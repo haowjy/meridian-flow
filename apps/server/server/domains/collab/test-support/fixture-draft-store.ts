@@ -1,4 +1,4 @@
-// Raw fixture model producers reserve identity before durable branch admission.
+// Raw fixture model producers reserve identity before durable draft admission.
 import { createDrizzleDraftStore } from "../adapters/drizzle-drafts.js";
 import { createDrizzleJournal } from "../adapters/drizzle-journal.js";
 import type { AppendDraftJournalInput } from "../domain/draft-store.js";

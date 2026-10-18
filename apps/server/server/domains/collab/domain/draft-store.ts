@@ -1,6 +1,6 @@
 /**
- * The branch storage contract: a branch is a checkpoint plus a journal tail; appends are
- * sequenced by the branch row's lock and rewrites fenced by `revision`. The row and content types, the store port every adapter implements, and the
+ * The draft storage contract: a draft is a checkpoint plus a journal tail; appends are
+ * sequenced by the draft row's lock and rewrites fenced by `revision`. The row and content types, the store port every adapter implements, and the
  * materialization of one read. The coordinator and the storage adapters both build on this.
  */
 
@@ -21,21 +21,21 @@ export type DraftStatus = "active" | "closed";
 /** The branch's origin Work as the row was read: archived, deleted or missing freeze it. */
 export type DraftWorkLifecycle = "active" | "archived" | "deleted" | "missing";
 
-/** A branch row without its content: the content is read only through `readDraftAt`. */
+/** A draft row without its content: the content is read only through `readDraftAt`. */
 export type DraftSnapshot = {
   draftId: string;
   documentId: DocumentId;
   kind: DraftKind;
   upstreamDraftId: string | null;
-  /** The draft this branch belongs to; a thread peer carries its upstream's. */
+  /** The branch this draft belongs to; a thread peer carries its upstream's. */
   branchId: BranchId;
-  /** Derived: the draft's origin Work (`branches.origin_work_id`), null when it has none. */
+  /** Derived: the branch's origin Work (`branches.origin_work_id`), null when it has none. */
   workId: WorkId | null;
   threadId: ThreadId | null;
   status: DraftStatus;
   /** The re-fork epoch: room name, journal grouping, edit placement. A reset bumps it. */
   generation: number;
-  /** Bumped by every committed write to the branch; the fence of exact rewrites. */
+  /** Bumped by every committed write to the draft; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
   checkpointRevision: number;
@@ -53,7 +53,7 @@ export type DraftSnapshot = {
 export type DraftTailRow = { id: number; update: Uint8Array; source: "agent" | "writer" };
 
 /**
- * One point-in-time read of a branch: its row, its checkpoint and its tail, from one statement.
+ * One point-in-time read of a draft: its row, its checkpoint and its tail, from one statement.
  * `checkpoint` is null when the read was asked `since` a checkpoint it still has: `tail` then
  * holds only the rows after that cursor.
  */
@@ -65,7 +65,7 @@ export type DraftRead = {
 
 /**
  * A work draft's effect baseline (`live_cut`), the live state its `has_effect` is measured
- * against. `state` is null for a legacy branch created
+ * against. `state` is null for a legacy draft created
  * before every creator stored one; the projection job establishes it with a pull.
  */
 export type EffectBaseline = { state: Uint8Array | null };
@@ -114,7 +114,7 @@ export type AppendFinalization =
   | { status: "refused" };
 
 /**
- * Rows appended past the checkpoint at whatever revision the branch is at: the row `UPDATE` is
+ * Rows appended past the checkpoint at whatever revision the draft is at: the row `UPDATE` is
  * the sequence point, with no revision predicate. Under its lock the store reads the committed
  * prefix `since` the caller's base cursor and hands it to `finalize`, which owns every fact that
  * depends on it (containment, novelty, receipts, authorship); the store writes what it returns.
@@ -164,11 +164,11 @@ export type RewriteOperation =
    */
   | { kind: "compact" }
   /**
-   * Live (or the upstream) merged into the branch. A work draft's `effect` was computed on the
+   * Live (or the upstream) merged into the draft. A work draft's `effect` was computed on the
    * candidate against `liveCut`, its new baseline, before the rewrite locked anything.
    */
   | { kind: "pull"; effect?: PullEffect }
-  /** A content rewrite the branch's Work must admit: a thread peer catching up its upstream. */
+  /** A content rewrite the draft's owning Work must admit: a thread peer catching up its upstream. */
   | { kind: "checkpoint" }
   /** A re-fork: the next generation, the tail discarded with its clocks fenced. */
   | {
@@ -211,7 +211,7 @@ export type RewriteOutcome =
   | { status: "moved" | "fenced" | "blocked" | "closed" | "upstreamMoved" };
 
 /**
- * A stale branch and its keyset position in the sweep's order. `updatedAt` is the stored
+ * A stale draft and its keyset position in the sweep's order. `updatedAt` is the stored
  * timestamp as text, exact to the microsecond (a `Date` would truncate it and skip rows).
  */
 export type StaleEffectCursor = { draftId: string; updatedAt: string };
@@ -220,7 +220,7 @@ export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
-  /** A work draft's effect baseline; null for a branch that carries no effect. */
+  /** A work draft's effect baseline; null for a draft that carries no effect. */
   readEffectBaseline(draftId: string): Promise<EffectBaseline | null>;
   /**
    * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
@@ -229,7 +229,7 @@ export type DraftStore = {
   appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome>;
   /**
    * The projection's write: `has_effect` and its watermark at exactly `revision`, touching the
-   * branch's Work. `moved` when the branch moved past `revision`; `contended` when a lock it
+   * branch's Work. `moved` when the draft moved past `revision`; `contended` when a lock it
    * needs was not free within the bound (100 ms per lock acquisition). Never bumps `revision`.
    */
   writeEffect(input: {
@@ -238,7 +238,7 @@ export type DraftStore = {
     hasEffect: boolean;
     workId: WorkId | null;
   }): Promise<"written" | "moved" | "contended">;
-  /** Active work branches whose watermark is behind their revision, newest first, keyset paged. */
+  /** Active work drafts whose watermark is behind their revision, newest first, keyset paged. */
   staleEffectDrafts(input: {
     after?: StaleEffectCursor;
     limit: number;
@@ -267,7 +267,7 @@ export class DraftCasConflictError extends Error {
 }
 
 /**
- * A writer update that depends on something the branch's journal does not hold yet (design
+ * A writer update that depends on something the draft's journal does not hold yet (design
  * §2.7): nothing was written, and the socket resyncs (`WS_CLOSE.DRAFT_PREFIX_MISSING`).
  */
 export class DraftPrefixMissingError extends Error {
@@ -280,7 +280,7 @@ export class DraftPrefixMissingError extends Error {
   }
 }
 
-/** A load named a branch whose rows are gone (a last-use Discard deleted them). */
+/** A load named a draft whose rows are gone (a last-use Discard deleted them). */
 export class DraftMissingError extends Error {
   constructor(readonly draftId: string) {
     super(`Draft ${draftId} does not exist`);
@@ -300,13 +300,12 @@ export function assertReadableDraft(
   }
 }
 
-/** The branch's content at the read: its checkpoint, then its tail rows in id order. */
+/** The draft's content at the read: its checkpoint, then its tail rows in id order. */
 export function materializeDraftRead(
   read: DraftRead,
   doc: Y.Doc = createCollabYDoc({ gc: false }),
 ): Y.Doc {
-  if (!read.checkpoint)
-    throw new Error("A branch read since a checkpoint cannot materialize alone");
+  if (!read.checkpoint) throw new Error("A draft read since a checkpoint cannot materialize alone");
   try {
     Y.applyUpdate(doc, read.checkpoint.state);
     for (const row of read.tail) Y.applyUpdate(doc, row.update);

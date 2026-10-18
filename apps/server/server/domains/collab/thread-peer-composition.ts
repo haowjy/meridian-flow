@@ -1,6 +1,6 @@
 /**
  * Collab composition (thread peers): assembles the production thread-peer pool from the
- * branch store, coordinator, pulls and agent-edit runtime. Part of the composition root
+ * draft store, coordinator, pulls and agent-edit runtime. Part of the composition root
  * (`composition.ts`); the pool itself (`domain/thread-peer-core-pool.ts`) holds no adapters.
  */
 import {
@@ -51,7 +51,7 @@ type AgentEditObservability = Pick<
 
 /**
  * The production thread-peer pool: each thread's agent-edit core over its peer drafts
- * (branch journal, branch coordinator, scoped links), the reply save fences, and the pool.
+ * (draft journal, draft coordinator, scoped links), the reply save fences, and the pool.
  */
 export function createDraftThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;

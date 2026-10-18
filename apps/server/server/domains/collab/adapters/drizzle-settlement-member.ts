@@ -122,7 +122,7 @@ export async function stageSettlementMemberWithinTx(
  * transaction: their journal rows are active again at their generation, their
  * unconsumed notices are retracted, and their lineage is deleted (the outbox
  * member and its joins cascade), so the idempotency key never answers "already
- * pushed" for an Apply that didn't happen. The branches are pending again, so the
+ * pushed" for an Apply that didn't happen. The drafts are pending again, so the
  * change goes through the Work projection like the staging that made them
  * pushed; the caller already holds their Works. The caller retires their trail
  * contribution.
@@ -137,7 +137,7 @@ export async function withdrawSettlementMembersWithinTx(
   const withdraw = async () => {
     const journalIds = pushes.flatMap((push) => push.journalIds);
     if (journalIds.length > 0) {
-      // `pushed → active` is a review-membership change: the branch rows are locked in id
+      // `pushed → active` is a review-membership change: the draft rows are locked in id
       // order and their revisions bumped before the rows return (the caller holds the Works).
       const affected = await db
         .selectDistinct({ draftId: draftWriteJournal.draftId })
@@ -203,7 +203,7 @@ export async function readSettlementCuts(
 
 /**
  * Makes one locked member effective inside its batch's completion transaction:
- * the branch's authored rows and one reconcile row in the live journal, their
+ * the draft's authored rows and one reconcile row in the live journal, their
  * attribution, the certified derivation, the head, and joins into other batches.
  */
 export async function admitSettlementMemberWithinTx(

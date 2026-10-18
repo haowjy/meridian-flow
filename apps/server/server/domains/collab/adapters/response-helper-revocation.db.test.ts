@@ -409,7 +409,7 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the read before it reads any branch, so Discard commits ahead of it.
+    // Pause the read before it reads any draft, so Discard commits ahead of it.
     let once = true;
     const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {

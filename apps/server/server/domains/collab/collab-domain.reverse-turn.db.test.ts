@@ -1,5 +1,5 @@
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
-/** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
+/** Public collab-domain reverseTurn coverage over Drizzle draft infrastructure. */
 
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";

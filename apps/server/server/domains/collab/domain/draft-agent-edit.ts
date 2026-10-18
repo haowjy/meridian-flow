@@ -1,4 +1,4 @@
-/** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
+/** Agent-edit bindings that make a thread-peer draft the write tool's document world. */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -296,9 +296,7 @@ export function createDraftAgentEditCoordinator(input: {
             if (!bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
               const workDraftId = snapshot.upstreamDraftId;
               if (!workDraftId) {
-                throw new Error(
-                  `Thread-peer branch ${snapshot.draftId} has no work-draft upstream`,
-                );
+                throw new Error(`Thread-peer draft ${snapshot.draftId} has no work-draft upstream`);
               }
               const first = pendingBatch[0];
               if (
@@ -357,7 +355,7 @@ export function createDraftAgentEditCoordinator(input: {
       prepareSave: (request) => staged(request, true),
     },
 
-    // A peer is made only by a pull in a draft: recovery never creates one.
+    // A peer is made only by pulling from a Work draft: recovery never creates one.
     async recover(): Promise<void> {},
 
     async concurrentUpdatesSince({
@@ -419,7 +417,7 @@ export function createDraftAgentEditCoordinator(input: {
       );
       if (maxRowId > 0) {
         // Load-bearing: this is only a captured candidate. Advancing the floor here would
-        // skip rows if the surrounding branch write later fails or CAS-exhausts.
+        // skip rows if the surrounding draft write later fails or CAS-exhausts.
         concurrentJournalWatermarks.capturePending(
           input.threadId,
           docId as DocumentId,
@@ -435,7 +433,7 @@ export function createDraftAgentEditCoordinator(input: {
             input.enlistResponseParticipant,
             attemptId,
           );
-        // Capture itself is provisional: failures before branch persistence must
+        // Capture itself is provisional: failures before draft persistence must
         // clear the candidate even though no watermark-advance participant exists yet.
         input.enlistResponseParticipant({
           commit() {},
@@ -507,7 +505,7 @@ export function createDraftAgentEditJournal(input: {
           materializeDestructiveProvenance: (request) =>
             materializeDestructiveProvenance({
               ...request,
-              // Roots absent from the live document were born on this agent-owned branch.
+              // Roots absent from the live document were born on this agent-owned draft.
               fallbackProvenance: "agent",
             }),
         }
@@ -529,7 +527,7 @@ export class StagedDraftWriteNoopError extends Error {
     readonly documentId: string,
   ) {
     super(
-      `Staged write for document ${documentId} produced no durable branch journal row on branch ${draftId}`,
+      `Staged write for document ${documentId} produced no durable draft journal row on draft ${draftId}`,
     );
     this.name = "StagedDraftWriteNoopError";
   }
@@ -593,8 +591,8 @@ export function createDraftPendingJournalEntries(
 }
 
 /**
- * The thread's current peer of the document. A peer is made only by a pull in a draft:
- * an access that finds none is `DraftNotFoundError`, never a new branch.
+ * The thread's current peer of the document. A peer is made only by pulling from a Work draft:
+ * an access that finds none is `DraftNotFoundError`, never a new peer draft.
  */
 async function resolveThreadDraftId(
   input: { threadId: ThreadId; drafts: DraftLookupWithSnapshots },

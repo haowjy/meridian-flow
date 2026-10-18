@@ -162,10 +162,10 @@ export type CollabTransport = {
   storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
   drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
-  /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
+  /** Narrow close affordance for durable shadow-probe T6 and draft reset plumbing. */
   closeHocuspocusDraftRoom(draftId: string): void;
   /**
-   * A tab's SyncStep1 on a branch room: reconciles `room` against the committed branch, then
+   * A tab's SyncStep1 on a draft room: reconciles `room` against the committed draft, then
    * true when the tab still holds content a reset discarded (decision D27).
    */
   rejectStaleDraftSyncStep1(input: {
@@ -175,7 +175,7 @@ export type CollabTransport = {
     room: Y.Doc;
   }): Promise<boolean>;
   /**
-   * Called from a branch room's load hook: once Hocuspocus registers the room, brings it up to
+   * Called from a draft room's load hook: once Hocuspocus registers the room, brings it up to
    * what committed while it loaded, or closes it when its generation is stale (decision D26).
    */
   enrollHocuspocusDraftRoom(input: {
@@ -368,18 +368,18 @@ export type DraftPreviewResult =
 
 export type DraftReviewApi = {
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ModelDraftRow[]>;
-  /** The review list route's one read: the active draft's listed items with live text tokens. */
+  /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { workId: WorkId }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
-  /** Every active draft in the project with changes to the document, oldest first. */
+  /** Every active branch in the project with changes to the document, oldest first. */
   branchesChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
   }): Promise<DocumentBranchOrigin[]>;
-  /** The Work's active draft's listed items, live text tokens unread: what Apply authorizes. */
+  /** The Work's active branch's listed items, live text tokens unread: what Apply authorizes. */
   items(input: {
     workId: WorkId;
   }): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
@@ -439,7 +439,7 @@ export type CollabBranches = {
   draftReview: DraftReviewApi;
 };
 
-/** The one branches resolver (Work → active draft, made only at the write boundary). */
+/** The one branch resolver (Work → active branch, made only at the write boundary). */
 export type CollabBranchResolver = {
   branches: Branches;
   /** A drain for the debounced registration of writers' review-room edits (§10.7). */
@@ -495,14 +495,14 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * The draft's branch on a document it just created or joined, seeded from its live
+   * The branch's draft for a document it just created or joined, seeded from its live
    * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
    * idempotent against a racing peer ensure (contract §6.2 step 5).
    */
   ensureCreatedDocumentDraft(input: { documentId: DocumentId; branchId: BranchId }): Promise<void>;
   /**
-   * Reverse a draft create's branch (contract §12.5, O-11), in the caller's transaction:
-   * `stands` when the draft's branch on the document (or a thread peer of it) holds a
+   * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
+   * `stands` when the branch's draft on the document (or a thread peer of it) holds a
    * contribution; otherwise the drafts go and, once the transaction commits, their
    * pooled cores, caches and rooms are retired.
    */

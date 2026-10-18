@@ -1,6 +1,6 @@
 /**
  * Ahead links bind once, on a live arrival, for every holder (12a as amended 2026-10-13):
- * until then each reader resolves the stored path in its own view, a draft's hidden
+ * until then each reader resolves the stored path in its own view, a branch's hidden
  * document there reads "in a draft" from every view, and a Discard that leaves no
  * document binds nothing, so the link reads "Doesn't exist yet" and a later live document
  * takes it. One walk of the design's case table.
@@ -73,7 +73,7 @@ describeBranchTreeDb("Ahead links bind once, on a live arrival (postgres)", (sta
     });
     expect(await settledTo(kaelAhead)).toBeNull();
 
-    // Another Work's draft is the only one at its path: D reads it in a draft too.
+    // Another Work's branch is the only one at its path: D reads it in a branch too.
     const vela = await s.model(beacon).create("characters/vela", "Vela.");
     expect(await everywhere(velaAhead, VELA)).toEqual({
       ascension: { id: vela, inBranch: true },

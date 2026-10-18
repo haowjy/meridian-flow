@@ -1,4 +1,4 @@
-/** Pure Yjs branch-to-branch propagation primitive for collab branch peers. */
+/** Pure Yjs draft-to-draft propagation primitive for collab draft peers. */
 import * as Y from "yjs";
 
 /** The one sync primitive. Both pull and push use this. */

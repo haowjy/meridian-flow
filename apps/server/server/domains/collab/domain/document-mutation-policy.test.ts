@@ -37,7 +37,7 @@ describe("document mutation policy operations", () => {
     const target = new Y.Doc({ gc: false });
     const before = Y.encodeStateAsUpdate(target);
     const row: AppendDraftJournalInput = {
-      draftId: "branch-1",
+      draftId: "draft-1",
       generation: 1,
       source: "agent",
       updateData: updateWith("agent"),

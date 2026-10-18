@@ -1,5 +1,5 @@
 /**
- * Contract §3.6 DB cases: whole-item rows (a create with no branch) and the §1.2 identity
+ * Contract §3.6 DB cases: whole-item rows (a create with no draft) and the §1.2 identity
  * rule: an item is named by its `itemKey` alone, never by a draft id or a branch id.
  */
 import { randomUUID } from "node:crypto";
@@ -53,7 +53,7 @@ describeBranchTreeDb("review items (postgres)", (start) => {
     });
     expect(perChange.body).toMatchObject({ status: "whole_item" });
 
-    // Item Discard of one created item leaves the other and the draft active.
+    // Item Discard of one created item leaves the other and the branch active.
     const [discarded] = (await s.discard(work, [dropped])) as { status: string }[];
     expect(discarded).toMatchObject({ status: "discarded" });
     expect((await s.items(work)).map((item) => item.documentId)).toEqual([kept]);
@@ -105,7 +105,7 @@ describeBranchTreeDb("review items (postgres)", (start) => {
     expect(await s.branchStatuses(work)).toEqual(["active"]);
   });
 
-  it("a document's draft hints list every other Work's active draft with changes to it, and drop settled or deleted ones", async () => {
+  it("a document's draft hints list every other Work's active branch with changes to it, and drop settled or deleted ones", async () => {
     const { runtime, s } = await start();
     const deps = selectBranchRouteServices(runtime.app);
     const hints = async (documentId: DocumentId) =>

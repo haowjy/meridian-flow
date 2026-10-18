@@ -1,5 +1,5 @@
 /**
- * The one owner of a bounded branch-store attempt (decision D13): capture and compute off
+ * The one owner of a bounded draft-store attempt (decision D13): capture and compute off
  * every lock, one commit scope per attempt, and the lifetime of every candidate the attempt
  * prepared. Operation policy (the bound's exhaustion outcome, the inverse's classification
  * pass, the reply save's retained `confirm` locks) stays with the caller.
@@ -27,7 +27,7 @@ export type Attempt = {
   own<C extends AttemptCandidate>(candidate: C): C;
   /**
    * Runs `operation` inside the attempt's one commit scope, which it opens before the
-   * attempt's first branch-store lock. A throw leaves the scope (rolled back) before the
+   * attempt's first draft-store lock. A throw leaves the scope (rolled back) before the
    * attempt is classified, so a retry never computes under the failed attempt's locks.
    */
   commit<R>(operation: () => Promise<R>): Promise<R>;

@@ -1,4 +1,4 @@
-/** Test writes that reach a branch through the coordinator operations a reply's save uses. */
+/** Test writes that reach a draft through the coordinator operations a reply's save uses. */
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -6,7 +6,7 @@ import type { AppendDraftJournalInput, DraftStore } from "../domain/draft-store.
 
 type SaveDoors = Pick<DraftCoordinator, "readDraft" | "commitSegmentRows" | "resetFromDoc">;
 
-/** Journals `updateData` as one row on the branch's current generation. */
+/** Journals `updateData` as one row on the draft's current generation. */
 export async function commitJournaledUpdate(
   coordinator: SaveDoors,
   input: Omit<AppendDraftJournalInput, "generation">,

@@ -55,7 +55,7 @@ export function createDraftReviewOperations(deps: Dependencies): DraftReviewServ
     draftIds: readonly string[],
     run: (drafts: readonly DraftSnapshot[], attempt: Attempt) => Promise<T>,
   ): Promise<T> {
-    if (draftIds.length === 0) throw new Error("A selected Discard names a branch");
+    if (draftIds.length === 0) throw new Error("A selected Discard names a draft");
     return runBoundedAttempts({
       bound: DISCARD_ATTEMPTS,
       scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,

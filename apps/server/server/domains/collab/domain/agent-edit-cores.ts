@@ -35,8 +35,8 @@ export type RefusedResponseDocument =
   | {
       documentId: DocumentId;
       /**
-       * The draft its writes were pinned to moved on before the save (closed, or this
-       * document's draft applied or discarded): the save never re-branches them (§2.5).
+       * The branch its writes were pinned to moved on before the save (closed, or this
+       * document's draft applied or discarded): the save never retargets them to a new branch (§2.5).
        */
       reason: StagedWriteRejectionReason;
     };
@@ -75,7 +75,7 @@ export type ThreadPeerAgentEditCore = Omit<
   /**
    * Retire exactly these peers on `documentId` after their drafts closed or were deleted:
    * their staged writes are refused with the reason, then their runtimes and pulled baselines
-   * go. Durable branch rows are the caller's; other threads and documents are untouched.
+   * go. Durable draft rows are the caller's; other threads and documents are untouched.
    */
   retireThreadPeers(
     documentId: string,

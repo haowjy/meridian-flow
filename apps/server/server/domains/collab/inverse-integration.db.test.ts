@@ -96,7 +96,7 @@ describe("inverse integration (postgres)", () => {
       ["red", "gold"],
     ]);
     const branchId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId;
-    if (!branchId) throw new Error("No active draft");
+    if (!branchId) throw new Error("No active branch");
     await claimCreate(branchId, NEW_ID);
     const reply = await createResponse(db, 2);
     const core = fixture.collab.agentEdit();
@@ -106,7 +106,7 @@ describe("inverse integration (postgres)", () => {
       await core.write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, context),
     ).toMatchObject({ status: "success" });
     expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
-    // The create is still staged, and another thread's peer sits on its draft branch.
+    // The create is still staged, and another thread's peer sits on its draft.
     expect(
       await core.write(
         { command: "create", file: "created", documentId: NEW_ID as never, content: "New." },
@@ -280,7 +280,7 @@ describe("inverse integration (postgres)", () => {
       ["red", "gold"],
     ]);
     const branchId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId;
-    if (!branchId) throw new Error("No active draft");
+    if (!branchId) throw new Error("No active branch");
     await claimCreate(branchId, NEW_ID);
     const reply = await createResponse(db, 2);
     expect(

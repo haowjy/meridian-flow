@@ -1,4 +1,4 @@
-/** The checkpoint + tail branch store in memory, for unit tests whose flows write a branch. */
+/** The checkpoint + tail draft store in memory, for unit tests whose flows write a draft. */
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
@@ -16,14 +16,14 @@ import {
   type StaleEffectCursor,
 } from "../domain/draft-store.js";
 
-/** A branch row, defaulting every field the test does not name. */
+/** A draft row, defaulting every field the test does not name. */
 export function testDraftRow(
   input: Pick<DraftSnapshot, "draftId" | "documentId"> & Partial<DraftSnapshot>,
 ): DraftSnapshot {
   return {
     kind: "work_draft",
     upstreamDraftId: null,
-    branchId: "draft-1" as DraftSnapshot["branchId"],
+    branchId: "branch-1" as DraftSnapshot["branchId"],
     workId: null,
     threadId: null,
     status: "active",
@@ -41,17 +41,17 @@ export function testDraftRow(
 
 type MemoryRow = { id: number; generation: number; update: Uint8Array; source: "agent" | "writer" };
 
-/** A branch as the store keeps it: the row, its checkpoint and every journal row it has. */
+/** A draft as the store keeps it: the row, its checkpoint and every journal row it has. */
 export type MemoryDraft = DraftSnapshot & {
   checkpoint: { state: Uint8Array; stateVector: Uint8Array };
   rows: MemoryRow[];
-  /** The work draft's effect baseline; a seeded branch's is its seed. */
+  /** The work draft's effect baseline; a seeded draft's is its seed. */
   liveCut?: Uint8Array;
   /** The revision `hasEffect` was judged at; absent is the stale sentinel. */
   hasEffectRevision?: number;
 };
 
-/** A stored branch: `row` with `content` (a document or its update bytes) as its checkpoint. */
+/** A stored draft: `row` with `content` (a document or its update bytes) as its checkpoint. */
 export function memoryDraft(row: DraftSnapshot, content: Y.Doc | Uint8Array): MemoryDraft {
   const state = content instanceof Uint8Array ? content : Y.encodeStateAsUpdate(content);
   return {
@@ -64,7 +64,7 @@ export function memoryDraft(row: DraftSnapshot, content: Y.Doc | Uint8Array): Me
 
 /**
  * The checkpoint + tail store in memory: every committed write bumps `revision`, an append
- * adds tail rows at whatever revision the branch holds (finalized on the prefix past its base,
+ * adds tail rows at whatever revision the draft holds (finalized on the prefix past its base,
  * as under the row lock), a rewrite replaces the checkpoint and moves `checkpointSeq` past
  * every row. One call runs with no await between its read and its write, so it is atomic.
  */

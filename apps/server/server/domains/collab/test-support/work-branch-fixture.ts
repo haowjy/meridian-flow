@@ -1,4 +1,4 @@
-/** Shared persisted Work draft fixture for collab operation integration tests. */
+/** Shared persisted Work branch fixture for collab operation integration tests. */
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -76,7 +76,7 @@ export function createWorkBranchFixture(db: Database) {
       name: "Work",
       slug: "work",
     });
-    // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+    // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
     await db
       .insert(branches)
       .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });

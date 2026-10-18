@@ -208,7 +208,7 @@ describe("branch-push durable projection", () => {
       store: draftStore,
     });
     const liveDoc = createCollabYDoc({ gc: false });
-    const draft = await branches.ensureActiveForWrite({
+    const branch = await branches.ensureActiveForWrite({
       workId: workId as never,
       projectId: projectId as never,
       threadId: null,
@@ -216,7 +216,7 @@ describe("branch-push durable projection", () => {
     });
     const documentDraft = await draftStore.ensureDocumentDraft({
       documentId: documentId as never,
-      branchId: draft.id,
+      branchId: branch.id,
       liveDoc,
     });
     const draftDoc = createCollabYDoc({ gc: false });
@@ -414,7 +414,7 @@ describe("branch-push durable projection", () => {
       store: draftStore,
     });
     const liveDoc = createCollabYDoc({ gc: false });
-    const draft = await branches.ensureActiveForWrite({
+    const branch = await branches.ensureActiveForWrite({
       workId: workId as never,
       projectId: projectId as never,
       threadId: null,
@@ -422,7 +422,7 @@ describe("branch-push durable projection", () => {
     });
     const documentDraft = await draftStore.ensureDocumentDraft({
       documentId: documentId as never,
-      branchId: draft.id,
+      branchId: branch.id,
       liveDoc,
     });
     const draftDoc = createCollabYDoc({ gc: false });

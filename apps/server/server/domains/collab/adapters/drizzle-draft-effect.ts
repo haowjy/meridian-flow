@@ -10,10 +10,10 @@ import { readDraftAt } from "./drizzle-draft-storage.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /**
- * Recomputes `has_effect` from the branch's checkpoint and tail against the document's live
+ * Recomputes `has_effect` from the draft's checkpoint and tail against the document's live
  * state, which becomes its live cut (a selective Discard's re-fork). A flip is a
- * review-membership change, so it bumps `revision`; the branch's revision after the refresh
- * comes back (none for a branch that is not a work draft).
+ * review-membership change, so it bumps `revision`; the draft's revision after the refresh
+ * comes back (none for a draft that is not a work draft).
  */
 export async function refreshDraftEffect(
   db: DrizzleDb,

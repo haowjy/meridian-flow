@@ -1,9 +1,9 @@
 /**
- * The Drizzle storage half of the branch store: the branch row and its derived Work lifecycle,
+ * The Drizzle storage half of the draft store: the draft row and its derived Work lifecycle,
  * the one read (`readDraftAt`), and the transactional journal and checkpoint primitives every
- * branch content write commits through (`appendRowsWithinTx`, `commitRewriteWithinTx`;
- * metadata writes use `shared/branch-revisions.ts`). Runs inside the caller's transaction and
- * takes no lock but the branch rows'; Work admission, receipts and effect policy belong to the
+ * draft content write commits through (`appendRowsWithinTx`, `commitRewriteWithinTx`;
+ * metadata writes use `shared/draft-revisions.ts`). Runs inside the caller's transaction and
+ * takes no lock but the draft rows'; Work admission, receipts and effect policy belong to the
  * callers.
  */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
@@ -132,8 +132,8 @@ const draftColumns = {
 };
 
 /**
- * A branch row with its Work and that Work's lifecycle derived through its draft (contract
- * §2.4), never stored on the branch; no content.
+ * A draft row with its Work and that Work's lifecycle derived through its branch (contract
+ * §2.4), never stored on the draft; no content.
  */
 export function selectDraft(db: DrizzleDb) {
   return db
@@ -144,7 +144,7 @@ export function selectDraft(db: DrizzleDb) {
 }
 
 /**
- * The branch's draft has an origin Work that is neither archived nor deleted, evaluated inside
+ * The draft's branch has an origin Work that is neither archived nor deleted, evaluated inside
  * the write's own statement so the lifecycle decision and the write are one observation.
  */
 const draftWorkActive = sql`exists (
@@ -175,7 +175,7 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
 }
 
 /**
- * The read seam: the branch row, its checkpoint and its tail (`id > checkpoint_seq` of the
+ * The read seam: the draft row, its checkpoint and its tail (`id > checkpoint_seq` of the
  * current generation) from one statement, so one snapshot. With `since` naming the checkpoint
  * the caller still holds, the checkpoint bytes are left out and the tail starts after its seq.
  * Nothing else reads `document_drafts.state`.
@@ -255,8 +255,8 @@ export type AppendCommitted = {
 /**
  * Shape A's storage half, inside the caller's savepoint. The `UPDATE` is the sequence point:
  * it bumps `revision` at whatever value it holds (no revision predicate, no retry) and holds
- * the row lock to `COMMIT`, so journal ids are allocated in commit order per branch (tail
- * order). It still refuses a closed, re-forked or frozen branch. After the lock, one separate
+ * the row lock to `COMMIT`, so journal ids are allocated in commit order per draft (tail
+ * order). It still refuses a closed, re-forked or frozen draft. After the lock, one separate
  * statement reads the committed prefix `since` the caller's base (a fresh READ COMMITTED
  * snapshot, so every row committed before this lock), and `finalize` decides what to insert.
  * Any outcome but `appended` throws `DraftWriteRollback` so the savepoint undoes the bump.
@@ -284,7 +284,7 @@ export async function appendRowsWithinTx(
       revision: documentDrafts.revision,
       checkpointRevision: documentDrafts.checkpointRevision,
     });
-  // Zero rows: the branch closed, re-forked or its Work is no longer active. Never a writer.
+  // Zero rows: the draft closed, re-forked or its Work is no longer active. Never a writer.
   if (!locked) throw new DraftWriteRollback({ status: "refused" });
   const lockedAt = performance.now();
   // Must stay its own statement: a CTE would share the UPDATE's snapshot and miss rows
@@ -298,7 +298,7 @@ export async function appendRowsWithinTx(
       (row) => row.generation !== input.expectedGeneration || row.draftId !== input.draftId,
     )
   )
-    throw new Error(`Draft ${input.draftId} append names another branch or generation`);
+    throw new Error(`Draft ${input.draftId} append names another draft or generation`);
   return {
     revision: Number(locked.revision),
     checkpointRevision: Number(locked.checkpointRevision),
@@ -312,9 +312,9 @@ export type RewriteCommit = {
   policy: RewritePolicy;
   fence: RewriteFence;
   /**
-   * `active`: the checkpoint `UPDATE` carries the branch's Work-is-active predicate (a content
+   * `active`: the checkpoint `UPDATE` carries the draft's Work-is-active predicate (a content
    * write the Work admits); zero rows is `moved`. `any`: a pull, reset or compaction, which no
-   * Work lifecycle gates: an archived Work's branches keep rebasing on live.
+   * Work lifecycle gates: an archived Work's drafts keep rebasing on live.
    */
   work: "active" | "any";
   /** A peer's captured upstream: locked `FOR SHARE` before the peer row, then checked. */
@@ -340,9 +340,9 @@ export type RewriteCommit = {
 
 /**
  * Shape B, the one checkpoint door, inside the caller's transaction: lock the upstream
- * (`FOR SHARE`) then the branch row (`FOR UPDATE`), validate the policy and the fence, fold
+ * (`FOR SHARE`) then the draft row (`FOR UPDATE`), validate the policy and the fence, fold
  * the tail, write the checkpoint at `revision + 1` with `checkpoint_seq` covering every row
- * the branch now has. No compute beyond the fold runs under the lock.
+ * the draft now has. No compute beyond the fold runs under the lock.
  */
 export async function commitRewriteWithinTx(
   db: DrizzleDb,

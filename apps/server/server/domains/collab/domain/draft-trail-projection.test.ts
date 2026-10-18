@@ -441,7 +441,7 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
   }
   const row = (id: number, updateData: Uint8Array): DraftJournalRow => ({
     id,
-    draftId: "branch-1",
+    draftId: "draft-1",
     generation: 1,
     wId: null,
     source: "agent",

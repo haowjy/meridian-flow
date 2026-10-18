@@ -189,22 +189,22 @@ describe("reply save refusals (postgres)", () => {
       store: createDrizzleBranchStore(db),
       boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
     });
-  /** Marks `documentId` as created by `workId`'s active draft, making that draft if need be. */
+  /** Marks `documentId` as created by `workId`'s active branch, making that branch if need be. */
   async function claimCreate(documentId: string, workId: WorkId, threadId: string) {
-    const draft = await branchesOf().ensureActiveForWrite({
+    const branch = await branchesOf().ensureActiveForWrite({
       workId,
       projectId: PROJECT_ID as never,
       threadId: threadId as never,
       userId: USER_ID as never,
     });
     await db.insert(schema.branchTreeChanges).values({
-      branchId: draft.id,
+      branchId: branch.id,
       nodeKind: "document",
       nodeId: documentId as never,
       created: true,
     });
   }
-  /** A document the draft created and has not revealed: hidden, with its tree row. */
+  /** A document the branch created and has not revealed: hidden, with its tree row. */
   async function hiddenCreate(documentId: string, name: string) {
     await db.insert(schema.documents).values({
       id: documentId as never,
@@ -215,7 +215,7 @@ describe("reply save refusals (postgres)", () => {
     });
     await claimCreate(documentId, WORK_ID, THREAD_ID);
   }
-  /** Work B's draft claims the same hidden create, as two chats creating one path would. */
+  /** Work B's branch claims the same hidden create, as two chats creating one path would. */
   async function shareHiddenCreate(fixture: Fixture) {
     await seedSecondWork(fixture);
     await claimCreate(NEW_ID, WORK_B_ID, THREAD_B_ID);
@@ -230,7 +230,7 @@ describe("reply save refusals (postgres)", () => {
     };
   };
 
-  /** A reply that created `NEW_ID` in the draft and saved, then a second reply staging an edit on it. */
+  /** A reply that created `NEW_ID` in the branch and saved, then a second reply staging an edit on it. */
   async function createdThenStaged() {
     const base = await setup();
     const { core } = base;
@@ -288,7 +288,7 @@ describe("reply save refusals (postgres)", () => {
     void fixture;
   });
 
-  it("15b: another Work revealing the create before Discard's transaction keeps the branch and refuses discarded_edit", async () => {
+  it("15b: another Work revealing the create before Discard's transaction keeps the draft and refuses discarded_edit", async () => {
     const { second, review, fixture } = await createdThenStaged();
     const remove = setCollabHook("discard.beforeCommitScope", async () => {
       remove();
@@ -299,7 +299,7 @@ describe("reply save refusals (postgres)", () => {
     });
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     expect(refused(await harness.commit(second))).toEqual([[NEW_ID, EDIT]]);
-    // The draft's own branch, by kind: the closed thread peer shares the document, and an
+    // The branch's own draft, by kind: the closed thread peer shares the document, and an
     // unordered select returns whichever row Postgres happens to place first.
     const [documentDraft] = await db
       .select()
@@ -311,13 +311,13 @@ describe("reply save refusals (postgres)", () => {
         ),
       );
     expect(documentDraft?.status).toBe("active");
-    // Reset from live, not closed: the branch holds exactly what the revealed document does.
+    // Reset from live, not closed: the draft holds exactly what the revealed document does.
     expect(await fixture.draftMarkdown(documentDraft?.id as string)).toBe(
       await harness.liveMarkdown(NEW_ID),
     );
   });
 
-  it("11: Apply all while staged drains the draft, which stays active, and the write lands in it even once the chat writes direct", async () => {
+  it("11: Apply all while staged drains the branch, which stays active, and the write lands in its draft even once the chat writes direct", async () => {
     const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await review.applyAll()).toMatchObject({ status: "completed" });
@@ -388,7 +388,7 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseB))).toEqual([]);
     const beta = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_B_ID);
     expect(await fixture.draftMarkdown(beta.draftId)).toBe("red\n\nblue\n\nemerald\n");
-    // A later reply writes the document again, through a fresh peer on the reset branch.
+    // A later reply writes the document again, through a fresh peer on the reset draft.
     const next = await createResponse(db, 3);
     expect(
       await core.write(
@@ -443,7 +443,7 @@ describe("reply save refusals (postgres)", () => {
     expect(JSON.stringify(next.result)).not.toContain("azure");
   });
 
-  describe("17: a save between a Discard's commit and its retirement is refused by branch state", () => {
+  describe("17: a save between a Discard's commit and its retirement is refused by draft state", () => {
     it("an edited document refuses discarded_edit", async () => {
       const { responseId, review, write } = await setup();
       expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
@@ -458,9 +458,9 @@ describe("reply save refusals (postgres)", () => {
 
     it.each([
       { name: "a revealed create", reveal: true, other: false, copy: EDIT },
-      { name: "a hidden create another Work's draft uses", reveal: false, other: true, copy: DOC },
-      { name: "a hidden create no other draft uses", reveal: false, other: false, copy: DOC },
-    ])("$name refuses its branch state's copy", async ({ reveal, other, copy }) => {
+      { name: "a hidden create another Work's branch uses", reveal: false, other: true, copy: DOC },
+      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: DOC },
+    ])("$name refuses its draft state's copy", async ({ reveal, other, copy }) => {
       const { second, review, fixture } = await createdThenStaged();
       if (reveal) {
         await db
@@ -528,8 +528,12 @@ describe("reply save refusals (postgres)", () => {
   ] as const;
   it.each(
     pullPhases.flatMap((phase) => [
-      { phase, other: false, name: "last use deletes the branch rows" },
-      { phase, other: true, name: "another Work's draft still uses the create, so its rows close" },
+      { phase, other: false, name: "last use deletes the draft rows" },
+      {
+        phase,
+        other: true,
+        name: "another Work's branch still uses the create, so its rows close",
+      },
     ]),
   )("23b: Discard of a hidden create $phase of a write's pull names the document ($name)", async ({
     phase,

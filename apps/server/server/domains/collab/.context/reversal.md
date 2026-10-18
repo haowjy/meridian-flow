@@ -63,7 +63,7 @@ their own root transaction. Root pulls must not be awaited while holding Work
 locks.
 
 An inverse is an attempt. It captures its documents in one read snapshot with
-no lock or lease (live state, live heads, branches merged over live) and plans
+no lock or lease (live state, live heads, drafts merged over live) and plans
 off every lock. Its commit scope takes the live mutexes, then one savepoint
 whose first locks are the Work rows (the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed: a seam boundary), then its
@@ -79,7 +79,7 @@ for model Undo, Redo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope. `markBlocking` is its own short write:
 Work rows, then the held draft rows, then the bump.
 
-A card outcome reports committed destination per document. Branch Undo says that
+A card outcome reports committed destination per document. Draft Undo says that
 Apply is needed to change the manuscript. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,
 `cant_undo_dependent`, `expired`, or `partial` with HTTP 200; callers retain

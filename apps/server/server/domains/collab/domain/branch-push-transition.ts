@@ -50,7 +50,7 @@ export type ApplyOutcome =
       kind: "settled";
       /** The pushes whose text reached live. */
       pushes: readonly PushLineageRow[];
-      /** Every held item, at the check or in completion, branchless ones included. */
+      /** Every held item, at the check or in completion, items without text drafts included. */
       held: readonly ApplyItemHold[];
       /** What the steps did per applied item, decided in completion. */
       outcomes: readonly ApplyItemOutcome[];
@@ -116,7 +116,7 @@ export function createBranchPushTransition(input: {
         if (prepared.kind === "return") return prepared.value;
         const payloads = prepared.payloads ?? {};
         if (prepared.pushes.length === 0 && Object.keys(payloads).length === 0) {
-          throw new Error("Draft push transition requires a push or an Apply payload");
+          throw new Error("Branch push transition requires a push or an Apply payload");
         }
         const settlement = { batchId: randomUUID(), claimToken: randomUUID() };
         // The same plans and lock order as completion, before anything is staged:

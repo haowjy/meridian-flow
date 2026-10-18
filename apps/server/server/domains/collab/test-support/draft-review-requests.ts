@@ -210,10 +210,10 @@ export function reviewDriver(
         }),
       );
     },
-    /** Discard all of the Work's active draft. */
+    /** Discard all of the Work's active branch. */
     async discardAll() {
       const { branchId } = await review.items({ workId });
-      if (!branchId) throw new Error("No active draft");
+      if (!branchId) throw new Error("No active branch");
       return body(
         await review.discardAll({
           workId,
@@ -223,10 +223,10 @@ export function reviewDriver(
         }),
       );
     },
-    /** Apply every listed item of the Work's active draft. */
+    /** Apply every listed item of the Work's active branch. */
     async applyAll() {
       const { branchId, items } = await review.items({ workId });
-      if (!branchId) throw new Error("No active draft");
+      if (!branchId) throw new Error("No active branch");
       return body(
         await review.applyAll({
           workId,

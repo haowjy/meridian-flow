@@ -9,16 +9,16 @@ draft ID, item key, or presented address interchangeably.
 | Term | Meaning | Wire identity |
 |---|---|---|
 | **branch** | One active Work branch; Apply leaves it open, whole Discard and purge close it. | `branchId` |
-| **draft** | One document's Work-draft Y.Doc and its thread peers; generation advances on reset. | opaque draft room plus generation |
+| **draft** | One document's pending version: either a Work draft (`work_draft`) or a thread peer (`thread_peer`). Each is its own Y.Doc; generation advances on reset. | opaque draft room plus generation |
 | **revision** | The draft row's counter: every append, rewrite and status or hold change moves it; rewrites are fenced by it, appends never check it; never reaches a client. | none |
 | **checkpoint** | The draft's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
 | **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${branchId}:${documentId}` |
 | **command** | One idempotent writer Apply or Discard action. | `commandId` |
-| **presented address** | The writer's Work/item/change selection; it names no draft. | review selector |
+| **presented address** | The writer's Work/item/change selection; it names no draft storage ID. | review selector |
 
 There is at most one active Work draft per `(documentId, branchId)`.
-Thread peers fork from that draft and share its upstream. The server resolves
+Thread peers fork from that draft and name it as their upstream. The server resolves
 every item key through the identity module; no caller accepts an ambiguous bare
 ID. A document with no draft can still be an item and can still be applied.
 
@@ -33,15 +33,15 @@ closed. Work purge reuses this kernel after proving its lifecycle set.
 
 Branch HTTP routes share one Work-access check: a deleted Work is 404 before any
 draft read or mutation, while an archived Work still permits review reads. An
-archived Work's branches are frozen to their writer: no frame, Apply or writer
+archived Work's drafts are frozen to their writer: no frame, Apply or writer
 Discard writes them until unarchive. Live→draft pulls keep rebasing them, so
 their base stays current and they apply cleanly after unarchive; see
 [CONTEXT.md](CONTEXT.md). Replaying an already committed push
 returns its durable receipt without reauthorizing a new write.
 
 Apply and Discard are server commands, not client loops. Apply item and
-per-change commands leave the draft open. Whole Apply and whole Discard name
-the draft once. Reusing a `commandId` returns its recorded result without
+per-change commands leave the branch open. Whole Apply and whole Discard name
+the branch once. Reusing a `commandId` returns its recorded result without
 reapplying it. A per-change command on a whole-document-only item refuses
 `whole_item`.
 

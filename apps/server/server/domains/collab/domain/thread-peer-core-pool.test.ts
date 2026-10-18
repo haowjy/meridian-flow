@@ -20,7 +20,7 @@ const THREAD_ID = "thread-1" as ThreadId;
 const live: FileDestination = { kind: "live" };
 const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
 
-/** The branches and reply fences every pool takes, over fake branch rows. */
+/** The branches and reply fences every pool takes, over fake branch and draft rows. */
 function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
   const branches = createFakeBranches();
   const drafts = createFakeDraftTable({ documentId: "ch12", threadId: THREAD_ID });
@@ -207,7 +207,7 @@ describe("reasoned refusal and retirement through the pool", () => {
     threadId,
   });
 
-  it("refuseStaged evicts the response's entry so a later write ensures a fresh draft and peer (U2)", async () => {
+  it("refuseStaged evicts the response's entry so a later write ensures a fresh branch and peer (U2)", async () => {
     const { pool, threadCore, branches, pullThreadPeer } = createPool();
     await pool.write(insertCh12, context(draftA, "reply-1"));
     expect(branches.ensureActiveForWrite).toHaveBeenCalledTimes(1);

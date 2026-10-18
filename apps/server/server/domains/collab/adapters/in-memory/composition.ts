@@ -241,7 +241,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       workBranchDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
       },
-      // No draft drafts in memory: nothing to register.
+      // No document drafts in memory: nothing to register.
       draftLinks: { flush: async () => {} },
     },
     documentCreation,

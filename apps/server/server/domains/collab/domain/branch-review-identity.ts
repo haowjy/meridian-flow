@@ -1,10 +1,10 @@
 /**
  * The one module that maps a review item to its draft, document and branch (contract
  * §1.2). The cut, the commands and the address route all resolve through it; none takes a
- * bare string that may be a `branches.id`, a branch id or an item key.
+ * bare string that may be a `branches.id`, a draft id or an item key.
  *
- * Addressability is not listing: it answers for every document the Work's active draft has
- * a view of (an active branch, or a change row), and says whether the list shows it. The
+ * Addressability is not listing: it answers for every document the Work's active branch has
+ * a view of (an active draft, or a change row), and says whether the list shows it. The
  * item is the tree-derived observation read for every such document, listed or not.
  */
 import type { BranchId } from "@meridian/contracts";
@@ -18,7 +18,7 @@ export type ResolvedReviewItem = {
   branchId: BranchId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The draft's text branch on the document; server-internal, null when it has none. */
+  /** The branch's text draft on the document; server-internal, null when it has none. */
   draftId: string | null;
   item: DraftReviewItem;
   listed: boolean;
@@ -36,7 +36,7 @@ export function createBranchReviewIdentity(deps: {
   branches: Pick<Branches, "activeForWork">;
   reviewItems: Pick<BranchReviewItems, "resolve">;
 }): BranchReviewIdentity {
-  /** One document of an already selected draft: a key never moves to a replacement draft. */
+  /** One document of an already selected branch: a key never moves to a replacement branch. */
   async function inBranch(branchId: BranchId, documentId: DocumentId) {
     const resolved = await deps.reviewItems.resolve(branchId, documentId);
     return resolved
@@ -53,17 +53,17 @@ export function createBranchReviewIdentity(deps: {
 
   return {
     async resolveReviewItem({ workId, itemKey }) {
-      const draft = await deps.branches.activeForWork(workId);
-      if (!draft) return null;
-      const prefix = `${draft.id}:`;
+      const branch = await deps.branches.activeForWork(workId);
+      if (!branch) return null;
+      const prefix = `${branch.id}:`;
       if (!itemKey.startsWith(prefix)) return null;
       const documentId = itemKey.slice(prefix.length) as DocumentId;
-      if (!isUuid(documentId) || draftItemKey(draft.id, documentId) !== itemKey) return null;
-      return inBranch(draft.id, documentId);
+      if (!isUuid(documentId) || draftItemKey(branch.id, documentId) !== itemKey) return null;
+      return inBranch(branch.id, documentId);
     },
     async resolveReviewItemByDocument({ workId, documentId }) {
-      const draft = await deps.branches.activeForWork(workId);
-      return draft ? inBranch(draft.id, documentId) : null;
+      const branch = await deps.branches.activeForWork(workId);
+      return branch ? inBranch(branch.id, documentId) : null;
     },
   };
 }

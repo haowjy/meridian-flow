@@ -56,7 +56,7 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     );
     expect(harness.stagedUpdates(responseId)).toEqual([[], []]);
-    const draftText = await harness.workBranchMarkdown();
+    const draftText = await harness.workDraftMarkdown();
     expect(draftText).toContainEqual(expect.stringContaining("Agent alpha."));
     if (liveBeta) expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
     else expect(draftText).toContainEqual(expect.stringContaining("Agent beta."));
@@ -81,7 +81,7 @@ describe("change trail (postgres)", () => {
     expect(await harness.responseJournalRows()).toEqual([]); // 1. Postgres journal
     expect(await harness.databaseDraftHashes()).toEqual(before.databaseDraftHashes); // 2. snapshots
     expect(await harness.threadPeerMarkdown()).toEqual(before.threadPeerMarkdown); // 3. peer cache
-    expect(await harness.workBranchMarkdown()).toEqual(before.workBranchMarkdown); // 4. draft cache
+    expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown); // 4. draft cache
     expect(harness.stagedUpdates("retry-response").map((updates) => updates.length)).toEqual([
       1, 1,
     ]); // 5. facade still owns the response
@@ -111,19 +111,19 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("retry-response");
   });
 
-  it("saves two draft-only documents back to back without retaining the branch lock", async () => {
+  it("saves two draft-only documents back to back without retaining the draft lock", async () => {
     const harness = createHarness(db);
     const fixture = harness.crossWorkProbeFixture();
     const created = [
       "00000000-0000-4000-8000-0000000008d1",
       "00000000-0000-4000-8000-0000000008d2",
     ] as const;
-    // The Work's draft created both: hidden rows and the draft's `created` rows.
-    const [draft] = await db
+    // The Work's branch created both: hidden rows and the branch's `created` rows.
+    const [branch] = await db
       .select({ id: schema.branches.id })
       .from(schema.branches)
       .where(eq(schema.branches.originWorkId, WORK_ID));
-    if (!draft) throw new Error("the harness seeds the Work's draft");
+    if (!branch) throw new Error("the harness seeds the Work's branch");
     await db.insert(schema.documents).values(
       created.map((id, index) => ({
         id: id as never,
@@ -136,7 +136,7 @@ describe("change trail (postgres)", () => {
     );
     await db.insert(schema.branchTreeChanges).values(
       created.map((id, index) => ({
-        branchId: draft.id,
+        branchId: branch.id,
         nodeKind: "document" as const,
         nodeId: id,
         created: true,
@@ -151,7 +151,7 @@ describe("change trail (postgres)", () => {
       const emptyLive = new Y.Doc({ gc: false });
       const documentDraft = await fixture.draftStore.ensureDocumentDraft({
         documentId: documentId as never,
-        branchId: draft.id,
+        branchId: branch.id,
         liveDoc: emptyLive,
       });
       emptyLive.destroy();
@@ -170,7 +170,7 @@ describe("change trail (postgres)", () => {
       content.destroy();
     }
 
-    const branches = await fixture.collab.draftReview.list({
+    const drafts = await fixture.collab.draftReview.list({
       projectId: PROJECT_ID as never,
       workId: WORK_ID,
     });
@@ -188,7 +188,7 @@ describe("change trail (postgres)", () => {
       }
     };
     for (const documentId of created) {
-      const draft = branches.find((candidate) => candidate.documentId === documentId);
+      const draft = drafts.find((candidate) => candidate.documentId === documentId);
       if (!draft) throw new Error(`missing draft for ${documentId}`);
       await expect(
         withDeadline(
@@ -214,16 +214,16 @@ describe("change trail (postgres)", () => {
     const before = await harness.captureState();
     const liveBeta = await harness.liveMarkdown(BETA_ID);
 
-    // Beta's live append runs first; alpha's branch journal insert then fails.
+    // Beta's live append runs first; alpha's draft journal insert then fails.
     harness.failJournalInsertAt = 1;
     await expect(harness.commit(MIXED_RETRY_RESPONSE)).rejects.toThrow(
-      "injected branch journal failure",
+      "injected draft journal failure",
     );
 
     expect(await harness.liveMarkdown(BETA_ID)).toBe(liveBeta);
     expect(await harness.liveAgentUpdateCount(BETA_ID)).toBe(0);
     expect(await harness.responseJournalRows()).toEqual([]);
-    expect(await harness.workBranchMarkdown()).toEqual(before.workBranchMarkdown);
+    expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown);
     expect(harness.liveRoomBroadcasts()).toEqual([]);
 
     harness.failJournalInsertAt = null;
@@ -277,7 +277,7 @@ describe("change trail (postgres)", () => {
     expect(await harness.responseJournalRows()).toEqual([]);
     expect(await harness.databaseDraftHashes()).toEqual(before.databaseDraftHashes);
     expect(await harness.threadPeerMarkdown()).toEqual(before.threadPeerMarkdown);
-    expect(await harness.workBranchMarkdown()).toEqual(before.workBranchMarkdown);
+    expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown);
     expect(harness.stagedUpdates("outer-rollback-response").map((rows) => rows.length)).toEqual([
       1, 1,
     ]);
@@ -491,7 +491,7 @@ describe("change trail (postgres)", () => {
     ).resolves.toEqual([]);
   });
 
-  it("preserves a live writer insertion between two branch edits", async () => {
+  it("preserves a live writer insertion between two draft edits", async () => {
     const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000837";
     await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);

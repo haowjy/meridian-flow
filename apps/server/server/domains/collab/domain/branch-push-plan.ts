@@ -49,7 +49,7 @@ export function assertRowsIntegrated(
   }
 }
 
-export function wholeBranchPushUpdate(input: { draftDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
+export function wholeDraftPushUpdate(input: { draftDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
   return Y.encodeStateAsUpdate(input.draftDoc, Y.encodeStateVector(input.liveDoc));
 }
 

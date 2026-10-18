@@ -101,13 +101,13 @@ function fixture(existingUpstream?: Y.Doc) {
       sinceStateVector: Y.encodeStateVector(baseline),
       liveJournalSeq: 0,
     });
-    if (!changes) throw new Error("Missing branch attribution");
+    if (!changes) throw new Error("Missing draft attribution");
     return changes;
   }
   return { upstream, baseline, rows, liveUpdates, row, check, serialize, coordinator };
 }
 
-describe("branch concurrent attribution", () => {
+describe("draft concurrent attribution", () => {
   it("does not credit system:reconcile deletions to the writer", async () => {
     const f = fixture();
     const before = Y.encodeStateVector(f.upstream);

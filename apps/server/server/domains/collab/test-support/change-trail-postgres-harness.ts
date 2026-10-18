@@ -218,7 +218,7 @@ export async function seedDatabase(
     name: "Atomicity work",
     slug: "atomicity-work",
   });
-  // The Work already has its draft, as if an earlier write ensured it (contract §2.5):
+  // The Work already has its branch, as if an earlier write ensured it (contract §2.5):
   // a drafted read pulls its thread peers instead of reading live.
   await db.insert(schema.branches).values({
     projectId: PROJECT_ID,
@@ -321,7 +321,7 @@ export type ChangeTrailHarnessOptions = {
   arrivals?: DocumentArrivals;
   /** Inside a withdrawal (refusal or hold), at its first write. */
   duringWithdrawal?: () => Promise<void>;
-  /** Apply steps after the draft tree step, in the order they run. */
+  /** Apply steps after the branch tree step, in the order they run. */
   applySteps?: readonly SettlementApplyStep[];
 };
 
@@ -352,7 +352,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
   });
-  const workBranchDrafts = createBranches({
+  const workBranches = createBranches({
     store: createDrizzleBranchStore(db),
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
@@ -362,10 +362,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
     },
-    branches: workBranchDrafts,
+    branches: workBranches,
   });
   let journalInsertCount = 0;
-  // Which branch journal insert of the next save fails, counting from 1.
+  // Which draft journal insert of the next save fails, counting from 1.
   const state = {
     failJournalInsertAt: null as number | null,
     failFirstRefresh: false,
@@ -377,7 +377,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       throw new Error(
         state.failJournalInsertAt === 2
           ? "injected second-document journal failure"
-          : "injected branch journal failure",
+          : "injected draft journal failure",
       );
     }
   }
@@ -517,7 +517,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       },
       steps: [
         createDrizzleBranchTreeStep(db, {
-          branches: workBranchDrafts,
+          branches: workBranches,
           // The harness keeps no catalog.
           catalog: { refreshSources: async () => "" },
           drafts: draftStore,
@@ -681,7 +681,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const agentEdit = scopeAgentEdit(
     createDraftThreadPeerAgentEditCore({
       documentEdits: modelDocumentEdits,
-      branches: workBranchDrafts,
+      branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
@@ -757,7 +757,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     liveFingerprint: (documentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
   });
-  // The harness keeps no branch rooms but the fake hocuspocus's: retirement closes those and
+  // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
   // the pooled cores' thread state.
   const retirePeers = createPeerRetirement({
     closeDraftRoom: (draftId) => {
@@ -770,20 +770,20 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     agentEdit,
   });
   const lookups = createDrizzleCollabLookups(db);
-  const identity = createBranchReviewIdentity({ branches: workBranchDrafts, reviewItems });
+  const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
     diagnostics: createDraftReviewDiagnostics(eventSink),
-    branches: workBranchDrafts,
+    branches: workBranches,
     reviewItems,
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({
-      branches: workBranchDrafts,
+      branches: workBranches,
       liveCoordinator,
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
-        branches: workBranchDrafts,
+        branches: workBranches,
         drafts: draftStore,
         coordinator: draftCoordinator,
         workProjection: createTestWorkProjectionMutation(db),
@@ -808,7 +808,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       }),
     ),
     branchApply: createBranchApply({
-      branches: workBranchDrafts,
+      branches: workBranches,
       reviewItems,
       push: realBranchPush,
     }),
@@ -852,7 +852,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   /**
    * Stages one write each to alpha and beta in one reply, both drafted. With
    * `liveBeta`, beta's write goes live and is staged first, so a save that
-   * fails at alpha's branch journal fails after beta's live append ran. A live
+   * fails at alpha's draft journal fails after beta's live append ran. A live
    * write records its authoring response, so `responseId` must then be a UUID.
    */
   async function seedAndStage(responseId: string, options: { liveBeta?: boolean } = {}) {
@@ -959,16 +959,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       await stageBeta();
     }
     preCommitDraftHashes = await databaseDraftHashes();
-    // Staging pulls legitimately deliver into loaded branch rooms. Start the
+    // Staging pulls legitimately deliver into loaded draft rooms. Start the
     // measurement window after staging so it covers only the commit attempt.
     draftBroadcasts.length = 0;
     watermarkCommits.length = 0;
     hocuspocus.broadcasts.length = 0;
-    const workBranchDrafts = await db
+    const workDrafts = await db
       .select({ id: schema.documentDrafts.id })
       .from(schema.documentDrafts)
       .where(eq(schema.documentDrafts.kind, "work_draft"));
-    return workBranchDrafts.map((documentDraft) => documentDraft.id).sort();
+    return workDrafts.map((documentDraft) => documentDraft.id).sort();
   }
 
   async function seedAndStageDestructive(
@@ -1054,8 +1054,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     if (!writerEditBeforeWrite) await applyWriterEdit();
-    const workBranch = await draftStore.resolveWorkDraftForThread(documentId, THREAD_ID);
-    return workBranch.draftId;
+    const workDraft = await draftStore.resolveWorkDraftForThread(documentId, THREAD_ID);
+    return workDraft.draftId;
   }
 
   async function seedDestructivePush(
@@ -1732,7 +1732,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     find: string;
     content: string;
   }): Promise<string> {
-    // Resolving the draft branch creates it before the write.
+    // Resolving the draft creates it before the write.
     const documentDraft = await draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     const context = {
       sessionId: THREAD_ID,
@@ -1999,12 +1999,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     return documentDraft.draftId;
   }
 
-  async function branchesByKind(kind: "thread_peer" | "work_draft") {
+  async function draftsByKind(kind: "thread_peer" | "work_draft") {
     return db.select().from(schema.documentDrafts).where(eq(schema.documentDrafts.kind, kind));
   }
 
   async function markdownByKind(kind: "thread_peer" | "work_draft") {
-    const rows = await branchesByKind(kind);
+    const rows = await draftsByKind(kind);
     return Promise.all(
       rows
         .sort((left, right) => left.documentId.localeCompare(right.documentId))
@@ -2106,7 +2106,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       if (!peer) throw new Error("staged reply has no thread peer");
       return peer.id;
     },
-    /** The reply's staged view of a document: its buffered writes live in the response, not the peer branch. */
+    /** The reply's staged view of a document: its buffered writes live in the response, not the peer draft. */
     async stagedReplyMarkdown(responseId: string, documentId: DocumentId) {
       const lease = await collab.agentEdit().prepare(responseId, documentId);
       if (!lease) throw new Error(`${responseId} has no staged writes on ${documentId}`);
@@ -2204,7 +2204,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .select({ generation: schema.documentDrafts.generation })
         .from(schema.documentDrafts)
         .where(eq(schema.documentDrafts.id, draftId));
-      if (!documentDraft) throw new Error("missing branch");
+      if (!documentDraft) throw new Error("missing draft");
       return documentDraft.generation;
     },
     async stageAnotherDestructiveEdit(draftId: string) {
@@ -2501,7 +2501,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           schema.changeTrailDeliveryOutbox.eventKind,
         ),
     threadPeerMarkdown: () => markdownByKind("thread_peer"),
-    workBranchMarkdown: () => markdownByKind("work_draft"),
+    workDraftMarkdown: () => markdownByKind("work_draft"),
     async databaseDraftHashes() {
       return databaseDraftHashes();
     },
@@ -2509,7 +2509,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       return {
         databaseDraftHashes: await this.databaseDraftHashes(),
         threadPeerMarkdown: await this.threadPeerMarkdown(),
-        workBranchMarkdown: await this.workBranchMarkdown(),
+        workDraftMarkdown: await this.workDraftMarkdown(),
       };
     },
     async expectSuccessfulCommit(responseId: string) {
@@ -2519,7 +2519,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         expect.stringContaining("Agent alpha."),
         expect.stringContaining("Agent beta."),
       ]);
-      expect(await this.workBranchMarkdown()).toEqual([
+      expect(await this.workDraftMarkdown()).toEqual([
         expect.stringContaining("Agent alpha."),
         expect.stringContaining("Agent beta."),
       ]);

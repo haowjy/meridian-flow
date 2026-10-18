@@ -10,7 +10,7 @@ import { createDrizzleDraftJournalReadStore } from "./drizzle-branch-push.js";
 
 const { createDb } = await import("@meridian/database");
 
-describe("branch journal reads (Postgres)", () => {
+describe("draft journal reads (Postgres)", () => {
   // One pooled connection: a read that leaves the held transaction can never be served.
   const db = createDb(process.env.DATABASE_URL ?? "", { max: 1 });
   afterAll(() => closeDatabase(db));

@@ -66,7 +66,7 @@ Trail, receipt, journal disposition, Apply, settlement, and turn-lifecycle
 producers append dirty signals in their own transaction. Reconciliation follows
 those signals through one semantic owner resolver under sorted aggregate locks,
 then deletes exactly the signals it observed. Sequence allocation is not commit
-order. Active branches do not block reconciliation, but rollback-pending journals
+order. Active drafts do not block reconciliation, but rollback-pending journals
 and pending live settlements do.
 
 The journal and receipt signal triggers run inside an append's draft row lock,
@@ -80,7 +80,7 @@ visible target, so divergent restoration or replication blocks rather than
 granting deletion credit to either copy.
 
 Push completion settles arriving ahead refs in its completion transaction. Branch
-moves are not hidden-view moves: a draft can create, edit, and delete, while
+moves are not hidden-view moves: a branch can create, edit, and delete, while
 location changes settle in the tree-store move transaction. Branch-held moves are
 rejected because a document's address would depend on the view. An Apply arrival is
 already at its final SQL address when completion calls the arrivals seam.

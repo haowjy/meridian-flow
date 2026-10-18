@@ -39,16 +39,16 @@ describe("peer retirement (U4)", () => {
     ]);
   });
 
-  it("closes the room of a branch with no thread and refuses nothing", async () => {
+  it("closes the room of a draft with no thread and refuses nothing", async () => {
     const { retire, retireThreadPeers, closeDraftRoom } = retirement();
 
-    await retire([{ draftId: "work-branch", documentId: DOCUMENT, threadId: null }]);
+    await retire([{ draftId: "work-draft", documentId: DOCUMENT, threadId: null }]);
 
-    expect(closeDraftRoom).toHaveBeenCalledWith("work-branch");
+    expect(closeDraftRoom).toHaveBeenCalledWith("work-draft");
     expect(retireThreadPeers).not.toHaveBeenCalled();
   });
 
-  it("retires per document, each peer under its own branch id", async () => {
+  it("retires per document, each peer under its own draft id", async () => {
     const { retire, retireThreadPeers } = retirement();
     const other = "ch13" as DocumentId;
 

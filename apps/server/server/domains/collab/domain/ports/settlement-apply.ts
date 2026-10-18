@@ -27,7 +27,7 @@
  * are reviewable again). A held member stays out of live everywhere and its
  * rows stay reviewable while the rest admit. Steps run in registration order
  * inside each phase and join the transaction the settlement owns (never an
- * ambient one). A batch with no text members (a branchless image Apply, a
+ * ambient one). A batch with no text members (an image Apply without a text draft, a
  * tree-only Apply) passes through the same order with phase 5 empty.
  */
 
@@ -40,7 +40,7 @@ export type ApplyRefusal = { code: string; detail?: JsonValue };
 /**
  * An item a step keeps out of live, and why. Items are the step's own units
  * (Apply: a draft item key); `documentId` names the text member that must not
- * admit with it, absent for a branchless item (an image). Holds are durable:
+ * admit with it, absent for an item without a text draft (an image). Holds are durable:
  * staged with the batch when decided at the check, written in completion when
  * decided there, and reported per item either way.
  */

@@ -56,7 +56,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
     scope: "project",
     isPrimary: true,
   });
-  const draft = await branches.ensureActiveForWrite({
+  const branch = await branches.ensureActiveForWrite({
     workId: workId as never,
     projectId: projectId as never,
     threadId: null,
@@ -86,7 +86,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
     await persistence.lifecycle.ensureDocument(documentId as never);
     await store.ensureDocumentDraft({
       documentId: documentId as never,
-      branchId: draft.id,
+      branchId: branch.id,
       liveDoc: createCollabYDoc({ gc: false }),
     });
     jobs.push({ documentId, threadId });
@@ -96,7 +96,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
       store.ensureThreadPeerDraft({
         documentId: job.documentId as never,
         threadId: job.threadId as never,
-        branchId: draft.id,
+        branchId: branch.id,
         liveDoc: createCollabYDoc({ gc: false }),
       }),
     ),

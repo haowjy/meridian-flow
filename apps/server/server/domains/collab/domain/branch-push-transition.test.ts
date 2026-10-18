@@ -59,7 +59,7 @@ function fixture() {
       if (!prepared) throw new Error("single push fixture");
       const push = {
         id: 1,
-        draftId: "branch",
+        draftId: "draft",
         draftGeneration: 1,
         documentId,
         journalIds: [],
@@ -114,7 +114,7 @@ function fixture() {
     changes: [],
   };
   const prepared: PreparedPushCommit = {
-    documentDraft: testDraftRow({ draftId: "branch", documentId, workId: "work" as WorkId }),
+    documentDraft: testDraftRow({ draftId: "draft", documentId, workId: "work" as WorkId }),
     journalRows: [],
     pushUpdate,
     idempotencyKey: "push",

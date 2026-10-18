@@ -1,19 +1,19 @@
-/** Thread-peer branch resolution port: which branch a thread reads, never its content. */
+/** Thread-peer draft resolution port: which draft a thread reads, never its content. */
 
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DraftSnapshot } from "./draft-store.js";
 
 export interface DraftResolver {
   /**
-   * The active thread-peer branch for this (document, thread), as metadata: its content is read
+   * The active thread-peer draft for this (document, thread), as metadata: its content is read
    * through the coordinator, in one observation with the row it belongs to.
    *
-   * Throws DraftNotFoundError if no active branch exists.
+   * Throws DraftNotFoundError if no active draft exists.
    */
   resolveThreadDraft(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
 }
 
-/** A resolved branch's identity and state as its row was read; no content. */
+/** A resolved draft's identity and state as its row was read; no content. */
 export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "generation" | "status" | "lifecycle">;
 
 export class DraftNotFoundError extends Error {
@@ -21,7 +21,7 @@ export class DraftNotFoundError extends Error {
   readonly threadId: ThreadId;
 
   constructor(documentId: DocumentId, threadId: ThreadId) {
-    super(`No active thread-peer branch exists for document ${documentId} and thread ${threadId}`);
+    super(`No active thread-peer draft exists for document ${documentId} and thread ${threadId}`);
     this.name = "DraftNotFoundError";
     this.documentId = documentId;
     this.threadId = threadId;

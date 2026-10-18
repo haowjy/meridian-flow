@@ -1,4 +1,4 @@
-/** Adapter-contract tests for Drizzle branch peers against local Postgres. */
+/** Adapter-contract tests for Drizzle draft peers against local Postgres. */
 
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -14,9 +14,9 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("drizzle branch store (postgres)", () => {});
+  describe.skip("drizzle draft store (postgres)", () => {});
 } else {
-  describe("drizzle branch store adapter contract (postgres)", async () => {
+  describe("drizzle draft store adapter contract (postgres)", async () => {
     const dbSchema = await import("@meridian/database/schema");
     const {
       draftWriteJournal,
@@ -76,7 +76,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const WORK_ID = "00000000-0000-4000-8000-000000000604";
     const NEXT_WORK_ID = "00000000-0000-4000-8000-000000000608";
     const BRANCH_ID = "00000000-0000-4000-8000-000000000609";
-    const NEXT_DRAFT_ID = "00000000-0000-4000-8000-000000000610";
+    const NEXT_BRANCH_ID = "00000000-0000-4000-8000-000000000610";
     const DOC_ID = "00000000-0000-4000-8000-000000000605";
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
     const TURN_ID = "00000000-0000-4000-8000-000000000607";
@@ -246,7 +246,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "next-work",
       });
       await db.insert(branches).values({
-        id: NEXT_DRAFT_ID,
+        id: NEXT_BRANCH_ID,
         projectId: PROJECT_ID,
         originWorkId: NEXT_WORK_ID,
         createdBy: USER_ID,
@@ -270,7 +270,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { documentDraft: nextPeer } = await store.ensureThreadPeerDraft({
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
-        branchId: NEXT_DRAFT_ID as never,
+        branchId: NEXT_BRANCH_ID as never,
         liveDoc: live,
       });
       const [oldRow, nextUpstream] = await Promise.all([
@@ -283,7 +283,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
 
       expect(nextPeer).toMatchObject({
-        branchId: NEXT_DRAFT_ID,
+        branchId: NEXT_BRANCH_ID,
         workId: NEXT_WORK_ID,
         threadId: THREAD_ID,
         status: "active",
@@ -364,7 +364,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         captureQueries = false;
       }
-      // An append locks no Work and counts no pending branches (#931).
+      // An append locks no Work and counts no pending drafts (#931).
       expect(
         measuredQueries.filter((query) =>
           query.startsWith('(select "branches"."origin_work_id", "document_drafts"."document_id"'),
@@ -419,7 +419,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       // The projection job's judgement of the append (design §3.2).
       const appended = await store.getDraft(work.draftId);
-      if (!appended) throw new Error("the branch is gone");
+      if (!appended) throw new Error("the draft is gone");
       await expect(
         store.writeEffect({
           draftId: work.draftId,
@@ -495,7 +495,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("commitPushBatch rejects stale branch snapshots and non-active source rows", async () => {
+    it("commitPushBatch rejects stale draft snapshots and non-active source rows", async () => {
       const pushStore = createDrizzlePushCommitStore(
         db,
         stageSettlementBatchWithinTx,
@@ -548,7 +548,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             ],
             pushUpdate: update,
-            idempotencyKey: "stale-branch",
+            idempotencyKey: "stale-draft",
             trail: {
               documentId: DOC_ID,
               documentTitle: "document",
@@ -678,7 +678,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(claimed).toEqual([]);
     });
 
-    it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {
+    it("G2 §6.1 entry corrupt snapshot fails loudly at draft-room load", async () => {
       const { DraftCorruptError } = await import("../../domain/draft-resolver.js");
       await db.insert(documentDrafts).values({
         id: "draft_corrupt_review_entry",
@@ -699,10 +699,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow(DraftCorruptError);
     });
 
-    it("never makes a branch in a closed draft: a captured draft's branch stays closed after its close", async () => {
+    it("never makes a draft in a closed branch: a captured branch's draft stays closed after its close", async () => {
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
       const branchStore = createDrizzleBranchStore(db);
-      // Review captured the Work's active draft and its branch, then a whole close ended it.
+      // Review captured the Work's active branch and its draft, then a whole close ended it.
       const captured = await store.ensureDocumentDraft({
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,
@@ -723,7 +723,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(documentDrafts.branchId, BRANCH_ID as never));
 
       expect
-        .soft((await store.getDraft(captured.draftId))?.status, "the captured branch is closed")
+        .soft((await store.getDraft(captured.draftId))?.status, "the captured draft is closed")
         .toBe("closed");
       await expect
         .soft(
@@ -732,7 +732,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             branchId: BRANCH_ID as never,
             liveDoc: docWithText("live"),
           }),
-          "a write boundary refuses the closed draft",
+          "a write boundary refuses the closed branch",
         )
         .rejects.toMatchObject({ name: "DraftStaleUpdateError" });
       expect
@@ -741,7 +741,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .select({ id: documentDrafts.id, status: documentDrafts.status })
             .from(documentDrafts)
             .where(eq(documentDrafts.branchId, BRANCH_ID as never)),
-          "and no branch row is added",
+          "and no draft row is added",
         )
         .toEqual(before);
     });
@@ -778,7 +778,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       repaired.doc.destroy();
     });
 
-    it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {
+    it("G2 §6.1 entry mid-reset rebinds to the bumped generation draft room", async () => {
       const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
       const documentDraft = await store.ensureDocumentDraft({
         documentId: DOC_ID as never,
@@ -808,21 +808,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(loadedDoc.getText("content").toString()).toBe("after reset");
     });
 
-    it("G2 §6.1 entry connect failure is a typed branch-room miss, never live fallback", async () => {
+    it("G2 §6.1 entry connect failure is a typed draft-room miss, never live fallback", async () => {
       const { parseYjsRoomName } = await import("@meridian/contracts/protocol");
       const persistence = draftRoomPersistence();
 
-      expect(parseYjsRoomName("draft:missing-review-branch:gen:1")).toEqual({
+      expect(parseYjsRoomName("draft:missing-review-draft:gen:1")).toEqual({
         kind: "draft",
-        draftId: "missing-review-branch",
+        draftId: "missing-review-draft",
         generation: 1,
       });
-      expect(parseYjsRoomName("draft:missing-review-branch")).toBeNull();
+      expect(parseYjsRoomName("draft:missing-review-draft")).toBeNull();
       await expect(
-        persistence.resolveDraftHocuspocusRoom("missing-review-branch", 1),
+        persistence.resolveDraftHocuspocusRoom("missing-review-draft", 1),
       ).resolves.toBeNull();
       await expect(
-        persistence.loadHocuspocusDraftState("missing-review-branch", 1),
+        persistence.loadHocuspocusDraftState("missing-review-draft", 1),
       ).resolves.toBeUndefined();
     });
     it("captures an immutable live journal draftBase for each new draft row", async () => {
@@ -859,9 +859,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
     });
     // Risk: an append is sequenced by the row lock, not fenced by the revision (design §2):
-    // it lands at any revision, refuses only a closed, re-forked or frozen branch, and an
+    // it lands at any revision, refuses only a closed, re-forked or frozen draft, and an
     // outcome that writes nothing must roll its bump back even inside a caller's transaction.
-    it("an append lands at any revision, refuses a closed branch, and rolls back what it does not write", async () => {
+    it("an append lands at any revision, refuses a closed draft, and rolls back what it does not write", async () => {
       const documentDraft = await store.ensureDocumentDraft({
         documentId: DOC_ID as never,
         branchId: BRANCH_ID as never,

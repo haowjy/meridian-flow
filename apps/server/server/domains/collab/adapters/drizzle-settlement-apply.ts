@@ -33,7 +33,7 @@ export type PlannedStep = { step: number; kind: string; plan: SettlementApplyPla
 
 /**
  * Plans every step from the scope, then locks, each over the whole batch at
- * once: Work rows, then draft rows, then one sorted namespace acquisition over the declared
+ * once: Work rows, then branch rows, then one sorted namespace acquisition over the declared
  * documents' sources and explicit sources, then document mutation locks. Nothing
  * a step needs is locked later, so no step takes a namespace lock under a
  * document lock (file-access §5, contract §9.4).

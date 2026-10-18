@@ -1,8 +1,8 @@
 /**
  * Drafted `user://` (D20 under 12b): a draft-mode Work in any project of the account branches
  * into the account's personal source, hidden live until Apply, and one hidden document is
- * shared by every draft of the account that uses it. Another account's source is never a
- * draft's.
+ * shared by every branch of the account that uses it. Another account's source is never a
+ * branch's.
  */
 import type { DocumentId } from "@meridian/contracts";
 import { branchTreeChanges, documentDrafts, documents } from "@meridian/database/schema";
@@ -108,7 +108,7 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
       .toContain(chapter);
   });
 
-  it("shares one hidden user:// document across the account's projects until its last draft ends", async () => {
+  it("shares one hidden user:// document across the account's projects until its last branch ends", async () => {
     const { s } = await start();
     const other = await s.another("project");
     const ascension = await s.work("Ascension", "draft");
@@ -129,7 +129,7 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
     expect.soft(row?.deleted, "tombstoned at the last use").not.toBeNull();
   });
 
-  it("reveals the account's hidden user:// document from any of its projects and never lets a stranger's draft use it", async () => {
+  it("reveals the account's hidden user:// document from any of its projects and never lets a stranger's branch use it", async () => {
     const { s } = await start();
     const other = await s.another("project");
     const stranger = await s.another("account");
@@ -137,21 +137,21 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
     const kael = await s.model(ascension).create("user://kael", "Kael.");
 
     const cinder = await stranger.work("Cinder", "draft");
-    const draft = await stranger.branchOf(cinder);
+    const branch = await stranger.branchOf(cinder);
     const drafts = createDrizzleDraftStore(db, {
       workProjection: createTestWorkProjectionMutation(db),
       branches: stranger.branches,
     });
     await expect(
-      drafts.ensureDocumentDraft({ documentId: kael, branchId: draft.id, liveDoc: new Y.Doc() }),
-      "a stranger's draft",
+      drafts.ensureDocumentDraft({ documentId: kael, branchId: branch.id, liveDoc: new Y.Doc() }),
+      "a stranger's branch",
     ).rejects.toThrow();
     expect
       .soft(
         await db
           .select({ id: documentDrafts.id })
           .from(documentDrafts)
-          .where(and(eq(documentDrafts.documentId, kael), eq(documentDrafts.branchId, draft.id))),
+          .where(and(eq(documentDrafts.documentId, kael), eq(documentDrafts.branchId, branch.id))),
       )
       .toEqual([]);
     expect
@@ -159,18 +159,18 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
         await db
           .select({ id: branchTreeChanges.nodeId })
           .from(branchTreeChanges)
-          .where(eq(branchTreeChanges.branchId, draft.id)),
+          .where(eq(branchTreeChanges.branchId, branch.id)),
       )
       .toEqual([]);
 
-    // The source is the account's: a draft in Ascension's project uses the document, and
+    // The source is the account's: a branch in Ascension's project uses the document, and
     // the writer's create at its path reveals it from another project of the same account.
     expect
       .soft(await other.writer.create("user://kael"))
       .toEqual({ status: "created", documentId: kael });
   });
 
-  it("keeps a draft's hidden file in a folder the writer moves from the project into user://", async () => {
+  it("keeps a branch's hidden file in a folder the writer moves from the project into user://", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const map = await s.writer.createDocument("lore/map", "Map.");

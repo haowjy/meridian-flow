@@ -1,5 +1,5 @@
 /**
- * Contract §2.1: only an end of use ends an active draft's branch. Every production statement
+ * Contract §2.1: only an end of use ends an active branch's draft. Every production statement
  * that closes or deletes a `document_drafts` row is named here; a new one fails this test
  * until its owner decides it is an end of use and adds it.
  */
@@ -10,7 +10,7 @@ import { expect, it } from "vitest";
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-/** Why each file may end a branch, by the cause it retires with. */
+/** Why each file may end a draft, by the cause it retires with. */
 const END_OF_USE = new Map([
   [
     "domains/collab/adapters/drizzle-branch-discard.ts",
@@ -33,7 +33,7 @@ function sources(dir: string): string[] {
   });
 }
 
-it("only the named end-of-use sites close or delete a draft branch", () => {
+it("only the named end-of-use sites close or delete a document draft", () => {
   const ending = sources(SERVER)
     .filter((path) => {
       const text = readFileSync(path, "utf8");

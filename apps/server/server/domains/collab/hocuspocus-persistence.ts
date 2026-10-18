@@ -65,7 +65,7 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
-  /** A writer's update to a draft branch is durable (the draft's own links register, §10.7). */
+  /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
   onDraftWriterUpdateAdmitted?(draftId: string): void;
   offlineReconciliation?: OfflineReconciliation;
 };
@@ -320,13 +320,13 @@ export function createHocuspocusPersistenceService(
   }
 
   function requireDraftStore(): DraftStore {
-    if (!deps.draftStore) throw new Error("Draft Hocuspocus rooms require a branch store");
+    if (!deps.draftStore) throw new Error("Draft Hocuspocus rooms require a draft store");
     return deps.draftStore;
   }
 
   function requireDraftCoordinator(): DraftCoordinator {
     if (!deps.draftCoordinator) {
-      throw new Error("Draft Hocuspocus rooms require a branch coordinator");
+      throw new Error("Draft Hocuspocus rooms require a draft coordinator");
     }
     return deps.draftCoordinator;
   }
@@ -419,7 +419,7 @@ export function createHocuspocusPersistenceService(
       const hocuspocus = deps.hocuspocus();
       if (!hocuspocus) return;
       const enrollment = (async () => {
-        // The load read the branch before its room became a delivery recipient: whatever
+        // The load read the draft before its room became a delivery recipient: whatever
         // committed in between, a transition or a reset, reached no room.
         if (!(await whenRoomRegistered(hocuspocus, document))) return;
         const base = await requireDraftCoordinator().reconcileRegisteredRoom({
@@ -439,7 +439,7 @@ export function createHocuspocusPersistenceService(
           payload: unknownToEventPayload(cause),
         });
       });
-      // A store of this room, and a drain of this branch, wait the enrollment out.
+      // A store of this room, and a drain of this draft, wait the enrollment out.
       trackAppend(draftRoomName(draftId, generation), enrollment);
     },
 
@@ -550,7 +550,7 @@ export function createHocuspocusPersistenceService(
             cause instanceof ReservedWriterClientIdError
           ) {
             deps.emitAgentEditInvariantViolation({
-              message: `Rejected client-authored provenance update for branch ${input.draftId}.`,
+              message: `Rejected client-authored provenance update for draft ${input.draftId}.`,
               draftId: input.draftId,
               originType: input.origin.type,
             });
@@ -591,8 +591,8 @@ export function createHocuspocusPersistenceService(
 
     async storeHocuspocusDraft(draftId, _document) {
       await drainPending(`draft:${draftId}`);
-      // Every branch mutation is durable before it reaches a Hocuspocus room, so a room
-      // store has nothing to write: it only waits out this branch's pending stores.
+      // Every draft mutation is durable before it reaches a Hocuspocus room, so a room
+      // store has nothing to write: it only waits out this draft's pending stores.
     },
 
     async drainHocuspocusPersistence() {
@@ -606,7 +606,7 @@ export function createHocuspocusPersistenceService(
 
     closeHocuspocusDraftRoom(draftId) {
       // Narrow ops/test affordance kept for the durable shadow probe fixture T6;
-      // production reset paths use the branch coordinator reset callback.
+      // production reset paths use the draft coordinator reset callback.
       const hocuspocus = deps.hocuspocus();
       if (!hocuspocus) return;
       const roomPrefix = `draft:${draftId}:gen:`;
@@ -677,7 +677,7 @@ export function createHocuspocusPersistenceService(
 }
 
 /**
- * A client vector past the branch's current clocks only where a reset discarded them: the
+ * A client vector past the draft's current clocks only where a reset discarded them: the
  * tab still holds the previous generation's content.
  */
 function draftSyncStep1IsStale(

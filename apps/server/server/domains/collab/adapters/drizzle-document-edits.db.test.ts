@@ -62,7 +62,7 @@ describe("document edit receipts (Postgres)", () => {
     it("writer insertion after Discard lands restored text", async () => {
       const { fixture, draftId, review } = draft;
       const snapshot = await fixture.draftStore.getDraft(draftId);
-      if (!snapshot) throw new Error("Missing branch");
+      if (!snapshot) throw new Error("Missing draft");
       const content = await readDraftContent(fixture.draftStore, draftId);
       const room = new Y.Doc({ gc: false });
       try {
@@ -165,7 +165,7 @@ describe("document edit receipts (Postgres)", () => {
       let ordinal = 0;
       const replace = async (paragraph: number, text: string) => {
         const snapshot = await fixture.draftStore.getDraft(draftId);
-        if (!snapshot) throw new Error("Missing branch");
+        if (!snapshot) throw new Error("Missing draft");
         const content = await readDraftContent(fixture.draftStore, draftId);
         const doc = new Y.Doc({ gc: false });
         try {
@@ -438,7 +438,7 @@ describe("document edit receipts (Postgres)", () => {
         ["red", "gold"],
       ]);
       const snapshot = await fixture.draftStore.getDraft(draftId);
-      if (!snapshot) throw new Error("Missing branch");
+      if (!snapshot) throw new Error("Missing draft");
       const content = await readDraftContent(fixture.draftStore, draftId);
       const room = new Y.Doc({ gc: false });
       try {

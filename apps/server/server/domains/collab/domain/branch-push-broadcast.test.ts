@@ -66,7 +66,7 @@ function projection(input: {
 }
 
 function documentDraft(documentId: DocumentId, _doc: Y.Doc): DraftSnapshot {
-  return testDraftRow({ draftId: `branch-${documentId}`, documentId, workId: WORK_ID });
+  return testDraftRow({ draftId: `draft-${documentId}`, documentId, workId: WORK_ID });
 }
 
 function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): PreparedPushCommit {

@@ -1,4 +1,4 @@
-/** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
+/** Shadow draft coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -41,7 +41,7 @@ function documentWithReservedFacts(): Y.Doc {
   return doc;
 }
 
-/** A branch's materialized content (checkpoint ⊕ tail), for assertions. */
+/** A draft's materialized content (checkpoint ⊕ tail), for assertions. */
 type StoredDraft = MemoryDraft & { state: Uint8Array; stateVector: Uint8Array };
 
 function draftSnapshot(input: {
@@ -65,7 +65,7 @@ function draftSnapshot(input: {
 
 function storedDraft(store: MemoryDraftStore, draftId: string): StoredDraft {
   const documentDraft = store.drafts.get(draftId);
-  if (!documentDraft) throw new Error(`Missing branch ${draftId}`);
+  if (!documentDraft) throw new Error(`Missing draft ${draftId}`);
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, documentDraft.checkpoint.state);
   for (const row of documentDraft.rows)
@@ -85,7 +85,7 @@ function materialize(snapshot: { state: Uint8Array } | MemoryDraft): Y.Doc {
 }
 
 describe("DraftCoordinator", () => {
-  it("acknowledges already-contained branch writer updates without another journal row", async () => {
+  it("acknowledges already-contained draft writer updates without another journal row", async () => {
     const store = new MemoryDraftStore();
     const draftDoc = docWithText("seed");
     store.drafts.set("work", draftSnapshot({ draftId: "work", doc: draftDoc }));
@@ -236,7 +236,7 @@ describe("DraftCoordinator", () => {
     expect(storedDraft(store, "work").generation).toBe(1);
   });
 
-  it("does not mutate the cached branch doc when journal append fails", async () => {
+  it("does not mutate the cached draft doc when journal append fails", async () => {
     const store = new MemoryDraftStore();
     store.drafts.set("work", draftSnapshot({ draftId: "work", doc: new Y.Doc({ gc: false }) }));
     const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });

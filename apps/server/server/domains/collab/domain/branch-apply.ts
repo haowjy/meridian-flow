@@ -91,7 +91,7 @@ export class BranchApplyPendingError extends Error {
     readonly branchId: BranchId,
     cause: PendingLiveSettlementError,
   ) {
-    super("The draft is finishing in the background.", { cause });
+    super("Your drafts are being applied in the background.", { cause });
     this.name = "BranchApplyPendingError";
   }
 }
@@ -122,8 +122,8 @@ export function createBranchApply(deps: {
   push: Pick<BranchPushService, "pushDraftsToLive">;
 }): BranchApply {
   async function activeBranch(branchId: BranchId, workId: WorkId) {
-    const [draft] = await deps.branches.byIds([branchId]);
-    return draft?.status === "active" && draft.originWorkId === workId ? draft : null;
+    const [branch] = await deps.branches.byIds([branchId]);
+    return branch?.status === "active" && branch.originWorkId === workId ? branch : null;
   }
 
   /** Each selected item with every token the payload needs: the ref's, else the read's. */
