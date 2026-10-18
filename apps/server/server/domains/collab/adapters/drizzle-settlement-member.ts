@@ -10,10 +10,10 @@ import type { Database } from "@meridian/database";
 import {
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
-  branchWriteJournal,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
+  draftWriteJournal,
   pushLineage,
 } from "@meridian/database/schema";
 import {
@@ -23,19 +23,19 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
+import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
+import { branchDraftRefs } from "../../../shared/work-branch-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type { BranchJournalRow } from "../domain/branch-journal.js";
 import type {
   PendingLiveSettlement,
   PreparedPushCommit,
   PushLineageRow,
 } from "../domain/branch-push-contracts.js";
 import { deriveDocument } from "../domain/document-derivations.js";
+import type { DraftJournalRow } from "../domain/draft-journal.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
@@ -86,7 +86,7 @@ export async function stageSettlementMemberWithinTx(
 ): Promise<void> {
   const durablePrePush = await materializeDurableDocumentBefore(
     db,
-    prepared.branch.documentId,
+    prepared.documentDraft.documentId,
     push.upstreamUpdateSeq ?? Number.MAX_SAFE_INTEGER,
   );
   const cut = createCollabYDoc({ gc: false });
@@ -122,14 +122,14 @@ export async function stageSettlementMemberWithinTx(
  * transaction: their journal rows are active again at their generation, their
  * unconsumed notices are retracted, and their lineage is deleted (the outbox
  * member and its joins cascade), so the idempotency key never answers "already
- * pushed" for an Apply that didn't happen. The drafts are pending again, so the
+ * pushed" for an Apply that didn't happen. The branches are pending again, so the
  * change goes through the Work projection like the staging that made them
  * pushed; the caller already holds their Works. The caller retires their trail
  * contribution.
  */
 export async function withdrawSettlementMembersWithinTx(
   db: DrizzleDb,
-  pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "branchId">[],
+  pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "draftId">[],
   notices: NoticePort | undefined,
   workProjection: WorkProjectionMutation,
 ): Promise<void> {
@@ -140,20 +140,20 @@ export async function withdrawSettlementMembersWithinTx(
       // `pushed → active` is a review-membership change: the branch rows are locked in id
       // order and their revisions bumped before the rows return (the caller holds the Works).
       const affected = await db
-        .selectDistinct({ branchId: branchWriteJournal.branchId })
-        .from(branchWriteJournal)
+        .selectDistinct({ draftId: draftWriteJournal.draftId })
+        .from(draftWriteJournal)
         .where(
-          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+          and(inArray(draftWriteJournal.id, journalIds), eq(draftWriteJournal.status, "pushed")),
         );
-      await bumpBranchRevisions(
+      await bumpDraftRevisions(
         db,
-        affected.map((row) => row.branchId),
+        affected.map((row) => row.draftId),
       );
       await db
-        .update(branchWriteJournal)
+        .update(draftWriteJournal)
         .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
         .where(
-          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+          and(inArray(draftWriteJournal.id, journalIds), eq(draftWriteJournal.status, "pushed")),
         );
     }
     await notices?.retractForPushes(pushes.map((push) => String(push.id)));
@@ -164,8 +164,8 @@ export async function withdrawSettlementMembersWithinTx(
       ),
     );
   };
-  const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
-  await workProjection.mutate({ branches: branchIds }, withdraw);
+  const draftIds = pushes.flatMap(({ draftId }) => (draftId ? [draftId] : []));
+  await workProjection.mutate({ drafts: draftIds }, withdraw);
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */
@@ -219,9 +219,9 @@ export async function admitSettlementMemberWithinTx(
       ? (
           await db
             .select()
-            .from(branchWriteJournal)
-            .where(inArray(branchWriteJournal.id, staged.push.journalIds))
-            .orderBy(branchWriteJournal.id)
+            .from(draftWriteJournal)
+            .where(inArray(draftWriteJournal.id, staged.push.journalIds))
+            .orderBy(draftWriteJournal.id)
         ).map(mapJournalRow)
       : [];
   const authority = await allocateDocumentAdmission(db, documentId);
@@ -251,7 +251,7 @@ export async function admitSettlementMemberWithinTx(
       : [];
   // Applied edit parts leave pending for their live sequence (§4.1).
   for (const [i, row] of journalRows.entries()) {
-    await placeDraftRows(db, row.branchId, row.generation, [row.id], {
+    await placeDraftRows(db, row.draftId, row.generation, [row.id], {
       kind: "live",
       seq: (authoredRows[i] as { id: number }).id,
     });
@@ -280,9 +280,7 @@ export async function admitSettlementMemberWithinTx(
     .returning({ id: pushLineage.id });
   if (!updated) throw new Error(`Staged push ${pushId} was completed concurrently`);
 
-  const [branchWork] = staged.push.branchId
-    ? await draftBranchWorks(db, [staged.push.branchId])
-    : [];
+  const [draftWork] = staged.push.draftId ? await branchDraftRefs(db, [staged.push.draftId]) : [];
   const derivation = await deriveDocument(
     {
       store: deps.derivationStore,
@@ -298,7 +296,7 @@ export async function admitSettlementMemberWithinTx(
   await upsertHead(db, documentId, canonicalRow.id, stateVector);
   await deps.projectionEffects.applyPushCompletion({
     documentId,
-    ...(branchWork?.workId ? { workId: branchWork.workId } : {}),
+    ...(draftWork?.workId ? { workId: draftWork.workId } : {}),
     at: new Date(),
   });
 
@@ -337,10 +335,10 @@ async function upsertHead(
     });
 }
 
-function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJournalRow {
+function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {
   return {
     id: row.id,
-    branchId: row.branchId,
+    draftId: row.draftId,
     generation: row.generation,
     wId: row.wId,
     toolCallId: row.toolCallId,
@@ -358,8 +356,8 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
 export function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
-    branchId: row.branchId,
-    branchGeneration: row.branchGeneration,
+    draftId: row.draftId,
+    draftGeneration: row.draftGeneration,
     documentId: row.documentId,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
@@ -392,13 +390,13 @@ export async function readSettlementMember(
       row.push.journalIds.length > 0
         ? await db
             .select({
-              source: branchWriteJournal.source,
-              draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq,
-              update: branchWriteJournal.updateData,
+              source: draftWriteJournal.source,
+              draftBaseUpdateSeq: draftWriteJournal.draftBaseUpdateSeq,
+              update: draftWriteJournal.updateData,
             })
-            .from(branchWriteJournal)
-            .where(inArray(branchWriteJournal.id, row.push.journalIds))
-            .orderBy(branchWriteJournal.id)
+            .from(draftWriteJournal)
+            .where(inArray(draftWriteJournal.id, row.push.journalIds))
+            .orderBy(draftWriteJournal.id)
         : [];
     const sweepCandidates = candidateRows.flatMap((candidate, index) =>
       candidate.source === "agent"

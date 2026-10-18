@@ -1,6 +1,6 @@
 /**
  * Hidden-node lifecycle through the real commands (contract §6, §7, §12): a draft's create
- * is an empty hidden row its drafts share (C-2); a live create at a hidden path reveals it
+ * is an empty hidden row its branches share (C-2); a live create at a hidden path reveals it
  * and an aborted held write leaves live state alone (C-3); and the fences between a join,
  * a reveal and a last use hold in both orders (I-1, I-2, I-3).
  *
@@ -10,9 +10,9 @@
 import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
+  branchTreeChanges,
   documents,
   documentYjsUpdates,
-  draftTreeChanges,
   folders,
   users,
 } from "@meridian/database/schema";
@@ -20,12 +20,12 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import {
-  type DraftTreeScenario,
-  draftTreeScenario,
+  type BranchTreeScenario,
+  branchTreeScenario,
   type ScenarioWork,
-} from "../../../test-support/draft-tree-scenario.js";
+} from "../../../test-support/branch-tree-scenario.js";
+import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
 import { setCollabHook } from "../../collab/domain/collab-test-hooks.js";
@@ -52,7 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function start() {
       const runtime = await runtimes.compose();
-      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const scenario = await branchTreeScenario(db, { runtime, runtimes });
       return { runtime, scenario };
     }
 
@@ -62,24 +62,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     /** What `view` shows at a Manuscript path. */
-    function at(scenario: DraftTreeScenario, view: TreeView, path: string) {
+    function at(scenario: BranchTreeScenario, view: TreeView, path: string) {
       return tree.resolvePath(view, { contextSourceId: scenario.project.sources.manuscript, path });
     }
 
     /** The folder id `view` shows at a Manuscript path, else null. */
-    async function folderAt(scenario: DraftTreeScenario, view: TreeView, path: string) {
+    async function folderAt(scenario: BranchTreeScenario, view: TreeView, path: string) {
       const found = await at(scenario, view, path);
       return found.kind === "found" && found.node.kind === "folder" ? found.node.folder.id : null;
     }
 
-    async function draftView(scenario: DraftTreeScenario, work: ScenarioWork): Promise<TreeView> {
-      return { kind: "draft", draftId: (await scenario.draftOf(work)).id };
+    async function branchView(scenario: BranchTreeScenario, work: ScenarioWork): Promise<TreeView> {
+      return { kind: "branch", branchId: (await scenario.branchOf(work)).id };
     }
 
     /** The documents the Work's draft created, as its tree state lists them. */
-    async function createdIn(scenario: DraftTreeScenario, work: ScenarioWork) {
-      const draft = await scenario.draftOf(work);
-      return (await tree.treeState(draft.id))
+    async function createdIn(scenario: BranchTreeScenario, work: ScenarioWork) {
+      const branch = await scenario.branchOf(work);
+      return (await tree.treeState(branch.id))
         .filter((node) => node.origin === "created")
         .map((node) => node.nodeId);
     }
@@ -97,14 +97,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     async function rowsNaming(id: string) {
       return (
         await db
-          .select({ draftId: draftTreeChanges.draftId })
-          .from(draftTreeChanges)
-          .where(eq(draftTreeChanges.nodeId, id))
-      ).map((row) => row.draftId);
+          .select({ branchId: branchTreeChanges.branchId })
+          .from(branchTreeChanges)
+          .where(eq(branchTreeChanges.nodeId, id))
+      ).map((row) => row.branchId);
     }
 
     /** Every document row of the scenario named `name`, hidden rows and tombstones included. */
-    async function _documentsNamed(scenario: DraftTreeScenario, name: string) {
+    async function _documentsNamed(scenario: BranchTreeScenario, name: string) {
       return db
         .select({ id: documents.id })
         .from(documents)
@@ -117,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     /** Folders of the scenario named `name` that aren't tombstones, hidden ones included. */
-    async function foldersNamed(scenario: DraftTreeScenario, name: string) {
+    async function foldersNamed(scenario: BranchTreeScenario, name: string) {
       return db
         .select({ id: folders.id })
         .from(folders)
@@ -130,32 +130,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    it("makes a draft's create an empty hidden row its drafts share (C-2)", async () => {
+    it("makes a draft's create an empty hidden row its branches share (C-2)", async () => {
       const { runtime, scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const rival = await scenario.work("Rival", "draft");
 
       const kael = await scenario.model(ascension).create("lore/kael", "Kael, drafted.");
-      const draft = await scenario.draftOf(ascension);
+      const branch = await scenario.branchOf(ascension);
       expect
         .soft(await runtime.ports.documentSync.readAsMarkdown(kael), "live Yjs is never seeded")
         .toEqual({ ok: true, value: "" });
       expect
         .soft(await liveStatus(kael), "hidden, used by the draft")
-        .toMatchObject({ kind: "hidden", usedBy: [{ draftId: draft.id }] });
+        .toMatchObject({ kind: "hidden", usedBy: [{ branchId: branch.id }] });
       expect
         .soft(await folderAt(scenario, LIVE_TREE, "lore"), "its folder is in no live view")
         .toBeNull();
       expect
         .soft(
-          await at(scenario, await draftView(scenario, ascension), "lore"),
+          await at(scenario, await branchView(scenario, ascension), "lore"),
           "the draft's hidden folder",
         )
         .toMatchObject({ kind: "found", node: { kind: "folder", folder: { hidden: true } } });
       expect.soft(await createdIn(scenario, ascension), "the draft's create").toEqual([kael]);
       expect
-        .soft(await scenario.draftBranch(ascension, kael), "the draft's branch")
-        .toMatchObject({ branchId: expect.any(String) });
+        .soft(await scenario.documentDraft(ascension, kael), "the draft's branch")
+        .toMatchObject({ draftId: expect.any(String) });
       const pending = await runtime.ports.documentSync.draftReview.list({
         projectId: scenario.project.id,
         workId: ascension.id,
@@ -196,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const kael = await scenario.model(ascension).create("lore/kael", "Kael, drafted.");
-      const lore = await folderAt(scenario, await draftView(scenario, ascension), "lore");
+      const lore = await folderAt(scenario, await branchView(scenario, ascension), "lore");
 
       expect(await scenario.writer.create("lore/kael")).toEqual({
         status: "created",
@@ -223,7 +223,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { scenario } = await start();
       const ascension = await scenario.work("Ascension", "draft");
       await scenario.model(ascension).create("notes/first", "Notes, drafted.");
-      const notes = await folderAt(scenario, await draftView(scenario, ascension), "notes");
+      const notes = await folderAt(scenario, await branchView(scenario, ascension), "notes");
 
       await scenario.writer.mkdir("notes");
       expect(notes, "the draft had the folder").not.toBeNull();
@@ -332,9 +332,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const drafting = await scenario.work("Drafting", "draft");
       const one = await scenario.seedHidden(drafting, "root/one/x");
       const two = await scenario.seedHidden(drafting, "root/two/y");
-      const draft = await scenario.draftOf(drafting);
+      const branch = await scenario.branchOf(drafting);
       const ids = order === "one first" ? [one, two] : [two, one];
-      await runInDrizzleTransaction(db, () => endUse(db, { draftId: draft.id, documentIds: ids }));
+      await runInDrizzleTransaction(db, () =>
+        endUse(db, { branchId: branch.id, documentIds: ids }),
+      );
       expect(await foldersNamed(scenario, "root"), "root pruned").toEqual([]);
       expect(await foldersNamed(scenario, "one")).toEqual([]);
       expect(await foldersNamed(scenario, "two")).toEqual([]);
@@ -343,7 +345,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // Each fence in both orders: the first run pauses at the hook holding its locks, the
     // second waits on them, then the first finishes.
     it.each([
-      { first: "join" as const, at: "createInDraft.afterCandidateLock" as const, joinsX: true },
+      { first: "join" as const, at: "createInBranch.afterCandidateLock" as const, joinsX: true },
       { first: "discard" as const, at: "endUse.afterRevalidate" as const, joinsX: false },
     ])("never joins a tombstone nor orphans a node when a join meets a last use, $first first (I-1)", async ({
       first,
@@ -367,11 +369,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(by.discard.ok, "discard settles").toBe(true);
       if (!by.join.ok) throw by.join.error;
       const seconds = by.join.value as DocumentId;
-      const secondDraft = await scenario.draftOf(second);
+      const secondDraft = await scenario.branchOf(second);
       expect.soft(seconds === x, "the join takes x only while x is used").toBe(joinsX);
       expect
         .soft(await liveStatus(seconds), "the second's document, hidden for its one user")
-        .toMatchObject({ kind: "hidden", usedBy: [{ draftId: secondDraft.id }] });
+        .toMatchObject({ kind: "hidden", usedBy: [{ branchId: secondDraft.id }] });
       expect.soft(await tombstoned(x), "x tombstoned only when nothing joined it").toBe(!joinsX);
       expect
         .soft(await rowsNaming(x), "no row names x but its user's")
@@ -418,10 +420,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const drafting = await scenario.work("Drafting", "draft");
       const path = "lore/y";
       const y = await scenario.model(drafting).create(path, "Drafted y.");
-      const draft = await scenario.draftOf(drafting);
+      const branch = await scenario.branchOf(drafting);
       expect(await liveStatus(y)).toMatchObject({
         kind: "hidden",
-        usedBy: [{ draftId: draft.id }],
+        usedBy: [{ branchId: branch.id }],
       });
       expect(await scenario.view(drafting).text(path)).toBe("Drafted y.\n");
       expect(await runtime.ports.documentSync.readAsMarkdown(y)).toEqual({
@@ -469,7 +471,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it.each([
-      { first: "draft" as const, at: "createInDraft.afterCandidateLock" as const },
+      { first: "branch" as const, at: "createInBranch.afterCandidateLock" as const },
       { first: "live" as const, at: "createLive.afterCandidateLock" as const },
     ])("leaves one document when a live create meets a draft create at one path, $first first (I-3)", async ({
       first,
@@ -480,7 +482,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { bWaited, by } = await race(
         db,
         {
-          draft: () => scenario.model(drafting).create("lore/z", "Drafted z."),
+          branch: () => scenario.model(drafting).create("lore/z", "Drafted z."),
           live: () => scenario.writer.create("lore/z"),
         },
         first,
@@ -488,10 +490,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect.soft(bWaited, "the second waits at the fence").toBe(true);
       expect.soft(by.live.ok, "the live create settles").toBe(true);
-      if (!by.draft.ok) throw by.draft.error;
+      if (!by.branch.ok) throw by.branch.error;
       expect
         .soft(await at(scenario, LIVE_TREE, "lore/z"), "one document, live, the draft's")
-        .toMatchObject({ kind: "found", node: { document: { id: by.draft.value } } });
+        .toMatchObject({ kind: "found", node: { document: { id: by.branch.value } } });
     });
   });
 }

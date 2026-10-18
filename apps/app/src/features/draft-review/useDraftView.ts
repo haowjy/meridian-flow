@@ -1,12 +1,12 @@
 /** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import {
   type DraftRef,
   useChangeCommandRecords,
   wholeDraftDisposition,
   wholeDraftPending,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { usePresentedDraftReview } from "./DraftReviewProvider";
 import {
@@ -17,7 +17,7 @@ import {
 } from "./draft-changes";
 import { type ReviewChange, reviewChangesOfPreview, wholeItemChange } from "./review-changes";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
-import type { WorkDraftCommands } from "./useWorkDraftCommands";
+import type { WorkBranchCommands } from "./useWorkBranchCommands";
 
 const EMPTY: readonly ReviewChange[] = [];
 
@@ -29,7 +29,7 @@ export function useDraftView(
     enabled = true,
     item,
   }: {
-    controller: Pick<WorkDraftCommands, "commandChange" | "changesLocked">;
+    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked">;
     enabled?: boolean;
     item?: ThreadDraftListItem;
   },
@@ -45,7 +45,7 @@ export function useDraftView(
     open?.documentId === draft.documentId &&
     open.itemKey === draft.itemKey;
   const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const branchless = item?.branchGeneration === null;
+  const branchless = item?.draftGeneration === null;
   const entry = useDraftPreviews(enabled && !sharing && !branchless ? [draft] : [], {
     openReview: open,
   })[0];

@@ -6,7 +6,7 @@ import { documentTarget, resolveContextRoute } from "./_helpers.js";
 export default defineEventHandler(async (event): Promise<DeleteDraftUploadResult> => {
   const { app, scheme, userId, edit } = await resolveContextRoute(event);
   if (scheme !== "uploads") {
-    throw createError({ statusCode: 400, message: "Draft upload deletion requires uploads" });
+    throw createError({ statusCode: 400, message: "Branch upload deletion requires uploads" });
   }
   const body = (await readBody<Partial<DeleteDraftUploadInput>>(event)) ?? {};
   if (

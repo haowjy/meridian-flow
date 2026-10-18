@@ -7,7 +7,7 @@
  */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { drafts } from "@meridian/database/schema";
+import { branches } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -53,13 +53,13 @@ export async function planAndLock(
   await workBoundary.lockWorks({
     works: [...members.workIds, ...plans.flatMap(({ plan }) => plan.workIds ?? [])],
   });
-  const draftIds = sortedUnique(plans.flatMap(({ plan }) => plan.draftIds ?? []));
-  if (draftIds.length > 0) {
+  const branchIds = sortedUnique(plans.flatMap(({ plan }) => plan.branchIds ?? []));
+  if (branchIds.length > 0) {
     await db
-      .select({ id: drafts.id })
-      .from(drafts)
-      .where(inArray(drafts.id, draftIds))
-      .orderBy(asc(drafts.id))
+      .select({ id: branches.id })
+      .from(branches)
+      .where(inArray(branches.id, branchIds))
+      .orderBy(asc(branches.id))
       .for("no key update");
   }
   const documentIds = sortedUnique(plans.flatMap(({ plan }) => plan.namespaceDocumentIds ?? []));

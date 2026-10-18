@@ -16,7 +16,7 @@ import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
 
-const branchRoomName = "branch:branch_1:gen:3";
+const draftRoomName = "draft:draft_1:gen:3";
 const liveDocumentName = "00000000-0000-4000-8000-000000000101";
 const userId = "00000000-0000-4000-8000-000000000102";
 const version = (major: number, minor: number, patch = 0): CollabSchemaVersion => ({
@@ -31,19 +31,19 @@ const OTHER_MAJOR_HEAD = version(COLLAB_SCHEMA_VERSION.major + 1, 0);
 function versionGateServices(
   input: {
     liveHead?: CollabSchemaVersion | null;
-    branchHead?: CollabSchemaVersion;
+    draftHead?: CollabSchemaVersion;
     liveGeneration?: bigint;
   } = {},
 ) {
   const documentSync = {
     bindHocuspocus: vi.fn(),
     headSchemaVersion: vi.fn(async () => (input.liveHead === undefined ? null : input.liveHead)),
-    resolveBranchHocuspocusRoom: vi.fn(async (branchId: string, generation: number) => ({
-      branchId,
+    resolveDraftHocuspocusRoom: vi.fn(async (draftId: string, generation: number) => ({
+      draftId,
       documentId: liveDocumentName,
       workId: "00000000-0000-4000-8000-000000000107",
       generation,
-      schemaVersion: input.branchHead ?? COLLAB_SCHEMA_VERSION,
+      schemaVersion: input.draftHead ?? COLLAB_SCHEMA_VERSION,
       status: "active" as const,
     })),
     validateHocuspocusDocument: vi.fn(async () => {}),
@@ -52,7 +52,7 @@ function versionGateServices(
       admitted: true as const,
       joinedSettlement: false,
     })),
-    flushBranchLivePull: vi.fn(async () => undefined),
+    flushDraftLivePull: vi.fn(async () => undefined),
   };
   return {
     liveDocuments: {
@@ -227,7 +227,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it("gates branch rooms at the same strict monotonic edge", async () => {
     const hocuspocus = createHocuspocus(
-      versionGateServices({ branchHead: COLLAB_SCHEMA_VERSION }) as never,
+      versionGateServices({ draftHead: COLLAB_SCHEMA_VERSION }) as never,
       createYjsRoomAccessIndex(),
     );
     const staleClientContext = connectContext(SENTINEL_SCHEMA_VERSION);
@@ -235,7 +235,7 @@ describe("Yjs connect-time schema version gate", () => {
     await expect(
       hocuspocus.configuration.onConnect?.({
         connectionConfig: connectionConfig(),
-        documentName: branchRoomName,
+        documentName: draftRoomName,
         context: staleClientContext,
       } as never),
     ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
@@ -246,7 +246,7 @@ describe("Yjs connect-time schema version gate", () => {
     await expect(
       hocuspocus.configuration.onConnect?.({
         connectionConfig: connectionConfig(),
-        documentName: branchRoomName,
+        documentName: draftRoomName,
         context: connectContext(COLLAB_SCHEMA_VERSION),
       } as never),
     ).resolves.toBeUndefined();
@@ -256,11 +256,11 @@ describe("Yjs connect-time schema version gate", () => {
     const majorMismatchHead = OTHER_MAJOR_HEAD;
     const services = versionGateServices({
       liveHead: majorMismatchHead,
-      branchHead: majorMismatchHead,
+      draftHead: majorMismatchHead,
     });
     const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
-    for (const room of [liveDocumentName, branchRoomName]) {
+    for (const room of [liveDocumentName, draftRoomName]) {
       const context = connectContext(COLLAB_SCHEMA_VERSION);
       await expect(
         hocuspocus.configuration.onConnect?.({
@@ -298,14 +298,14 @@ describe("Yjs connect-time schema version gate", () => {
 
   it.each([
     ["live", liveDocumentName],
-    ["branch", branchRoomName],
+    ["branch", draftRoomName],
   ])("keeps the typed stale-head close on the %s document-load guard", async (_kind, room) => {
     const services = versionGateServices({ liveHead: null });
     Object.assign(services.documentSync, {
       loadHocuspocusDocument: vi.fn(async () => {
         throw staleSchemaError();
       }),
-      loadHocuspocusBranchState: vi.fn(async () => {
+      loadHocuspocusDraftState: vi.fn(async () => {
         throw staleSchemaError();
       }),
     });

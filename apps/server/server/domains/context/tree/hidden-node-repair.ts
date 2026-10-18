@@ -65,7 +65,9 @@ export function createHiddenNodeRepair(deps: {
           folderIds: joinIds(
             ended.tombstoned.flatMap((ref) => (ref.kind === "folder" ? [ref.id] : [])),
           ),
-          releasedBranchIds: joinIds(ended.releasedBranches.map((branch) => branch.branchId)),
+          releasedDraftIds: joinIds(
+            ended.releasedDrafts.map((documentDraft) => documentDraft.draftId),
+          ),
         },
         payload: {
           trigger,
@@ -78,7 +80,7 @@ export function createHiddenNodeRepair(deps: {
 
   async function repairUnused(documentIds: readonly DocumentId[]): Promise<EndedUse> {
     const ids = [...new Set(documentIds)].sort();
-    if (ids.length === 0) return { tombstoned: [], releasedObjects: [], releasedBranches: [] };
+    if (ids.length === 0) return { tombstoned: [], releasedObjects: [], releasedDrafts: [] };
     for (let attempt = 1; ; attempt += 1) {
       try {
         const ended = await runInRootDrizzleTransaction(deps.db, async () => {

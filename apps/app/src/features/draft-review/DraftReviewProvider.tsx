@@ -1,4 +1,4 @@
-/** Draft-review scope ownership and the boundary that exposes one scope to consumers. */
+/** Branch-review scope ownership and the boundary that exposes one scope to consumers. */
 
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,8 +14,8 @@ import {
   useState,
 } from "react";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { type ThreadDraftsStatus, useWorkDrafts } from "@/client/query/useWorkDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { type ThreadBranchesStatus, useWorkBranches } from "@/client/query/useWorkBranches";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
@@ -33,7 +33,7 @@ export type DraftReviewContextValue = {
   controller: DraftReviewController;
   roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
-  drafts: ThreadDraftsStatus;
+  branches: ThreadBranchesStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
@@ -100,7 +100,7 @@ export function useDraftReviewScopeValue({
   presented,
 }: {
   projectId: string | null;
-  /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
+  /** The Work whose branches this scope reviews; its archived state freezes them (D30). */
   work: Work | null;
   stateOwner?: DraftReviewStateOwner;
   presented?: PresentedDocument | null;
@@ -112,8 +112,8 @@ export function useDraftReviewScopeValue({
   const effectiveProjectId = projectId ?? "";
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
-  const drafts = useWorkDrafts(projectId, workId);
-  const files = drafts.files ?? [];
+  const branches = useWorkBranches(projectId, workId);
+  const files = branches.files ?? [];
   const localStateOwner = useDraftReviewStateOwner();
   const reviewState = stateOwner ?? localStateOwner;
   const scope = useRef({ projectId: effectiveProjectId, workId: effectiveWorkId, queryClient });
@@ -167,7 +167,7 @@ export function useDraftReviewScopeValue({
     controller.exitReview();
   }, [effectiveProjectId, effectiveWorkId, queryClient, controller.exitReview]);
 
-  const fileForDocument = drafts.fileForDocument;
+  const fileForDocument = branches.fileForDocument;
 
   const reviewRoomNameForDraft = useCallback(
     (documentId: string, itemKey: string) =>
@@ -213,7 +213,7 @@ export function useDraftReviewScopeValue({
       controller,
       roomOwner,
       files,
-      drafts,
+      branches,
       fileForDocument,
       reviewRoomNameForDraft,
       activeEditorDocumentId,
@@ -223,7 +223,7 @@ export function useDraftReviewScopeValue({
       controller,
       roomOwner,
       files,
-      drafts,
+      branches,
       fileForDocument,
       reviewRoomNameForDraft,
       activeEditorDocumentId,

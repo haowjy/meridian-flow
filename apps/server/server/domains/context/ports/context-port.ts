@@ -49,7 +49,7 @@ export interface ThreadContextView {
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
   /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
-  draftWork: WorkRef | null;
+  branchWork: WorkRef | null;
   version?: "draft" | "live";
 }
 

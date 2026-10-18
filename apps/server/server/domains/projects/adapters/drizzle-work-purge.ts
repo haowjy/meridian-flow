@@ -1,7 +1,7 @@
 /**
  * Permanently removes expired Works, then best-effort removes their object-store blobs.
- * A purged Work's drafts are disposed of first through collab's locked Discard kernel
- * (contract §2.6, F10): their branches leased before the transaction, then, after the
+ * A purged Work's branches are disposed of first through collab's locked Discard kernel
+ * (contract §2.6, F10): their drafts leased before the transaction, then, after the
  * deleted/cutoff proof, every hidden document they created tombstoned and released.
  */
 
@@ -9,9 +9,9 @@ import type { WorkId } from "@meridian/contracts/runtime";
 import { workPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  branches,
   contextSources,
   documents,
-  drafts,
   eventJournal,
   projectResults,
   promptBakes,
@@ -29,7 +29,7 @@ import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
 } from "../../storage/index.js";
-import type { WorkDraftDisposal } from "../ports/work-draft-disposal.js";
+import type { WorkBranchDisposal } from "../ports/work-branch-disposal.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
 
@@ -37,7 +37,7 @@ export function createDrizzleWorkPurger(deps: {
   db: Database;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
-  drafts: WorkDraftDisposal;
+  branches: WorkBranchDisposal;
   now?: () => Date;
 }) {
   const now = deps.now ?? (() => new Date());
@@ -57,15 +57,15 @@ export function createDrizzleWorkPurger(deps: {
     workId: WorkId,
     cutoff: Date,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
-    return deps.drafts.withDisposal(workId, (disposeDrafts) =>
-      purgeLocked(workId, cutoff, disposeDrafts),
+    return deps.branches.withDisposal(workId, (disposeBranches) =>
+      purgeLocked(workId, cutoff, disposeBranches),
     );
   }
 
   async function purgeLocked(
     workId: WorkId,
     cutoff: Date,
-    disposeDrafts: () => Promise<{ releasedObjects: readonly string[] }>,
+    disposeBranches: () => Promise<{ releasedObjects: readonly string[] }>,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -149,9 +149,9 @@ export function createDrizzleWorkPurger(deps: {
             ),
           ),
       ]);
-      // F10: the Work's drafts end through the Discard kernel, after this proof and before
+      // F10: the Work's branches end through the Discard kernel, after this proof and before
       // their rows go, so nothing they created stays live and their storage is released.
-      const disposed = await disposeDrafts();
+      const disposed = await disposeBranches();
       const objectKeys = [
         ...uploads.map(({ objectKey }) => objectKey),
         ...[...results, ...binaries].flatMap(({ storageUrl }) => {
@@ -184,8 +184,8 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
       }
-      // The disposed drafts' rows go with the Work; their closed branches cascade.
-      await activeDb.delete(drafts).where(eq(drafts.originWorkId, workId));
+      // The disposed branches' rows go with the Work; their closed drafts cascade.
+      await activeDb.delete(branches).where(eq(branches.originWorkId, workId));
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))

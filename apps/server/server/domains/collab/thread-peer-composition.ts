@@ -17,20 +17,20 @@ import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { FileAccess } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
-import {
-  type BranchAgentEditDiagnostics,
-  type BranchConcurrentJournalWatermarks,
-  createBranchAgentEditCoordinator,
-  createBranchAgentEditJournal,
-  createBranchPendingJournalEntries,
-  type EnlistResponseParticipant,
-} from "./domain/branch-agent-edit.js";
-import type { BranchCoordinator } from "./domain/branch-coordinator.js";
-import type { BranchReplayJournalReads } from "./domain/branch-journal.js";
-import type { BranchPullService } from "./domain/branch-pulls.js";
+import type { Branches } from "./domain/branches.js";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
-import type { Drafts } from "./domain/drafts.js";
-import type { ApplicationBranchStore } from "./domain/ports/application-branch-store.js";
+import {
+  createDraftAgentEditCoordinator,
+  createDraftAgentEditJournal,
+  createDraftPendingJournalEntries,
+  type DraftAgentEditDiagnostics,
+  type DraftConcurrentJournalWatermarks,
+  type EnlistResponseParticipant,
+} from "./domain/draft-agent-edit.js";
+import type { DraftCoordinator } from "./domain/draft-coordinator.js";
+import type { DraftReplayJournalReads } from "./domain/draft-journal.js";
+import type { DraftPullService } from "./domain/draft-pulls.js";
+import type { ApplicationDraftStore } from "./domain/ports/application-draft-store.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { createReplySaveFences } from "./domain/reply-save-fences.js";
 import type { ResponseTransactionSettlement } from "./domain/response-transaction.js";
@@ -50,20 +50,20 @@ type AgentEditObservability = Pick<
 >;
 
 /**
- * The production thread-peer pool: each thread's agent-edit core over its peer branches
+ * The production thread-peer pool: each thread's agent-edit core over its peer drafts
  * (branch journal, branch coordinator, scoped links), the reply save fences, and the pool.
  */
-export function createBranchThreadPeerAgentEditCore(input: {
+export function createDraftThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  branches: ApplicationBranchStore;
-  branchCoordinator: BranchCoordinator;
-  branchPulls: BranchPullService;
-  branchJournal: BranchReplayJournalReads;
-  concurrentJournalWatermarks: BranchConcurrentJournalWatermarks;
-  diagnostics: BranchAgentEditDiagnostics;
+  drafts: ApplicationDraftStore;
+  draftCoordinator: DraftCoordinator;
+  draftPulls: DraftPullService;
+  draftJournal: DraftReplayJournalReads;
+  concurrentJournalWatermarks: DraftConcurrentJournalWatermarks;
+  diagnostics: DraftAgentEditDiagnostics;
   afterCommit(callback: () => void | Promise<void>): void;
   enlistResponseParticipant: EnlistResponseParticipant;
   model: YProsemirrorDocumentModel;
@@ -80,22 +80,22 @@ export function createBranchThreadPeerAgentEditCore(input: {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
-  drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
+  branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
-    drafts: input.drafts,
     branches: input.branches,
+    drafts: input.drafts,
     fences: createReplySaveFences({
       liveUtilityCore: input.liveUtilityCore,
-      branches: input.branches,
       drafts: input.drafts,
+      branches: input.branches,
       diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,
       lockWorks: input.lockWorks,
       lockLiveDocuments: input.lockLiveDocuments,
     }),
     liveUtilityCore: input.liveUtilityCore,
-    afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
+    afterLiveCommit: (documentId) => input.draftPulls.scheduleLivePull(documentId),
     fileAccess: input.fileAccess,
     lockWorks: input.lockWorks,
     lockLiveDocuments: input.lockLiveDocuments,
@@ -104,7 +104,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
     createThreadCore: (threadId, viewFor) => {
-      const pendingJournalEntries = createBranchPendingJournalEntries(
+      const pendingJournalEntries = createDraftPendingJournalEntries(
         input.enlistResponseParticipant,
         input.diagnostics,
       );
@@ -114,16 +114,16 @@ export function createBranchThreadPeerAgentEditCore(input: {
           registrar: input.aheadRefs,
           viewFor,
         }),
-        journal: createBranchAgentEditJournal({
+        journal: createDraftAgentEditJournal({
           liveJournal: input.journal,
           pendingJournalEntries,
         }),
-        coordinator: createBranchAgentEditCoordinator({
+        coordinator: createDraftAgentEditCoordinator({
           threadId,
-          branchCoordinator: input.branchCoordinator,
-          branches: input.branches,
+          draftCoordinator: input.draftCoordinator,
+          drafts: input.drafts,
           pendingJournalEntries,
-          journalRows: input.branchJournal,
+          journalRows: input.draftJournal,
           liveJournal: input.journal,
           diagnostics: input.diagnostics,
           afterCommit: input.afterCommit,
@@ -143,6 +143,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
         ...input.observability,
       });
     },
-    pullThreadPeer: (command) => input.branchPulls.pullThreadPeer(command),
+    pullThreadPeer: (command) => input.draftPulls.pullThreadPeer(command),
   });
 }

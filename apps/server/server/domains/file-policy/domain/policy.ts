@@ -49,10 +49,10 @@ export function isDrafted(scheme: ContextUriScheme): boolean {
  */
 export function sourceDestination(
   scheme: ContextUriScheme,
-  draftWork: WorkRef | null,
+  branchWork: WorkRef | null,
 ): FileDestination {
-  return draftWork && isDrafted(scheme)
-    ? { kind: "draft", workId: draftWork.id, workSlug: draftWork.slug }
+  return branchWork && isDrafted(scheme)
+    ? { kind: "draft", workId: branchWork.id, workSlug: branchWork.slug }
     : { kind: "live" };
 }
 
@@ -70,9 +70,9 @@ export interface NodeGrant {
 function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
-    return { kind: "draft", workId: target.workId, workSlug: facts.draftWork?.slug ?? null };
+    return { kind: "draft", workId: target.workId, workSlug: facts.branchWork?.slug ?? null };
   }
-  return sourceDestination(facts.scheme, principal.agent?.draftWork ?? null);
+  return sourceDestination(facts.scheme, principal.agent?.branchWork ?? null);
 }
 
 /** The whole decision: the destination, then the level there. */
@@ -131,10 +131,10 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
-    if (!facts.draftWork || facts.draftWork.id !== at.workId) {
+    if (!facts.branchWork || facts.branchWork.id !== at.workId) {
       throw new Error(`File facts lack the draft Work ${at.workId}`);
     }
-    terms.push(...workTerms(facts.draftWork));
+    terms.push(...workTerms(facts.branchWork));
   }
   return terms;
 }

@@ -100,11 +100,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("creates a distinct binary asset without changing the host document", async () => {
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const service = createFigureAssetService({
         objectStore,

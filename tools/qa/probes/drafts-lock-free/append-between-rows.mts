@@ -13,7 +13,7 @@
  * (two `appendRows` calls), which is the retry phase 4 deletes.
  */
 import assert from "node:assert/strict";
-import type { BranchStore } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import {
   appendToFirstParagraph,
   type Harness,
@@ -38,9 +38,9 @@ import {
 const text = (doc: Y.Doc) => doc.getXmlFragment("prosemirror").toString();
 
 /** `store` whose `appendRows` calls are counted: one per frame without a retry loop. */
-function counted(store: BranchStore) {
+function counted(store: DraftStore) {
   const calls = { appendRows: 0 };
-  const wrapped: BranchStore = {
+  const wrapped: DraftStore = {
     ...store,
     appendRows(input) {
       calls.appendRows += 1;
@@ -52,12 +52,12 @@ function counted(store: BranchStore) {
 
 async function send(
   process: Awaited<ReturnType<typeof openProcess>>,
-  draft: { branchId: string; generation: number },
+  draft: { draftId: string; generation: number },
   update: Uint8Array,
 ) {
   const outcome = await frameOutcome(
     process.coordinator.commitWriterUpdate({
-      branchId: draft.branchId,
+      draftId: draft.draftId,
       expectedGeneration: draft.generation,
       updateData: update,
       roomDocument: process.room,
@@ -87,7 +87,7 @@ export const appendBetweenRows: Probe = {
       async "1-two-frames-between"() {
         const f = await twoProcesses(harness, "between-rows");
         try {
-          const r = (await harness.readBranch(f.draft.branchId)).revision;
+          const r = (await harness.readDraft(f.draft.draftId)).revision;
           const key = keystroke(f.a.room, " A1", 910_001);
           const frame = independently(() => send(f.a, f.draft, key));
           await f.pause.entered;
@@ -98,10 +98,10 @@ export const appendBetweenRows: Probe = {
           f.pause.release();
           const outcome = await frame;
           const roomAfterInstall = text(f.a.room);
-          const durable = await harness.readBranch(f.draft.branchId);
-          const rows = await journalRows(harness, f.draft.branchId);
+          const durable = await harness.readDraft(f.draft.draftId);
+          const rows = await journalRows(harness, f.draft.draftId);
           const aRow = nth(rows, -1);
-          const aReceipt = (await receipts(harness, f.draft.branchId)).find(
+          const aReceipt = (await receipts(harness, f.draft.draftId)).find(
             (parts) => parts[0]?.rowId === aRow.id,
           );
           const frontier = aReceipt?.[0]?.frontier ?? {};
@@ -139,16 +139,16 @@ export const appendBetweenRows: Probe = {
           await f.pause.entered;
           appendToFirstParagraph(f.draft.live, " LIVE");
           const pulled = await f.b.coordinator.pullFromDoc({
-            branchId: f.draft.branchId,
+            draftId: f.draft.draftId,
             upstream: f.draft.live,
           });
-          const movedTo = await harness.readBranch(f.draft.branchId);
+          const movedTo = await harness.readDraft(f.draft.draftId);
           f.pause.release();
           const outcome = await frame;
-          const nextRead = await f.a.coordinator.readBranch(f.draft.branchId, async (doc) =>
+          const nextRead = await f.a.coordinator.readDraft(f.draft.draftId, async (doc) =>
             text(doc),
           );
-          const durable = await harness.readBranch(f.draft.branchId);
+          const durable = await harness.readDraft(f.draft.draftId);
           observe("arm 2", {
             pulled,
             checkpointRevision: movedTo.checkpointRevision,

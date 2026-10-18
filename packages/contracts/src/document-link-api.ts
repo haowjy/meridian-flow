@@ -43,9 +43,9 @@ export type DocumentLinkAnswer =
         rootThreadId?: string | null;
         chatThreadId?: string | null;
       };
-      inDraft: boolean;
-      /** Present iff `inDraft`: the draft the chip opens (the reader's own if it uses it, else the oldest). */
-      draft?: { draftId: string; workId: string | null };
+      inBranch: boolean;
+      /** Present iff `inBranch`: the draft the chip opens (the reader's own if it uses it, else the oldest). */
+      branch?: { branchId: string; workId: string | null };
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;
     }

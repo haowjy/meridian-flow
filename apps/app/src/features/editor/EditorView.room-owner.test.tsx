@@ -1,21 +1,21 @@
 // @vitest-environment jsdom
 /** Real provider, editor paint, session and pool replacement. Only HTTP and the wire are fake. */
 
-import { branchRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { draftRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { act, useEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/PaintHold";
-import { BranchRoomPool } from "@/core/editor/branch-room-pool";
 import {
   DocumentSession,
   type DocumentSessionConnectionState,
 } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { DocumentSessionTeardownOwner } from "@/core/editor/document-session-teardown-owner";
+import { DraftRoomPool } from "@/core/editor/draft-room-pool";
 import {
   DraftReviewBoundary,
   useDraftReview,
@@ -49,13 +49,13 @@ afterEach(async () => {
 });
 
 const mocks = vi.hoisted(() => ({
-  listWorkDrafts: vi.fn(),
+  listWorkBranches: vi.fn(),
   getDraftPreview: vi.fn(),
   applyDraftChanges: vi.fn(),
   discardDraft: vi.fn(),
 }));
 
-vi.mock("@/client/api/drafts-api", () => mocks);
+vi.mock("@/client/api/branches-api", () => mocks);
 
 vi.mock("./useInlineReviewSync", () => ({
   useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
@@ -70,7 +70,7 @@ const documentId = "document-a";
 const transportStatus = new Map<string, (state: DocumentSessionConnectionState) => void>();
 const syncs = new Map<string, ReturnType<typeof deferredReviewAnswer<void>>>();
 const teardowns = new Map<string, ReturnType<typeof deferredReviewAnswer<void>>>();
-const pool = new BranchRoomPool({
+const pool = new DraftRoomPool({
   teardownGraceMs: 1,
   teardownOwner: new DocumentSessionTeardownOwner(() => new Error("room is retiring")),
   openSession: (roomKey) =>
@@ -99,11 +99,11 @@ const pool = new BranchRoomPool({
     }),
 });
 const poolRegistry = {
-  retainBranchRooms: (owner: string, rooms: Parameters<typeof pool.retain>[1]) =>
+  retainDraftRooms: (owner: string, rooms: Parameters<typeof pool.retain>[1]) =>
     pool.retain(owner, rooms),
-  releaseBranchRooms: (owner: string) => pool.release(owner),
-  getBranchRoom: (room: string) => pool.get(room),
-  rebuildBranchRoom: (room: string) => pool.rebuild(room),
+  releaseDraftRooms: (owner: string) => pool.release(owner),
+  getDraftRoom: (room: string) => pool.get(room),
+  rebuildDraftRoom: (room: string) => pool.rebuild(room),
 };
 
 let review: ReturnType<typeof useDraftReview> | null = null;
@@ -144,9 +144,9 @@ beforeEach(() => {
   draftOnly = false;
   supplyMarks = true;
   vi.clearAllMocks();
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   review = null;
-  mocks.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  mocks.listWorkBranches.mockResolvedValue({ items: [listed] });
 });
 
 afterEach(() => {
@@ -165,7 +165,7 @@ const mounted = () => {
   return node.editor;
 };
 async function run(run: (client: QueryClient, room: string) => Promise<void>, enter = true) {
-  const room = branchRoomName("review-owner", 1);
+  const room = draftRoomName("review-owner", 1);
   mocks.getDraftPreview.mockResolvedValue({ ...previewOf("2"), reviewRoomName: room });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await withReactRoot(
@@ -193,7 +193,7 @@ it.each([
     const oldEditor = mounted();
     await act(async () => oldEditor.commands.insertContent("The held review."));
     const live = sessions.get(documentId).document;
-    const room = disposition === "superseded" ? branchRoomName("review-owner", 2) : oldRoom;
+    const room = disposition === "superseded" ? draftRoomName("review-owner", 2) : oldRoom;
     const sync = deferredReviewAnswer<void>();
     syncs.set(room, sync);
     if (disposition === "superseded") {
@@ -203,7 +203,7 @@ it.each([
         transportStatus.get(oldRoom)?.({
           kind: "reset",
           disposition,
-          reason: WS_CLOSE.BRANCH_GENERATION_STALE.reason,
+          reason: WS_CLOSE.DRAFT_GENERATION_STALE.reason,
         }),
       );
       expect(document.querySelector("[data-paint-hold]")?.textContent).toContain(
@@ -211,19 +211,19 @@ it.each([
       );
       mocks.getDraftPreview.mockResolvedValue({
         ...previewOf("3"),
-        branchGeneration: 2,
+        draftGeneration: 2,
         reviewRoomName: room,
       });
-      mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
+      mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
       await act(async () =>
-        read.resolve({ ...previewOf("3"), branchGeneration: 2, reviewRoomName: room }),
+        read.resolve({ ...previewOf("3"), draftGeneration: 2, reviewRoomName: room }),
       );
     } else {
       await act(async () =>
         transportStatus.get(oldRoom)?.({
           kind: "reset",
           disposition,
-          reason: disposition === "refused" ? "access-changed" : WS_CLOSE.BRANCH_STALE.reason,
+          reason: disposition === "refused" ? "access-changed" : WS_CLOSE.DRAFT_STALE.reason,
         }),
       );
     }
@@ -244,7 +244,7 @@ it.each([
 
 it("draft-only has no live fallback, including closed completion and terminal failure", async () => {
   draftOnly = true;
-  mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
+  mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
   await run(async (_client, room) => {
     const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(answer.promise);
@@ -255,10 +255,10 @@ it("draft-only has no live fallback, including closed completion and terminal fa
     expect(surfaces()).toEqual(["review"]);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf(),
-      branchGeneration: 2,
-      reviewRoomName: branchRoomName("review-owner", 2),
+      draftGeneration: 2,
+      reviewRoomName: draftRoomName("review-owner", 2),
     });
-    mocks.listWorkDrafts.mockResolvedValue({ items: [] });
+    mocks.listWorkBranches.mockResolvedValue({ items: [] });
     await act(async () => {
       answer.resolve(applied(true));
       await done;
@@ -291,9 +291,9 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     expect(live.isEditable).toBe(false);
     await act(async () => vi.advanceTimersByTimeAsync(16));
     const refusalSync = deferredReviewAnswer<void>();
-    const branch = review?.roomOwner.session;
-    if (!branch) throw new Error("Missing branch session");
-    vi.spyOn(branch, "whenLocalPersistenceSynced").mockReturnValue(refusalSync.promise);
+    const documentDraft = review?.roomOwner.session;
+    if (!documentDraft) throw new Error("Missing branch session");
+    vi.spyOn(documentDraft, "whenLocalPersistenceSynced").mockReturnValue(refusalSync.promise);
     await act(async () => {
       discard.reject(new HttpResponseError("refused", 500, null));
       await done;
@@ -304,7 +304,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     // The refused Discard left the change in the draft: the writer's view has it again.
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
+        projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, draftA.itemKey),
         { ...previewOf("2"), reviewRoomName: room },
       ),
     );
@@ -316,7 +316,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     expect(surfaces()).toEqual(["review"]);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf(),
-      branchGeneration: 2,
+      draftGeneration: 2,
       reviewRoomName: room,
     });
     await act(async () => {
@@ -340,20 +340,20 @@ it("a retired rebuild answer cannot replace a later review", async () => {
       transportStatus.get(oldRoom)?.({
         kind: "reset",
         disposition: "rebuild",
-        reason: WS_CLOSE.BRANCH_STALE.reason,
+        reason: WS_CLOSE.DRAFT_STALE.reason,
       }),
     );
     expect(review?.roomOwner.session).toBeNull();
-    const nextRoom = branchRoomName("later-review", 1);
+    const nextRoom = draftRoomName("later-review", 1);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf("9"),
       itemKey: "draft-b",
       reviewRoomName: nextRoom,
     });
     const rows = [{ ...listed, itemKey: "draft-b" }];
-    mocks.listWorkDrafts.mockResolvedValue({ items: rows });
+    mocks.listWorkBranches.mockResolvedValue({ items: rows });
     await act(async () => {
-      client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), rows);
+      client.setQueryData(projectQueryKeys.workBranches("project-a", "work-a"), rows);
       review?.controller.enterInlineReview(documentId, "draft-b");
     });
     await settleReact(() => expect(review?.roomOwner.session?.roomKey).toBe(nextRoom));
@@ -412,19 +412,19 @@ function ReviewChromeWitness() {
 it("an incoming proposal holds the painted chrome across the room observation precursor", async () => {
   await run(async (client) => {
     await act(async () => mounted().commands.insertContent("Painted generation one."));
-    const room = branchRoomName("review-owner", 2);
+    const room = draftRoomName("review-owner", 2);
     const sync = deferredReviewAnswer<void>();
     syncs.set(room, sync);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf("3"),
-      branchGeneration: 2,
+      draftGeneration: 2,
       reviewRoomName: room,
     });
-    mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
+    mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
-        { ...previewOf("3"), branchGeneration: 2, reviewRoomName: room },
+        projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, draftA.itemKey),
+        { ...previewOf("3"), draftGeneration: 2, reviewRoomName: room },
       ),
     );
     await settleReact(() => expect(document.querySelector("[data-paint-hold]")).not.toBeNull());
@@ -438,11 +438,11 @@ it("an incoming proposal holds the painted chrome across the room observation pr
     await settleReact(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
-        { ...previewOf(), branchGeneration: 3, reviewRoomName: room },
+        projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, draftA.itemKey),
+        { ...previewOf(), draftGeneration: 3, reviewRoomName: room },
       ),
     );
-    expect(review?.controller.inlineReview?.branchGeneration).toBe(2);
+    expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
     expect(document.querySelector("[data-paint-hold]")).toBeNull();
     await settleReact(() =>
       expect(document.querySelector("[data-review-state]")?.textContent).toBe("No listed changes"),
@@ -476,7 +476,7 @@ it("offers addressed whole Discard when a corrupt draft cannot open", async () =
     mocks.getDraftPreview.mockResolvedValue({
       status: "corrupt",
       itemKey: draftA.itemKey,
-      branchGeneration: 1,
+      draftGeneration: 1,
     });
     await act(async () => review?.controller.enterInlineReview(documentId, draftA.itemKey));
     const discardButton = () =>
@@ -489,11 +489,11 @@ it("offers addressed whole Discard when a corrupt draft cannot open", async () =
     await act(async () => discardButton()?.click());
     expect(mocks.discardDraft).toHaveBeenCalledWith("project-a", "work-a", documentId, {
       commandId: expect.any(String),
-      draftId: expect.any(String),
+      branchId: expect.any(String),
       itemKey: draftA.itemKey,
     });
     expect(discardButton()?.disabled).toBe(true);
-    mocks.getDraftPreview.mockResolvedValue({ ...previewOf(), branchGeneration: 2 });
+    mocks.getDraftPreview.mockResolvedValue({ ...previewOf(), draftGeneration: 2 });
     await act(async () => answer.resolve(discarded(true)));
     await settleReact(() => expect(review?.controller.inlineReview).toBeNull());
     expect(mocks.discardDraft).toHaveBeenCalledTimes(1);

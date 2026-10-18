@@ -11,8 +11,8 @@ import { createDb } from "@meridian/database";
 import { contextAvailabilityHeads, contextCatalogCommits, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTreeReader, LIVE_TREE } from "./tree-view.js";
 
@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function start() {
       const runtime = await runtimes.compose();
-      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const scenario = await branchTreeScenario(db, { runtime, runtimes });
       const { id: projectId, userId } = scenario.project;
       const ascension = await scenario.work("Ascension", "draft");
       const model = scenario.model(ascension);
@@ -50,9 +50,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return head?.version ?? 0n;
       }
       async function hiddenFolder(path: string) {
-        const draft = await scenario.draftOf(ascension);
+        const branch = await scenario.branchOf(ascension);
         const found = await tree.resolvePath(
-          { kind: "draft", draftId: draft.id },
+          { kind: "branch", branchId: branch.id },
           { contextSourceId: manuscript, path },
         );
         if (found.kind !== "found" || found.node.kind !== "folder")

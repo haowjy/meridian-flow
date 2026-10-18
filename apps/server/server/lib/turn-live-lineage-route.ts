@@ -66,7 +66,7 @@ export async function handleTurnLiveLineageRequest(
 
 /** The lineage's documents the writer can still read (file-access §6). */
 async function filterAccessibleLiveLineageDocuments<
-  T extends { documentId: string; uri: string; scope: "live" | "draft" },
+  T extends { documentId: string; uri: string; scope: "live" | "branch" },
 >(deps: TurnLiveLineageRouteServices, input: { documents: T[]; userId: UserId }): Promise<T[]> {
   const access = await deps.fileAccess.listAccess(
     { accountId: input.userId },
@@ -78,7 +78,7 @@ async function filterAccessibleLiveLineageDocuments<
 function serializeLiveLineageDocument(document: {
   documentId: string;
   uri: string;
-  scope: "live" | "draft";
+  scope: "live" | "branch";
 }): TurnLiveLineageDocumentItem {
   const parsed = parseContextUri(document.uri);
   if (!parsed.ok) {

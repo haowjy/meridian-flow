@@ -122,7 +122,7 @@ open has no in-place recovery yet.
 
 A draft-only tab (a new document proposed by a draft) opens no live binding at
 all: it is absent from the live SQL tree and the server refuses a room for it,
-so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
+so review hosts the draft branch room alone (`liveRoom={!draftOnly}`) and a
 failed branch room offers Retry or closing the tab, never a fallback to an empty
 live editor. The phone hosts it through the same `ContextEditorMountHost`
 (`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both

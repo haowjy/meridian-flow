@@ -16,7 +16,7 @@ export function isProjectWorkDerivedKey(
   }
   const workId = queryKey[3];
   if (typeof workId !== "string" || (workIds && !workIds.has(workId))) return false;
-  return queryKey[4] === "drafts" || (queryKey[4] === "documents" && queryKey.includes("draft"));
+  return queryKey[4] === "branches" || (queryKey[4] === "documents" && queryKey.includes("draft"));
 }
 
 export function isWorkScopedProjectContextCatalogKey(
@@ -75,14 +75,14 @@ export const projectQueryKeys = {
   /** Client-only, account-cache lifetime: undisplayed/dismissible handoff loss on this document. */
   writerHandoffLoss: (projectId: string, documentId: string) =>
     ["projects", projectId, "documents", documentId, "writer-handoff-loss"] as const,
-  workDrafts: (projectId: string, workId: string) =>
-    ["projects", projectId, "works", workId, "drafts"] as const,
-  /** The drafts with changes to one document; invalidated with the Work draft lists. */
+  workBranches: (projectId: string, workId: string) =>
+    ["projects", projectId, "works", workId, "branches"] as const,
+  /** The branches with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  workDraftPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
+  workBranchPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,

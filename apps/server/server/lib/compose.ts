@@ -24,7 +24,7 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
-import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -492,7 +492,7 @@ export async function createProductionAppPorts(input: {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
-    pendingCounts: createDrizzleWorkDraftPendingStore(db),
+    pendingCounts: createDrizzleWorkBranchPendingStore(db),
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
@@ -603,8 +603,8 @@ export async function createProductionAppPorts(input: {
     eventSink,
     arrivals,
     hiddenNodeRepair,
-    drafts: documentSync.drafts,
-    pendingDraft: workProjectionMutation,
+    branches: documentSync.branches,
+    pendingBranch: workProjectionMutation,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),
@@ -831,7 +831,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
-    drafts: ports.documentSync,
+    branches: ports.documentSync,
     workContextNotices,
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
@@ -900,7 +900,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
-    drafts: ports.documentSync.workDraftDisposal,
+    branches: ports.documentSync.workBranchDisposal,
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
@@ -1056,7 +1056,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,
-      drafts: ports.documentSync.drafts,
+      branches: ports.documentSync.branches,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
     }),

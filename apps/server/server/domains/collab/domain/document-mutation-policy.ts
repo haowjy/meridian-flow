@@ -3,7 +3,7 @@
 import { validateSemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { AppendBranchJournalInput } from "./branch-store.js";
+import type { AppendDraftJournalInput } from "./draft-store.js";
 import { validateClientUpdateAdmission, validateProvenanceGraph } from "./provenance.js";
 
 export type AuthorshipSource =
@@ -152,7 +152,7 @@ export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
 export function admitSegmentRows(
   doc: Y.Doc,
   documentId: string,
-  journals: readonly AppendBranchJournalInput[],
+  journals: readonly AppendDraftJournalInput[],
 ): void {
   for (let index = 0; index < journals.length; ) {
     const first = journals[index];
@@ -194,14 +194,14 @@ export function assertSegmentRowsComplete(source: Y.Doc, admitted: Y.Doc): void 
     });
     Y.applyUpdate(probe, Y.encodeStateAsUpdate(source, Y.encodeStateVector(admitted)));
     if (probe.store.pendingStructs || probe.store.pendingDs)
-      throw new Error("Branch sync delta has unresolved Yjs dependencies");
+      throw new Error("Draft sync delta has unresolved Yjs dependencies");
     if (changed) throw new Error("Segment write left an unjournaled residual");
   } finally {
     probe.destroy();
   }
 }
 
-/** Draft agent rows own fresh structs; deletes may refer to older clients. */
+/** Branch agent rows own fresh structs; deletes may refer to older clients. */
 export function assertFreshAgentUpdate(doc: Y.Doc, update: Uint8Array): void {
   const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
   for (const struct of Y.decodeUpdate(update).structs) {

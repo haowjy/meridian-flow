@@ -57,7 +57,7 @@ export function aheadRegistrations(mints: readonly AheadMint[]) {
       aheadId: parsed.aheadId,
       holderProjectId: mint.holderProjectId,
       address: mint.address,
-      ...(mint.view.kind === "draft" ? { draftId: mint.view.draftId } : {}),
+      ...(mint.view.kind === "branch" ? { branchId: mint.view.branchId } : {}),
     };
   });
 }

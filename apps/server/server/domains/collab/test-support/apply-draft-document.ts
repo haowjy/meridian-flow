@@ -23,7 +23,7 @@ export async function applyDraftDocument(
     envelope: testEnvelope({
       workId: input.workId,
       kind: "apply_items",
-      draftId: found.draftId,
+      branchId: found.branchId,
       userId: input.userId,
     }),
   });

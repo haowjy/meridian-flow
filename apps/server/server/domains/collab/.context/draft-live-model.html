@@ -77,6 +77,7 @@
 <main>
 
 <h1>The Draft / Live Model</h1>
+<p>A branch holds a Work's pending file tree. A draft is one document's pending version inside that branch; thread peers are also document drafts.</p>
 <p class="lede">
 One document, two surfaces, <strong>one consent point</strong>. Everything in
 the system merges automatically (draft-mode AI edits into the draft, live edits
@@ -119,11 +120,11 @@ whatever its Work's default or its sibling chats do.
     <text x="565" y="193" text-anchor="middle" fill="currentColor" font-size="12" font-family="sans-serif">writer consent · gated</text>
     <text x="352" y="132" fill="var(--live)" font-size="12.5" font-family="sans-serif" transform="rotate(0)"> </text>
   </g>
-  <!-- Draft -->
+  <!-- Branch -->
   <g style="color: var(--draft)">
     <rect x="40" y="242" width="590" height="86" rx="10" fill="none" stroke="currentColor" stroke-width="2"/>
-    <text x="335" y="274" text-anchor="middle" fill="currentColor" font-size="19" font-weight="700" font-family="sans-serif">Work draft (branch)</text>
-    <text x="335" y="300" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">one review branch per (document, Work) · real Y.Doc</text>
+    <text x="335" y="274" text-anchor="middle" fill="currentColor" font-size="19" font-weight="700" font-family="sans-serif">Document draft</text>
+    <text x="335" y="300" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">one review draft per (document, Work) · real Y.Doc</text>
   </g>
   <!-- AI -->
   <text x="200" y="372" fill="var(--muted)" font-size="13" font-family="sans-serif">Draft-mode AI (thread peers) writes here</text>
@@ -147,7 +148,7 @@ prop that drifts.
   <tr>
     <td><strong>What it is</strong></td>
     <td>The manuscript. Canonical journal (<code>document_yjs_updates</code>).</td>
-    <td>The proposal. One Work-draft branch per <code>(documentId, workId)</code>.</td>
+    <td>The proposal. One Work draft per <code>(documentId, workId)</code>.</td>
   </tr>
   <tr>
     <td><strong>Who writes</strong></td>
@@ -162,20 +163,20 @@ prop that drifts.
   <tr>
     <td><strong>Leaving it</strong></td>
     <td>—</td>
-    <td>Apply (whole branch) or Discard (by discard class).</td>
+    <td>Apply (whole draft) or Discard (by discard class).</td>
   </tr>
 </table>
 </div>
 
 <h2>Everything below the gate is automatic</h2>
 <ul class="rule-list">
-  <li><strong>Draft-mode AI writes to the branch.</strong>
-      <code>createBranchAgentEditCoordinator</code> gives a draft-mode thread
+  <li><strong>Draft-mode AI writes to the draft.</strong>
+      <code>createDraftAgentEditCoordinator</code> gives a draft-mode thread
       no path to live. A chat in direct mode (<code>aiWriteMode: "direct"</code>)
       routes AI writes to the live core instead (<code>composition.ts</code>).
       Either way there is no per-edit accept, no veto, no sweep negotiation.</li>
   <li><strong>The draft continuously pulls from live.</strong>
-      <code>branch-pulls.ts</code> (<code>scheduleLivePull</code> /
+      <code>draft-pulls.ts</code> (<code>scheduleLivePull</code> /
       <code>flushLivePull</code>) merges live updates into the draft. Room
       admission triggers a pull; open rooms receive pull deltas without
       reconnecting. If another session edits live, the edit shows up in the
@@ -194,7 +195,7 @@ prop that drifts.
 <h2>The one consent point: Apply</h2>
 <p>
 <span class="gate-word">Apply is consent.</span> Clicking it means the writer
-accepted that each selected item's <em>whole</em> current branch, including
+accepted that each selected item's <em>whole</em> current draft, including
 writer edits made after preview, replaces live, with its tree change (reveal,
 restore, rename back). Within an item there is no partial apply and no machine
 arbitration of meaning; an item whose path is taken is held. Proposal cards offer selective
@@ -213,12 +214,12 @@ The writer's protection is not a veto layer. It is two things:
 <p>
 A stale Apply is refused, never merged on the writer's behalf. Each item
 carries the tokens its review rendered (location version, the live text's
-full-state fingerprint, the branch generation); Apply compares them under the
+full-state fingerprint, the draft generation); Apply compares them under the
 batch's locks and answers <code>stale</code> when any moved, so the writer
 looks again. A deletion moves the fingerprint, which a state vector would miss.
-This is item and per-change Apply; whole Apply applies the current branch.
+This is item and per-change Apply; whole Apply applies the current draft.
 Pulls (live to draft) need no consent.
-(<code>domain/draft-apply.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code>)
+(<code>domain/branch-apply.ts</code>, <code>adapters/drizzle-branch-tree-step.ts</code>)
 </p>
 
 <h2>The durable record</h2>
@@ -231,7 +232,7 @@ Pulls (live to draft) need no consent.
       Receipt-level Undo/Redo is the sole AI reversal authority; mark
       popovers are read-only evidence.</li>
   <li><strong>Runtime state is memory-only.</strong> Restarts cold-reconstruct
-      from the live journal plus each branch's checkpoint and tail rows.</li>
+      from the live journal plus each draft's checkpoint and tail rows.</li>
 </ul>
 
 <h2>What this model replaced</h2>
@@ -265,14 +266,14 @@ cure was one mechanism, enforced by types and keys rather than prose.
   <tr><th>Edge</th><th>Rule</th></tr>
   <tr><td>live → draft</td><td><strong>No consent gate.</strong> Continuous and automatic; a pull merges whenever it runs. It waits while an Apply of the same document is settling, and keeps running while the Work is archived, so the draft applies cleanly after unarchive (see the archive contract in <a href="CONTEXT.md">CONTEXT.md</a>).</td></tr>
   <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. Item and per-change Apply refuse a stale render; whole Apply has no live-head guard yet (#420).</td></tr>
-  <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's branch, always. The mode is the chat's, never the Work's.</td></tr>
+  <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's draft, always. The mode is the chat's, never the Work's.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>
 </table>
 </div>
 
 <h2>Further reading</h2>
 <ul>
-  <li><a href="CONTEXT.md">CONTEXT.md</a> — contracts, authority head, write codec, branch model in depth</li>
+  <li><a href="CONTEXT.md">CONTEXT.md</a> — contracts, authority head, write codec, draft model in depth</li>
   <li><a href="../AGENTS.md">collab AGENTS.md</a> — the working mental model for this domain</li>
   <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse stale whole Apply</a> ·
       <a href="https://github.com/haowjy/meridian-flow/issues/421">#421 diff mode</a> ·

@@ -190,7 +190,7 @@ describe("document transport server acknowledgement", () => {
   // provider's order, whose SyncStep2 its server marks for collision reconciliation.
   it.each([
     [ROOM, ["update", "update", "update", "step2"]],
-    ["branch:draft-1:gen:1", ["step2", "update", "update", "update"]],
+    ["draft:draft-1:gen:1", ["step2", "update", "update", "update"]],
   ] as const)("is not saved in %s until every offline-queued update is acknowledged", async (roomName, order) => {
     harness.destroy();
     harness = createHarness(roomName);

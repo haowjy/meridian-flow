@@ -1,12 +1,12 @@
 /** A work draft's effect recomputed against live, for a re-fork that moves its baseline. */
 import type { Database } from "@meridian/database";
-import { documentBranches } from "@meridian/database";
+import { documentDrafts } from "@meridian/database";
 import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { materializeBranchRead } from "../domain/branch-store.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
-import { readBranchAt } from "./drizzle-branch-storage.js";
+import { materializeDraftRead } from "../domain/draft-store.js";
+import { readDraftAt } from "./drizzle-draft-storage.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 /**
@@ -17,31 +17,31 @@ import { createDrizzleJournal } from "./drizzle-journal.js";
  */
 export async function refreshDraftEffect(
   db: DrizzleDb,
-  branchId: string,
+  draftId: string,
 ): Promise<{ revision: number } | undefined> {
-  const read = await readBranchAt(db, branchId);
-  if (read?.branch.kind !== "work_draft") return undefined;
+  const read = await readDraftAt(db, draftId);
+  if (read?.documentDraft.kind !== "work_draft") return undefined;
   const live = new Y.Doc({ gc: false });
   let draft: Y.Doc | undefined;
   try {
-    const snapshot = await createDrizzleJournal(db as Database).read(read.branch.documentId);
+    const snapshot = await createDrizzleJournal(db as Database).read(read.documentDraft.documentId);
     if (snapshot.checkpoint) Y.applyUpdate(live, snapshot.checkpoint);
     for (const row of snapshot.updates) Y.applyUpdate(live, row.update);
     const baseline = Y.encodeStateAsUpdate(live);
-    draft = materializeBranchRead(read);
+    draft = materializeDraftRead(read);
     const hasEffect = !documentEffectsEqual(live, draft);
-    const flip = sql`case when ${documentBranches.hasEffect} is distinct from ${hasEffect} then 1 else 0 end`;
+    const flip = sql`case when ${documentDrafts.hasEffect} is distinct from ${hasEffect} then 1 else 0 end`;
     const [row] = await db
-      .update(documentBranches)
+      .update(documentDrafts)
       .set({
         hasEffect,
         liveCut: Buffer.from(baseline),
-        revision: sql`${documentBranches.revision} + ${flip}`,
+        revision: sql`${documentDrafts.revision} + ${flip}`,
         // The judgement holds at the revision this write leaves (design §3.2's watermark).
-        hasEffectRevision: sql`${documentBranches.revision} + ${flip}`,
+        hasEffectRevision: sql`${documentDrafts.revision} + ${flip}`,
       })
-      .where(eq(documentBranches.id, branchId))
-      .returning({ revision: documentBranches.revision });
+      .where(eq(documentDrafts.id, draftId))
+      .returning({ revision: documentDrafts.revision });
     return row ? { revision: Number(row.revision) } : undefined;
   } finally {
     live.destroy();

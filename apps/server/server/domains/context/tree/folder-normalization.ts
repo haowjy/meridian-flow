@@ -29,7 +29,7 @@ import {
  * A live folder landed at a hidden folder's path: fold the hidden one into it, recursively
  * (§8.2). Same-named child folders fold into each other; everything else is reparented.
  * Nothing is refused: a hidden node that lands beside a node of the other kind stays
- * hidden there; the tree view owns the clash the drafts that use it see (F11).
+ * hidden there; the tree view owns the clash the branches that use it see (F11).
  */
 export async function absorbHiddenFolder(
   db: Database,

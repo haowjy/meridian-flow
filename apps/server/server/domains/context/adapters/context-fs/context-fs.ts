@@ -22,9 +22,9 @@ import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   BoundWrite,
-  BranchPeerShadowAccess,
   DocumentCreationAggregate,
   DocumentLinkScopes,
+  DraftPeerShadowAccess,
   EffectiveReadVersion,
   HashlineRead,
   MarkdownDocumentStore,
@@ -105,7 +105,7 @@ export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
-    Pick<BranchPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
+    Pick<DraftPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -220,7 +220,7 @@ export class ContextFS implements ContextSchemeAdapter {
       });
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction: deps.commandTransaction ?? {
-        run: (operation) => deps.store.transaction(() => operation({ draft: null })),
+        run: (operation) => deps.store.transaction(() => operation({ branch: null })),
       },
       serializeThroughCallbacks: true,
       mapThrownError: (error) =>
@@ -696,9 +696,9 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
     // Without a separate draft both versions are the same document (D3).
-    const drafted = sourceDestination(this.scheme, view.draftWork).kind === "draft";
-    return view.version !== "live" && drafted && view.draftWork
-      ? { ...reader, destination: "draft", workId: view.draftWork.id as WorkId }
+    const drafted = sourceDestination(this.scheme, view.branchWork).kind === "draft";
+    return view.version !== "live" && drafted && view.branchWork
+      ? { ...reader, destination: "draft", workId: view.branchWork.id as WorkId }
       : { ...reader, destination: "live" };
   }
 

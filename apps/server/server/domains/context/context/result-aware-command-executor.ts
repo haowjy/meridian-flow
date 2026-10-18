@@ -1,9 +1,9 @@
 /** Transactional execution for commands whose domain failures are returned as Results. */
 import { Err, type Result } from "../../../shared/result.js";
 import type {
-  ContextCommandActiveDraft,
+  ContextCommandActiveBranch,
+  ContextCommandBranch,
   ContextCommandContext,
-  ContextCommandDraft,
   ContextCommandOptions,
   ContextCommandScopes,
   ContextCommandTransaction,
@@ -16,9 +16,9 @@ export interface ResultAwareCommandExecutor<TError> {
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
   /** A command in a Work's draft, which the transaction makes (`ensure`) and locks. */
-  runInDraft<T>(
-    draft: ContextCommandDraft & { mode: "ensure" },
-    operation: (draft: ContextCommandActiveDraft) => Promise<Result<T, TError>>,
+  runInBranch<T>(
+    branch: ContextCommandBranch & { mode: "ensure" },
+    operation: (branch: ContextCommandActiveBranch) => Promise<Result<T, TError>>,
   ): Promise<Result<T, TError>>;
   /**
    * A read that must hold nothing (a live create's discovery, contract §6.3 step 1), in
@@ -80,15 +80,15 @@ export function createResultAwareCommandExecutor<TError>(input: {
 
   return {
     run,
-    runInDraft(draft, operation) {
+    runInBranch(branch, operation) {
       return run(
-        ({ draft: active }) => {
+        ({ branch: active }) => {
           // The transaction contract: an `ensure` command always resolves a draft.
           if (!active) throw new Error("An ensuring command transaction resolved no draft");
           return operation(active);
         },
         undefined,
-        { draft },
+        { branch },
       );
     },
     exclusive<T>(operation: () => Promise<T>): Promise<T> {

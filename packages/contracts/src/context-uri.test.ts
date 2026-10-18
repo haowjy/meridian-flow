@@ -146,13 +146,13 @@ it("preserves literal href syntax in decoded document addresses", () => {
 });
 
 describe("isDraftedScheme", () => {
-  it("drafts the four durable namespaces", () => {
+  it("branches the four durable namespaces", () => {
     expect(["manuscript", "kb", "user", "unfiled"].map((s) => isDraftedScheme(s as never))).toEqual(
       [true, true, true, true],
     );
   });
 
-  it("never drafts scratch or uploads", () => {
+  it("never branches scratch or uploads", () => {
     expect(["scratch", "uploads"].map((s) => isDraftedScheme(s as never))).toEqual([false, false]);
   });
 });

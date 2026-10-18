@@ -2,7 +2,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { Button } from "@/components/ui/button";
 
 export type ReviewStateProps = {

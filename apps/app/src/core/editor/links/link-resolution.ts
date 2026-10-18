@@ -95,12 +95,12 @@ export function linkCacheKey(key: LinkKey): string {
 }
 
 /** The draft a hidden document lives in: what the server says a link to it opens. */
-export type LinkDraftDestination = { draftId: string; workId: string | null };
+export type LinkBranchDestination = { branchId: string; workId: string | null };
 
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
   /** `draft` is present iff the document is hidden ("in a draft"); only its review opens it. */
-  | { state: "document"; document: ResolvedDocumentLink; draft?: LinkDraftDestination }
+  | { state: "document"; document: ResolvedDocumentLink; branch?: LinkBranchDestination }
   | { state: "missing"; document: null }
   /** A ref whose document the reader can no longer reach. Never followable. */
   | { state: "gone"; document: null };

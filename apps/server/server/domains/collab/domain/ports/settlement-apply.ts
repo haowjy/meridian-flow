@@ -8,7 +8,7 @@
  * root-owned completion transaction:
  *
  * 1. Work row locks, the union of every member's and every plan's `workIds`;
- *    then the plans' `draftIds` rows (`FOR NO KEY UPDATE`, id order);
+ *    then the plans' `branchIds` rows (`FOR NO KEY UPDATE`, id order);
  * 2. namespace locks, once, sorted, for the sources of every plan's
  *    `namespaceDocumentIds` together with every plan's `namespaceSourceIds`;
  * 3. document mutation locks, sorted, for every member and every plan's `documentIds`;
@@ -31,7 +31,7 @@
  * tree-only Apply) passes through the same order with phase 5 empty.
  */
 
-import type { DraftId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { ContextSourceId, DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 
@@ -78,7 +78,7 @@ export type ApplyCheckAdmission =
 /** A text member, known before staging and reconstructed from its push for completion. */
 export type ApplyMember = {
   documentId: DocumentId;
-  branchId: string | null;
+  draftId: string | null;
   workId: WorkId | null;
   journalIds: readonly number[];
 };
@@ -110,8 +110,8 @@ export type SettlementBatchScope =
 export type SettlementApplyPlan = {
   /** Works this step changes, locked with the batch's own before anything else. */
   workIds?: readonly WorkId[];
-  /** Drafts this step applies or closes, row-locked after Works, before namespaces. */
-  draftIds?: readonly DraftId[];
+  /** Branches this step applies or closes, row-locked after Works, before namespaces. */
+  branchIds?: readonly BranchId[];
   /** Documents whose current sources' namespaces must be held. */
   namespaceDocumentIds?: readonly DocumentId[];
   /** Explicit sources (current and final), merged with the documents' sources into one acquisition. */
@@ -133,7 +133,7 @@ export type SettlementApplyPlan = {
 };
 
 export type SettlementApplyStep = {
-  /** The payload kind this step owns (`"draft_tree"`); recovery finds its input by it. */
+  /** The payload kind this step owns (`"branch_tree"`); recovery finds its input by it. */
   kind: string;
   /**
    * Plans this step for one batch from durable, immutable inputs, before any

@@ -1,172 +1,148 @@
-/** Selective Discard re-forks a Work draft from live and its surviving journal rows. */
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+/** Groups the complete draft difference into attributed, dependency-closed review classes. */
+
+import type { ReviewDeletedSpan, ReviewHunk } from "@meridian/contracts/branches";
 import * as Y from "yjs";
 import {
-  type Attempt,
-  type AttemptScope,
-  NO_ATTEMPT_SCOPE,
-  runBoundedAttempts,
-} from "./branch-attempts.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
-import type { BranchJournalReadStore, BranchJournalRow } from "./branch-journal.js";
-import {
-  BranchPushCommitConflictError,
-  type BranchReviewService,
-  DraftChangeRefusal,
-  type PushCommitStore,
-} from "./branch-push-contracts.js";
-import { assertNoPendingIntegration } from "./branch-push-plan.js";
-import type { BranchSnapshot, BranchStore } from "./branch-store.js";
-import { documentEffectsEqual } from "./document-content.js";
+  type ClockRange,
+  type DraftUpdateAttributionIndex,
+  deleteSetRanges,
+  type IndexedDraftUpdate,
+  indexDraftUpdates,
+  type OperationClockRange,
+} from "./draft-review-attribution.js";
+import { assignReviewClasses } from "./draft-review-closure.js";
+import { hunkSpans, operationSemanticFields } from "./draft-review-presentation.js";
+import type { DraftReviewDiagnostic, DraftReviewOperationInternal } from "./draft-review-types.js";
 
-type Dependencies = {
-  branchStore: BranchStore;
-  journalReadStore: BranchJournalReadStore;
-  commitStore: PushCommitStore;
-  branchCoordinator?: Partial<Pick<BranchCoordinator, "notifyReset">>;
-  journal: UpdateJournal;
-  /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
-  attemptScope?: AttemptScope;
+export type { ClockRange, IndexedDraftUpdate } from "./draft-review-attribution.js";
+
+type OperationGraphHunk = {
+  raw: {
+    insertedRanges: readonly ClockRange[];
+    deletedRanges: readonly ClockRange[];
+    insertedText: string;
+    deletedText: string;
+  };
+  review: ReviewHunk;
 };
 
-export function createBranchReviewOperations(deps: Dependencies): BranchReviewService {
-  async function listReviewableRows(
-    branchId: string,
-    generation: number,
-  ): Promise<BranchJournalRow[]> {
-    return deps.journalReadStore.listReviewableJournalRows(branchId, generation);
-  }
+type DraftReviewOperationGraph = {
+  hunks: ReviewHunk[];
+  operations: DraftReviewOperationInternal[];
+  diagnostics: DraftReviewDiagnostic[];
+};
 
-  async function loadLiveDoc(documentId: BranchSnapshot["documentId"]): Promise<Y.Doc> {
-    const snapshot = await deps.journal.read(documentId);
-    const doc = createCollabYDoc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
-  }
+/**
+ * Builds the logical operation graph used by inline draft review.
+ *
+ * Rows have three roles:
+ * - sourceUpdateIds: logical rows displayed as the operation's authoring source.
+ * - physical rows: source rows plus restorative/delete rows that currently carry
+ *   or reverse that logical operation while replaying the draft journal.
+ * - closureUpdateIds: physical rows that currently carry or reverse the
+ *   logical operation.
+ *
+ * Invariant: a review class joins physical-row/visible-hunk overlap and Yjs
+ * dependencies, and every class member carries the same closed row set.
+ *
+ * Span invariant: hunk spans are inserted-text-only, ordered, non-overlapping,
+ * and cover the hunk's inserted ranges exactly once without changing source
+ * identity. Deletions stay widget-level on ReviewHunk.deletedText.
+ */
+export function computeDraftReviewOperations(input: {
+  baseDoc: Y.Doc;
+  updates: readonly IndexedDraftUpdate[];
+  hunks: readonly OperationGraphHunk[];
+}): DraftReviewOperationGraph {
+  const attribution = indexDraftUpdates({ baseDoc: input.baseDoc, updates: input.updates });
+  const attributedHunks = input.hunks.map((hunk) => {
+    const coverage = attribution.attributeRanges(hunk.raw);
+    const complete =
+      coverage.complete &&
+      (hunk.review.kind === "block"
+        ? hunk.raw.insertedRanges.length + hunk.raw.deletedRanges.length > 0
+        : (!hunk.raw.insertedText || hunk.raw.insertedRanges.length > 0) &&
+          (!hunk.raw.deletedText || hunk.raw.deletedRanges.length > 0));
+    return { ...hunk, ...coverage, complete };
+  });
+  return groupOperationsForHunks(
+    attributedHunks,
+    attribution,
+    input.updates,
+    deleteSetRanges(Y.decodeUpdate(Y.encodeStateAsUpdate(input.baseDoc)).ds),
+  );
+}
 
-  /**
-   * Attempts that re-read the branches and run again when a writer's frame or another
-   * process moved one under us. Four attempts each finding the draft moved (a writer typing)
-   * answer stale, as a selection made against an older draft does.
-   */
-  async function withActiveWorkDraftBranches<T>(
-    branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[], attempt: Attempt) => Promise<T>,
-  ): Promise<T> {
-    if (branchIds.length === 0) throw new Error("A selected Discard names a branch");
-    return runBoundedAttempts({
-      bound: DISCARD_ATTEMPTS,
-      scope: deps.attemptScope ?? NO_ATTEMPT_SCOPE,
-      isMiss: (cause) => cause instanceof BranchPushCommitConflictError,
-      run: async (attempt) => {
-        const branches = await Promise.all(
-          branchIds.map(async (branchId) =>
-            assertActiveWorkDraftBranch(await deps.branchStore.getBranch(branchId), branchId),
-          ),
-        );
-        return run(branches, attempt);
-      },
-      exhausted: () => {
-        throw new DraftChangeRefusal("stale");
-      },
-    });
-  }
+type AttributedOperationGraphHunk = OperationGraphHunk & {
+  operationIds: string[];
+  complete: boolean;
+  deletedSpans: ReviewDeletedSpan[];
+  insertedAttribution: OperationClockRange[];
+};
 
-  async function discardSelected(
-    discardInput: Parameters<BranchReviewService["discardSelected"]>[0],
-  ): ReturnType<BranchReviewService["discardSelected"]> {
-    return withActiveWorkDraftBranches([discardInput.branchId], async ([branch], attempt) => {
-      const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
-      const selection = await discardInput.selectRows(branch, reviewableRows);
-      const selected = new Set(selection.journalIds);
-      if (selected.size === 0) throw new Error("selective_discard_requires_rows");
-      const rows = reviewableRows.filter((row) => selected.has(row.id));
-      if (rows.length !== selected.size) {
-        return {
-          status: "nothing_to_undo" as const,
-          branchId: branch.branchId,
-          journalIds: [...selected].sort((a, b) => a - b),
-        };
-      }
-      const history = await deps.journalReadStore.listJournalRowsForBranch({
-        branchId: branch.branchId,
-        generation: branch.generation,
-      });
-      const survivors = history.filter(
-        (row) => row.status !== "discarded" && !selected.has(row.id),
-      );
-      const peer = await loadLiveDoc(branch.documentId);
-      const live = new Y.Doc({ gc: false });
-      Y.applyUpdate(live, Y.encodeStateAsUpdate(peer));
-      try {
-        for (const row of survivors) Y.applyUpdate(peer, row.updateData);
-        assertNoPendingIntegration(
-          peer,
-          "selective_discard_refork",
-          survivors.map((row) => row.id),
-        );
-        const itemClosed = documentEffectsEqual(live, peer);
-        const itemDisposition = history.some((row) => row.status === "pushed")
-          ? ("applied" as const)
-          : ("discarded" as const);
-        const outcome = { itemClosed, ...(itemClosed ? { itemDisposition } : {}) };
-        // Computed above off every lock; the re-fork's one commit scope.
-        await attempt.commit(() =>
-          deps.commitStore.commitDiscard({
-            ...(discardInput.command
-              ? {
-                  command: {
-                    envelope: discardInput.command.envelope,
-                    result: discardInput.command.result(outcome),
-                  },
-                }
-              : {}),
-            branch,
-            journalRows: rows,
-            survivors,
-            retireSurvivors: itemClosed,
-            expectedLiveRevision: selection.expectedLiveRevision,
-            state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
-            reviewedByUserId: discardInput.reviewedByUserId,
-          }),
-        );
-        attempt.own({
-          transfer: () =>
-            deps.branchCoordinator?.notifyReset?.({
-              branchId: branch.branchId,
-              generation: branch.generation + 1,
-            }),
-          dispose() {},
-        });
-        return {
-          status: "discarded",
-          branchId: branch.branchId,
-          journalIds: [...selected].sort((a, b) => a - b),
-          ...outcome,
-        };
-      } finally {
-        live.destroy();
-        peer.destroy();
-      }
-    });
-  }
+function groupOperationsForHunks(
+  attributedHunks: readonly AttributedOperationGraphHunk[],
+  attribution: DraftUpdateAttributionIndex,
+  updates: readonly IndexedDraftUpdate[],
+  baseDeletedRanges: readonly ClockRange[],
+): DraftReviewOperationGraph {
+  const hunks = attributedHunks.map((hunk) => {
+    const attributionFields = {
+      operationIds: [...hunk.operationIds].sort(operationSort),
+      ...(!hunk.complete ? { unclassified: true } : {}),
+      ...(attribution.hasInterleavedEdits(hunk.raw.insertedRanges) ? { mergeArtifact: true } : {}),
+    };
+    if (hunk.review.kind === "block")
+      return { ...hunk.review, ...attributionFields } satisfies ReviewHunk;
+    return {
+      ...hunk.review,
+      ...attributionFields,
+      ...(hunk.raw.insertedText ? { insertedText: hunk.raw.insertedText } : {}),
+      ...(hunk.raw.deletedText ? { deletedSpans: hunk.deletedSpans } : {}),
+      spans: hunkSpans(hunk.insertedAttribution),
+    } satisfies ReviewHunk;
+  });
 
+  const visibleOperationIds = new Set(hunks.flatMap((hunk) => hunk.operationIds));
+  const operations = [...visibleOperationIds]
+    .flatMap((operationId) => {
+      const operation = attribution.byOperationId.get(operationId);
+      if (!operation) return [];
+      return [
+        {
+          operationId: operation.operationId,
+          ...(operation.partKey ? { partKey: operation.partKey } : {}),
+          sourceUpdateIds: operation.sourceUpdateIds,
+          closureUpdateIds: operation.physicalSourceUpdateIds,
+          ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
+          kind: operation.kind,
+          ...(operation.actorUserId ? { actorUserId: operation.actorUserId } : {}),
+          ...operationSemanticFields(operation.operationId, hunks, attributedHunks),
+        },
+      ];
+    })
+    .sort((a, b) => operationSort(a.operationId, b.operationId));
+  const classified = assignReviewClasses({ hunks, operations, updates, baseDeletedRanges });
+  const unclassifiedOperationIds = new Set(
+    hunks.filter((hunk) => hunk.unclassified).flatMap((hunk) => hunk.operationIds),
+  );
+  const incompleteClasses = new Set(
+    classified
+      .filter((op) => unclassifiedOperationIds.has(op.operationId))
+      .map((op) => op.closureClassId),
+  );
   return {
-    discardSelected,
+    hunks,
+    operations: classified.map((operation) => ({
+      ...operation,
+      ...(incompleteClasses.has(operation.closureClassId) ? { canApplyOrDiscard: false } : {}),
+    })),
+    diagnostics: hunks
+      .filter((hunk) => hunk.unclassified)
+      .map((hunk) => ({ code: "unattributed_hunk", hunkId: hunk.hunkId })),
   };
 }
 
-const DISCARD_ATTEMPTS = 4;
-
-function assertActiveWorkDraftBranch(
-  branch: BranchSnapshot | null | undefined,
-  branchId: string,
-): BranchSnapshot {
-  if (!branch) throw new Error(`Branch ${branchId} does not exist`);
-  if (branch.kind !== "work_draft" || branch.status !== "active") {
-    throw new Error(`Branch ${branchId} is not an active work draft`);
-  }
-  return branch;
+function operationSort(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true });
 }

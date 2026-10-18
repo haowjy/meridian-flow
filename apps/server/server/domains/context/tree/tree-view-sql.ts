@@ -10,7 +10,7 @@
  * change rows at the draft's location. Folders have no change rows yet, so a draft's
  * folders are the live ones plus the hidden ones its documents sit under.
  */
-import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@meridian/contracts";
+import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
@@ -28,7 +28,7 @@ import {
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
-import { loadSourceOwners, type SourceOwner } from "./draft-ownership.js";
+import { loadSourceOwners, type SourceOwner } from "./branch-ownership.js";
 import type { NodeRef, TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries
@@ -128,7 +128,7 @@ const rowLocation = { source: "d.context_source_id", parent: "d.folder_id", name
 
 /**
  * Live rows, and the hidden documents D created. Both sit at their row's location (a draft's
- * create is a real hidden row), as separate branches so a path predicate reaches an index.
+ * create is a real hidden row), as separate drafts so a path predicate reaches an index.
  */
 function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const slots = slotted(match, "key, source_id, parent_id, name, extension");
@@ -141,27 +141,27 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   return sql`${live}
     UNION ALL
     ${select}
-    FROM ${slots}draft_tree_changes c JOIN documents d ON d.id = c.node_id
-    WHERE c.draft_id = ${view.draftId}::uuid AND c.node_kind = 'document' AND ${draftDocument}${at(match, rowLocation, "d.extension")}`;
+    FROM ${slots}branch_tree_changes c JOIN documents d ON d.id = c.node_id
+    WHERE c.branch_id = ${view.branchId}::uuid AND c.node_kind = 'document' AND ${draftDocument}${at(match, rowLocation, "d.extension")}`;
 }
 
 /**
  * Hidden folders D's view places something under, and their ancestors (TM invariant 1),
  * seeded from D's change rows: each row's document is one primary-key probe.
  */
-function usedHiddenFolderIds(draftId: DraftId): SQL {
+function usedHiddenFolderIds(branchId: BranchId): SQL {
   return sql`
     WITH RECURSIVE used(id) AS (
-      SELECT placed.folder_id FROM draft_tree_changes c
+      SELECT placed.folder_id FROM branch_tree_changes c
       CROSS JOIN LATERAL (
         SELECT d.folder_id AS folder_id FROM documents d
         WHERE d.id = c.node_id AND ${draftDocument} OFFSET 0
       ) placed
-      WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document'
+      WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'document'
         AND placed.folder_id IS NOT NULL
       UNION
-      SELECT c.node_id FROM draft_tree_changes c
-      WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'folder' AND c.created
+      SELECT c.node_id FROM branch_tree_changes c
+      WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'folder' AND c.created
       UNION
       SELECT f2.parent_id FROM folders f2 JOIN used u ON f2.id = u.id
       WHERE f2.parent_id IS NOT NULL
@@ -185,7 +185,7 @@ function foldersQuery(view: TreeView, match?: SlotMatch): SQL {
     UNION ALL
     ${select} FROM ${slots}folders f
     WHERE f.deleted_at IS NULL AND f.hidden${position}
-      AND f.id IN (${usedHiddenFolderIds(view.draftId)})`;
+      AND f.id IN (${usedHiddenFolderIds(view.branchId)})`;
 }
 
 /** One lookup position: a name under a parent folder (null: the source root). */
@@ -335,52 +335,52 @@ export async function loadDocumentIdentityRows(
 }
 
 /** One active draft that created a document, oldest draft first per document. */
-export type DraftUseRow = {
+export type BranchUseRow = {
   documentId: DocumentId;
-  draftId: DraftId;
+  branchId: BranchId;
   originWorkId: WorkId | null;
-  draftCreatedAt: Date;
+  branchCreatedAt: Date;
 };
 
-export async function loadActiveDraftUses(
+export async function loadActiveBranchUses(
   db: DrizzleDb,
   documentIds: readonly DocumentId[],
-): Promise<DraftUseRow[]> {
+): Promise<BranchUseRow[]> {
   if (documentIds.length === 0) return [];
   const rows = await currentDrizzleDb(db).execute<{
     document_id: string;
-    draft_id: string;
+    branch_id: string;
     origin_work_id: string | null;
     draft_created_ms: number;
   }>(sql`
-    SELECT c.node_id::text AS document_id, r.id::text AS draft_id,
+    SELECT c.node_id::text AS document_id, r.id::text AS branch_id,
       r.origin_work_id::text AS origin_work_id,
       (extract(epoch FROM r.created_at) * 1000)::float8 AS draft_created_ms
-    FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
+    FROM branch_tree_changes c JOIN branches r ON r.id = c.branch_id
     WHERE c.node_kind = 'document' AND c.node_id IN (${uuidList(documentIds)})
       AND c.created AND r.status = 'active'
     ORDER BY c.node_id, r.created_at, r.id`);
   return rows.map((row) => ({
     documentId: row.document_id as DocumentId,
-    draftId: row.draft_id as DraftId,
+    branchId: row.branch_id as BranchId,
     originWorkId: row.origin_work_id as WorkId | null,
-    draftCreatedAt: new Date(Number(row.draft_created_ms)),
+    branchCreatedAt: new Date(Number(row.draft_created_ms)),
   }));
 }
 
-export async function loadDraftCreatedDocuments(
+export async function loadBranchCreatedDocuments(
   db: DrizzleDb,
-  draftId: DraftId,
+  branchId: BranchId,
   only?: readonly string[],
 ): Promise<DocumentIdentityRow[]> {
   if (only?.length === 0) return [];
   const rows = await currentDrizzleDb(db).execute<RawIdentityRow>(sql`
     SELECT ${identityColumns}
-    FROM draft_tree_changes c
+    FROM branch_tree_changes c
     CROSS JOIN LATERAL (
       SELECT * FROM documents d WHERE d.id = c.node_id OFFSET 0
     ) d
-    WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.created
+    WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'document' AND c.created
       ${only ? sql`AND c.node_id IN (${uuidList(only)})` : sql``}
     ORDER BY c.created_at, c.node_id`);
   return rows.map(identityRow);
@@ -441,7 +441,7 @@ function uuidList(ids: readonly string[]): SQL {
 
 /**
  * Diagnostics extend the canonical selection with formerly live lifecycle/malformed
- * identities only. Placement comes from the same branches as visibleDocuments;
+ * identities only. Placement comes from the same drafts as visibleDocuments;
  * hidden tombstones never enter either arm, even with a stale draft change row.
  */
 export function identityDocuments(view: TreeView) {
@@ -485,12 +485,12 @@ export function identityFolderFields(relation: ReturnType<typeof identityFolders
   ) as typeof columns;
 }
 
-/** A hidden, live document matched at one location, with how many active drafts use it. */
+/** A hidden, live document matched at one location, with how many active branches use it. */
 export type HiddenDocumentCandidate = {
   id: DocumentId;
   /** The row's physical source, which a reveal locks with its destination. */
   sourceId: ContextSourceId;
-  /** Active drafts with a `created` row on it; zero is an inconsistent row (repair on touch). */
+  /** Active branches with a `created` row on it; zero is an inconsistent row (repair on touch). */
   activeUses: number;
 };
 
@@ -516,7 +516,7 @@ const textDocument = sql`d.storage_url IS NULL AND d.file_type NOT IN (${sql.joi
 export async function loadHiddenDocumentCandidates(
   db: DrizzleDb,
   slot: DocumentSlot,
-  options: { excludeDraftId?: DraftId; ids?: readonly DocumentId[] } = {},
+  options: { excludeDraftId?: BranchId; ids?: readonly DocumentId[] } = {},
 ): Promise<HiddenDocumentCandidate[]> {
   if (options.ids && options.ids.length === 0) return [];
   const sameFolder = (column: string) =>
@@ -529,7 +529,7 @@ export async function loadHiddenDocumentCandidates(
     active_uses: number;
   }>(sql`
     SELECT d.id::text AS id, d.context_source_id::text AS source_id,
-      (SELECT count(*)::int FROM draft_tree_changes u JOIN drafts r ON r.id = u.draft_id
+      (SELECT count(*)::int FROM branch_tree_changes u JOIN branches r ON r.id = u.branch_id
         WHERE u.node_kind = 'document' AND u.node_id = d.id AND u.created
           AND r.status = 'active') AS active_uses
     FROM documents d
@@ -538,8 +538,8 @@ export async function loadHiddenDocumentCandidates(
       AND d.name = ${slot.name} AND d.extension = ${slot.extension}
       ${
         options.excludeDraftId
-          ? sql`AND NOT EXISTS (SELECT 1 FROM draft_tree_changes x
-              WHERE x.draft_id = ${options.excludeDraftId}::uuid AND x.node_kind = 'document'
+          ? sql`AND NOT EXISTS (SELECT 1 FROM branch_tree_changes x
+              WHERE x.branch_id = ${options.excludeDraftId}::uuid AND x.node_kind = 'document'
                 AND x.node_id = d.id)`
           : sql``
       }

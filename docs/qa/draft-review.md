@@ -8,7 +8,7 @@ miss: stale-row windows, silent
 no-op verbs, stuck pending states.
 
 Ownership and command contracts: [draft-review reference](../../apps/app/src/features/draft-review/.context/draft-review.md). The shared
-`draft-command-executor.ts` admits commands; `EditorView` owns paint readiness,
+`branch-command-executor.ts` admits commands; `EditorView` owns paint readiness,
 not `useReviewRoomOwner`. `PresentedReviewScope` and
 `usePresentedDraftReview` share the one presented-document review across Editor
 and dock hosts.
@@ -211,7 +211,7 @@ row's Review a silent no-op).
 ## Probe B — no verb re-enable window during dispositions
 
 Regression guard for the pump-tail window (mutations dropped `isPending`
-before the workDrafts refetch settled, re-enabling verbs against stale rows
+before the workBranches refetch settled, re-enabling verbs against stale rows
 for ~200ms).
 
 1. Stage 2–3 drafts across documents. Open the Work page's Files tab and the
@@ -657,7 +657,7 @@ on refusal, without a navigation change.
   Do not use the chat receipt's Undo: this probes the writer's own Undo.
 - For missing-anchor handoff, use the controlled real-Yjs regression rather
   than timing a browser race:
-  `pnpm --filter @meridian/app test src/core/editor/branch-writer-handoff.test.ts`.
+  `pnpm --filter @meridian/app test src/core/editor/draft-writer-handoff.test.ts`.
   Same-generation rebuilds retain wholly/partly pending carries until late
   anchors arrive. A synced newer generation retires its source: rescue unrelated
   typing whose own anchors survive under a fresh client, drop the unanchorable
@@ -686,7 +686,7 @@ and every staged result's settlement ID, not only its grouped `wN` handle.
   Discard azure. Read and save still succeed, with a failed bronze receipt
   and exactly `red / blue / green`.
 - Stage `gold → gild`, `gild → bronze` and independent `green → lime`.
-  Discard gold and refuse the next Work-draft `commitBranchMutation` once
+  Discard gold and refuse the next Work-draft `commitDraftMutation` once
   through that existing test port. Restore it and retry. Both rejected
   settlement IDs remain, lime commits, and the draft is `red / azure / lime`.
 - In that grouped-handle reply, the next tool names the document and handle
@@ -708,7 +708,7 @@ or database required):
 
 ```bash
 taskset -c 0-7 pnpm exec vitest run \
-  apps/server/server/domains/collab/domain/branch-response-replay.test.ts
+  apps/server/server/domains/collab/domain/draft-response-replay.test.ts
 ```
 
 - Two chats plan on `Alpha Beta.`. Commit A's `Beta → Gamma`, then replay B's
@@ -764,7 +764,7 @@ reuse another worktree's project, database, thread or browser session.
    live reads remain seeded until Apply. There must be one addition, not two.
 4. Apply that document's draft via
    `POST /api/projects/<project>/works/<work>/documents/<document>/draft/apply`
-   with `{"draftId":"<draft ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
+   with `{"branchId":"<draft ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
    Assert the entire `content` value, including terminal newlines:
    insertion `"Seed.\n\nAdded once.\n"`; replacement `"Alpha Gamma.\n"`.
 5. For named partial skips, script a turn inserting `One addition.` and
@@ -943,7 +943,7 @@ for the old click. Independent typing in another change still admits.
 
 DB evidence: `collab/review-disposition.db.test.ts` exercises deletion and
 independent typing through the durable coordinator. Queue/retry evidence:
-`client/query/draft-command-executor.test.tsx` includes changed-effect evidence
+`client/query/branch-command-executor.test.tsx` includes changed-effect evidence
 with unchanged stable keys. These are integration/adapter checks, not browser
 smoke verification.
 
@@ -972,7 +972,7 @@ it is listed.
    and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "You discarded
    this draft, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
 5. **Live-edit staleness.** Not covered here: an Apply with tokens from before a live edit refuses as `stale`, tested
-   by the DB suite (`draft-tree.apply-staleness.db.test.ts`).
+   by the DB suite (`branch-tree.apply-staleness.db.test.ts`).
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass. The API-level answers
 (`commandId` resend, conflict, unknown, `whole_item`, `cant_undo_elsewhere`) are covered by tests, not by this recipe.
@@ -980,7 +980,7 @@ Capture `agent-browser console` and `errors` at the end of each: clean is part o
 ## Cold-open waterfall and the ahead-link chip (browser)
 
 Open a drafted document's review cold: a fresh `agent-browser` session with the auth state loaded, then `open` the
-review URL (`/editor/<scheme>/<name>?work=<workId>&item=<draftId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
+review URL (`/editor/<scheme>/<name>?work=<workId>&item=<branchId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
 init script, enlarge the Resource Timing buffer (Vite loads hundreds of modules), and watch for the first appearance
 of the draft's text in `document.body.innerText`. Record, ordered by start time: the address admission request
 (`reviewWorkId` and `itemKey` in its query), the draft preview request, the `/ws/yjs` connect and open, and the first
@@ -1044,8 +1044,8 @@ Capture `agent-browser console` and `errors` at the end of each: clean is part o
 
 ## An open document says when a draft has changes to it (browser, #757)
 
-`GET /api/projects/:p/documents/:d/drafts` answers the active drafts in the project with changes to the
-document (`draftId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
+`GET /api/projects/:p/documents/:d/branches` answers the active drafts in the project with changes to the
+document (`branchId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
 review. The editor shows a line under the identity row for every draft other than the one the view works
 in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
 menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
@@ -1061,3 +1061,20 @@ at 390x844.
    once, and on another device on focus or the catalog wake.
 4. **A document no draft touches** shows no hint.
 5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.
+
+## Vocabulary rename upgrade (#880)
+
+Upgrade a populated database through `0067` without resetting it, then apply
+`0068_draft_branch_names.sql` and `0069_draft_branch_values_online.sql`. Check a
+pending document and peer, journal and publication references, receipt origin
+and placement JSON, a staged tree payload, and a recorded command result.
+The document IDs use `draft_`; their parent set uses `branchId`. Both trail
+functions must still return the journal's owners after the table rename.
+
+Start `pnpm dev` with `MODEL_PROVIDER=mock`. Use `./mf` to create a Work and chat,
+switch the chat to draft mode, and script a document edit. The Work's
+`/branches` list and the document's `/branches` hint return the same `branchId`.
+Open the draft in the browser: the copy says Draft, not Branch. Apply in the
+browser and confirm the live document changed and its pending row disappeared.
+Repeat with `./mf api POST …/branches/apply` and a new `commandId`; read live
+again, inspect browser errors, capture screenshots, and stop the dev stack.

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-/** Draft authority across real presented-review/Chat scopes and immutable Work-bound batches. */
+/** Branch authority across real presented-review/Chat scopes and immutable Work-bound batches. */
 
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import {
   applied,
   change,
@@ -33,9 +33,9 @@ async function open(p: () => ScopeProbe, draft = draftA) {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-b" ? ["3"] : ["1", "2"])),
     itemKey: id,

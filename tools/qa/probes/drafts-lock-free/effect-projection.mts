@@ -34,9 +34,9 @@ import {
 } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { independently, observe, openHarness, type Probe } from "./harness.mts";
 import {
-  branchRow,
   captureUpdate,
   countingEffects,
+  draftRow,
   firstText,
   judgedEffect,
   keystroke,
@@ -75,7 +75,7 @@ export const effectProjection: Probe = {
               () => workBadge(harness, draft.workId),
               (b) => b.pending === 1 && b.entityRevision > before.entityRevision,
             );
-            const row = await branchRow(harness, draft.branchId);
+            const row = await draftRow(harness, draft.draftId);
             observe("arm 1", {
               before,
               ...caught,
@@ -120,7 +120,7 @@ export const effectProjection: Probe = {
             );
             const typed = await within(
               1_000,
-              () => branchRow(harness, draft.branchId),
+              () => draftRow(harness, draft.draftId),
               (row) => row.watermark === row.revision,
             );
             const touches =
@@ -134,7 +134,7 @@ export const effectProjection: Probe = {
               () => workBadge(harness, draft.workId),
               (b) => b.pending === 0,
             );
-            const appends = harness.appends.filter((append) => append.branchId === draft.branchId);
+            const appends = harness.appends.filter((append) => append.draftId === draft.draftId);
             observe("arm 2", {
               keys: percentiles(keyMs),
               waitMs: percentiles(appends.map((append) => append.waitMs)),
@@ -170,13 +170,13 @@ export const effectProjection: Probe = {
             // Apply staging's effect on the branch: every row pushed under a revision bump,
             // `has_effect` untouched (an exact rewrite, `drizzle-branch-push.ts`), inside the
             // Works boundary as `commitPushBatch` runs it.
-            await harness.projection.mutate({ branches: [draft.branchId] }, async () => {
+            await harness.projection.mutate({ drafts: [draft.draftId] }, async () => {
               const tx = currentDrizzleDb(harness.db);
               await tx.execute(
-                sql`update branch_write_journal set status = 'pushed', pushed_at = now() where branch_id = ${draft.branchId}`,
+                sql`update draft_write_journal set status = 'pushed', pushed_at = now() where draft_id = ${draft.draftId}`,
               );
               await tx.execute(
-                sql`update document_branches set revision = revision + 1 where id = ${draft.branchId}`,
+                sql`update document_drafts set revision = revision + 1 where id = ${draft.draftId}`,
               );
             });
             const staged = await workBadge(harness, draft.workId);
@@ -207,10 +207,10 @@ export const effectProjection: Probe = {
             ]);
             const settledRow = await within(
               2_000,
-              () => branchRow(harness, draft.branchId),
+              () => draftRow(harness, draft.draftId),
               (row) => row.watermark === row.revision,
             );
-            const judged = await judgedEffect(harness, draft.branchId);
+            const judged = await judgedEffect(harness, draft.draftId);
             observe("arm 4", {
               sent,
               row: settledRow.observation,
@@ -241,9 +241,9 @@ export const effectProjection: Probe = {
             // Apply's completion locks its Works through `lockWorks` (`planAndLock`), not
             // `mutate`, and changes membership under them; no append follows to recount.
             await runInDrizzleTransaction(harness.db, async () => {
-              await harness.projection.lockWorks({ branches: [draft.branchId] });
+              await harness.projection.lockWorks({ drafts: [draft.draftId] });
               await currentDrizzleDb(harness.db).execute(
-                sql`update branch_write_journal set status = 'pushed', pushed_at = now() where branch_id = ${draft.branchId}`,
+                sql`update draft_write_journal set status = 'pushed', pushed_at = now() where draft_id = ${draft.draftId}`,
               );
             });
             const locked = await workBadge(harness, draft.workId);

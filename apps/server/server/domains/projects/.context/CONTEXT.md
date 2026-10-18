@@ -95,7 +95,7 @@ transaction that locks a Work through the boundary recounts it at commit:
 reply save's grants), `mutate(set, operation)` is `lockWorks` then the write
 (closing a draft through Discard, branch writes, the draft-effect projection).
 At commit each locked Work's pending count is reconciled once (one SQL aggregate
-over collab's membership rule, `WorkDraftPendingCounts`, however many locks the
+over collab's membership rule, `WorkBranchPendingCounts`, however many locks the
 transaction took) against the stored value, and only a Work whose count moved
 gets a revision bump and a Works-changed notice. A write that leaves the count
 alone sends nothing: the count is the only thing collab's writes change in a

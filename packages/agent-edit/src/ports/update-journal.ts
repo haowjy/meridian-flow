@@ -31,9 +31,9 @@ export type JournalMutation = JournalMutationBase &
     | {
         mode: "threadPeer";
         /** Host branch generation captured with the write baseline. */
-        branchGeneration: number;
+        draftGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
-        peerBranchId?: string;
+        peerDraftId?: string;
       }
   );
 
@@ -83,7 +83,7 @@ export interface UpdateJournal {
     docId: string;
     before: DocHandle;
     afterCandidate: DocHandle;
-    /** Branch adapters classify roots absent from the live document as agent-authored. */
+    /** Draft adapters classify roots absent from the live document as agent-authored. */
     fallbackProvenance?: "writer_protected" | "agent";
   }): Promise<{
     before: DestructiveProvenanceRun[];

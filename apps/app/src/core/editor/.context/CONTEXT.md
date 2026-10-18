@@ -207,8 +207,8 @@ keyboard, pointer, drop, or branch-recovery answer.
 ### Branch retirement
 
 - Branch retirement never replays the retired AI snapshot. The transport owns
-  the outbox; `BranchRoomPool` drains it on release or carries it on reset.
-  `BranchWriterHandoff` is account-epoch owned, not review-UI owned, and
+  the outbox; `DraftRoomPool` drains it on release or carries it on reset.
+  `DraftWriterHandoff` is account-epoch owned, not review-UI owned, and
   re-expresses only pending writer operations whose anchors survive under a
   fresh client. The rest is dropped, reported once through the
   document-scoped ref, and released.
@@ -217,8 +217,8 @@ keyboard, pointer, drop, or branch-recovery answer.
   and `schema` fences the room.
 - A branch room's update refusal (`1008`) is bounded in the transport: after
   three in a row with no acknowledgement between, the room ends `terminal`
-  `BRANCH_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.
-  It keeps its outbox, and `BranchRoomPool` does not retire it while an owner
+  `DRAFT_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.
+  It keeps its outbox, and `DraftRoomPool` does not retire it while an owner
   retains it: the review editor stays mounted read-only with the unsent text,
   and the save pill offers Reopen draft, which rebuilds the room from the
   server (a re-forked draft answers that reconnect as superseded). Live rooms

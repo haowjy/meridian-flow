@@ -429,11 +429,11 @@ else
       expect(reservation?.state).toBe("reserved");
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         db,
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
         catalogMutations: createDrizzleContextCatalog(db),
       });
       const service = createUploadIntake({

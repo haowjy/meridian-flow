@@ -47,8 +47,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const DRAFT_ID = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
+const BRANCH_ID = crypto.randomUUID();
+const DRAFT: LinkView = { kind: "branch", branchId: BRANCH_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -176,7 +176,7 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
-    drafts: { viewForWork: async () => ({ kind: "live" }) },
+    branches: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled
       // in a reply's pinned draft, not the live grant it was routed with.
@@ -232,7 +232,7 @@ async function harness(
     storeRegistry: registry,
   }).forWork({ workId: crypto.randomUUID(), workSlug: null } as never, PROJECT, USER, new Map(), {
     threadId: crypto.randomUUID(),
-    draftWork: null,
+    branchWork: null,
   });
   call.context = { port, resolution: {} as never };
   const registrations = createModelToolRegistrations(deps).map(
@@ -384,7 +384,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -707,7 +707,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`) },
+        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`) },
       };
     },
   },
@@ -798,7 +798,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT_ID}`) },
+        shown: { [TARGET]: expected([fact(101)], `branch:${BRANCH_ID}`) },
       };
     },
   },

@@ -2,8 +2,8 @@
  * WorkChanges — the Work page's "Changes to review": every draft file of the
  * Work in the one file order (`sortDraftFiles`), each expandable in place to its
  * changes (`WorkChangeFile`). The group's `…` menu holds Apply all and Discard
- * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
- * search box filters, new documents and formatting-only drafts included, and
+ * all, the creation-bound whole-Work batch (`disposeBranches`). They act on every draft of the Work whatever the
+ * search box filters, new documents and formatting-only branches included, and
  * only a change row uses the per-change selection
  * commands. Discard all asks first, inline, in the menu's place.
  *
@@ -15,7 +15,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkBranches } from "@/client/query/useWorkBranches";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
+import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
 import { WorkChangeFile } from "./WorkChangeFile";
@@ -41,10 +41,10 @@ export function WorkChanges({
   matchesSearch: WorkFileSearch;
 }) {
   const workId = work.id;
-  const controller = useWorkDraftCommands({ projectId, work });
-  const drafts = useWorkDrafts(projectId, workId);
+  const controller = useWorkBranchCommands({ projectId, work });
+  const branches = useWorkBranches(projectId, workId);
   const touch = usePhoneShell() === true;
-  const files = drafts.files ?? [];
+  const files = branches.files ?? [];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {
@@ -53,12 +53,12 @@ export function WorkChanges({
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextLocation?.path || ""),
   );
-  if (files.length === 0 && drafts.status === "error") {
+  if (files.length === 0 && branches.status === "error") {
     return (
       <WorkFileGroup label={t`Changes to review`}>
         <InlineErrorRow
           message={t`Pending drafts couldn’t load`}
-          onRetry={drafts.refetch}
+          onRetry={branches.refetch}
           actionLabel={t`Retry Pending drafts`}
         />
       </WorkFileGroup>
@@ -70,7 +70,7 @@ export function WorkChanges({
     documentId: file.documentId,
     itemKey: file.draft.itemKey,
   }));
-  const dispose = (mode: "apply" | "discard") => void controller.disposeDrafts(mode, everyDraft);
+  const dispose = (mode: "apply" | "discard") => void controller.disposeBranches(mode, everyDraft);
 
   return (
     <WorkFileGroup

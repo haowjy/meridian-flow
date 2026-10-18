@@ -64,10 +64,10 @@ function clocksOf(update: Uint8Array, client: number): number[] {
  * The second key's wait: phase 4 queues it on the branch row (the sequence point); a wait on
  * the Work row is today's membership-flip lock on a keystroke, which phase 4 deletes.
  */
-const KEY_WAIT = /document_branches|"works"/;
-function assertWaitedOnBranchRow(waiting: readonly string[]) {
+const KEY_WAIT = /document_drafts|"works"/;
+function assertWaitedOnDraftRow(waiting: readonly string[]) {
   assert.ok(
-    waiting.every((query) => /document_branches/.test(query)),
+    waiting.every((query) => /document_drafts/.test(query)),
     `the second key waits on the branch row, not a Work: ${JSON.stringify(waiting)}`,
   );
 }
@@ -84,13 +84,13 @@ function twoKeys(draft: { live: Y.Doc }) {
   return { u1, u2 };
 }
 
-async function durable(harness: Harness, branchId: string) {
-  const state = await harness.readBranch(branchId);
+async function durable(harness: Harness, draftId: string) {
+  const state = await harness.readDraft(draftId);
   return {
     revision: state.revision,
     text: state.text,
-    rows: (await journalRows(harness, branchId)).length,
-    receipts: (await receipts(harness, branchId)).length,
+    rows: (await journalRows(harness, draftId)).length,
+    receipts: (await receipts(harness, draftId)).length,
   };
 }
 
@@ -108,19 +108,19 @@ export const appendNovelty: Probe = {
         const { u1, u2 } = twoKeys(draft);
         const gateway = openGateway(harness, harness.store);
         try {
-          const room = await gateway.load(draft.branchId, draft.generation);
-          const before = await durable(harness, draft.branchId);
-          const second = await gateway.send(room, draft.branchId, draft.generation, u2);
-          const afterSecond = await durable(harness, draft.branchId);
+          const room = await gateway.load(draft.draftId, draft.generation);
+          const before = await durable(harness, draft.draftId);
+          const second = await gateway.send(room, draft.draftId, draft.generation, u2);
+          const afterSecond = await durable(harness, draft.draftId);
           const merged = await gateway.send(
             room,
-            draft.branchId,
+            draft.draftId,
             draft.generation,
             Y.mergeUpdates([u1, u2]),
           );
-          const after = await durable(harness, draft.branchId);
-          const rows = await journalRows(harness, draft.branchId);
-          const edits = await receipts(harness, draft.branchId);
+          const after = await durable(harness, draft.draftId);
+          const rows = await journalRows(harness, draft.draftId);
+          const edits = await receipts(harness, draft.draftId);
           observe("a", {
             before,
             second,
@@ -140,7 +140,7 @@ export const appendNovelty: Probe = {
             `${WRITER}:1`,
           ]);
           assert.match(after.text, /BaseAB/);
-          assert.deepEqual(close, { code: 4207, reason: "branch-prefix-missing" });
+          assert.deepEqual(close, { code: 4207, reason: "draft-prefix-missing" });
         } finally {
           draft.live.destroy();
           await gateway.close();
@@ -159,9 +159,9 @@ export const appendNovelty: Probe = {
           const waiting = await harness.waitForLockWaiter(KEY_WAIT);
           pause.release();
           const outcomes = [await first, await second];
-          const rows = await journalRows(harness, draft.branchId);
-          const edits = await receipts(harness, draft.branchId);
-          const after = await durable(harness, draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
+          const edits = await receipts(harness, draft.draftId);
+          const after = await durable(harness, draft.draftId);
           observe("b", { waiting, outcomes, after, receipts: edits });
           assert.deepEqual(outcomes, ["appended", "appended"]);
           assert.equal(rows.length, 2);
@@ -169,7 +169,7 @@ export const appendNovelty: Probe = {
           const second2 = edits.find((parts) => nth(parts, 0).rowId === nth(rows, 1).id);
           assert.deepEqual(expanded(second2?.[0]?.inserted ?? []), [`${WRITER}:1`]);
           assert.match(after.text, /BaseAB/);
-          assertWaitedOnBranchRow(waiting);
+          assertWaitedOnDraftRow(waiting);
         } finally {
           pause.remove();
           tab.room.destroy();
@@ -181,7 +181,7 @@ export const appendNovelty: Probe = {
         const draft = await seedDraft(harness, "novelty-c");
         const { u1 } = twoKeys(draft);
         const tab = await openRoom(harness, coordinator, draft);
-        const before = await durable(harness, draft.branchId);
+        const before = await durable(harness, draft.draftId);
         const pause = pauseAt("branch.append.beforeCommit");
         try {
           const first = independently(() => tab.send(u1));
@@ -190,13 +190,13 @@ export const appendNovelty: Probe = {
           const waiting = await harness.waitForLockWaiter(KEY_WAIT);
           pause.release();
           const outcomes = [await first, await resend];
-          const after = await durable(harness, draft.branchId);
+          const after = await durable(harness, draft.draftId);
           observe("c", { waiting, outcomes, before, after });
           assert.deepEqual(outcomes, ["appended", "contained"]);
           assert.equal(after.rows, 1);
           assert.equal(after.receipts, 1);
           assert.equal(after.revision, before.revision + 1);
-          assertWaitedOnBranchRow(waiting);
+          assertWaitedOnDraftRow(waiting);
         } finally {
           pause.remove();
           tab.room.destroy();
@@ -210,8 +210,8 @@ export const appendNovelty: Probe = {
         const tab = await openRoom(harness, coordinator, draft);
         try {
           const outcomes = [await tab.send(u1), await tab.send(Y.mergeUpdates([u1, u2]))];
-          const rows = await journalRows(harness, draft.branchId);
-          const edits = await receipts(harness, draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
+          const edits = await receipts(harness, draft.draftId);
           observe("d", {
             outcomes,
             rowStructs: rows.map((r) => structsOf(r.update)),
@@ -240,8 +240,8 @@ export const appendNovelty: Probe = {
           const del = captureUpdate(writer, () => firstText(writer).delete(0, 1));
           const ins = appendToFirstParagraph(writer, "Z");
           const outcomes = [await tab.send(del), await tab.send(Y.mergeUpdates([del, ins]))];
-          const rows = await journalRows(harness, draft.branchId);
-          const edits = await receipts(harness, draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
+          const edits = await receipts(harness, draft.draftId);
           const last = edits.find((parts) => nth(parts, 0).rowId === nth(rows, -1).id);
           observe("e", { outcomes, receipt: last });
           assert.deepEqual(outcomes, ["appended", "appended"]);
@@ -284,17 +284,17 @@ export const appendNovelty: Probe = {
           Y.applyUpdate(source, fact);
           const committed = await independently(() =>
             harness.coordinator.commitSegmentRows({
-              branchId: draft.branchId,
+              draftId: draft.draftId,
               expectedGeneration: draft.generation,
               sourceDoc: source,
-              rows: [{ branchId: draft.branchId, source: "agent", updateData: fact }],
+              rows: [{ draftId: draft.draftId, source: "agent", updateData: fact }],
             }),
           );
           source.destroy();
           pause.release();
           const outcome = await frame;
-          const rows = await journalRows(harness, draft.branchId);
-          const doc = await durableDoc(harness, draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
+          const doc = await durableDoc(harness, draft.draftId);
           const facts = doc.getMap(PROVENANCE_TARGETS_TYPE).size;
           doc.destroy();
           observe("f", { committed, outcome, rows: rows.map((r) => r.source), facts });
@@ -344,13 +344,13 @@ export const appendNovelty: Probe = {
           other.destroy();
           pause.release();
           const outcome = await frame;
-          const rows = await journalRows(harness, draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
           const aliases = rows.at(-1)?.meta.restorationAliases ?? [];
           observe("g", {
             concurrent,
             outcome,
             aliases: aliases.length,
-            text: (await harness.readBranch(draft.branchId)).text,
+            text: (await harness.readDraft(draft.draftId)).text,
           });
           assert.equal(concurrent, "appended");
           assert.equal(outcome, "appended");
@@ -374,25 +374,25 @@ export const appendNovelty: Probe = {
             t.delete(t.length - 1, 1);
           });
           const committed = await harness.coordinator.commitSegmentRows({
-            branchId: draft.branchId,
+            draftId: draft.draftId,
             expectedGeneration: draft.generation,
             sourceDoc: source,
             rows: [
               {
-                branchId: draft.branchId,
+                draftId: draft.draftId,
                 source: "agent",
                 updateData: insert,
                 documentEditKey: "h",
               },
               {
-                branchId: draft.branchId,
+                draftId: draft.draftId,
                 source: "agent",
                 updateData: remove,
                 documentEditKey: "h",
               },
             ],
           });
-          const edits = await receipts(harness, draft.branchId);
+          const edits = await receipts(harness, draft.draftId);
           observe("h", { committed, edits });
           assert.equal(committed, true);
           assert.equal(edits.length, 1, "one document_edits row");
@@ -418,7 +418,7 @@ export const appendNovelty: Probe = {
               t.delete(t.length - 1, 1);
             });
             const outcome = await tab.send(Y.mergeUpdates([ins, del]));
-            const edits = await receipts(harness, draft.branchId);
+            const edits = await receipts(harness, draft.draftId);
             observe("i transient", { outcome, edits });
             assert.equal(outcome, "appended");
             assert.equal(edits.length, 1);
@@ -445,8 +445,8 @@ export const appendNovelty: Probe = {
             appendToFirstParagraph(writer, "Y");
             t.delete(t.length - 1, 1);
             const outcome = await tab.send(Y.encodeStateAsUpdate(writer));
-            const rows = await journalRows(harness, draft.branchId);
-            const edits = await receipts(harness, draft.branchId);
+            const rows = await journalRows(harness, draft.draftId);
+            const edits = await receipts(harness, draft.draftId);
             const last = edits.find((parts) => nth(parts, 0).rowId === nth(rows, -1).id);
             observe("i straddling", { outcome, rows: rows.length, receipt: last });
             assert.equal(outcome, "appended");
@@ -474,10 +474,10 @@ export const appendNovelty: Probe = {
               const t = firstText(writer);
               t.delete(t.length - 1, 1);
             });
-            const room = await gateway.load(draft.branchId, draft.generation);
-            const before = await durable(harness, draft.branchId);
-            const sent = await gateway.send(room, draft.branchId, draft.generation, del);
-            const after = await durable(harness, draft.branchId);
+            const room = await gateway.load(draft.draftId, draft.generation);
+            const before = await durable(harness, draft.draftId);
+            const sent = await gateway.send(room, draft.draftId, draft.generation, del);
+            const after = await durable(harness, draft.draftId);
             observe("i unknown delete", { sent, before, after });
             assert.deepEqual(sent, { ok: false, closes: [PREFIX_MISSING_CLOSE] });
             assert.deepEqual(after, before);

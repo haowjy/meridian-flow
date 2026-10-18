@@ -11,7 +11,7 @@ import type { Editor } from "@tiptap/core";
 import { act, useEffect, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { createReviewScopeFixture, listed, previewOf } from "@/test-support/draft-review-scope";
@@ -70,16 +70,16 @@ beforeEach(() => {
   fixture = createReviewScopeFixture({
     registry: {
       ...sessions.registry,
-      getBranchRoom: (roomKey: string) => {
+      getDraftRoom: (roomKey: string) => {
         const session = sessions.get(roomKey);
         vi.spyOn(session, "whenSynced").mockResolvedValue();
         return session;
       },
     } as unknown as LiveDocumentSessionRegistry,
   });
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   review = null;
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
 });
 afterEach(() => {

@@ -1,4 +1,4 @@
-/** Draft-only authorship boundaries, independent of whether review marks are shown. */
+/** Branch-only authorship boundaries, independent of whether review marks are shown. */
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type * as Y from "yjs";
 import { isRemoteDocumentRebuild } from "../../anchors";

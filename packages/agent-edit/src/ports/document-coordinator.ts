@@ -147,8 +147,8 @@ export interface DocumentAccess {
   timeoutMs?: number;
   signal?: AbortSignal;
   /**
-   * The host branch a staged thread-peer write was pinned to (`InteractionContext.branchId`):
+   * The host branch a staged thread-peer write was pinned to (`InteractionContext.draftId`):
    * the coordinator resolves exactly this one and never provisions another.
    */
-  pinnedBranchId?: string;
+  pinnedDraftId?: string;
 }

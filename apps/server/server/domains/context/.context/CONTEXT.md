@@ -64,7 +64,7 @@ storage, not the text engine.
 
 ## Views, identity, and revisions
 
-The tree module supplies `LIVE_TREE` and `{ kind: "draft", draftId }`. ContextFS
+The tree module supplies `LIVE_TREE` and `{ kind: "draft", branchId }`. ContextFS
 uses that view for `stat`, `read`, `list`, `search`, and `locate`; a draft's
 hidden document or folder appears only in that draft. A draft create has an
 empty live Y.Doc and text in the branch until Apply. The hidden predicate has
@@ -214,12 +214,12 @@ reach the document by identity; an alias returns only when that identity is
 currently available to the request owner in the requested project.
 
 A link resolver is not a capability. A reader who cannot reach a ref receives
-`gone` without a location. A hidden document may answer `inDraft` with the
+`gone` without a location. A hidden document may answer `inBranch` with the
 selected draft and path. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
-supply `reviewWorkId` and an item key `${draftId}:${documentId}`; the server
+supply `reviewWorkId` and an item key `${branchId}:${documentId}`; the server
 checks that item against active review items, then reads the draft tree. Stale,
 foreign, or mismatched selectors return unavailable rather than falling back
 to live. The address resolver returns the canonical current locator; it never

@@ -98,7 +98,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
         focusReviewChange,
       },
       files,
-      drafts: { status: "ready" },
+      branches: { status: "ready" },
       fileForDocument: (id: string | null | undefined) =>
         files.find((group) => group.documentId === id) ?? null,
       activeEditorDocumentId: mounted ? target.documentId : null,

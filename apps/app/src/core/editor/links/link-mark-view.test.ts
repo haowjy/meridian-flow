@@ -182,7 +182,7 @@ it("draws a link whose answer is a draft-only document with a visible draft stat
             uri: KAEL,
             workId: null,
           },
-          draft: { draftId: "d1", workId: "w1" },
+          branch: { branchId: "d1", workId: "w1" },
         })),
     });
     const anchor = () => editor.view.dom.querySelector("a");

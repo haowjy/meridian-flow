@@ -7,13 +7,13 @@
  */
 import type { ThreadId, UserId, WorkId } from "@meridian/contracts";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { Drafts } from "../../../collab/domain/drafts.js";
+import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
+import type { BranchCreatePort, EnsuredBranch } from "../../ports/branch-create.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
 import type { ContextWriteBinaryOptions } from "../../ports/context-port.js";
-import type { DraftCreatePort, EnsuredDraft } from "../../ports/draft-create.js";
 import type { CreateFault } from "../../tree/hidden-node-types.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { binaryTrackedWriteFault } from "./bound-writes.js";
@@ -32,8 +32,8 @@ export type ContextPlacement =
       workId: WorkId;
       threadId: ThreadId;
       userId: UserId;
-      drafts: Pick<Drafts, "viewForWork">;
-      creates: DraftCreatePort;
+      branches: Pick<Branches, "viewForWork">;
+      creates: BranchCreatePort;
     };
 
 /** Commands only a live placement runs. */
@@ -139,27 +139,27 @@ function draftPlacement(
   const { executor } = deps;
   const work = { workId: placement.workId, threadId: placement.threadId, userId: placement.userId };
   /** A command in the drafting Work's draft, which the transaction ensures and locks. */
-  const inDraft = <T>(operation: (draft: EnsuredDraft) => Promise<Result<T, AdapterFault>>) =>
-    executor.runInDraft({ ...work, mode: "ensure" }, (draft) =>
-      operation({ id: draft.id, workId: placement.workId }),
+  const inBranch = <T>(operation: (branch: EnsuredBranch) => Promise<Result<T, AdapterFault>>) =>
+    executor.runInBranch({ ...work, mode: "ensure" }, (branch) =>
+      operation({ id: branch.id, workId: placement.workId }),
     );
   return {
     kind: "draft",
     readView: (version) =>
       version === "live"
         ? Promise.resolve(LIVE_TREE)
-        : placement.drafts.viewForWork(placement.workId),
+        : placement.branches.viewForWork(placement.workId),
     refuse: (operation) => ({
       code: "invalid_operation",
       message: `A draft can't ${operation}; create the file empty and write into it`,
     }),
     ensureTracked(path, options) {
-      return inDraft(async (draft) => {
+      return inBranch(async (branch) => {
         const target = resolveCreateTarget(path, options);
         if (!target.ok) return target;
         const { dir, name, extension, filetype } = target.value;
-        const created = await placement.creates.createInDraft({
-          draft,
+        const created = await placement.creates.createInBranch({
+          branch,
           dir,
           name,
           extension,
@@ -181,12 +181,12 @@ function draftPlacement(
     },
     writeBinary(path, options) {
       // A draft's binary is its own hidden row holding the draft's object (12b-Q2).
-      return inDraft(async (draft) => {
+      return inBranch(async (branch) => {
         const target = resolveBinaryTarget(path, options);
         if (!target.ok) return target;
         const { dir, name, extension } = target.value;
-        const created = await placement.creates.createInDraft({
-          draft,
+        const created = await placement.creates.createInBranch({
+          branch,
           dir,
           name,
           extension,
@@ -207,18 +207,18 @@ function draftPlacement(
     },
     retract(documentId) {
       return executor.run(
-        async ({ draft }) => {
+        async ({ branch }) => {
           // No active draft: a whole Discard already ended every use.
-          if (draft) {
+          if (branch) {
             await placement.creates.retractCreate({
-              draft: { id: draft.id, workId: placement.workId },
+              branch: { id: branch.id, workId: placement.workId },
               documentId,
             });
           }
           return Ok({ placement: "draft" as const });
         },
         undefined,
-        { draft: { ...work, mode: "existing" } },
+        { branch: { ...work, mode: "existing" } },
       );
     },
   };

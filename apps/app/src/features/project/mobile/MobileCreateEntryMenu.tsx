@@ -7,7 +7,7 @@
  * shared `ContextCreateKind`), but phone chrome — a 44px `PhoneIconButton`
  * trigger in the top bar's trailing slot and 44px menu items. A separate
  * component (rather than presentation flags on the desktop menu) keeps the
- * shared component free of phone branches; only the create *kind* contract
+ * shared component free of phone drafts; only the create *kind* contract
  * is shared because the server mutation owns the payload.
  */
 import { t } from "@lingui/core/macro";

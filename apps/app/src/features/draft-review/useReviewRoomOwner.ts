@@ -9,11 +9,11 @@ import {
   intentKeys,
   useChangeCommandRecords,
   wholeDraftDisposition,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { projectDraft, projectDraftList } from "@/client/query/draft-projection";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
-import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
+import { workBranchesQueryOptions } from "@/client/query/useWorkBranches";
 import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import type { PresentedDocument } from "@/features/project/presented-document";
@@ -45,13 +45,16 @@ export function useReviewRoomOwner({
   const owner = useRef(`review-room:${++ownerSequence}`);
   const documentId = review?.documentId ?? "";
   const itemKey = review?.itemKey ?? "";
-  const generation = review?.branchGeneration;
+  const generation = review?.draftGeneration;
   const roomName = review?.roomName ?? null;
-  const draft = { projectId, workId, documentId, itemKey, branchGeneration: generation };
+  const draft = { projectId, workId, documentId, itemKey, draftGeneration: generation };
   const key = JSON.stringify([projectId, workId, documentId, itemKey, generation, roomName]);
   const horizon = useRef({ key, queryClient, registry });
   horizon.current = { key, queryClient, registry };
-  const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
+  const { data: rows } = useQuery({
+    ...workBranchesQueryOptions(projectId, workId),
+    enabled: false,
+  });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
   const records = useChangeCommandRecords();
   const [entryAnswered, setEntryAnswered] = useState<string | null>(null);
@@ -95,9 +98,9 @@ export function useReviewRoomOwner({
       documentId,
       itemKey,
       terminal,
-      branchGeneration: absenceGeneration,
+      draftGeneration: absenceGeneration,
       draftOnly: kind.current.draftOnly,
-      evidence: generation === null ? null : { branchGeneration: generation, proposal: true },
+      evidence: generation === null ? null : { draftGeneration: generation, proposal: true },
     });
   };
   const reopenRoom = useRef<(() => void) | null>(null);
@@ -135,7 +138,7 @@ export function useReviewRoomOwner({
       !disposing
     ) {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
+        queryKey: projectQueryKeys.workBranchPreview(projectId, workId, documentId, itemKey),
       });
     }
   }, [
@@ -181,9 +184,9 @@ export function useReviewRoomOwner({
       if (!current()) return;
       const shown = selected.current.review;
       if (
-        answer.branchGeneration !== undefined &&
-        shown?.branchGeneration !== undefined &&
-        answer.branchGeneration < shown.branchGeneration
+        answer.draftGeneration !== undefined &&
+        shown?.draftGeneration !== undefined &&
+        answer.draftGeneration < shown.draftGeneration
       )
         answer = await read();
       if (!current()) return;
@@ -194,13 +197,13 @@ export function useReviewRoomOwner({
         const visible = projectDraft(
           answer,
           intentKeys(records, draft),
-          wholeDraftDisposition(records, draft, answer.branchGeneration, answer) !== null,
+          wholeDraftDisposition(records, draft, answer.draftGeneration, answer) !== null,
         ).preview;
         dispatch({
           type: "generationObserved",
           documentId,
           itemKey,
-          branchGeneration: answer.branchGeneration,
+          draftGeneration: answer.draftGeneration,
           proposal: visible.status === "active" && reviewChangesOfPreview(visible).length > 0,
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
@@ -241,7 +244,7 @@ export function useReviewRoomOwner({
     const rebuild = () => {
       rebuilding = true;
       setBinding({ session: null, key });
-      void registry.rebuildBranchRoom(roomName).then(
+      void registry.rebuildDraftRoom(roomName).then(
         (replacement) => {
           if (!current()) return;
           unsubscribe?.();
@@ -256,7 +259,7 @@ export function useReviewRoomOwner({
     reopenRoom.current = () => {
       if (current() && !rebuilding) rebuild();
     };
-    registry.retainBranchRooms(owner.current, [
+    registry.retainDraftRooms(owner.current, [
       {
         ...reviewRoomRef(queryClient, draft, roomName),
         writerChanges: (generation) => {
@@ -277,7 +280,7 @@ export function useReviewRoomOwner({
         setOutbox({
           scope,
           generation:
-            room?.kind === "branch" &&
+            room?.kind === "draft" &&
             connection?.kind !== "reset" &&
             !updatesRefused(connection) &&
             session.hasUnacknowledgedEdits()
@@ -315,16 +318,16 @@ export function useReviewRoomOwner({
       });
     };
     try {
-      bind(registry.getBranchRoom(roomName));
+      bind(registry.getDraftRoom(roomName));
     } catch (error) {
-      registry.releaseBranchRooms(owner.current);
+      registry.releaseDraftRooms(owner.current);
       throw error;
     }
     return () => {
       owned = false;
       reopenRoom.current = null;
       unsubscribe?.();
-      registry.releaseBranchRooms(owner.current);
+      registry.releaseDraftRooms(owner.current);
     };
   }, [key, scope, registry, queryClient, dispatch]);
 
@@ -348,7 +351,7 @@ export function useReviewRoomOwner({
 
 /** Addressed cache observations, without interpreting an empty reset as a proposal. */
 export function reviewRoomObservations(
-  rows: import("@meridian/contracts/drafts").ThreadDraftListItem[] | undefined,
+  rows: import("@meridian/contracts/branches").ThreadDraftListItem[] | undefined,
   preview: DraftPreviewRead | undefined,
   draft: { documentId: string; itemKey: string },
   pendingWriterGeneration: number | null = null,
@@ -369,22 +372,22 @@ export function reviewRoomObservations(
           wholeDraftDisposition(
             intents.records,
             { ...intents.scope, ...draft },
-            preview.branchGeneration,
+            preview.draftGeneration,
             preview,
           ) !== null,
         ).preview
       : preview;
-  if (row && row.branchGeneration !== null)
+  if (row && row.draftGeneration !== null)
     actions.push({
       type: "generationObserved",
       ...draft,
-      branchGeneration: row.branchGeneration,
+      draftGeneration: row.draftGeneration,
       proposal: visibleRows?.includes(row) === true,
     });
   const evidence =
     preview?.status === "active"
       ? {
-          branchGeneration: preview.branchGeneration,
+          draftGeneration: preview.draftGeneration,
           proposal:
             visiblePreview?.status === "active" &&
             reviewChangesOfPreview(visiblePreview).length > 0,
@@ -394,8 +397,8 @@ export function reviewRoomObservations(
   // Delivery is changes evidence, not a listed proposal that adopts a generation.
   const changesEvidence =
     pendingWriterGeneration !== null &&
-    (!evidence?.proposal || pendingWriterGeneration > evidence.branchGeneration)
-      ? { branchGeneration: pendingWriterGeneration, proposal: true }
+    (!evidence?.proposal || pendingWriterGeneration > evidence.draftGeneration)
+      ? { draftGeneration: pendingWriterGeneration, proposal: true }
       : evidence;
   // A draft-only address belongs to lifecycle until catalog settlement. List
   // omission and an empty active/reset preview cannot close or fail it.
@@ -403,7 +406,7 @@ export function reviewRoomObservations(
     actions.push({
       type: "reviewAbsent",
       ...draft,
-      branchGeneration: preview?.branchGeneration,
+      draftGeneration: preview?.draftGeneration,
       evidence: changesEvidence,
       draftOnly,
     });

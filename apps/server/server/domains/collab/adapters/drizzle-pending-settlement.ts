@@ -25,7 +25,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
+import { branchDraftRefs } from "../../../shared/work-branch-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -674,14 +674,14 @@ async function stagedMembers(
   db: DrizzleDb,
   members: readonly BatchCompletionMember[],
 ): Promise<StagedApplyMember[]> {
-  const branchIds = members.flatMap(({ push }) => (push.branchId ? [push.branchId] : []));
-  const works = await draftBranchWorks(db, branchIds);
-  const workByBranch = new Map(works.map(({ id, workId }) => [id, workId]));
+  const draftIds = members.flatMap(({ push }) => (push.draftId ? [push.draftId] : []));
+  const works = await branchDraftRefs(db, draftIds);
+  const workByDraft = new Map(works.map(({ id, workId }) => [id, workId]));
   return members.map(({ push }) => ({
     pushId: push.id,
     documentId: push.documentId,
-    branchId: push.branchId,
-    workId: (push.branchId ? (workByBranch.get(push.branchId) ?? null) : null) as WorkId | null,
+    draftId: push.draftId,
+    workId: (push.draftId ? (workByDraft.get(push.draftId) ?? null) : null) as WorkId | null,
     journalIds: push.journalIds,
   }));
 }

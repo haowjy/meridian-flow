@@ -20,8 +20,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
 import {
@@ -421,7 +421,7 @@ if (!RUN) {
 
       async function start() {
         const runtime = await runtimes.compose();
-        const scenario = await draftTreeScenario(db, { runtime, runtimes });
+        const scenario = await branchTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
         // The model's create is a hidden row in the Work's draft.
         const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");

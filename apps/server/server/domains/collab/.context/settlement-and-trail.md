@@ -7,18 +7,18 @@ apply a partial push.
 
 ## Push pipeline
 
-Apply holds no branch. Staging takes the live coordinator locks of its
+Apply holds no draft. Staging takes the live coordinator locks of its
 documents in document-ID order (capturing each one's LOCK-WS cut first), then
 runs as one bounded attempt whose commit scope is the staging transaction: it
-locks Works through the Works mutation boundary, then drafts, namespaces,
-documents and branch rows, and a branch that moved since preparation misses its
+locks Works through the Works mutation boundary, then branches, namespaces,
+documents and draft rows, and a draft that moved since preparation misses its
 revision, rolls the staging back and recaptures. Completion runs after that
 scope has closed.
 
-Whole-branch and selected-row builders produce one candidate batch consumed by
+Whole-draft and selected-row builders produce one candidate batch consumed by
 the shared push pipeline. Locked preparation computes the diff from the live
 cut; trail projection turns that diff into the sole durable Apply
-record. A typed branch generation supplies idempotency, not a second diff.
+record. A typed draft generation supplies idempotency, not a second diff.
 
 The transition captures the immutable LOCK-WS cut, admits concurrent rows
 through the document mutation lock, and before completion compares each warm
@@ -28,7 +28,7 @@ the committed replace-set to connected bare-document rooms only after the
 completion fence reports applied or already applied. Delivery is a session hint,
 not a durable outbox and cannot make a committed push fail.
 
-Whole Apply applies the current branch, including rows created after a
+Whole Apply applies the current draft, including rows created after a
 preview. Per-change Apply and Discard replay only complete selected classes and
 require their displayed live revision, class identities, immutable member keys,
 and server-vended admission evidence. A missing or changed selected class
@@ -66,10 +66,10 @@ Trail, receipt, journal disposition, Apply, settlement, and turn-lifecycle
 producers append dirty signals in their own transaction. Reconciliation follows
 those signals through one semantic owner resolver under sorted aggregate locks,
 then deletes exactly the signals it observed. Sequence allocation is not commit
-order. Active drafts do not block reconciliation, but rollback-pending journals
+order. Active branches do not block reconciliation, but rollback-pending journals
 and pending live settlements do.
 
-The journal and receipt signal triggers run inside an append's branch row lock,
+The journal and receipt signal triggers run inside an append's draft row lock,
 so their cost is the keystroke's hold. `change_trail_owners` runs with JIT off
 (its recursive estimate otherwise compiles LLVM code on every call) and looks
 journals up by primary key; inserts that cannot have owners return before it
@@ -79,9 +79,9 @@ Provenance admission is root-unit injective: one protected root unit has one
 visible target, so divergent restoration or replication blocks rather than
 granting deletion credit to either copy.
 
-Push completion settles arriving ahead refs in its completion transaction. Draft
+Push completion settles arriving ahead refs in its completion transaction. Branch
 moves are not hidden-view moves: a draft can create, edit, and delete, while
-location changes settle in the tree-store move transaction. Draft-held moves are
+location changes settle in the tree-store move transaction. Branch-held moves are
 rejected because a document's address would depend on the view. An Apply arrival is
 already at its final SQL address when completion calls the arrivals seam.
 

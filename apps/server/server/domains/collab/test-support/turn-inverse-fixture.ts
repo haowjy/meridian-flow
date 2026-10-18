@@ -39,19 +39,19 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
 }
 
 /** The document's work-draft branch id: what `view.draftMarkdown` reads. */
-export async function draftBranchId(
+export async function readDraftId(
   db: ReturnType<typeof createTestDatabase>,
   documentId: string,
 ): Promise<string> {
-  const [branch] = await db
-    .select({ id: schema.documentBranches.id })
-    .from(schema.documentBranches)
+  const [documentDraft] = await db
+    .select({ id: schema.documentDrafts.id })
+    .from(schema.documentDrafts)
     .where(
       and(
-        eq(schema.documentBranches.documentId, documentId),
-        eq(schema.documentBranches.kind, "work_draft"),
+        eq(schema.documentDrafts.documentId, documentId),
+        eq(schema.documentDrafts.kind, "work_draft"),
       ),
     );
-  if (!branch) throw new Error(`No work draft branch for ${documentId}`);
-  return branch.id;
+  if (!documentDraft) throw new Error(`No work draft branch for ${documentId}`);
+  return documentDraft.id;
 }

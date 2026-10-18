@@ -10,7 +10,7 @@
  */
 
 import type { DraftPreviewEntry } from "@/client/query/useDraftPreview";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { listablePreview } from "@/features/draft-review/draft-changes";
 import {
   type ReviewChange,
@@ -50,7 +50,7 @@ export function dockFile(
     changes: NO_CHANGES,
     actionable: NO_CHANGES,
   } satisfies Omit<DockFile, "status">;
-  if (row.draft.branchGeneration === null) {
+  if (row.draft.draftGeneration === null) {
     const changes = [wholeItemChange(row.draft)].filter((change) =>
       change.threadIds.includes(threadId),
     );

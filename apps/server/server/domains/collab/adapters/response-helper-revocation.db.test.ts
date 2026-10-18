@@ -1,6 +1,6 @@
 // Whole Discard revokes Alpha helpers while Beta keeps the response open.
 import { randomUUID } from "node:crypto";
-import { branchRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runInRootDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -36,14 +36,14 @@ describe("response helper revocation (Postgres)", () => {
   });
   afterAll(() => closeDatabase(db));
   let fixture: ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
-  let branchId: string;
+  let draftId: string;
   let responseId: string;
   let context: ReturnType<typeof responseContext>;
   let core: ReturnType<typeof fixture.collab.agentEdit>;
   beforeEach(async () => {
     await resetDatabase(db);
     harness = createHarness(db);
-    ({ fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    ({ fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
       ["blue", "azure"],
     ]));
@@ -84,9 +84,9 @@ describe("response helper revocation (Postgres)", () => {
       context,
     );
   async function expectBeta() {
-    const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
+    const beta = await fixture.draftStore.resolveWorkDraftForThread(BETA_ID, THREAD_ID);
     try {
-      expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
+      expect(await fixture.draftMarkdown(beta.draftId)).toBe("Beta staged.\n");
     } finally {
     }
   }
@@ -102,7 +102,7 @@ describe("response helper revocation (Postgres)", () => {
         expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
       ]),
     });
-    expect(await fixture.draftMarkdown(branchId)).toBe(`red\n\nblue\n\n${content}\n`);
+    expect(await fixture.draftMarkdown(draftId)).toBe(`red\n\nblue\n\n${content}\n`);
     await expectBeta();
   }
   it("item Discard retires only its Work's peers and staged writes", async () => {
@@ -174,20 +174,17 @@ describe("response helper revocation (Postgres)", () => {
         contextB,
       ),
     ).toMatchObject({ status: "success", phase: "staged" });
-    const branchB = await fixture.branchStore.resolveWorkDraftBranchForThread(
-      ALPHA_ID,
-      threadB as never,
-    );
+    const draftB = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, threadB as never);
     const peers = await db
       .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.kind, "thread_peer"));
+      .from(schema.documentDrafts)
+      .where(eq(schema.documentDrafts.kind, "thread_peer"));
     const peerA = peers.find((peer) => peer.documentId === ALPHA_ID && peer.threadId === THREAD_ID);
     const peerB = peers.find((peer) => peer.documentId === ALPHA_ID && peer.threadId === threadB);
     if (!peerA || !peerB) throw new Error("Missing the two active Work peers");
-    expect(peerB.upstreamBranchId).toBe(branchB.branchId);
-    const roomA = branchRoomName(peerA.id, peerA.generation);
-    const roomB = branchRoomName(peerB.id, peerB.generation);
+    expect(peerB.upstreamDraftId).toBe(draftB.draftId);
+    const roomA = draftRoomName(peerA.id, peerA.generation);
+    const roomB = draftRoomName(peerB.id, peerB.generation);
     await fixture.hocuspocus.openDirectConnection(roomA);
     await fixture.hocuspocus.openDirectConnection(roomB);
     expect(await discard()).toMatchObject({ status: "discarded" });
@@ -196,12 +193,12 @@ describe("response helper revocation (Postgres)", () => {
     expect(fixture.hocuspocus.documents.has(roomB)).toBe(true);
     const [closedA] = await db
       .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, peerA.id));
+      .from(schema.documentDrafts)
+      .where(eq(schema.documentDrafts.id, peerA.id));
     const [activeB] = await db
       .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, peerB.id));
+      .from(schema.documentDrafts)
+      .where(eq(schema.documentDrafts.id, peerB.id));
     expect(closedA.status).toBe("closed");
     // Closing a peer is a review-membership input: it moves the peer's revision (§2.5).
     expect(closedA.revision).toBeGreaterThan(peerA.revision);
@@ -212,12 +209,12 @@ describe("response helper revocation (Postgres)", () => {
         expect.objectContaining({ documentId: ALPHA_ID, updateCount: 1 }),
       ]),
     });
-    expect(await fixture.draftMarkdown(branchB.branchId)).toBe("red\n\nblue\n\nemerald\n");
+    expect(await fixture.draftMarkdown(draftB.draftId)).toBe("red\n\nblue\n\nemerald\n");
     const savedA = await harness.commit(responseId);
     expect(savedA.documents.filter((doc) => doc.updateCount > 0)).toEqual([
       expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
     ]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     const freshResponse = await createResponse(db, 3);
     expect(
       await core.write(
@@ -233,7 +230,7 @@ describe("response helper revocation (Postgres)", () => {
       ),
     ).toMatchObject({ status: "success", phase: "staged" });
     expect(await harness.commit(freshResponse)).toMatchObject({ status: "committed" });
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\nolive\n");
   });
   // Decision D17: Discard's irreversible effects (peer retirement, its room's close, the
   // reply's helper revocation) wait for the ambient root's commit, not a savepoint's release.
@@ -248,8 +245,8 @@ describe("response helper revocation (Postgres)", () => {
     run,
     documents,
   }) => {
-    const peer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-    const room = branchRoomName(peer.branchId, peer.generation);
+    const peer = await fixture.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID);
+    const room = draftRoomName(peer.draftId, peer.generation);
     await fixture.hocuspocus.openDirectConnection(room);
     const retired: string[] = [];
     const retire = core.retireThreadPeers;
@@ -261,7 +258,7 @@ describe("response helper revocation (Postgres)", () => {
       retired: [...retired].sort(),
       roomOpen: fixture.hocuspocus.documents.has(room),
       helper: core.hasResponseDocument(responseId, ALPHA_ID),
-      peer: (await fixture.branchStore.getBranch(peer.branchId))?.status,
+      peer: (await fixture.draftStore.getDraft(peer.draftId))?.status,
     });
     const untouched = { retired: [], roomOpen: true, helper: true, peer: "active" };
     try {
@@ -289,7 +286,7 @@ describe("response helper revocation (Postgres)", () => {
     }
   });
   it("delayed retirement preserves a fresh peer's write in the same reply", async () => {
-    const oldPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+    const oldPeer = await fixture.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID);
     let entered!: () => void;
     let release!: () => void;
     const waiting = new Promise<void>((resolve) => {
@@ -307,7 +304,7 @@ describe("response helper revocation (Postgres)", () => {
     const pending = discard();
     try {
       await waiting;
-      expect(await fixture.branchStore.getBranch(oldPeer.branchId)).toMatchObject({
+      expect(await fixture.draftStore.getDraft(oldPeer.draftId)).toMatchObject({
         status: "closed",
       });
       // Model the old response entry's eviction by a refusal before its next write.
@@ -316,9 +313,9 @@ describe("response helper revocation (Postgres)", () => {
         status: "success",
         phase: "staged",
       });
-      const freshPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-      expect(freshPeer.branchId).not.toBe(oldPeer.branchId);
-      const room = branchRoomName(freshPeer.branchId, freshPeer.generation);
+      const freshPeer = await fixture.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID);
+      expect(freshPeer.draftId).not.toBe(oldPeer.draftId);
+      const room = draftRoomName(freshPeer.draftId, freshPeer.generation);
       await fixture.hocuspocus.openDirectConnection(room);
       release();
       expect(await pending).toMatchObject({ status: "discarded" });
@@ -337,8 +334,8 @@ describe("response helper revocation (Postgres)", () => {
           expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
         ]),
       });
-      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
-      expect(await fixture.branchStore.getBranch(freshPeer.branchId)).toMatchObject({
+      expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\nolive\n");
+      expect(await fixture.draftStore.getDraft(freshPeer.draftId)).toMatchObject({
         status: "active",
       });
     } finally {
@@ -358,17 +355,17 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.branchCoordinator.readBranch.bind(fixture.branchCoordinator);
+    const original = fixture.draftCoordinator.readDraft.bind(fixture.draftCoordinator);
     let once = true;
-    fixture.branchCoordinator.readBranch = async (branch, fn) => {
+    fixture.draftCoordinator.readDraft = async (documentDraft, fn) => {
       const targeted =
-        once && branch === branchId && String(fn).includes("listConcurrentJournalRows");
+        once && documentDraft === draftId && String(fn).includes("listConcurrentJournalRows");
       if (targeted) once = false;
       if (targeted && !afterRead) {
         entered();
         await gate;
       }
-      const result = await original(branch, fn);
+      const result = await original(documentDraft, fn);
       if (targeted && afterRead) {
         entered();
         await gate;
@@ -399,9 +396,9 @@ describe("response helper revocation (Postgres)", () => {
       });
     } finally {
       release();
-      fixture.branchCoordinator.readBranch = original;
+      fixture.draftCoordinator.readDraft = original;
     }
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite(fresh);
   });
   it("item Discard rejects a held prepared read without revoking Beta", async () => {
@@ -441,7 +438,7 @@ describe("response helper revocation (Postgres)", () => {
       release();
       unhook();
     }
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite("olive");
   });
 });

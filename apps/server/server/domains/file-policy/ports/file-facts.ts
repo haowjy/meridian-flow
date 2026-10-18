@@ -7,9 +7,9 @@ export interface FileFactsRequest {
   target: FileTarget;
   /**
    * The Work whose draft this access may go through: an agent's draft-mode
-   * Work. A `draft` target names its own; facts then include `draftWork`.
+   * Work. A `draft` target names its own; facts then include `branchWork`.
    */
-  draftWorkId?: WorkId;
+  branchWorkId?: WorkId;
 }
 
 export interface FileFactsPort {
@@ -17,13 +17,13 @@ export interface FileFactsPort {
   load(request: FileFactsRequest): Promise<FileFacts | null>;
   /**
    * The list path (file-access §6): many documents' facts in one query, each
-   * through `draftWorkId`'s draft when given. Folders are left out of
+   * through `branchWorkId`'s draft when given. Folders are left out of
    * `ancestors`: a listed row is already visible, and v1 grants
    * sit on the project. Missing documents are absent from the map.
    */
   loadList(
     documentIds: readonly DocumentId[],
-    draftWorkId?: WorkId,
-    draftViews?: ReadonlyMap<DocumentId, TreeView>,
+    branchWorkId?: WorkId,
+    branchViews?: ReadonlyMap<DocumentId, TreeView>,
   ): Promise<Map<DocumentId, FileFacts>>;
 }

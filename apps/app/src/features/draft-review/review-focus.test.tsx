@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /** Shared provider focus follows regrouping, commands and stepping; late answers cannot focus another review. */
 
-import type { DraftApplyChangesResponse, DraftPreviewResponse } from "@meridian/contracts/drafts";
+import type { DraftApplyChangesResponse, DraftPreviewResponse } from "@meridian/contracts/branches";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   applied,
@@ -46,7 +46,7 @@ const regrouped = {
 const second = { ...listed, itemKey: "draft-b", documentId: "document-b" };
 
 async function reviewOpened(probe: () => ScopeProbe) {
-  await vi.waitFor(() => expect(fixture.network.listWorkDrafts).toHaveBeenCalled());
+  await vi.waitFor(() => expect(fixture.network.listWorkBranches).toHaveBeenCalled());
   await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
   await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
 }
@@ -60,8 +60,8 @@ const target = (id: string) => ({
 
 beforeEach(() => {
   fixture = createReviewScopeFixture();
-  resetDraftCommandRecords();
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, second] });
+  resetBranchCommandRecords();
+  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed, second] });
   fixture.network.getDraftPreview.mockResolvedValue(threeChanges);
 });
 
@@ -72,7 +72,7 @@ describe("a change regrouped more than once", () => {
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
       await act(async () => probe().presented.controller.focusReviewChange(review, target("2")));
-      const previewKey = projectQueryKeys.workDraftPreview(
+      const previewKey = projectQueryKeys.workBranchPreview(
         "project-a",
         "work-a",
         "document-a",
@@ -125,7 +125,7 @@ describe("a command's late answer", () => {
       );
 
       await act(async () => {
-        answer({ status: "stale", draftId: "work-draft-a", itemKey: "draft-a" });
+        answer({ status: "stale", branchId: "work-draft-a", itemKey: "draft-a" });
         await done;
       });
       expect(probe().presented.controller.focus).toBeNull();
@@ -153,7 +153,7 @@ describe("focus through real review commands", () => {
     fixture.network.applyDraftChanges
       .mockReturnValueOnce(accepted.promise)
       .mockReturnValueOnce(refused.promise)
-      .mockResolvedValue({ status: "stale", draftId: "work-draft-a", itemKey: "draft-a" });
+      .mockResolvedValue({ status: "stale", branchId: "work-draft-a", itemKey: "draft-a" });
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
       await act(async () => probe().header.view.focus(probe().header.view.items[1].change));
@@ -196,7 +196,7 @@ describe("focus through real review commands", () => {
       });
       expect(probe().header.view.focused?.classId).toBe("class-3");
       await act(async () => {
-        refused.resolve({ status: "stale", draftId: "work-draft-a", itemKey: "draft-a" });
+        refused.resolve({ status: "stale", branchId: "work-draft-a", itemKey: "draft-a" });
         await done;
       });
       await vi.waitFor(() => expect(probe().header.view.focused?.classId).toBe("class-1"));

@@ -60,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("loads documents, drafts and containers with their ancestors", async () => {
+    it("loads documents, branches and containers with their ancestors", async () => {
       const facts = createDrizzleFileFacts(
         database.current,
         createTestWorkProjectionMutation(database.current),
@@ -104,9 +104,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const drafted = await facts.load({
         target: { kind: "document", documentId: chapter },
-        draftWorkId: a,
+        branchWorkId: a,
       });
-      expect(drafted?.draftWork?.id).toBe(a);
+      expect(drafted?.branchWork?.id).toBe(a);
 
       const container = await facts.load({
         target: { kind: "container", scheme: "scratch", owner: { scope: "work", workId: a } },

@@ -1,20 +1,20 @@
 /** Builds the candidate batches an Apply stages: whole-branch, or the rows a review selected. */
 import { randomUUID } from "node:crypto";
 import type { UserId } from "@meridian/contracts/runtime";
-import type { BranchJournalRow } from "./branch-journal.js";
 import {
   type ApplyPayloads,
   BranchPushCommitConflictError,
   type CandidateBatch,
 } from "./branch-push-contracts.js";
-import type { BranchSnapshot } from "./branch-store.js";
+import type { DraftJournalRow } from "./draft-journal.js";
+import type { DraftSnapshot } from "./draft-store.js";
 
 type CandidateSource = {
-  branch: BranchSnapshot;
-  rows: BranchJournalRow[];
+  documentDraft: DraftSnapshot;
+  rows: DraftJournalRow[];
 };
 
-export function buildWholeBranchCandidates(input: {
+export function buildWholeDraftCandidates(input: {
   sources: readonly CandidateSource[];
   payloads?: ApplyPayloads;
   pushedByUserId?: UserId;
@@ -22,8 +22,8 @@ export function buildWholeBranchCandidates(input: {
   return {
     ...(input.payloads ? { payloads: input.payloads } : {}),
     candidates: input.sources.map((source) => ({
-      branchId: source.branch.branchId,
-      documentId: source.branch.documentId,
+      draftId: source.documentDraft.draftId,
+      documentId: source.documentDraft.documentId,
       rows: source.rows,
       materialization: "whole" as const,
     })),
@@ -44,14 +44,14 @@ export function buildSelectedRowCandidates(input: {
   if (selected.size === 0) throw new Error("selective_push_requires_rows");
   const rows = input.source.rows.filter((row) => selected.has(row.id));
   if (rows.length !== selected.size) {
-    throw new BranchPushCommitConflictError(input.source.branch.branchId);
+    throw new BranchPushCommitConflictError(input.source.documentDraft.draftId);
   }
   return {
     ...(input.payloads ? { payloads: input.payloads } : {}),
     candidates: [
       {
-        branchId: input.source.branch.branchId,
-        documentId: input.source.branch.documentId,
+        draftId: input.source.documentDraft.draftId,
+        documentId: input.source.documentDraft.documentId,
         rows,
         materialization: "selected_rows",
       },

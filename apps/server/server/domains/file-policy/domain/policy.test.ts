@@ -47,7 +47,7 @@ const lineageLink = (rootThreadId: string): AgentLink => ({
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
   accountId: OWNER,
-  agent: { chain, draftWork: null },
+  agent: { chain, branchWork: null },
 });
 
 describe("file policy", () => {
@@ -91,9 +91,9 @@ describe("file policy", () => {
   });
 
   it("routes drafted sources to the agent's draft and caps them by the draft's Work", () => {
-    const drafting = (draftWork: FileWorkFacts): [Principal, FileFacts] => [
-      { accountId: OWNER, agent: { chain: [link("edit", draftWork.id)], draftWork } },
-      file("manuscript", null, { draftWork }),
+    const drafting = (branchWork: FileWorkFacts): [Principal, FileFacts] => [
+      { accountId: OWNER, agent: { chain: [link("edit", branchWork.id)], branchWork } },
+      file("manuscript", null, { branchWork }),
     ];
     const live = decide(...drafting(A), ownerGrants);
     expect(live.destination).toEqual({ kind: "draft", workId: "a", workSlug: "a" });

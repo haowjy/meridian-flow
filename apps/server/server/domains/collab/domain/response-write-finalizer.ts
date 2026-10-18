@@ -4,7 +4,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "../contracts.js";
 import type { ResponseSaveResult, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
 import type { PostDurabilityNoticeService } from "./reversal-notices.js";
 

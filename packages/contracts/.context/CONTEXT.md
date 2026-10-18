@@ -37,13 +37,13 @@ contract owns a rule and where it is consumed.
   depends on storage kind: there is no separate binary identity mode and no
   display key (stored parts already render the writer and model name). Move and
   copy pass the source extension explicitly, never infer it from filetype.
-- Yjs protocol contracts expose only live rooms and generation-fenced branch
+- Yjs protocol contracts expose only live rooms and generation-fenced draft
   rooms. Every close pair a classifier uses lives in `WS_CLOSE`; transport-local
   lifecycle closes stay with their emitting transport.
 
 ## Context ownership and URIs
 
-`context-uri.ts` owns scheme classification and address syntax. Draft-mode
+`context-uri.ts` owns scheme classification and address syntax. Branch-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
 not drafted. A leading `@` in each path segment is reserved for Work authority;
 other `@` characters are valid. `uploads://@/c15/x` names a chat's upload

@@ -483,23 +483,23 @@ restart smoke check.
   ./mf mock script '[{"text":"RP13 first draft sentence."}]' --json > "$E/script.json"
   ./mf thread send "$T" 'RP13 write' --json > "$E/send.ndjson"
   ./mf doc read "$DOC" --json > "$E/before.json"
-  ./mf api GET "/api/projects/$P/works/$W/drafts" --json > "$E/draft.json"
+  ./mf api GET "/api/projects/$P/works/$W/branches" --json > "$E/draft.json"
 
   DRAFT=$(jq -r '.drafts[0].id' "$E/draft.json")
   ITEM=$(jq -r '.drafts[0].items[0].itemKey' "$E/draft.json")
   TOKEN=$(jq -r '.drafts[0].items[0].locationToken' "$E/draft.json")
   APPLY=$(node -p 'crypto.randomUUID()')
 
-  ./mf api POST "/api/projects/$P/works/$W/drafts/apply" \
-    --data "{\"draftId\":\"$DRAFT\",\"commandId\":\"$APPLY\",\"items\":[{\"itemKey\":\"$ITEM\",\"locationToken\":\"$TOKEN\"}]}" \
+  ./mf api POST "/api/projects/$P/works/$W/branches/apply" \
+    --data "{\"branchId\":\"$DRAFT\",\"commandId\":\"$APPLY\",\"items\":[{\"itemKey\":\"$ITEM\",\"locationToken\":\"$TOKEN\"}]}" \
     --json > "$E/apply.json"
   ./mf doc read "$DOC" --json > "$E/after-apply.json"
 
   DISCARD=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/projects/$P/works/$W/drafts/discard" \
-    --data "{\"draftId\":\"$DRAFT\",\"commandId\":\"$DISCARD\"}" --json > "$E/discard.json"
+  ./mf api POST "/api/projects/$P/works/$W/branches/discard" \
+    --data "{\"branchId\":\"$DRAFT\",\"commandId\":\"$DISCARD\"}" --json > "$E/discard.json"
   ./mf doc read "$DOC" --json > "$E/after-discard.json"
-  ./mf api GET "/api/projects/$P/works/$W/drafts" --json > "$E/drafts-after.json"
+  ./mf api GET "/api/projects/$P/works/$W/branches" --json > "$E/branches-after.json"
   ```
 
 - **Expect:** `apply` answers `completed` and moves only the applied row's text;

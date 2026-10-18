@@ -36,14 +36,14 @@ export async function handleDocumentAddressRequest(
     if (!work || work.projectId !== input.projectId || work.deletedAt)
       return { kind: "unavailable" };
     // Addressable, not listed: an unlisted active item opens too (M1). A bare branch id,
-    // another Work's key and a `drafts.id` all resolve to nothing here.
+    // another Work's key and a `branches.id` all resolve to nothing here.
     const resolved = await deps.draftReview.resolveItem({
       workId: review.workId as WorkId,
       itemKey: review.itemKey,
     });
     if (!resolved) return { kind: "unavailable" };
     reviewDocumentId = resolved.documentId;
-    view = { kind: "draft", draftId: resolved.draftId };
+    view = { kind: "branch", branchId: resolved.branchId };
     destination = { kind: "draft", workId: work.id, workSlug: work.isNoWork ? null : work.slug };
   }
   const principal = { accountId: input.userId as UserId };

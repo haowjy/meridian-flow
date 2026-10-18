@@ -4,7 +4,7 @@
  * notice.
  */
 import type { Database } from "@meridian/database";
-import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import {
   createWorkProjectionMutation,
   type WorkProjectionMutation,
@@ -15,6 +15,6 @@ export function createTestWorkProjectionMutation(db: Database): WorkProjectionMu
     db,
     availability: { advance: async () => "0" },
     catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
-    pendingCounts: createDrizzleWorkDraftPendingStore(db),
+    pendingCounts: createDrizzleWorkBranchPendingStore(db),
   });
 }

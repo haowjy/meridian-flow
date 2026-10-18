@@ -5,7 +5,7 @@ import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type ContextTab, getContextTabs, isDraftOnly, useContextTabsStore } from "@/client/stores";
 import * as account from "@/features/project/context/account-feature-context";
@@ -35,7 +35,7 @@ const draftTab = contextTabFromDraftGroup({
   contextLocation: { scheme: "manuscript", path: "/chapter.md" },
   isNew: true,
 });
-if (!draftTab) throw new Error("Draft tab fixture must be editable");
+if (!draftTab) throw new Error("Branch tab fixture must be editable");
 
 const addressedTab = contextTabFromFile(
   "manuscript",
@@ -90,7 +90,7 @@ async function open(p: () => ScopeProbe) {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   useContextTabsStore.setState({
     byProject: {},
@@ -119,7 +119,7 @@ beforeEach(() => {
   });
   removal.bindRouteSelection("project-a", revision, { kind: "server", documentId: "document-a" });
   fixture = createReviewScopeFixture({ removal });
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listedA, listedB] });
+  fixture.network.listWorkBranches.mockResolvedValue({ items: [listedA, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
     itemKey: id,
@@ -188,7 +188,7 @@ it("draft-only Discard keeps both containers until its own terminal success; ref
     expect(useDockDocumentStore.getState().occupant).toBe(occupant);
     fixture.network.discardDraft.mockResolvedValue({
       status: "discarded",
-      draftId: listed.draftId,
+      branchId: listed.branchId,
       itemKey: "draft-a",
       itemClosed: true,
     });
@@ -328,9 +328,9 @@ it.each([
 
 it("bulk progress reaches the next draft at confirmation without waiting for navigation", async () => {
   const navigate = vi.fn(() => new Promise<never>(() => {}));
-  fixture.network.applyAllDrafts.mockResolvedValue({
+  fixture.network.applyAllBranches.mockResolvedValue({
     status: "completed",
-    draftId: listed.draftId,
+    branchId: listed.branchId,
     items: [
       { itemKey: "draft-a", status: "applied", notes: [] },
       { itemKey: "draft-b", status: "applied", notes: [] },
@@ -340,13 +340,13 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
     async (p) => {
       await open(p);
       await act(async () => {
-        expect(await p().presented.controller.disposeDrafts("apply", [draftA, draftB])).toEqual([
+        expect(await p().presented.controller.disposeBranches("apply", [draftA, draftB])).toEqual([
           { kind: "applied" },
           { kind: "applied" },
         ]);
       });
       expect(navigate).toHaveBeenCalled();
-      expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
+      expect(fixture.network.applyAllBranches).toHaveBeenCalledTimes(1);
       expect(p().presented.controller.isDisposing).toBe(false);
     },
     {
@@ -413,12 +413,12 @@ it("an unopened list follows a remote write and disposition through updated list
         ...previewOf(...(id === "draft-b" ? ids : ["1", "2"])),
         itemKey: id,
       }));
-      fixture.network.listWorkDrafts.mockResolvedValue({
+      fixture.network.listWorkBranches.mockResolvedValue({
         items: [listedA, { ...listedB, updatedAt: stamp }],
       });
       await act(async () => {
         await p().queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+          queryKey: projectQueryKeys.workBranches("project-a", "work-a"),
         });
       });
     };

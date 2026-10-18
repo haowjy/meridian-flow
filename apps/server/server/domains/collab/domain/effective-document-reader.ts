@@ -14,20 +14,20 @@ import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
-  BranchPeerShadowAccess,
+  DraftPeerShadowAccess,
   EffectiveReadVersion,
   HashlineRead,
   SyncError,
 } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
-import type { BranchPullService } from "./branch-pulls.js";
-import { BranchNotFoundError } from "./branch-resolver.js";
+import type { Branches } from "./branches.js";
 import { documentRevision, versioned } from "./document-revision.js";
-import type { Drafts } from "./drafts.js";
+import type { DraftCoordinator } from "./draft-coordinator.js";
+import type { DraftPullService } from "./draft-pulls.js";
+import { DraftNotFoundError } from "./draft-resolver.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { PeerRetirement } from "./peer-retirement.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -37,23 +37,23 @@ type EffectiveReadInput = {
 } & EffectiveReadVersion;
 
 export function createEffectiveDocumentReader(input: {
-  branches: ApplicationBranchStore;
-  branchCoordinator: BranchCoordinator;
-  branchPulls: BranchPullService;
+  drafts: ApplicationDraftStore;
+  draftCoordinator: DraftCoordinator;
+  draftPulls: DraftPullService;
   liveCoordinator: DocumentCoordinator;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
-  drafts: Pick<Drafts, "viewForWork">;
+  branches: Pick<Branches, "viewForWork">;
   retirePeers: PeerRetirement;
   deferUntilCommit(callback: () => Promise<void>): boolean;
-}): BranchPeerShadowAccess {
+}): DraftPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? input.drafts.viewForWork(command.workId)
+      ? input.branches.viewForWork(command.workId)
       : { kind: "live" };
   }
 
@@ -102,36 +102,36 @@ export function createEffectiveDocumentReader(input: {
       // A read never ensures a peer or a draft (S1): it pulls a peer the thread already has,
       // in the Work's active draft.
       const view = await viewOf(command);
-      if (view.kind === "draft") {
+      if (view.kind === "branch") {
         try {
-          await input.branches.resolveThreadBranch(command.documentId, command.threadId);
-          await input.branchPulls.pullThreadPeer({
+          await input.drafts.resolveThreadDraft(command.documentId, command.threadId);
+          await input.draftPulls.pullThreadPeer({
             documentId: command.documentId,
             threadId: command.threadId,
-            draftId: view.draftId,
+            branchId: view.branchId,
           });
         } catch (cause) {
-          if (!(cause instanceof BranchNotFoundError)) throw cause;
+          if (!(cause instanceof DraftNotFoundError)) throw cause;
         }
       }
       try {
-        const branch = await input.branches.resolveThreadBranch(
+        const documentDraft = await input.drafts.resolveThreadDraft(
           command.documentId,
           command.threadId,
         );
-        return Ok(await readEffectiveBranch(branch, read));
+        return Ok(await readEffectiveDraft(documentDraft, read));
       } catch (cause) {
-        if (!(cause instanceof BranchNotFoundError)) throw cause;
+        if (!(cause instanceof DraftNotFoundError)) throw cause;
       }
-      await input.branchPulls.flushLivePull(command.documentId);
+      await input.draftPulls.flushLivePull(command.documentId);
       try {
-        const workDraft = await input.branches.resolveWorkDraftBranchForThread(
+        const workBranch = await input.drafts.resolveWorkDraftForThread(
           command.documentId,
           command.threadId,
         );
-        return Ok(await readEffectiveBranch(workDraft, read));
+        return Ok(await readEffectiveDraft(workBranch, read));
       } catch (cause) {
-        if (!(cause instanceof BranchNotFoundError)) throw cause;
+        if (!(cause instanceof DraftNotFoundError)) throw cause;
       }
     }
     return fallback();
@@ -155,11 +155,11 @@ export function createEffectiveDocumentReader(input: {
     }
   }
 
-  function readEffectiveBranch<T>(
-    branch: { branchId: string },
+  function readEffectiveDraft<T>(
+    documentDraft: { draftId: string },
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<T> {
-    return input.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+    return input.draftCoordinator.readDraft(documentDraft.draftId, async (doc) =>
       read(toDocHandle(doc)),
     );
   }
@@ -176,8 +176,8 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
-    flushBranchLivePull(documentId) {
-      return input.branchPulls.flushLivePull(documentId);
+    flushDraftLivePull(documentId) {
+      return input.draftPulls.flushLivePull(documentId);
     },
     readEffectiveMarkdown(command) {
       return readEffective(command, async (doc) =>
@@ -202,27 +202,27 @@ export function createEffectiveDocumentReader(input: {
         return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
       });
     },
-    ensureCreatedDraftBranch(command) {
-      return input.branches.ensureCreatedDraftBranch(command);
+    ensureCreatedDocumentDraft(command) {
+      return input.drafts.ensureCreatedDocumentDraft(command);
     },
-    async retractCreatedDraftBranch(command) {
-      const retracted = await input.branches.retractCreatedDraftBranch(command);
+    async retractCreatedDocumentDraft(command) {
+      const retracted = await input.drafts.retractCreatedDocumentDraft(command);
       if (retracted.outcome === "retracted" && retracted.deleted.length > 0) {
-        // Rooms and pooled cores hold the deleted branches' state; exactly those go, once
-        // the deletion is durable (an abort keeps the branches). Another Work's peers on
+        // Rooms and pooled cores hold the deleted drafts' state; exactly those go, once
+        // the deletion is durable (an abort keeps the drafts). Another Work's peers on
         // the same document are not this retraction's.
         const { deleted } = retracted;
         const retire = () =>
           input.retirePeers(
-            deleted.map(({ branchId, threadId }) =>
+            deleted.map(({ draftId, threadId }) =>
               threadId
                 ? {
-                    branchId,
+                    draftId,
                     documentId: command.documentId,
                     threadId,
                     cause: "document_discarded" as const,
                   }
-                : { branchId, documentId: command.documentId, threadId: null },
+                : { draftId, documentId: command.documentId, threadId: null },
             ),
           );
         if (!input.deferUntilCommit(retire)) await retire();

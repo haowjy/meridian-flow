@@ -57,7 +57,7 @@ export interface LinkAheadRegistry {
    * key; a closed draft skips its part), takes the targets' namespace keys sorted (no Work or
    * holder lock), inserts idempotently by id (re-registering an id for another address
    * throws), then settles any row whose address already holds a live document. With a
-   * `draftId` it is idempotent per (ahead id, draft), not per row: a ref with no live
+   * `branchId` it is idempotent per (ahead id, draft), not per row: a ref with no live
    * settlement whose address holds exactly one document in that draft's view is settled
    * there, whether or not the id was registered before.
    */

@@ -1,4 +1,4 @@
-# domains/collab — server-side branch collaboration
+# domains/collab — server-side draft collaboration
 
 This domain owns durable live and Work-draft Yjs coordination, persistence,
 review settlement, and Hocuspocus admission. It composes
@@ -6,7 +6,10 @@ review settlement, and Hocuspocus admission. It composes
 
 ## Mental model
 
-- Live documents, Work drafts, and thread peers are real Y.Docs. Journals and
+- A branch is one Work's pending file tree (`branches`); its document versions
+  are drafts (`document_drafts`). Apply leaves the branch open; Discard all closes it.
+
+- Live documents, document drafts, and thread peers are real Y.Docs. Journals and
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
   Review classes and writer attribution are server-derived, dependency-closed,
@@ -23,10 +26,10 @@ review settlement, and Hocuspocus admission. It composes
 - Admit novel writer content durably before Yjs apply, broadcast, or ack.
   Treat Yjs merge as trusted: destructive evidence informs receipts and marks,
   never a veto. Undo and redo are the reversal authority.
-- Branch Y.Docs use `gc: false`. Any apply after an `await` must use the
+- Draft Y.Docs use `gc: false`. Any apply after an `await` must use the
   documented durable authority/concurrency fence; a coordinator lock alone is
   not enough.
-- A branch append (a writer keystroke, a reply's rows) is ordered by its branch
+- A draft append (a writer keystroke, a reply's rows) is ordered by its draft
   row lock, never fenced by a revision: do not add a revision check, a retry or
   a Work lock to it. What depends on the committed journal is decided under that
   row lock; review membership and the Works badge catch up afterward in the
@@ -45,7 +48,7 @@ review settlement, and Hocuspocus admission. It composes
   collab must not infer live versus draft from a thread mode.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
-The focused references are [branch records](.context/branch-model-and-records.md),
+The focused references are [draft records](.context/draft-model-and-records.md),
 [document authority](.context/document-authority-and-schema.md),
 [reversal](.context/reversal.md),
 [settlement](.context/settlement-and-trail.md), and

@@ -54,7 +54,7 @@ it("counts and reveals pending files alongside an already settled live trail", a
                 documentId: "pending",
                 uri: "manuscript://pending.md",
                 path: "pending.md",
-                scope: "draft",
+                scope: "branch",
               },
             ]}
             receipt={{ state: "live-active", control: "undo" }}
@@ -114,7 +114,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
   );
   function Card() {
     const [receipt, set] = useState<import("@meridian/contracts/protocol").TurnReceiptChip>({
-      state: "branch-active",
+      state: "live-active",
       control: "undo",
     });
     setReceipt = set;
@@ -123,7 +123,12 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
         threadId="chat"
         turn={{ id: "turn" } as Turn}
         documents={[
-          { documentId: "doc", uri: "manuscript://chapter.md", path: "chapter.md", scope: "draft" },
+          {
+            documentId: "doc",
+            uri: "manuscript://chapter.md",
+            path: "chapter.md",
+            scope: "branch",
+          },
         ]}
         receipt={receipt}
         changeTrail={{
@@ -158,7 +163,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
                 documentId: "doc",
                 path: "chapter.md",
                 uri: "manuscript://chapter.md",
-                scope: "draft",
+                scope: "branch",
               },
             ],
             undefined,
@@ -189,7 +194,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
               {
                 uri: "manuscript://chapter.md",
                 status: "reversed",
-                destination: { kind: "draft", branchId: "draft" },
+                destination: { kind: "draft", draftId: "draft" },
               },
             ],
             acceptedParts: 1,

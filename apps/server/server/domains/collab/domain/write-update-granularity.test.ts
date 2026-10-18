@@ -110,7 +110,7 @@ describe("per-write journal encoding", () => {
           interactionContext: {
             mode: "threadPeer" as const,
             afterJournalId: i,
-            branchGeneration: 1,
+            draftGeneration: 1,
           },
         };
         if (i === 0 || !sameChat || reread)

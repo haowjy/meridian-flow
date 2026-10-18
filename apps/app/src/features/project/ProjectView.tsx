@@ -52,10 +52,10 @@ import {
   useDraftReviewStateOwner,
 } from "@/features/draft-review/useDraftReviewController";
 import {
-  useWorkDraftCommands,
-  type WorkDraftCommands,
-  WorkDraftCommandsBoundary,
-} from "@/features/draft-review/useWorkDraftCommands";
+  useWorkBranchCommands,
+  type WorkBranchCommands,
+  WorkBranchCommandsBoundary,
+} from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
@@ -402,7 +402,7 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
-    chatCommands: WorkDraftCommands;
+    chatCommands: WorkBranchCommands;
     presentedReview: DraftReviewContextValue;
     mobileDocumentRoute: MobileDocumentRoute;
     retainEditorWhileLoading?: boolean;
@@ -512,7 +512,7 @@ function HydratedReviewControllers({
   mobileDocumentRoute: MobileDocumentRoute;
   retainEditorWhileLoading?: boolean;
 }) {
-  const chatCommands = useWorkDraftCommands({
+  const chatCommands = useWorkBranchCommands({
     projectId: props.projectId,
     work: props.chatWork,
     threadId: props.chatThreadId,
@@ -731,14 +731,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "context-rail",
       children: (
-        <WorkDraftCommandsBoundary value={props.chatCommands}>
+        <WorkBranchCommandsBoundary value={props.chatCommands}>
           <ContextSidebar
             threadId={displayedChatThreadId(props.chatDisplay)}
             projectId={props.projectId}
             visible={isOpen("context-rail")}
             onClose={close("context-rail")}
           />
-        </WorkDraftCommandsBoundary>
+        </WorkBranchCommandsBoundary>
       ),
     },
     {
@@ -807,7 +807,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 inert={chatIndexShowing}
                 aria-hidden={chatIndexShowing}
               >
-                <WorkDraftCommandsBoundary value={props.chatCommands}>
+                <WorkBranchCommandsBoundary value={props.chatCommands}>
                   <ChatSurface
                     key="chat-surface"
                     projectId={props.projectId}
@@ -822,7 +822,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     onCloseDock={close("chat")}
                     onOpenContextTarget={props.onOpenContextTarget}
                   />
-                </WorkDraftCommandsBoundary>
+                </WorkBranchCommandsBoundary>
               </div>
             )}
             {chatIndexShowing ? (

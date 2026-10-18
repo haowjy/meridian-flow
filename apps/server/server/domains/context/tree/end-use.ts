@@ -7,14 +7,14 @@
  * Every function runs in its caller's transaction, which holds the Work, the draft (when
  * there is one) and the namespaces. Hidden nodes are tombstoned, never hard-deleted.
  */
-import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
+import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
-import { dropDocumentRows } from "./draft-tree-store.js";
+import { dropDocumentRows } from "./branch-tree-store.js";
 import {
   lockDocuments,
-  type ReleasedBranch,
+  type ReleasedDraft,
   releaseDocumentStorage,
   tombstoneDocuments,
   tombstoneFolders,
@@ -24,25 +24,25 @@ import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
 import {
   isUnusedHiddenFolder,
-  loadActiveDraftUses,
+  loadActiveBranchUses,
+  loadBranchCreatedDocuments,
   loadDocumentIdentityRows,
-  loadDraftCreatedDocuments,
 } from "./tree-view-sql.js";
 
 /**
  * What an end of use tombstoned, the stored objects to delete once it commits, and the
- * branches its storage release deleted (their rooms and runtimes retire after commit).
+ * drafts its storage release deleted (their rooms and runtimes retire after commit).
  */
 export type EndedUse = {
   tombstoned: readonly NodeRef[];
   releasedObjects: readonly string[];
-  releasedBranches: readonly ReleasedBranch[];
+  releasedDrafts: readonly ReleasedDraft[];
 };
 
 const NOTHING_ENDED: EndedUse = Object.freeze({
   tombstoned: [],
   releasedObjects: [],
-  releasedBranches: [],
+  releasedDrafts: [],
 });
 
 /**
@@ -52,11 +52,11 @@ const NOTHING_ENDED: EndedUse = Object.freeze({
  */
 export async function endUse(
   db: Database,
-  input: { draftId: DraftId; documentIds: readonly DocumentId[] },
+  input: { branchId: BranchId; documentIds: readonly DocumentId[] },
 ): Promise<EndedUse> {
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
-  await dropDocumentRows(db, { draftId: input.draftId, documentIds: ids });
+  await dropDocumentRows(db, { branchId: input.branchId, documentIds: ids });
   return tombstoneUnused(db, ids);
 }
 
@@ -78,16 +78,16 @@ export async function tombstoneUnused(
   await lockDocuments(db, ids);
   const tx = currentDrizzleDb(db);
   const rows = await loadDocumentIdentityRows(tx, ids);
-  const used = new Set((await loadActiveDraftUses(tx, ids)).map((use) => use.documentId));
+  const used = new Set((await loadActiveBranchUses(tx, ids)).map((use) => use.documentId));
   const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
   await treeHook("endUse.afterRevalidate");
   if (ending.length === 0) return NOTHING_ENDED;
   const endingIds = ending.map((row) => row.id);
   await tombstoneDocuments(db, endingIds);
-  const releasedBranches = await releaseDocumentStorage(db, endingIds);
+  const releasedDrafts = await releaseDocumentStorage(db, endingIds);
   const tombstoned: NodeRef[] = endingIds.map((id) => ({ kind: "document" as const, id }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
-  if (options.keepFolders) return { tombstoned, releasedObjects, releasedBranches };
+  if (options.keepFolders) return { tombstoned, releasedObjects, releasedDrafts };
   // Every ancestor of every ended document, deepest first: a folder is judged only after
   // all of the batch's folders beneath it, so a sibling still alive at first glance never
   // leaves its parent behind.
@@ -108,7 +108,7 @@ export async function tombstoneUnused(
     await tombstoneFolders(db, [folderId]);
     tombstoned.push({ kind: "folder", id: folderId });
   }
-  return { tombstoned, releasedObjects, releasedBranches };
+  return { tombstoned, releasedObjects, releasedDrafts };
 }
 
 /** What an end of use touches: documents, and every source they sit in now or in a draft. */
@@ -123,7 +123,7 @@ export type EndUseScope = {
  * sit now (an item's text, a node a read repairs).
  */
 export type EndUseRequest = {
-  drafts?: readonly { draftId: DraftId; documentIds?: readonly DocumentId[] }[];
+  branches?: readonly { branchId: BranchId; documentIds?: readonly DocumentId[] }[];
   documentIds?: readonly DocumentId[];
 };
 
@@ -153,9 +153,9 @@ export async function readEndUseScope(db: Database, request: EndUseRequest): Pro
   const tx = currentDrizzleDb(db);
   const documentIds = new Set<DocumentId>();
   const sourceIds = new Set<ContextSourceId>();
-  for (const { draftId, documentIds: named } of request.drafts ?? []) {
+  for (const { branchId, documentIds: named } of request.branches ?? []) {
     const only = named ? new Set(named) : null;
-    for (const row of await loadDraftCreatedDocuments(tx, draftId)) {
+    for (const row of await loadBranchCreatedDocuments(tx, branchId)) {
       if (only && !only.has(row.id)) continue;
       documentIds.add(row.id);
       sourceIds.add(row.contextSourceId);
@@ -197,24 +197,24 @@ export async function acquireEndUseScope(
 
 /**
  * Reverse a draft's create for a rolled-back reply or a failed create (§12.5, O-11). The
- * tree half only: collab's `retractBranch` decides whether the draft's text branch holds
+ * tree half only: collab's `retractDraft` decides whether the draft's text branch holds
  * another contribution (then the create stands) and otherwise removes it; the draft's use
  * then ends.
  */
 export async function retractCreate(
   db: Database,
   input: {
-    draftId: DraftId;
+    branchId: BranchId;
     documentId: DocumentId;
-    retractBranch(): Promise<"retracted" | "stands">;
+    retractDraft(): Promise<"retracted" | "stands">;
   },
 ): Promise<{ retracted: boolean; tombstoned: readonly NodeRef[] }> {
   await lockDocuments(db, [input.documentId]);
-  const uses = await loadActiveDraftUses(currentDrizzleDb(db), [input.documentId]);
-  if (!uses.some((use) => use.draftId === input.draftId)) {
+  const uses = await loadActiveBranchUses(currentDrizzleDb(db), [input.documentId]);
+  if (!uses.some((use) => use.branchId === input.branchId)) {
     return { retracted: false, tombstoned: [] };
   }
-  if ((await input.retractBranch()) === "stands") return { retracted: false, tombstoned: [] };
-  const ended = await endUse(db, { draftId: input.draftId, documentIds: [input.documentId] });
+  if ((await input.retractDraft()) === "stands") return { retracted: false, tombstoned: [] };
+  const ended = await endUse(db, { branchId: input.branchId, documentIds: [input.documentId] });
   return { retracted: true, tombstoned: ended.tombstoned };
 }

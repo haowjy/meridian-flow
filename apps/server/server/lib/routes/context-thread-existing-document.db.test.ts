@@ -119,7 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: DRAFT_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
-          name: "Draft",
+          name: "Branch",
           slug: "draft",
         },
       ]);
@@ -184,7 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.threadWorks.threadId, THREAD_ID));
     }
 
-    // A writer overwrite stays live even when the thread drafts model writes.
+    // A writer overwrite stays live even when the thread branches model writes.
     it("overwrites an existing document from a draft-mode thread at once", async () => {
       await bindThread(DRAFT_WORK_ID);
       await db
