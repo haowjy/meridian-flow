@@ -63,7 +63,7 @@ generation are required end to end. Unexpected failures report safe identity
 metadata to the observer and collapse to model-facing `internal_error`; observer
 failures never alter mutation control flow.
 
-The package calls its human locator `file`; a host may publish a different path
+The package calls its human locator `file`; a host may show a different path
 name. Internal `documentId` remains storage/journal/runtime identity and is
 never inferred from writer-facing prose.
 
