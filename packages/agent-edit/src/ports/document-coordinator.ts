@@ -88,7 +88,9 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 /**
  * Port callers' access to the host-owned canonical Y.Doc (live or branch). Callers must not
  * rely on mutual exclusion: each host decides how a mutation commits (a live host serializes
- * callers; a branch host runs them on private candidates committed at a revision).
+ * callers; a branch host runs them on private candidates and commits an ordinary CRDT write as
+ * an unfenced append, while an exact peer catch-up or rewrite commits only at the revision it
+ * captured, so a staged save can still miss that revision).
  */
 export interface DocumentCoordinator {
   /**
