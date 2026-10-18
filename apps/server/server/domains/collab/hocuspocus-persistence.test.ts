@@ -13,6 +13,7 @@ import {
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
+import type { LiveWriterAppend, LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import {
@@ -305,7 +306,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   it("suppresses contained reconnect updates without advancing writer ingress", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const onLiveUpdatePersisted = vi.fn();
     const persistence = createHocuspocusPersistenceService({
       journal,
@@ -341,7 +341,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   it("admits novel insertion and delete-only updates", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const onLiveUpdatePersisted = vi.fn();
     const persistence = createHocuspocusPersistenceService({
       journal,
@@ -407,7 +406,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
     const closeConnections = vi.fn();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents, closeConnections }) as never,
@@ -437,7 +435,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const staleClient = cloneDoc(retired);
     const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
@@ -476,7 +473,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
     const liveDocument = documentWithReservedFacts();
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
@@ -503,7 +499,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const liveDocument = documentWithReservedFacts();
     const wrongDocument = boundDoc({ gc: false });
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
@@ -526,7 +521,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
   it("rejects reserved-client-ID injection before journaling", async () => {
     const liveDocument = boundDoc({ gc: false });
     const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
@@ -555,11 +549,11 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(
       () =>
-        new Promise<{ seq: number; joinedSettlement: boolean }>((resolve) => {
+        new Promise<LiveWriterAppend>((resolve) => {
           events.push("journal:start");
           commit = () => {
             events.push("journal:commit");
-            resolve({ seq: 1, joinedSettlement: true });
+            resolve({ status: "appended", seq: 1, joinedSettlement: true });
           };
         }),
     );
@@ -639,8 +633,10 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(
       () =>
-        new Promise<{ seq: number; joinedSettlement: boolean }>((resolve) => {
-          resolvers.push(() => resolve({ seq: resolvers.length, joinedSettlement: false }));
+        new Promise<LiveWriterAppend>((resolve) => {
+          resolvers.push(() =>
+            resolve({ status: "appended", seq: resolvers.length, joinedSettlement: false }),
+          );
         }),
     );
     const persistence = createHocuspocusPersistenceService({
@@ -724,8 +720,13 @@ function branchSnapshot(doc: Y.Doc): { branch: BranchSnapshot; state: Uint8Array
   };
 }
 
-function fakeJournal(): CheckpointJournal {
+function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   return {
+    appendWriterUpdate: vi.fn(async () => ({
+      status: "appended" as const,
+      seq: 1,
+      joinedSettlement: false,
+    })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");
     },

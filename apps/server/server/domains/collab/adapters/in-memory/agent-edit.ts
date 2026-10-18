@@ -13,14 +13,19 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
 import type { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
+import { documentContainsUpdate } from "../../domain/document-containment.js";
 import { bindDocumentAuthority } from "../../domain/document-handle.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../../domain/ports/checkpoint-authority.js";
+import type {
+  LiveWriterAppend,
+  LiveWriterJournal,
+} from "../../domain/ports/live-writer-journal.js";
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
-import { loadDocumentState } from "../document-loader.js";
+import { loadDocumentState, storedDocument } from "../document-loader.js";
 
 export type InMemoryCheckpointRecord = {
   id: string;
@@ -30,16 +35,17 @@ export type InMemoryCheckpointRecord = {
   createdAt: string;
 };
 
-export type InMemoryJournal = CheckpointJournal & {
-  createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string>;
-  seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean>;
-  getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
-  listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
-  latestUpdate(docId: string): Promise<PersistedUpdate | null>;
-  latestUpdateSeq(docId: string): Promise<number>;
-  updateRecords(docId: string): PersistedUpdate[];
-  documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
-};
+export type InMemoryJournal = CheckpointJournal &
+  LiveWriterJournal & {
+    createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string>;
+    seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean>;
+    getCheckpoint(id: string): Promise<InMemoryCheckpointRecord | null>;
+    listCheckpoints(docId: string): Promise<InMemoryCheckpointRecord[]>;
+    latestUpdate(docId: string): Promise<PersistedUpdate | null>;
+    latestUpdateSeq(docId: string): Promise<number>;
+    updateRecords(docId: string): PersistedUpdate[];
+    documentsForTurn(threadId: string, turnId: string): Promise<string[]>;
+  };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {
   override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {
@@ -51,6 +57,25 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
 
   private readonly checkpoints: InMemoryCheckpointRecord[] = [];
   private nextCheckpointId = 1;
+  // The document lock the Drizzle journal judges novelty under.
+  private readonly writerAdmissions = new KeyedMutex();
+
+  appendWriterUpdate(
+    docId: string,
+    update: Uint8Array,
+    meta: Parameters<UpdateJournal["append"]>[2],
+  ): Promise<LiveWriterAppend> {
+    return this.writerAdmissions.run(docId, async () => {
+      const stored = storedDocument(await this.read(docId));
+      try {
+        if (documentContainsUpdate(stored, update)) return { status: "contained" };
+      } finally {
+        stored.destroy();
+      }
+      const seq = await this.append(docId, update, meta);
+      return { status: "appended", seq, joinedSettlement: false };
+    });
+  }
 
   async captureCheckpoint(docId: string, authority: CheckpointAuthority) {
     if (authority.authorityId !== docId || authority.generation !== 1n) return null;

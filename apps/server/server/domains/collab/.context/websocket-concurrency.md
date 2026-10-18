@@ -28,11 +28,13 @@ contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). A frame
 racing another write waits for the row lock once and never judges again; no
 branch mutex exists to hold against a frame.
 
-A live-room writer frame is judged new the same way, where it serializes: the
-journal's `appendWriterUpdate` holds the document mutation lock and compares the
-update with the stored state, so a copy whose structs and deletes are already
-stored writes no row, no receipt and no settlement join, and is acknowledged
-(#946: a second tab relaying a peer's keystroke on its own socket). The
+A live-room writer frame is judged new the same way, where it serializes:
+collab's `LiveWriterJournal.appendWriterUpdate` port holds the document
+mutation lock, reads the stored document and judges the update against it, then
+inserts. A copy whose structs and deletes are already stored returns
+`{ status: "contained" }`, as a draft append does, and writes no row, no receipt
+and no settlement join, and is acknowledged (#946: a second tab relaying a
+peer's keystroke on its own socket). The
 pre-lock check against the room is only a fast refusal for reconnect replays;
 the room lags admissions still in their transaction.
 
