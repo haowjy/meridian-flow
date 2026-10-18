@@ -623,16 +623,14 @@ type XmlNodeSpan = ClockRange & {
 
 function xmlNodeSpans(update: Uint8Array): XmlNodeSpan[] {
   return Y.decodeUpdate(update).structs.flatMap((struct) => {
-    const item = struct as typeof struct & {
-      content?: { getContent?(): unknown[] };
-    };
-    const node = item.content?.getContent?.().find((value) => value instanceof Y.XmlElement);
+    if (!(struct instanceof Y.Item) || !(struct.content instanceof Y.ContentType)) return [];
+    const node = struct.content.type;
     if (!(node instanceof Y.XmlElement)) return [];
     return [
       {
-        client: item.id.client,
-        clockFrom: item.id.clock,
-        clockTo: item.id.clock + item.length,
+        client: struct.id.client,
+        clockFrom: struct.id.clock,
+        clockTo: struct.id.clock + struct.length,
         nodeType: node.nodeName,
       },
     ];

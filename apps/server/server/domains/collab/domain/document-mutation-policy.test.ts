@@ -11,7 +11,7 @@ import {
   replaceAuthorityGeneration,
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
-import { appendProvenanceFacts } from "./provenance.js";
+import { appendProvenanceFacts, validateClientUpdateAdmission } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -72,7 +72,9 @@ describe("document mutation policy operations", () => {
     writer.getXmlFragment("prosemirror").push([paragraph, new Y.XmlElement("paragraph")]);
     writer.getXmlFragment("prosemirror").delete(0, 1);
     const live = new Y.Doc({ gc: false });
-    Y.applyUpdate(live, Y.encodeStateAsUpdate(writer));
+    const writerUpdate = Y.encodeStateAsUpdate(writer);
+    expect(validateClientUpdateAdmission(live, writerUpdate)).toEqual({ reservedClientId: null });
+    Y.applyUpdate(live, writerUpdate);
     const target = new Y.Doc({ gc: false });
 
     replicateFrozenSource(live, target);

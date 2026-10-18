@@ -423,7 +423,7 @@ function replacedBlockOutputRanges(
   inserted: readonly LineageRange[],
   outputLength: number,
 ): LineageRange[] {
-  const item = (block as unknown as { _item: YItemLike | null })._item;
+  const item = block._item;
   if (!item?.deleted) return [];
   // A structural remint inserts beside the input tombstone. Accept only one adjacent
   // block whose complete prose was inserted by this lowering, or let the length guard fail.
@@ -444,13 +444,10 @@ function replacedBlockOutputRanges(
   return matches.length === 1 ? (matches[0] ?? []) : [];
 }
 
-function nearestVisibleType(
-  item: YItemLike | null | undefined,
-  direction: "left" | "right",
-): unknown {
+function nearestVisibleType(item: Y.Item | null, direction: "left" | "right"): unknown {
   let current = item;
   while (current?.deleted) current = current[direction];
-  return current?.content.type;
+  return current?.content instanceof Y.ContentType ? current.content.type : undefined;
 }
 
 function textEditInputSpan(edit: MappedEdit["edit"]): { from: number; to: number } | undefined {
@@ -479,12 +476,11 @@ function resolvedRootUnits(
 }
 
 function insertedStringRanges(update: Uint8Array): LineageRange[] {
-  return (Y.decodeUpdate(update) as DecodedUpdate).structs.flatMap((value) => {
-    const struct = asStruct(value);
-    return struct.content?.constructor?.name === "ContentString"
+  return decodeAdmittedUpdate(update).structs.flatMap((struct) =>
+    struct instanceof Y.Item && struct.content instanceof Y.ContentString
       ? [{ clientID: struct.id.client, clock: struct.id.clock, length: struct.length }]
-      : [];
-  });
+      : [],
+  );
 }
 
 function intersectRangesInOrder(
@@ -548,8 +544,8 @@ export function validateClientUpdateAdmission(
   referenceDocument: Y.Doc,
   update: Uint8Array,
 ): { reservedClientId: number | null } {
-  const decoded = Y.decodeUpdate(update) as DecodedUpdate;
-  const incoming = decoded.structs.map(asStruct);
+  const decoded = decodeAdmittedUpdate(update);
+  const incoming = decoded.structs;
   const reservedClientId =
     incoming.find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id.client ?? null;
   if (reservedClientId === null) {
@@ -580,8 +576,9 @@ function assertDecodedUpdateOutsideReservedNamespace(
     const memo = ancestryMemo.get(struct);
     if (memo !== undefined) return memo;
     if (visiting.has(struct)) throw new ReservedNamespaceAdmissionError("Cyclic Yjs parent chain");
+    if (!(struct instanceof Y.Item)) return false;
     visiting.add(struct);
-    const parent = struct.parent;
+    const parent = decodedParent(struct);
     let result = typeof parent === "string" && isReservedName(parent);
     if (!result && isId(parent)) {
       const incomingParent = findStruct(incomingByClient, parent);
@@ -633,11 +630,13 @@ function isPlainProseFastPath(
     }
   }
   for (const struct of incoming) {
-    if (typeof struct.parent === "string") {
-      if (struct.parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
-    } else if (!isId(struct.parent) || incomingContains(incoming, struct.parent)) {
+    if (!(struct instanceof Y.Item)) return false;
+    const parent = decodedParent(struct);
+    if (typeof parent === "string") {
+      if (parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
+    } else if (!isId(parent) || incomingContains(incoming, parent)) {
       return false;
-    } else if (reserved.contains(struct.parent)) {
+    } else if (reserved.contains(parent)) {
       return false;
     }
     for (const anchor of [struct.origin, struct.rightOrigin]) {
@@ -662,10 +661,11 @@ function incomingContains(
 }
 
 export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
-  return (Y.decodeUpdate(update) as DecodedUpdate).structs.map((value) => {
-    const struct = asStruct(value);
-    return { clientID: struct.id.client, clock: struct.id.clock, length: struct.length };
-  });
+  return decodeAdmittedUpdate(update).structs.map((struct) => ({
+    clientID: struct.id.client,
+    clock: struct.id.clock,
+    length: struct.length,
+  }));
 }
 
 function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
@@ -743,16 +743,6 @@ class RangeIndex<T> {
   }
 }
 
-type YItemLike = {
-  id: { client: number; clock: number };
-  length: number;
-  deleted: boolean;
-  parent: unknown;
-  content: { constructor?: { name?: string }; type?: unknown };
-  left?: YItemLike | null;
-  right?: YItemLike | null;
-};
-
 function visibleProseStringRanges(doc: Y.Doc): LineageRange[] {
   return visibleStringRanges(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
 }
@@ -761,12 +751,10 @@ function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): Li
   const ranges: LineageRange[] = [];
   const visit = (current: Y.XmlElement | Y.XmlText | Y.XmlFragment): void => {
     if (current instanceof Y.XmlText) {
-      let item = (current as unknown as { _start: YItemLike | null })._start;
-      while (item) {
-        if (!item.deleted && item.content.constructor?.name === "ContentString") {
+      for (let item = current._start; item; item = item.right) {
+        if (!item.deleted && item.content instanceof Y.ContentString) {
           ranges.push({ clientID: item.id.client, clock: item.id.clock, length: item.length });
         }
-        item = item.right ?? null;
       }
       return;
     }
@@ -794,18 +782,8 @@ function allStringRanges(doc: Y.Doc): RangeIndex<true> {
   return index;
 }
 
-type DecodedStruct = {
-  id: { client: number; clock: number };
-  length: number;
-  parent: unknown;
-  origin?: unknown;
-  rightOrigin?: unknown;
-  content?: { constructor?: { name?: string } };
-};
-type DecodedUpdate = {
-  structs: unknown[];
-  ds: { clients: Map<number, Array<{ clock: number; len: number }>> };
-};
+type DecodedStruct = Y.Item | Y.GC | Y.Skip;
+type DecodedUpdate = ReturnType<typeof Y.decodeUpdate>;
 
 function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   const index = new ReservedRangeIndex();
@@ -816,24 +794,15 @@ function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   return index;
 }
 
-function collectTypeStructs(type: unknown, index: ReservedRangeIndex): void {
-  const map = (type as { _map?: Map<string, YItemLike> })._map;
-  for (const entry of map?.values() ?? []) {
-    let item: YItemLike | null = entry;
-    while (item) {
-      index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
-      const content = (item as unknown as { content?: { getContent?: () => unknown[] } }).content;
-      for (const child of content?.getContent?.() ?? []) collectTypeStructs(child, index);
-      item = item.left ?? null;
-    }
-  }
-  let item = (type as { _start?: YItemLike | null })._start ?? null;
-  while (item) {
+function collectTypeStructs<E>(type: Y.AbstractType<E>, index: ReservedRangeIndex): void {
+  const collect = (item: Y.Item): void => {
     index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
-    const content = (item as unknown as { content?: { getContent?: () => unknown[] } }).content;
-    for (const child of content?.getContent?.() ?? []) collectTypeStructs(child, index);
-    item = item.right ?? null;
+    if (item.content instanceof Y.ContentType) collectTypeStructs(item.content.type, index);
+  };
+  for (const entry of type._map.values()) {
+    for (let item: Y.Item | null = entry; item; item = item.left) collect(item);
   }
+  for (let item = type._start; item; item = item.right) collect(item);
 }
 
 class ReservedRangeIndex {
@@ -939,12 +908,20 @@ function findStruct(
     ?.find((struct) => id.clock >= struct.id.clock && id.clock < struct.id.clock + struct.length);
 }
 
-function asStruct(value: unknown): DecodedStruct {
-  const struct = value as DecodedStruct;
-  if (!isId(struct.id) || !Number.isSafeInteger(struct.length) || struct.length <= 0) {
-    throw new ReservedNamespaceAdmissionError("Malformed Yjs update struct");
+function decodeAdmittedUpdate(update: Uint8Array): DecodedUpdate {
+  const decoded = Y.decodeUpdate(update);
+  for (const struct of decoded.structs) {
+    if (!isId(struct.id) || !Number.isSafeInteger(struct.length) || struct.length <= 0) {
+      throw new ReservedNamespaceAdmissionError("Malformed Yjs update struct");
+    }
   }
-  return struct;
+  return decoded;
+}
+
+/** A decoded, unintegrated item names a root parent by its share key, which Yjs's
+ * typings omit (they describe integrated items); widen before narrowing. */
+function decodedParent(item: Y.Item): unknown {
+  return item.parent;
 }
 
 function sameAttribution(left: AttributionRunV1, right: AttributionRunV1): boolean {

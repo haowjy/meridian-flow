@@ -126,9 +126,8 @@ export function assertNoPendingIntegration(
   operation: string,
   journalIds: readonly number[],
 ): void {
-  const store = (doc as unknown as { store?: { pendingStructs?: unknown; pendingDs?: unknown } })
-    .store;
-  if (hasPending(store?.pendingStructs) || hasPending(store?.pendingDs)) {
+  const { pendingStructs, pendingDs } = doc.store;
+  if (hasPending(pendingStructs) || hasPending(pendingDs)) {
     throw new BranchPeerIntegrationError(operation, journalIds);
   }
 }
