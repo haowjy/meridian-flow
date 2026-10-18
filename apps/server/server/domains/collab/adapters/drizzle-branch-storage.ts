@@ -34,6 +34,7 @@ import {
   type BranchSnapshot,
   type BranchTailRow,
   type BranchWorkLifecycle,
+  type EffectBaseline,
   mergeStateVectors,
   type PullEffect,
   type RewriteFence,
@@ -232,21 +233,14 @@ export async function readBranchAt(
 export async function readEffectBaselineWithin(
   db: DrizzleDb,
   branchId: string,
-): Promise<{ state: Uint8Array | null; checkpointRevision: number } | null> {
+): Promise<EffectBaseline | null> {
   const [row] = await db
-    .select({
-      kind: documentBranches.kind,
-      liveCut: documentBranches.liveCut,
-      checkpointRevision: documentBranches.checkpointRevision,
-    })
+    .select({ kind: documentBranches.kind, liveCut: documentBranches.liveCut })
     .from(documentBranches)
     .where(eq(documentBranches.id, branchId))
     .limit(1);
   if (row?.kind !== "work_draft") return null;
-  return {
-    state: row.liveCut ? new Uint8Array(row.liveCut) : null,
-    checkpointRevision: Number(row.checkpointRevision),
-  };
+  return { state: row.liveCut ? new Uint8Array(row.liveCut) : null };
 }
 
 /** What an append's sequence point committed, with the lock's wait and hold. */

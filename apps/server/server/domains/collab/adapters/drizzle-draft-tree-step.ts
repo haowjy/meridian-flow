@@ -296,7 +296,6 @@ export function createDrizzleDraftTreeStep(
                 expectedRevision: branch.revision,
                 schemaVersion: branch.schemaVersion,
                 editDisposition: "retired",
-                fence: { kind: "settlement-owned", batchId: scope.batchId },
               })
               .catch((cause) => {
                 if (cause instanceof BranchCasConflictError) return false;

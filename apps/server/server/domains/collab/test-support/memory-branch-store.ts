@@ -112,7 +112,7 @@ export class MemoryBranchStore implements BranchStore {
   async readEffectBaseline(branchId: string): Promise<EffectBaseline | null> {
     const branch = this.branches.get(branchId);
     if (branch?.kind !== "work_draft") return null;
-    return { state: branch.liveCut ?? null, checkpointRevision: branch.checkpointRevision };
+    return { state: branch.liveCut ?? null };
   }
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {

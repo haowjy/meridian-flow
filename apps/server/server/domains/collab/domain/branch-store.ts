@@ -65,10 +65,10 @@ export type BranchRead = {
 
 /**
  * A work draft's effect baseline (`live_cut`), the live state its `has_effect` is measured
- * against, at the checkpoint revision it was read. `state` is null for a legacy branch created
+ * against. `state` is null for a legacy branch created
  * before every creator stored one; the projection job establishes it with a pull.
  */
-export type EffectBaseline = { state: Uint8Array | null; checkpointRevision: number };
+export type EffectBaseline = { state: Uint8Array | null };
 
 /** One logical write's edit receipts, captured on the document the append commits into. */
 export type AppendReceiptGroup = {
@@ -146,10 +146,7 @@ export type AppendRowsOutcome =
  * document (`fenced` while it is pending, `blocked` once it is terminally blocked); a
  * settlement's own reset is not; Discard and close fence on neither.
  */
-export type RewriteFence =
-  | { kind: "pending-settlement" }
-  | { kind: "settlement-owned"; batchId: string }
-  | { kind: "none" };
+export type RewriteFence = { kind: "pending-settlement" } | { kind: "none" };
 
 /**
  * `exact` commits only at the revision the rewrite was computed at; `fold` commits over any
