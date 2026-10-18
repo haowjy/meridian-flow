@@ -357,10 +357,11 @@ point for live content; the in-process coordinator mutex is not
 </p>
 <p>
 "Document authority" names the durable head and nothing else. The operation
-capabilities that admit content (<code>admitFreshAuthorship</code>,
-<code>admitCertifiedMutation</code>, <code>replicateFrozenIdentity</code>,
-<code>replaceAuthorityGeneration</code>) are the <strong>document mutation
-policy</strong>, and an in-memory room is the <strong>live document</strong>.
+capabilities that admit content durably (<code>admitFreshAuthorship</code>,
+<code>replaceAuthorityGeneration</code>) and the local checks a branch runs before
+its store commits (<code>admitSegmentRows</code>, <code>replicateFrozenSource</code>)
+are the <strong>document mutation policy</strong>, and an in-memory room is the
+<strong>live document</strong>.
 <span class="ref"><code>domain/document-mutation-policy.ts</code>, <a href="document-authority-and-schema.md">document authority and schema</a></span>
 </p>
 
@@ -875,7 +876,7 @@ The points below are the ones that change how you reason about edits here.
 </p>
 <ul class="rule-list">
   <li><strong>Pulls are replication, not authorship.</strong> A live pull uses
-    <code>replicateFrozenIdentity</code> on a frozen copy of live, so pulled
+    <code>replicateFrozenSource</code> on a frozen copy of live, so pulled
     structs keep their original Yjs identities and attribution. A pull
     computes off every lock, enters the Works mutation boundary, and commits as
     a fold over its replica's cursor, so writer rows appended meanwhile are
