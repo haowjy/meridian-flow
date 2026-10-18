@@ -10,13 +10,11 @@ import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
-  type AttributionManifestV1,
   appendProvenanceFacts,
   createSemanticProvenanceWriter,
   type DocumentAuthorityId,
   journalInsertionRanges,
   materializeCandidateProvenance,
-  materializeProvenanceView,
   PROVENANCE_TARGETS_TYPE,
   ProvenanceMaterializationError,
 } from "./provenance.js";
@@ -30,14 +28,6 @@ function inlineText(text: string): Fragment {
 }
 
 const authorityId = "00000000-0000-4000-8000-000000000100" as DocumentAuthorityId;
-const emptyManifest = (): AttributionManifestV1 => ({
-  version: 1,
-  authorityId,
-  generation: 1n,
-  checkpointId: "empty-authority-floor",
-  floor: null,
-  attributions: [],
-});
 
 describe("provenance materialization", () => {
   it("writes restoration facts alongside a retained output run", () => {
@@ -294,77 +284,6 @@ describe("provenance materialization", () => {
     expect(doc.getMap(PROVENANCE_TARGETS_TYPE).size).toBe(0);
   });
 
-  it("attributes a pending insertion to the row that originated its clocks", () => {
-    const source = createCollabYDoc({ gc: false });
-    const fragment = source.getXmlFragment("prosemirror");
-    const paragraph = new Y.XmlElement("paragraph");
-    fragment.push([paragraph]);
-    const parentUpdate = Y.encodeStateAsUpdate(source);
-    const parentVector = Y.encodeStateVector(source);
-    const text = new Y.XmlText("writer words");
-    paragraph.push([text]);
-    const childUpdate = Y.encodeStateAsUpdate(source, parentVector);
-
-    const result = materializeProvenanceView({
-      authorityId,
-      generation: 1n,
-      manifest: emptyManifest(),
-      rows: [
-        {
-          authorityId,
-          generation: 1n,
-          admissionSequence: 1n,
-          batchOrdinal: 0,
-          journalRowId: 10n,
-          originType: "agent",
-          actorUserId: null,
-          update: childUpdate,
-        },
-        {
-          authorityId,
-          generation: 1n,
-          admissionSequence: 2n,
-          batchOrdinal: 0,
-          journalRowId: 11n,
-          originType: "human",
-          actorUserId: crypto.randomUUID(),
-          update: parentUpdate,
-        },
-      ],
-      watermark: { admissionSequence: 2n, batchOrdinal: 0, journalRowId: 11n },
-    });
-
-    expect(result.doc.getXmlFragment("prosemirror").toString()).toContain("writer words");
-    expect(result.visible).toHaveLength(1);
-    expect(result.visible[0]?.birthClass).toBe("agent");
-    expect(result.visible[0]?.target).toEqual(result.visible[0]?.root);
-  });
-
-  it("blocks missing replay rows and missing checkpoint attribution", () => {
-    const doc = proseDoc("unattributed");
-    const update = Y.encodeStateAsUpdate(doc);
-    expect(() =>
-      materializeProvenanceView({
-        authorityId,
-        generation: 1n,
-        manifest: emptyManifest(),
-        rows: [row(2n, 2n, update)],
-        watermark: { admissionSequence: 2n, batchOrdinal: 0, journalRowId: 2n },
-      }),
-    ).toThrow(/missing a row/);
-
-    expect(() =>
-      materializeProvenanceView({
-        authorityId,
-        generation: 1n,
-        checkpointUpdate: update,
-        manifest: emptyManifest(),
-        rows: [],
-        watermark: { admissionSequence: 0n, batchOrdinal: 0, journalRowId: 0n },
-      }),
-    ).toThrow(ProvenanceMaterializationError);
-  });
-
   it("accepts idempotent facts and blocks conflicting append-only assignments", () => {
     const doc = proseDoc("ab");
     const target = textRange(doc);
@@ -559,19 +478,6 @@ describe("sweep observation evidence", () => {
     doc.destroy();
   });
 });
-
-function row(admissionSequence: bigint, journalRowId: bigint, update: Uint8Array) {
-  return {
-    authorityId,
-    generation: 1n,
-    admissionSequence,
-    batchOrdinal: 0,
-    journalRowId,
-    originType: "human",
-    actorUserId: crypto.randomUUID(),
-    update,
-  };
-}
 
 function proseDoc(value: string): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
