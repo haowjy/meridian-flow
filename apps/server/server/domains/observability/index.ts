@@ -38,7 +38,6 @@ export type {
 export { recordFailure } from "./record-failure.js";
 export {
   MAX_EVENT_RECORD_BYTES,
-  safeSnippet,
   sanitizeEventRecord,
   serializedEventBytes,
 } from "./safe-event.js";

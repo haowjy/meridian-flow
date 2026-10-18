@@ -5,18 +5,15 @@ import {
   applyConcurrentUpdates,
   type BlockSnapshot,
   type ConcurrentDetectionResult,
-  computeEcho,
   snapshotBlocks,
 } from "../apply/echo.js";
 import type {
-  ApplyEchoHunk,
   ConcurrentEditInfo,
   ConcurrentUpdate,
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
 import { toDocHandle } from "../handles.js";
 import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
-import { withRunShownLinks } from "../links/shown.js";
 import type { DocumentAccess, DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -34,23 +31,6 @@ import type { DocumentCommandName, InteractionContext, MutationActor } from "./t
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
-}
-
-export interface SyncedMutationSummary {
-  revision?: string | null;
-  echo: ApplyEchoHunk[];
-  concurrentEdits?: ConcurrentEditInfo;
-  reconciled: boolean;
-  awarenessDegraded?: true;
-}
-
-export interface MutationEchoInput {
-  runtime: MutationCommitRuntime;
-  /** The command's links; the echo spells through them. */
-  links: CommandLinks;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
 }
 
 export interface JournaledUpdate {
@@ -166,10 +146,6 @@ export class AcceptedMutationSubmissionError extends Error {
 export interface MutationCommit {
   submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
-  summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent?: ConcurrentDetectionResult,
-  ): SyncedMutationSummary;
   detectConcurrentEdits(input: {
     docId: string;
     runtime: MutationCommitRuntime;
@@ -215,35 +191,12 @@ export function createMutationCommit(deps: {
   return {
     submitMutation,
     commitJournalBatch,
-    summarizeMutationEcho,
     detectConcurrentEdits,
     captureCommitPreflight,
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
     reportAcceptedMutation,
   };
-
-  function summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
-  ): SyncedMutationSummary {
-    try {
-      const after = snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
-      const echo = computeEcho({
-        before: input.before,
-        after,
-        agentTouchedHashes: input.touchedHashes,
-        agentDeletedHashes: input.deletedHashes,
-      });
-      return {
-        echo,
-        concurrentEdits: withRunShownLinks(concurrent.info, input.links),
-        reconciled: echo.some((hunk) => hunk.mode === "full"),
-      };
-    } catch {
-      return { echo: [], reconciled: false, awarenessDegraded: true };
-    }
-  }
 
   async function detectConcurrentEdits(input: {
     docId: string;
@@ -731,14 +684,5 @@ function mergeConcurrentDetection(
         ? { syncOverflow: true }
         : {}),
     },
-  };
-}
-
-function emptyConcurrentDetection(): ConcurrentDetectionResult {
-  return {
-    humanTouchedHashes: new Set(),
-    touchedHashes: new Set(),
-    baselineBlocks: [],
-    lineageOrigins: [],
   };
 }

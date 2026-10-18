@@ -107,9 +107,3 @@ export interface DestructiveProvenanceRun {
 export function writeHandle(wId: number): string {
   return `w${wId}`;
 }
-
-export function parseWriteHandle(handle: string): number | undefined {
-  if (!/^w[1-9]\d*$/.test(handle)) return undefined;
-  const ordinal = Number(handle.slice(1));
-  return Number.isSafeInteger(ordinal) ? ordinal : undefined;
-}
