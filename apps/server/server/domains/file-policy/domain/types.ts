@@ -207,7 +207,7 @@ export function targetDocumentId(target: FileTarget): DocumentId {
 }
 
 /**
- * The named Works a write to this file locks (§5): its owner and its draft's
+ * The named Works a write to this file locks (§5): its owner and its branch's
  * Work. The project and No Work can't be archived, so they lock nothing.
  */
 export function grantWorkIds(facts: FileFacts): WorkId[] {

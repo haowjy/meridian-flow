@@ -20,7 +20,7 @@ const draftOf = (documentId: string): ThreadDraftListItem => ({
 });
 
 describe("write-mode control draft count", () => {
-  it("counts the documents waiting in the chosen Work's draftss", async () => {
+  it("counts the documents waiting in the chosen Work's drafts", async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(projectQueryKeys.workBranchDrafts("p", "work-a"), [
       draftOf("doc-1"),

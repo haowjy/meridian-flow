@@ -695,7 +695,7 @@ export function useContextCatalogWake(
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const transport = useOptionalThreadTransport();
-  // A create that joined a draft's document now is that document, so its draft list is
+  // A create that joined a branch's new document now is that document, so its draft list is
   // stale: the writer sees the draft's review at once, not at the next reload or hint.
   useEffect(
     () =>

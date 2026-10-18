@@ -1,4 +1,4 @@
-/** Snapshot-owned branch mutations and explicit preview-fenced request envelopes. */
+/** Snapshot-owned draft edits and explicit preview-fenced request envelopes. */
 import { randomUUID } from "node:crypto";
 import type { BranchCommandId, BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { BranchCommandKind } from "@meridian/contracts/branches";

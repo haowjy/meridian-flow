@@ -491,7 +491,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         hidden: true,
         deletedAt: null,
       });
-      expect.soft(await usesOf(sharedId), "stands: the draft keeps it").toHaveLength(1);
+      expect.soft(await usesOf(sharedId), "stands: the branch keeps it").toHaveLength(1);
       const read = await scenario.view(other).read("lore/shared.md");
       expect
         .soft(read.ok && read.value.content, "stands: the other thread's text")

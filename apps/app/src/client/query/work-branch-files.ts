@@ -68,7 +68,7 @@ export function sortDraftFiles<
 }
 
 /**
- * The basename of a document's context path (`work://branches/ch-3.md` → `ch-3.md`),
+ * The basename of a document's context path (`manuscript://book/ch-3.md` → `ch-3.md`),
  * or `null` when there's no usable path. New documents are URI-addressed, so the
  * basename is the display name when the AI created the doc unnamed (spec §5.5,
  * product call 2026-07-05). Trailing slashes are ignored.

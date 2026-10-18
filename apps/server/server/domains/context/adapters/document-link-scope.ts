@@ -83,7 +83,7 @@ type ViewIndex = {
   /**
    * Hidden documents this view doesn't use, by the address of the branch each reads "in a
    * draft" in, oldest branch first. Only `documentAt` reads it: an ahead ref's address
-   * shows a draft's document, while typed links (`documentFor`) never bind to one.
+   * shows a branch's hidden document, while typed links (`documentFor`) never bind to one.
    */
   hiddenByUri: Map<string, Row[]>;
 };

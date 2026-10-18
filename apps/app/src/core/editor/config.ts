@@ -71,7 +71,7 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
-  /** The Work the viewer is in: a picture still in its draft is signed through it. */
+  /** The Work the viewer is in: a picture still pending in its branch is signed through it. */
   workId?: string;
 };
 
