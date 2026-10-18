@@ -7,6 +7,7 @@ import {
   buildGenerateResult,
   createStreamAccumulator,
   eventsFromOpenAIChunk,
+  type StreamFinalization,
 } from "../openai-compatible/stream-collect.js";
 import { type OpenRouterProviderData, readOpenRouterProviderData } from "./provider-data.js";
 
@@ -39,8 +40,11 @@ export function* eventsFromOpenRouterChunk(
   yield* eventsFromOpenAIChunk(chunk, acc);
 }
 
-export function buildOpenRouterGenerateResult(acc: OpenRouterStreamAccumulator): GenerateResult {
-  const result = buildGenerateResult(acc);
+export function buildOpenRouterGenerateResult(
+  acc: OpenRouterStreamAccumulator,
+  finalization: StreamFinalization = "complete",
+): GenerateResult {
+  const result = buildGenerateResult(acc, finalization);
   const providerData: OpenRouterProviderData = {
     ...readOpenRouterProviderData(result.providerData),
   };

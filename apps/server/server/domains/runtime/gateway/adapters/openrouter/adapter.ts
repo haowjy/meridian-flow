@@ -74,7 +74,11 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
           yield* eventsFromOpenRouterChunk(chunk, acc);
         }
 
-        const result = buildOpenRouterGenerateResult(acc);
+        // The SDK can consume AbortError and end iteration normally.
+        const result = buildOpenRouterGenerateResult(
+          acc,
+          request.signal?.aborted ? "interrupted" : "complete",
+        );
         const enriched = await enrichResult(result, apiKey, baseUrl, request);
         yield { type: "end", result: enriched };
       } catch (err) {
@@ -85,7 +89,7 @@ export function createOpenRouterAdapter(config: ProviderConfig): ProviderAdapter
             return;
           }
           if (accumulatorHasPartialResult(acc) || acc.generationId) {
-            const partial = buildOpenRouterGenerateResult(acc);
+            const partial = buildOpenRouterGenerateResult(acc, "interrupted");
             const enriched = await enrichResult(partial, apiKey, baseUrl, request);
             yield { type: "end", result: enriched };
             return;
