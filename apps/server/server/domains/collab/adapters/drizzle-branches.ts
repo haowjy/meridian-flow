@@ -564,7 +564,7 @@ export function createDrizzleBranchStore(
    * The projection's write (design §3.2) in a root transaction of its own: `has_effect` and its
    * watermark at exactly `revision`, inside the Work boundary's `mutate` when the branch has a
    * Work (Work first, then touched). `lock_timeout` bounds each lock acquisition (the Work, the
-   * branch row an append holds, the publication participants at commit), not the transaction;
+   * branch row an append holds, the Works-notice participants at commit), not the transaction;
    * a miss aborts with `55P03`, mapped here, outside the transaction, to `contended`.
    */
   async function writeEffect(input: {

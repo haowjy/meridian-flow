@@ -240,7 +240,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       draftId: rendered?.draftId,
       items: [{ itemKey: rendered?.itemKey, status: "applied", notes: [] }],
     });
-    expect.soft(await live.idAt("growth/original"), "published").toBe(original);
+    expect.soft(await live.idAt("growth/original"), "applied").toBe(original);
     expect.soft(await live.idAt("growth/late"), "the late item stays in D").toBeNull();
     expect.soft(await s.batchStates(), "one batch, completed").toEqual(["completed"]);
   });

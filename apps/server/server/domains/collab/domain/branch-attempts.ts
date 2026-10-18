@@ -14,7 +14,7 @@ export type AttemptScope = <R>(operation: () => Promise<R>) => Promise<R>;
 
 /**
  * Something an attempt prepared that only its success may keep: `transfer` hands it to
- * publication once the whole attempt completed, `dispose` drops it on any unwind, including
+ * installation once the whole attempt completed, `dispose` drops it on any unwind, including
  * one whose own write succeeded inside a scope that a later miss rolled back.
  */
 export type AttemptCandidate = {

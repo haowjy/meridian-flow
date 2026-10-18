@@ -1,6 +1,6 @@
 /**
  * A branch's write journal as its readers see it: the row record, its revision token, and the
- * neutral reads that replay, attribution and review make. Publication's push-lineage reads
+ * neutral reads that replay, attribution and review make. Apply's push-lineage reads
  * extend this in `branch-push-contracts.ts`.
  */
 

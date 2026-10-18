@@ -223,7 +223,7 @@ export const branchPushSettlementBatches = pgTable(
     lastError: text("last_error"),
     blockedAt: timestamp("blocked_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
-    /** A publication step refused the staged batch; nothing of it reached live. */
+    /** An Apply step refused the staged batch; nothing of it reached live. */
     abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -267,7 +267,7 @@ export const branchPushSettlementBatches = pgTable(
   ],
 );
 
-/** A publication step's durable input, staged with its batch and read on claim and recovery. */
+/** An Apply step's durable input, staged with its batch and read on claim and recovery. */
 export const branchPushSettlementPayloads = pgTable(
   "branch_push_settlement_payloads",
   {
@@ -281,7 +281,7 @@ export const branchPushSettlementPayloads = pgTable(
 );
 
 /**
- * An item a publication step kept out of a batch, and why: staged with the batch
+ * An item an Apply step kept out of a batch, and why: staged with the batch
  * when the pre-staging check decided it, written in completion otherwise.
  */
 export const branchPushSettlementHolds = pgTable(

@@ -312,7 +312,7 @@ export async function durableDoc(harness: Harness, branchId: string): Promise<Y.
 
 /**
  * One server process: its coordinator over `store` (its own connections when `store` is
- * another harness's) and one room, which every publication of this process reaches. `dirty`
+ * another harness's) and one room, which every delivery of this process reaches. `dirty`
  * counts the coordinator's `onAppendCommitted` marks.
  */
 export async function openProcess(
@@ -325,7 +325,7 @@ export async function openProcess(
   const coordinator = phase4Coordinator(harness, {
     store,
     onAppendCommitted: (branchId) => dirty.push(branchId),
-    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "publish"),
+    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
   });
   await coordinator.readBranch(draft.branchId, async () => {});
   return { room, coordinator, dirty };

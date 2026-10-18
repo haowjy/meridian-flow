@@ -1,4 +1,4 @@
-/** Mutable Hocuspocus instance binding and branch-room delivery: publication and repair. */
+/** Mutable Hocuspocus instance binding and branch-room delivery and repair. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
@@ -32,7 +32,7 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
       closeBranchRooms(instance, branchId, olderThan);
     },
     applyToRoom,
-    publishBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
+    deliverBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
       try {
         const prefix = `branch:${branchId}:gen:`;
         for (const [roomName, branchDoc] of instance?.documents.entries() ?? []) {

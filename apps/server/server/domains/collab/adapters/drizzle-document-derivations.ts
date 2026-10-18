@@ -1,4 +1,4 @@
-/** Journal-locked cuts and compare-and-set publication of document derived outputs. */
+/** Journal-locked cuts and compare-and-set writes of document derived outputs. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {

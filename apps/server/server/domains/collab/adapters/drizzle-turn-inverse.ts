@@ -1,6 +1,6 @@
 /**
  * Durable multi-document inverse admission: a lock-free capture, a plan on attempt-local
- * documents, one commit scope that validates the capture; publishes only after it commits.
+ * documents, one commit scope that validates the capture; delivers only after it commits.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type {
@@ -60,7 +60,7 @@ type Dependencies = {
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
-  /** Revert, rollback and mark-blocking change pending membership, so they publish through it. */
+  /** Revert, rollback and mark-blocking change pending membership, so they reconcile the Works' counts through it. */
   workProjection: Pick<WorkProjectionMutation, "mutate">;
 };
 export function createDrizzleTurnInverseService(input: Dependencies) {
@@ -213,15 +213,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     run: (documents: InverseDocument[]) => Promise<T>,
     attempt: Attempt | null,
   ): Promise<T> {
-    const publications: (() => Promise<void>)[] = [];
-    // Publication reads the documents through their coordinators and may pull: only once the
+    const deliveries: (() => Promise<void>)[] = [];
+    // Delivery reads the documents through their coordinators and may pull: only once the
     // attempt completed, and outside every mutex it held.
     attempt?.own({
       async transfer() {
-        const publish = async () => {
-          for (const publication of publications) await publication();
+        const deliver = async () => {
+          for (const delivery of deliveries) await delivery();
         };
-        if (!deferUntilDrizzleCommit(publish)) await publish();
+        if (!deferUntilDrizzleCommit(deliver)) await deliver();
       },
       dispose() {},
     });
@@ -229,7 +229,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // revision or live head, which the commit scope finds and turns into a whole-attempt miss.
     const captured = await capture(query);
     try {
-      return await attemptStorage.run({ ...captured, attempt, publications }, () =>
+      return await attemptStorage.run({ ...captured, attempt, deliveries }, () =>
         run(captured.documents),
       );
     } finally {
@@ -276,7 +276,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const planned = plans.map((plan) => planDocument(plan, query));
       const liveIds = planned.filter((entry) => !entry.draft).map((entry) => entry.documentId);
       const handles: string[] = [];
-      const publications: (() => Promise<void>)[] = [];
+      const deliveries: (() => Promise<void>)[] = [];
       await withLiveDocuments([...new Set(liveIds)].sort(), () =>
         scope.commit(() =>
           // A seam boundary before any other lock (decision D17, file-access §5): the captured
@@ -300,13 +300,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   throw new InverseAttemptMiss();
               }
               for (const entry of planned)
-                handles.push(...(await commitDocument(entry, kind, userId, query, publications)));
+                handles.push(...(await commitDocument(entry, kind, userId, query, deliveries)));
             },
             { seam: true },
           ),
         ),
       );
-      attempt.publications.push(...publications);
+      attempt.deliveries.push(...deliveries);
       return handles;
     },
   };
@@ -371,13 +371,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     };
   }
 
-  /** One planned document inside the commit scope: its rows, receipts, statuses, publication. */
+  /** One planned document inside the commit scope: its rows, receipts, statuses, delivery. */
   async function commitDocument(
     entry: PlannedInverse,
     kind: "undo" | "redo" | "revert" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
-    publications: (() => Promise<void>)[],
+    deliveries: (() => Promise<void>)[],
   ): Promise<string[]> {
     const { plan, draft } = entry;
     const document = plan.document;
@@ -534,7 +534,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
     }
     if (!entry.updates.length) return handles;
-    const publish = async () => {
+    const deliver = async () => {
       if (draft) await input.branchCoordinator.deliverCommitted(draft.branchId);
       else {
         await input.coordinator.recover(document.documentId);
@@ -551,7 +551,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           beforeContentRef: null,
         });
     };
-    publications.push(publish);
+    deliveries.push(deliver);
     return handles;
   }
 
@@ -595,7 +595,7 @@ type PlannedInverse = {
 
 /** The attempt a store call runs in: its capture, and whether it may still commit. */
 const attemptStorage = new AsyncLocalStorage<
-  InverseCapture & { attempt: Attempt | null; publications: (() => Promise<void>)[] }
+  InverseCapture & { attempt: Attempt | null; deliveries: (() => Promise<void>)[] }
 >();
 
 /** The captured revision or live head moved before the commit scope validated it. */

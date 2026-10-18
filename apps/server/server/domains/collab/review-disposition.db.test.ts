@@ -166,7 +166,7 @@ it.each([
   }
 });
 
-it("keeps incomplete attribution document-only and whole Apply still publishes its full effect", async () => {
+it("keeps incomplete attribution document-only and whole Apply still applies its full effect", async () => {
   const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha stays.", "missing-removal-owner");

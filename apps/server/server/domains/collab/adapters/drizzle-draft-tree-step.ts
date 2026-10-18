@@ -1,6 +1,6 @@
 /**
  * The draft tree step on the settlement seam (contract §11.2, `kind: "draft_tree"`): what
- * Apply publishes with a draft's text, in the batch's one lock order (D's Work, D, every
+ * Apply lands with a draft's text, in the batch's one lock order (D's Work, D, every
  * current and final source, every item's document).
  *
  * The check (before staging) and `beforeAdmission` (completion) make the same decision,
@@ -53,19 +53,19 @@ import {
 } from "../domain/draft-tree-payload.js";
 import type { Drafts } from "../domain/drafts.js";
 import type {
-  PublicationAdmission,
-  PublicationItemHold,
-  PublicationRefusal,
-  SettlementPublicationStep,
-} from "../domain/ports/settlement-publication.js";
+  ApplyAdmission,
+  ApplyItemHold,
+  ApplyRefusal,
+  SettlementApplyStep,
+} from "../domain/ports/settlement-apply.js";
 import { settleCommandForBatchWithinTx } from "./drizzle-draft-commands.js";
 
-type Refusal = Extract<PublicationAdmission, { kind: "refuse" }>;
+type Refusal = Extract<ApplyAdmission, { kind: "refuse" }>;
 
-/** One item that publishes, with its node and branch read under the locks. */
+/** One item that applies, with its node and branch read under the locks. */
 type Eligible = { item: DraftTreePayloadItem; node: TreeStateNode; branch: BranchSnapshot | null };
 
-type Decided = { kind: "proceed"; holds: PublicationItemHold[]; apply: Eligible[] };
+type Decided = { kind: "proceed"; holds: ApplyItemHold[]; apply: Eligible[] };
 
 export function createDrizzleDraftTreeStep(
   db: Database,
@@ -81,7 +81,7 @@ export function createDrizzleDraftTreeStep(
     catalog: ContextCatalogMutationPort;
     arrivals?: DocumentArrivals;
   },
-): SettlementPublicationStep {
+): SettlementApplyStep {
   const tree = createTreeReader(db);
 
   return {
@@ -111,7 +111,7 @@ export function createDrizzleDraftTreeStep(
           (await tree.treeState(payload.draftId, editedIds)).map((node) => [node.nodeId, node]),
         );
         const stale: string[] = [];
-        const holds: PublicationItemHold[] = [];
+        const holds: ApplyItemHold[] = [];
         const apply: Eligible[] = [];
         for (const item of payload.items) {
           const node = nodes.get(item.documentId);
@@ -135,12 +135,12 @@ export function createDrizzleDraftTreeStep(
       }
 
       /**
-       * 5a against the live tree: an item publishes only where the live tree is free at its
+       * 5a against the live tree: an item applies only where the live tree is free at its
        * row's location. Clashes among the draft's own items are already holds in its view,
        * so only live nodes block here; a blocked item is held.
        */
       async function holdUntilPlaceable(decided: {
-        holds: PublicationItemHold[];
+        holds: ApplyItemHold[];
         apply: Eligible[];
       }): Promise<Decided> {
         const needs = new Map(decided.apply.map((eligible) => [eligible, slotsOf(eligible.node)]));
@@ -182,7 +182,7 @@ export function createDrizzleDraftTreeStep(
         if (scope.stage !== "check") return false;
         if (node.locationVersion.toString() !== item.locationToken) return true;
         // A member's live text under its coordinator lease; an item with no text member
-        // publishes no text, so its live text can't be stale.
+        // lands no text, so its live text can't be stale.
         const live = scope.liveTextFingerprints.get(item.documentId);
         if (item.liveTextToken !== null && live !== undefined && live !== item.liveTextToken) {
           return true;
@@ -194,7 +194,7 @@ export function createDrizzleDraftTreeStep(
       }
 
       // What completion decided, for the command's terminal result (§4.5, §4.6).
-      let completionHolds: readonly PublicationItemHold[] = [];
+      let completionHolds: readonly ApplyItemHold[] = [];
       let completionNotes: ReadonlyMap<string, readonly ApplyNote[]> = new Map();
 
       /** The command's terminal result when the batch completed. */
@@ -238,7 +238,7 @@ export function createDrizzleDraftTreeStep(
       }
 
       /** The command's terminal result when completion withdrew the batch. */
-      function withdrawnResult(reason: PublicationRefusal): DraftCommandResult | null {
+      function withdrawnResult(reason: ApplyRefusal): DraftCommandResult | null {
         const { command, draftId } = payload;
         if (!command) return null;
         const gone = readDraftTreeRefusal(reason)?.kind === "gone";

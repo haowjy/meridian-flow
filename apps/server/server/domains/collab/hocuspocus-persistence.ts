@@ -624,8 +624,8 @@ export function createHocuspocusPersistenceService(
 
     async disconnectLiveGeneration(documentId, generation) {
       const hocuspocus = deps.hocuspocus();
-      // Hocuspocus publishes a room only after all load hooks complete. Its
-      // registered continuation publishes before this one retires and evicts it.
+      // Hocuspocus serves a room only after all load hooks complete. Its
+      // registered continuation runs before this one retires and evicts it.
       void hocuspocus?.loadingDocuments?.get(documentId)?.then(
         (loaded) => {
           if (

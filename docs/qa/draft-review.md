@@ -171,7 +171,7 @@ the preview after a refused command: the selected closed class alone settles. Re
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's
 rows/token. An unknown or closed draft returns `gone` without provisioning a
-replacement. A corrupt preview never repairs or publishes document content.
+replacement. A corrupt preview never repairs or writes document content.
 
 The DB concurrency contract injects append, re-fork and status commits after
 every awaited snapshot query and at read-port entry/return. Run it with
@@ -373,8 +373,8 @@ and inspect the surfaces.
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
    only Lore pass's changes, including the shared class.
 5. Open Dialogue pass. Once loaded, its new document is one change with Apply,
-   Discard and Review. Apply publishes it; Discard removes it. Review opens it
-   without publishing. Verify whole-command payloads from draft dock, row and bar.
+   Discard and Review. Apply lands it; Discard removes it. Review opens it
+   without applying. Verify whole-command payloads from draft dock, row and bar.
 6. Open Untouched. PASS: no draft dock, although the Work has pending changes. After
    Pacing pass's last change is handled, its draft dock also disappears, even while
    Lore pass's other changes remain.
@@ -803,7 +803,7 @@ and replaying either class alone must leave the other paragraph unchanged.
 Every inverse row must own its metadata client and have no map-entry anchors
 into another inverse row.
 
-### Receipt hold and publication regression checks
+### Receipt hold and Apply regression checks
 
 - Apply turn A's `Beta → Gamma`. In the same draft, turn B replaces
   `Blue → Silver`, then Undo B restores `Blue`. Undo A and Redo A must
@@ -817,7 +817,7 @@ into another inverse row.
 - Connect a live Yjs room before acting on a document with no active draft.
   Keep the connection and its local replica open through Undo and Redo. Drive
   actions with `./mf`; inspect only that replica between actions, never a
-  document read, reopen or reconnect that could repair a missing publication.
+  document read, reopen or reconnect that could repair a missing Apply.
   The replica must receive each committed inverse. The DB room regression
   also injects immediate-live failed-response rollback into that same schedule.
 - Extend the long-history correctness case with a 10,000-character deletion
@@ -835,7 +835,7 @@ then wait for the empty trail to settle while the edit remains unapplied.
 Apply the draft, repeat with another edit and Discard, and read the trail through
 `./mf api GET /api/threads/<thread-id>/change-trails`. Each late disposition
 must reopen the producing trail and settle at a higher version. Unapplied drafts
-must not publish themselves. An empty or failed assistant turn must also settle.
+must not apply themselves. An empty or failed assistant turn must also settle.
 
 For the commit-to-worker crash window, use the PostgreSQL lifecycle suite:
 
@@ -847,8 +847,8 @@ Its restart checks commit before constructing a fresh aggregate adapter on a
 separate connection. Receipt and placement rollback must leave the signal log
 unchanged; committed invalidation must survive destroying warm state. A lower
 sequence committed after consumption must remain discoverable, and failed
-consumption must restore the signals with the shell and outbox. Pending
-live publication must delay settlement. These are DB integration checks, not a
+consumption must restore the signals with the shell and outbox. A pending
+live write must delay settlement. These are DB integration checks, not a
 claim that this manual writer workflow passed.
 
 ## Model Undo and Redo counts

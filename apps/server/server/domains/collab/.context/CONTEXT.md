@@ -64,7 +64,7 @@ side effect, never a preview side effect.
 The thread-peer pool is the only model document entry point. Each call carries
 the caller's `FileGrant`; writes run under the grant scope and a reply pins a
 document to its first grant. The response transaction saves all live and draft
-journals, receipt records, and callbacks together. Live rooms publish only
+journals, receipt records, and callbacks together. Live rooms receive writes only
 after commit, so rollback is invisible to open editors.
 
 A chat's write mode decides only where its new AI writes go; chats in
@@ -73,7 +73,7 @@ that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Branches carry
 no push policy. Trail reconciliation consumes transactional dirty signals and
-never publishes a draft. Active unapplied rows do not delay a terminal receipt.
+never applies a draft. Active unapplied rows do not delay a terminal receipt.
 
 A reply's save resolves exactly the peer each document was pinned to and
 refuses that document stale when the pin no longer holds (closed peer, reset or
@@ -110,7 +110,7 @@ no drafts.
 A Work draft is shared by every thread editing the same document in that Work.
 Thread peers fork from it and retain the upstream branch identity and
 peer-branch generation independently of the Work's current generation. Draft
-Apply publishes its selected or whole branch through the single push seam;
+Apply lands its selected or whole branch through the single push seam;
 Discard re-forks from live plus surviving rows and creates no restoration copy.
 
 Attribution is based on immutable journal provenance and dependency closure,
@@ -203,20 +203,20 @@ runs inside `mutate`: a branch made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no
 keystroke locks a Work or counts. Tests use the same boundary
 (`apps/server/server/test-support/work-projection.ts`), with no catalog or
-availability publication.
+availability notice.
 
 A work draft's derived state (`has_effect`, its review membership, the Work's
 badge) is a projection, not part of the append. Every committed
 append marks the branch dirty (`onAppendCommitted`, a required coordinator
 input); the projection job (`domain/branch-projection.ts`) coalesces marks
 (250 ms after the last, at most 1 s after the first), runs at most four
-judgements at a time, fingerprints the published replica against the stored
+judgements at a time, fingerprints the committed replica against the stored
 baseline (`live_cut`, frozen at creation and replaced only under a revision
 bump), and writes `has_effect` with its watermark `has_effect_revision` through
 `writeEffect` at exactly that revision, inside `mutate` (which reconciles the
 Work's stored badge count and notifies only if it moved), under
 `SET LOCAL lock_timeout = '100ms'`. That bound applies to each lock
-acquisition (the Work, the branch row, the publication participants), not to
+acquisition (the Work, the branch row, the Works-notice participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision
 is re-judged at once, so the badge converges within the max wait once typing
 pauses and eventually while typing. That is the contract, not a bound to
@@ -249,7 +249,7 @@ step); the contract step also deletes the job's null-baseline arm and
 `pullWorkDraft`, whose only caller that arm is.
 
 A writer frame takes no lease, mutex or document lock. It is judged once on the
-published replica (admissible, its room, the echo exit, authorship as an early
+committed replica (admissible, its room, the echo exit, authorship as an early
 rejection) and appended once; a concurrent writer costs it one row-lock wait,
 never a second judgement. It first checks its room holds the committed replica,
 and a room that does not has missed a delivery: it is reconciled to the replica
@@ -259,18 +259,18 @@ the frame (`1008`).
 
 Room delivery has one owner: `install` in
 `domain/branch-coordinator.ts`, the only place a replica becomes the branch's
-published replica. It runs when the store's transaction commits (a savepoint's
+committed replica. It runs when the store's transaction commits (a savepoint's
 callbacks move to its parent on release and are dropped on its rollback, so a
-rolled-back child publishes nothing), installs only past the replica published
+rolled-back child installs nothing), installs only past the replica installed
 by then, and sends this process's rooms what separates the two: the rows the new
-replica was built from when they cover everything past the published one (built
+replica was built from when they cover everything past the installed one (built
 on it or on an older replica of the same checkpoint and generation: a frame with
 the rows that landed before its lock, a reply's rows, a read's tail catch-up),
 otherwise the document difference (a pull or
 compaction that folded rows under the branch lock, a checkpoint catch-up, a
 checkpoint another process wrote), or nothing when the content is unchanged. A
 new generation closes the rooms of older ones instead. A transition at or below
-the published revision installs and sends nothing, so a read racing a local
+the committed revision installs and sends nothing, so a read racing a local
 commit delivers once. `install` reaches only rooms Hocuspocus has registered,
 and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
 enrolls itself: its `afterLoadDocument` hook chains after
@@ -296,7 +296,7 @@ room with no exchange catches up at the next keystroke, rejoin or handshake.
 A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
 the background (`compact`: no content, effect or `updatedAt` change). Frames
 and the fold they trigger are `domain/branch-writer-frames.ts`, over the branch
-runtime surface (`BranchRuntime`: published replicas, private candidates,
+runtime surface (`BranchRuntime`: committed replicas, private candidates,
 prepared writes, attempts) that `domain/branch-coordinator.ts` owns with the
 operations on it: frame admission depends on the runtime, never on the
 operations. Its `compacting`
@@ -310,7 +310,7 @@ Every branch write runs through `runBoundedAttempts`
 and compute off every lock, one commit scope per attempt (a root transaction,
 or one savepoint inside an ambient one) opened before its first branch-store
 lock, and a miss that leaves that scope before the next capture. The attempt
-owns its candidates: a completed attempt transfers them to publication, and any
+owns its candidates: a completed attempt transfers them to installation, and any
 unwind disposes the rest, including a write whose own statement succeeded in a
 scope a later miss rolled back. An append (a frame, segment rows) is one
 attempt and never retries; only exact and fold rewrites (a reply save's peer
@@ -319,7 +319,7 @@ recapture on a miss. The bound's exhaustion outcome stays with each caller.
 
 A reply save is an attempt across every participating core: prepare replays
 each staged document on a candidate, consume appends per upstream inside one
-savepoint, install publishes. A miss unwinds the savepoint and prepares again
+savepoint, install delivers. A miss unwinds the savepoint and prepares again
 from the original staged buffer, up to four attempts; the reply's `confirm`
 runs once, and an attempt prepared before it is disposed if it throws. The
 save and a thread core's tool-time accesses hold no branch: they prepare
@@ -404,7 +404,7 @@ first and revalidates. Live mutexes are held around a commit scope (an
 inverse's live destinations, item Discard, Apply completion). Two captures
 still run under them, the live-scope exceptions: a live pull snapshots the live
 bytes inside `withDocument` (before any transaction), and Apply staging
-captures each document's LOCK-WS lock cut and prepares its publication under
+captures each document's LOCK-WS lock cut and prepares its Apply under
 those live scopes. No path awaits writer ingress while it holds a Work or
 branch row: Apply completion drains live writer admissions before the
 scope's first row lock, and an admission that starts after the drain makes the
@@ -454,7 +454,7 @@ still attributed. The journal floor is a provisional, commit-bound cursor, never
 a global maximum.
 
 `document_links` is a hint from a certified cut, never link authority. Changing
-the extractor bumps its version, and no second post-write publisher exists.
+the extractor bumps its version, and no second post-write writer exists.
 
 Review attribution compares live, branch, and journal content from one cut.
 It must preserve surviving Yjs identities, distinguish rich changes from text
@@ -464,11 +464,11 @@ Every class touching an unclassified hunk is `canApplyOrDiscard: false`; both
 selectors refuse it as `incomplete_class`, so only document-level Apply or
 Discard can settle it. Deleted text carries per-author spans (agent or writer)
 from deletion attribution, since one deletion can contain both authors.
-Publication uses canonical block identities, not display hash prefixes or
+Apply uses canonical block identities, not display hash prefixes or
 serialized prose. Agent preview operations carry their chat thread (with its
 title, resolved in one batched lookup) and the journal row's turn and tool-call
 ids so the app can open the chat at the write; writer operations carry none.
-Review hunks and publication compare prose (`documentProseEqual`); pending
+Review hunks and Apply compare prose (`documentProseEqual`); pending
 effects and terminal settlement also compare managed manifest membership
 (`documentEffectsEqual`). Manifest changes have their own review operations and
 never become prose hunks.
@@ -497,7 +497,7 @@ disposition leaves `itemClosed: false` and cannot reject the command. Staged
 item Apply (the draft tree step) compares its location, live-text, and
 generation tokens only at the staging check: staging is the consent boundary.
 
-Thread-peer publication applies ordered per-segment journal rows to a
+A thread peer's segment write applies ordered per-segment journal rows to a
 provisional target clone and never regenerates durable Work journal rows from a
 raw state-vector diff, which would reintroduce cumulative tombstones. An
 unresolved sync dependency is an integrity failure, never a partially journaled

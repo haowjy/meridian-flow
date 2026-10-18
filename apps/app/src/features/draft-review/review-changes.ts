@@ -3,7 +3,7 @@
  * closure class or one whole-draft item for a new document, in document order.
  *
  * The server owns the class partition (dependency-closed sets of operations
- * that publish or discard together); this module only groups by the required
+ * that apply or discard together); this module only groups by the required
  * `operation.closureClassId` and describes each class: its colour, a short
  * excerpt, who made it, and whether the writer's own edits are inside it. The
  * header's stepper, the manuscript's bar and the change list all read this one

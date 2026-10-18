@@ -59,7 +59,7 @@ describe("document edit receipts (Postgres)", () => {
         (rows[1].updateMeta as { documentEdit: unknown }).documentEdit,
       );
     }
-    it("writer insertion after Discard publishes restored text", async () => {
+    it("writer insertion after Discard lands restored text", async () => {
       const { fixture, branchId, review } = draft;
       const snapshot = await fixture.branchStore.getBranch(branchId);
       if (!snapshot) throw new Error("Missing branch");
@@ -113,7 +113,7 @@ describe("document edit receipts (Postgres)", () => {
       }
       await expectSurvivor();
     });
-    it("cold recovery publishes the restored word and retains its turn shell", async () => {
+    it("cold recovery lands the restored word and retains its turn shell", async () => {
       harness.cancelScheduledPulls();
       harness.destroyWarmState();
       harness = createHarness(db);
@@ -551,7 +551,7 @@ describe("document edit receipts (Postgres)", () => {
         .where(eq(schema.documentEditParts.editId, edits[0].id));
       expect(parts).toHaveLength(1);
       expect(parts[0].placement.kind).toBe("live");
-      if (parts[0].placement.kind !== "live") throw new Error("Part was not published");
+      if (parts[0].placement.kind !== "live") throw new Error("Part was not placed on live");
       const [authored] = await db
         .select()
         .from(schema.documentYjsUpdates)

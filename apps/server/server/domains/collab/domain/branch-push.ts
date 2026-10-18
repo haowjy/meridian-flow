@@ -26,14 +26,10 @@ import {
   wholeBranchPushUpdate,
 } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
-import { createBranchPushTransition, type PublicationOutcome } from "./branch-push-transition.js";
+import { type ApplyOutcome, createBranchPushTransition } from "./branch-push-transition.js";
 import { type BranchSnapshot, materializeBranchRead } from "./branch-store.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
-import type {
-  PublicationItemHold,
-  PublicationItemOutcome,
-  PublicationRefusal,
-} from "./ports/settlement-publication.js";
+import type { ApplyItemHold, ApplyItemOutcome, ApplyRefusal } from "./ports/settlement-apply.js";
 
 type ComputedCandidate = {
   candidate: PushCandidate;
@@ -45,17 +41,17 @@ type ComputedCandidate = {
 type BatchPipelineResult =
   | { kind: "conflict"; push: PushLineageRow; phases: readonly ComputedCandidate[] }
   | { kind: "command_exists"; phases: readonly ComputedCandidate[] }
-  | { kind: "refused"; reason: PublicationRefusal; phases: readonly ComputedCandidate[] }
+  | { kind: "refused"; reason: ApplyRefusal; phases: readonly ComputedCandidate[] }
   | {
       kind: "committed";
       /** The pushes whose text reached live. */
       pushes: readonly PushLineageRow[];
-      /** Candidates a publication step kept out of live, and why. */
-      held: ReadonlyMap<DocumentId, PublicationRefusal>;
+      /** Candidates an Apply step kept out of live, and why. */
+      held: ReadonlyMap<DocumentId, ApplyRefusal>;
       /** Every held item, branchless ones included. */
-      heldItems: readonly PublicationItemHold[];
-      /** What the steps did per published item, decided in completion. */
-      outcomes: readonly PublicationItemOutcome[];
+      heldItems: readonly ApplyItemHold[];
+      /** What the steps did per applied item, decided in completion. */
+      outcomes: readonly ApplyItemOutcome[];
       phases: readonly ComputedCandidate[];
     };
 
@@ -155,7 +151,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     signal?: AbortSignal,
   ): Promise<BatchPipelineResult> {
     if (batch.candidates.length === 0 && Object.keys(batch.payloads ?? {}).length === 0) {
-      throw new Error("Candidate batch requires a push or a publication payload");
+      throw new Error("Candidate batch requires a push or an Apply payload");
     }
     const phases = await Promise.all(
       batch.candidates.map((candidate) => {
@@ -221,7 +217,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
 
   /** A settled batch as the pipeline reports it, from the phases it staged. */
   function batchResult(
-    outcome: PublicationOutcome,
+    outcome: ApplyOutcome,
     phases: readonly ComputedCandidate[],
   ): BatchPipelineResult {
     if (outcome.kind === "refused") return { kind: "refused", reason: outcome.reason, phases };
@@ -243,7 +239,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   /**
    * Revalidates the drafts being pushed and runs the batch, inside the documents' link scope,
    * as bounded attempts: an attempt whose branch moved before or at staging (a writer typing)
-   * rolls its staging back and runs again from a fresh read. A branchless publication
+   * rolls its staging back and runs again from a fresh read. A branchless Apply
    * (payloads only) opens no document scope and stages once.
    */
   async function withActiveWorkDraftBranches<T>(
@@ -360,7 +356,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     result: BatchPipelineResult | null,
   ): PushBranchesResult {
     const items = new Map(unbatched);
-    let refused: PublicationRefusal | undefined;
+    let refused: ApplyRefusal | undefined;
     if (result?.kind === "refused") {
       refused = result.reason;
       for (const item of mapRefused(result)) items.set(item.branchId, item);
@@ -429,7 +425,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     return itemsOf(order, unbatched, result);
   }
 
-  /** Publishes several drafts as one batch. */
+  /** Applies several drafts as one batch. */
   const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = (pushInput) =>
     withActiveWorkDraftBranches(
       pushInput.branchIds,

@@ -11,11 +11,11 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { Attempt } from "./branch-attempts.js";
 import {
+  type ApplyPayloads,
   FIRST_CLAIM_EPOCH,
   type PendingLiveSettlement,
   type PendingSettlementBatch,
   type PreparedPushCommit,
-  type PublicationPayloads,
   type PushCommitStore,
   type PushLineageRow,
   type SettlementClaim,
@@ -29,11 +29,7 @@ import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
-import type {
-  PublicationItemHold,
-  PublicationItemOutcome,
-  PublicationRefusal,
-} from "./ports/settlement-publication.js";
+import type { ApplyItemHold, ApplyItemOutcome, ApplyRefusal } from "./ports/settlement-apply.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
@@ -49,17 +45,17 @@ export class PendingLiveSettlementError extends Error {
 type LiveDocs = ReadonlyMap<DocumentId, Y.Doc>;
 
 /** How a staged (or checked) batch ended. */
-export type PublicationOutcome =
+export type ApplyOutcome =
   | {
       kind: "settled";
       /** The pushes whose text reached live. */
       pushes: readonly PushLineageRow[];
       /** Every held item, at the check or in completion, branchless ones included. */
-      held: readonly PublicationItemHold[];
-      /** What the steps did per published item, decided in completion. */
-      outcomes: readonly PublicationItemOutcome[];
+      held: readonly ApplyItemHold[];
+      /** What the steps did per applied item, decided in completion. */
+      outcomes: readonly ApplyItemOutcome[];
     }
-  | { kind: "refused"; reason: PublicationRefusal }
+  | { kind: "refused"; reason: ApplyRefusal }
   /** Another request holds the writer's `commandId`; nothing was staged. */
   | { kind: "command_exists" };
 
@@ -67,10 +63,10 @@ export type PublicationOutcome =
 type SettleResult =
   | {
       kind: "completed";
-      held: readonly PublicationItemHold[];
-      outcomes: readonly PublicationItemOutcome[];
+      held: readonly ApplyItemHold[];
+      outcomes: readonly ApplyItemOutcome[];
     }
-  | { kind: "refused"; reason: PublicationRefusal };
+  | { kind: "refused"; reason: ApplyRefusal };
 
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
@@ -88,15 +84,15 @@ export function createBranchPushTransition(input: {
     | { kind: "return"; value: T }
     | {
         kind: "push";
-        /** May be empty when `payloads` carries the whole publication. */
+        /** May be empty when `payloads` carries the whole Apply. */
         pushes: PreparedPushCommit[];
-        payloads?: PublicationPayloads;
+        payloads?: ApplyPayloads;
         /** The writer's command, claimed with the staging (§4.6). */
         command?: DraftCommandEnvelope;
         onCommandExists?: () => T;
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
         onConflict: (push: PushLineageRow) => T;
-        finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
+        finish: (input: { outcome: ApplyOutcome; docs: LiveDocs }) => T | Promise<T>;
       };
 
   async function execute<T>(inputExecution: {
@@ -120,12 +116,12 @@ export function createBranchPushTransition(input: {
         if (prepared.kind === "return") return prepared.value;
         const payloads = prepared.payloads ?? {};
         if (prepared.pushes.length === 0 && Object.keys(payloads).length === 0) {
-          throw new Error("Branch push transition requires a push or a publication payload");
+          throw new Error("Branch push transition requires a push or an Apply payload");
         }
         const settlement = { batchId: randomUUID(), claimToken: randomUUID() };
         // The same plans and lock order as completion, before anything is staged:
         // a refusal stages nothing, and held candidates leave the batch first.
-        const check = await input.settlementStore.checkPublication({
+        const check = await input.settlementStore.checkApply({
           batchId: settlement.batchId,
           members: prepared.pushes.map((push) => ({
             documentId: push.branch.documentId,
@@ -295,7 +291,7 @@ export function createBranchPushTransition(input: {
             replacement: trailContributionReplacement(member.trail, member.push),
           })),
           payloads,
-          // The live text the batch publishes over: its lock cut plus every admission that
+          // The live text the batch lands over: its lock cut plus every admission that
           // joined it since staging, so a writer's change after the cut (a deletion too)
           // moves the rendered-text token.
           liveTextFingerprints: new Map(
@@ -429,7 +425,7 @@ export function createBranchPushTransition(input: {
 function outcomeOf(
   settled: SettleResult,
   staged: { batchId: string; pushes: readonly PushLineageRow[] },
-): PublicationOutcome {
+): ApplyOutcome {
   if (settled.kind === "refused") return { kind: "refused", reason: settled.reason };
   const heldDocuments = new Set(settled.held.flatMap(({ documentId }) => documentId ?? []));
   return {

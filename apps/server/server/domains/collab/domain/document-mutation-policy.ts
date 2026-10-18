@@ -179,7 +179,7 @@ export function admitSegmentRows(
 }
 
 /**
- * The admitted rows hold everything `source` published: `source`'s difference from `admitted`,
+ * The admitted rows hold everything `source` wrote: `source`'s difference from `admitted`,
  * applied to a copy of it, must change nothing and leave no unresolved structs or deletes (a
  * source includes the target's complete causal prefix, so a dependency it lacks is a residual
  * the rows never journaled). Throws on a residual; `admitted` itself is never touched.
@@ -195,7 +195,7 @@ export function assertSegmentRowsComplete(source: Y.Doc, admitted: Y.Doc): void 
     Y.applyUpdate(probe, Y.encodeStateAsUpdate(source, Y.encodeStateVector(admitted)));
     if (probe.store.pendingStructs || probe.store.pendingDs)
       throw new Error("Branch sync delta has unresolved Yjs dependencies");
-    if (changed) throw new Error("Segment publication left an unjournaled residual");
+    if (changed) throw new Error("Segment write left an unjournaled residual");
   } finally {
     probe.destroy();
   }
