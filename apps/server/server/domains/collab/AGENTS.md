@@ -26,7 +26,12 @@ review settlement, and Hocuspocus admission. It composes
 - Admit novel writer content durably before Yjs apply, broadcast, or ack.
   Treat Yjs merge as trusted: destructive evidence informs receipts and marks,
   never a veto. Undo and redo are the reversal authority.
-- Draft Y.Docs use `gc: false`. Any apply after an `await` must use the
+- Every server authority doc and every materialization of one is `gc: false`: draft
+  and live docs, rooms (`yjs-ws-handler.ts`), clones and scratch docs. A rewrite never
+  encodes a gc-on doc, and a client doc (gc on) is never the origin of a Yjs snapshot, since
+  `createDocFromSnapshot` throws on it and a once-collected store restores the wrong text
+  silently. [Probe](../../../../docs/qa/frontier-survives-compaction.md).
+- Any apply after an `await` must use the
   documented durable authority/concurrency fence; a coordinator lock alone is
   not enough.
 - A draft append (a writer keystroke, a reply's rows) is ordered by its draft
