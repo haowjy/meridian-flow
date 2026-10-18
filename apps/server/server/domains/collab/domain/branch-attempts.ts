@@ -1,9 +1,8 @@
 /**
  * The one owner of a bounded branch-store attempt (decision D13): capture and compute off
  * every lock, one commit scope per attempt, and the lifetime of every candidate the attempt
- * prepared. Operation policy (the bound's exhaustion outcome, a frame's locked last attempt,
- * the inverse's classification pass, the reply save's retained `confirm` locks) stays with
- * the caller.
+ * prepared. Operation policy (the bound's exhaustion outcome, the inverse's classification
+ * pass, the reply save's retained `confirm` locks) stays with the caller.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -24,10 +23,6 @@ export type AttemptCandidate = {
 };
 
 export type Attempt = {
-  /** 1-based. */
-  readonly number: number;
-  /** The bound's final attempt: its miss is the caller's exhaustion outcome. */
-  readonly last: boolean;
   /** Owns `candidate` until the attempt completes: transferred then, disposed on an unwind. */
   own<C extends AttemptCandidate>(candidate: C): C;
   /**
@@ -66,8 +61,6 @@ export async function runBoundedAttempts<T>(spec: {
   isMiss(cause: unknown): boolean;
   run(attempt: Attempt): Promise<T>;
   exhausted(cause: unknown): T | Promise<T>;
-  /** A miss is about to be retried as attempt `next`. */
-  retrying?(next: number): void;
 }): Promise<T> {
   // A nested owner would transfer its candidates when it ends, before the outer attempt can
   // still roll its scope back (decision D16a): pass the outer `Attempt` down instead.
@@ -76,8 +69,6 @@ export async function runBoundedAttempts<T>(spec: {
     const owned: AttemptCandidate[] = [];
     let scoped = false;
     const attempt: Attempt = {
-      number,
-      last: number >= spec.bound,
       own(candidate) {
         owned.push(candidate);
         return candidate;
@@ -99,8 +90,7 @@ export async function runBoundedAttempts<T>(spec: {
     } catch (cause) {
       disposeAll(owned);
       if (!spec.isMiss(cause)) throw cause;
-      if (attempt.last) return spec.exhausted(cause);
-      spec.retrying?.(number + 1);
+      if (number >= spec.bound) return spec.exhausted(cause);
       continue;
     }
     for (const [index, candidate] of owned.entries()) {

@@ -32,10 +32,6 @@ const immediateSettlement: ResponseTransactionSettlement = {
 const responseTransactionStorage = new AsyncLocalStorage<ResponseTransactionContext>();
 let nextTransactionId = 0;
 
-export function currentResponseTransactionId(): string | null {
-  return responseTransactionStorage.getStore()?.id ?? null;
-}
-
 /** Independent replication must not enlist its durable effects in a caller response. */
 export function runOutsideResponseTransaction<T>(operation: () => T): T {
   return responseTransactionStorage.exit(operation);

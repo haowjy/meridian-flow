@@ -24,17 +24,19 @@ describe("runBoundedAttempts", () => {
       transfer: () => void events.push(`${name} transferred`),
       dispose: () => void events.push(`${name} disposed`),
     });
+    let number = 0;
     const result = await runBoundedAttempts({
       bound: 4,
       scope,
       isMiss: (cause) => cause instanceof Miss,
       run: async (attempt) => {
-        events.push(`capture ${attempt.number}`);
-        const first = attempt.own(candidate(`${attempt.number}a`));
-        attempt.own(candidate(`${attempt.number}b`));
+        const current = ++number;
+        events.push(`capture ${current}`);
+        const first = attempt.own(candidate(`${current}a`));
+        attempt.own(candidate(`${current}b`));
         await attempt.commit(async () => {
-          events.push(`${attempt.number}a persisted`);
-          if (attempt.number === 1) throw new Miss();
+          events.push(`${current}a persisted`);
+          if (current === 1) throw new Miss();
         });
         return first;
       },
@@ -61,17 +63,20 @@ describe("runBoundedAttempts", () => {
 
   it("answers the last miss with the caller's policy and propagates anything else", async () => {
     const disposed: number[] = [];
-    const run = (fail: (attempt: number) => Error) =>
-      runBoundedAttempts({
+    const run = (fail: () => Error) => {
+      let number = 0;
+      return runBoundedAttempts({
         bound: 2,
         scope: (operation) => operation(),
         isMiss: (cause) => cause instanceof Miss,
         run: async (attempt) => {
-          attempt.own({ transfer() {}, dispose: () => void disposed.push(attempt.number) });
-          throw fail(attempt.number);
+          const current = ++number;
+          attempt.own({ transfer() {}, dispose: () => void disposed.push(current) });
+          throw fail();
         },
         exhausted: (cause) => (cause instanceof Miss ? "stale" : "unreachable"),
       });
+    };
     await expect(run(() => new Miss())).resolves.toBe("stale");
     expect(disposed).toEqual([1, 2]);
     await expect(run(() => new Error("broken"))).rejects.toThrow("broken");

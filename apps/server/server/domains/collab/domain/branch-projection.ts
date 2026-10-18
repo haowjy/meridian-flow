@@ -50,7 +50,6 @@ type Outcome = "done" | "drop" | "moved" | "contended" | "fenced" | "parked";
 
 type Entry = {
   firstDirtyAt?: number;
-  lastDirtyAt?: number;
   timer?: NodeJS.Timeout;
   running: boolean;
   queued: boolean;
@@ -112,7 +111,6 @@ export function createBranchProjection(input: {
     }
     if (entry.queued) return;
     const now = Date.now();
-    entry.lastDirtyAt = now;
     entry.firstDirtyAt ??= now;
     arm(branchId, entry, Math.min(now + DEBOUNCE_MS, entry.firstDirtyAt + MAX_WAIT_MS) - now);
   }
@@ -131,7 +129,6 @@ export function createBranchProjection(input: {
     entry.running = true;
     entry.again = false;
     entry.firstDirtyAt = undefined;
-    entry.lastDirtyAt = undefined;
     void input
       .outsideTransaction(() => judge(branchId))
       .catch((cause: unknown): "failed" => {

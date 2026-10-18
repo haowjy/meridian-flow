@@ -30,7 +30,6 @@ import {
   type BranchStore,
   type CommitRewriteInput,
   materializeBranchRead,
-  type RewriteFence,
   type RewriteOperation,
   type RewriteOutcome,
   type RewritePolicy,
@@ -100,7 +99,6 @@ type CommitAttemptOptions<T> = {
   bound?: number;
   scope?: AttemptScope;
   moved?: (cause: unknown) => T;
-  retrying?: (attempt: number) => void;
 };
 
 /**
@@ -139,10 +137,6 @@ export type BranchRuntime = {
     rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
   ): PreparedBranchWrite;
   foldPolicy(replica: PublishedReplica): RewritePolicy;
-  commitAttempts<T>(
-    run: (attempt: Attempt) => Promise<T>,
-    options?: CommitAttemptOptions<T>,
-  ): Promise<T>;
   /** `write` as one whole attempt: true when it wrote, false when it was contained. */
   commitOnce(
     write: PreparedBranchWrite,
@@ -237,7 +231,6 @@ type ResetInput = {
   expectedRevision: number;
   schemaVersion?: CollabSchemaVersion;
   editDisposition?: "discarded" | "retired";
-  fence?: RewriteFence;
 };
 
 export type BranchCoordinator = {
@@ -334,7 +327,6 @@ export function createBranchCoordinator(input: {
       bound: options.bound ?? COMMIT_ATTEMPTS,
       scope: options.scope ?? attemptScope,
       isMiss: (cause) => cause instanceof BranchCasConflictError,
-      retrying: options.retrying,
       run,
       exhausted:
         options.moved ??
@@ -782,7 +774,7 @@ export function createBranchCoordinator(input: {
   function prepareReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
-    reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence"> & {
+    reset: Pick<ResetInput, "schemaVersion" | "editDisposition"> & {
       policy: RewritePolicy;
       upstreamEpoch?: PullInput["upstreamEpoch"];
     },
@@ -791,7 +783,7 @@ export function createBranchCoordinator(input: {
     replicatedInto(upstream, candidate);
     return prepareRewrite(snapshot.branchId, candidate, {
       policy: reset.policy,
-      fence: reset.fence ?? { kind: "none" },
+      fence: { kind: "none" },
       operation: {
         kind: "reset",
         editDisposition: reset.editDisposition ?? "discarded",
@@ -961,7 +953,6 @@ export function createBranchCoordinator(input: {
       prepareAppend,
       prepareRewrite,
       foldPolicy,
-      commitAttempts,
       commitOnce,
     },
     { diagnostics: input.diagnostics },
