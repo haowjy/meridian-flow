@@ -183,7 +183,7 @@ export function createWorkProjectionMutation(input: {
     const draftIds = new Set(set.drafts ?? []);
     const drafts = await branchDraftRefs(input.db, [...draftIds]);
     if (options.requireActive) {
-      if (drafts.length !== draftIds.size) throw new Error("Branch branch not found");
+      if (drafts.length !== draftIds.size) throw new Error("Draft not found");
       // A draft whose origin Work is gone is frozen, as a missing Work is.
       const frozen = drafts.find((row) => row.workId === null);
       if (frozen) throw new WorkLifecycleUnavailableError(frozen.branchId, "missing");

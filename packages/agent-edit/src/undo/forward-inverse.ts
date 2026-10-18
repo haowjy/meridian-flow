@@ -142,7 +142,7 @@ export function captureEditParts(
   });
 }
 
-/** An invocation-local index, never a persisted-state cache. All alias drafts remain evidence. */
+/** An invocation-local index, never a persisted-state cache. All alias branches remain evidence. */
 class Lineage {
   readonly forward = new Map<Key, Key[]>();
   readonly backward = new Map<Key, Key>();

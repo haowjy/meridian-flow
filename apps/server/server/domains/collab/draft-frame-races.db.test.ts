@@ -278,7 +278,7 @@ describe("writer frames racing rewrites (postgres)", () => {
       if (door === "model") {
         const undone = await modelUndo();
         expect(undone).toMatchObject({ status: "internal_error" });
-        expect(JSON.stringify(undone)).toContain("the draft changed while reversing; try again");
+        expect(JSON.stringify(undone)).toContain("the document changed while reversing; try again");
       } else {
         await expect(cardUndo()).rejects.toBeInstanceOf(ReversalConflictError);
       }

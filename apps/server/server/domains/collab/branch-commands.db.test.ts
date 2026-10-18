@@ -210,7 +210,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
   it.each([
     {
       name: "not found",
-      refuse: () => createError({ statusCode: 404, message: "Branch not found" }),
+      refuse: () => createError({ statusCode: 404, message: "Draft not found" }),
     },
     {
       name: "archived",

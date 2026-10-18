@@ -339,7 +339,7 @@ it.each(
       destination === "draft"
         ? (
             await db
-              .select({ branchId: schema.documentDrafts.id })
+              .select({ draftId: schema.documentDrafts.id })
               .from(schema.documentDrafts)
               .where(
                 and(
@@ -349,8 +349,7 @@ it.each(
               )
           )[0]
         : null;
-    const text = () =>
-      draft ? view.draftMarkdown(draft.branchId) : harness.liveMarkdown(ALPHA_ID);
+    const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
     expect(await text()).toBe(
       command === "redo" ? "Alpha Gamma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
     );

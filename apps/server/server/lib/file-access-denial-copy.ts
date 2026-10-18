@@ -65,7 +65,7 @@ function workArchivedMessage(denial: FileAccessDenied): string {
     denial.agentChain !== null &&
     mayChangeWorks(chainPermission(denial.agentChain));
   if (denial.destination?.kind === "draft") {
-    const frozen = `${work} is archived, so its draft is frozen and this change wasn't made.`;
+    const frozen = `${work} is archived, so its drafts are frozen and this change wasn't made.`;
     return mayUnarchive
       ? `${frozen} Unarchive it with ${unarchive}, or ask the user to switch this chat to auto-apply.`
       : `${frozen} Ask the user to unarchive ${named} or switch this chat to auto-apply.`;

@@ -355,7 +355,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, WORK_ID));
       const { call } = await script.begin();
       const frozen =
-        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch this chat to auto-apply.';
+        'Work @rewrite is archived, so its drafts are frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch this chat to auto-apply.';
 
       for (const args of [
         { command: "create", path: "manuscript://new", content: "Never lands." },

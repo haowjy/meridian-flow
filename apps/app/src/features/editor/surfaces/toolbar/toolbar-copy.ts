@@ -17,7 +17,7 @@ import type {
  * Who the reason is being said about. The toolbar names a control; a surface
  * whose controls are not toolbar rows — the formatting menu's marks row and
  * its Turn into list — names the family instead, because the copy only ever
- * drafts on family and a menu item is not a toolbar button. `document` is
+ * branches on family and a menu item is not a toolbar button. `document` is
  * for controls whose only reasons are the document's own (still opening, read
  * only), where naming a family would claim a distinction the copy never makes.
  */

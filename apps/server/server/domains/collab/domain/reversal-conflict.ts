@@ -6,7 +6,7 @@
  */
 export class ReversalConflictError extends Error {
   constructor() {
-    super("the draft changed while reversing; try again");
+    super("the document changed while reversing; try again");
     this.name = "ReversalConflictError";
   }
 }
