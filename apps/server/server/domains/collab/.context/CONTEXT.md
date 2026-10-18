@@ -41,6 +41,12 @@ link views. It performs no room reads, pulls, provisioning, or repair. A
 missing branch is `gone`, not an invitation to create one. Returned bytes and
 scopes are detached before rich difference work begins.
 
+The review compares live with the draft as its next pull will leave it: live
+structs the draft has not pulled yet are merged into the cut's draft copy
+before the difference. Pulls are debounced (2–10 s), so live is routinely
+ahead of the draft; without the merge, another writer's new live text reads as
+the draft's unattributed removal, and live's deletions as its insertions.
+
 Apply fences the displayed cut. Selective Discard fences the displayed class
 identities and the server-vended closed-row/rich-effect evidence, allowing
 independent draft typing but refusing changed selected evidence. Whole Apply
