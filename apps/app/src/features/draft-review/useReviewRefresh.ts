@@ -14,7 +14,7 @@
  * review does not sit on a stale list until the stream ends.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -42,12 +42,13 @@ export function useReviewRefresh({
   const documentId = review?.documentId ?? null;
   const itemKey = review?.itemKey ?? null;
 
+  const schedule = useRef<(() => void) | null>(null);
+
+  // The pending read belongs to the review, not to the rooms it listens to: an
+  // editor re-binding its live room (its surface briefly inactive) must not
+  // drop a change already seen, such as the pull that just reached the draft.
   useEffect(() => {
     if (!projectId || !workId || !documentId || !itemKey) return;
-    const sources: DocumentSession[] = [];
-    if (session) sources.push(session);
-    if (liveSession) sources.push(liveSession);
-
     let timer: ReturnType<typeof setTimeout> | null = null;
     let firstPendingAt = 0;
     let active = true;
@@ -82,7 +83,7 @@ export function useReviewRefresh({
         }
       });
     };
-    const schedule = () => {
+    schedule.current = () => {
       const now = Date.now();
       if (timer === null) firstPendingAt = now;
       else clearTimeout(timer);
@@ -91,11 +92,19 @@ export function useReviewRefresh({
         Math.min(SETTLE_MS, Math.max(0, firstPendingAt + MAX_WAIT_MS - now)),
       );
     };
-    for (const source of sources) source.document.on("update", schedule);
     return () => {
       active = false;
+      schedule.current = null;
       if (timer !== null) clearTimeout(timer);
-      for (const source of sources) source.document.off("update", schedule);
     };
-  }, [projectId, workId, documentId, itemKey, session, liveSession, queryClient]);
+  }, [projectId, workId, documentId, itemKey, queryClient]);
+
+  useEffect(() => {
+    const sources = [session, liveSession].filter((source) => source !== null);
+    const changed = () => schedule.current?.();
+    for (const source of sources) source.document.on("update", changed);
+    return () => {
+      for (const source of sources) source.document.off("update", changed);
+    };
+  }, [session, liveSession]);
 }
