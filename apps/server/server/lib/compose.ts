@@ -575,6 +575,7 @@ export async function createProductionAppPorts(input: {
     notices,
     workProjectionMutation,
     objects: objectRelease,
+    drainSettlement: environment.DRAIN_APPLY_SETTLEMENT === "1",
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(

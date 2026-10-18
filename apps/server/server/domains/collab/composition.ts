@@ -179,6 +179,8 @@ type CollabDomainDeps = {
   aheadRegistrations?: AheadRegistrationRecovery;
   /** Deletes a discarded hidden image's stored object after commit (§12.2 step 4). */
   objects?: Pick<ObjectRelease, "storageUrls">;
+  /** Stops staging new Applies while settlement drains (cutover); staged ones complete. */
+  drainSettlement?: boolean;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -540,6 +542,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches: workBranches,
     reviewItems,
     push: branchPush,
+    ...(deps.drainSettlement ? { drainSettlement: true } : {}),
   });
   const discardStore = createDrizzleBranchDiscard(deps.db, {
     branches: workBranches,
