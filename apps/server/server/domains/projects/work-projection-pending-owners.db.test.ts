@@ -20,7 +20,6 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -105,7 +104,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         availability,
         catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
       });
       await catalog.refreshProject(PROJECT_ID);
       return { db, projection };
@@ -343,51 +341,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         settle("00000000-0000-4000-8000-000000000949", "00000000-0000-4000-8000-00000000094a"),
       ).resolves.toMatchObject({ status: "completed", held: [{ itemKey: "chapter" }] });
       await expectPublishedAfter(repushed);
-    });
-
-    it("publishes an effect toggle on a branch that keeps its reviewable rows", async () => {
-      const { db, projection } = await fixture();
-      const pending = createDrizzleWorkDraftPendingStore(db);
-      await appendBranchRows(
-        createDrizzleBranchStore(db, {
-          workProjection: projection,
-          drafts: createDrizzleDraftStore(db),
-        }),
-        BRANCH_ID,
-        [{ updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } }],
-      );
-      const setEffect = (hasEffect: boolean) =>
-        projection.mutatePending({ branches: [BRANCH_ID] }, async () => {
-          await db
-            .update(documentBranches)
-            .set({ hasEffect })
-            .where(eq(documentBranches.id, BRANCH_ID));
-        });
-      // The hint and the catalog count read the one membership relation; the Work revision follows.
-      const agree = async (members: number) => {
-        expect(
-          (await pending.countPendingByWorkIds([WORK_ID as never])).get(WORK_ID as never) ?? 0,
-        ).toBe(members);
-        await expect(
-          pending.listDraftsChangingDocument({
-            projectId: PROJECT_ID as never,
-            documentId: DOCUMENT_ID as never,
-          }),
-        ).resolves.toHaveLength(members);
-      };
-      await agree(1);
-      for (const [hasEffect, members] of [
-        [false, 0],
-        [true, 1],
-      ] as const) {
-        const before = await projectionState();
-        await setEffect(hasEffect);
-        await agree(members);
-        const after = await projectionState();
-        expect(after.entityRevision).toBe((before.entityRevision ?? 0n) + 1n);
-        expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);
-        expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0);
-      }
     });
   });
 }

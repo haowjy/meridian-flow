@@ -26,7 +26,10 @@ client.
 `withDocument` runs a callback on the host's document; its mutations commit
 atomically or refuse. Callers must not rely on mutual exclusion: a live host
 serializes callers for one document, a branch host runs them on private
-candidates committed at a revision. Neither fences a separate WebSocket
+candidates. On a branch an ordinary CRDT write commits as an unfenced append;
+an exact peer catch-up or rewrite commits only at the revision it captured, so
+a `StagedWriteCommit` whose save includes one can still throw a revision miss.
+Neither fences a separate WebSocket
 transport; the host supplies that authority check. `DocumentAccess.timeoutMs`
 bounds only a live host's wait. `recover` replays persisted-but-unapplied
 updates and reports a missing coordinator document as `DocumentNotFoundError`.

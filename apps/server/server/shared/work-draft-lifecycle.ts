@@ -44,17 +44,3 @@ export async function draftBranchWorks(
     workId: (row.workId as WorkId | null) ?? null,
   }));
 }
-
-/** The origin Works of these drafts that have one, as the pending projection maps a draft. */
-export async function draftOriginWorkIds(
-  db: DrizzleDb,
-  draftIds: readonly DraftId[],
-): Promise<WorkId[]> {
-  const ids = [...new Set(draftIds)];
-  if (ids.length === 0) return [];
-  const rows = await currentDrizzleDb(db)
-    .select({ workId: drafts.originWorkId })
-    .from(drafts)
-    .where(inArray(drafts.id, ids));
-  return rows.flatMap(({ workId }) => (workId ? [workId as WorkId] : []));
-}

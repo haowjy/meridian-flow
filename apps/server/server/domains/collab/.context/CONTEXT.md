@@ -179,20 +179,18 @@ locks the Works a write names, directly or through its drafts and branches,
 `FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
 inverse, document or branch lock, so every write enters Work, draft, document,
 branch, the order the transitions take. A caller hands it its whole write set
-once: `mutatePending` when the write's effect on review membership is known
-only after it runs (it counts the Works' pending documents before and after
-and touches those that moved), `mutateKnownWorks` when the caller already
-knows the write moves these Works (the draft-effect projection's write: lock,
-write, touch, no count), and `lockWorks` for order alone (opening or closing a
+once: `mutate` to lock, write, then touch every Work of the set (the write set
+is the invalidation set; a touch whose pending count did not move is an
+accepted extra publication, W47), and `lockWorks` for order alone (opening or closing a
 draft, Apply's batch plan, a reply save's grants). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a draft branch
-runs inside `mutatePending`: a branch made while its Work archives waits on
+runs inside `mutate`: a branch made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no
 keystroke locks a Work or counts (#931). Tests use the same boundary
 (`test-support/work-projection.ts`), with no catalog or availability
-publication and no pending counts.
+publication.
 
 A work draft's derived state (`has_effect`, its review membership, the Work's
 badge) is a projection, not part of the append (design §3). Every committed
@@ -202,7 +200,7 @@ input); the projection job (`domain/branch-projection.ts`) coalesces marks
 judgements at a time, fingerprints the published replica against the stored
 baseline (`live_cut`, frozen at creation and replaced only under a revision
 bump), and writes `has_effect` with its watermark `has_effect_revision` through
-`writeEffect` at exactly that revision, inside `mutateKnownWorks`, under
+`writeEffect` at exactly that revision, inside `mutate`, under
 `SET LOCAL lock_timeout = '100ms'`. That bound applies to each lock
 acquisition (the Work, the branch row, the publication participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision
@@ -323,7 +321,7 @@ captures without any lock: one read-only snapshot of each document's live
 head, each affected draft at its revision merged with that live state, the
 history and each draft's lifecycle. It plans on that capture, then commits in
 one scope: the live mutexes of its live destinations, then a seam boundary
-(`mutatePending` with `seam`): the captured branches' Works and the bound
+(`mutate` with `seam`): the captured branches' Works and the bound
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
 grant Work). Then its documents' mutation locks in id order,

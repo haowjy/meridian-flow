@@ -481,8 +481,3 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
 export function serializedEventBytes(event: EventRecord): number {
   return Buffer.byteLength(JSON.stringify(event), "utf8");
 }
-
-export function safeSnippet(value: string, maxLength = 160): string {
-  const redacted = redactString(value);
-  return redacted.length <= maxLength ? redacted : `${redacted.slice(0, maxLength)}…`;
-}

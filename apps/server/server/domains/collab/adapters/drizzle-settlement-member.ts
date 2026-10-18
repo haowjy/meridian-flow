@@ -165,7 +165,7 @@ export async function withdrawSettlementMembersWithinTx(
     );
   };
   const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
-  await workProjection.mutatePending({ branches: branchIds }, withdraw);
+  await workProjection.mutate({ branches: branchIds }, withdraw);
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */
