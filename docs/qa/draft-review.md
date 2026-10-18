@@ -94,7 +94,7 @@ Record the archive click time, each close and the notice's arrival. The seam
 behind it is the `archive-in-flight-append` probe in
 [drafts-lock-free-probes.md](drafts-lock-free-probes.md).
 
-[archive-window]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-branches.md
+[archive-window]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-drafts.md
 
 ## Per-change Discard of a long writer change
 
