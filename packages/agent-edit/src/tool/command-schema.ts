@@ -222,7 +222,7 @@ function readInput<Target extends z.ZodRawShape>(target: Target, targetKey: Targ
 }
 
 function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: TargetKey) {
-  const branch = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
+  const documentDraft = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
     z
       .object({
         command: z.literal(command),
@@ -233,14 +233,14 @@ function mutationUnion<Target extends z.ZodRawShape>(target: Target, targetKey: 
       .describe(MUTATION_BRANCHES[command].description);
   return z
     .discriminatedUnion("command", [
-      branch("create"),
-      branch("copy"),
-      branch("insert"),
-      branch("replace"),
-      branch("remove"),
-      branch("undo"),
-      branch("redo"),
-      branch("revert"),
+      documentDraft("create"),
+      documentDraft("copy"),
+      documentDraft("insert"),
+      documentDraft("replace"),
+      documentDraft("remove"),
+      documentDraft("undo"),
+      documentDraft("redo"),
+      documentDraft("revert"),
     ])
     .superRefine((value, ctx) => {
       const fields = value as Parameters<typeof addSelectorIssues>[2] & { command: string };

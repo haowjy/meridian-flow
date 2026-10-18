@@ -12,7 +12,7 @@ import type {
   ReviewHunk,
   ReviewOperation,
   ReviewTextHunk,
-} from "@meridian/contracts/drafts";
+} from "@meridian/contracts/branches";
 import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";

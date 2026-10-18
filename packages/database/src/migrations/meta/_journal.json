@@ -435,6 +435,20 @@
       "when": 1792290020000,
       "tag": "0067_work_pending_document_count_online",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792290030000,
+      "tag": "0068_draft_branch_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792290040000,
+      "tag": "0069_draft_branch_values_online",
+      "breakpoints": true
     }
   ]
 }

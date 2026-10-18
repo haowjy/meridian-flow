@@ -63,14 +63,14 @@ export interface WorkRef {
 
 /**
  * Who is asking. A person acts alone; an agent acts for the person, under its
- * delegation chain, and in draft mode routes drafted sources to `draftWork`.
+ * delegation chain, and in draft mode routes drafted sources to `branchWork`.
  */
 export interface Principal {
   accountId: UserId;
   agent?: {
     chain: AgentChain;
     /** The Work whose draft drafted sources land in; null outside draft mode. */
-    draftWork: WorkRef | null;
+    branchWork: WorkRef | null;
   };
 }
 
@@ -142,7 +142,7 @@ export interface FileFacts {
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
   ancestors: readonly FileNode[];
   /** The Work whose draft this access goes through, when one was asked about. */
-  draftWork?: FileWorkFacts;
+  branchWork?: FileWorkFacts;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ export function targetDocumentId(target: FileTarget): DocumentId {
 export function grantWorkIds(facts: FileFacts): WorkId[] {
   const ids: WorkId[] = [];
   if (facts.ownerWork && !facts.ownerWork.isNoWork) ids.push(facts.ownerWork.id);
-  if (facts.draftWork && !facts.draftWork.isNoWork) ids.push(facts.draftWork.id);
+  if (facts.branchWork && !facts.branchWork.isNoWork) ids.push(facts.branchWork.id);
   return ids;
 }
 

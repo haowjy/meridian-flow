@@ -1,19 +1,19 @@
 /** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { DraftRef } from "@/client/query/draft-command-record";
+import type { DraftRef } from "@/client/query/branch-command-record";
 import {
-  currentDraftCommandRecords,
-  draftCommandFailure,
-  pendingDraftCommand,
-  useDraftCommandRecords,
-} from "@/client/query/draft-command-record";
+  branchCommandFailure,
+  currentBranchCommandRecords,
+  pendingBranchCommand,
+  useBranchCommandRecords,
+} from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkBranches } from "@/client/query/useWorkBranches";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
@@ -70,29 +70,30 @@ function WorkSettlement({
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
-  const drafts = useWorkDrafts(projectId, workId);
-  const records = useDraftCommandRecords();
+  const branches = useWorkBranches(projectId, workId);
+  const records = useBranchCommandRecords();
   const projection = useObservedResourceProjection(resources, projectId);
   // A draft-only tab whose draft left the active list was disposed of
   // elsewhere. The list cannot say how, so the catalog decides: a document
   // that now exists was applied, otherwise the draft was discarded.
   useEffect(() => {
     if (!resources || !projectId || !workId) return;
-    if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
+    if (branches.status !== "ready" && branches.status !== "empty") return;
+    const isOrphan = (draft: DraftRef, activeBranches: readonly ThreadDraftListItem[]) =>
       draft.workId === workId &&
-      !pendingDraftCommand(currentDraftCommandRecords(), draft) &&
-      !draftCommandFailure(currentDraftCommandRecords(), draft) &&
-      !activeDrafts.some((row) => row.itemKey === draft.itemKey);
-    const activeDrafts = drafts.drafts ?? [];
-    if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
+      !pendingBranchCommand(currentBranchCommandRecords(), draft) &&
+      !branchCommandFailure(currentBranchCommandRecords(), draft) &&
+      !activeBranches.some((row) => row.itemKey === draft.itemKey);
+    const activeBranches = branches.branches ?? [];
+    if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeBranches)))
+      return;
 
     const scopeFor = (draft: DraftOnlyPresentation) =>
       contextCatalogScope(projectId, draft.contextLocation.scheme, { workId: draft.workId });
     const scopes = new Map(
       lifecycle
         .presentations(projectId)
-        .filter((draft) => isOrphan(draft, activeDrafts))
+        .filter((draft) => isOrphan(draft, activeBranches))
         .flatMap((draft) => {
           const scope = scopeFor(draft);
           return scope ? [[JSON.stringify(scope), scope] as const] : [];
@@ -107,12 +108,12 @@ function WorkSettlement({
         .then((view) => {
           if (attempt.signal.aborted) return;
           queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-          const currentDrafts =
+          const currentBranches =
             queryClient.getQueryData<ThreadDraftListItem[]>(
-              projectQueryKeys.workDrafts(projectId, workId),
+              projectQueryKeys.workBranches(projectId, workId),
             ) ?? [];
           for (const draft of lifecycle.presentations(projectId)) {
-            if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
+            if (!isOrphan(draft, currentBranches) || JSON.stringify(scopeFor(draft)) !== key)
               continue;
             if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
             else lifecycle.remove(draft);
@@ -126,8 +127,8 @@ function WorkSettlement({
     lifecycle,
     records,
     membership,
-    drafts.drafts,
-    drafts.status,
+    branches.branches,
+    branches.status,
     projectId,
     queryClient,
     resources,
@@ -138,16 +139,16 @@ function WorkSettlement({
   const presentedRef = useRef(presented);
   presentedRef.current = presented;
   const openReview = useOptionalOpenEditorReview();
-  // Draft-only means "hidden live". The replica showing the document (by its
+  // Branch-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
   // once for every Work. A tab the writer was looking at keeps the review it
-  // showed, opened over the live document: the view the chip's Draft choice gives.
+  // showed, opened over the live document: the view the chip's Branch choice gives.
   useEffect(() => {
-    if (drafts.status !== "ready") return;
+    if (branches.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
     const promoting = new Set<string>();
     for (const draft of lifecycle.presentations(projectId)) {
-      const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
+      const row = branches.branches?.find((candidate) => candidate.itemKey === draft.itemKey);
       if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
@@ -187,8 +188,8 @@ function WorkSettlement({
   }, [
     lifecycle,
     membership,
-    drafts.drafts,
-    drafts.status,
+    branches.branches,
+    branches.status,
     projection.records,
     projectId,
     workId,

@@ -73,7 +73,7 @@ function journalEntry(update: Uint8Array): JournalBatchAppendEntry {
       mode: "threadPeer",
       threadId: THREAD_ID,
       turnId: "turn-lock",
-      branchGeneration: 1,
+      draftGeneration: 1,
     },
   };
 }

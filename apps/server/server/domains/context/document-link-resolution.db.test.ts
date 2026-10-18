@@ -1,10 +1,10 @@
 /** Real catalog/Work-authority integration for canonical document-link navigation. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
+  branchTreeChanges,
   contextSources,
   documents,
-  drafts,
-  draftTreeChanges,
   linkAheadRefs,
   projects,
   threads,
@@ -102,7 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        drafts: {
+        branches: {
           viewForWork: async (workId) => {
             viewed.push(workId);
             return { kind: "live" };
@@ -383,7 +383,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        drafts: { viewForWork: async () => ({ kind: "live" }) },
+        branches: { viewForWork: async () => ({ kind: "live" }) },
       };
       const result = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
@@ -408,19 +408,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ contextSourceId: documents.contextSourceId })
         .from(documents)
         .where(eq(documents.id, live));
-      const hidden = async (name: string, draftId: string) => {
+      const hidden = async (name: string, branchId: string) => {
         const id = crypto.randomUUID();
         await db
           .insert(documents)
           .values({ id, contextSourceId, name, extension: "md", hidden: true });
         await db
-          .insert(draftTreeChanges)
-          .values({ draftId, nodeId: id, nodeKind: "document", created: true });
+          .insert(branchTreeChanges)
+          .values({ branchId, nodeId: id, nodeKind: "document", created: true });
         return id;
       };
       const draftA = crypto.randomUUID();
       const draftB = crypto.randomUUID();
-      await db.insert(drafts).values([
+      await db.insert(branches).values([
         { id: draftA, projectId: p, originWorkId: a, createdBy: u },
         { id: draftB, projectId: p, originWorkId: b, createdBy: u },
       ]);
@@ -440,12 +440,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        drafts: {
+        branches: {
           viewForWork: async (workId) =>
             workId === a
-              ? { kind: "draft", draftId: draftA }
+              ? { kind: "branch", branchId: draftA }
               : workId === b
-                ? { kind: "draft", draftId: draftB }
+                ? { kind: "branch", branchId: draftB }
                 : { kind: "live" },
         },
       };
@@ -463,15 +463,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         });
       expect((await resolveIn(a)).answers).toMatchObject([
-        { state: "document", inDraft: true, draft: { draftId: draftA }, document: { id: created } },
-        { state: "document", inDraft: false, document: { id: live } },
+        {
+          state: "document",
+          inBranch: true,
+          branch: { branchId: draftA },
+          document: { id: created },
+        },
+        { state: "document", inBranch: false, document: { id: live } },
         { state: "missing" },
       ]);
       // Work B's draft created only "elsewhere"; A's creates stay hidden from it.
       expect((await resolveIn(b)).answers).toMatchObject([
         { state: "missing" },
-        { state: "document", inDraft: false, document: { id: live } },
-        { state: "document", inDraft: true, draft: { draftId: draftB } },
+        { state: "document", inBranch: false, document: { id: live } },
+        { state: "document", inBranch: true, branch: { branchId: draftB } },
       ]);
     });
     it("answers ref links through the route core: gone never carries a location", async () => {
@@ -549,7 +554,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        drafts: {
+        branches: {
           viewForWork: async (workId) => {
             provisioned.push(workId);
             return { kind: "live" };
@@ -586,7 +591,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const liveDocument = {
         state: "document",
         document: { id: live, title: "live", scheme: "manuscript", path: "live" },
-        inDraft: false,
+        inBranch: false,
       };
       expect(response.answers).toMatchObject([
         liveDocument,
@@ -626,7 +631,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(threads)
         .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
       provisioned.length = 0;
-      const noWorkDraft = await handleDocumentLinkResolveRequest(deps, {
+      const noWorkBranch = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
         userId: u as never,
         request: {
@@ -636,7 +641,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       // The tombstone stays gone; the chat's links still read No Work's draft view.
-      expect(noWorkDraft.answers).toMatchObject([{ state: "gone" }]);
+      expect(noWorkBranch.answers).toMatchObject([{ state: "gone" }]);
       expect(provisioned).toEqual([noWork]);
       // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();

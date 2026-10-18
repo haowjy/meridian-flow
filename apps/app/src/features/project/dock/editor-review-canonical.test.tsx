@@ -21,7 +21,7 @@ it.each([
     };
     const review = {
       controller: { workId: "work", inlineReview: null },
-      drafts: { status: "ready" },
+      branches: { status: "ready" },
       files: [group],
     } as unknown as DraftReviewContextValue;
     return (

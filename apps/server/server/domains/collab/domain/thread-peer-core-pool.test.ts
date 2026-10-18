@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { harness } from "../../../../../../packages/agent-edit/src/tool/test-support/write-tool-harness.js";
 import type { FileDestination } from "../../file-policy/index.js";
 import {
-  createFakeBranchTable,
-  createFakeDrafts,
+  createFakeBranches,
+  createFakeDraftTable,
   createFakeFileAccess,
   createFakeThreadPeerCores,
   fakeEditGrant,
@@ -20,20 +20,20 @@ const THREAD_ID = "thread-1" as ThreadId;
 const live: FileDestination = { kind: "live" };
 const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
 
-/** The drafts and reply fences every pool takes, over fake branch rows. */
+/** The branches and reply fences every pool takes, over fake branch rows. */
 function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
-  const drafts = createFakeDrafts();
-  const branches = createFakeBranchTable({ documentId: "ch12", threadId: THREAD_ID });
+  const branches = createFakeBranches();
+  const drafts = createFakeDraftTable({ documentId: "ch12", threadId: THREAD_ID });
   const fileAccess = createFakeFileAccess();
   const fences = createReplySaveFences({
     liveUtilityCore,
-    branches,
     drafts,
+    branches,
     fileAccess,
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
-  return { drafts, branches, fences, fileAccess };
+  return { branches, drafts, fences, fileAccess };
 }
 
 function createPool() {
@@ -41,8 +41,8 @@ function createPool() {
   const liveUtilityCore = asLiveAgentEditCore(liveCore.asCore());
   const ports = poolPorts(liveUtilityCore);
   const pool = createThreadPeerCorePool({
-    drafts: ports.drafts,
-    branches: { getBranch: async () => null },
+    branches: ports.branches,
+    drafts: { getDraft: async () => null },
     fences: ports.fences,
     liveUtilityCore,
     createThreadCore: () => threadCore.asCore(),
@@ -125,8 +125,8 @@ describe("thread-peer pool", () => {
       });
       const closingPorts = poolPorts(asLiveAgentEditCore(liveHarness.core));
       const closingPool = createThreadPeerCorePool({
-        drafts: closingPorts.drafts,
-        branches: { getBranch: async () => null },
+        branches: closingPorts.branches,
+        drafts: { getDraft: async () => null },
         fences: closingPorts.fences,
         liveUtilityCore: asLiveAgentEditCore(liveHarness.core),
         createThreadCore: () => {
@@ -150,9 +150,9 @@ describe("thread-peer pool", () => {
           pausedEviction
             ? undefined
             : {
-                peerBranchId: "peer-1",
-                upstreamBranchId: "upstream-1",
-                branchGeneration: 1,
+                peerDraftId: "peer-1",
+                upstreamDraftId: "upstream-1",
+                draftGeneration: 1,
                 attributionBaseline: new Uint8Array(),
               },
         commitThreadResponseAtomically: (operation) => operation(),
@@ -208,9 +208,9 @@ describe("reasoned refusal and retirement through the pool", () => {
   });
 
   it("refuseStaged evicts the response's entry so a later write ensures a fresh draft and peer (U2)", async () => {
-    const { pool, threadCore, drafts, pullThreadPeer } = createPool();
+    const { pool, threadCore, branches, pullThreadPeer } = createPool();
     await pool.write(insertCh12, context(draftA, "reply-1"));
-    expect(drafts.ensureActiveForWrite).toHaveBeenCalledTimes(1);
+    expect(branches.ensureActiveForWrite).toHaveBeenCalledTimes(1);
 
     pool.refuseStaged("reply-1", "ch12", "discarded_draft");
     expect(threadCore.refuseStaged).toHaveBeenCalledWith(
@@ -222,7 +222,7 @@ describe("reasoned refusal and retirement through the pool", () => {
     expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
 
     await pool.write(insertCh12, context(draftA, "reply-1"));
-    expect(drafts.ensureActiveForWrite).toHaveBeenCalledTimes(2);
+    expect(branches.ensureActiveForWrite).toHaveBeenCalledTimes(2);
     expect(pullThreadPeer).toHaveBeenCalledTimes(2);
     expect(pool.responseDestination("reply-1", "ch12")).toMatchObject({ kind: "draft" });
   });
@@ -234,13 +234,13 @@ describe("reasoned refusal and retirement through the pool", () => {
     await pool.write(insertCh12, replyContext("reply-2"));
 
     await pool.retireThreadPeers("ch12", [
-      { threadId: THREAD_ID, peerBranchId: "peer-1", reason: "discarded_edit" },
+      { threadId: THREAD_ID, peerDraftId: "peer-1", reason: "discarded_edit" },
     ]);
 
     expect(threadCore.retirePeer).toHaveBeenCalledWith({
       documentId: "ch12",
       threadId: THREAD_ID,
-      peerBranchId: "peer-1",
+      peerDraftId: "peer-1",
       reason: "discarded_edit",
     });
     expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
@@ -251,7 +251,7 @@ describe("reasoned refusal and retirement through the pool", () => {
     });
 
     await pool.retireThreadPeers("ch12", [
-      { threadId: THREAD_ID, peerBranchId: "peer-2", reason: "discarded_edit" },
+      { threadId: THREAD_ID, peerDraftId: "peer-2", reason: "discarded_edit" },
     ]);
     expect(pool.responseDestination("reply-2", "ch12")).toBeUndefined();
   });
@@ -262,8 +262,8 @@ describe("reasoned refusal and retirement through the pool", () => {
     const live = asLiveAgentEditCore(liveCore.asCore());
     const ports = poolPorts(live);
     const pool = createThreadPeerCorePool({
-      drafts: ports.drafts,
-      branches: { getBranch: async () => null },
+      branches: ports.branches,
+      drafts: { getDraft: async () => null },
       fences: ports.fences,
       liveUtilityCore: live,
       createThreadCore: (threadId) => {
@@ -286,11 +286,11 @@ describe("reasoned refusal and retirement through the pool", () => {
     await pool.evictThread("thread-a" as ThreadId);
 
     await pool.retireThreadPeers("ch12", [
-      { threadId: "thread-a", peerBranchId: "peer-1", reason: "discarded_document" },
+      { threadId: "thread-a", peerDraftId: "peer-1", reason: "discarded_document" },
     ]);
 
     expect(cores.get("thread-a")?.retirePeer).toHaveBeenCalledWith(
-      expect.objectContaining({ peerBranchId: "peer-1", reason: "discarded_document" }),
+      expect.objectContaining({ peerDraftId: "peer-1", reason: "discarded_document" }),
     );
     expect(cores.get("thread-b")?.retirePeer).not.toHaveBeenCalled();
   });

@@ -21,10 +21,10 @@
  * and the owner rebuilds the room from the server's state.
  *
  * A branch room's update refusal (`1008`) is bounded. One refusal reconnects
- * and resends, as any close does; after `MAX_BRANCH_UPDATE_REFUSALS` in a row
- * with no acknowledgement between them, the room ends `BRANCH_UPDATES_REFUSED`
+ * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
+ * with no acknowledgement between them, the room ends `DRAFT_UPDATES_REFUSED`
  * and keeps its outbox for the owner to show. Live rooms never count. A
- * `4207 branch-prefix-missing` close is not a refusal: the server received an
+ * `4207 draft-prefix-missing` close is not a refusal: the server received an
  * update before the bytes it depends on, and the reconnect's handshake repairs
  * that, so it reconnects like any drop and never counts.
  *
@@ -61,11 +61,11 @@ import type { Awareness } from "y-protocols/awareness";
 import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
-  BRANCH_UPDATES_REFUSED,
   type DocumentSessionAccess,
   type DocumentSessionConnectionState,
   type DocumentSessionResetReason,
   type DocumentSessionTransportProvider,
+  DRAFT_UPDATES_REFUSED,
   type ResetDisposition,
 } from "@/core/editor/document-session";
 
@@ -87,11 +87,11 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 const SOCKET_OPEN = 1;
 
 // The server's close for a branch frame it would not admit (policy violation).
-const BRANCH_UPDATE_REFUSED_CODE = 1008;
-const MAX_BRANCH_UPDATE_REFUSALS = 3;
+const DRAFT_UPDATE_REFUSED_CODE = 1008;
+const MAX_DRAFT_UPDATE_REFUSALS = 3;
 
-function isBranchRoom(roomName: string): boolean {
-  return roomName.startsWith("branch:");
+function isDraftRoom(roomName: string): boolean {
+  return roomName.startsWith("draft:");
 }
 
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
@@ -250,8 +250,8 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.BRANCH_GENERATION_STALE.reason]: "superseded",
-  [WS_CLOSE.BRANCH_STALE.reason]: "rebuild",
+  [WS_CLOSE.DRAFT_GENERATION_STALE.reason]: "superseded",
+  [WS_CLOSE.DRAFT_STALE.reason]: "rebuild",
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
@@ -265,7 +265,7 @@ export function classifyDocumentTransportClose(
   const reason = event.reason as DocumentSessionResetReason;
   const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
   if (disposition) {
-    if ((disposition === "superseded" || disposition === "rebuild") && !isBranchRoom(roomName))
+    if ((disposition === "superseded" || disposition === "rebuild") && !isDraftRoom(roomName))
       return null;
     if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
     return { kind: "reset", reason, disposition, code: event.code };
@@ -306,7 +306,7 @@ export function createHocuspocusDocumentTransport({
       autoConnect: false,
     },
     acknowledgement,
-    isBranchRoom(roomName),
+    isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
@@ -397,14 +397,14 @@ export function createHocuspocusDocumentTransport({
       publishTerminal(state);
       return;
     }
-    // Only a genuine refusal counts; 4207 branch-prefix-missing is a plain reconnect.
+    // Only a genuine refusal counts; 4207 draft-prefix-missing is a plain reconnect.
     if (
-      event.code === BRANCH_UPDATE_REFUSED_CODE &&
-      isBranchRoom(roomName) &&
+      event.code === DRAFT_UPDATE_REFUSED_CODE &&
+      isDraftRoom(roomName) &&
       outbox !== null &&
-      ++refusals >= MAX_BRANCH_UPDATE_REFUSALS
+      ++refusals >= MAX_DRAFT_UPDATE_REFUSALS
     )
-      publishTerminal({ kind: "terminal", reason: BRANCH_UPDATES_REFUSED, code: event.code });
+      publishTerminal({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: event.code });
   }
 
   function handleStateless({ payload }: onStatelessParameters): void {

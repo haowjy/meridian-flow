@@ -389,7 +389,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Ok({ deletedDocumentIds: [deletedDocument.id], availabilityGeneration });
       }
 
-      // Hidden contents stay where their drafts placed them, under twins at their paths (§8.3).
+      // Hidden contents stay where their branches placed them, under twins at their paths (§8.3).
       await splitHiddenContents(this.db, token.nodeId as FolderId);
       const folderClosure = await currentDrizzleDb(this.db).execute<{ id: string }>(sql`
         WITH RECURSIVE subtree AS (

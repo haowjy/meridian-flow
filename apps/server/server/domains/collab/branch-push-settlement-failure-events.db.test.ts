@@ -50,8 +50,8 @@ describe("settlement failure reporting (postgres)", () => {
         throw new Error("stop after the batch is staged");
       },
     });
-    const branchId = await harness.seedDestructivePush(name, documentId);
-    await expect(harness.push(branchId)).rejects.toThrow("stop after the batch is staged");
+    const draftId = await harness.seedDestructivePush(name, documentId);
+    await expect(harness.push(draftId)).rejects.toThrow("stop after the batch is staged");
     harness.destroyWarmState();
     await expirePendingClaims(db, documentId);
     const [{ batchId }] = await db

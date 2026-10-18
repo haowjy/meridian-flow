@@ -17,9 +17,9 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createHocuspocusBinding } from "../../../../apps/server/server/domains/collab/adapters/hocuspocus-binding.ts";
-import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
-import type { BranchStore } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
-import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/branch-writer-frames.ts";
+import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
+import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-writer-frames.ts";
 import { createHocuspocusPersistenceService } from "../../../../apps/server/server/domains/collab/hocuspocus-persistence.ts";
 import {
   admitWriterSync,
@@ -51,15 +51,15 @@ type Document = Awaited<ReturnType<ReturnType<typeof createHocuspocus>["createDo
 
 type Reconciled = Parameters<WriterFrameDiagnostics["roomReconciled"]>[0];
 
-/** `store` whose first `readBranchAt` holds its result until `release`, once it has `entered`. */
-function pausedRead(store: BranchStore) {
+/** `store` whose first `readDraftAt` holds its result until `release`, once it has `entered`. */
+function pausedRead(store: DraftStore) {
   const entered = gate();
   const release = gate();
   let held = true;
-  const paused: BranchStore = {
+  const paused: DraftStore = {
     ...store,
-    async readBranchAt(...args) {
-      const result = await store.readBranchAt(...args);
+    async readDraftAt(...args) {
+      const result = await store.readDraftAt(...args);
       if (held) {
         held = false;
         entered.open();
@@ -77,24 +77,24 @@ function pausedRead(store: BranchStore) {
  */
 export function openGateway(
   harness: Harness,
-  store: BranchStore,
+  store: DraftStore,
   options: { dropDelivery?: boolean } = {},
 ) {
   const binding = createHocuspocusBinding();
   const reconciled: Reconciled[] = [];
   let drop = options.dropDelivery ?? false;
-  const coordinator = createBranchCoordinator({
+  const coordinator = createDraftCoordinator({
     onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
-    onBranchUpdate(update) {
+    onDraftUpdate(update) {
       if (drop) {
         drop = false;
         return;
       }
-      binding.deliverBranchUpdate(update);
+      binding.deliverDraftUpdate(update);
     },
-    onBranchReset: ({ branchId, generation }) => binding.closeBranch(branchId, generation),
+    onDraftReset: ({ draftId, generation }) => binding.closeDraft(draftId, generation),
     applyToRoom: binding.applyToRoom,
     diagnostics: {
       compactionFailed() {},
@@ -103,8 +103,8 @@ export function openGateway(
     },
   });
   const persistence = createHocuspocusPersistenceService({
-    branchStore: store,
-    branchCoordinator: coordinator,
+    draftStore: store,
+    draftCoordinator: coordinator,
     journal: {} as never,
     hocuspocus: () => binding.current(),
     metaForOrigin: () => ({ origin: "system", seq: 0 }) as never,
@@ -118,9 +118,9 @@ export function openGateway(
   binding.bind(hocuspocus);
 
   /** The room loaded as a socket's `ClientConnection` loads it; resolves once registered. */
-  function load(branchId: string, generation: number): Promise<Document> {
+  function load(draftId: string, generation: number): Promise<Document> {
     return hocuspocus.createDocument(
-      `branch:${branchId}:gen:${generation}`,
+      `draft:${draftId}:gen:${generation}`,
       { headers: {}, url: "/" } as never,
       "probe-socket",
       { readOnly: false, isAuthenticated: true } as never,
@@ -129,12 +129,12 @@ export function openGateway(
   }
 
   /** A tab's keystroke on `room`, admitted as the gateway admits a socket's frame. */
-  async function type(room: Document, branchId: string, generation: number, token: string) {
+  async function type(room: Document, draftId: string, generation: number, token: string) {
     const tab = new Y.Doc({ gc: false });
     Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
     const update = appendToFirstParagraph(tab, token);
     tab.destroy();
-    return send(room, branchId, generation, update);
+    return send(room, draftId, generation, update);
   }
 
   /**
@@ -143,7 +143,7 @@ export function openGateway(
    */
   async function send(
     room: Document,
-    branchId: string,
+    draftId: string,
     generation: number,
     payload: Uint8Array,
     syncType = 2,
@@ -157,7 +157,7 @@ export function openGateway(
         syncType,
         payload,
         userId: harness.ids.user as never,
-        context: { branchSyncState: new Map([[`${branchId}:${generation}`, "passed"]]) },
+        context: { draftSyncState: new Map([[`${draftId}:${generation}`, "passed"]]) },
         closeTransport: (close) => closes.push(close),
       }),
     );
@@ -171,12 +171,12 @@ export function openGateway(
    * through Hocuspocus's sync receiver and the gateway's `beforeSync` hook: its SyncStep1, then
    * its SyncStep2 answer. Everything the server sends the tab is applied to it.
    */
-  async function joinReadOnly(room: Document, branchId: string, tab: Y.Doc) {
+  async function joinReadOnly(room: Document, draftId: string, tab: Y.Doc) {
     const context = {
       traceId: "read-only-handshake",
       userId: harness.ids.user,
-      branchSyncState: new Map(),
-      admissionTarget: { kind: "branch", branchId, generation: 1, documentId: room.name },
+      draftSyncState: new Map(),
+      admissionTarget: { kind: "draft", draftId, generation: 1, documentId: room.name },
       access: { level: "read" },
     };
     let serverVector: Uint8Array | undefined;
@@ -231,7 +231,7 @@ export function openGateway(
     send,
     joinReadOnly,
     /** Waits out every enrollment the branch's rooms started. */
-    enrolled: (branchId: string) => persistence.drainHocuspocusBranchPersistence(branchId),
+    enrolled: (draftId: string) => persistence.drainHocuspocusDraftPersistence(draftId),
     async close() {
       for (const document of [...hocuspocus.documents.values()])
         await hocuspocus.unloadDocument(document);
@@ -242,10 +242,14 @@ export function openGateway(
 const text = (doc: Y.Doc) => doc.getXmlFragment("prosemirror").toString();
 
 async function seedDraft(harness: Harness, label: string) {
-  const { draftId } = await harness.seedWork(label);
+  const { branchId } = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, "Base");
-  const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
-  return { branchId: branch.branchId, live };
+  const documentDraft = await harness.store.ensureDocumentDraft({
+    documentId,
+    branchId,
+    liveDoc: live,
+  });
+  return { draftId: documentDraft.draftId, live };
 }
 
 export const coldLoadCommit: Probe = {
@@ -253,21 +257,21 @@ export const coldLoadCommit: Probe = {
   decision: "D26",
   expected: `room after registration holds COMMITTED; next: {"ok":true,"closes":[]}; one enrollment repair`,
   async run(harness) {
-    const { branchId, live } = await seedDraft(harness, "cold-load-commit");
+    const { draftId, live } = await seedDraft(harness, "cold-load-commit");
     const pause = pausedRead(harness.store);
     const gateway = openGateway(harness, pause.paused);
     try {
-      const loading = gateway.load(branchId, 1);
+      const loading = gateway.load(draftId, 1);
       await pause.entered.wait;
       appendToFirstParagraph(live, " COMMITTED");
-      const pulled = await gateway.coordinator.pullFromDoc({ branchId, upstream: live });
+      const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
       pause.release.open();
       const room = await loading;
       const registered = text(room);
-      await gateway.enrolled(branchId);
+      await gateway.enrolled(draftId);
       const enrolled = text(room);
-      const next = await gateway.type(room, branchId, 1, " NEXT");
-      const durable = (await harness.readBranch(branchId)).text;
+      const next = await gateway.type(room, draftId, 1, " NEXT");
+      const durable = (await harness.readDraft(draftId)).text;
       observe("load", { pulled, registered, enrolled, durable });
       observe("next", next);
       observe(
@@ -295,30 +299,30 @@ export const coldLoadReset: Probe = {
   decision: "D26",
   expected: `generation-1 room closed once registered; generation-2 room takes the next frame`,
   async run(harness) {
-    const { branchId, live } = await seedDraft(harness, "cold-load-reset");
+    const { draftId, live } = await seedDraft(harness, "cold-load-reset");
     const pause = pausedRead(harness.store);
     const gateway = openGateway(harness, pause.paused);
     try {
-      const loading = gateway.load(branchId, 1);
+      const loading = gateway.load(draftId, 1);
       await pause.entered.wait;
       appendToFirstParagraph(live, " RESET");
       const reset = await gateway.coordinator.resetFromDoc({
-        branchId,
+        draftId,
         upstream: live,
         expectedGeneration: 1,
         policy: "fold",
       });
       // This process learns of generation 2 before the paused generation-1 load returns.
-      await gateway.coordinator.readBranch(branchId, async () => {});
+      await gateway.coordinator.readDraft(draftId, async () => {});
       pause.release.open();
       const old = await loading;
       const registered = gateway.hocuspocus.documents.get(old.name) === old;
-      await gateway.enrolled(branchId);
+      await gateway.enrolled(draftId);
       const afterEnrollment = gateway.hocuspocus.documents.has(old.name);
-      const current = await gateway.load(branchId, 2);
-      await gateway.enrolled(branchId);
-      const next = await gateway.type(current, branchId, 2, " NEXT");
-      const durable = await harness.readBranch(branchId);
+      const current = await gateway.load(draftId, 2);
+      await gateway.enrolled(draftId);
+      const next = await gateway.type(current, draftId, 2, " NEXT");
+      const durable = await harness.readDraft(draftId);
       observe("reset", { reset, registered, afterEnrollment, generation: durable.generation });
       observe("next", { ...next, room: text(current), durable: durable.text });
       assert.equal(reset, true);
@@ -338,16 +342,16 @@ export const droppedDelivery: Probe = {
   decision: "D26",
   expected: `room lacks LIVE after the dropped delivery; next: {"ok":true,"closes":[]}; one frame repair`,
   async run(harness) {
-    const { branchId, live } = await seedDraft(harness, "dropped-delivery");
+    const { draftId, live } = await seedDraft(harness, "dropped-delivery");
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
     try {
-      const room = await gateway.load(branchId, 1);
-      await gateway.enrolled(branchId);
+      const room = await gateway.load(draftId, 1);
+      await gateway.enrolled(draftId);
       appendToFirstParagraph(live, " LIVE");
-      const pulled = await gateway.coordinator.pullFromDoc({ branchId, upstream: live });
+      const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
       const behind = text(room);
-      const next = await gateway.type(room, branchId, 1, " NEXT");
-      const durable = (await harness.readBranch(branchId)).text;
+      const next = await gateway.type(room, draftId, 1, " NEXT");
+      const durable = (await harness.readDraft(draftId)).text;
       observe("drop", { pulled, behind, durable });
       observe("next", { ...next, room: text(room) });
       observe("reconciled", gateway.reconciled);
@@ -374,18 +378,18 @@ export const readOnlyHandshake: Probe = {
   decision: "D27",
   expected: `room and read-only tab lack LIVE after the dropped delivery; after the tab's handshake both hold it; one handshake repair`,
   async run(harness) {
-    const { branchId, live } = await seedDraft(harness, "read-only-handshake");
+    const { draftId, live } = await seedDraft(harness, "read-only-handshake");
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
     const tab = new Y.Doc({ gc: false });
     try {
-      const room = await gateway.load(branchId, 1);
-      await gateway.enrolled(branchId);
+      const room = await gateway.load(draftId, 1);
+      await gateway.enrolled(draftId);
       Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
       appendToFirstParagraph(live, " LIVE");
-      const pulled = await gateway.coordinator.pullFromDoc({ branchId, upstream: live });
+      const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
       const behind = { room: text(room), tab: text(tab) };
-      await gateway.joinReadOnly(room, branchId, tab);
-      const durable = (await harness.readBranch(branchId)).text;
+      await gateway.joinReadOnly(room, draftId, tab);
+      const durable = (await harness.readDraft(draftId)).text;
       const triggers = gateway.reconciled.map(({ trigger }) => trigger);
       observe("drop", { pulled, behind, durable });
       observe("joined", { room: text(room), tab: text(tab) });

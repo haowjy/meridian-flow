@@ -6,13 +6,13 @@ predicate and the lock order are the load-bearing rules.
 
 ## Views and ownership
 
-`TreeView` is `LIVE_TREE` or `{ kind: "draft", draftId }`. Live views exclude
+`TreeView` is `LIVE_TREE` or `{ kind: "draft", branchId }`. Live views exclude
 deleted and hidden rows. A draft view includes its live rows plus the hidden
 documents and folders it created or needs as ancestors, at their row-owned
 location. A path with two visible nodes answers `ambiguous`; normalization is a
 write operation, while `treeState` reports the clash.
 
-`draft-ownership.ts` is the single rule for which drafts may hold a document:
+`branch-ownership.ts` is the single rule for which drafts may hold a document:
 the draft's project, or the account owner's personal `user://` source. End of
 use, Discard, purge, repair, and reveal count every active draft that may hold
 the row, so one hidden `user://` document can be shared by drafts in several

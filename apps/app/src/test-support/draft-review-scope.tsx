@@ -4,10 +4,10 @@ import type { Work } from "@meridian/contracts/works";
 import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
-import * as draftsApi from "@/client/api/drafts-api";
-import type { DraftRef } from "@/client/query/draft-command-record";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import * as branchesApi from "@/client/api/branches-api";
+import type { DraftRef } from "@/client/query/branch-command-record";
+import { useWorkBranches } from "@/client/query/useWorkBranches";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { ThreadStoreProvider } from "@/client/stores";
 import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -24,10 +24,10 @@ import { useDraftView } from "@/features/draft-review/useDraftView";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import {
-  useWorkDraftCommands,
-  type WorkDraftCommands,
-  WorkDraftCommandsBoundary,
-} from "@/features/draft-review/useWorkDraftCommands";
+  useWorkBranchCommands,
+  type WorkBranchCommands,
+  WorkBranchCommandsBoundary,
+} from "@/features/draft-review/useWorkBranchCommands";
 import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { withReactRoot } from "./react-dom-harness";
@@ -48,7 +48,7 @@ export const workC = {
 } as Work;
 
 export const listed = {
-  draftId: "work-draft-a",
+  branchId: "work-draft-a",
   origin: "edited" as const,
   isNew: false,
   binary: false,
@@ -57,14 +57,14 @@ export const listed = {
   tokens: {
     locationToken: "location-1",
     liveTextToken: "live-1",
-    branchGenerationToken: "generation-1",
+    draftGenerationToken: "generation-1",
   },
   settling: false,
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
   contextLocation: null,
-  branchGeneration: 1,
+  draftGeneration: 1,
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
@@ -78,11 +78,11 @@ export const operation = (id: string) => ({
 });
 
 export const preview = {
-  draftId: listed.draftId,
+  branchId: listed.branchId,
   item: listed,
   status: "active" as const,
   itemKey: "draft-a",
-  branchGeneration: 1,
+  draftGeneration: 1,
 
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",
@@ -105,7 +105,7 @@ export const change = (...ids: string[]) => ({
 });
 
 export const applied = (itemClosed: boolean, id = "2") => ({
-  draftId: listed.draftId,
+  branchId: listed.branchId,
   status: "applied" as const,
   itemKey: "draft-a",
   operationIds: [id],
@@ -115,14 +115,14 @@ export const applied = (itemClosed: boolean, id = "2") => ({
 
 /** Item Apply's 200: the item settled with no notes. */
 export const itemApplied = (itemKey = "draft-a") => ({
-  draftId: listed.draftId,
+  branchId: listed.branchId,
   status: "applied" as const,
   itemKey,
   item: { itemKey, status: "applied" as const, notes: [] },
 });
 
 export const discarded = (itemClosed: boolean) => ({
-  draftId: listed.draftId,
+  branchId: listed.branchId,
   status: "discarded" as const,
   itemKey: "draft-a",
   itemClosed,
@@ -131,12 +131,12 @@ export const discarded = (itemClosed: boolean) => ({
 export type ScopeProbe = {
   queryClient: QueryClient;
   presented: DraftReviewContextValue;
-  chat: { commands: WorkDraftCommands; files: ReviewFileTarget[] };
-  third: { commands: WorkDraftCommands; files: ReviewFileTarget[] };
+  chat: { commands: WorkBranchCommands; files: ReviewFileTarget[] };
+  third: { commands: WorkBranchCommands; files: ReviewFileTarget[] };
   header: ReviewHeaderModel;
   openDraft: (draft: ReviewedDraft) => Promise<void>;
   mountLateReader: () => Promise<() => ReviewChangesView>;
-  chatRunner: WorkDraftCommands;
+  chatRunner: WorkBranchCommands;
   movePresentedToWork: (to: Work) => Promise<void>;
   moveChatToWork: (to: Work) => Promise<void>;
   mountDraftChanges: (
@@ -191,12 +191,12 @@ export async function renderReviewScopes(
   let addChangeList: ((target: DraftRef, scope: "chat" | "third") => void) | null = null;
   const changeLists = new Map<DraftRef, DraftChangesView>();
   function ChangeList({ target, scope }: { target: DraftRef; scope: "chat" | "third" }) {
-    const controller = current[scope]?.commands as WorkDraftCommands;
+    const controller = current[scope]?.commands as WorkBranchCommands;
     changeLists.set(target, useDraftView(target, { controller }));
     return null;
   }
   function RunnerProbe() {
-    current.chatRunner = current.chat?.commands as WorkDraftCommands;
+    current.chatRunner = current.chat?.commands as WorkBranchCommands;
     return null;
   }
   function LateReader() {
@@ -246,25 +246,25 @@ export async function renderReviewScopes(
     });
     const [chatWork, setChatWork] = useState(options.chatWork ?? work);
     current.moveChatToWork = (to) => act(async () => setChatWork(to));
-    const chatCommands = useWorkDraftCommands({
+    const chatCommands = useWorkBranchCommands({
       projectId: options.projectId ?? "project-a",
       work: chatWork,
       threadId: options.threadId ?? "thread-a",
     });
-    const thirdCommands = useWorkDraftCommands({
+    const thirdCommands = useWorkBranchCommands({
       projectId: options.projectId ?? "project-a",
       work: options.thirdWork ?? workC,
     });
     current.presented = presented;
     const chat = {
       commands: chatCommands,
-      files: useWorkDrafts(options.projectId ?? "project-a", chatWork.id).files ?? [],
+      files: useWorkBranches(options.projectId ?? "project-a", chatWork.id).files ?? [],
     };
     current.chat = chat;
     const third = {
       commands: thirdCommands,
       files:
-        useWorkDrafts(options.projectId ?? "project-a", (options.thirdWork ?? workC).id).files ??
+        useWorkBranches(options.projectId ?? "project-a", (options.thirdWork ?? workC).id).files ??
         [],
     };
     current.third = third;
@@ -275,7 +275,9 @@ export async function renderReviewScopes(
           <HeaderProbe />
         </DraftReviewBoundary>
         {chatSurface ? (
-          <WorkDraftCommandsBoundary value={chat.commands}>{chatSurface}</WorkDraftCommandsBoundary>
+          <WorkBranchCommandsBoundary value={chat.commands}>
+            {chatSurface}
+          </WorkBranchCommandsBoundary>
         ) : null}
       </PresentedReviewScope>
     );
@@ -319,14 +321,14 @@ export function createReviewScopeFixture(
     act(notify);
   });
   const network = {
-    listWorkDrafts: vi.spyOn(draftsApi, "listWorkDrafts"),
-    getDraftPreview: vi.spyOn(draftsApi, "getDraftPreview"),
-    applyAllDrafts: vi.spyOn(draftsApi, "applyAllDrafts"),
-    discardAllDrafts: vi.spyOn(draftsApi, "discardAllDrafts"),
-    observeDraftCommand: vi.spyOn(draftsApi, "observeDraftCommand"),
-    applyDraft: vi.spyOn(draftsApi, "applyDraft"),
-    applyDraftChanges: vi.spyOn(draftsApi, "applyDraftChanges"),
-    discardDraft: vi.spyOn(draftsApi, "discardDraft"),
+    listWorkBranches: vi.spyOn(branchesApi, "listWorkBranches"),
+    getDraftPreview: vi.spyOn(branchesApi, "getDraftPreview"),
+    applyAllBranches: vi.spyOn(branchesApi, "applyAllBranches"),
+    discardAllBranches: vi.spyOn(branchesApi, "discardAllBranches"),
+    observeBranchCommand: vi.spyOn(branchesApi, "observeBranchCommand"),
+    applyDraft: vi.spyOn(branchesApi, "applyDraft"),
+    applyDraftChanges: vi.spyOn(branchesApi, "applyDraftChanges"),
+    discardDraft: vi.spyOn(branchesApi, "discardDraft"),
   };
   // Unconfigured requests stay pending, never accidentally reach a real server.
   for (const endpoint of Object.values(network))
@@ -338,9 +340,9 @@ export function createReviewScopeFixture(
   const registry =
     options.registry ??
     ({
-      retainBranchRooms: () => {},
-      releaseBranchRooms: () => {},
-      getBranchRoom: (roomKey: string) => {
+      retainDraftRooms: () => {},
+      releaseDraftRooms: () => {},
+      getDraftRoom: (roomKey: string) => {
         let room = rooms.get(roomKey);
         if (!room) {
           room = new DocumentSession({ roomKey, persistence: { kind: "none" } });

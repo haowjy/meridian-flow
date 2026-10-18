@@ -1,8 +1,8 @@
 /**
  * Live Yjs connections by the Works their file access depends on (file-access
  * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
- * of its own files, its scratch and its drafts, and no manuscript, kb or user
- * room. Branch rooms are named by branch, so room names can't answer this.
+ * of its own files, its scratch and its branches, and no manuscript, kb or user
+ * room. Draft rooms are named by branch, so room names can't answer this.
  */
 import type { WorkId } from "@meridian/contracts/runtime";
 

@@ -3,7 +3,7 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { DraftCommandFailure, ServerRefusal } from "@/client/query/draft-command-record";
+import type { BranchCommandFailure, ServerRefusal } from "@/client/query/branch-command-record";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {
@@ -56,7 +56,7 @@ export function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusa
 export function ReviewMessageText({
   failure: { code, serverCode, serverReason },
 }: {
-  failure: DraftCommandFailure;
+  failure: BranchCommandFailure;
 }) {
   switch (code) {
     case "apply-offline":

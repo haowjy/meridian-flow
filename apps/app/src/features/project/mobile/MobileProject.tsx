@@ -8,7 +8,7 @@ import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
 import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
-import { WorkDraftCommandsBoundary } from "@/features/draft-review/useWorkDraftCommands";
+import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
@@ -154,7 +154,7 @@ export function MobileProject(props: MobileProjectProps) {
         >
           <SheetTitle className="sr-only">{t`Chat`}</SheetTitle>
           <SheetDescription className="sr-only">{t`Chat alongside your current screen`}</SheetDescription>
-          <WorkDraftCommandsBoundary value={props.chatCommands}>
+          <WorkBranchCommandsBoundary value={props.chatCommands}>
             <MobileKeyboardAware>
               <ChatSurface
                 projectId={props.projectId}
@@ -171,7 +171,7 @@ export function MobileProject(props: MobileProjectProps) {
                 onOpenContextTarget={props.onOpenContextTarget}
               />
             </MobileKeyboardAware>
-          </WorkDraftCommandsBoundary>
+          </WorkBranchCommandsBoundary>
         </SheetContent>
       </Sheet>
       <NavigationDrawer
@@ -232,7 +232,7 @@ function renderActiveView(
       if (props.chatDisplay.kind === "index")
         return <ChatIndex projectId={props.projectId} namedByChrome />;
       return (
-        <WorkDraftCommandsBoundary value={props.chatCommands}>
+        <WorkBranchCommandsBoundary value={props.chatCommands}>
           <MobileChatHost
             projectId={props.projectId}
             threadId={displayedChatThreadId(props.chatDisplay)}
@@ -240,7 +240,7 @@ function renderActiveView(
             availableWorks={props.availableWorks}
             onOpenContextTarget={props.onOpenContextTarget}
           />
-        </WorkDraftCommandsBoundary>
+        </WorkBranchCommandsBoundary>
       );
     case "context":
       if (props.editorScope.status !== "ready") {

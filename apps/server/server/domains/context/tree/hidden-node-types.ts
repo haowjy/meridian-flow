@@ -29,7 +29,7 @@ export type BinaryNode = {
   metadata?: JsonObject | DocumentCreationMetadata;
 };
 
-export type DraftCreateResult =
+export type BranchCreateResult =
   /** Something already sits at the path in the draft's view. */
   | { kind: "existing"; documentId: DocumentId; binary: boolean }
   /** The draft now uses this document: a new hidden row, or (`joined`) another draft's. */
@@ -53,7 +53,7 @@ export type RevealExpectation = {
  * What a live create claims under its locks (§6.3 step 4): `any` reveals the hidden
  * document at the path or inserts; `none` inserts and treats a hidden candidate that
  * appeared since discovery as a change; `mint` inserts a caller-minted identity and leaves
- * any hidden document its path in its drafts; `reveal` takes exactly the expected one.
+ * any hidden document its path in its branches; `reveal` takes exactly the expected one.
  */
 export type LiveClaim =
   | { kind: "any" }

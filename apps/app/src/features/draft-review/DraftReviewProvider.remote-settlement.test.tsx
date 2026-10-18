@@ -102,7 +102,7 @@ describe("DraftReviewProvider remote settlement", () => {
       error: null,
     } as never);
     const registry = account.useLiveDocumentSessionRegistry();
-    registry.observeBranchRoom = () => () => undefined;
+    registry.observeDraftRoom = () => () => undefined;
     promote = vi.spyOn(fixture.removal, "promoteAppliedDraft").mockResolvedValue(true);
     discard = vi.spyOn(fixture.removal, "discardDraft").mockReturnValue({ kind: "noop" });
     fixture.network.getDraftPreview.mockResolvedValue(preview);
@@ -119,9 +119,9 @@ describe("DraftReviewProvider remote settlement", () => {
       contextLocation: { scheme: "manuscript", path: "/chapter.md" },
       isNew: true,
     });
-    if (!tab) throw new Error("Draft tab fixture must be editable");
+    if (!tab) throw new Error("Branch tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
-    fixture.network.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
+    fixture.network.listWorkBranches.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
     // An observation joined from before the Apply would say the document is absent.
     resources.acquireCatalog.mockResolvedValue({ entries: new Map() });
     resources.acquireCatalogAfter.mockResolvedValue({
@@ -233,25 +233,25 @@ describe("DraftReviewProvider remote settlement", () => {
       </QueryClientProvider>,
       async () => {
         useDockDocumentStore.setState({ accountId: "account-a" });
-        await vi.waitFor(() => expect(fixture.network.listWorkDrafts).toHaveBeenCalled());
+        await vi.waitFor(() => expect(fixture.network.listWorkBranches).toHaveBeenCalled());
         await act(async () => undefined);
         expect(resources.acquireCatalogAfter).not.toHaveBeenCalled();
 
-        fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
+        fixture.network.listWorkBranches.mockResolvedValue({ items: [] });
         const emptyPreview = {
           ...preview,
-          branchGeneration: mode === "discard" ? 2 : 1,
+          draftGeneration: mode === "discard" ? 2 : 1,
           operations: [],
           hunks: [],
         };
         fixture.network.getDraftPreview.mockResolvedValue(emptyPreview);
         await act(async () => {
           queryClient.setQueryData(
-            projectQueryKeys.workDraftPreview("project-a", "work-a", "document-a", "draft-a"),
+            projectQueryKeys.workBranchPreview("project-a", "work-a", "document-a", "draft-a"),
             emptyPreview,
           );
           await queryClient.refetchQueries({
-            queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+            queryKey: projectQueryKeys.workBranches("project-a", "work-a"),
           });
         });
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Review marks, removals, focus and visibility through a real collaborative editor. */
 
-import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
+import type { ReviewDeletedSpan } from "@meridian/contracts/branches";
 import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";

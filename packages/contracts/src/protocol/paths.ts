@@ -10,7 +10,7 @@ import type { ProjectContextTreeScheme } from "./http-types.js";
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Review URLs name the Work and the item (`itemKey`); a branch id or `drafts.id` never selects one. */
+/** Review URLs name the Work and the item (`itemKey`); a branch id or `branches.id` never selects one. */
 export type DocumentAddressReviewSelector = {
   workId: string;
   itemKey: string;
@@ -116,32 +116,32 @@ export function apiProjectWorkingSetPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}/working-set`;
 }
 
-/** The active drafts with changes to one document, from any view. */
-export function apiProjectDocumentDraftsPath(projectId: string, documentId: string): string {
-  return `${apiProjectPath(projectId)}/documents/${documentId}/drafts`;
+/** The active branches with changes to one document, from any view. */
+export function apiProjectDocumentBranchesPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/branches`;
 }
 
-export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
+export function apiProjectWorkBranchesPath(projectId: string, workId: string): string {
+  return `${apiProjectWorksPath(projectId)}/${workId}/branches`;
 }
 
 /** Apply all: one command over the Work's whole draft. */
-export function apiProjectWorkDraftsApplyPath(projectId: string, workId: string): string {
-  return `${apiProjectWorkDraftsPath(projectId, workId)}/apply`;
+export function apiProjectWorkBranchesApplyPath(projectId: string, workId: string): string {
+  return `${apiProjectWorkBranchesPath(projectId, workId)}/apply`;
 }
 
 /** Observes one Apply or Discard command by its client `commandId`. */
-export function apiProjectWorkDraftCommandPath(
+export function apiProjectWorkBranchCommandPath(
   projectId: string,
   workId: string,
   commandId: string,
 ): string {
-  return `${apiProjectWorkDraftsPath(projectId, workId)}/commands/${commandId}`;
+  return `${apiProjectWorkBranchesPath(projectId, workId)}/commands/${commandId}`;
 }
 
 /** Discard all: one command over the Work's whole draft. */
-export function apiProjectWorkDraftsDiscardPath(projectId: string, workId: string): string {
-  return `${apiProjectWorkDraftsPath(projectId, workId)}/discard`;
+export function apiProjectWorkBranchesDiscardPath(projectId: string, workId: string): string {
+  return `${apiProjectWorkBranchesPath(projectId, workId)}/discard`;
 }
 
 export function apiProjectWorkDocumentDraftPath(

@@ -1,8 +1,8 @@
 /** Immutable inputs shared by review preview and selective disposition. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { BranchJournalRow } from "../branch-journal.js";
-import type { BranchSnapshot } from "../branch-store.js";
-import type { DraftReviewItem } from "../draft-review-items.js";
+import type { DraftReviewItem } from "../branch-review-items.js";
+import type { DraftJournalRow } from "../draft-journal.js";
+import type { DraftSnapshot } from "../draft-store.js";
 import type { HolderLinkScope } from "./document-link-scope.js";
 
 /** What a caller names; the cut resolves it through the identity module, inside its snapshot. */
@@ -13,14 +13,14 @@ export type ReviewAddress = {
 };
 
 /** The branch row with its content as the cut's snapshot read it through the read seam. */
-export type ReviewCutBranch = Readonly<BranchSnapshot> & {
+export type ReviewCutDraft = Readonly<DraftSnapshot> & {
   /** Detached, privately owned bytes of checkpoint ⊕ tail at `revision`. */
   readonly state: Uint8Array;
 };
 
 export type ReviewCut = Readonly<{
-  branch: ReviewCutBranch;
-  history: readonly Readonly<BranchJournalRow>[];
+  documentDraft: ReviewCutDraft;
+  history: readonly Readonly<DraftJournalRow>[];
   live: Readonly<{ state: Uint8Array; revision: string }>;
   /** The tree-derived item, never null: an unlisted active branch has one (M1). */
   item: DraftReviewItem;

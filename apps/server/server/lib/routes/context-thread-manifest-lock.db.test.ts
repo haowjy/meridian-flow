@@ -90,11 +90,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const routeDeps = {
         contextPorts,
@@ -136,9 +136,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.changeTrailShells,
         schema.pendingNotices,
         schema.agentEditWidCounters,
-        schema.branchWriteJournal,
+        schema.draftWriteJournal,
         schema.pushLineage,
-        schema.documentBranches,
+        schema.documentDrafts,
         schema.documentYjsCheckpoints,
         schema.documentYjsHeads,
         schema.documentYjsUpdates,

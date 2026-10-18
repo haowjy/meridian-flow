@@ -193,7 +193,7 @@ function withHeldPorts(editor: Editor): Ingress {
 /**
  * What this editor draws over the picture at `pos`, read off the manuscript
  * itself rather than off plugin state: `data-pending-image` is the decoration
- * attribute `ImageNodeView` branches on, so this is the peer's rendering.
+ * attribute `ImageNodeView` drafts on, so this is the peer's rendering.
  */
 function slotStatus(editor: Editor, pos: number): string | null {
   const dom = editor.view.nodeDOM(pos);

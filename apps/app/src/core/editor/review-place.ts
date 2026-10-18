@@ -14,7 +14,7 @@
 
 import { getBlockItemId } from "@meridian/agent-edit";
 import { textItemBoundaryPositions } from "@meridian/agent-edit/yjs-mutation";
-import { blockItemKey, operationKey } from "@meridian/contracts/drafts";
+import { blockItemKey, operationKey } from "@meridian/contracts/branches";
 import type { Editor } from "@tiptap/core";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import * as Y from "yjs";

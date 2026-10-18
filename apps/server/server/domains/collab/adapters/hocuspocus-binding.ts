@@ -3,16 +3,16 @@ import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { closeBranchRooms } from "../hocuspocus-rooms.js";
+import { closeDraftRooms } from "../hocuspocus-rooms.js";
 
-const BRANCH_AGENT_BROADCAST_ORIGIN = {
+const DRAFT_AGENT_BROADCAST_ORIGIN = {
   source: "local",
-  context: { origin: { type: "system", reason: "branch-agent-append" } },
+  context: { origin: { type: "system", reason: "draft-agent-append" } },
 } satisfies TransactionOrigin;
 
 /** Content a branch room did not author: Hocuspocus broadcasts it to the room's tabs. */
 function applyToRoom(room: Y.Doc, update: Uint8Array): void {
-  Y.applyUpdate(room, update, BRANCH_AGENT_BROADCAST_ORIGIN);
+  Y.applyUpdate(room, update, DRAFT_AGENT_BROADCAST_ORIGIN);
 }
 
 export function createHocuspocusBinding(eventSink?: EventSink) {
@@ -28,25 +28,25 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
     },
-    closeBranch(branchId: string, olderThan?: number): void {
-      closeBranchRooms(instance, branchId, olderThan);
+    closeDraft(draftId: string, olderThan?: number): void {
+      closeDraftRooms(instance, draftId, olderThan);
     },
     applyToRoom,
-    deliverBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
+    deliverDraftUpdate({ draftId, update }: { draftId: string; update: Uint8Array }): void {
       try {
-        const prefix = `branch:${branchId}:gen:`;
-        for (const [roomName, branchDoc] of instance?.documents.entries() ?? []) {
+        const prefix = `draft:${draftId}:gen:`;
+        for (const [roomName, draftDoc] of instance?.documents.entries() ?? []) {
           if (roomName.startsWith(prefix)) {
-            applyToRoom(branchDoc, update);
+            applyToRoom(draftDoc, update);
           }
         }
       } catch (cause) {
         if (!eventSink) return;
         emitEvent(eventSink, {
           level: "warn",
-          source: "collab.branch_review",
-          name: "branch_update_broadcast.failed",
-          payload: { branchId, ...unknownToEventPayload(cause) },
+          source: "collab.draft_review",
+          name: "draft_update_broadcast.failed",
+          payload: { draftId, ...unknownToEventPayload(cause) },
         });
       }
     },

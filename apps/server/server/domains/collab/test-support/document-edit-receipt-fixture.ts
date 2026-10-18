@@ -47,13 +47,13 @@ export async function stageDraft(
     identities.push(outcome.writeId);
   }
   expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
-  const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-  const branchId = branch.branchId;
+  const documentDraft = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+  const draftId = documentDraft.draftId;
   const rows = await db
     .select()
-    .from(schema.branchWriteJournal)
-    .where(eq(schema.branchWriteJournal.branchId, branchId))
-    .orderBy(schema.branchWriteJournal.id);
+    .from(schema.draftWriteJournal)
+    .where(eq(schema.draftWriteJournal.draftId, draftId))
+    .orderBy(schema.draftWriteJournal.id);
   expect(rows).toHaveLength(writes.length);
   const edits = await db
     .select()
@@ -68,7 +68,7 @@ export async function stageDraft(
   expect(identities).toEqual(edits.map((edit) => `w${edit.wId}`));
   expect(new Set(identities).size).toBe(writes.length);
   expect(rows.map((row) => `w${row.wId}`)).toEqual(identities);
-  return { fixture, branchId, rows, responseId };
+  return { fixture, draftId, rows, responseId };
 }
 
 export async function createResponse(db: ReturnType<typeof createTestDatabase>, sequence: number) {
@@ -108,7 +108,7 @@ export async function setupResponseDraft(
   harness: ReturnType<typeof createHarness>,
   empty = false,
 ) {
-  const { fixture, branchId, rows } = await stageDraft(
+  const { fixture, draftId, rows } = await stageDraft(
     db,
     harness,
     "red\n\nblue\n\ngreen",
@@ -146,7 +146,7 @@ export async function setupResponseDraft(
       },
       context,
     );
-  return { fixture, branchId, rows, target, review, responseId, context, read, write };
+  return { fixture, draftId, rows, target, review, responseId, context, read, write };
 }
 export async function reviewChange(
   fixture: ReceiptFixture,
@@ -163,7 +163,7 @@ export async function reviewChange(
   const envelope = testEnvelope({
     workId: target.workId,
     kind: apply ? "apply_changes" : "discard_changes",
-    draftId: preview.draftId,
+    branchId: preview.branchId,
   });
   const outcome = await (apply
     ? fixture.collab.draftReview.applyChanges({

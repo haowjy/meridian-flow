@@ -1,13 +1,13 @@
 /**
- * useDocumentDraftHints — the active drafts with changes to one open document, from any
+ * useDocumentDraftHints — the active branches with changes to one open document, from any
  * view. One read per document open: it re-reads on the same signals as the Work draft lists
  * (the writer's own draft commands, catalog wakes and identity changes invalidate its key),
  * and on window focus and reconnect through the query client's defaults. No polling.
  */
-import type { DocumentDraftHint } from "@meridian/contracts/drafts";
+import type { DocumentDraftHint } from "@meridian/contracts/branches";
 import { useQuery } from "@tanstack/react-query";
 
-import { listDocumentDraftHints } from "@/client/api/drafts-api";
+import { listDocumentDraftHints } from "@/client/api/branches-api";
 import { projectQueryKeys } from "./project-query-keys";
 
 const NONE: readonly DocumentDraftHint[] = [];

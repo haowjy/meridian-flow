@@ -151,16 +151,16 @@ export async function followProjectLink({
 }
 
 function documentRef(found: DocumentEntry): LinkDocumentRef {
-  const { document, draft } = found;
-  const workId = draft?.workId ?? document.workId;
-  if (!draft || !workId) return { documentId: document.documentId };
+  const { document, branch } = found;
+  const workId = branch?.workId ?? document.workId;
+  if (!branch || !workId) return { documentId: document.documentId };
   return {
     documentId: document.documentId,
     review: {
       workId,
-      // The review's identity: `${draftId}:${documentId}` (contract rev 5.1, vocabulary).
-      itemKey: `${draft.draftId}:${document.documentId}`,
-      // Draft rows and launches spell the path with a leading slash.
+      // The review's identity: `${branchId}:${documentId}` (contract rev 5.1, vocabulary).
+      itemKey: `${branch.branchId}:${document.documentId}`,
+      // Branch rows and launches spell the path with a leading slash.
       contextLocation: {
         scheme: document.scheme,
         path: document.path.startsWith("/") ? document.path : `/${document.path}`,

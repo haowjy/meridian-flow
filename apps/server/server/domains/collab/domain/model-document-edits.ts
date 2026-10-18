@@ -5,27 +5,27 @@ import type {
   DocumentEdits,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { TurnInverseService } from "./turn-inverse-service.js";
 
 export function createModelDocumentEdits(input: {
   service(): TurnInverseService;
-  branches: ApplicationBranchStore;
+  drafts: ApplicationDraftStore;
   coordinator: DocumentCoordinator;
 }): DocumentEdits {
   async function query(request: DocumentEditRequest) {
     const documentId = request.documentId as DocumentId;
     const view = request.context.linkView;
-    let branchId: string | null = null;
-    if (view?.kind === "draft") {
-      const branch = await input.coordinator.withDocument(documentId, (liveDoc) =>
-        input.branches.ensureDraftBranch({ documentId, draftId: view.draftId, liveDoc }),
+    let draftId: string | null = null;
+    if (view?.kind === "branch") {
+      const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) =>
+        input.drafts.ensureDocumentDraft({ documentId, branchId: view.branchId, liveDoc }),
       );
-      branchId = branch.branchId;
+      draftId = documentDraft.draftId;
     }
     return {
       model: true as const,
-      branchId,
+      draftId,
       documentIds: [documentId],
       threadId: request.threadId as ThreadId,
       turnId: request.context.turnId as TurnId | undefined,

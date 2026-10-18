@@ -3,7 +3,10 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
 
-import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
+import type {
+  BranchCommandFailure,
+  ChangeCommandState,
+} from "@/client/query/branch-command-record";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
@@ -20,7 +23,7 @@ export type ReviewChangeRowProps = {
 
   /** Why the last command on this change did not land. */
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
-  draftFailure?: DraftCommandFailure | null;
+  draftFailure?: BranchCommandFailure | null;
   onFocus: () => void;
   onApply: () => void;
   onDiscard: () => void;

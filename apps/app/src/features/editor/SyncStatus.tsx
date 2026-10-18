@@ -145,7 +145,7 @@ export function SyncStatus({ session, onReopen }: SyncStatusProps) {
     ) : snapshot.status === "access-lost" ? (
       <Trans>Access lost (not saving to the server)</Trans>
     ) : phase === "awaiting" ? (
-      snapshot.room.kind === "branch" ? (
+      snapshot.room.kind === "draft" ? (
         <Trans>Not saved yet (keep this tab open until you're back online)</Trans>
       ) : (
         <Trans>Saved locally (offline)</Trans>

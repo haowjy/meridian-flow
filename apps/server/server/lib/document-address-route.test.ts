@@ -3,7 +3,7 @@
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import type { DraftReviewApi } from "../domains/collab/contracts.js";
-import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
+import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import type { DocumentAddressResolver } from "../domains/context/ports/document-address.js";
 import type { FileDestination } from "../domains/file-policy/index.js";
 import { handleDocumentAddressRequest } from "./document-address-route.js";
@@ -20,10 +20,10 @@ function fixture() {
     work: { id: "work", slug: "review", projectId: "project", deletedAt: null as Date | null },
     // The resolver's explicit answer for the review's item, or null when the draft is inactive.
     resolved: {
-      draftId: "whole-draft",
+      branchId: "whole-draft",
       itemKey: "whole-draft:hidden",
       documentId: "hidden",
-      draftBranchId: "branch",
+      draftId: "branch",
       item: {} as DraftReviewItem,
       listed: true,
     } as unknown as Awaited<ReturnType<DraftReviewApi["resolveItem"]>>,
@@ -38,7 +38,7 @@ function fixture() {
   const documentAddresses: DocumentAddressResolver = {
     resolve: async () => document("live"),
     resolveById: async (selected) =>
-      state.available && selected.documentId === "hidden" && selected.view?.kind === "draft"
+      state.available && selected.documentId === "hidden" && selected.view?.kind === "branch"
         ? document("hidden")
         : { kind: "unavailable" },
   };

@@ -78,7 +78,7 @@ export type ThreadWorkScope = { workId: WorkId; workSlug: WorkSlug | null };
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  draftOwner: { kind: "work"; workId: WorkId } | null;
+  branchOwner: { kind: "work"; workId: WorkId } | null;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */

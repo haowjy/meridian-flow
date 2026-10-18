@@ -39,11 +39,11 @@ if (!enabled || !databaseUrl) {
         const rows = await target<{ table_name: string }[]>`
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
+              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'draft_write_journal')
           `;
         expect(rows.map((row) => row.table_name).sort()).toEqual([
-          "branch_write_journal",
           "change_trail_document_occurrences",
+          "draft_write_journal",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name
@@ -132,13 +132,13 @@ if (!enabled || !databaseUrl) {
           SELECT indexname, indexdef
           FROM pg_indexes
           WHERE schemaname = 'public'
-            AND indexname = 'document_branches_active_work_draft_by_draft'
+            AND indexname = 'document_drafts_active_work_draft_by_branch'
         `;
         expect(indexes).toEqual([
           {
-            indexname: "document_branches_active_work_draft_by_draft",
+            indexname: "document_drafts_active_work_draft_by_branch",
             indexdef:
-              "CREATE INDEX document_branches_active_work_draft_by_draft ON public.document_branches USING btree (draft_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
+              "CREATE INDEX document_drafts_active_work_draft_by_branch ON public.document_drafts USING btree (branch_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
           },
         ]);
       } finally {

@@ -249,14 +249,14 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
     };
   },
   show: onSelectedWork(async (deps, thread, work) => {
-    const [threads, drafts] = await Promise.all([
+    const [threads, branches] = await Promise.all([
       deps.threads.listRecentByWork(thread.projectId, work.id, 10),
-      deps.drafts.draftReview.list({ projectId: thread.projectId, workId: work.id }),
+      deps.branches.draftReview.list({ projectId: thread.projectId, workId: work.id }),
     ]);
     return {
       work: modelWork(work),
       recentThreads: threads.map(({ title, updatedAt, status }) => ({ title, updatedAt, status })),
-      drafts,
+      branches,
     } satisfies WorkShowResult;
   }),
   update: onSelectedWork(async (deps, thread, work, command) =>

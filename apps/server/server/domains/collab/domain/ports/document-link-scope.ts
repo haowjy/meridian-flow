@@ -56,7 +56,7 @@ export interface ScopePrepareRequest {
   written?: readonly PMNode[];
   /** The writing chat: a bare written `uploads://` is loaded at the address it will be bound to. */
   uploadsChat?: string;
-  /** Views a `reader` will resolve in, beside the holders' (their drafts' settlements load too). */
+  /** Views a `reader` will resolve in, beside the holders' (their branches' settlements load too). */
   views?: readonly LinkView[];
 }
 
@@ -81,7 +81,7 @@ export interface DocumentLinkScopes {
    * hidden document; this is how an address names one. Null for the live view, another
    * draft's creation, or what the reader may not read.
    */
-  draftCreatedAt(input: { view: LinkView; uri: string }): CatalogDocument | null;
+  branchCreatedAt(input: { view: LinkView; uri: string }): CatalogDocument | null;
   /**
    * Pins the holder a reader door reads bindings for, in `view`: an explicit id when that
    * document is visible there (wherever it now sits), else the one document at `uri`.

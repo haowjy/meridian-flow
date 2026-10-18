@@ -2,14 +2,14 @@
  * DraftSwitcher — the version chip with its menu: which version of THIS document
  * is showing. The versions are the live document and its pending draft
  * (a document has one active draft per Work, so today that is two). The same
- * chip and menu show on the live document (`showing="live"`, picking Draft
+ * chip and menu show on the live document (`showing="live"`, picking Branch
  * opens the review) and in review (picking Live leaves it), so the control the
  * writer used to get in is the one they use to get out. Moving between files is
  * not here: it belongs to the Work page's Changes to review (`WorkChanges`),
  * which also holds the Work-wide Apply all and Discard all.
  *
  * On a phone (`touch`) the header has no room for Apply draft, Discard draft or
- * the Show changes switch, so the menu carries them: pass `draftCommands` and
+ * the Show changes switch, so the menu carries them: pass `branchCommands` and
  * `marks` and they appear. Both are the same commands the desktop header runs.
  * Rename is offered when the row cannot show its own Rename chip.
  *
@@ -40,12 +40,12 @@ export type DraftSwitcherProps = {
   onShowLive: () => void;
   /** Opens the draft's review (live only). */
   onShowDraft?: () => void;
-  /** The last attempt to open the review failed: the chip says so and Draft retries. */
+  /** The last attempt to open the review failed: the chip says so and Branch retries. */
   failed?: boolean;
   /** A phone's header: the trigger is a 44px target and its menu fits the screen. */
   touch?: boolean;
   /** Whole-draft commands for this document, offered in the menu (phone). Absent once nothing is left to apply. */
-  draftCommands?: {
+  branchCommands?: {
     canApply: boolean;
     applying: boolean;
     onApply: () => void;
@@ -65,7 +65,7 @@ export function DraftSwitcher({
   onShowDraft,
   failed = false,
   touch = false,
-  draftCommands,
+  branchCommands,
   marks,
   onRename,
 }: DraftSwitcherProps) {
@@ -118,21 +118,21 @@ export function DraftSwitcher({
         <VersionItem current={showing === "draft"} onSelect={onShowDraft}>
           <Trans>Draft</Trans>
         </VersionItem>
-        {draftCommands || marks ? <DropdownMenuSeparator /> : null}
-        {draftCommands ? (
+        {branchCommands || marks ? <DropdownMenuSeparator /> : null}
+        {branchCommands ? (
           <>
             <DropdownMenuItem
-              disabled={disabled || !draftCommands.canApply}
-              onSelect={draftCommands.onApply}
+              disabled={disabled || !branchCommands.canApply}
+              onSelect={branchCommands.onApply}
               className="pl-7 font-medium"
             >
-              {draftCommands.applying ? <Loader2 className="animate-spin" aria-hidden /> : null}
+              {branchCommands.applying ? <Loader2 className="animate-spin" aria-hidden /> : null}
               <Trans>Apply draft</Trans>
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               disabled={disabled}
-              onSelect={draftCommands.onDiscard}
+              onSelect={branchCommands.onDiscard}
               className="pl-7"
             >
               <Trans>Discard draft</Trans>

@@ -1,7 +1,7 @@
 /** One draft-only lifecycle across Editor membership and the dock slot. */
 
 import { useMemo } from "react";
-import type { DraftRef } from "@/client/query/draft-command-record";
+import type { DraftRef } from "@/client/query/branch-command-record";
 import {
   type ContextTab,
   getContextTabs,

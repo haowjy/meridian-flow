@@ -22,7 +22,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  CollabDrafts,
+  CollabBranches,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
@@ -70,7 +70,7 @@ export interface ToolWiringDeps {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContextNotices: Pick<WorkContextNotices, "workChanged" | "threadChanged">;
   stopThreadRun(threadId: ThreadId): Promise<void>;
-  drafts: Pick<CollabDrafts, "draftReview">;
+  branches: Pick<CollabBranches, "draftReview">;
   documentTouches?: TurnDocumentTouchRepository;
   eventSink: EventSink;
   /** Binary copies duplicate the stored object (D24). */

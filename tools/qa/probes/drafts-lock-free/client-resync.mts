@@ -252,12 +252,12 @@ function openServer(harness: Harness, workId: string) {
   const binding = createHocuspocusBinding();
   const prefixMissing: unknown[] = [];
   const coordinator = phase4Coordinator(harness, {
-    onBranchUpdate: (update) => binding.deliverBranchUpdate(update),
+    onDraftUpdate: (update) => binding.deliverDraftUpdate(update),
     diagnostics: { appendPrefixMissing: (input) => prefixMissing.push(input) },
   });
   const persistence = createHocuspocusPersistenceService({
-    branchStore: harness.store,
-    branchCoordinator: coordinator,
+    draftStore: harness.store,
+    draftCoordinator: coordinator,
     journal: {} as never,
     hocuspocus: () => binding.current(),
     metaForOrigin: () => ({ origin: "system", seq: 0 }) as never,
@@ -265,7 +265,7 @@ function openServer(harness: Harness, workId: string) {
   });
   const grant = (target: unknown) => ({
     level: "edit",
-    facts: { target, ownerWork: null, draftWork: { id: workId, isNoWork: false } },
+    facts: { target, ownerWork: null, branchWork: { id: workId, isNoWork: false } },
   });
   const gateway = createYjsGateway({
     liveDocuments: { findById: async () => ({ kind: "missing" }) },
@@ -277,7 +277,7 @@ function openServer(harness: Harness, workId: string) {
     documentSync: {
       ...persistence,
       bindHocuspocus: binding.bind,
-      flushBranchLivePull: async () => {},
+      flushDraftLivePull: async () => {},
     },
     eventSink: { emit() {} },
   } as never);
@@ -324,9 +324,9 @@ type Server = ReturnType<typeof openServer>;
 /** A writing tab on `draft`, driven by a 50 ms typing loop the arms start and stop. */
 async function openWriter(
   client: { openTab(roomName: string): Tab },
-  draft: { branchId: string; generation: number },
+  draft: { draftId: string; generation: number },
 ) {
-  const tab = client.openTab(`branch:${draft.branchId}:gen:${draft.generation}`);
+  const tab = client.openTab(`draft:${draft.draftId}:gen:${draft.generation}`);
   await within(5_000, async () => tab.loaded(), Boolean).catch((cause) => {
     const socket = PipeSocket.all.at(-1);
     throw new Error(
@@ -373,7 +373,7 @@ async function openWriter(
 async function settleAndCheck(
   harness: Harness,
   label: string,
-  draft: { branchId: string },
+  draft: { draftId: string },
   writer: Awaited<ReturnType<typeof openWriter>>,
   sockets: PipeSocket[],
   options: { lost?: readonly string[] } = {},
@@ -384,9 +384,9 @@ async function settleAndCheck(
     async () => ({ outbox: tab.unacknowledged() === null, saved: tab.acknowledged() }),
     (s) => s.outbox && s.saved,
   );
-  const durable = (await harness.readBranch(draft.branchId)).text;
-  const rows = await journalRows(harness, draft.branchId);
-  const parts = (await receipts(harness, draft.branchId)).flat();
+  const durable = (await harness.readDraft(draft.draftId)).text;
+  const rows = await journalRows(harness, draft.draftId);
+  const parts = (await receipts(harness, draft.draftId)).flat();
   const clocks = new Map<string, number>();
   for (const row of rows)
     for (const struct of Y.decodeUpdate(row.update).structs)
@@ -401,8 +401,8 @@ async function settleAndCheck(
   const closes = sockets.flatMap((s) =>
     s.closedWith && s.closedWith.by === "server" ? [s.closedWith.code] : [],
   );
-  const branchSockets = sockets.filter((s) => s.sent.some((f) => f.room.startsWith("branch:")));
-  const wire = branchSockets.map((s) => s.syncKinds().slice(0, 3).join(","));
+  const draftSockets = sockets.filter((s) => s.sent.some((f) => f.room.startsWith("draft:")));
+  const wire = draftSockets.map((s) => s.syncKinds().slice(0, 3).join(","));
   const lost = new Set(options.lost ?? []);
   const surviving = tokens.filter((token) => !lost.has(token));
   const positions = surviving.map((token) => durable.indexOf(token));
@@ -417,7 +417,7 @@ async function settleAndCheck(
     unreceipted,
     wire,
     firstAckMs: percentiles(
-      branchSockets.flatMap((s) => (s.firstAckMs() === null ? [] : [s.firstAckMs() as number])),
+      draftSockets.flatMap((s) => (s.firstAckMs() === null ? [] : [s.firstAckMs() as number])),
     ),
   });
   assert.deepEqual(
@@ -480,7 +480,7 @@ export const clientResync: Probe = {
                 const socket = PipeSocket.all.at(-1);
                 socket?.drop();
                 // The next connection's SyncStep2 queues on the row the held frame owns.
-                await harness.waitForLockWaiter(/document_branches/, 10_000);
+                await harness.waitForLockWaiter(/document_drafts/, 10_000);
               } finally {
                 pause.remove();
               }
@@ -514,7 +514,7 @@ export const clientResync: Probe = {
             const socket = PipeSocket.all.at(-1);
             const acks = socket?.received.filter((f) => f.type === 8).length ?? 0;
             socket?.drop();
-            await harness.waitForLockWaiter(/document_branches/, 10_000);
+            await harness.waitForLockWaiter(/document_drafts/, 10_000);
             held.remove();
             await writer.typeKeys(2);
             observe("g acks before the drop", acks);
@@ -580,7 +580,7 @@ export const clientResync: Probe = {
           const draft = await seedDraft(harness, "resync-raw");
           const server = openServer(harness, draft.workId);
           PipeSocket.connector = (socket) => server.accept(socket);
-          const room = `branch:${draft.branchId}:gen:${draft.generation}`;
+          const room = `draft:${draft.draftId}:gen:${draft.generation}`;
           const peer = new Y.Doc({ gc: false });
           peer.clientID = 970_001;
           Y.applyUpdate(peer, Y.encodeStateAsUpdate(draft.live));
@@ -620,7 +620,7 @@ export const clientResync: Probe = {
               sync(room, 0, Y.encodeStateVector(peer)),
               sync(room, 1, Y.encodeStateAsUpdate(peer, before)),
             ]);
-            const durable = (await harness.readBranch(draft.branchId)).text;
+            const durable = (await harness.readDraft(draft.draftId)).text;
             observe("k", {
               first: first.closedWith,
               prefixMissing: server.prefixMissing.length,

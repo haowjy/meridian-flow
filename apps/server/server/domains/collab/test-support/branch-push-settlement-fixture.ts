@@ -47,11 +47,11 @@ export const SETTLEMENT_BATCH = [DEFAULT_ALPHA_ID, BETA_ID, GAMMA_ID] as const;
 export async function seedSettlementBatch(
   harness: ReturnType<typeof createHarness>,
 ): Promise<string[]> {
-  const branchIds: string[] = [];
+  const draftIds: string[] = [];
   for (const documentId of SETTLEMENT_BATCH) {
-    branchIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
+    draftIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
   }
-  return branchIds;
+  return draftIds;
 }
 
 /** The caller owns hook registration and connection teardown. */

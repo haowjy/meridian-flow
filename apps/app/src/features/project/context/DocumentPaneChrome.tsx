@@ -68,7 +68,7 @@ export function DocumentPaneChrome({
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
-      {/* Other drafts of this document are discoverable wherever it is shown, live or in review. */}
+      {/* Other branches of this document are discoverable wherever it is shown, live or in review. */}
       <DocumentDraftHint projectId={projectId} tab={tab} />
     </>
   );

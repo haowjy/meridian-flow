@@ -5,8 +5,8 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-branch-push.js";
-import { createPostgresWorkDraftDisposal } from "../collab/test-support/work-draft-disposal.js";
+import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-branch-push.js";
+import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
@@ -61,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pendingCounts: createDrizzleWorkDraftPendingStore(db),
+      pendingCounts: createDrizzleWorkBranchPendingStore(db),
       availability,
       catalog,
     });
@@ -615,7 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("cascade-deletes Work chats, drafts, and context from their read surfaces, then restores them", async () => {
+    it("cascade-deletes Work chats, branches, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db
@@ -629,15 +629,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning();
       if (!document) throw new Error("Expected Work document");
       const [draft] = await db
-        .insert(schema.drafts)
+        .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
-        .returning({ id: schema.drafts.id });
+        .returning({ id: schema.branches.id });
       if (!draft) throw new Error("Expected the Work's draft");
-      await db.insert(schema.documentBranches).values({
+      await db.insert(schema.documentDrafts).values({
         id: "work-delete-draft",
         documentId: document.id,
         kind: "work_draft",
-        draftId: draft.id,
+        branchId: draft.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -822,8 +822,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, "work-delete-draft")),
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
         "soft delete leaves the Work's draft untouched (§2.6)",
       ).resolves.toMatchObject([{ status: "active" }]);
 
@@ -847,8 +847,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, "work-delete-draft")),
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
       ).resolves.toMatchObject([{ status: "active" }]);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
@@ -1069,7 +1069,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
-        drafts: createPostgresWorkDraftDisposal(db),
+        branches: createPostgresWorkBranchDisposal(db),
       });
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
@@ -1104,7 +1104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore,
         eventSink,
-        drafts: createPostgresWorkDraftDisposal(db),
+        branches: createPostgresWorkBranchDisposal(db),
       });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
@@ -1249,15 +1249,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .returning();
       if (!document) throw new Error("Expected uploaded document");
       const [draft] = await db
-        .insert(schema.drafts)
+        .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
-        .returning({ id: schema.drafts.id });
+        .returning({ id: schema.branches.id });
       if (!draft) throw new Error("Expected the Work's draft");
-      await db.insert(schema.documentBranches).values({
+      await db.insert(schema.documentDrafts).values({
         id: "purged-work-draft",
         documentId: document.id,
         kind: "work_draft",
-        draftId: draft.id,
+        branchId: draft.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -1361,8 +1361,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         db
           .select()
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, "purged-work-draft")),
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, "purged-work-draft")),
       ).resolves.toEqual([]);
       await expect(
         db.select().from(schema.threads).where(inArray(schema.threads.id, derivedIds)),

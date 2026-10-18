@@ -86,12 +86,12 @@ export interface ResponseCommitter {
     responseId: string,
     docId: string,
     reason: StagedWriteRejectionReason,
-    peerBranchId?: string,
+    peerDraftId?: string,
   ): void;
   retirePeer(input: {
     documentId: string;
     threadId: string;
-    peerBranchId: string;
+    peerDraftId: string;
     reason: DiscardedWriteReason;
   }): void;
   dropForThread(docId: string, threadId: string): void;
@@ -142,7 +142,7 @@ interface DocumentLifetime {
 }
 interface DocumentEpoch {
   threadId: string;
-  peerBranchId?: string;
+  peerDraftId?: string;
   epoch: number;
 }
 
@@ -374,7 +374,7 @@ export function createResponseCommitter(deps: {
     responseId: string,
     docId: string,
     threadId: string,
-    peerBranchId?: string,
+    peerDraftId?: string,
     bindPeer = false,
   ): DocumentLifetime {
     let docs = documentEpochs.get(responseId);
@@ -384,21 +384,21 @@ export function createResponseCommitter(deps: {
     }
     let entry = docs.get(docId);
     if (!entry) {
-      entry = { threadId, peerBranchId, epoch: nextDocumentEpoch++ };
+      entry = { threadId, peerDraftId, epoch: nextDocumentEpoch++ };
       docs.set(docId, entry);
     }
     // A fresh peer owns a fresh acceptance epoch; prepared reads only observe it.
-    if (bindPeer && entry.peerBranchId !== peerBranchId) {
-      entry.peerBranchId = peerBranchId;
+    if (bindPeer && entry.peerDraftId !== peerDraftId) {
+      entry.peerDraftId = peerDraftId;
       entry.epoch = nextDocumentEpoch++;
     }
     return { responseId, docId, epoch: entry.epoch };
   }
   /** Invalidates outstanding leases by exact document and thread (and peer, when given), buffered or not. */
-  function revokeEpochs(docId: string, threadId: string, peerBranchId?: string): void {
+  function revokeEpochs(docId: string, threadId: string, peerDraftId?: string): void {
     for (const docs of documentEpochs.values()) {
       const entry = docs.get(docId);
-      if (entry?.threadId === threadId && (!peerBranchId || entry.peerBranchId === peerBranchId))
+      if (entry?.threadId === threadId && (!peerDraftId || entry.peerDraftId === peerDraftId))
         entry.epoch = nextDocumentEpoch++;
     }
   }
@@ -490,14 +490,14 @@ export function createResponseCommitter(deps: {
     responseDocuments,
     dropForThread,
     refuseStaged,
-    retirePeer: ({ documentId, threadId, peerBranchId, reason }) => {
-      revokeEpochs(documentId, threadId, peerBranchId);
+    retirePeer: ({ documentId, threadId, peerDraftId, reason }) => {
+      revokeEpochs(documentId, threadId, peerDraftId);
       for (const [responseId, state] of responses)
         if (
           state.kind === "buffered" &&
           state.buffer.docs.get(documentId)?.session.threadId === threadId
         )
-          refuseStaged(responseId, documentId, reason, peerBranchId);
+          refuseStaged(responseId, documentId, reason, peerDraftId);
     },
     prepare,
     stage,
@@ -698,7 +698,7 @@ export function createResponseCommitter(deps: {
       docId,
       doc.session.threadId,
       doc.interactionContext?.mode === "threadPeer"
-        ? doc.interactionContext.peerBranchId
+        ? doc.interactionContext.peerDraftId
         : undefined,
     );
     const owner = responses.get(responseId);
@@ -753,7 +753,7 @@ export function createResponseCommitter(deps: {
           input.docId,
           input.session.threadId,
           input.context.interactionContext?.mode === "threadPeer"
-            ? input.context.interactionContext.peerBranchId
+            ? input.context.interactionContext.peerDraftId
             : undefined,
           true,
         )
@@ -771,9 +771,9 @@ export function createResponseCommitter(deps: {
         coordinator.stagedWrites,
     );
     const live = runtimeStore.runtimeFor(input.session, input.docId);
-    live.peerBranchId =
+    live.peerDraftId =
       input.context.interactionContext?.mode === "threadPeer"
-        ? input.context.interactionContext.peerBranchId
+        ? input.context.interactionContext.peerDraftId
         : undefined;
     if (read && !prepared) {
       const previous = live.doc;
@@ -940,9 +940,9 @@ export function createResponseCommitter(deps: {
         outcomes.set(
           docBuffer.docId,
           await prepareSaveOn(docBuffer, {
-            pinnedBranchId:
+            pinnedDraftId:
               docBuffer.interactionContext?.mode === "threadPeer"
-                ? docBuffer.interactionContext.peerBranchId
+                ? docBuffer.interactionContext.peerDraftId
                 : undefined,
           }),
         );
@@ -1155,9 +1155,9 @@ export function createResponseCommitter(deps: {
           reportingCut: replayBase ? Y.encodeStateAsUpdate(replayBase) : undefined,
           interactionContext: docBuffer.interactionContext,
           access: {
-            pinnedBranchId:
+            pinnedDraftId:
               docBuffer.interactionContext?.mode === "threadPeer"
-                ? docBuffer.interactionContext.peerBranchId
+                ? docBuffer.interactionContext.peerDraftId
                 : undefined,
           },
           ownTurnId: lastTurnId,
@@ -1670,7 +1670,7 @@ export function createResponseCommitter(deps: {
                 doc: yjsUpdateFromState(input.preOwnSnapshot),
                 staged: coordinator.stagedWrites,
                 cut: {
-                  generation: input.interactionContext.branchGeneration,
+                  generation: input.interactionContext.draftGeneration,
                   state: input.preOwnSnapshot.slice(),
                 },
               },
@@ -1779,14 +1779,14 @@ export function createResponseCommitter(deps: {
     responseId: string,
     docId: string,
     reason: StagedWriteRejectionReason,
-    peerBranchId?: string,
+    peerDraftId?: string,
   ): void {
     const buffer = activeBuffer(responseId);
     const doc = buffer?.docs.get(docId);
     if (!buffer || !doc) return;
     const belongs = (entry: StagedResponseUpdate) =>
-      !peerBranchId ||
-      (entry.mutation?.mode === "threadPeer" && entry.mutation.peerBranchId === peerBranchId);
+      !peerDraftId ||
+      (entry.mutation?.mode === "threadPeer" && entry.mutation.peerDraftId === peerDraftId);
     const rejected = doc.updates
       .filter(belongs)
       .map((entry) => ({ ...entry, rejectionReason: reason }));
@@ -1796,7 +1796,7 @@ export function createResponseCommitter(deps: {
     buffer.refused.set(docId, [...(buffer.refused.get(docId) ?? []), ...rejected]);
     enqueueNotices(responseId, docId, rejected);
     const epoch = documentEpochs.get(responseId)?.get(docId);
-    if (epoch && (!peerBranchId || epoch.peerBranchId === peerBranchId))
+    if (epoch && (!peerDraftId || epoch.peerDraftId === peerDraftId))
       epoch.epoch = nextDocumentEpoch++;
     if (doc.updates.length) {
       if (isPrepared(doc)) {

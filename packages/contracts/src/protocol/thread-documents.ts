@@ -34,17 +34,14 @@ export interface TurnLiveLineageDocumentItem {
   uri: string;
   /** Slash-prefixed display path derived from the canonical context URI. */
   path: string;
-  scope: "live" | "draft";
+  scope: "live" | "branch";
 }
 
 export type TurnReceiptState =
   | "live-active"
   | "live-reversed"
-  | "branch-active"
-  | "branch-reversed"
   | "work-active"
   | "work-reversed"
-  | "rollback-pending"
   | "cant_undo_dependent"
   | "expired";
 

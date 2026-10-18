@@ -11,7 +11,7 @@
  */
 
 import { createContext, useCallback, useContext } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useContextTabsActions } from "@/client/stores";
 import type { LinkDestination } from "@/features/links";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";

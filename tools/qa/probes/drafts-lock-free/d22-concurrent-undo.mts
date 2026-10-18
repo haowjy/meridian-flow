@@ -26,12 +26,12 @@ import {
 async function seedModelDraftWrite(harness: Harness, label: string) {
   const work = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, "Base");
-  const branch = await harness.store.ensureDraftBranch({
+  const documentDraft = await harness.store.ensureDocumentDraft({
     documentId,
-    draftId: work.draftId,
+    branchId: work.branchId,
     liveDoc: live,
   });
-  const read = await harness.store.readBranchAt(branch.branchId);
+  const read = await harness.store.readDraftAt(documentDraft.draftId);
   if (!read) throw new Error("The draft branch was not created");
   live.clientID = 941_002;
   const before = Y.encodeStateAsUpdate(live);
@@ -45,15 +45,15 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
     parts = captureReceiptRows(pre, [
       {
         update,
-        origin: { kind: "pending", branchId: branch.branchId, generation: 0, rowId: 0 },
+        origin: { kind: "pending", draftId: documentDraft.draftId, generation: 0, rowId: 0 },
       },
     ]);
   } finally {
     pre.destroy();
   }
   const row = {
-    branchId: branch.branchId,
-    generation: read.branch.generation,
+    draftId: documentDraft.draftId,
+    generation: read.documentDraft.generation,
     updateData: update,
     source: "agent" as const,
     threadId: work.threadId as ThreadId,
@@ -62,21 +62,24 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   };
   const receipts = [{ rowIndexes: [0], parts: parts.map(({ origin: _origin, ...part }) => part) }];
   const appended = await harness.store.appendRows({
-    branchId: branch.branchId,
+    draftId: documentDraft.draftId,
     documentId,
-    expectedGeneration: read.branch.generation,
-    base: { checkpointRevision: read.branch.checkpointRevision, seq: read.branch.checkpointSeq },
+    expectedGeneration: read.documentDraft.generation,
+    base: {
+      checkpointRevision: read.documentDraft.checkpointRevision,
+      seq: read.documentDraft.checkpointSeq,
+    },
     finalize: () => ({ status: "appended", rows: [row], receipts }),
   });
   if (appended.status !== "appended") throw new Error(`The model write was ${appended.status}`);
-  return { ...work, documentId, branchId: branch.branchId };
+  return { ...work, documentId, draftId: documentDraft.draftId };
 }
 
 function inverseService(harness: Harness, label: string) {
   return createDrizzleTurnInverseService({
     db: harness.db,
     journal: harness.persistence.journal,
-    branches: harness.store,
+    drafts: harness.store,
     coordinator: {
       withDocument: async <T,>(id: string, run: (doc: Y.Doc) => Promise<T>) => {
         const doc = await harness.liveDoc(id);
@@ -88,7 +91,7 @@ function inverseService(harness: Harness, label: string) {
       },
       recover: async () => {},
     } as never,
-    branchCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: { async deliverCommitted() {} },
     resolveDocumentUri: async () => `@${label}/probe.md`,
     refreshDocument: async () => {},
     flushLivePull: async () => {},
@@ -163,14 +166,14 @@ export const d22ConcurrentUndo: Probe = {
             threadId: seeded.threadId,
             turnId: seeded.turnId,
             documentIds: [seeded.documentId],
-            branchId: seeded.branchId,
+            draftId: seeded.draftId,
             model: true,
           } as never,
           { command: "undo", file: "probe.md" },
         );
       const statuses = await twoUndos(harness, seeded.workId, undo);
       const kinds = await editKinds(harness, seeded.documentId);
-      const draft = await harness.readBranch(seeded.branchId);
+      const draft = await harness.readDraft(seeded.draftId);
       observe("draft", { statuses, kinds, text: draft.text, revision: draft.revision });
       assert.equal(statuses.filter((status) => status === "success").length, 1);
       assert.ok(

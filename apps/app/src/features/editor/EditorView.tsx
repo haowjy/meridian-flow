@@ -1,15 +1,15 @@
 /** Review composition over a warm live editor and the scope owner's addressed branch binding. */
 import { Trans } from "@lingui/react/macro";
-import { operationKey, type ReviewOperation } from "@meridian/contracts/drafts";
+import { operationKey, type ReviewOperation } from "@meridian/contracts/branches";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  draftCommandKey,
+  branchCommandKey,
   intentKeys,
   selectionKeys,
   useChangeCommandRecords,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import {
   PaintCapture,
   PaintScope,
@@ -242,7 +242,7 @@ export function EditorView(props: EditorViewProps) {
     const { restoring } = intentKeys(commandRecords, draftRef);
     for (const key of restoring) discarded.current.keys.add(key);
     for (const record of Object.values(
-      commandRecords.drafts[draftCommandKey(draftRef)]?.outcomes ?? {},
+      commandRecords.branches[branchCommandKey(draftRef)]?.outcomes ?? {},
     ))
       if (record.phase === "failed")
         for (const key of selectionKeys(record))
@@ -441,7 +441,7 @@ function ReviewRuntime({
     workId: controller.workId,
     documentId: review.documentId,
     itemKey: review.itemKey,
-    branchGeneration: review.branchGeneration,
+    draftGeneration: review.draftGeneration,
     onInlineModelAvailable: onModelAvailable,
   });
   useInlineReviewFocus({

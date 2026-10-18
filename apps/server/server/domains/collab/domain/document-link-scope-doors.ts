@@ -7,14 +7,14 @@
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections), the model's edit core, a
  * reply's save, the draft-aware reads (Markdown, hashlines and revision), offline
- * reconciliation. Draft preview scopes both sides
+ * reconciliation. Branch preview scopes both sides
  * in `work-draft-review-service.ts`; ContextFS.search scopes its source's
  * chapters together. A push scopes itself before branch locks in
  * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
  */
 
-import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
+import type { DraftPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
 import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { OfflineReconciliation } from "./offline-reconciliation.js";
@@ -116,14 +116,14 @@ export function scopeOfflineReconciliation(
 }
 
 /**
- * Draft-aware reads, in the reader's thread: its manifest peer and reply's
+ * Branch-aware reads, in the reader's thread: its manifest peer and reply's
  * staged creates decide what a draft view holds. The revision depends on the
  * tree, so it is scoped like the text.
  */
-export function scopeBranchPeer(
-  access: BranchPeerShadowAccess,
+export function scopeDraftPeer(
+  access: DraftPeerShadowAccess,
   scopes: DocumentLinkScopes,
-): BranchPeerShadowAccess {
+): DraftPeerShadowAccess {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,
     ...(command.threadId ? { viewer: { threadId: command.threadId } } : {}),
@@ -132,11 +132,11 @@ export function scopeBranchPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    flushBranchLivePull: access.flushBranchLivePull,
+    flushDraftLivePull: access.flushDraftLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
-    ensureCreatedDraftBranch: access.ensureCreatedDraftBranch,
-    retractCreatedDraftBranch: access.retractCreatedDraftBranch,
+    ensureCreatedDocumentDraft: access.ensureCreatedDocumentDraft,
+    retractCreatedDocumentDraft: access.retractCreatedDocumentDraft,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

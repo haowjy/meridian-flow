@@ -5,7 +5,11 @@
  * hunks, visible author attribution and class-owned excerpts.
  */
 import { i18n } from "@lingui/core";
-import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type {
+  DraftPreviewResponse,
+  ReviewHunk,
+  ReviewOperation,
+} from "@meridian/contracts/branches";
 import { describe, expect, it } from "vitest";
 
 import { listed } from "@/test-support/draft-review-scope";
@@ -206,9 +210,9 @@ describe("whole-item changes", () => {
   const preview = (item: Partial<typeof listed>, operations: ReviewOperation[] = []) =>
     ({
       status: "active",
-      draftId: listed.draftId,
+      branchId: listed.branchId,
       itemKey: listed.itemKey,
-      branchGeneration: 1,
+      draftGeneration: 1,
       reviewRoomName: "room",
       liveRevisionToken: "l",
       draftRevisionToken: "t",
@@ -233,7 +237,7 @@ describe("whole-item changes", () => {
       ...listed,
       binary: true,
       wholeItem: true,
-      branchGeneration: null,
+      draftGeneration: null,
       documentName: "map.png",
       actorThreads: [{ threadId: "chat-a", title: "Chat A" }],
     };

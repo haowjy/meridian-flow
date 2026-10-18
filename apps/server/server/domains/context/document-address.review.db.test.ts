@@ -2,9 +2,9 @@
 import { documents } from "@meridian/database/schema";
 import { expect, it } from "vitest";
 import { handleDocumentAddressRequest } from "../../lib/document-address-route.js";
-import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 
-describeDraftTreeDb("review address identity", (start, db) => {
+describeBranchTreeDb("review address identity", (start, db) => {
   it("selects the hidden KB draft at a live collision and refuses invalid capabilities", async () => {
     const { s, runtime } = await start();
     const work = await s.work("review-binding", "draft");
@@ -24,7 +24,7 @@ describeDraftTreeDb("review address identity", (start, db) => {
     const unused = unusedRow.id;
     const row = (await s.items(work)).find((item) => item.documentId === hidden);
     if (!row) throw new Error("Expected draft item");
-    const { branchId } = await s.draftBranch(work, hidden);
+    const { draftId } = await s.documentDraft(work, hidden);
     const rival = await s.work("rival", "draft");
     await s.model(rival).create("kb://Rival", "Rival words.");
     const [rivalItem] = await s.items(rival);
@@ -54,11 +54,11 @@ describeDraftTreeDb("review address identity", (start, db) => {
     for (const selector of [
       { ...review, itemKey: "bad" },
       { ...review, workId: rival.id },
-      { ...review, itemKey: branchId },
-      { ...review, itemKey: row.draftId },
+      { ...review, itemKey: draftId },
+      { ...review, itemKey: row.branchId },
       { ...review, itemKey: rivalItem?.itemKey ?? "missing" },
-      { ...review, itemKey: `${row.draftId}:${live}` },
-      { ...review, itemKey: `${row.draftId}:${unused}` },
+      { ...review, itemKey: `${row.branchId}:${live}` },
+      { ...review, itemKey: `${row.branchId}:${unused}` },
     ]) {
       expect(
         await handleDocumentAddressRequest(deps, input, selector),

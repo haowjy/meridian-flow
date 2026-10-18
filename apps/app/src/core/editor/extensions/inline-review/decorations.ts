@@ -12,7 +12,7 @@
  * never contains it.
  */
 import { i18n } from "@lingui/core";
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewOperation } from "@meridian/contracts/branches";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import {

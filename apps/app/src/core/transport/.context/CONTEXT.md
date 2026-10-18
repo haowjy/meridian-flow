@@ -30,7 +30,7 @@ production so observation does not create a second transport path.
 
 The outbox is the session layer's evidence that the writer has typing the
 server has not acknowledged. Draft review counts it as changes at the shown
-generation, and `BranchWriterHandoff` carries it into the next generation, so
+generation, and `DraftWriterHandoff` carries it into the next generation, so
 it must be visible to every observer before anything can act on its absence.
 
 - **Store, then send.** `handleDocumentUpdate` registers on the `Y.Doc` before
@@ -85,7 +85,7 @@ order on every branch connection is `step1, step2, [released updates],
   is reconciled; a live socket writes in the provider's order.
 
 `4207` is not a refusal. It never counts toward the three-`1008` refusal bound
-(`MAX_BRANCH_UPDATE_REFUSALS` in `hocuspocus-document-transport.ts`; see the
+(`MAX_DRAFT_UPDATE_REFUSALS` in `hocuspocus-document-transport.ts`; see the
 editor's `.context/CONTEXT.md`),
 keeps the outbox, and reconnects after the provider's delay like any drop.
 After handshake-first it means a server that lost committed rows or a peer that
@@ -120,7 +120,7 @@ reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
 resets with reason `access-changed` instead of reconnecting, and
 `DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
 session. A branch (draft review) room rebuilds through
-`rebuildBranchRoom`, which starts a fresh session from the server's state. A
+`rebuildDraftRoom`, which starts a fresh session from the server's state. A
 live room (scratch) goes through the registry's `dropRefusedRoom`, which
 revokes each lease's access: the session is torn down and its IndexedDB copy,
 which still holds the refused edits, is cleared. Editor hosts unbind at once

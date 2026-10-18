@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Draft-only entries of several Works on one document: Discard and promotion decide once, by the container's own address. */
+/** Branch-only entries of several Works on one document: Discard and promotion decide once, by the container's own address. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -94,7 +94,7 @@ it("a join seen first by one Work keeps the review another Work has on screen", 
     } as never),
   );
   // Work A's observer is ready first: it must not decide what Work B has on screen.
-  fixture.network.listWorkDrafts.mockImplementation(async (_project, workId) => {
+  fixture.network.listWorkBranches.mockImplementation(async (_project, workId) => {
     if (workId === "work-b") await new Promise((resolve) => setTimeout(resolve, 40));
     return {
       items: [

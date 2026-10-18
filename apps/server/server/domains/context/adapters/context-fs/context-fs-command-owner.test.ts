@@ -14,7 +14,7 @@ describe("ResultAwareCommandExecutor at the ContextFS owner", () => {
     const transaction: ContextCommandTransaction = {
       run: async (operation) => {
         transactionEntries += 1;
-        const result = await operation({ draft: null });
+        const result = await operation({ branch: null });
         if (transactionEntries === 1) await firstCallbacksSettled;
         return result;
       },

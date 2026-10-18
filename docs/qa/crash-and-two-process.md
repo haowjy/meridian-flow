@@ -4,12 +4,12 @@ Two lock-free drafts probes. **P5** stops the server between a branch write's
 `COMMIT` and its acknowledgement and checks the resend lands once. **P6** runs two
 server processes on one database, with a tab on each typing into the same draft.
 Both run on an owned mock stack (`MODEL_PROVIDER=mock pnpm dev`) and read
-durable state with `tools/qa/branch-readback.ts`. Record the commit, date, stack
+durable state with `tools/qa/draft-readback.ts`. Record the commit, date, stack
 and evidence path for each run, as the [catalog](README.md) asks.
 
 ## Tools
 
-- `pnpm exec tsx tools/qa/branch-readback.ts <branchId> [--db <url>]` prints a
+- `pnpm exec tsx tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
   branch's `revision`, `checkpointRevision`, `checkpointSeq`, generation, tail
   rows with their client ids, materialized `text` and `stateSha256`. Without
   `--db` it reads this checkout's database.
@@ -44,8 +44,8 @@ stale. During that window, read the server's stdout in `logs/portless.log`.
 Seed a document, create a named Work, create a thread on it with
 `aiWriteMode: "draft"` in the `POST /api/threads` body (`./mf api`), and make a
 draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
-`./mf api GET /api/projects/<project>/works/<work>/drafts` names the draft. Its
-branch id is the `branchId` on the draft's rows.
+`./mf api GET /api/projects/<project>/works/<work>/branches` names the draft. Its
+branch id is the `draftId` on the draft's rows.
 
 ## P5: crash between the append's commit and its ack
 
@@ -64,7 +64,7 @@ branch id is the `branchId` on the draft's rows.
    - Typing again with no arm file does not crash.
 4. Repeat with `COLLAB_CRASH_AT=branch.append.beforeCommit` (phase 4). Count
    the draft's receipts first:
-   `select count(*) from document_edit_parts where placement->>'branchId' = '<branchId>'`
+   `select count(*) from document_edit_parts where placement->>'draftId' = '<draftId>'`
    with `psql "$db"`. Arm the file and type one word. The server exits after
    the append inserted its rows and receipts and before `COMMIT`, so nothing of
    that frame is durable; the client reconnects and its handshake's SyncStep2
@@ -120,7 +120,7 @@ branch id is the `branchId` on the draft's rows.
      `two-process-fold` and `two-process-compaction` cover a pull or compaction
      folding the other process's row ([seam probes](drafts-lock-free-probes.md)).
    - No frame is judged twice: appends are sequenced by the branch row's lock,
-     so neither process emits a `BranchCasConflictError` for a frame. Read
+     so neither process emits a `DraftCasConflictError` for a frame. Read
      `collab.branch.append_committed` (debug) for each key's `waitMs` and `holdMs`.
    - A live edit pulled by both processes lands once; the loser sees `moved`.
    - Equal hashes after the reload are not enough on their own.

@@ -22,7 +22,7 @@ import {
 } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { DocumentLinkScopes, Drafts } from "../domains/collab/index.js";
+import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
 import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
@@ -37,7 +37,7 @@ export interface DocumentLinkRouteDeps {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
   /** The selected Work's view: its active draft, or live when it has none (F7). */
-  drafts: Pick<Drafts, "viewForWork">;
+  branches: Pick<Branches, "viewForWork">;
 }
 
 type DocumentAnswer = Extract<DocumentLinkAnswer, { state: "document" }>["document"];
@@ -62,7 +62,7 @@ export async function handleDocumentLinkResolveRequest(
   }
   // A Work's draft view is the live tree plus what that draft created.
   const view: LinkView = workId
-    ? await deps.drafts.viewForWork(workId as WorkId)
+    ? await deps.branches.viewForWork(workId as WorkId)
     : { kind: "live" };
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
   let holderUri: string | undefined;
@@ -167,7 +167,7 @@ export async function handleDocumentLinkResolveRequest(
     );
     for (const { index, document } of found) {
       if (access.has(document.id as DocumentId)) {
-        answers[index] = { state: "document", document, inDraft: false };
+        answers[index] = { state: "document", document, inBranch: false };
       }
     }
   }
@@ -179,7 +179,7 @@ export async function handleDocumentLinkResolveRequest(
 
 /**
  * Names the document a Work's draft created at an address the live tree leaves empty (the
- * scope's `draftCreatedAt`: exact, then the one extension-omitted match). A live occupant
+ * scope's `branchCreatedAt`: exact, then the one extension-omitted match). A live occupant
  * keeps winning, since these never reached one; another draft's creation and what the
  * reader may not read stay missing.
  */
@@ -194,7 +194,7 @@ async function answerFromDraftView(
   },
 ): Promise<void> {
   const { projectId, userId, view, unanswered, answers } = input;
-  if (view.kind !== "draft") return;
+  if (view.kind !== "branch") return;
   await deps.linkScopes.within({ projectId, viewer: { accountId: userId } }, async () => {
     await deps.linkScopes.prepare({
       holders: [],
@@ -202,9 +202,9 @@ async function answerFromDraftView(
       addresses: unanswered.map(({ uri }) => uri),
     });
     for (const { index, uri } of unanswered) {
-      const document = deps.linkScopes.draftCreatedAt({ view, uri });
+      const document = deps.linkScopes.branchCreatedAt({ view, uri });
       if (!document) continue;
-      answers[index] = answerOf({ kind: "document", document, inDraft: true });
+      answers[index] = answerOf({ kind: "document", document, inBranch: true });
     }
   });
 }
@@ -214,14 +214,14 @@ function answerOf(resolution: LinkResolution): DocumentLinkAnswer {
   // Rule 3: the client keeps the settlement and never answers this ref by address again.
   const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
   if (resolution.kind === "document") {
-    const { document, inDraft } = resolution;
+    const { document, inBranch } = resolution;
     const described = describeDocument(document);
     return described
       ? {
           state: "document",
           document: described,
-          inDraft,
-          ...(document.draft ? { draft: document.draft } : {}),
+          inBranch,
+          ...(document.branch ? { branch: document.branch } : {}),
           ...marks,
         }
       : { state: "gone", ...marks };

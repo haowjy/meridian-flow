@@ -113,7 +113,7 @@ beforeEach(() => {
                 ? {
                     state: "document",
                     document: { ...document, id: document.documentId },
-                    inDraft: false,
+                    inBranch: false,
                   }
                 : { state: "missing", uri: href },
             ],

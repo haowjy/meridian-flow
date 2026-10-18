@@ -17,8 +17,8 @@ import {
   type ReviewHunk,
   type ReviewOperation,
   type ThreadDraftListItem,
-} from "@meridian/contracts/drafts";
-import type { ChangeSelection } from "@/client/query/draft-command-record";
+} from "@meridian/contracts/branches";
+import type { ChangeSelection } from "@/client/query/branch-command-record";
 import { wholeItemHidden } from "@/client/query/draft-projection";
 import {
   attributionThreadIds,
@@ -314,14 +314,14 @@ export type ChangeTarget =
   | { kind: "draft" }
   | { kind: "display" };
 
-export type DraftView = {
+export type BranchView = {
   changes: readonly ReviewChange[];
 };
 
-const views = new WeakMap<ActivePreview, DraftView>();
+const views = new WeakMap<ActivePreview, BranchView>();
 
-/** One normalized change and action index, shared by open and unopened drafts. */
-export function draftView(preview: ActivePreview): DraftView {
+/** One normalized change and action index, shared by open and unopened branches. */
+export function branchView(preview: ActivePreview): BranchView {
   let view = views.get(preview);
   if (!view) {
     const changes = changesOf(preview);
@@ -352,5 +352,5 @@ export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget 
 
 /** Lists read the normalized domain view, never reconstruct targets in a surface. */
 export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewChange[] {
-  return draftView(preview).changes;
+  return branchView(preview).changes;
 }

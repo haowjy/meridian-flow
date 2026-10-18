@@ -11,7 +11,7 @@ import {
   workPurgeAt,
 } from "@meridian/contracts/works";
 import type { AddressableWork } from "@/client/query/useWorks";
-import type { WorkCreation, WorkDraft } from "@/client/query/work-command-projection";
+import type { WorkBranch, WorkCreation } from "@/client/query/work-command-projection";
 import type { WorkDeleteWindow } from "@/client/query/work-command-selectors";
 import type { WorksView } from "../routing/project-address";
 import type { WorkRowFailure } from "./WorkCommandFailureRow";
@@ -29,7 +29,7 @@ export const archiveTab = (work: Pick<Work, "archivedAt">): ArchiveTab =>
  * row of the Deleted tab.
  */
 export type WorkListEntry = { key: string; failure?: WorkRowFailure } & (
-  | { state: "creating" | "notCreated"; work: WorkDraft }
+  | { state: "creating" | "notCreated"; work: WorkBranch }
   | { state: "restoring" | "undo" | "idle"; work: AddressableWork }
 );
 

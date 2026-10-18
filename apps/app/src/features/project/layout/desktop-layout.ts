@@ -8,7 +8,7 @@
  * the visual chrome, and region separation is purely TONAL (no borders, no
  * shadows): the grey-gold shelf (`rail-l`), the brighter chrome that the tab
  * band and the whole dock share (`--color-sidebar`), and the lit page rising
- * out of it. SlotGrid never branches on slot kind.
+ * out of it. SlotGrid never drafts on slot kind.
  *
  * History: the optional `context-header` row and the `files` column are gone
  * — the Editor destination absorbs its sidebar/dock expand toggles into the

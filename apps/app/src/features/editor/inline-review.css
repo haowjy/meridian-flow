@@ -1,4 +1,4 @@
-/* Draft-review decorations: continuous inline highlights and block rings.
+/* Branch-review decorations: continuous inline highlights and block rings.
    Inline emphasis thickens the underline; no padding or rounded span boxes,
    so adjacent green, gold and struck ranges join without tiled seams. */
 /* Tone variables are local to each mark. Writer comes last so pending gold

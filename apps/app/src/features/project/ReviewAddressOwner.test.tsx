@@ -84,7 +84,7 @@ function Harness({
           inlineReview: inline,
           exitInlineReview: exitInlineReview ?? vi.fn(),
         },
-        drafts: { status: "ready" },
+        branches: { status: "ready" },
         files: [
           {
             documentId: draft.documentId,
@@ -263,17 +263,17 @@ describe("ReviewAddressOwner", () => {
     });
     const fixture = createReviewScopeFixture();
     const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    fixture.network.listWorkDrafts.mockResolvedValue({
+    fixture.network.listWorkBranches.mockResolvedValue({
       items: [
         {
           ...listed,
-          draftId: "whole-draft",
+          branchId: "whole-draft",
           origin: "created",
           binary: false,
           wholeItem: true,
           conflict: null,
           settling: false,
-          tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
+          tokens: { locationToken: "location", liveTextToken: null, draftGenerationToken: null },
           contextLocation: { scheme: "manuscript", path: "/chapter.md" },
           isNew: true,
         },

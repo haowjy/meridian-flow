@@ -1,4 +1,4 @@
-/** Project a live editor tab into an account-recents opening. Local drafts keep their resource handle. */
+/** Project a live editor tab into an account-recents opening. Local branches keep their resource handle. */
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentAddress, RecentOpening } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";

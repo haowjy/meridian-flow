@@ -9,8 +9,8 @@
  * - `two-process-compaction`: A's 512-row background compaction folds a row B committed.
  */
 import assert from "node:assert/strict";
-import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
-import type { BranchStore } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import {
   appendToFirstParagraph,
   gate,
@@ -27,13 +27,13 @@ const KEYS = 20;
 type Process = ReturnType<typeof openProcess>;
 
 /** One server process: its coordinator over its own store, and one Hocuspocus room. */
-function openProcess(harness: Harness, label: string, store: BranchStore = harness.store) {
+function openProcess(harness: Harness, label: string, store: DraftStore = harness.store) {
   const room = new Y.Doc({ gc: false });
-  const coordinator = createBranchCoordinator({
+  const coordinator = createDraftCoordinator({
     onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
-    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
+    onDraftUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
   });
   return { label, room, coordinator };
 }
@@ -45,22 +45,26 @@ function openProcess(harness: Harness, label: string, store: BranchStore = harne
 async function twoProcesses(
   harness: Harness,
   label: string,
-  storeA?: BranchStore,
-  wrap: (store: BranchStore) => BranchStore = (store) => store,
+  storeA?: DraftStore,
+  wrap: (store: DraftStore) => DraftStore = (store) => store,
 ) {
-  const { draftId } = await harness.seedWork(label);
+  const { branchId } = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, "Base");
-  const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
+  const documentDraft = await harness.store.ensureDocumentDraft({
+    documentId,
+    branchId,
+    liveDoc: live,
+  });
   const other = await openHarness(harness.url);
   const a = openProcess(harness, "A", wrap(storeA ?? harness.store));
   const b = openProcess(other, "B", wrap(other.store));
   for (const process of [a, b]) {
-    await process.coordinator.readBranch(branch.branchId, async (doc) => {
+    await process.coordinator.readDraft(documentDraft.draftId, async (doc) => {
       Y.applyUpdate(process.room, Y.encodeStateAsUpdate(doc));
     });
   }
-  const generation = (await harness.readBranch(branch.branchId)).generation;
-  return { branchId: branch.branchId, generation, live, a, b, other };
+  const generation = (await harness.readDraft(documentDraft.draftId)).generation;
+  return { draftId: documentDraft.draftId, generation, live, a, b, other };
 }
 
 /** The tab's keystroke on its room's state: a fresh client inserting `token` at the end. */
@@ -76,7 +80,7 @@ function keystroke(room: Y.Doc, token: string): Uint8Array {
 
 async function type(
   process: Process,
-  branchId: string,
+  draftId: string,
   generation: number,
   token: string,
   wall?: number[],
@@ -85,7 +89,7 @@ async function type(
   const started = performance.now();
   const result = await settled(
     process.coordinator.commitWriterUpdate({
-      branchId,
+      draftId,
       expectedGeneration: generation,
       updateData: update,
       roomDocument: process.room,
@@ -110,19 +114,19 @@ const roomText = (process: Process) => process.room.getXmlFragment("prosemirror"
 export const twoProcessFrames: Probe = {
   name: "two-process-frames",
   decision: "D25",
-  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no BranchCasConflictError, one appendRows per frame`,
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no frame over 1 s, no DraftCasConflictError, one appendRows per frame`,
   async run(harness) {
     // One sequence point per frame (design §9): today's revision miss, retried inside the frame
-    // as `BranchCasConflictError`, would show as a second `appendRows` call.
+    // as `DraftCasConflictError`, would show as a second `appendRows` call.
     let appendRowsCalls = 0;
-    const counted = (store: BranchStore): BranchStore => ({
+    const counted = (store: DraftStore): DraftStore => ({
       ...store,
       appendRows(input) {
         appendRowsCalls += 1;
         return store.appendRows(input);
       },
     });
-    const { branchId, generation, live, a, b, other } = await twoProcesses(
+    const { draftId, generation, live, a, b, other } = await twoProcesses(
       harness,
       "two-process",
       undefined,
@@ -134,8 +138,8 @@ export const twoProcessFrames: Probe = {
     let admitted = 0;
     for (let key = 0; key < KEYS; key += 1) {
       const results = await Promise.all([
-        type(a, branchId, generation, ` A${key}`, wall),
-        type(b, branchId, generation, ` B${key}`, wall),
+        type(a, draftId, generation, ` A${key}`, wall),
+        type(b, draftId, generation, ` B${key}`, wall),
       ]);
       for (const result of results) {
         if (result.ok) admitted += 1;
@@ -148,14 +152,14 @@ export const twoProcessFrames: Probe = {
     const tokens = (text: string) => (text.match(/ [AB]\d+/g) ?? []).length;
     const rooms: Record<string, number> = {};
     for (const process of [a, b]) {
-      await process.coordinator.readBranch(branchId, async () => {});
+      await process.coordinator.readDraft(draftId, async () => {});
       rooms[process.label] = tokens(roomText(process));
     }
     const appends = [...harness.appends, ...other.appends].filter(
-      (append) => append.branchId === branchId,
+      (append) => append.draftId === draftId,
     );
     await other.close();
-    const durable = tokens((await harness.readBranch(branchId)).text);
+    const durable = tokens((await harness.readDraft(draftId)).text);
     observe("frames", { admitted, failures });
     observe("tokens", { durable, rooms });
     // `lock_timeout` plays no part here: an append waits for the row as long as a holder holds it.
@@ -167,7 +171,7 @@ export const twoProcessFrames: Probe = {
       appendRowsCalls,
     });
     assert.equal(appendRowsCalls, 2 * KEYS, "a frame retried its sequence point");
-    assert.ok(!Object.keys(failures).some((name) => name.startsWith("BranchCasConflictError")));
+    assert.ok(!Object.keys(failures).some((name) => name.startsWith("DraftCasConflictError")));
     assert.ok(Math.max(...wall) < 1_000, "a frame took a second or more");
     assert.equal(admitted, 2 * KEYS);
     assert.deepEqual(
@@ -178,12 +182,12 @@ export const twoProcessFrames: Probe = {
 };
 
 /** `store` whose first rewrite of `kind` waits for `release` once it has `entered`. */
-function pausedRewrite(store: BranchStore, kind: "pull" | "compact") {
+function pausedRewrite(store: DraftStore, kind: "pull" | "compact") {
   const entered = gate();
   const release = gate();
   const done = gate();
   let held = false;
-  const paused: BranchStore = {
+  const paused: DraftStore = {
     ...store,
     async commitRewrite(input) {
       if (held || input.operation.kind !== kind) return store.commitRewrite(input);
@@ -211,14 +215,14 @@ export const twoProcessFold: Probe = {
       appendToFirstParagraph(f.live, " LIVE");
       // A's pull has merged live into its candidate; B commits before the pull's rewrite runs,
       // so the rewrite folds B's row in under the branch lock.
-      const pull = f.a.coordinator.pullFromDoc({ branchId: f.branchId, upstream: f.live });
+      const pull = f.a.coordinator.pullFromDoc({ draftId: f.draftId, upstream: f.live });
       await pause.entered.wait;
-      const foreign = await type(f.b, f.branchId, f.generation, " FOREIGN");
+      const foreign = await type(f.b, f.draftId, f.generation, " FOREIGN");
       pause.release.open();
       const pulled = await pull;
-      const durable = (await harness.readBranch(f.branchId)).text;
+      const durable = (await harness.readDraft(f.draftId)).text;
       const room = roomText(f.a);
-      const next = await type(f.a, f.branchId, f.generation, " NEXT");
+      const next = await type(f.a, f.draftId, f.generation, " NEXT");
       observe("pull", { foreign: foreign.ok, pulled, durable, room });
       observe("next", next);
       assert.equal(pulled, "pulled");
@@ -247,28 +251,28 @@ export const twoProcessCompaction: Probe = {
       const source = new Y.Doc({ gc: false });
       Y.applyUpdate(source, Y.encodeStateAsUpdate(f.a.room));
       const rows = Array.from({ length: COMPACT_TAIL_ROWS - 1 }, () => ({
-        branchId: f.branchId,
+        draftId: f.draftId,
         source: "writer" as const,
         updateData: appendToFirstParagraph(source, "x"),
       }));
       await f.a.coordinator.commitSegmentRows({
-        branchId: f.branchId,
+        draftId: f.draftId,
         expectedGeneration: f.generation,
         sourceDoc: source,
         rows,
       });
       source.destroy();
-      await f.a.coordinator.readBranch(f.branchId, async () => {});
-      await type(f.a, f.branchId, f.generation, " TRIGGER");
+      await f.a.coordinator.readDraft(f.draftId, async () => {});
+      await type(f.a, f.draftId, f.generation, " TRIGGER");
       await pause.entered.wait;
-      const foreign = await type(f.b, f.branchId, f.generation, " FOREIGN");
+      const foreign = await type(f.b, f.draftId, f.generation, " FOREIGN");
       pause.release.open();
       await pause.done.wait;
       // The compaction delivers after its own commit returns.
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const durable = await harness.readBranch(f.branchId);
+      const durable = await harness.readDraft(f.draftId);
       const room = roomText(f.a);
-      const next = await type(f.a, f.branchId, f.generation, " NEXT");
+      const next = await type(f.a, f.draftId, f.generation, " NEXT");
       observe("compaction", {
         foreign: foreign.ok,
         tail: durable.tail,

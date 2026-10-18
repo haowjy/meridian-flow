@@ -6,8 +6,8 @@
  */
 import assert from "node:assert/strict";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createBranchPullService } from "../../../../apps/server/server/domains/collab/domain/branch-pulls.ts";
-import { materializeBranchRead } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import { createDraftPullService } from "../../../../apps/server/server/domains/collab/domain/draft-pulls.ts";
+import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import {
   appendToFirstParagraph,
   independently,
@@ -21,15 +21,19 @@ export const d23ArchivedDraftRebases: Probe = {
   name: "d23-archived-draft-rebases",
   decision: "D23",
   expected:
-    "archived: the live edit reaches the draft; unarchived: the text is already there, checkpoint unmoved; a writer frame while archived rejects `BranchStaleUpdateError`",
+    "archived: the live edit reaches the draft; unarchived: the text is already there, checkpoint unmoved; a writer frame while archived rejects `DraftStaleUpdateError`",
   async run(harness) {
-    const { workId, draftId } = await harness.seedWork("archived-rebase");
+    const { workId, branchId } = await harness.seedWork("archived-rebase");
     const { documentId, live } = await harness.seedDocument("archived-rebase", "Base");
-    const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
-    const pulls = createBranchPullService({
+    const documentDraft = await harness.store.ensureDocumentDraft({
+      documentId,
+      branchId,
+      liveDoc: live,
+    });
+    const pulls = createDraftPullService({
       outsideTransaction: independently,
-      branches: harness.store,
-      branchCoordinator: harness.coordinator,
+      drafts: harness.store,
+      draftCoordinator: harness.coordinator,
       liveCoordinator: {
         withDocument: async (_id: string, run: (doc: typeof live) => unknown) => run(live),
       } as never,
@@ -38,33 +42,33 @@ export const d23ArchivedDraftRebases: Probe = {
       await harness.works.archive(workId);
       appendToFirstParagraph(live, " AFTER ARCHIVE");
       await pulls.flushLivePull(documentId as DocumentId);
-      const archived = await harness.readBranch(branch.branchId);
+      const archived = await harness.readDraft(documentDraft.draftId);
       observe("archived", archived);
       assert.equal(archived.lifecycle, "archived");
       assert.match(archived.text, /Base AFTER ARCHIVE/);
 
-      const read = await harness.store.readBranchAt(branch.branchId);
-      if (!read) throw new Error("Branch is missing");
-      const room = materializeBranchRead(read);
+      const read = await harness.store.readDraftAt(documentDraft.draftId);
+      if (!read) throw new Error("Draft is missing");
+      const room = materializeDraftRead(read);
       try {
         const before = Y.encodeStateVector(room);
         appendToFirstParagraph(room, " WRITER");
         const frame = await settled(
           harness.coordinator.commitWriterUpdate({
-            branchId: branch.branchId,
-            expectedGeneration: read.branch.generation,
+            draftId: documentDraft.draftId,
+            expectedGeneration: read.documentDraft.generation,
             updateData: Y.encodeStateAsUpdate(room, before),
             roomDocument: room,
           }),
         );
         observe("writer frame", frame);
-        assert.equal(frame.ok ? undefined : frame.name, "BranchStaleUpdateError");
+        assert.equal(frame.ok ? undefined : frame.name, "DraftStaleUpdateError");
       } finally {
         room.destroy();
       }
 
       await harness.works.unarchive(workId);
-      const unarchived = await harness.readBranch(branch.branchId);
+      const unarchived = await harness.readDraft(documentDraft.draftId);
       observe("unarchived", unarchived);
       assert.equal(unarchived.lifecycle, "active");
       assert.equal(unarchived.text, archived.text);

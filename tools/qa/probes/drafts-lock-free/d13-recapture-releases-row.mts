@@ -6,8 +6,8 @@
  * transaction, and each attempt a savepoint inside the caller's ambient root.
  */
 import assert from "node:assert/strict";
-import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
-import type { BranchStore } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { runInRootDrizzleTransaction } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import {
   appendToFirstParagraph,
@@ -19,21 +19,25 @@ import {
 
 async function arm(harness: Harness, ambient: boolean) {
   const label = ambient ? "recapture-savepoint" : "recapture-root";
-  const { workId, draftId } = await harness.seedWork(label);
+  const { workId, branchId } = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, "Base");
-  const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
+  const documentDraft = await harness.store.ensureDocumentDraft({
+    documentId,
+    branchId,
+    liveDoc: live,
+  });
   const outcomes: string[] = [];
   let rivalled = false;
   let missed = false;
   let recapture: unknown;
-  const store: BranchStore = {
+  const store: DraftStore = {
     ...harness.store,
     async commitRewrite(input) {
       if (!rivalled) {
         rivalled = true;
         // Another server's pull commits a checkpoint after this attempt captured.
         const rival = await independently(() =>
-          harness.coordinator.pullFromDoc({ branchId: branch.branchId, upstream: live }),
+          harness.coordinator.pullFromDoc({ draftId: documentDraft.draftId, upstream: live }),
         );
         outcomes.push(`rival ${rival}`);
       }
@@ -42,27 +46,27 @@ async function arm(harness: Harness, ambient: boolean) {
       if (outcome.status === "moved") missed = true;
       return outcome;
     },
-    async readBranchAt(id, since) {
+    async readDraftAt(id, since) {
       if (missed && recapture === undefined) {
         recapture = await harness.raw
           .begin(async (tx) => {
-            await tx`select id from document_branches where id = ${branch.branchId} for update nowait`;
+            await tx`select id from document_drafts where id = ${documentDraft.draftId} for update nowait`;
             await tx`select id from works where id = ${workId} for no key update nowait`;
             return "branch and Work rows available";
           })
           .catch((cause: { code?: string }) => ({ held: cause.code }));
       }
-      return harness.store.readBranchAt(id, since);
+      return harness.store.readDraftAt(id, since);
     },
   };
-  const coordinator = createBranchCoordinator({
+  const coordinator = createDraftCoordinator({
     onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
   });
   appendToFirstParagraph(live, " pulled");
   try {
-    const pull = () => coordinator.pullFromDoc({ branchId: branch.branchId, upstream: live });
+    const pull = () => coordinator.pullFromDoc({ draftId: documentDraft.draftId, upstream: live });
     const result = ambient ? await runInRootDrizzleTransaction(harness.db, pull) : await pull();
     observe(ambient ? "savepoint per attempt" : "root per attempt", {
       outcomes,

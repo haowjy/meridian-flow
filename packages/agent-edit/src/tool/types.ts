@@ -171,10 +171,10 @@ export type InteractionContext =
   | (InteractionContextBase & {
       /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
       mode: "threadPeer";
-      branchGeneration: number;
+      draftGeneration: number;
       /** Host peer identity, for exact retirement independently of generation replay. */
-      peerBranchId?: string;
-      upstreamBranchId?: string;
+      peerDraftId?: string;
+      upstreamDraftId?: string;
     });
 
 /** Hidden host/session context; not part of the LLM command params. */

@@ -8,7 +8,7 @@ pending-review authority and settlement fences while pursuing them.
 Unify manifest reconciliation and mutation behind one intent-aware command in
 `composition.ts` and `adapters/drizzle-branches.ts`. The command must
 distinguish a legacy raw row from a not-yet-recorded draft create without
-using caller ordering as domain semantics. `domain/ports/work-draft-pending-store.ts`
+using caller ordering as domain semantics. `domain/ports/work-branch-pending-store.ts`
 remains the independent pending-review authority.
 
 ## Large-history recovery

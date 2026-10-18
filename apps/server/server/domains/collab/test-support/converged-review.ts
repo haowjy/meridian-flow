@@ -20,7 +20,7 @@ export function settleBefore<T extends object>(target: T, flush: () => Promise<v
 }
 
 export function convergedReview<C extends CollabDomain>(collab: C): C {
-  const flush = () => collab.branchEffects.flush();
+  const flush = () => collab.draftEffects.flush();
   settleBefore(collab.draftReview, flush);
   return collab;
 }

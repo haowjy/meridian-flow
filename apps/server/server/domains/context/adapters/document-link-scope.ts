@@ -10,7 +10,7 @@
  * Readability comes from the file policy's list path.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { DraftId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type ContextUriScheme,
@@ -123,10 +123,10 @@ const memberKey = (key: LinkScopeKey) =>
       : `document:${key.documentId}`;
 
 /** One key per tree view: a reply sees what its view sees. */
-const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `draft:${view.draftId}`);
+const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `branch:${view.branchId}`);
 
 const treeViewOf = (view: LinkView): TreeView =>
-  view.kind === "live" ? LIVE_TREE : { kind: "draft", draftId: view.draftId as DraftId };
+  view.kind === "live" ? LIVE_TREE : { kind: "branch", branchId: view.branchId as BranchId };
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
@@ -300,11 +300,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const rows = await loadRows({ names: [...names], projectIds: projects });
     for (const row of rows) if (!snapshot.rows.get(row.id)) remember(snapshot, row);
 
-    const drafts = views.filter((view) => view.kind === "draft");
-    if (drafts.length > 0 && snapshot.projectId) {
+    const branches = views.filter((view) => view.kind === "branch");
+    if (branches.length > 0 && snapshot.projectId) {
       const coordinates = await coordinatesOf(snapshot.projectId as ProjectId, uris);
       const occupants = new Set<string>();
-      for (const view of drafts) {
+      for (const view of branches) {
         for (const ids of (await tree.occupantsAt(treeViewOf(view), coordinates)).values()) {
           for (const id of ids) occupants.add(id);
         }
@@ -351,12 +351,12 @@ export function createDrizzleDocumentLinkScopes(deps: {
     );
     if (unknown.length === 0) return;
     // A hidden document's facts come from the draft it reads "in a draft" in.
-    const draftViews = new Map<DocumentId, TreeView>();
+    const branchViews = new Map<DocumentId, TreeView>();
     for (const { statuses } of snapshot.views.values()) {
       for (const [id, status] of statuses) {
-        const draft = status.kind === "hidden" || status.kind === "visible" ? status.draft : null;
-        if (draft && !draftViews.has(id)) {
-          draftViews.set(id, { kind: "draft", draftId: draft.draftId });
+        const branch = status.kind === "hidden" || status.kind === "visible" ? status.branch : null;
+        if (branch && !branchViews.has(id)) {
+          branchViews.set(id, { kind: "branch", branchId: branch.branchId });
         }
       }
     }
@@ -364,7 +364,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       ? await deps.fileAccess.listAccess(
           { accountId: snapshot.viewer as UserId },
           unknown.map((row) => row.id as DocumentId),
-          { draftViews },
+          { branchViews },
         )
       : new Map();
     for (const row of unknown) snapshot.readable.set(row.id, access.has(row.id as DocumentId));
@@ -393,8 +393,8 @@ export function createDrizzleDocumentLinkScopes(deps: {
       }
       hidden.sort(
         (a, b) =>
-          a.at.draft.createdAt.getTime() - b.at.draft.createdAt.getTime() ||
-          a.at.draft.draftId.localeCompare(b.at.draft.draftId),
+          a.at.branch.createdAt.getTime() - b.at.branch.createdAt.getTime() ||
+          a.at.branch.branchId.localeCompare(b.at.branch.branchId),
       );
       for (const { row, at } of hidden) push(index.hiddenByUri, at.address.uri, row);
       snapshot.views.set(key, index);
@@ -486,9 +486,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
         miss,
       );
     },
-    draftCreatedAt({ view, uri }) {
+    branchCreatedAt({ view, uri }) {
       const snapshot = storage.getStore();
-      return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).draftCreatedAt(uri) : null;
+      return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).branchCreatedAt(uri) : null;
     },
     async pinHolder({ view, documentId, uri }) {
       // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
@@ -572,7 +572,7 @@ function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
   miss: (key: string) => void,
-): HolderCatalog & { draftCreatedAt(uri: string): CatalogDocument | null } {
+): HolderCatalog & { branchCreatedAt(uri: string): CatalogDocument | null } {
   const key = viewKey(view);
   /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
   const statusOf = (row: Row) => {
@@ -593,14 +593,15 @@ function snapshotCatalog(
           : null;
     // "In a draft": hidden, wherever the reader sees it, named by the draft it reads in.
     const hidden = status.kind === "hidden" || (status.kind === "visible" && status.hidden);
-    const draft = status.kind === "hidden" || status.kind === "visible" ? status.draft : undefined;
+    const branch =
+      status.kind === "hidden" || status.kind === "visible" ? status.branch : undefined;
     return {
       documentId: row.id,
       owner: row.owner,
       projectId: row.projectId,
       uri: address?.uri ?? row.uri,
-      presence: status.kind === "deleted" ? "deleted" : hidden ? "draft" : "live",
-      ...(draft ? { draft: { draftId: draft.draftId, workId: draft.originWorkId } } : {}),
+      presence: status.kind === "deleted" ? "deleted" : hidden ? "branch" : "live",
+      ...(branch ? { branch: { branchId: branch.branchId, workId: branch.originWorkId } } : {}),
       readable: snapshot.readable.get(row.id) ?? false,
       nameable:
         row.projectId === snapshot.projectId ||
@@ -651,14 +652,14 @@ function snapshotCatalog(
      * the one extension-omitted match. Only the view's own draft counts (`documentAt` shows
      * an ahead ref any draft's creation), and only a document the reader may name and read.
      */
-    draftCreatedAt(uri) {
-      if (view.kind !== "draft" || !snapshot.addresses.has(uri)) return null;
+    branchCreatedAt(uri) {
+      if (view.kind !== "branch" || !snapshot.addresses.has(uri)) return null;
       const statuses = snapshot.views.get(key)?.statuses;
       const created = [...(statuses ?? [])].flatMap(([id, status]) => {
         const row = snapshot.rows.get(id);
         const own =
           (status.kind === "hidden" || (status.kind === "visible" && status.hidden)) &&
-          status.draft?.draftId === view.draftId;
+          status.branch?.branchId === view.branchId;
         return row && own ? [{ row, address: status.address.uri }] : [];
       });
       const match = matchDocumentPath(created, uri, (entry) => entry.address);

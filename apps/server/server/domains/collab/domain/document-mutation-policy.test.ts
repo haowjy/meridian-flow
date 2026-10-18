@@ -3,7 +3,6 @@
 import type { DocumentRevision } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import type { AppendBranchJournalInput } from "./branch-store.js";
 import {
   type AuthorityGenerationReplacementPort,
   admitSegmentRows,
@@ -11,6 +10,7 @@ import {
   replaceAuthorityGeneration,
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
+import type { AppendDraftJournalInput } from "./draft-store.js";
 import { appendProvenanceFacts, validateClientUpdateAdmission } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
@@ -36,8 +36,8 @@ describe("document mutation policy operations", () => {
   it("validates a semantic edit's IR before any of its rows applies", () => {
     const target = new Y.Doc({ gc: false });
     const before = Y.encodeStateAsUpdate(target);
-    const row: AppendBranchJournalInput = {
-      branchId: "branch-1",
+    const row: AppendDraftJournalInput = {
+      draftId: "branch-1",
       generation: 1,
       source: "agent",
       updateData: updateWith("agent"),

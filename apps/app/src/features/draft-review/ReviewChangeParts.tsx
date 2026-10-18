@@ -11,7 +11,7 @@ import type {
   ChangeCommandMode,
   ChangeFailureCode,
   ServerRefusal,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import {
   DropdownMenu,
   DropdownMenuContent,

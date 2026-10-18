@@ -9,11 +9,11 @@ import type { DocumentId } from "@meridian/contracts";
 import { documents } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { itemFor } from "../../test-support/draft-tree-scenario.js";
-import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { itemFor } from "../../test-support/branch-tree-scenario.js";
+import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 
-describeDraftTreeDb("a create joins a draft's document (postgres)", (start, db) => {
+describeBranchTreeDb("a create joins a draft's document (postgres)", (start, db) => {
   it("answers joined, turns the draft's item into an edit, and replays unchanged, after a move and after a delete", async () => {
     const { s } = await start();
     const drafting = await s.work("Drafting", "draft");

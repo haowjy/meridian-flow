@@ -13,8 +13,8 @@ export const THREAD_WORK_RACE = {
   contextId: "00000000-0000-4000-8000-000000000476",
   documentId: "00000000-0000-4000-8000-000000000477",
   noWorkId: "00000000-0000-4000-8000-000000000478",
-  draftId: "00000000-0000-4000-8000-000000000479",
-  branchId: "branch_work_lifecycle_race",
+  branchId: "00000000-0000-4000-8000-000000000479",
+  draftId: "draft_work_lifecycle_race",
 } as const;
 
 export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
@@ -70,19 +70,19 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
   await db.insert(schema.documents).values({
     id: ids.documentId,
     contextSourceId: ids.contextId,
-    name: "Draft target",
+    name: "Branch target",
   });
-  await db.insert(schema.drafts).values({
-    id: ids.draftId,
+  await db.insert(schema.branches).values({
+    id: ids.branchId,
     projectId: ids.projectId,
     originWorkId: ids.workId,
     createdBy: ids.userId,
   });
-  await db.insert(schema.documentBranches).values({
-    id: ids.branchId,
+  await db.insert(schema.documentDrafts).values({
+    id: ids.draftId,
     documentId: ids.documentId,
     kind: "work_draft",
-    draftId: ids.draftId,
+    branchId: ids.branchId,
     state: Buffer.from([0, 0]),
     stateVector: Buffer.from([0]),
   });

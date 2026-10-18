@@ -10,9 +10,9 @@
  * live Yjs document, and its text lives in the draft's branch.
  */
 import type {
+  BranchId,
   ContextSourceId,
   DocumentId,
-  DraftId,
   ProjectId,
   ThreadId,
   TurnId,
@@ -22,14 +22,14 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
-import { draftMayHold, loadProjectHolder } from "./draft-ownership.js";
-import { recordCreated } from "./draft-tree-store.js";
+import { branchMayHold, loadProjectHolder } from "./branch-ownership.js";
+import { recordCreated } from "./branch-tree-store.js";
 import { tombstoneUnused } from "./end-use.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
 import type {
   BinaryNode,
+  BranchCreateResult,
   CreateFault,
-  DraftCreateResult,
   LiveClaim,
   LiveCreateCandidate,
   RevealExpectation,
@@ -46,7 +46,7 @@ import {
 } from "./tree-view-sql.js";
 
 // ---------------------------------------------------------------------------------------
-// Draft creates (§6.2)
+// Branch creates (§6.2)
 // ---------------------------------------------------------------------------------------
 
 /**
@@ -56,10 +56,10 @@ import {
  * settlements of unsettled ahead refs at that address. Runs in the command transaction
  * that holds the drafting Work, the draft and the source's namespace.
  */
-export async function createInDraft(
+export async function createInBranch(
   db: Database,
   input: {
-    draftId: DraftId;
+    branchId: BranchId;
     contextSourceId: ContextSourceId;
     dir: readonly string[];
     name: string;
@@ -70,13 +70,13 @@ export async function createInDraft(
     /** Empty live Yjs for a new text row (never seeded). */
     ensureEmptyContent(documentId: DocumentId): Promise<void>;
     /** The draft's branch on a text document, seeded from its empty live document. */
-    ensureDraftBranch(documentId: DocumentId): Promise<void>;
+    ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
     repair?: Pick<HiddenNodeRepair, "report">;
   },
-): Promise<Result<DraftCreateResult, CreateFault>> {
+): Promise<Result<BranchCreateResult, CreateFault>> {
   const tree = createTreeReader(db);
-  const view: TreeView = { kind: "draft", draftId: input.draftId };
+  const view: TreeView = { kind: "branch", branchId: input.branchId };
   const occupant = await tree.resolvePath(view, {
     contextSourceId: input.contextSourceId,
     path: filePath(input.dir, input.name, input.extension),
@@ -118,8 +118,8 @@ export async function createInDraft(
     documentId =
       (
         await pickHiddenCandidate(db, slot, {
-          excludeDraftId: input.draftId,
-          lock: "createInDraft.afterCandidateLock",
+          excludeDraftId: input.branchId,
+          lock: "createInBranch.afterCandidateLock",
           ...(input.repair ? { repair: input.repair } : {}),
         })
       )?.id ?? null;
@@ -136,11 +136,11 @@ export async function createInDraft(
   }
 
   await recordCreated(db, {
-    draftId: input.draftId,
+    branchId: input.branchId,
     documentId,
     ...(input.createdBy ? { createdBy: input.createdBy } : {}),
   });
-  if (input.node.kind === "tracked") await input.ensureDraftBranch(documentId);
+  if (input.node.kind === "tracked") await input.ensureDocumentDraft(documentId);
   return Ok({ kind: "created", documentId, joined });
 }
 
@@ -292,7 +292,7 @@ async function pickHiddenCandidate(
   db: Database,
   slot: DocumentSlot,
   options: {
-    excludeDraftId?: DraftId;
+    excludeDraftId?: BranchId;
     lock?: TreeHookPoint;
     repair?: Pick<HiddenNodeRepair, "report">;
   } = {},

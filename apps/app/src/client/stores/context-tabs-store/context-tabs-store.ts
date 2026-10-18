@@ -47,7 +47,7 @@ export {
 } from "./editor-workspace-model";
 
 type ContextTabsState = {
-  /** One tab per document, independent of other browser contexts. Draft-only tabs are never persisted. */
+  /** One tab per document, independent of other browser contexts. Branch-only tabs are never persisted. */
   byProject: Record<string, ProjectTabsSlice>;
   _workspaceHydrated: boolean;
   _layoutPersistenceError: unknown | null;

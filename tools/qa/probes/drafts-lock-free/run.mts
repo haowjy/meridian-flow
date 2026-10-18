@@ -1,5 +1,5 @@
 /**
- * Runs the lock-free drafts seam probes (decision D21) against one scratch database:
+ * Runs the lock-free branches seam probes (decision D21) against one scratch database:
  *
  *   pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts [probe ...] [--db <url>] [--keep]
  *

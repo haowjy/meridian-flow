@@ -21,7 +21,7 @@ vi.mock("./account-feature-context", () => ({
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
   useLiveDocumentSessionRegistry: () => ({
     whenRefusedRoomDropped: () => null,
-    observeBranchRoom: () => () => undefined,
+    observeDraftRoom: () => () => undefined,
   }),
 }));
 

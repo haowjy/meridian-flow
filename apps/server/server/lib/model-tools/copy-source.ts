@@ -181,7 +181,7 @@ export async function copyBinary(
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
   const destinationUri = splitDocumentFile(input.path).filePath;
-  // Binary files have no drafts or revisions, so the copy always reads the live file.
+  // Binary files have no branches or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
     objectStore: deps.objectStore,
@@ -197,7 +197,7 @@ export async function copyBinary(
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
   // The port's placement decided where the copy landed; only the Work's slug is ours to add.
   const destination = copied.value.placement;
-  const draftWork = context.resolution.primaryDraftWork;
+  const branchWork = context.resolution.primaryBranchWork;
   return {
     output: modelResult({
       command: "copy",
@@ -206,7 +206,7 @@ export async function copyBinary(
       payload: {
         path: copied.value.uri,
         destination,
-        ...(destination === "draft" ? { draftWork: draftWork?.slug ?? "/" } : {}),
+        ...(destination === "draft" ? { draftWork: branchWork?.slug ?? "/" } : {}),
         copied: { from: source.uri },
       },
     }),

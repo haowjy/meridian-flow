@@ -6,7 +6,6 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -17,6 +16,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -69,16 +69,16 @@ it("failed-response rollback targets the response, is per-part and terminal on r
       { providerResponseId: second, editScopeId: second },
       { threadId: THREAD_ID, turnId: TURN_ID },
     );
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
-    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Gamma.\n\nBlue.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Gamma.\n\nBlue.\n");
     const before = await db
       .select()
       .from(schema.documentEdits)
@@ -120,24 +120,24 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
         context,
       );
     await harness.commit(responseId);
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, await branchContent(db, branch.id));
+      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.branchCoordinator.commitWriterUpdate({
-        branchId: branch.id,
-        expectedGeneration: branch.generation,
+      await view.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.id,
+        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,
@@ -148,9 +148,9 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
     const revision = async () =>
       (
         await db
-          .select({ revision: schema.documentBranches.revision })
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, branch.id))
+          .select({ revision: schema.documentDrafts.revision })
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.id, documentDraft.id))
       )[0]?.revision ?? -1;
     const beforeRollback = await revision();
     await view.collab.finalizeResponseRollback(
@@ -160,13 +160,13 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
         turnId: TURN_ID,
       },
     );
-    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
     // The draft's text stays: its revision moves for the active → rollback_pending flip (§2.5).
     expect(await revision()).toBeGreaterThan(beforeRollback);
     const pending = await db
       .select()
-      .from(schema.branchWriteJournal)
-      .where(eq(schema.branchWriteJournal.status, "rollback_pending"));
+      .from(schema.draftWriteJournal)
+      .where(eq(schema.draftWriteJournal.status, "rollback_pending"));
     expect(pending).toHaveLength(1);
     expect(
       await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
@@ -178,7 +178,7 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
         turnId: TURN_ID,
       },
     );
-    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "view_change",
     });
@@ -214,17 +214,19 @@ it.each([
     expect(
       await core.write({ ...address, command: "revert", edit: "w1" }, inverseContext),
     ).toMatchObject({ status: "success", writeId: "w4" });
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
     const prose = () =>
-      destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(branch.id);
+      destination === "live"
+        ? harness.liveMarkdown(ALPHA_ID)
+        : view.draftMarkdown(documentDraft.id);
     expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
     await view.collab.finalizeResponseRollback(responseIdentity, {
       threadId: THREAD_ID,
@@ -256,11 +258,11 @@ it.each([
     if (destination === "draft") {
       const authored = await db
         .select()
-        .from(schema.branchWriteJournal)
+        .from(schema.draftWriteJournal)
         .where(
           and(
-            eq(schema.branchWriteJournal.branchId, branch.id),
-            eq(schema.branchWriteJournal.source, "agent"),
+            eq(schema.draftWriteJournal.draftId, documentDraft.id),
+            eq(schema.draftWriteJournal.source, "agent"),
           ),
         );
       const metadata = authored.map(
@@ -337,17 +339,18 @@ it.each(
       destination === "draft"
         ? (
             await db
-              .select({ draftId: schema.documentBranches.id })
-              .from(schema.documentBranches)
+              .select({ branchId: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
               .where(
                 and(
-                  eq(schema.documentBranches.documentId, ALPHA_ID),
-                  eq(schema.documentBranches.kind, "work_draft"),
+                  eq(schema.documentDrafts.documentId, ALPHA_ID),
+                  eq(schema.documentDrafts.kind, "work_draft"),
                 ),
               )
           )[0]
         : null;
-    const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
+    const text = () =>
+      draft ? view.draftMarkdown(draft.branchId) : harness.liveMarkdown(ALPHA_ID);
     expect(await text()).toBe(
       command === "redo" ? "Alpha Gamma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
     );

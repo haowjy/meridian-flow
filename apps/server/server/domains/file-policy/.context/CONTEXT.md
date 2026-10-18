@@ -28,7 +28,7 @@ level = min(person term, lifecycle term, agent term)
 (Scratch and Uploads are never drafted) and the agent cap. File facts use the
 canonical draft resolver and the selected tree view; hidden identities outside
 that view have no facts, and neither does a Work's draft of a document it may
-not hold (`draftMayHold`: its project's, or its account's `user://`).
+not hold (`branchMayHold`: its project's, or its account's `user://`).
 
 ## Grants and service boundary
 

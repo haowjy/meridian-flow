@@ -7,13 +7,13 @@ export function prepareHolds(documents: InverseDocument[]) {
     documents.map((document) => {
       const liveIndex = prepareEditRoots(document.live, document.history);
       const views = new Map([[null as string | null, liveIndex]]);
-      for (const [id, draft] of document.drafts) views.set(id, liveIndex.forView(draft.doc));
+      for (const [id, draft] of document.branches) views.set(id, liveIndex.forView(draft.doc));
       const heldRoots = new Map<string, Set<string>>();
       for (const part of document.history) {
         if (part.kind === "write" || part.placement.kind !== "pending") continue;
-        const id = part.placement.branchId,
-          draft = document.drafts.get(id);
-        if (!draft || draft.branch.generation !== part.placement.generation) continue;
+        const id = part.placement.draftId,
+          draft = document.branches.get(id);
+        if (!draft || draft.documentDraft.generation !== part.placement.generation) continue;
         const roots = heldRoots.get(id) ?? new Set<string>();
         for (const root of liveIndex.roots(part.effect)) roots.add(root);
         heldRoots.set(id, roots);

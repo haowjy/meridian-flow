@@ -1,6 +1,6 @@
 /**
  * DraftReviewBand — a document's review controls, as part of the identity row
- * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
+ * (`DocumentIdentityBar`) rather than a header of their own: the Branch chip with
  * its menu right after the breadcrumb, then, on the right, the stepper, Show
  * changes, Discard draft and Apply draft (the per-change bar's Discard and
  * Apply act on one change; these name their scope). They sit at the end of the
@@ -25,7 +25,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, Eye, EyeOff, List, Loader2, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -175,7 +175,7 @@ export function DraftReviewBand({
 
 /**
  * This document's change list, under the row: its changes, or the state line
- * that stands in for them, then the way to the Work's other drafts. An icon
+ * that stands in for them, then the way to the Work's other branches. An icon
  * that never gives up its place in a narrow row.
  */
 function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {

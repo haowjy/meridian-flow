@@ -30,11 +30,11 @@ else
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         db,
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
         catalogMutations: catalog,
       });
       const service = createCorpusImportService({
@@ -119,11 +119,11 @@ else
         const collab = createInMemoryCollabDomain();
         const catalog = createDrizzleContextCatalog(db);
         const contextPorts = createProductionUnifiedContextPortFactory({
-          pendingDraft: createTestWorkProjectionMutation(db),
+          pendingBranch: createTestWorkProjectionMutation(db),
           db,
           links: createTestDocumentLinkScopes(db),
           documentSync: collab,
-          drafts: collab.drafts,
+          branches: collab.branches,
           catalogMutations: catalog,
         });
         const service = createCorpusImportService({

@@ -1,6 +1,6 @@
 /**
  * Populated upgrade contract for 0044/0045 (and D62's 0046/0047 on top): the Work-branch foundation's data moves and
- * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
+ * online retry, and `main`'s pending draft creates arriving hidden with their branches' uses.
  * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037), the namespace
  * observation versions (0038/0039) and #713's edit ledger and dirty signals (0040/0041) run
  * over them first, as they do in a deploy; #713's edit rows are seeded after 0041.
@@ -15,9 +15,9 @@ import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import { afterEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
+import { branchTreeCommands } from "./branch-tree-commands.js";
+import { branchTreeWorldOver, personalUserSource, type ScenarioWork } from "./branch-tree-seeds.js";
 import { useComposedRuntimes } from "./composed-runtime.js";
-import { draftTreeCommands } from "./draft-tree-commands.js";
-import { draftTreeWorldOver, personalUserSource, type ScenarioWork } from "./draft-tree-seeds.js";
 import {
   createScratchDatabase,
   journalIndex,
@@ -518,8 +518,8 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
         user: personal.sourceId,
       },
     };
-    const world = draftTreeWorldOver(db, project, [id(3) as WorkId, id(4) as WorkId]);
-    const s = { ...world, ...draftTreeCommands(world, () => ({ runtime, runtimes })) };
+    const world = branchTreeWorldOver(db, project, [id(3) as WorkId, id(4) as WorkId]);
+    const s = { ...world, ...branchTreeCommands(world, () => ({ runtime, runtimes })) };
     const work = (n: number, thread: number, turn: number, slug: string): ScenarioWork => ({
       id: id(n) as WorkId,
       slug,
@@ -539,9 +539,9 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
 
     // Each draft's create is identity only; the name migration ran first, so the hidden row
     // holds the canonical place.
-    expect(await target`SELECT node_id FROM draft_tree_changes ORDER BY node_id, draft_id`).toEqual(
-      [{ node_id: created }, { node_id: shared }, { node_id: shared }],
-    );
+    expect(
+      await target`SELECT node_id FROM branch_tree_changes ORDER BY node_id, branch_id`,
+    ).toEqual([{ node_id: created }, { node_id: shared }, { node_id: shared }]);
     expect(
       await target`SELECT id, name, extension FROM documents WHERE id IN (${created}, ${shared}) ORDER BY id`,
     ).toEqual(
@@ -561,7 +561,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     expect(await isNew(beta)).toEqual([shared]);
     expect(await tombstoned(discarded)).toBe(true);
     // A Work whose only branch was the manifest's has no draft.
-    expect(await s.draftStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
+    expect(await s.branchStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
 
     // A live create at any prose spelling of its path reveals the same identity.
     expect(await s.writer.create("new.md")).toMatchObject({

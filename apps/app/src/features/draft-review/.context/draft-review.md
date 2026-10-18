@@ -8,7 +8,7 @@ is that commands, rooms, paint, and delivery are separate owners.
 
 The presented document and review address come from the project review owner.
 The session reducer owns selected review, shown generation, retained completion,
-and focus; the controller owns navigation effects. Draft command records own
+and focus; the controller owns navigation effects. Branch command records own
 per-draft claims, intent queues, failures, and read fences. The executor owns
 typed admission, answer recording, and refresh ordering. Work commands retain
 their creation-bound Work and thread authority. Chat and Work lists own no
@@ -16,10 +16,10 @@ review reducer, room or focus observer, and there is no per-list review scope.
 `useAiDraftLauncher.openReviewFile` is the one listed-file launch adapter for
 Work rows, chat Review, and the live Draft chip.
 
-Branch lifecycle status is not review evidence. The server's
-`work-draft-pending` classifier supplies review membership, content-branch count
-and the mode-switch apply plan; the client never authorizes Draft-to-Auto-apply
-transitions or counts bookkeeping-only branches as changes. Files order by name,
+Draft lifecycle status is not review evidence. The server's
+`work-draft-pending` classifier supplies review membership, content-draft count
+and the mode-switch apply plan; the client never authorizes Branch-to-Auto-apply
+transitions or counts bookkeeping-only drafts as changes. Files order by name,
 then path basename, then document ID; update time never reorders them.
 
 Changes group by the server's `closureClassId`, ordered by earliest hunk. Send
@@ -28,7 +28,7 @@ classes flagged `canApplyOrDiscard: false` show no selective controls; the chat
 strip skips incomplete classes and the whole-draft header commands cover them.
 
 The room owner acquires eligible generations and presence leases. Editor
-adapters own construction, marks, paint readiness, and active binding. Draft
+adapters own construction, marks, paint readiness, and active binding. Branch
 lifecycle owns cross-container promotion/removal. Writer delivery is account
 and session lifetime, not review lifetime: outbox or pending carry is
 generation-tagged changes evidence, not permission to adopt an empty reset, and
@@ -62,7 +62,7 @@ Accepted per-change commands retain an immutable member set, operation keys,
 revision tokens, and admission evidence. Each operation in the class is sent.
 An identical actionable stale answer may receive one fresh-cut retry; transport
 ambiguity, permission failure, and incomplete classes do not retry. Whole-draft
-commands settle the current server branch, and synthetic class keys never reach
+commands settle the current server draft, and synthetic class keys never reach
 the server. Apply and Discard are server commands, not browser mutation history.
 
 Failures are classified from typed status/connectivity evidence, never message
@@ -81,7 +81,7 @@ predicts pending, an `itemClosed` answer supplies closed, and a non-closing or
 released claim withdraws pending while closed remains sticky for that review.
 Opening a later review adopts current evidence, not an old closing answer. The
 shown generation never moves backwards. Whole Apply stays in generation G;
-whole Discard and last-selection disposition reset the branch to G+1. Revision
+whole Discard and last-selection disposition reset the draft to G+1. Revision
 tokens are stale fences, never room identity.
 
 What the writer sees at completion: a pending last Discard shows the warm live
@@ -121,7 +121,7 @@ ready; a missing class selects the first remaining change. Addressed focus
 cannot target another review. Layout belongs to components; controllers are
 passed as props/callbacks.
 
-## Draft-only lifecycle
+## Branch-only lifecycle
 
 A new document has server document/Yjs state without live catalog membership.
 Its draft-only tab carries the document, Work, draft item, and tab instance
@@ -141,11 +141,11 @@ remote classification. Settlement creates no tab. The Editor delegates exact
 tab removal/route repair to the context removal coordinator; the dock settles
 its stored occupant. Both adapters are account-epoch fenced.
 
-A live document with drafts exposes one document-level hint, while the selector
+A live document with branches exposes one document-level hint, while the selector
 maps that hint to the current review address. New-document Discard also removes
 its Work-manifest entry, and a later Apply lands that manifest as well as
 content. Promotion happens once per document whichever Work's observer saw it.
-Draft-only Editor tabs are never persisted and are skipped by durable route
+Branch-only Editor tabs are never persisted and are skipped by durable route
 continuity (Editor persistence strips `reviews`). The dock persists its review
 address and its one `reviews` entry, the only record that a restored tab is
 draft-only rather than a live document under review; restore admits the address
@@ -158,7 +158,7 @@ ownership.
 ## Durable decisions and verification
 
 - [Inline review product decision][inline]
-- [Editable branch authority][editable]
+- [Editable draft authority][editable]
 - [Server command authority][authority]
 - [Apply is done at server confirmation][confirmation] (admission, the one
   executor and its rejected layouts)

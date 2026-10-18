@@ -18,7 +18,7 @@ const {
   threadId: THREAD_ID,
   workId: WORK_ID,
   targetWorkId: TARGET_WORK_ID,
-  branchId: BRANCH_ID,
+  draftId: DRAFT_ID,
 } = THREAD_WORK_RACE;
 const ADVISORY_KEY = 748_210_471;
 
@@ -35,12 +35,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
       "../../../projects/index.js"
     );
+    const { createDrizzleDraftStore } = await import("../../../collab/adapters/drizzle-drafts.js");
     const { createDrizzleBranchStore } = await import(
       "../../../collab/adapters/drizzle-branches.js"
     );
-    const { createDrizzleDraftStore } = await import("../../../collab/adapters/drizzle-drafts.js");
-    const { appendBranchRows, proseBranchUpdate } = await import(
-      "../../../collab/test-support/branch-store-seam.js"
+    const { appendDraftRows, proseDraftUpdate } = await import(
+      "../../../collab/test-support/draft-store-seam.js"
     );
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
@@ -54,9 +54,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
-    const branches = createDrizzleBranchStore(db, {
+    const drafts = createDrizzleDraftStore(db, {
       workProjection: createTestWorkProjectionMutation(db),
-      drafts: createDrizzleDraftStore(db),
+      branches: createDrizzleBranchStore(db),
     });
 
     beforeEach(async () => {
@@ -205,17 +205,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // An append locks no Work (phase 4): it is not held behind the deletion, and one that
         // started before the deletion committed lands (the archive window, design §5).
         await expect(
-          appendBranchRows(branches, BRANCH_ID, [
-            { updateData: proseBranchUpdate(), source: "agent" },
-          ]),
+          appendDraftRows(drafts, DRAFT_ID, [{ updateData: proseDraftUpdate(), source: "agent" }]),
         ).resolves.toHaveLength(1);
         await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
         advisoryLockHeld = false;
         await deletion;
         // Once the deletion committed, the append's Work-is-active predicate refuses the next.
         await expect(
-          appendBranchRows(branches, BRANCH_ID, [
-            { updateData: proseBranchUpdate("after"), source: "agent" },
+          appendDraftRows(drafts, DRAFT_ID, [
+            { updateData: proseDraftUpdate("after"), source: "agent" },
           ]),
         ).rejects.toThrow(/append was refused/);
       } finally {

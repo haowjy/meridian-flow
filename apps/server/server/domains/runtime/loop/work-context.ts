@@ -87,7 +87,7 @@ export function describeWriteMode(input: {
   mode: AiWriteMode;
   archived: boolean;
   mayUnarchive: boolean;
-  /** The chat has no Work, so its drafts are shared with the project's other chats that have none. */
+  /** The chat has no Work, so its branches are shared with the project's other chats that have none. */
   noWork: boolean;
 }): { label: string; instructions: string[] } {
   if (input.archived) {
@@ -103,14 +103,14 @@ export function describeWriteMode(input: {
       return {
         label: "archived in auto-apply",
         instructions: [
-          "Changes outside scratch:// are written straight into the writer's documents, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
+          "Changes outside scratch:// are written straight into the writer's documents, but this Work's scratch:// and any drafts it kept are frozen. To change those, unarchive it with work unarchive.",
         ],
       };
     }
     return {
       label: "archived in draft mode",
       instructions: [
-        "This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// are then written straight into the writer's documents, and the draft stays frozen.",
+        "This Work's drafts and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// are then written straight into the writer's documents, and its drafts stay frozen.",
       ],
     };
   }

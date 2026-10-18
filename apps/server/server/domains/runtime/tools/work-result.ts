@@ -5,7 +5,7 @@
  * `historySummary` reads the typed value.
  */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -22,11 +22,11 @@ export interface ModelWork {
   pendingDocumentCount: number;
 }
 
-/** `work show`: the Work, its recent chats and its drafts. */
+/** `work show`: the Work, its recent chats and its branches. */
 export interface WorkShowResult {
   work: ModelWork;
   recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
-  drafts: {
+  branches: {
     documentName: string | null;
     contextLocation: ThreadDraftListItem["contextLocation"];
     createdDocument?: boolean;
@@ -84,11 +84,11 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
       ].join("\n"),
     );
   }
-  if (result.drafts.length > 0) {
+  if (result.branches.length > 0) {
     sections.push(
       [
         "Drafts:",
-        ...result.drafts.map((draft) => {
+        ...result.branches.map((draft) => {
           const name = draft.contextLocation
             ? `${draft.contextLocation.scheme}://${draft.contextLocation.path.replace(/^\/+/, "")}`
             : (draft.documentName ?? "Untitled");

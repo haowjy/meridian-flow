@@ -139,7 +139,7 @@ describe("response committer", () => {
       ...context,
       responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
       turnId: "prepared-turn",
-      interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, afterJournalId: 0 },
+      interactionContext: { mode: "threadPeer" as const, draftGeneration: 1, afterJournalId: 0 },
     };
     await prepared.core.read({ file: "chapter.md" }, peer);
     expect(
@@ -251,8 +251,8 @@ describe("response committer", () => {
           turnId: `turn-${file}`,
           interactionContext: {
             mode: "threadPeer",
-            branchGeneration: 1,
-            peerBranchId: "branch-peer",
+            draftGeneration: 1,
+            peerDraftId: "branch-peer",
           },
         },
       );
@@ -500,11 +500,11 @@ describe("response committer", () => {
 });
 
 describe("reasoned refusal of staged writes", () => {
-  const peerContext = (responseId: string, peerBranchId: string, turn: string) => ({
+  const peerContext = (responseId: string, peerDraftId: string, turn: string) => ({
     ...context,
     turnId: turn,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, peerBranchId },
+    interactionContext: { mode: "threadPeer" as const, draftGeneration: 1, peerDraftId },
   });
   const receiptTexts = (
     result: Awaited<ReturnType<ReturnType<typeof harness>["core"]["commitResponse"]>>,

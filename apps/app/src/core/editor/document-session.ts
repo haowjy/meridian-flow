@@ -91,7 +91,7 @@ export type DocumentSessionStatus =
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a branch room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -116,10 +116,10 @@ export type DocumentSessionAccess = "edit" | "read";
 export type DocumentSessionResetReason =
   /** The room's access changed while local edits were pending; the server refused them. */
   | typeof WS_CLOSE.ACCESS_CHANGED.reason
-  | typeof WS_CLOSE.BRANCH_STALE.reason
+  | typeof WS_CLOSE.DRAFT_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason;
 
 /** How a terminal room reset treats its unacknowledged writer updates. */
 export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
@@ -138,10 +138,10 @@ export type DocumentSessionConnectionState =
  * several reconnects in a row. The session stays open and read-only so its owner
  * can show the unsent text and reopen the draft; nothing retries it.
  */
-export const BRANCH_UPDATES_REFUSED = "branch-updates-refused";
+export const DRAFT_UPDATES_REFUSED = "draft-updates-refused";
 
 export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
-  return state?.kind === "terminal" && state.reason === BRANCH_UPDATES_REFUSED;
+  return state?.kind === "terminal" && state.reason === DRAFT_UPDATES_REFUSED;
 }
 
 /**
@@ -191,7 +191,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a branch room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
@@ -269,7 +269,7 @@ export class DocumentSession {
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
-    this.documentId = room.kind === "live" ? room.documentId : room.branchId;
+    this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);

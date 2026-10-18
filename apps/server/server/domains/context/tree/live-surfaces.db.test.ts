@@ -26,8 +26,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadDocument } from "../../../lib/document-download-route.js";
 import { hasLiveDocument } from "../../../lib/yjs-ws-handler.js";
 import { createFigureSignedUrlHandler } from "../../../routes/api/projects/[projectId]/documents/[documentId]/figure/signed-url.get.js";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleFileFacts } from "../../file-policy/adapters/drizzle-file-facts.js";
@@ -67,7 +67,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     async function subject() {
       const runtime = await runtimes.compose();
       const { ports, app } = runtime;
-      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const scenario = await branchTreeScenario(db, { runtime, runtimes });
       const { id: projectId, userId } = scenario.project;
       const ascension = await scenario.work("Ascension", "draft");
       const direct = await scenario.work("Direct", "direct");
@@ -108,7 +108,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .update(documents)
         .set({ deletedAt: new Date() })
         .where(inArray(documents.id, tombstones));
-      const draft = await scenario.draftOf(ascension);
+      const branch = await scenario.branchOf(ascension);
       // A create moved elsewhere: its row is its place, so every surface spells the row.
       const relocated = await model.create("secret/relocated", "Relocated.");
       const anchor = await model.create("draft-location/anchor", "Anchor.");
@@ -154,7 +154,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       // For the picture's denials: a rival Work's draft and another account's Work.
       const rival = await scenario.work("Rival", "draft");
       await scenario.model(rival).create("rival", "The rival's.");
-      const foreign = await draftTreeScenario(db, { runtime, runtimes });
+      const foreign = await branchTreeScenario(db, { runtime, runtimes });
       const foreignWork = await foreign.work("Foreign", "draft");
       await foreign.model(foreignWork).create("foreign", "Foreign.");
 
@@ -217,7 +217,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         userId,
         ascension,
         direct,
-        draft,
+        branch,
         chapter,
         harbor,
         map,
@@ -238,7 +238,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           threads: ports.threadRepos.threads,
           availability: ports.projectContextAvailability,
           documents: ports.documentSync,
-          drafts: ports.documentSync.drafts,
+          branches: ports.documentSync.branches,
           threadWorks: ports.threadRepos.threadWorks,
           works: ports.workRepo,
         }),
@@ -478,10 +478,10 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           run: async () => {
             const { identity } = await s.link({ kind: "live" }, s.liveRef);
             return identity.kind === "document"
-              ? [identity.inDraft, identity.document.draft, identity.document.uri]
+              ? [identity.inBranch, identity.document.branch, identity.document.uri]
               : identity.kind;
           },
-          expected: [true, { draftId: s.draft.id, workId: s.ascension.id }, HARBOR_URI],
+          expected: [true, { branchId: s.branch.id, workId: s.ascension.id }, HARBOR_URI],
         },
         {
           // Owner amendment 12a: an unbound ref at a draft's hidden path reads "in a draft".
@@ -489,7 +489,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           run: async () => {
             const { occupant } = await s.link({ kind: "live" }, s.liveRef);
             return occupant.kind === "document"
-              ? [occupant.document.documentId, occupant.inDraft, occupant.settled]
+              ? [occupant.document.documentId, occupant.inBranch, occupant.settled]
               : occupant.kind;
           },
           expected: [s.harbor, true, undefined],
@@ -507,7 +507,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       const s = await subject();
       const { ports } = s.runtime;
       const draftFs = s.scenario.view(s.ascension);
-      const view = { kind: "draft", draftId: s.draft.id } as const;
+      const view = { kind: "branch", branchId: s.branch.id } as const;
       const input = { projectId: s.projectId, documentIds: [s.relocated], view };
       const actor = { userId: s.userId };
       const rows = [
@@ -561,7 +561,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
               s.tombstones.map((documentId) =>
                 s.facts.load({
                   target: { kind: "document", documentId },
-                  draftWorkId: s.ascension.id,
+                  branchWorkId: s.ascension.id,
                 }),
               ),
             ),
@@ -668,20 +668,20 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           run: async () => {
             const { identity } = await s.link(view, s.draftRef);
             return identity.kind === "document"
-              ? [identity.inDraft, identity.document.draft, identity.document.uri]
+              ? [identity.inBranch, identity.document.branch, identity.document.uri]
               : identity.kind;
           },
-          expected: [true, { draftId: s.draft.id, workId: s.ascension.id }, HARBOR_URI],
+          expected: [true, { branchId: s.branch.id, workId: s.ascension.id }, HARBOR_URI],
         },
         {
           surface: "ahead ref in D's text at the path",
           run: async () => {
-            const [inDraft, live] = await Promise.all([
+            const [inBranch, live] = await Promise.all([
               s.link(view, s.draftRef),
               s.link({ kind: "live" }, s.draftRef),
             ]);
             // Read by address in both views: nothing binds it until harbor goes live.
-            return [inDraft, live].map(({ occupant }) =>
+            return [inBranch, live].map(({ occupant }) =>
               occupant.kind === "document"
                 ? [occupant.document.documentId, occupant.settled]
                 : occupant.kind,
@@ -708,7 +708,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           run: async () =>
             (
               await ports.fileAccess.listAccess({ accountId: s.userId }, [s.harbor], {
-                draftViews: new Map([[s.harbor, view]]),
+                branchViews: new Map([[s.harbor, view]]),
               })
             ).has(s.harbor),
           expected: true,
@@ -732,7 +732,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     // and a drafting Work skip the full matrix subject.
     async function bareSubject() {
       const runtime = await runtimes.compose();
-      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const scenario = await branchTreeScenario(db, { runtime, runtimes });
       const ascension = await scenario.work("Ascension", "draft");
       const { id: projectId, userId } = scenario.project;
       return { runtime, scenario, ascension, projectId, userId };

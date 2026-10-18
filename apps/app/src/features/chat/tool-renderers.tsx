@@ -278,8 +278,8 @@ export function documentToolFailureCopy(tool: ToolView): string {
     }
     case "ambiguous_path":
       return name
-        ? t`Two files in the draft share the path ${name}. Review the draft to keep one.`
-        : t`Two files in the draft share this path. Review the draft to keep one.`;
+        ? t`Two of this Work's drafts share the path ${name}. Review the drafts to keep one.`
+        : t`Two of this Work's drafts share this path. Review the drafts to keep one.`;
     case "ambiguous_match":
       return name
         ? t`The requested passage in ${name} wasn't specific enough.`
@@ -323,7 +323,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
     case "nothing_to_revert":
       return t`There was nothing to revert.`;
     case "work_archived":
-      return t`That change can't be made because the draft is archived.`;
+      return t`That change can't be made because this Work's drafts are archived.`;
     case "permission_denied":
       return name ? t`${name} can't be changed.` : t`That document can't be changed.`;
     case "partial_failure":

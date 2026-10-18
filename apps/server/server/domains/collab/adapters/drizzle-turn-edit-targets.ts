@@ -44,7 +44,7 @@ export async function readTurnEditTargets(
       row.placement.kind === "live" || row.placement.kind === "pending"
         ? row.placement
         : row.origin;
-    const scope = placement.kind === "pending" ? "draft" : "live";
+    const scope = placement.kind === "pending" ? "branch" : "live";
     targets.set(`${row.documentId}:${scope}`, { documentId: row.documentId, scope });
   }
   return [...targets.values()].sort(

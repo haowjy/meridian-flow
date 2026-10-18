@@ -1,12 +1,12 @@
 /** The reply save fence: identity admission and reasoned refusal (contract §2.1). */
-import type { DraftId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createFakeBranchTable,
+  createFakeDraftTable,
   createFakeFileAccess,
   createFakeThreadPeerCores,
-  FAKE_DRAFT_ID,
+  FAKE_BRANCH_ID,
   FAKE_UPSTREAM_ID,
   fakeEditGrant,
 } from "../test-support/thread-peer-pool-fakes.js";
@@ -20,14 +20,16 @@ const WORK = "work-a" as WorkId;
 function scenario() {
   const { liveCore, threadCore } = createFakeThreadPeerCores();
   const live = asLiveAgentEditCore(liveCore.asCore());
-  const branches = createFakeBranchTable({ documentId: DOCUMENT, threadId: THREAD });
-  const drafts = { shareActive: vi.fn(async (_id: DraftId) => ({ id: FAKE_DRAFT_ID }) as never) };
+  const drafts = createFakeDraftTable({ documentId: DOCUMENT, threadId: THREAD });
+  const branches = {
+    shareActive: vi.fn(async (_id: BranchId) => ({ id: FAKE_BRANCH_ID }) as never),
+  };
   const fileAccess = createFakeFileAccess();
   const diagnostics = { replyPinMismatch: vi.fn() };
   const fences = createReplySaveFences({
     liveUtilityCore: live,
-    branches,
     drafts,
+    branches,
     diagnostics,
     fileAccess,
     lockWorks: async () => {},
@@ -45,11 +47,11 @@ function scenario() {
         {
           core,
           grant: fakeEditGrant({ kind: "draft", workId: WORK, workSlug: "a" }),
-          linkView: { kind: "draft", draftId: FAKE_DRAFT_ID },
+          linkView: { kind: "branch", branchId: FAKE_BRANCH_ID },
           pin: {
-            draftId: FAKE_DRAFT_ID,
-            peerBranchId: "peer-1",
-            upstreamBranchId: FAKE_UPSTREAM_ID,
+            branchId: FAKE_BRANCH_ID,
+            peerDraftId: "peer-1",
+            upstreamDraftId: FAKE_UPSTREAM_ID,
           },
         },
       ],
@@ -58,8 +60,8 @@ function scenario() {
   return {
     fences,
     record,
-    branches,
     drafts,
+    branches,
     fileAccess,
     threadCore,
     diagnostics,
@@ -75,9 +77,9 @@ describe("reply save fence", () => {
   });
 
   it("admits a pin after the upstream's generation moved: a pin authorizes identity only", async () => {
-    const { fences, record, branches } = scenario();
-    branches.set(FAKE_UPSTREAM_ID, {
-      ...(await branches.getBranch(FAKE_UPSTREAM_ID))!,
+    const { fences, record, drafts } = scenario();
+    drafts.set(FAKE_UPSTREAM_ID, {
+      ...(await drafts.getDraft(FAKE_UPSTREAM_ID))!,
       generation: 9,
     } as never);
     await expect(fences.confirm(record)).resolves.toEqual([]);
@@ -86,19 +88,15 @@ describe("reply save fence", () => {
   it.each([
     [
       "draft closed",
-      (s: ReturnType<typeof scenario>) => s.drafts.shareActive.mockResolvedValue(null as never),
+      (s: ReturnType<typeof scenario>) => s.branches.shareActive.mockResolvedValue(null as never),
       "discarded_draft",
     ],
     [
       "upstream closed",
-      (s: ReturnType<typeof scenario>) => s.branches.close(FAKE_UPSTREAM_ID),
+      (s: ReturnType<typeof scenario>) => s.drafts.close(FAKE_UPSTREAM_ID),
       "discarded_document",
     ],
-    [
-      "peer closed",
-      (s: ReturnType<typeof scenario>) => s.branches.close("peer-1"),
-      "discarded_edit",
-    ],
+    ["peer closed", (s: ReturnType<typeof scenario>) => s.drafts.close("peer-1"), "discarded_edit"],
   ] as const)("refuses with the reason branch state names: %s", async (_name, arrange, reason) => {
     const s = scenario();
     arrange(s);
@@ -114,12 +112,12 @@ describe("reply save fence", () => {
 
   it("a vanished upstream or peer refuses with the reason a closed one does", async () => {
     const gone = scenario();
-    gone.branches.set(FAKE_UPSTREAM_ID, null);
+    gone.drafts.set(FAKE_UPSTREAM_ID, null);
     await expect(gone.fences.confirm(gone.record)).resolves.toEqual([
       { documentId: DOCUMENT, reason: "discarded_document" },
     ]);
     const lost = scenario();
-    lost.branches.set("peer-1", null);
+    lost.drafts.set("peer-1", null);
     await expect(lost.fences.confirm(lost.record)).resolves.toEqual([
       { documentId: DOCUMENT, reason: "discarded_edit" },
     ]);
@@ -127,9 +125,9 @@ describe("reply save fence", () => {
 
   it("the draft's closure outranks a closed upstream and a closed peer", async () => {
     const s = scenario();
-    s.drafts.shareActive.mockResolvedValue(null as never);
-    s.branches.close(FAKE_UPSTREAM_ID);
-    s.branches.close("peer-1");
+    s.branches.shareActive.mockResolvedValue(null as never);
+    s.drafts.close(FAKE_UPSTREAM_ID);
+    s.drafts.close("peer-1");
     await expect(s.fences.confirm(s.record)).resolves.toEqual([
       { documentId: DOCUMENT, reason: "discarded_draft" },
     ]);
@@ -137,9 +135,9 @@ describe("reply save fence", () => {
 
   it("reports an invariant break and refuses as integration for a peer of another draft", async () => {
     const s = scenario();
-    s.branches.set("peer-1", {
-      ...(await s.branches.getBranch("peer-1"))!,
-      draftId: "another-draft" as DraftId,
+    s.drafts.set("peer-1", {
+      ...(await s.drafts.getDraft("peer-1"))!,
+      branchId: "another-draft" as BranchId,
     } as never);
 
     await expect(s.fences.confirm(s.record)).resolves.toEqual([

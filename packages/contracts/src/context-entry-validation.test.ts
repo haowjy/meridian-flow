@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateContextEntryName, validateContextEntryPath } from "./context-entry-validation.js";
 
 describe("context entry validation", () => {
-  it.each(["Drafts/@notes.md"])("reserves authority-like segment in %j", (raw) => {
+  it.each(["Branches/@notes.md"])("reserves authority-like segment in %j", (raw) => {
     const result = raw.includes("/")
       ? validateContextEntryPath(raw)
       : validateContextEntryName(raw);

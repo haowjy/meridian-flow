@@ -111,11 +111,11 @@ if (!RUN) {
         const service = (db: Database) => {
           const catalog = createDrizzleContextCatalog(db);
           const contextPorts = createProductionUnifiedContextPortFactory({
-            pendingDraft: createTestWorkProjectionMutation(db),
+            pendingBranch: createTestWorkProjectionMutation(db),
             links: createTestDocumentLinkScopes(db),
             db,
             documentSync: collab,
-            drafts: collab.drafts,
+            branches: collab.branches,
             catalogMutations: catalog,
           });
           return createUploadIntake({
@@ -259,11 +259,11 @@ if (!RUN) {
           }),
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
-          pendingDraft: createTestWorkProjectionMutation(db),
+          pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
           documentSync: collab,
-          drafts: collab.drafts,
+          branches: collab.branches,
           catalogMutations: catalog,
         });
         const service = createUploadIntake({
@@ -331,11 +331,11 @@ if (!RUN) {
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(database.current),
+        pendingBranch: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
         catalogMutations: catalog,
       });
       const service = createUploadIntake({

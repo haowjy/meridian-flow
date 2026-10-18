@@ -92,7 +92,7 @@ export function ContextDocumentHost({
   const reviewItemKey = reviewRoomName ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft branch alone.
-  const branchOnly = isDraftOnly(tab);
+  const draftOnly = isDraftOnly(tab);
   // `readOnly` is the Work's scope (archived freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
@@ -103,7 +103,7 @@ export function ContextDocumentHost({
     retry?: () => void,
   ): ReactNode => {
     if (!mountEditor) return null;
-    const hosted = session !== null || branchOnly || Boolean(selectedReviewItemKey);
+    const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {
@@ -174,7 +174,7 @@ export function ContextDocumentHost({
                 )}
               />
               <EditorView
-                draftOnly={branchOnly}
+                draftOnly={draftOnly}
                 onCloseDraftOnly={
                   onCloseDraftOnly ??
                   (() => {
@@ -214,7 +214,7 @@ export function ContextDocumentHost({
       documentId={tab.documentId}
       resourceHandle={tab.resourceHandle}
       availabilityRevision={availabilityRevision}
-      liveRoom={!branchOnly}
+      liveRoom={!draftOnly}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
@@ -267,7 +267,7 @@ function RoomScopeCatalogCheck({
   useEffect(() => {
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName
-      ? registry.observeBranchRoom(reviewRoomName, observer)
+      ? registry.observeDraftRoom(reviewRoomName, observer)
       : session?.subscribe(observer);
   }, [registry, reviewRoomName, session]);
   useEffect(() => {

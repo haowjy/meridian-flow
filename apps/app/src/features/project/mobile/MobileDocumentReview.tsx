@@ -16,7 +16,7 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -77,7 +77,7 @@ export function MobileDocumentReview({
 }
 
 /**
- * The live document's way into its pending draft: the Draft chip in a row of
+ * The live document's way into its pending draft: the Branch chip in a row of
  * the review header's own height and inset, so the chip stays where the
  * reviewing one will be. Nothing is drawn for a document with no pending draft.
  */

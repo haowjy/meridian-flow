@@ -1,4 +1,4 @@
-/** Branch-push (Apply and settlement) contracts shared across collab domain services and adapters. */
+/** Draft-push (Apply and settlement) contracts shared across collab domain services and adapters. */
 
 import type {
   AgentEditCodecFactory,
@@ -7,13 +7,13 @@ import type {
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DraftCommandResult } from "@meridian/contracts/drafts";
+import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
-import type { BranchJournalReadStore, BranchJournalRow } from "./branch-journal.js";
-import type { BranchSnapshot, BranchStore } from "./branch-store.js";
-import type { DraftCommandEnvelope } from "./draft-commands.js";
+import type { BranchCommandEnvelope } from "./branch-commands.js";
+import type { DraftJournalReadStore, DraftJournalRow } from "./draft-journal.js";
+import type { DraftSnapshot, DraftStore } from "./draft-store.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -24,19 +24,19 @@ import type { SweepEvidence } from "./sweep-policy.js";
 import type { NormalizedTrail, RawTrailChange, TrailChangeV1 } from "./trail-read-kernel.js";
 
 export class BranchPushCommitConflictError extends Error {
-  constructor(readonly branchId: string) {
-    super(`Branch ${branchId} changed before its push could commit`);
+  constructor(readonly draftId: string) {
+    super(`Draft ${draftId} changed before its push could commit`);
     this.name = "BranchPushCommitConflictError";
   }
 }
 
 export class BranchPushRetryExhaustedError extends Error {
   constructor(
-    readonly branchId: string,
+    readonly draftId: string,
     readonly maxRetries: number,
     cause?: unknown,
   ) {
-    super(`Branch ${branchId} push did not commit after ${maxRetries} CAS retries`, { cause });
+    super(`Draft ${draftId} push did not commit after ${maxRetries} CAS retries`, { cause });
     this.name = "BranchPushRetryExhaustedError";
   }
 }
@@ -51,8 +51,8 @@ export type ApplyBlockChange = {
 
 export type PushLineageRow = {
   id: number;
-  branchId: string | null;
-  branchGeneration: number;
+  draftId: string | null;
+  draftGeneration: number;
   documentId: DocumentId;
   journalIds: number[];
   upstreamUpdateSeq: number | null;
@@ -71,15 +71,15 @@ export type PushToLiveResult =
   | { status: "already_pushed"; push: PushLineageRow }
   | {
       status: "noop";
-      branchId: string;
+      draftId: string;
       documentId: DocumentId;
-      branchGeneration: number;
+      draftGeneration: number;
       reason: "no_active_rows";
     }
   /** An Apply step kept this draft out of live; its rows stay reviewable. */
-  | { status: "held"; branchId: string; documentId: DocumentId; reason: ApplyRefusal }
+  | { status: "held"; draftId: string; documentId: DocumentId; reason: ApplyRefusal }
   /** An Apply step refused the whole batch; nothing of it reached live. */
-  | { status: "refused"; branchId: string; documentId: DocumentId; reason: ApplyRefusal };
+  | { status: "refused"; draftId: string; documentId: DocumentId; reason: ApplyRefusal };
 
 /** Durable Apply-step inputs staged with a batch, by step kind. */
 export type ApplyPayloads = Readonly<Record<string, JsonValue>>;
@@ -92,8 +92,8 @@ export class DraftChangeRefusal extends Error {
 
 export type PreparedPushCommit = {
   expectedLiveRevision?: string;
-  branch: BranchSnapshot;
-  journalRows: BranchJournalRow[];
+  documentDraft: DraftSnapshot;
+  journalRows: DraftJournalRow[];
   pushUpdate: Uint8Array;
   idempotencyKey: string;
   receiptId?: string;
@@ -175,31 +175,31 @@ export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRe
 
 /** A per-change Apply's selection: made on each staging attempt's read, naming the payloads it stages. */
 export type ChangeApplySelection = {
-  branchId: string;
+  draftId: string;
   select(
-    branch: BranchSnapshot,
-    rows: BranchJournalRow[],
+    documentDraft: DraftSnapshot,
+    rows: DraftJournalRow[],
   ): Promise<ReviewRowSelection & { payloads: ApplyPayloads }>;
 };
 
 export type PreparedDiscardCommit = {
   /** Present only for per-change Discard: identical survivor deltas in the next generation. */
-  survivors?: BranchJournalRow[];
+  survivors?: DraftJournalRow[];
   retireSurvivors?: boolean;
   expectedLiveRevision?: string;
-  /** Claimed `done` as the transaction's first write; a taken id throws `DraftCommandExistsError`. */
-  command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
-  branch: BranchSnapshot;
-  journalRows: BranchJournalRow[];
+  /** Claimed `done` as the transaction's first write; a taken id throws `BranchCommandExistsError`. */
+  command?: { envelope: BranchCommandEnvelope; result: BranchCommandResult };
+  documentDraft: DraftSnapshot;
+  journalRows: DraftJournalRow[];
   state: Uint8Array;
   reviewedByUserId?: UserId;
 };
 
 export type PushCandidate = {
-  branchId: string;
+  draftId: string;
   documentId: DocumentId;
   /** The reviewable rows the whole-branch state applies. */
-  rows: BranchJournalRow[];
+  rows: DraftJournalRow[];
   /** A selected-rows candidate replays only its rows onto live instead of the whole branch. */
   materialization: "whole" | "selected_rows";
 };
@@ -210,13 +210,13 @@ export type CandidateBatch = {
   payloads?: ApplyPayloads;
   receiptId: string;
   expectedLiveRevision?: string;
-  command?: DraftCommandEnvelope;
+  command?: BranchCommandEnvelope;
   pushedByUserId?: UserId;
 };
 
 /** The journal reads plus Apply's push lineage: the reads an Apply makes. */
-export type BranchPushReadStore = BranchJournalReadStore & {
-  latestPushForBranch(branchId: string, generation: number): Promise<PushLineageRow | null>;
+export type BranchPushReadStore = DraftJournalReadStore & {
+  latestPushForDraft(draftId: string, generation: number): Promise<PushLineageRow | null>;
   listPushLineageForTurn(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
 };
 
@@ -232,7 +232,7 @@ export type PushCommitStore = {
     /** Items the pre-staging check held: staged with the batch as durable exclusions. */
     holds?: readonly ApplyItemHold[];
     /** The writer's command, claimed as the transaction's first write (§4.6). */
-    command?: DraftCommandEnvelope;
+    command?: BranchCommandEnvelope;
   }): Promise<
     | { status: "inserted"; pushes: PushLineageRow[] }
     | { status: "conflict"; push: PushLineageRow }
@@ -243,22 +243,22 @@ export type PushCommitStore = {
 };
 
 export type PushUpdateComputer = (input: {
-  branch: BranchSnapshot;
-  branchDoc: Y.Doc;
+  documentDraft: DraftSnapshot;
+  draftDoc: Y.Doc;
   liveDoc: Y.Doc;
 }) => Uint8Array;
 
 export type BranchPushService = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: {
-    branchId: string;
+    draftId: string;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
-  /** Applies several drafts as one batch; one item per requested branch, in request order. */
-  pushBranchesToLive(input: {
+  /** Applies several branches as one batch; one item per requested branch, in request order. */
+  pushDraftsToLive(input: {
     /** May be empty when `payloads` carries the whole Apply (a branchless one). */
-    branchIds: readonly string[];
+    draftIds: readonly string[];
     payloads?: ApplyPayloads;
     /**
      * Per-change Apply: apply only the rows this selects from the one branch, chosen again on
@@ -266,7 +266,7 @@ export type BranchPushService = {
      */
     selected?: ChangeApplySelection;
     /** The writer's command, claimed in the staging transaction (§4.6). */
-    command?: DraftCommandEnvelope;
+    command?: BranchCommandEnvelope;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<{
@@ -282,24 +282,27 @@ export type BranchPushService = {
   }>;
 };
 
-export type BranchReviewService = {
+export type DraftReviewService = {
   discardSelected(input: {
-    branchId: string;
-    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
+    draftId: string;
+    selectRows: (
+      documentDraft: DraftSnapshot,
+      rows: DraftJournalRow[],
+    ) => Promise<ReviewRowSelection>;
     reviewedByUserId?: UserId;
     /** The command to claim `done` in the refork's transaction, built from its outcome. */
     command?: {
-      envelope: DraftCommandEnvelope;
-      result(outcome: DiscardedChanges): DraftCommandResult;
+      envelope: BranchCommandEnvelope;
+      result(outcome: DiscardedChanges): BranchCommandResult;
     };
   }): Promise<
-    | ({ status: "discarded"; branchId: string; journalIds: number[] } & DiscardedChanges)
-    | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
+    | ({ status: "discarded"; draftId: string; journalIds: number[] } & DiscardedChanges)
+    | { status: "nothing_to_undo"; draftId: string; journalIds: number[] }
   >;
 };
 
 export type BranchPushServiceInput = {
-  branchStore: BranchStore;
+  draftStore: DraftStore;
   journalReadStore: BranchPushReadStore;
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;

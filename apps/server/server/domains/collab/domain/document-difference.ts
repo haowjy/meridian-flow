@@ -8,7 +8,7 @@ import {
   unwrapBlock,
   wordHunks,
 } from "@meridian/agent-edit/integration";
-import { blockItemKey, type ReviewFormattingChange } from "@meridian/contracts/drafts";
+import { blockItemKey, type ReviewFormattingChange } from "@meridian/contracts/branches";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
 import {
