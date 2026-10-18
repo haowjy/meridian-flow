@@ -91,8 +91,9 @@ export const documentBranches = pgTable(
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
     generation: integer("generation").notNull().default(1),
     /**
-     * Bumped by every committed write to the branch: appends, checkpoint rewrites, closes and
-     * every change to a review-membership input. The write fence; never reaches the client.
+     * Bumped by every committed write to the branch: appends, checkpoint rewrites, closes, holds
+     * and row status changes. Rewrites are fenced by it; appends bump it without checking it, and
+     * the projection job writes `has_effect` at it without bumping it. Never reaches the client.
      */
     revision: bigint("revision", { mode: "number" }).notNull().default(0),
     /** The `revision` the checkpoint (`state`, `state_vector`) was written at. */

@@ -572,7 +572,8 @@ and no Work lock is taken (see the append contract in
 lease or document lock is taken. A refusal closes with
 <code>1008 branch-update-admission-failed</code>; an update whose prefix the
 journal lacks closes with <code>4207 branch-prefix-missing</code>, which the
-client treats as a reconnect. Branch rooms never
+client treats as a reconnect. Review membership and the Works badge are not
+part of the frame: the projection job judges them after the commit. Branch rooms never
 re-persist in <code>onStoreDocument</code>; every branch mutation is already
 durable.
 </p>
@@ -1060,8 +1061,12 @@ graph.
   <li><strong>Branches.</strong> The branch store over the Works mutation
     boundary (a required dependency: it owns Work-first lock order), the
     branch coordinator (published replicas, private candidates, attempts and
-    the operations on them), writer-frame admission, and the pull service.
-    There is no branch mutex or lease.</li>
+    the operations on them), writer-frame admission, the pull service, and the
+    projection job, which every committed append marks dirty
+    (<code>onAppendCommitted</code>, a required coordinator input) and which
+    writes <code>has_effect</code> and the Works badge after the append, with
+    a 30-second sweep for what a crash left stale. There is no branch mutex or
+    lease.</li>
   <li><strong>Runtime.</strong> <code>createAgentEditRuntime</code> builds the
     markup codec exactly once with the injected
     <code>DocumentLinkScopes</code>, the schema-aware markdown engine,
