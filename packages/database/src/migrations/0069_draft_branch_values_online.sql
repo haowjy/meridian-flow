@@ -26,22 +26,29 @@ END $$;
 --> statement-breakpoint
 CREATE OR REPLACE PROCEDURE rename_draft_branch_values(batch_size int) LANGUAGE plpgsql AS $$
 DECLARE
-  part_cursor bigint := 0; part_next bigint; part_ids bigint[];
-  command_cursor uuid := '00000000-0000-0000-0000-000000000000'; command_next uuid; command_ids uuid[];
-  batch_cursor uuid := '00000000-0000-0000-0000-000000000000'; step_cursor text := '';
-  link_thread uuid := '00000000-0000-0000-0000-000000000000';
-  link_document uuid := '00000000-0000-0000-0000-000000000000';
-  link_digest text := ''; link_turn uuid := '00000000-0000-0000-0000-000000000000';
-  item record; visited int; new_view text; new_digest text;
+  part_cursor bigint; part_next bigint; part_ids bigint[];
+  command_cursor uuid; command_next uuid; command_ids uuid[];
+  batch_cursor uuid; step_cursor text; settlement_page branch_push_settlement_payloads[];
+  link_thread uuid;
+  link_document uuid;
+  link_digest text; link_turn uuid; link_page thread_shown_links[];
+  item record; new_view text; new_digest text;
 BEGIN
   -- Durable IDs are opaque: retaining them avoids unbounded FK fanout and broken JSON references.
   -- Page over ALL rows in native primary-key order, then test the version marker. Filtering
   -- before LIMIT could scan an entire retained history to fill one batch of old rows.
   LOOP
     SET LOCAL lock_timeout = '2s';
-    SELECT max(id), array_agg(id) INTO part_next, part_ids FROM (
-      SELECT id FROM document_edit_parts WHERE id > part_cursor ORDER BY id LIMIT batch_size FOR UPDATE
-    ) page;
+    -- No key value is reserved: the first page has no lower bound.
+    IF part_cursor IS NULL THEN
+      SELECT max(id), array_agg(id) INTO part_next, part_ids FROM (
+        SELECT id FROM document_edit_parts ORDER BY id LIMIT batch_size FOR UPDATE
+      ) page;
+    ELSE
+      SELECT max(id), array_agg(id) INTO part_next, part_ids FROM (
+        SELECT id FROM document_edit_parts WHERE id > part_cursor ORDER BY id LIMIT batch_size FOR UPDATE
+      ) page;
+    END IF;
     EXIT WHEN part_next IS NULL;
     UPDATE document_edit_parts SET
       origin = CASE WHEN origin ? 'branchId' THEN rename_draft_branch_json(origin) ELSE origin END,
@@ -52,25 +59,39 @@ BEGIN
   END LOOP;
   LOOP
     SET LOCAL lock_timeout = '2s';
-    visited := 0;
-    FOR item IN SELECT * FROM branch_push_settlement_payloads
-      WHERE (batch_id, step_kind) > (batch_cursor, step_cursor)
-      ORDER BY batch_id, step_kind LIMIT batch_size FOR UPDATE
-    LOOP
-      batch_cursor := item.batch_id; step_cursor := item.step_kind; visited := visited + 1;
+    IF batch_cursor IS NULL THEN
+      SELECT array_agg(page) INTO settlement_page FROM (
+        SELECT * FROM branch_push_settlement_payloads
+        ORDER BY batch_id, step_kind LIMIT batch_size FOR UPDATE
+      ) page;
+    ELSE
+      SELECT array_agg(page) INTO settlement_page FROM (
+        SELECT * FROM branch_push_settlement_payloads
+        WHERE (batch_id, step_kind) > (batch_cursor, step_cursor)
+        ORDER BY batch_id, step_kind LIMIT batch_size FOR UPDATE
+      ) page;
+    END IF;
+    EXIT WHEN settlement_page IS NULL;
+    FOREACH item IN ARRAY settlement_page LOOP
+      batch_cursor := item.batch_id; step_cursor := item.step_kind;
       IF item.step_kind = 'draft_tree' THEN
         UPDATE branch_push_settlement_payloads SET payload = rename_draft_branch_json(payload), step_kind = 'branch_tree'
         WHERE batch_id = item.batch_id AND step_kind = item.step_kind;
       END IF;
     END LOOP;
-    EXIT WHEN visited = 0;
     COMMIT;
   END LOOP;
   LOOP
     SET LOCAL lock_timeout = '2s';
-    SELECT array_agg(id ORDER BY id) INTO command_ids FROM (
-      SELECT id FROM branch_commands WHERE id > command_cursor ORDER BY id LIMIT batch_size FOR UPDATE
-    ) page;
+    IF command_cursor IS NULL THEN
+      SELECT array_agg(id ORDER BY id) INTO command_ids FROM (
+        SELECT id FROM branch_commands ORDER BY id LIMIT batch_size FOR UPDATE
+      ) page;
+    ELSE
+      SELECT array_agg(id ORDER BY id) INTO command_ids FROM (
+        SELECT id FROM branch_commands WHERE id > command_cursor ORDER BY id LIMIT batch_size FOR UPDATE
+      ) page;
+    END IF;
     EXIT WHEN command_ids IS NULL;
     command_next := command_ids[array_length(command_ids, 1)];
     UPDATE branch_commands SET
@@ -82,14 +103,23 @@ BEGIN
   END LOOP;
   LOOP
     SET LOCAL lock_timeout = '2s';
-    visited := 0;
     -- A changed digest can move a showing onto a later page; its new view makes that visit a no-op.
-    FOR item IN SELECT * FROM thread_shown_links
-      WHERE (thread_id, document_id, showing_digest, turn_id) > (link_thread, link_document, link_digest, link_turn)
-      ORDER BY thread_id, document_id, showing_digest, turn_id LIMIT batch_size FOR UPDATE
-    LOOP
+    IF link_thread IS NULL THEN
+      SELECT array_agg(page) INTO link_page FROM (
+        SELECT * FROM thread_shown_links
+        ORDER BY thread_id, document_id, showing_digest, turn_id LIMIT batch_size FOR UPDATE
+      ) page;
+    ELSE
+      SELECT array_agg(page) INTO link_page FROM (
+        SELECT * FROM thread_shown_links
+        WHERE (thread_id, document_id, showing_digest, turn_id) > (link_thread, link_document, link_digest, link_turn)
+        ORDER BY thread_id, document_id, showing_digest, turn_id LIMIT batch_size FOR UPDATE
+      ) page;
+    END IF;
+    EXIT WHEN link_page IS NULL;
+    FOREACH item IN ARRAY link_page LOOP
       link_thread := item.thread_id; link_document := item.document_id;
-      link_digest := item.showing_digest; link_turn := item.turn_id; visited := visited + 1;
+      link_digest := item.showing_digest; link_turn := item.turn_id;
       IF item.view NOT LIKE 'draft:%' THEN CONTINUE; END IF;
       new_view := 'branch:' || substr(item.view, 7);
       -- array_to_json(text[]) has the compact JSON.stringify string-array encoding, unlike jsonb::text.
@@ -104,7 +134,6 @@ BEGIN
           AND thread_shown_links.holder_uri = excluded.holder_uri AND thread_shown_links.view = excluded.view;
       IF NOT FOUND THEN RAISE EXCEPTION 'shown-link digest collision'; END IF;
     END LOOP;
-    EXIT WHEN visited = 0;
     COMMIT;
   END LOOP;
 END $$;

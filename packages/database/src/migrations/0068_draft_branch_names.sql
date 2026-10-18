@@ -174,6 +174,14 @@ BEGIN
     INSERT INTO change_trail_dirty_log(thread_id, turn_id)
       SELECT * FROM change_trail_owners(ARRAY[NEW.id]);
   ELSIF TG_TABLE_NAME = 'document_edit_parts' THEN
+    -- Renaming the pending draft key changes no placement meaning or trail owners.
+    IF TG_OP = 'UPDATE' AND (
+      NEW.placement = OLD.placement OR (
+        OLD.placement ? 'branchId' AND NOT (OLD.placement ? 'draftId')
+        AND NEW.placement = (OLD.placement - 'branchId')
+          || jsonb_build_object('draftId', OLD.placement->'branchId')
+      )
+    ) THEN RETURN NEW; END IF;
     INSERT INTO change_trail_dirty_log(thread_id, turn_id)
       SELECT * FROM change_trail_owners(ARRAY[NEW.edit_id]);
   ELSIF TG_TABLE_NAME = 'draft_write_journal' THEN
