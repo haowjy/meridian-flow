@@ -145,10 +145,10 @@ const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"
 );
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
-const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
-const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
-  await import("../domain/provenance.js");
+const { createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } = await import(
+  "../domain/provenance.js"
+);
 
 /** Each suite owns its connection; importing this module allocates no database resources. */
 export function createTestDatabase(): Database {
@@ -2333,69 +2333,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         checkpointId: checkpoint.id,
         expectedGeneration: authorityHead.generation,
       });
-    },
-    async attemptDivergentReplicationAdmission() {
-      const base = new Y.Doc({ gc: false });
-      const fragment = base.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-      const root = (() => {
-        const paragraph = new Y.XmlElement("paragraph");
-        const text = new Y.XmlText("a");
-        paragraph.push([text]);
-        fragment.push([paragraph]);
-        const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
-          .id;
-        return { clientID: id.client, clock: id.clock, length: 1 };
-      })();
-      const carry = (value: string) => {
-        const doc = new Y.Doc({ gc: false });
-        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base));
-        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).delete(0, 1);
-        const paragraph = new Y.XmlElement("paragraph");
-        const text = new Y.XmlText(value);
-        paragraph.push([text]);
-        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-        const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
-          .id;
-        appendProvenanceFacts(doc, {
-          targets: [
-            {
-              version: 1,
-              target: { clientID: id.client, clock: id.clock, length: 1 },
-              root,
-            },
-          ],
-        });
-        return doc;
-      };
-      const target = carry("t");
-      const source = carry("s");
-      const before = Y.encodeStateAsUpdate(target);
-      let journaled = false;
-      try {
-        await replicateFrozenIdentity({
-          source: { documentId: ALPHA_ID, doc: source },
-          target: { documentId: ALPHA_ID, generation: 1n, doc: target },
-          plan: { kind: "wholeDocument" },
-          admit: async ({ update }) => {
-            journaled = true;
-            Y.applyUpdate(target, update);
-            return { sequence: 1n, joined: 0 };
-          },
-        });
-        return { rejected: false, journaled, applied: true };
-      } catch (cause) {
-        return {
-          rejected:
-            cause instanceof Error &&
-            cause.message.includes("One provenance root unit cannot have two visible targets"),
-          journaled,
-          applied: !Buffer.from(Y.encodeStateAsUpdate(target)).equals(Buffer.from(before)),
-        };
-      } finally {
-        base.destroy();
-        target.destroy();
-        source.destroy();
-      }
     },
     destroyWarmState() {
       for (const doc of hocuspocus.documents.values()) doc.destroy();
