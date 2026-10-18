@@ -349,7 +349,7 @@
     "apps/server/server/domains/projects/provisioning-race.db.test.ts": 3,
     "apps/server/server/domains/projects/slug-routing.db.test.ts": 6,
     "apps/server/server/domains/projects/work-projection-mutation.db.test.ts": 6,
-    "apps/server/server/domains/projects/work-projection-pending-owners.db.test.ts": 2,
+    "apps/server/server/domains/projects/work-projection-pending-owners.db.test.ts": 1,
     "apps/server/server/domains/projects/work-repository.db.test.ts": 15,
     "apps/server/server/domains/projects/work-repository.test.ts": 2,
     "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.db.test.ts": 3,

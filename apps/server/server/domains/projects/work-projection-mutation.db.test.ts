@@ -27,7 +27,6 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -210,7 +209,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         availability,
         catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
       });
       await catalog.refreshProject(PROJECT_ID);
       await catalog.refreshProject(OTHER_PROJECT_ID);
@@ -310,7 +308,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         availability,
         catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
       });
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
       const [headBefore] = await db
@@ -395,7 +392,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         availability,
         catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
       });
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
       const [headBefore] = await db
@@ -449,7 +445,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         availability,
         catalog,
-        pending: createDrizzleWorkDraftPendingStore(db),
       });
       const branches = createDrizzleBranchStore(db, {
         workProjection: projection,

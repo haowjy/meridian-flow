@@ -29,7 +29,7 @@ export const d22RetractedPeerPull: Probe = {
         async commitRewrite(input) {
           if (retraction === undefined) {
             const result = await independently(() =>
-              harness.projection.mutatePending({ drafts: [draftId] }, () =>
+              harness.projection.mutate({ drafts: [draftId] }, () =>
                 harness.store.retractCreatedDraftBranch({ documentId, draftId }),
               ),
             );

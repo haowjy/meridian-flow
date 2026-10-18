@@ -244,7 +244,7 @@ export function createDrizzlePushCommitStore(
 ): PushCommitStore {
   return {
     async commitDiscard(input) {
-      return workProjection.mutatePending(
+      return workProjection.mutate(
         { branches: [input.branch.branchId] },
         () => commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
         ACTIVE_DRAFT_SEAM,
@@ -276,7 +276,7 @@ export function createDrizzlePushCommitStore(
         return null;
       };
       return workProjection
-        .mutatePending(
+        .mutate(
           { branches: branchIds },
           async () => {
             const txDb = currentDrizzleDb(db);
