@@ -14,8 +14,8 @@ import {
   useState,
 } from "react";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { type ThreadDraftsStatus, useWorkDrafts } from "@/client/query/useWorkDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { useWorkBranchDrafts, type WorkDraftListStatus } from "@/client/query/useWorkBranchDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
@@ -33,7 +33,7 @@ export type DraftReviewContextValue = {
   controller: DraftReviewController;
   roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
-  drafts: ThreadDraftsStatus;
+  drafts: WorkDraftListStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
@@ -112,7 +112,7 @@ export function useDraftReviewScopeValue({
   const effectiveProjectId = projectId ?? "";
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
-  const drafts = useWorkDrafts(projectId, workId);
+  const drafts = useWorkBranchDrafts(projectId, workId);
   const files = drafts.files ?? [];
   const localStateOwner = useDraftReviewStateOwner();
   const reviewState = stateOwner ?? localStateOwner;

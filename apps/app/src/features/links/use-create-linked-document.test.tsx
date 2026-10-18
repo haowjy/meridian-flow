@@ -69,7 +69,7 @@ it("captures an existing nested home without contacting the server before openin
     });
     expect(id).toBe("document");
     expect(createFolder).not.toHaveBeenCalled();
-    // The destination rides the create, so a draft's document at this name is joined.
+    // The destination rides the create, so a branch's document at this name is joined.
     expect(resources.reserveDocument).toHaveBeenCalledWith("project", "", {
       parent: { kind: "folder", folderId: "picked-folder" },
       name: "scene",

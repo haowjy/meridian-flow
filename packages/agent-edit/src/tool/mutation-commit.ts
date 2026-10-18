@@ -282,9 +282,9 @@ export function createMutationCommit(deps: {
           awarenessDegraded = applied.awarenessDegraded;
           return null;
         },
-        // A thread-peer write commits to exactly the branch it was staged against.
+        // A thread-peer write commits to exactly the draft it was staged against.
         input.interactionContext?.mode === "threadPeer"
-          ? { pinnedBranchId: input.interactionContext.peerBranchId }
+          ? { pinnedDraftId: input.interactionContext.peerDraftId }
           : undefined,
       );
     } catch (cause) {

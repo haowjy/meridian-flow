@@ -295,7 +295,7 @@ describe("change trail (postgres)", () => {
   it("recovers a late Discard committed before the trail worker restarts", async () => {
     const warm = createHarness(db);
     try {
-      const branchId = await warm.seedDestructivePush("late-discard-restart");
+      const draftId = await warm.seedDestructivePush("late-discard-restart");
       await warm.pollTrails();
       await warm.pollTrails();
       const [settled] = (await warm.trailRowMembership()).shells;
@@ -378,9 +378,9 @@ describe("change trail (postgres)", () => {
 
   it("does not synthesize a shared trail from mixed journal ownership", async () => {
     const harness = createHarness(db);
-    const branchId = await harness.seedDestructivePush("shared-settlement");
+    const draftId = await harness.seedDestructivePush("shared-settlement");
     await harness.makeJournalOwnershipMixed();
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(draftId)).resolves.toMatchObject({ status: "pushed" });
 
     await harness.pollTrails();
     await harness.pollTrails();
@@ -446,15 +446,15 @@ describe("change trail (postgres)", () => {
 
   it("uses one sorted lock order for combined shared and turn reconciliation", async () => {
     const harness = createHarness(db);
-    const branchId = await harness.seedDestructivePush("combined-lock-order");
+    const draftId = await harness.seedDestructivePush("combined-lock-order");
     await harness.makeJournalOwnershipMixed();
-    await harness.push(branchId);
-    await harness.stageAnotherDestructiveEdit(branchId);
+    await harness.push(draftId);
+    await harness.stageAnotherDestructiveEdit(draftId);
     await harness.makeJournalOwnershipMixed();
 
     await expect(
       Promise.race([
-        Promise.all([harness.push(branchId), harness.pollTrails()]),
+        Promise.all([harness.push(draftId), harness.pollTrails()]),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("aggregate lock-order deadlock")), 5_000),
         ),

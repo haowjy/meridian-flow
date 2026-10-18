@@ -1,6 +1,8 @@
 /** Server-owned read-model for documents edited by one transcript turn. */
+
+import type { TurnReceiptChip } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { TurnReceiptChip, TurnReceiptStateStore } from "./turn-receipt.js";
+import type { TurnReceiptStateStore } from "./turn-receipt.js";
 
 export type TurnEditedDocumentScope = "live" | "draft";
 

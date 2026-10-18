@@ -50,7 +50,7 @@ export const d18SampledDiscard: Probe = {
       if (!update) throw new Error("no update");
       const row: Row = {
         id,
-        branchId: "branch_sampling",
+        draftId: "draft_sampling",
         generation: 1,
         status: "active",
         source: "writer",
@@ -72,10 +72,10 @@ export const d18SampledDiscard: Probe = {
     const links = { holder: { uri: "project://probe.md" } };
     const cut = (doc: Y.Doc, rows: readonly Row[], generation: number) =>
       ({
-        branch: {
-          branchId: "branch_sampling",
+        documentDraft: {
+          draftId: "draft_sampling",
           documentId: "doc",
-          draftId: "draft",
+          branchId: "branch",
           kind: "work_draft",
           status: "active",
           generation,
@@ -86,7 +86,7 @@ export const d18SampledDiscard: Probe = {
         live: { state: Y.encodeStateAsUpdate(base), revision: "unchanged-live" },
         links: { live: links, draft: links },
         item: {
-          draftId: "draft",
+          branchId: "branch",
           itemKey: "item",
           wholeItem: false,
           isNew: false,
@@ -116,7 +116,7 @@ export const d18SampledDiscard: Probe = {
         selectReviewCut(
           now,
           model,
-          (now as { branch: never }).branch,
+          (now as { documentDraft: never }).documentDraft,
           rows as never,
           {
             ...command,

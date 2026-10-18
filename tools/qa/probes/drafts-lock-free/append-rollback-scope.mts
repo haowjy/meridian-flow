@@ -68,18 +68,18 @@ export const appendRollbackScope: Probe = {
       // A first key, so U1 flips no review membership on today's code (no Work lock).
       assert.equal(await tab.send(keystroke(tab.room, " warm")), "appended");
       const u1 = keystroke(tab.room, "A", 900_101);
-      const before = (await harness.readBranch(draft.branchId)).revision;
+      const before = (await harness.readDraft(draft.draftId)).revision;
       dirty.length = 0;
-      const pause = pauseAt("branch.append.beforeCommit");
+      const pause = pauseAt("draft.append.beforeCommit");
       try {
         const first = independently(() => tab.send(u1));
         await pause.entered;
         const second = independently(() => resend(() => tab.send(u1), draft.workId));
-        const waiting = await harness.waitForLockWaiter(/document_branches|works/);
+        const waiting = await harness.waitForLockWaiter(/document_drafts|works/);
         pause.release();
         const outcomes = [await first, await second];
-        const after = await harness.readBranch(draft.branchId);
-        const rows = await journalRows(harness, draft.branchId);
+        const after = await harness.readDraft(draft.draftId);
+        const rows = await journalRows(harness, draft.draftId);
         return { draft, waiting, outcomes, before, after, rows: rows.length, dirty: [...dirty] };
       } finally {
         pause.remove();
@@ -135,7 +135,7 @@ export const appendRollbackScope: Probe = {
             const t = firstText(writer);
             t.delete(t.length - 1, 1);
           });
-          const before = (await harness.readBranch(draft.branchId)).revision;
+          const before = (await harness.readDraft(draft.draftId)).revision;
           dirty.length = 0;
           let outcome: unknown;
           const root = await frameOutcome(
@@ -145,8 +145,8 @@ export const appendRollbackScope: Probe = {
               return { admitted: true };
             }),
           );
-          const after = (await harness.readBranch(draft.branchId)).revision;
-          const rows = (await journalRows(harness, draft.branchId)).length;
+          const after = (await harness.readDraft(draft.draftId)).revision;
+          const rows = (await journalRows(harness, draft.draftId)).length;
           const name = await workName(harness, draft.workId);
           observe("c", {
             outcome,

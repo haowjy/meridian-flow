@@ -43,15 +43,15 @@ export const COLD_SCENARIO_IDS = Object.fromEntries(
 /** The three documents a multi-document settlement batch pushes together. */
 export const SETTLEMENT_BATCH = [DEFAULT_ALPHA_ID, BETA_ID, GAMMA_ID] as const;
 
-/** One staged destructive push per batch document; their branch ids in batch order. */
+/** One staged destructive push per batch document; their draft ids in batch order. */
 export async function seedSettlementBatch(
   harness: ReturnType<typeof createHarness>,
 ): Promise<string[]> {
-  const branchIds: string[] = [];
+  const draftIds: string[] = [];
   for (const documentId of SETTLEMENT_BATCH) {
-    branchIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
+    draftIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
   }
-  return branchIds;
+  return draftIds;
 }
 
 /** The caller owns hook registration and connection teardown. */

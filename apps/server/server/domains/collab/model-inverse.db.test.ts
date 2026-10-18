@@ -10,7 +10,6 @@ import { createAllowAllFileAccess } from "../file-policy/index.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
-import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -23,7 +22,8 @@ import {
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
-import { draftBranchId, inverseFixture } from "./test-support/turn-inverse-fixture.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
+import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
 const fixture = () => inverseFixture(db);
@@ -179,7 +179,7 @@ describe("model document stack", () => {
           ),
         ).toMatchObject({ status: "success", writeId: `w${index + 1}` });
       await harness.commit(responseId);
-      const branchId = await draftBranchId(db, ALPHA_ID);
+      const draftId = await readDraftId(db, ALPHA_ID);
       let call = 0;
       const write = async (command: "undo" | "redo", count?: number) =>
         view.collab.agentEdit().write(
@@ -193,24 +193,24 @@ describe("model document stack", () => {
           context,
         );
       expect(await write("undo", 4)).toMatchObject({ status: "insufficient_undo" });
-      expect(await view.draftMarkdown(branchId)).toBe("Alpha Azure.\n\nBlue.\n");
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
       if (schedule === "count") {
         expect(await write("undo", 3)).toMatchObject({ status: "success" });
-        expect(await view.draftMarkdown(branchId)).toBe("Alpha Beta.\n\nBlue.\n");
+        expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
         expect(await write("redo", 3)).toMatchObject({ status: "success" });
       } else {
         for (const text of ["Silver", "Gold", "Beta"]) {
           expect(await write("undo")).toMatchObject({ status: "success" });
-          expect(await view.draftMarkdown(branchId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
+          expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
         }
         expect(await write("redo")).toMatchObject({
           status: "success",
           result: { message: "redone: w1" },
         });
-        expect(await view.draftMarkdown(branchId)).toBe("Alpha Gold.\n\nBlue.\n");
+        expect(await view.draftMarkdown(draftId)).toBe("Alpha Gold.\n\nBlue.\n");
         expect(await write("redo", 2)).toMatchObject({ status: "success" });
       }
-      expect(await view.draftMarkdown(branchId)).toBe("Alpha Azure.\n\nBlue.\n");
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
       harness.cancelScheduledPulls();
@@ -242,9 +242,9 @@ describe("model document stack", () => {
         initial,
       );
       await harness.commit(responseId);
-      const branchId = await draftBranchId(db, ALPHA_ID);
+      const draftId = await readDraftId(db, ALPHA_ID);
       const prose = () =>
-        destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(branchId);
+        destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(draftId);
       const responseIdentity = { providerResponseId: responseId, editScopeId: randomUUID() };
       const inverse = { ...initial, responseIdentity };
       const write = (command: "undo" | "redo", count = 1) =>
@@ -322,7 +322,7 @@ describe("model document stack", () => {
         context,
       );
       await harness.commit(responseId);
-      const branchId = await draftBranchId(db, ALPHA_ID);
+      const draftId = await readDraftId(db, ALPHA_ID);
       if (state === "applied") await review.applyItem(ALPHA_ID);
       if (state === "discarded") await review.discardItem(ALPHA_ID);
       if (state === "user undo")
@@ -364,7 +364,7 @@ describe("model document stack", () => {
             context,
           ),
         ).toMatchObject({ status: "success", writeId: "w2" });
-        expect(await view.draftMarkdown(branchId)).toBe("Alpha Beta.\n\nBlue.\n");
+        expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
       }
     } finally {
@@ -384,7 +384,7 @@ it.each([
     const command = { documentId: ALPHA_ID, file: "alpha.md" };
     await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
     await harness.commit(responseId);
-    const branchId = await draftBranchId(db, ALPHA_ID);
+    const draftId = await readDraftId(db, ALPHA_ID);
     if (direction === "redo")
       expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
         status: "success",
@@ -399,19 +399,19 @@ it.each([
       status: `cant_${direction}_elsewhere`,
     });
     await core.read({ ...command, format: "edits" }, context);
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, branchId));
+      .from(schema.documentDrafts)
+      .where(eq(schema.documentDrafts.id, draftId));
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, await branchContent(db, branch.id));
+      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.branchCoordinator.commitWriterUpdate({
-        branchId: branch.id,
-        expectedGeneration: branch.generation,
+      await view.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.id,
+        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,
@@ -426,7 +426,7 @@ it.each([
     expect(await core.write({ ...command, command: "revert", edit: "w1" }, context)).toMatchObject({
       status: "nothing_to_revert",
     });
-    expect(await view.draftMarkdown(branchId)).toBe(expected);
+    expect(await view.draftMarkdown(draftId)).toBe(expected);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
@@ -511,8 +511,8 @@ it("model edit pages decode immutable parts and a new revert clears redo in the 
     expect(await core.write({ ...command, command: "redo" }, context)).toMatchObject({
       status: "nothing_to_redo",
     });
-    const branchId = await draftBranchId(db, ALPHA_ID);
-    expect(await view.draftMarkdown(branchId)).toBe("Alpha Text23.\n\nBlue.\n");
+    const draftId = await readDraftId(db, ALPHA_ID);
+    expect(await view.draftMarkdown(draftId)).toBe("Alpha Text23.\n\nBlue.\n");
     const liveContext = {
       ...context,
       responseIdentity: undefined,
@@ -552,24 +552,24 @@ it.each([
       ),
     ).toMatchObject({ status: "success", writeId: "w1" });
     await harness.commit(responseId);
-    const branchId = await draftBranchId(db, ALPHA_ID);
+    const draftId = await readDraftId(db, ALPHA_ID);
     if (state === "partly applied") {
       const preview = await review.activePreview(ALPHA_ID);
       await review.applyChanges(ALPHA_ID, preview, [preview.operations[0].operationId]);
     } else {
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, branchId));
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.id, draftId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, await branchContent(db, branch.id));
+        Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
         doc.clientID = allocateDocumentClient(doc);
         const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
         const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-        await view.branchCoordinator.commitWriterUpdate({
-          branchId: branch.id,
-          expectedGeneration: branch.generation,
+        await view.draftCoordinator.commitWriterUpdate({
+          draftId: documentDraft.id,
+          expectedGeneration: documentDraft.generation,
           updateData: Y.mergeUpdates(updates),
           actorUserId: USER_ID,
           roomDocument: doc,
@@ -587,12 +587,12 @@ it.each([
     expect(await core.write({ ...address, command: "undo" }, context)).toMatchObject({
       status: state === "changed" ? "cant_undo_changed" : "cant_undo_applied",
     });
-    expect(await view.draftMarkdown(branchId)).toBe(before);
+    expect(await view.draftMarkdown(draftId)).toBe(before);
     expect(await core.write({ ...address, command: "revert", edit: "w1" }, context)).toMatchObject({
       status: "success",
       writeId: "w2",
     });
-    expect(await view.draftMarkdown(branchId)).toBe(
+    expect(await view.draftMarkdown(draftId)).toBe(
       state === "changed" ? "Alpha Ga!mma.\n\nBlue.\n" : "Alpha Beta.\n\nBlue.\n",
     );
   } finally {

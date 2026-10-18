@@ -3,14 +3,14 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
   contextAvailabilityHeads,
   contextCatalogCommits,
   contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
-  documentBranches,
+  documentDrafts,
   documents,
-  drafts,
   projects,
   threads,
   threadWorks,
@@ -25,16 +25,16 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import {
-  createDrizzleBranchJournalReadStore,
+  createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
+  createDrizzleWorkBranchPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
 import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
 import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
-import { appendBranchRows, proseBranchUpdate } from "../collab/test-support/branch-store-seam.js";
+import { appendDraftRows, proseDraftUpdate } from "../collab/test-support/draft-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -57,16 +57,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000908";
     const SECOND_SOURCE_ID = "00000000-0000-4000-8000-000000000912";
     const SECOND_DOCUMENT_ID = "00000000-0000-4000-8000-000000000913";
-    const BRANCH_ID = "branch_work_projection_owner";
-    const SECOND_BRANCH_ID = "branch_work_projection_owner_second";
+    const DRAFT_ID = "draft_work_projection_owner";
+    const SECOND_DRAFT_ID = "draft_work_projection_owner_second";
     const OTHER_PROJECT_ID = "00000000-0000-4000-8000-000000000914";
     const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000915";
     const OTHER_SOURCE_ID = "00000000-0000-4000-8000-000000000916";
     const OTHER_DOCUMENT_ID = "00000000-0000-4000-8000-000000000917";
-    const OTHER_BRANCH_ID = "branch_work_projection_owner_other_project";
-    const DRAFT_ID = "00000000-0000-4000-8000-000000000918";
-    const SECOND_DRAFT_ID = "00000000-0000-4000-8000-000000000919";
-    const OTHER_DRAFT_ID = "00000000-0000-4000-8000-00000000091a";
+    const OTHER_DRAFT_ID = "draft_work_projection_owner_other_project";
+    const BRANCH_ID = "00000000-0000-4000-8000-000000000918";
+    const SECOND_BRANCH_ID = "00000000-0000-4000-8000-000000000919";
+    const OTHER_BRANCH_ID = "00000000-0000-4000-8000-00000000091a";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -148,42 +148,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         fileType: "markdown",
       });
-      await db.insert(drafts).values([
-        { id: DRAFT_ID, projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID },
+      await db.insert(branches).values([
+        { id: BRANCH_ID, projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID },
         {
-          id: SECOND_DRAFT_ID,
+          id: SECOND_BRANCH_ID,
           projectId: PROJECT_ID,
           originWorkId: SECOND_WORK_ID,
           createdBy: USER_ID,
         },
         {
-          id: OTHER_DRAFT_ID,
+          id: OTHER_BRANCH_ID,
           projectId: OTHER_PROJECT_ID,
           originWorkId: OTHER_WORK_ID,
           createdBy: USER_ID,
         },
       ]);
-      await db.insert(documentBranches).values({
-        id: BRANCH_ID,
+      await db.insert(documentDrafts).values({
+        id: DRAFT_ID,
         documentId: DOCUMENT_ID,
         kind: "work_draft",
-        draftId: DRAFT_ID,
+        branchId: BRANCH_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
-      await db.insert(documentBranches).values({
-        id: SECOND_BRANCH_ID,
+      await db.insert(documentDrafts).values({
+        id: SECOND_DRAFT_ID,
         documentId: SECOND_DOCUMENT_ID,
         kind: "work_draft",
-        draftId: SECOND_DRAFT_ID,
+        branchId: SECOND_BRANCH_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
-      await db.insert(documentBranches).values({
-        id: OTHER_BRANCH_ID,
+      await db.insert(documentDrafts).values({
+        id: OTHER_DRAFT_ID,
         documentId: OTHER_DOCUMENT_ID,
         kind: "work_draft",
-        draftId: OTHER_DRAFT_ID,
+        branchId: OTHER_BRANCH_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
@@ -208,7 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const projection = createWorkProjectionMutation({
         db,
-        pendingCounts: createDrizzleWorkDraftPendingStore(db),
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
         availability,
         catalog,
       });
@@ -308,7 +308,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const measured = createWorkProjectionMutation({
         db,
-        pendingCounts: createDrizzleWorkDraftPendingStore(db),
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
         availability,
         catalog,
       });
@@ -393,7 +393,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const measured = createWorkProjectionMutation({
         db,
-        pendingCounts: createDrizzleWorkDraftPendingStore(db),
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
         availability,
         catalog,
       });
@@ -447,23 +447,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const projection = createWorkProjectionMutation({
         db,
-        pendingCounts: createDrizzleWorkDraftPendingStore(db),
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
         availability,
         catalog,
       });
-      const branches = createDrizzleBranchStore(db, {
+      const drafts = createDrizzleDraftStore(db, {
         workProjection: projection,
-        drafts: createDrizzleDraftStore(db),
+        branches: createDrizzleBranchStore(db),
       });
-      for (const branchId of [BRANCH_ID, OTHER_BRANCH_ID, SECOND_BRANCH_ID]) {
-        await appendBranchRows(branches, branchId, [
-          { updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } },
+      for (const draftId of [DRAFT_ID, OTHER_DRAFT_ID, SECOND_DRAFT_ID]) {
+        await appendDraftRows(drafts, draftId, [
+          { updateData: proseDraftUpdate(), source: "agent", updateMeta: { kind: "edit" } },
         ]);
         // The draft-effect projection's write, which stores the count the append moved.
-        const appended = await branches.getBranch(branchId);
-        if (!appended) throw new Error(`missing branch ${branchId}`);
-        await branches.writeEffect({
-          branchId,
+        const appended = await drafts.getDraft(draftId);
+        if (!appended) throw new Error(`missing draft ${draftId}`);
+        await drafts.writeEffect({
+          draftId,
           revision: appended.revision,
           hasEffect: true,
           workId: appended.workId,
@@ -483,7 +483,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const sequenceBefore = await db.execute<{ lastValue: string }>(
         sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
       );
-      const journal = createDrizzleBranchJournalReadStore(db);
+      const journal = createDrizzleDraftJournalReadStore(db);
       const pushStore = createDrizzlePushCommitStore(
         db,
         stageSettlementBatchWithinTx,
@@ -491,28 +491,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         undefined,
         projection,
       );
-      const branchInputs = [
-        { branchId: BRANCH_ID, documentId: DOCUMENT_ID, workId: WORK_ID, draftId: DRAFT_ID },
+      const draftInputs = [
+        { draftId: DRAFT_ID, documentId: DOCUMENT_ID, workId: WORK_ID, branchId: BRANCH_ID },
         {
-          branchId: OTHER_BRANCH_ID,
+          draftId: OTHER_DRAFT_ID,
           documentId: OTHER_DOCUMENT_ID,
           workId: OTHER_WORK_ID,
-          draftId: OTHER_DRAFT_ID,
+          branchId: OTHER_BRANCH_ID,
         },
         {
-          branchId: SECOND_BRANCH_ID,
+          draftId: SECOND_DRAFT_ID,
           documentId: SECOND_DOCUMENT_ID,
           workId: SECOND_WORK_ID,
-          draftId: SECOND_DRAFT_ID,
+          branchId: SECOND_BRANCH_ID,
         },
       ];
       await runInDrizzleTransaction(db, async () => {
-        for (const value of branchInputs) {
-          const branch = await branches.getBranch(value.branchId);
-          if (!branch) throw new Error(`missing branch ${value.branchId}`);
+        for (const value of draftInputs) {
+          const documentDraft = await drafts.getDraft(value.draftId);
+          if (!documentDraft) throw new Error(`missing draft ${value.draftId}`);
           await pushStore.commitDiscard({
-            branch,
-            journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
+            documentDraft,
+            journalRows: await journal.listReviewableJournalRows(value.draftId, 1),
             state: new Uint8Array([0, 0]),
           });
         }
@@ -535,8 +535,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(sequenceAfter[0]?.lastValue ?? "0")).toBe(
         BigInt(sequenceBefore[0]?.lastValue ?? "0") + 1n,
       );
-      for (const { branchId } of branchInputs) {
-        await expect(journal.listReviewableJournalRows(branchId, 1)).resolves.toEqual([]);
+      for (const { draftId } of draftInputs) {
+        await expect(journal.listReviewableJournalRows(draftId, 1)).resolves.toEqual([]);
       }
     });
   });

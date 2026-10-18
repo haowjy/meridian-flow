@@ -53,7 +53,7 @@ export const reviewUnpulledLive: Probe = {
     const history = [
       {
         id: 1,
-        branchId: "branch_unpulled",
+        draftId: "draft_unpulled",
         generation: 1,
         status: "active",
         source: "writer",
@@ -77,10 +77,10 @@ export const reviewUnpulledLive: Probe = {
 
     const links = { holder: { uri: "project://probe.md" } };
     const cut = {
-      branch: {
-        branchId: "branch_unpulled",
+      documentDraft: {
+        draftId: "draft_unpulled",
         documentId: "doc",
-        draftId: "draft",
+        branchId: "branch",
         kind: "work_draft",
         status: "active",
         generation: 1,
@@ -91,7 +91,7 @@ export const reviewUnpulledLive: Probe = {
       live: { state: Y.encodeStateAsUpdate(live), revision: "live-ahead" },
       links: { live: links, draft: links },
       item: {
-        draftId: "draft",
+        branchId: "branch",
         itemKey: "item",
         wholeItem: false,
         isNew: false,
@@ -126,7 +126,7 @@ export const reviewUnpulledLive: Probe = {
     const selected = selectReviewCut(
       cut,
       model,
-      (cut as { branch: never }).branch,
+      (cut as { documentDraft: never }).documentDraft,
       history as never,
       {
         kind: "apply",

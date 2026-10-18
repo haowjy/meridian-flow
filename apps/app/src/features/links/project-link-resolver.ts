@@ -151,7 +151,9 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         rootThreadId: document.rootThreadId ?? undefined,
       });
       // A hidden document is "in a draft": keep the destination the server named.
-      return found && answer.inDraft && answer.draft ? { ...found, draft: answer.draft } : found;
+      return found && answer.inBranch && answer.branch
+        ? { ...found, branch: answer.branch }
+        : found;
     }
     case "gone":
       return GONE;

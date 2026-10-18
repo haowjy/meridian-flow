@@ -14,11 +14,11 @@ import { type ChangeEventWsMessage, WS_CLOSE } from "@meridian/contracts/protoco
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "@/test-support/memory-storage";
 import {
-  BRANCH_UPDATES_REFUSED,
   DocumentSession,
   type DocumentSessionConnectionState,
   type DocumentSessionSnapshot,
   type DocumentSessionTransportProvider,
+  DRAFT_UPDATES_REFUSED,
 } from "./document-session";
 import { clientSchemaReloadGuardKey } from "./schema-fence";
 
@@ -280,7 +280,7 @@ describe("DocumentSession status derivation", () => {
   it("reports reset as access-lost so draft review exits after server room close", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "draft:draft-1",
+      roomKey: "draft:draft-1:gen:1",
       persistence: { kind: "none" },
       transportFactory: factory,
     });
@@ -288,9 +288,9 @@ describe("DocumentSession status derivation", () => {
 
     current().emit({
       kind: "reset",
-      reason: WS_CLOSE.BRANCH_STALE.reason,
+      reason: WS_CLOSE.DRAFT_STALE.reason,
       disposition: "rebuild",
-      code: WS_CLOSE.BRANCH_STALE.code,
+      code: WS_CLOSE.DRAFT_STALE.code,
     });
 
     expect(session.getSnapshot()).toMatchObject({
@@ -304,7 +304,7 @@ describe("DocumentSession status derivation", () => {
   it("emits a terminal close that arrives while already offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "branch:draft-1:gen:1",
+      roomKey: "draft:draft-1:gen:1",
       persistence: { kind: "none" },
       transportFactory: factory,
     });
@@ -315,11 +315,11 @@ describe("DocumentSession status derivation", () => {
     current().emit({ kind: "disconnected" });
     const { snapshots, unsubscribe } = track(session);
 
-    current().emit({ kind: "terminal", reason: BRANCH_UPDATES_REFUSED, code: 1008 });
+    current().emit({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: 1008 });
 
     expect(snapshots.at(-1)).toMatchObject({
       status: "offline",
-      connectionState: { kind: "terminal", reason: BRANCH_UPDATES_REFUSED },
+      connectionState: { kind: "terminal", reason: DRAFT_UPDATES_REFUSED },
     });
     unsubscribe();
     await session.destroy();

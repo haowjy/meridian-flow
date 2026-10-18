@@ -22,10 +22,10 @@ it.each([
 ] as const)("an unavailable %s review selector stays selected and never admits the live occupant", async (scheme) => {
   const transitions: string[] = [];
   function Harness() {
-    const [branch, setBranch] = useState<string | null>("unknown");
-    const drafts = { status: "empty", files: [] };
-    const binding = bindDocumentAddressReview(branch ?? undefined, "work");
-    const remote = branch
+    const [documentDraft, setDraft] = useState<string | null>("unknown");
+    const draftList = { status: "empty", files: [] };
+    const binding = bindDocumentAddressReview(documentDraft ?? undefined, "work");
+    const remote = documentDraft
       ? { kind: "unavailable" }
       : ({ kind: "current", document: { documentId: "live-occupant" } } as const);
     const reconciled = reconcileDocumentAddress(
@@ -36,7 +36,7 @@ it.each([
     const gated = gateLiveView(
       reconciled.result,
       { catalog: null, isComplete: true, isFetching: false, isError: false },
-      drafts,
+      draftList,
       () => false,
       reconciled.view,
     );
@@ -44,11 +44,11 @@ it.each([
       gated.result?.kind === "unavailable"
         ? "unavailable"
         : (gated.result?.document.documentId ?? "pending");
-    const state = `${branch ?? "plain"}:${status}`;
+    const state = `${documentDraft ?? "plain"}:${status}`;
     transitions.push(state);
     const review = {
       controller: { workId: "work", inlineReview: null },
-      drafts,
+      drafts: draftList,
       files: [],
     } as unknown as DraftReviewContextValue;
     return (
@@ -64,11 +64,11 @@ it.each([
             documentId: null,
             scheme,
             path: "/Collision",
-            review: branch ? { workId: "work", itemKey: branch } : null,
+            review: documentDraft ? { workId: "work", itemKey: documentDraft } : null,
             draftOnly: false,
           }}
           port={{
-            write: (next) => setBranch(next?.itemKey ?? null),
+            write: (next) => setDraft(next?.itemKey ?? null),
             admit: () => {
               throw new Error("must not admit");
             },

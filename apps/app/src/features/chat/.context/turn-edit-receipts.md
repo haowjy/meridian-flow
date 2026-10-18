@@ -35,7 +35,7 @@ staged create and leaves an empty document, the same as undoing any create
 and the document stays openable.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
-(`live-active`, `branch-active`, reversed, dependent, or expired) decides whether
+(`live-active`, `work-active`, reversed, dependent, or expired) decides whether
 it is available. Unavailable actions render a compact `Can't undo` pill; the
 server-derived reason appears only after expansion. Captured Before/After
 excerpts remain visible after document loss and reload, and deleted live anchors
@@ -58,12 +58,12 @@ viewing the change, which is what expansion puts on screen. A refused command
 never leaves the card unchanged.
 
 Undo reverses the turn's remaining edits where they are now: pending in the
-Work draft or already applied to live. Branch and live writes remain one atomic
+Work's document drafts or already applied to live. Draft and live writes remain one atomic
 command. The receipt immediately shows Undoing/Redoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
 Pending Undo preserves its generation so Redo can restore it. Review Discard is
 terminal, not Undo: discarded rows never authorize Redo even while other changes
-keep the draft open. Apply/Discard generation resets withdraw old branch
+keep the draft open. Apply/Discard generation resets withdraw old draft
 authority without affecting applied live authority. The server's existing
 dependency and archived-Work guards still apply.
 

@@ -1,11 +1,11 @@
-/** Snapshot-owned branch mutations and explicit preview-fenced request envelopes. */
+/** Snapshot-owned draft edits and explicit preview-fenced request envelopes. */
 import { randomUUID } from "node:crypto";
-import type { DraftCommandId, DraftId, UserId, WorkId } from "@meridian/contracts";
-import type { DraftCommandKind } from "@meridian/contracts/drafts";
+import type { BranchCommandId, BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchCommandKind } from "@meridian/contracts/branches";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DraftReviewApi } from "../contracts.js";
-import { commandDigest, type DraftCommandEnvelope } from "../domain/draft-commands.js";
+import { type BranchCommandEnvelope, commandDigest } from "../domain/branch-commands.js";
 import {
   type createHarness,
   THREAD_ID,
@@ -13,12 +13,12 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
-import { captureHistoricalBranchRow } from "./historical-branch-row.js";
+import { captureHistoricalDraftRow } from "./historical-draft-row.js";
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
-export async function commitBranchEdit(
+export async function commitDraftEdit(
   fixture: Fixture,
-  branchId: string,
+  draftId: string,
   author: {
     source: "agent" | "writer";
     clientId?: number;
@@ -27,7 +27,7 @@ export async function commitBranchEdit(
   },
   mutate: (doc: Y.Doc) => void,
 ) {
-  const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
+  const staged = await fixture.draftCoordinator.readDraft(draftId, async (doc, snapshot) => {
     const clone = createCollabYDoc({ gc: false });
     Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
     return { clone, generation: snapshot.generation };
@@ -35,16 +35,16 @@ export async function commitBranchEdit(
   try {
     if (author.clientId !== undefined) staged.clone.clientID = author.clientId;
     mutate(staged.clone);
-    await fixture.branchCoordinator.commitSegmentRows({
-      branchId: branchId,
+    await fixture.draftCoordinator.commitSegmentRows({
+      draftId: draftId,
       sourceDoc: staged.clone,
       expectedGeneration: staged.generation,
       rows: [
         {
-          branchId: branchId,
-          updateData: await captureHistoricalBranchRow(
-            fixture.branchCoordinator,
-            branchId,
+          draftId: draftId,
+          updateData: await captureHistoricalDraftRow(
+            fixture.draftCoordinator,
+            draftId,
             staged.clone,
           ),
           source: author.source,
@@ -65,25 +65,25 @@ export async function commitBranchEdit(
 /** A fresh command envelope for facade-level suites; the route builds its own from the body. */
 export function testEnvelope(input: {
   workId: WorkId;
-  kind: DraftCommandKind;
-  draftId: DraftId | null;
+  kind: BranchCommandKind;
+  branchId: BranchId | null;
   userId?: UserId;
-  commandId?: DraftCommandId;
+  commandId?: BranchCommandId;
   body?: unknown;
-}): DraftCommandEnvelope {
+}): BranchCommandEnvelope {
   const accountId = input.userId ?? (USER_ID as UserId);
   return {
-    commandId: input.commandId ?? (randomUUID() as DraftCommandId),
+    commandId: input.commandId ?? (randomUUID() as BranchCommandId),
     workId: input.workId,
     accountId,
     kind: input.kind,
-    draftId: input.draftId,
+    branchId: input.branchId,
     digest: commandDigest({
       accountId,
       projectId: "",
       workId: input.workId,
       kind: input.kind,
-      selectors: { draftId: input.draftId },
+      selectors: { branchId: input.branchId },
       body: input.body ?? null,
     }),
   };
@@ -176,76 +176,76 @@ export function reviewDriver(
       return (await review.items({ workId })).items;
     },
     async applyItem(documentId: string) {
-      const { item, draftId } = await resolved(documentId);
+      const { item, branchId } = await resolved(documentId);
       return body(
         await review.applyItem({
           workId,
           item,
           userId,
-          envelope: testEnvelope({ workId, kind: "apply_items", draftId, userId }),
+          envelope: testEnvelope({ workId, kind: "apply_items", branchId, userId }),
         }),
       );
     },
     async discardItem(documentId: string) {
-      const { item, draftId } = await resolved(documentId);
+      const { item, branchId } = await resolved(documentId);
       return body(
         await review.discardItem({
           workId,
           item,
           userId,
-          envelope: testEnvelope({ workId, kind: "discard_items", draftId, userId }),
+          envelope: testEnvelope({ workId, kind: "discard_items", branchId, userId }),
         }),
       );
     },
     async applyChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
-      const { itemKey, draftId } = await resolved(documentId);
+      const { itemKey, branchId } = await resolved(documentId);
       const ids = operationIds ?? preview.operations.map((op) => op.operationId);
       return body(
         await review.applyChanges({
           workId,
           itemKey,
           userId,
-          envelope: testEnvelope({ workId, kind: "apply_changes", draftId, userId }),
+          envelope: testEnvelope({ workId, kind: "apply_changes", branchId, userId }),
           selection: { kind: "apply", ...fencedSelection(preview, ids) },
         }),
       );
     },
-    /** Discard all of the Work's active draft. */
+    /** Discard all of the Work's active branch. */
     async discardAll() {
-      const { draftId } = await review.items({ workId });
-      if (!draftId) throw new Error("No active draft");
+      const { branchId } = await review.items({ workId });
+      if (!branchId) throw new Error("No active branch");
       return body(
         await review.discardAll({
           workId,
-          draftId,
+          branchId,
           userId,
-          envelope: testEnvelope({ workId, kind: "discard_draft", draftId, userId }),
+          envelope: testEnvelope({ workId, kind: "discard_branch", branchId, userId }),
         }),
       );
     },
-    /** Apply every listed item of the Work's active draft. */
+    /** Apply every listed item of the Work's active branch. */
     async applyAll() {
-      const { draftId, items } = await review.items({ workId });
-      if (!draftId) throw new Error("No active draft");
+      const { branchId, items } = await review.items({ workId });
+      if (!branchId) throw new Error("No active branch");
       return body(
         await review.applyAll({
           workId,
-          draftId,
+          branchId,
           items: items.map(({ itemKey }) => ({ itemKey })),
           userId,
-          envelope: testEnvelope({ workId, kind: "apply_items", draftId, userId }),
+          envelope: testEnvelope({ workId, kind: "apply_items", branchId, userId }),
         }),
       );
     },
     async discardChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
-      const { itemKey, draftId } = await resolved(documentId);
+      const { itemKey, branchId } = await resolved(documentId);
       const ids = operationIds ?? preview.operations.map((op) => op.operationId);
       return body(
         await review.discardChanges({
           workId,
           itemKey,
           userId,
-          envelope: testEnvelope({ workId, kind: "discard_changes", draftId, userId }),
+          envelope: testEnvelope({ workId, kind: "discard_changes", branchId, userId }),
           selection: { kind: "discard", ...fencedSelection(preview, ids) },
         }),
       );

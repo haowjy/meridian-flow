@@ -1,7 +1,7 @@
 /** Durable regressions for complete-effect settlement and preview-scoped Discard. */
 
 import { toDocHandle } from "@meridian/agent-edit/integration";
-import { documentBranches } from "@meridian/database";
+import { documentDrafts } from "@meridian/database";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import {
   resetSettlementFixture,
 } from "./test-support/branch-push-settlement-fixture.js";
 import { THREAD_ID } from "./test-support/change-trail-postgres-harness.js";
-import { commitBranchEdit, reviewDriver } from "./test-support/draft-review-requests.js";
+import { commitDraftEdit, reviewDriver } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetSettlementFixture(db));
@@ -28,34 +28,34 @@ it.each([
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "format-loss");
     const f = harness.crossWorkProbeFixture();
     const review = reviewDriver(f.collab.draftReview);
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const documentDraft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     // Manifest review is separate from prose, but both feed the durable pending effect.
-    await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+    await commitDraftEdit(f, documentDraft.draftId, { source: "writer" }, (doc) => {
       doc.getMap("documents").set(ALPHA_ID, true);
     });
-    await harness.settleBranchEffects();
+    await harness.settleDraftEffects();
     const [pending] = await db
       .select()
-      .from(documentBranches)
-      .where(eq(documentBranches.id, branch.branchId));
+      .from(documentDrafts)
+      .where(eq(documentDrafts.id, documentDraft.draftId));
     expect(pending.hasEffect).toBe(true);
     expect(await review.list()).toHaveLength(1);
-    await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+    await commitDraftEdit(f, documentDraft.draftId, { source: "writer" }, (doc) => {
       doc.getMap("documents").delete(ALPHA_ID);
       const para = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
       const text = para.get(0) as Y.XmlText;
       text.format(0, 5, { strong: {} });
       text.format(0, 5, { strong: null });
     });
-    await harness.settleBranchEffects();
+    await harness.settleDraftEffects();
     const [noop] = await db
       .select()
-      .from(documentBranches)
-      .where(eq(documentBranches.id, branch.branchId));
+      .from(documentDrafts)
+      .where(eq(documentDrafts.id, documentDraft.draftId));
     expect(noop.hasEffect).toBe(false);
     expect(await review.list()).toEqual([]);
     for (const source of ["agent", "writer"] as const) {
-      await commitBranchEdit(f, branch.branchId, { source }, (doc) => {
+      await commitDraftEdit(f, documentDraft.draftId, { source }, (doc) => {
         if (source === "agent") {
           const b = f.model.getBlocks(toDocHandle(doc))[0];
           f.model.applyTextEdit(toDocHandle(doc), b, { from: 11, to: 11 }, " Agent");
@@ -67,7 +67,7 @@ it.each([
     }
     const preview = await review.preview(ALPHA_ID);
     if (preview.status !== "active") throw Error("missing preview");
-    expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
+    expect(await f.draftMarkdown(documentDraft.draftId)).toContain("**Beta**");
     const agentOperations = preview.operations
       .filter((op) => op.kind === "agent")
       .map((op) => op.operationId);
@@ -82,13 +82,13 @@ it.each([
       status: action === "apply" ? "applied" : "discarded",
       itemClosed: false,
     });
-    expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
+    expect(await f.draftMarkdown(documentDraft.draftId)).toContain("**Beta**");
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("**Beta**");
     expect(await review.list()).toHaveLength(1);
     const [formatted] = await db
       .select()
-      .from(documentBranches)
-      .where(eq(documentBranches.id, branch.branchId));
+      .from(documentDrafts)
+      .where(eq(documentDrafts.id, documentDraft.draftId));
     expect(formatted.hasEffect).toBe(true);
     expect(after.operations).toHaveLength(1);
     expect(after.operations[0]?.kind).toBe("writer");
@@ -119,9 +119,9 @@ it.each([
   try {
     await harness.seedWriterDocument("Alpha base.", "discard-arrival");
     const f = harness.crossWorkProbeFixture();
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const documentDraft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     async function stage(source: "agent" | "writer") {
-      await commitBranchEdit(f, branch.branchId, { source }, (doc) => {
+      await commitDraftEdit(f, documentDraft.draftId, { source }, (doc) => {
         const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
         if (shape === "created-parent" && source === "agent") {
           const paragraph = new Y.XmlElement("paragraph");
@@ -171,9 +171,9 @@ it("keeps incomplete attribution document-only and whole Apply still applies its
   try {
     await harness.seedWriterDocument("Alpha stays.", "missing-removal-owner");
     const f = harness.crossWorkProbeFixture();
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    const documentDraft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     for (const edit of ["insert", "remove"] as const) {
-      await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
+      await commitDraftEdit(f, documentDraft.draftId, { source: "agent" }, (doc) => {
         const block = f.model.getBlocks(toDocHandle(doc))[0];
         f.model.applyTextEdit(
           toDocHandle(doc),
@@ -184,12 +184,12 @@ it("keeps incomplete attribution document-only and whole Apply still applies its
       });
     }
     // Fault-inject missing attribution evidence while preserving the persisted effect.
-    const rows = await f.db.select().from(f.schema.branchWriteJournal);
+    const rows = await f.db.select().from(f.schema.draftWriteJournal);
     const removal = rows.sort((a, b) => b.id - a.id)[0];
     await f.db
-      .update(f.schema.branchWriteJournal)
+      .update(f.schema.draftWriteJournal)
       .set({ status: "discarded" })
-      .where(eq(f.schema.branchWriteJournal.id, removal.id));
+      .where(eq(f.schema.draftWriteJournal.id, removal.id));
     const review = reviewDriver(f.collab.draftReview);
     const preview = await review.preview(ALPHA_ID);
     if (preview.status !== "active") throw new Error("missing preview");
@@ -221,8 +221,8 @@ it("accepts the clicked Discard class after repeated independent writer admissio
       "discard-typing",
     );
     const f = harness.crossWorkProbeFixture();
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
+    const documentDraft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+    await commitDraftEdit(f, documentDraft.draftId, { source: "agent" }, (doc) => {
       const block = f.model.getBlocks(toDocHandle(doc))[0];
       f.model.applyTextEdit(toDocHandle(doc), block, { from: 6, to: 11 }, "sabre");
     });
@@ -231,7 +231,7 @@ it("accepts the clicked Discard class after repeated independent writer admissio
     if (preview.status !== "active") throw Error("missing preview");
     const clickedClassIds = [...new Set(preview.operations.map((op) => op.closureClassId))];
     for (const words of [" Writer", " keeps typing"]) {
-      await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+      await commitDraftEdit(f, documentDraft.draftId, { source: "writer" }, (doc) => {
         const paragraph = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(2) as Y.XmlElement;
         const text = paragraph.get(0) as Y.XmlText;
         text.insert(text.length, words);
@@ -250,7 +250,7 @@ it("accepts the clicked Discard class after repeated independent writer admissio
       status: "discarded",
       itemClosed: false,
     });
-    expect(await f.draftMarkdown(branch.branchId)).toBe(
+    expect(await f.draftMarkdown(documentDraft.draftId)).toBe(
       "Alpha sword waits.\n\nBeta shield waits.\n\nGamma waits. Writer keeps typing\n",
     );
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
@@ -266,8 +266,8 @@ it("refuses clicked Discard when a writer deletes draft-only characters without 
   try {
     await harness.seedWriterDocument("Alpha Beta.", "discard-deletion");
     const f = harness.crossWorkProbeFixture();
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
+    const documentDraft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+    await commitDraftEdit(f, documentDraft.draftId, { source: "agent" }, (doc) => {
       const text = (doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
         0,
       ) as Y.XmlText;
@@ -277,7 +277,7 @@ it("refuses clicked Discard when a writer deletes draft-only characters without 
     const review = reviewDriver(f.collab.draftReview);
     const clicked = await review.preview(ALPHA_ID);
     if (clicked.status !== "active") throw Error("missing preview");
-    await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+    await commitDraftEdit(f, documentDraft.draftId, { source: "writer" }, (doc) => {
       const text = (doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement).get(
         0,
       ) as Y.XmlText;
@@ -291,7 +291,7 @@ it("refuses clicked Discard when a writer deletes draft-only characters without 
     expect(arrived.operations[0].closureUpdateIds).toHaveLength(2);
     expect(clicked.operations[0].closureUpdateIds).toHaveLength(1);
     expect(await review.discardChanges(ALPHA_ID, clicked)).toMatchObject({ status: "stale" });
-    expect(await f.draftMarkdown(branch.branchId)).toBe("Alpha Gaa.\n");
+    expect(await f.draftMarkdown(documentDraft.draftId)).toBe("Alpha Gaa.\n");
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n");
   } finally {
     harness.destroyWarmState();

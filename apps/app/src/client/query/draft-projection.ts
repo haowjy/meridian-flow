@@ -6,8 +6,8 @@
  * `operationKey`, which survives a re-fork, so one projection serves every
  * generation of the draft. Whole commands instead address a generation horizon.
  */
-import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
-import { type ChangeCommandRecords, wholeDraftDisposition } from "./draft-command-record";
+import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/branches";
+import { type ChangeCommandRecords, wholeDraftDisposition } from "./branch-command-record";
 
 export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
@@ -98,14 +98,14 @@ export function projectDraft(
 
 /** Work files are a projection too: no intent ever removes a cached server row. */
 export function projectDraftList<
-  T extends { documentId: string; itemKey: string; branchGeneration?: number | null },
+  T extends { documentId: string; itemKey: string; draftGeneration?: number | null },
 >(observed: T[], scope: { projectId: string; workId: string }, records: ChangeCommandRecords): T[] {
   return observed.filter(
     (row) =>
       wholeDraftDisposition(
         records,
         { ...scope, ...row },
-        row.branchGeneration ?? undefined,
+        row.draftGeneration ?? undefined,
         observed,
       ) !== "apply",
   );

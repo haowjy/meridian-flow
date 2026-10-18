@@ -3,29 +3,29 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  branches,
   branchPushSettlementBatches,
   branchPushSettlementPayloads,
-  branchWriteJournal,
-  documentBranches,
+  branchTreeChanges,
+  documentDrafts,
   documentEditParts,
   documentEdits,
-  drafts,
-  draftTreeChanges,
+  draftWriteJournal,
   pushLineage,
   works,
 } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
+import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { branchDraftWork } from "../../../shared/work-draft-lifecycle.js";
+import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type { BranchJournalRow } from "../domain/branch-journal.js";
+import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
   BranchPushCommitConflictError,
   type BranchPushReadStore,
@@ -35,111 +35,111 @@ import {
   type PushCommitStore,
   type PushLineageRow,
 } from "../domain/branch-push-contracts.js";
-import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
-import { DraftCommandExistsError } from "../domain/draft-commands.js";
-import { DRAFT_TREE_STEP } from "../domain/draft-tree-payload.js";
+import { BRANCH_TREE_STEP } from "../domain/branch-tree-payload.js";
+import type { DraftJournalRow } from "../domain/draft-journal.js";
+import { persistDurableTrailRecords } from "../domain/draft-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type {
-  WorkDraftPendingEvidence,
-  WorkDraftPendingStore,
-} from "../domain/ports/work-draft-pending-store.js";
-import { commitRewriteWithinTx } from "./drizzle-branch-storage.js";
+  WorkBranchPendingEvidence,
+  WorkBranchPendingStore,
+} from "../domain/ports/work-branch-pending-store.js";
+import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-branch-commands.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
-import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
+import { commitRewriteWithinTx } from "./drizzle-draft-storage.js";
 import {
   assertRootOwnedSettlement,
   type StageSettlementBatchWithinTx,
 } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
-export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
+export function sortPushesByDocumentId<T extends { documentDraft: { documentId: string } }>(
   pushes: readonly T[],
 ): T[] {
   return [...pushes].sort((left, right) =>
-    left.branch.documentId.localeCompare(right.branch.documentId),
+    left.documentDraft.documentId.localeCompare(right.documentDraft.documentId),
   );
 }
 
-export function createDrizzleBranchJournalReadStore(db: Database): BranchPushReadStore {
+export function createDrizzleDraftJournalReadStore(db: Database): BranchPushReadStore {
   return {
-    async listActiveJournalRows(branchId, generation) {
+    async listActiveJournalRows(draftId, generation) {
       const rows = await db
         .select()
-        .from(branchWriteJournal)
+        .from(draftWriteJournal)
         .where(
           and(
-            eq(branchWriteJournal.branchId, branchId),
-            eq(branchWriteJournal.generation, generation),
-            eq(branchWriteJournal.status, "active"),
+            eq(draftWriteJournal.draftId, draftId),
+            eq(draftWriteJournal.generation, generation),
+            eq(draftWriteJournal.status, "active"),
           ),
         )
-        .orderBy(branchWriteJournal.id);
+        .orderBy(draftWriteJournal.id);
       return rows.map(mapJournalRow);
     },
 
-    async listReviewableJournalRows(branchId, generation) {
+    async listReviewableJournalRows(draftId, generation) {
       const rows = await db
         .select()
-        .from(branchWriteJournal)
+        .from(draftWriteJournal)
         .where(
           and(
-            eq(branchWriteJournal.branchId, branchId),
-            eq(branchWriteJournal.generation, generation),
-            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+            eq(draftWriteJournal.draftId, draftId),
+            eq(draftWriteJournal.generation, generation),
+            inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
-        .orderBy(branchWriteJournal.id);
+        .orderBy(draftWriteJournal.id);
       return rows.map(mapJournalRow);
     },
 
     async listJournalRowsForTurn(input) {
       const conditions = [
-        eq(branchWriteJournal.threadId, input.threadId),
-        eq(branchWriteJournal.turnId, input.turnId),
+        eq(draftWriteJournal.threadId, input.threadId),
+        eq(draftWriteJournal.turnId, input.turnId),
       ];
-      if (input.branchId) conditions.push(eq(branchWriteJournal.branchId, input.branchId));
+      if (input.draftId) conditions.push(eq(draftWriteJournal.draftId, input.draftId));
       if (input.generation !== undefined) {
-        conditions.push(eq(branchWriteJournal.generation, input.generation));
+        conditions.push(eq(draftWriteJournal.generation, input.generation));
       }
       if (input.statuses && input.statuses.length > 0) {
-        conditions.push(inArray(branchWriteJournal.status, [...input.statuses]));
+        conditions.push(inArray(draftWriteJournal.status, [...input.statuses]));
       }
       const rows = await db
         .select()
-        .from(branchWriteJournal)
+        .from(draftWriteJournal)
         .where(and(...conditions))
-        .orderBy(branchWriteJournal.id);
+        .orderBy(draftWriteJournal.id);
       return rows.map(mapJournalRow);
     },
 
-    async listJournalRowsForBranch(input) {
+    async listJournalRowsForDraft(input) {
       const conditions = [
-        eq(branchWriteJournal.branchId, input.branchId),
-        eq(branchWriteJournal.generation, input.generation),
+        eq(draftWriteJournal.draftId, input.draftId),
+        eq(draftWriteJournal.generation, input.generation),
       ];
       if (input.throughJournalId !== undefined) {
-        conditions.push(sql`${branchWriteJournal.id} <= ${input.throughJournalId}`);
+        conditions.push(sql`${draftWriteJournal.id} <= ${input.throughJournalId}`);
       }
       const rows = await currentDrizzleDb(db)
         .select({
-          row: branchWriteJournal,
+          row: draftWriteJournal,
           editKind: documentEdits.kind,
         })
-        .from(branchWriteJournal)
+        .from(draftWriteJournal)
         .leftJoin(
           documentEditParts,
           sql`
           ${documentEditParts.origin}->>'kind' = 'pending'
-          and ${documentEditParts.origin}->>'branchId' = ${branchWriteJournal.branchId}::text
-          and ${documentEditParts.origin}->>'generation' = ${branchWriteJournal.generation}::text
-          and ${documentEditParts.origin}->>'rowId' = ${branchWriteJournal.id}::text
+          and ${documentEditParts.origin}->>'draftId' = ${draftWriteJournal.draftId}::text
+          and ${documentEditParts.origin}->>'generation' = ${draftWriteJournal.generation}::text
+          and ${documentEditParts.origin}->>'rowId' = ${draftWriteJournal.id}::text
         `,
         )
         .leftJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
         .where(and(...conditions))
-        .orderBy(branchWriteJournal.id);
+        .orderBy(draftWriteJournal.id);
       // A row can carry several parts of one edit: one entry per row, in journal order.
       const byRow = new Map<number, ReturnType<typeof mapJournalRow>>();
       for (const { row, editKind } of rows) {
@@ -153,12 +153,12 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchPushRea
 
     async listPushLineageForTurn(input) {
       const turnRows = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
+        .select({ id: draftWriteJournal.id })
+        .from(draftWriteJournal)
         .where(
           and(
-            eq(branchWriteJournal.threadId, input.threadId),
-            eq(branchWriteJournal.turnId, input.turnId),
+            eq(draftWriteJournal.threadId, input.threadId),
+            eq(draftWriteJournal.turnId, input.turnId),
           ),
         );
       const journalIds = turnRows.map((row) => row.id);
@@ -178,45 +178,43 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchPushRea
       return rows.map(mapLineage);
     },
 
-    async listConcurrentJournalRows(branchId, generation, options) {
+    async listConcurrentJournalRows(draftId, generation, options) {
       const floor = options.afterJournalId ?? 0;
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
       const rows = await currentDrizzleDb(db)
-        .select({ row: branchWriteJournal })
-        .from(branchWriteJournal)
-        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
+        .select({ row: draftWriteJournal })
+        .from(draftWriteJournal)
+        .innerJoin(documentDrafts, eq(draftWriteJournal.draftId, documentDrafts.id))
         .where(
           and(
-            eq(documentBranches.documentId, options.documentId),
-            sql`${branchWriteJournal.id} > ${floor}`,
-            // Same-branch active rows and cross-branch pushed rows are both needed for
+            eq(documentDrafts.documentId, options.documentId),
+            sql`${draftWriteJournal.id} > ${floor}`,
+            // Same-draft active rows and cross-draft pushed rows are both needed for
             // attribution. Cold-start scans are deliberately unbounded until we add a
             // push-ordered floor; max(journal.id) is unsound because journal ids can include
             // unpushed sibling rows and do not encode push order. Each row remains bounded
-            // by its owning branch generation so reset/future-generation rows cannot leak
+            // by its owning draft generation so reset/future-generation rows cannot leak
             // backward.
             sql`(
-              (${branchWriteJournal.branchId} = ${branchId}
-                AND ${branchWriteJournal.generation} <= ${generation}
-                AND ${branchWriteJournal.status} IN ('active', 'pushed'))
-              OR (${branchWriteJournal.branchId} <> ${branchId}
-                AND ${branchWriteJournal.generation} <= ${documentBranches.generation}
-                AND ${branchWriteJournal.status} = 'pushed')
+              (${draftWriteJournal.draftId} = ${draftId}
+                AND ${draftWriteJournal.generation} <= ${generation}
+                AND ${draftWriteJournal.status} IN ('active', 'pushed'))
+              OR (${draftWriteJournal.draftId} <> ${draftId}
+                AND ${draftWriteJournal.generation} <= ${documentDrafts.generation}
+                AND ${draftWriteJournal.status} = 'pushed')
             )`,
           ),
         )
-        .orderBy(branchWriteJournal.id);
+        .orderBy(draftWriteJournal.id);
       return rows.map(({ row }) => mapJournalRow(row));
     },
 
-    async latestPushForBranch(branchId, generation) {
+    async latestPushForDraft(draftId, generation) {
       const [row] = await db
         .select()
         .from(pushLineage)
-        .where(
-          and(eq(pushLineage.branchId, branchId), eq(pushLineage.branchGeneration, generation)),
-        )
+        .where(and(eq(pushLineage.draftId, draftId), eq(pushLineage.draftGeneration, generation)))
         .orderBy(sql`${pushLineage.id} DESC`)
         .limit(1);
       return row ? mapLineage(row) : null;
@@ -245,7 +243,7 @@ export function createDrizzlePushCommitStore(
   return {
     async commitDiscard(input) {
       return workProjection.mutate(
-        { branches: [input.branch.branchId] },
+        { drafts: [input.documentDraft.draftId] },
         () => commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
         ACTIVE_DRAFT_SEAM,
       );
@@ -253,7 +251,7 @@ export function createDrizzlePushCommitStore(
 
     async commitPushBatch(input) {
       assertRootOwnedSettlement("Branch push staging");
-      const branchIds = input.pushes.map(({ branch }) => branch.branchId);
+      const draftIds = input.pushes.map(({ documentDraft }) => documentDraft.draftId);
       const firstCommitted = async () => {
         for (const prepared of sortPushesByDocumentId(input.pushes)) {
           const existing = await findLineage(currentDrizzleDb(db), prepared.idempotencyKey);
@@ -263,7 +261,7 @@ export function createDrizzlePushCommitStore(
       };
       return workProjection
         .mutate(
-          { branches: branchIds },
+          { drafts: draftIds },
           async () => {
             const txDb = currentDrizzleDb(db);
             // The command's claim is the transaction's first write; losing it stages nothing.
@@ -278,7 +276,7 @@ export function createDrizzlePushCommitStore(
             const sorted = sortPushesByDocumentId(input.pushes);
             // Every document lock before any trail lock, as completion takes them.
             for (const prepared of sorted)
-              await lockDocumentMutation(txDb, prepared.branch.documentId);
+              await lockDocumentMutation(txDb, prepared.documentDraft.documentId);
             const now = new Date();
             const staged = [];
             for (const prepared of sorted) {
@@ -325,52 +323,52 @@ export function createDrizzlePushCommitStore(
 }
 
 /**
- * The one SQL membership rule for a branch to count as a pending document, twin of
- * `draft-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
+ * The one SQL membership rule for a draft to count as a pending document, twin of
+ * `branch-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
  * document hint both filter by it; the Works boundary reconciles each Work's stored count
  * through that count (migration 0067's backfill spells it in SQL too).
  */
-const reviewableWorkDraftBranch = and(
-  eq(documentBranches.kind, "work_draft"),
-  eq(documentBranches.status, "active"),
-  sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
+const reviewableWorkDraft = and(
+  eq(documentDrafts.kind, "work_draft"),
+  eq(documentDrafts.status, "active"),
+  sql`(${documentDrafts.hasEffect} OR ${documentDrafts.blocking})`,
   sql`exists (
-    select 1 from ${branchWriteJournal}
-    where ${branchWriteJournal.branchId} = ${documentBranches.id}
-      and ${branchWriteJournal.generation} = ${documentBranches.generation}
-      and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
+    select 1 from ${draftWriteJournal}
+    where ${draftWriteJournal.draftId} = ${documentDrafts.id}
+      and ${draftWriteJournal.generation} = ${documentDrafts.generation}
+      and ${draftWriteJournal.status} in ('active', 'rollback_pending'))`,
 );
 
-export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
+export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
   return {
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
       const tx = currentDrizzleDb(db);
-      const branched = tx
-        .select({ workId: branchDraftWork.workId, documentId: documentBranches.documentId })
-        .from(documentBranches)
-        .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
+      const drafted = tx
+        .select({ workId: draftBranchWork.workId, documentId: documentDrafts.documentId })
+        .from(documentDrafts)
+        .innerJoin(draftBranchWork.branches, draftBranchWork.on)
         .where(
           and(
-            inArray(branchDraftWork.workId, workIds),
-            eq(drafts.status, "active"),
-            reviewableWorkDraftBranch,
+            inArray(draftBranchWork.workId, workIds),
+            eq(branches.status, "active"),
+            reviewableWorkDraft,
           ),
         );
-      // A created document is pending with no text yet (a branchless image, an empty create).
+      // A created document is pending with no text yet (a draftless image, an empty create).
       const changed = tx
-        .select({ workId: drafts.originWorkId, documentId: draftTreeChanges.nodeId })
-        .from(draftTreeChanges)
-        .innerJoin(drafts, eq(drafts.id, draftTreeChanges.draftId))
+        .select({ workId: branches.originWorkId, documentId: branchTreeChanges.nodeId })
+        .from(branchTreeChanges)
+        .innerJoin(branches, eq(branches.id, branchTreeChanges.branchId))
         .where(
           and(
-            inArray(drafts.originWorkId, workIds),
-            eq(drafts.status, "active"),
-            eq(draftTreeChanges.nodeKind, "document"),
+            inArray(branches.originWorkId, workIds),
+            eq(branches.status, "active"),
+            eq(branchTreeChanges.nodeKind, "document"),
           ),
         );
       // `union` (not `union all`) leaves each Work's document once, so a row is a document.
-      const pending = branched.union(changed).as("pending");
+      const pending = drafted.union(changed).as("pending");
       const rows = await tx
         .select({ workId: pending.workId, count: sql<number>`count(*)::int` })
         .from(pending)
@@ -379,55 +377,58 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         rows.flatMap(({ workId, count }) => (workId ? [[workId as WorkId, count]] : [])),
       );
     },
-    async listDraftsChangingDocument({ projectId, documentId }) {
+    async listBranchesChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
       // The same membership arms as the Work counts, narrowed to one document.
-      const branched = tx
-        .select({ draftId: documentBranches.draftId })
-        .from(documentBranches)
-        .where(and(eq(documentBranches.documentId, documentId), reviewableWorkDraftBranch));
+      const drafted = tx
+        .select({ branchId: documentDrafts.branchId })
+        .from(documentDrafts)
+        .where(and(eq(documentDrafts.documentId, documentId), reviewableWorkDraft));
       const changed = tx
-        .select({ draftId: draftTreeChanges.draftId })
-        .from(draftTreeChanges)
+        .select({ branchId: branchTreeChanges.branchId })
+        .from(branchTreeChanges)
         .where(
-          and(eq(draftTreeChanges.nodeId, documentId), eq(draftTreeChanges.nodeKind, "document")),
+          and(eq(branchTreeChanges.nodeId, documentId), eq(branchTreeChanges.nodeKind, "document")),
         );
-      // Archived Works stay (their drafts remain reviewable); deleted Works and drafts whose
+      // Archived Works stay (their branches remain reviewable); deleted Works and branches whose
       // origin Work is gone are out, since today's review address needs a live Work.
       const rows = await tx
         .select({
-          draftId: drafts.id,
+          branchId: branches.id,
           originWorkId: works.id,
           name: works.name,
           isNoWork: works.isNoWork,
         })
-        .from(drafts)
-        .innerJoin(works, eq(works.id, drafts.originWorkId))
+        .from(branches)
+        .innerJoin(works, eq(works.id, branches.originWorkId))
         .where(
           and(
-            eq(drafts.projectId, projectId),
-            eq(drafts.status, "active"),
+            eq(branches.projectId, projectId),
+            eq(branches.status, "active"),
             isNull(works.deletedAt),
-            sql`${drafts.id} in (${branched.union(changed)})`,
+            sql`${branches.id} in (${drafted.union(changed)})`,
           ),
         )
-        .orderBy(asc(drafts.createdAt), asc(drafts.id));
+        .orderBy(asc(branches.createdAt), asc(branches.id));
       return rows.map((row) => ({
-        draftId: row.draftId,
+        branchId: row.branchId,
         originWorkId: row.originWorkId,
         originWorkName: row.isNoWork ? null : row.name,
       }));
     },
-    async listCreators(draftId, documentIds) {
+    async listCreators(branchId, documentIds) {
       const rows = await currentDrizzleDb(db)
-        .select({ documentId: draftTreeChanges.nodeId, threadId: draftTreeChanges.createdThreadId })
-        .from(draftTreeChanges)
+        .select({
+          documentId: branchTreeChanges.nodeId,
+          threadId: branchTreeChanges.createdThreadId,
+        })
+        .from(branchTreeChanges)
         .where(
           and(
-            eq(draftTreeChanges.draftId, draftId),
-            eq(draftTreeChanges.nodeKind, "document"),
-            isNotNull(draftTreeChanges.createdThreadId),
-            documentIds ? inArray(draftTreeChanges.nodeId, [...documentIds]) : undefined,
+            eq(branchTreeChanges.branchId, branchId),
+            eq(branchTreeChanges.nodeKind, "document"),
+            isNotNull(branchTreeChanges.createdThreadId),
+            documentIds ? inArray(branchTreeChanges.nodeId, [...documentIds]) : undefined,
           ),
         );
       return new Map(
@@ -436,7 +437,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         ),
       );
     },
-    async listSettling(draftId) {
+    async listSettling(branchId) {
       const rows = await currentDrizzleDb(db)
         .select({ payload: branchPushSettlementPayloads.payload })
         .from(branchPushSettlementPayloads)
@@ -446,9 +447,9 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         )
         .where(
           and(
-            eq(branchPushSettlementPayloads.stepKind, DRAFT_TREE_STEP),
+            eq(branchPushSettlementPayloads.stepKind, BRANCH_TREE_STEP),
             eq(branchPushSettlementBatches.state, "pending"),
-            sql`${branchPushSettlementPayloads.payload}->>'draftId' = ${draftId}`,
+            sql`${branchPushSettlementPayloads.payload}->>'branchId' = ${branchId}`,
           ),
         );
       const keys = new Set<string>();
@@ -458,50 +459,50 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
       }
       return keys;
     },
-    async listDraftBranchEvidence(draftId, documentIds) {
-      // One row per branch and writing chat: the journal is aggregated here, not shipped.
+    async listBranchDraftEvidence(branchId, documentIds) {
+      // One row per draft and writing chat: the journal is aggregated here, not shipped.
       const writer = sql<
         string | null
-      >`case when ${branchWriteJournal.source} = 'agent' then ${branchWriteJournal.threadId} end`;
+      >`case when ${draftWriteJournal.source} = 'agent' then ${draftWriteJournal.threadId} end`;
       const rows = await currentDrizzleDb(db)
         .select({
-          branchId: documentBranches.id,
-          documentId: documentBranches.documentId,
-          generation: documentBranches.generation,
-          updatedAt: documentBranches.updatedAt,
-          hasEffect: documentBranches.hasEffect,
-          blocking: documentBranches.blocking,
+          draftId: documentDrafts.id,
+          documentId: documentDrafts.documentId,
+          generation: documentDrafts.generation,
+          updatedAt: documentDrafts.updatedAt,
+          hasEffect: documentDrafts.hasEffect,
+          blocking: documentDrafts.blocking,
           writer,
-          writes: sql<number>`count(${branchWriteJournal.id})::int`,
-          lastWrite: sql<number | null>`max(${branchWriteJournal.id})`,
+          writes: sql<number>`count(${draftWriteJournal.id})::int`,
+          lastWrite: sql<number | null>`max(${draftWriteJournal.id})`,
         })
-        .from(documentBranches)
+        .from(documentDrafts)
         .leftJoin(
-          branchWriteJournal,
+          draftWriteJournal,
           and(
-            eq(branchWriteJournal.branchId, documentBranches.id),
-            eq(branchWriteJournal.generation, documentBranches.generation),
-            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+            eq(draftWriteJournal.draftId, documentDrafts.id),
+            eq(draftWriteJournal.generation, documentDrafts.generation),
+            inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
         .where(
           and(
-            eq(documentBranches.draftId, draftId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-            documentIds ? inArray(documentBranches.documentId, [...documentIds]) : undefined,
+            eq(documentDrafts.branchId, branchId),
+            eq(documentDrafts.kind, "work_draft"),
+            eq(documentDrafts.status, "active"),
+            documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
           ),
         )
-        .groupBy(documentBranches.id, writer)
-        .orderBy(asc(documentBranches.id), sql`max(${branchWriteJournal.id}) desc nulls last`);
+        .groupBy(documentDrafts.id, writer)
+        .orderBy(asc(documentDrafts.id), sql`max(${draftWriteJournal.id}) desc nulls last`);
 
-      const evidence = new Map<string, WorkDraftPendingEvidence>();
+      const evidence = new Map<string, WorkBranchPendingEvidence>();
       for (const row of rows) {
-        const branch = evidence.get(row.branchId) ?? {
-          branch: {
-            branchId: row.branchId,
+        const documentDraft = evidence.get(row.draftId) ?? {
+          documentDraft: {
+            draftId: row.draftId,
             documentId: row.documentId,
-            draftId,
+            branchId,
             generation: row.generation,
             updatedAt: row.updatedAt,
             hasEffect: row.hasEffect,
@@ -510,9 +511,9 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           hasRows: false,
           agentThreadIds: [],
         };
-        if (row.writes > 0) branch.hasRows = true;
-        if (row.writer) branch.agentThreadIds.push(row.writer);
-        evidence.set(row.branchId, branch);
+        if (row.writes > 0) documentDraft.hasRows = true;
+        if (row.writer) documentDraft.agentThreadIds.push(row.writer);
+        evidence.set(row.draftId, documentDraft);
       }
       return [...evidence.values()];
     },
@@ -528,12 +529,13 @@ async function commitPreparedDiscard(
     input.command &&
     !(await claimCommandWithinTx(db, input.command.envelope, input.command.result))
   ) {
-    throw new DraftCommandExistsError(input.command.envelope.commandId);
+    throw new BranchCommandExistsError(input.command.envelope.commandId);
   }
-  await lockDocumentMutation(db, input.branch.documentId);
+  await lockDocumentMutation(db, input.documentDraft.documentId);
   if (
     input.expectedLiveRevision !== undefined &&
-    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
+    input.expectedLiveRevision !==
+      (await readLiveReviewRevision(db, input.documentDraft.documentId))
   )
     throw new DraftChangeRefusal("stale");
 
@@ -544,8 +546,8 @@ async function commitPreparedDiscard(
   try {
     Y.applyUpdate(checkpoint, input.state);
     rewritten = await commitRewriteWithinTx(db, {
-      branchId: input.branch.branchId,
-      policy: { kind: "exact", revision: input.branch.revision },
+      draftId: input.documentDraft.draftId,
+      policy: { kind: "exact", revision: input.documentDraft.revision },
       fence: { kind: "none" },
       work: "active",
       doc: checkpoint,
@@ -558,10 +560,10 @@ async function commitPreparedDiscard(
     checkpoint.destroy();
   }
   if (rewritten.status !== "committed")
-    throw new BranchPushCommitConflictError(input.branch.branchId);
+    throw new BranchPushCommitConflictError(input.documentDraft.draftId);
 
   const discardedRows = await db
-    .update(branchWriteJournal)
+    .update(draftWriteJournal)
     .set({
       status: "discarded",
       reviewedBy: input.reviewedByUserId ?? null,
@@ -569,40 +571,40 @@ async function commitPreparedDiscard(
     })
     .where(
       and(
-        eq(branchWriteJournal.branchId, input.branch.branchId),
-        eq(branchWriteJournal.generation, input.branch.generation),
-        inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+        eq(draftWriteJournal.draftId, input.documentDraft.draftId),
+        eq(draftWriteJournal.generation, input.documentDraft.generation),
+        inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
         inArray(
-          branchWriteJournal.id,
+          draftWriteJournal.id,
           input.journalRows.map((row) => row.id),
         ),
       ),
     )
-    .returning({ id: branchWriteJournal.id });
+    .returning({ id: draftWriteJournal.id });
   if (discardedRows.length !== input.journalRows.length) {
-    throw new BranchPushCommitConflictError(input.branch.branchId);
+    throw new BranchPushCommitConflictError(input.documentDraft.draftId);
   }
   await placeDraftRows(
     db,
-    input.branch.branchId,
-    input.branch.generation,
+    input.documentDraft.draftId,
+    input.documentDraft.generation,
     input.journalRows.map((row) => row.id),
     { kind: "discarded" },
   );
   if (input.survivors) {
     await db
-      .update(branchWriteJournal)
+      .update(draftWriteJournal)
       .set({ status: "discarded" })
       .where(
         and(
-          eq(branchWriteJournal.branchId, input.branch.branchId),
-          eq(branchWriteJournal.generation, input.branch.generation),
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+          eq(draftWriteJournal.draftId, input.documentDraft.draftId),
+          eq(draftWriteJournal.generation, input.documentDraft.generation),
+          inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
         ),
       );
   }
-  await refreshDraftEffect(db, input.branch.branchId);
-  await bumpBranchRevisions(db, [input.branch.branchId], { blocking: false });
+  await refreshDraftEffect(db, input.documentDraft.draftId);
+  await bumpDraftRevisions(db, [input.documentDraft.draftId], { blocking: false });
 }
 
 /**
@@ -617,16 +619,16 @@ async function rejournalSurvivors(
 ): Promise<void> {
   for (const row of survivors) {
     if (input.retireSurvivors) {
-      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+      await placeDraftRows(db, row.draftId, input.documentDraft.generation, [row.id], {
         kind: "retired",
       });
       continue;
     }
     const [next] = await db
-      .insert(branchWriteJournal)
+      .insert(draftWriteJournal)
       .values({
-        branchId: row.branchId,
-        generation: input.branch.generation + 1,
+        draftId: row.draftId,
+        generation: input.documentDraft.generation + 1,
         updateData: Buffer.from(row.updateData),
         source: row.source,
         actorUserId: row.actorUserId,
@@ -638,12 +640,12 @@ async function rejournalSurvivors(
         status: row.status,
         draftBaseUpdateSeq: row.draftBaseUpdateSeq,
       })
-      .returning({ id: branchWriteJournal.id });
+      .returning({ id: draftWriteJournal.id });
     if (!next) throw new Error("Discard survivor was not journaled");
-    await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+    await placeDraftRows(db, row.draftId, input.documentDraft.generation, [row.id], {
       kind: "pending",
-      branchId: row.branchId,
-      generation: input.branch.generation + 1,
+      draftId: row.draftId,
+      generation: input.documentDraft.generation + 1,
       rowId: next.id,
     });
   }
@@ -663,26 +665,27 @@ async function commitPreparedPush(
   input: PreparedPushCommit,
   now: Date,
 ): Promise<typeof pushLineage.$inferSelect> {
-  await lockDocumentMutation(db, input.branch.documentId);
+  await lockDocumentMutation(db, input.documentDraft.documentId);
   if (
     input.expectedLiveRevision !== undefined &&
-    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
+    input.expectedLiveRevision !==
+      (await readLiveReviewRevision(db, input.documentDraft.documentId))
   )
     throw new DraftChangeRefusal("stale");
 
   // Staging flips the rows' status (a membership input): the revision fences and records it.
   // The revision alone fences the generation: a re-fork bumps it.
-  const [casRow] = await bumpBranchRevisions(db, [input.branch.branchId], {
-    expectedRevision: input.branch.revision,
+  const [casRow] = await bumpDraftRevisions(db, [input.documentDraft.draftId], {
+    expectedRevision: input.documentDraft.revision,
   });
-  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
+  if (!casRow) throw new BranchPushCommitConflictError(input.documentDraft.draftId);
 
   const [lineage] = await db
     .insert(pushLineage)
     .values({
-      branchId: input.branch.branchId,
-      branchGeneration: input.branch.generation,
-      documentId: input.branch.documentId,
+      draftId: input.documentDraft.draftId,
+      draftGeneration: input.documentDraft.generation,
+      documentId: input.documentDraft.documentId,
       journalIds: input.journalRows.map((row) => row.id),
       upstreamUpdateSeq: null,
       pushedByUserId: input.pushedByUserId ?? null,
@@ -696,7 +699,7 @@ async function commitPreparedPush(
 
   if (input.journalRows.length > 0) {
     const pushedRows = await db
-      .update(branchWriteJournal)
+      .update(draftWriteJournal)
       .set({
         status: "pushed",
         pushedAt: now,
@@ -705,38 +708,38 @@ async function commitPreparedPush(
       })
       .where(
         and(
-          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+          inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
           inArray(
-            branchWriteJournal.id,
+            draftWriteJournal.id,
             input.journalRows.map((row) => row.id),
           ),
         ),
       )
-      .returning({ id: branchWriteJournal.id });
+      .returning({ id: draftWriteJournal.id });
     if (pushedRows.length !== input.journalRows.length) {
-      throw new BranchPushCommitConflictError(input.branch.branchId);
+      throw new BranchPushCommitConflictError(input.documentDraft.draftId);
     }
   }
 
   return lineage;
 }
 
-function representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
+function representativeThreadId(rows: DraftJournalRow[]): ThreadId | null {
   const ids = new Set(rows.map((row) => row.threadId));
   const [id] = ids;
   return ids.size === 1 && id !== null ? id : null;
 }
 
-function representativeTurnId(rows: BranchJournalRow[]): TurnId | null {
+function representativeTurnId(rows: DraftJournalRow[]): TurnId | null {
   const ids = new Set(rows.map((row) => row.turnId));
   const [id] = ids;
   return ids.size === 1 && id !== null ? id : null;
 }
 
-function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJournalRow {
+function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {
   return {
     id: row.id,
-    branchId: row.branchId,
+    draftId: row.draftId,
     generation: row.generation,
     wId: row.wId,
     toolCallId: row.toolCallId,
@@ -754,8 +757,8 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
 function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
-    branchId: row.branchId,
-    branchGeneration: row.branchGeneration,
+    draftId: row.draftId,
+    draftGeneration: row.draftGeneration,
     documentId: row.documentId,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,

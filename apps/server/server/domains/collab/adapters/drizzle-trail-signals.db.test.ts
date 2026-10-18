@@ -86,14 +86,14 @@ describe("change trail dirty signals (postgres)", () => {
     const harness = createHarness(db);
     try {
       await clear();
-      const branch = await harness.seedDestructivePush("signals");
+      const documentDraft = await harness.seedDestructivePush("signals");
       expect(await signals()).not.toEqual([]);
       await clear();
-      await db.update(schema.branchWriteJournal).set({ status: "rollback_pending" });
+      await db.update(schema.draftWriteJournal).set({ status: "rollback_pending" });
       expect(await signals()).not.toEqual([]);
-      await db.update(schema.branchWriteJournal).set({ status: "active" });
+      await db.update(schema.draftWriteJournal).set({ status: "active" });
       await clear();
-      await harness.push(branch);
+      await harness.push(documentDraft);
       expect(await signals()).not.toEqual([]);
       await clear();
       await db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID));
@@ -196,13 +196,13 @@ describe("change trail dirty signals (postgres)", () => {
   it("holds the original turn settling for an inverse-only live write and rollback", async () => {
     const harness = createHarness(db);
     try {
-      const branchId = await harness.seedDestructivePush("semantic-readiness");
+      const draftId = await harness.seedDestructivePush("semantic-readiness");
       const original = await receipt();
       const inverse = await receipt(original);
       const [journal] = await db
-        .insert(schema.branchWriteJournal)
+        .insert(schema.draftWriteJournal)
         .values({
-          branchId,
+          draftId,
           generation: 1,
           source: "writer",
           updateData: Buffer.from([0, 0]),
@@ -215,7 +215,7 @@ describe("change trail dirty signals (postgres)", () => {
         .insert(schema.pushLineage)
         .values({
           documentId: ALPHA_ID,
-          branchGeneration: 1,
+          draftGeneration: 1,
           journalIds: [journal.id],
           idempotencyKey: "inverse-only",
         })
@@ -245,9 +245,9 @@ describe("change trail dirty signals (postgres)", () => {
       await writer().reconcileTerminalOwners();
       expect(await shell()).toMatchObject({ state: "settling" });
       await db
-        .update(schema.branchWriteJournal)
+        .update(schema.draftWriteJournal)
         .set({ status: "pushed" })
-        .where(eq(schema.branchWriteJournal.id, journal.id));
+        .where(eq(schema.draftWriteJournal.id, journal.id));
       await writer().reconcileTerminalOwners();
       expect(await shell()).toMatchObject({ state: "settling" });
       await db

@@ -13,7 +13,7 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createInMemoryPendingSettlementStore } from "../test-support/in-memory-pending-settlement-store.js";
-import { testBranchRow } from "../test-support/memory-branch-store.js";
+import { testDraftRow } from "../test-support/memory-draft-store.js";
 import type {
   PreparedPushCommit,
   PushCommitStore,
@@ -46,11 +46,11 @@ function fixture() {
     markup.parse("Writer recent: Writer captured body.\n\nSurvivor."),
   );
   const lockCut = Y.encodeStateAsUpdate(live);
-  const branch = document(lockCut);
-  const doomed = model.getBlocks(toDocHandle(branch))[0]!;
-  const before = Y.encodeStateVector(branch);
-  model.deleteBlock(toDocHandle(branch), doomed);
-  const pushUpdate = Y.encodeStateAsUpdate(branch, before);
+  const documentDraft = document(lockCut);
+  const doomed = model.getBlocks(toDocHandle(documentDraft))[0]!;
+  const before = Y.encodeStateVector(documentDraft);
+  model.deleteBlock(toDocHandle(documentDraft), doomed);
+  const pushUpdate = Y.encodeStateAsUpdate(documentDraft, before);
   const completed: number[] = [];
   const store = createInMemoryPendingSettlementStore({ onCompleted: (id) => completed.push(id) });
   const pushes: PushLineageRow[] = [];
@@ -59,8 +59,8 @@ function fixture() {
       if (!prepared) throw new Error("single push fixture");
       const push = {
         id: 1,
-        branchId: "branch",
-        branchGeneration: 1,
+        draftId: "draft",
+        draftGeneration: 1,
         documentId,
         journalIds: [],
         upstreamUpdateSeq: 1,
@@ -114,7 +114,7 @@ function fixture() {
     changes: [],
   };
   const prepared: PreparedPushCommit = {
-    branch: testBranchRow({ branchId: "branch", documentId, workId: "work" as WorkId }),
+    documentDraft: testDraftRow({ draftId: "draft", documentId, workId: "work" as WorkId }),
     journalRows: [],
     pushUpdate,
     idempotencyKey: "push",

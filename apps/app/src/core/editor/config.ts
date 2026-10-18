@@ -71,7 +71,7 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
-  /** The Work the viewer is in: a picture still in its draft is signed through it. */
+  /** The Work the viewer is in: a picture still pending in its branch is signed through it. */
   workId?: string;
 };
 
@@ -97,7 +97,7 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
-  /** Live-session sidecar; omitted for branch/draft rooms. */
+  /** Live-session sidecar; omitted for draft rooms. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;

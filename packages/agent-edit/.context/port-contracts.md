@@ -17,7 +17,7 @@ checkpoint cuts. Compaction never expires immutable receipts or lineage.
 
 Undo/redo state is not transport state. `DocumentEdits` reads immutable parts
 and delegates stack policy to the host's inverse policy, behind the
-prepared-lease gate and never through the branch journal facade or staged-write
+prepared-lease gate and never through the draft journal facade or staged-write
 queue. There is no reconstruction-based reversal endpoint or reserved undo
 client.
 
@@ -25,8 +25,8 @@ client.
 
 `withDocument` runs a callback on the host's document; its mutations commit
 atomically or refuse. Callers must not rely on mutual exclusion: a live host
-serializes callers for one document, a branch host runs them on private
-candidates. On a branch an ordinary CRDT write commits as an unfenced append;
+serializes callers for one document, a draft host runs them on private
+candidates. On a draft an ordinary CRDT write commits as an unfenced append;
 an exact peer catch-up or rewrite commits only at the revision it captured, so
 a `StagedWriteCommit` whose save includes one can still throw a revision miss.
 Neither fences a separate WebSocket

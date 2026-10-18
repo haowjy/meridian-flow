@@ -213,7 +213,7 @@ describe("context router untitled identity recovery", () => {
     });
 
     await expect(
-      port.createUntitledDocument("manuscript://drafts", {
+      port.createUntitledDocument("manuscript://branches", {
         documentId: "00000000-0000-4000-8000-000000000101",
         origin: { type: "system" },
       }),

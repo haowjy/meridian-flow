@@ -21,7 +21,7 @@ export interface Work {
   defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Documents this Work's active draft changes (the Works badge), as the server stores it; never derive from visible rows. */
+  /** Documents this Work's active branch changes (the Works badge), as the server stores it; never derive from visible rows. */
   pendingDocumentCount: number;
   createdAt: string;
   updatedAt: string;
@@ -78,7 +78,7 @@ export type ThreadWorkScope = { workId: WorkId; workSlug: WorkSlug | null };
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  draftOwner: { kind: "work"; workId: WorkId } | null;
+  branchOwner: { kind: "work"; workId: WorkId } | null;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */

@@ -1,5 +1,5 @@
 /**
- * Document forwards: a device's create that joined a draft's hidden document leaves its
+ * Document forwards: a device's create that joined a branch's hidden document leaves its
  * minted id meaning the joined one (`document_forwards`). The device's id never has a
  * `documents` row. Every function runs in its caller's transaction; a forward is written
  * in the reveal's own transaction, so a join and its forward commit together.

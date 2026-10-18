@@ -4,12 +4,12 @@ import type { InteractionContext } from "./types.js";
 /** Journal mutation mode derived from interaction context. */
 export function mutationMode(
   context: InteractionContext | undefined,
-): { mode: "threadPeer"; branchGeneration: number; peerBranchId?: string } | { mode: "live" } {
+): { mode: "threadPeer"; draftGeneration: number; peerDraftId?: string } | { mode: "live" } {
   return context?.mode === "threadPeer"
     ? {
         mode: "threadPeer",
-        branchGeneration: context.branchGeneration,
-        ...(context.peerBranchId ? { peerBranchId: context.peerBranchId } : {}),
+        draftGeneration: context.draftGeneration,
+        ...(context.peerDraftId ? { peerDraftId: context.peerDraftId } : {}),
       }
     : { mode: "live" };
 }

@@ -9,7 +9,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { Attempt } from "./branch-attempts.js";
+import type { BranchCommandEnvelope } from "./branch-commands.js";
 import {
   type ApplyPayloads,
   FIRST_CLAIM_EPOCH,
@@ -21,10 +21,10 @@ import {
   type SettlementClaim,
   type SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
-import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import { collabHook } from "./collab-test-hooks.js";
-import type { DraftCommandEnvelope } from "./draft-commands.js";
+import type { Attempt } from "./draft-attempts.js";
+import { trailContributionReplacement } from "./draft-trail-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
@@ -50,7 +50,7 @@ export type ApplyOutcome =
       kind: "settled";
       /** The pushes whose text reached live. */
       pushes: readonly PushLineageRow[];
-      /** Every held item, at the check or in completion, branchless ones included. */
+      /** Every held item, at the check or in completion, items without text drafts included. */
       held: readonly ApplyItemHold[];
       /** What the steps did per applied item, decided in completion. */
       outcomes: readonly ApplyItemOutcome[];
@@ -88,7 +88,7 @@ export function createBranchPushTransition(input: {
         pushes: PreparedPushCommit[];
         payloads?: ApplyPayloads;
         /** The writer's command, claimed with the staging (§4.6). */
-        command?: DraftCommandEnvelope;
+        command?: BranchCommandEnvelope;
         onCommandExists?: () => T;
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
         onConflict: (push: PushLineageRow) => T;
@@ -124,15 +124,15 @@ export function createBranchPushTransition(input: {
         const check = await input.settlementStore.checkApply({
           batchId: settlement.batchId,
           members: prepared.pushes.map((push) => ({
-            documentId: push.branch.documentId,
-            branchId: push.branch.branchId,
-            workId: push.branch.workId,
+            documentId: push.documentDraft.documentId,
+            draftId: push.documentDraft.draftId,
+            workId: push.documentDraft.workId,
             journalIds: push.journalRows.map((row) => row.id),
           })),
           payloads: new Map(Object.entries(payloads)),
           liveTextFingerprints: new Map(
             prepared.pushes.map((push) => [
-              push.branch.documentId,
+              push.documentDraft.documentId,
               fullStateUpdateFingerprint(push.lockCutUpdate),
             ]),
           ),
@@ -143,7 +143,9 @@ export function createBranchPushTransition(input: {
         // Held items are durable exclusions: their text leaves the batch, their step
         // payload is the refined one, and the holds are staged with it.
         const checkHeld = new Set(check.hold.flatMap(({ documentId }) => documentId ?? []));
-        const pushes = prepared.pushes.filter((push) => !checkHeld.has(push.branch.documentId));
+        const pushes = prepared.pushes.filter(
+          (push) => !checkHeld.has(push.documentDraft.documentId),
+        );
         const stagedPayloads = Object.fromEntries(check.payloads);
         const staging = pushes.length > 0 || check.payloads.size > 0;
         if (!staging) {
@@ -166,7 +168,7 @@ export function createBranchPushTransition(input: {
           if (!prepared.onCommandExists) throw new Error("Command id already has an effect");
           return prepared.onCommandExists();
         }
-        await prepared.afterDurableCommit?.(pushes.map((push) => push.branch.documentId));
+        await prepared.afterDurableCommit?.(pushes.map((push) => push.documentDraft.documentId));
         // Staged and durable, not yet settled: where a test races a change with the batch.
         await collabHook("applyItems.afterStaging");
         // The committer holds the batch's first claim; it never adopts a later one.

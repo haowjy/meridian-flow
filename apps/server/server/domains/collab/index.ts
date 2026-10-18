@@ -8,9 +8,9 @@ export { installCollabCrashController } from "./adapters/collab-crash-controller
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
-export { BranchPrefixMissingError } from "./domain/branch-store.js";
+export type { Branches } from "./domain/branches.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
-export type { Drafts } from "./domain/drafts.js";
+export { DraftPrefixMissingError } from "./domain/draft-store.js";
 export {
   type BindHolder,
   type BindMarkdownInput,
@@ -18,6 +18,7 @@ export {
   type LinkBinder,
   LinkBindingInsideTransactionError,
 } from "./domain/link-binding.js";
+export type { Branch, BranchStatus } from "./domain/ports/branch-store.js";
 export {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -25,7 +26,6 @@ export {
   type LinkScopeKey,
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
-export type { Draft, DraftStatus } from "./domain/ports/draft-store.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

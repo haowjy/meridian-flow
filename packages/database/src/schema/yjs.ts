@@ -1,10 +1,10 @@
 import type {
+  BranchCommandId,
+  BranchCommandKind,
+  BranchCommandResult,
+  BranchId,
   DocumentAuthorityId,
   DocumentId,
-  DraftCommandId,
-  DraftCommandKind,
-  DraftCommandResult,
-  DraftId,
   ModelResponseId,
   ThreadId,
   TurnId,
@@ -31,15 +31,15 @@ import {
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
+import { branches } from "./branches";
 import { documents, works } from "./content";
 import { documentEdits } from "./document-edits";
-import { drafts } from "./drafts";
 import { users } from "./users";
 
-type DocumentBranchKind = "work_draft" | "thread_peer";
-type DocumentBranchStatus = "active" | "closed";
-type BranchWriteJournalSource = "agent" | "writer";
-type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
+type DocumentDraftKind = "work_draft" | "thread_peer";
+type DocumentDraftStatus = "active" | "closed";
+type DraftWriteJournalSource = "agent" | "writer";
+type DraftWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
 type BranchPushSettlementState = "pending" | "blocked" | "completed" | "abandoned";
 type BranchPushSettlementClaimKind = "warm" | "recovery";
 type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
@@ -47,33 +47,30 @@ type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
 
-export const documentBranches = pgTable(
-  "document_branches",
+export const documentDrafts = pgTable(
+  "document_drafts",
   {
     id: text("id").primaryKey(),
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<DocumentBranchKind>().notNull(),
-    upstreamBranchId: text("upstream_branch_id").references(
-      (): AnyPgColumn => documentBranches.id,
-      {
-        onDelete: "set null",
-      },
-    ),
+    kind: text("kind").$type<DocumentDraftKind>().notNull(),
+    upstreamDraftId: text("upstream_draft_id").references((): AnyPgColumn => documentDrafts.id, {
+      onDelete: "set null",
+    }),
     /**
-     * The draft this branch belongs to (decision 3: a draft is its own record). A thread
-     * peer carries its upstream Work-draft branch's draft.
+     * The branch this document draft belongs to. A thread peer shares its upstream
+     * document draft's branch.
      */
-    draftId: uuid("draft_id")
-      .$type<DraftId>()
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
       .notNull()
-      .references(() => drafts.id, { onDelete: "cascade" }),
+      .references(() => branches.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
-    status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
+    status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     /** Current visible effect against the durable last-pulled live cut. */
@@ -91,49 +88,49 @@ export const documentBranches = pgTable(
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
     generation: integer("generation").notNull().default(1),
     /**
-     * Bumped by every committed write to the branch: appends, checkpoint rewrites, closes, holds
+     * Bumped by every committed write to the draft: appends, checkpoint rewrites, closes, holds
      * and row status changes. Rewrites are fenced by it; appends bump it without checking it, and
      * the projection job writes `has_effect` at it without bumping it. Never reaches the client.
      */
     revision: bigint("revision", { mode: "number" }).notNull().default(0),
     /** The `revision` the checkpoint (`state`, `state_vector`) was written at. */
     checkpointRevision: bigint("checkpoint_revision", { mode: "number" }).notNull().default(0),
-    /** Highest `branch_write_journal.id` folded into the checkpoint; the tail is every later row. */
+    /** Highest `draft_write_journal.id` folded into the checkpoint; the tail is every later row. */
     checkpointSeq: bigint("checkpoint_seq", { mode: "number" }).notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("document_branches_active_draft_document")
-      .on(table.documentId, table.draftId)
+    uniqueIndex("document_drafts_active_branch_document")
+      .on(table.documentId, table.branchId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    index("document_branches_active_work_draft_by_draft")
-      .on(table.draftId, table.id, table.generation)
+    index("document_drafts_active_work_draft_by_branch")
+      .on(table.branchId, table.id, table.generation)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    uniqueIndex("document_branches_active_thread_peer")
+    uniqueIndex("document_drafts_active_thread_peer")
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
-    check("document_branches_kind_valid", sql`${table.kind} IN ('work_draft', 'thread_peer')`),
-    check("document_branches_status_valid", sql`${table.status} IN ('active', 'closed')`),
+    check("document_drafts_kind_valid", sql`${table.kind} IN ('work_draft', 'thread_peer')`),
+    check("document_drafts_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
-      "document_branches_owner_shape",
+      "document_drafts_owner_shape",
       sql`(${table.kind} = 'work_draft' AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
     ),
   ],
 );
 
-export const branchWriteJournal = pgTable(
-  "branch_write_journal",
+export const draftWriteJournal = pgTable(
+  "draft_write_journal",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    branchId: text("branch_id")
+    draftId: text("draft_id")
       .notNull()
-      .references(() => documentBranches.id, { onDelete: "cascade" }),
+      .references(() => documentDrafts.id, { onDelete: "cascade" }),
     generation: integer("generation").notNull(),
     wId: integer("w_id"),
     /** The model's tool call that made this write; the chat transcript row to jump to. */
     toolCallId: text("tool_call_id"),
-    source: text("source").$type<BranchWriteJournalSource>().notNull().default("agent"),
+    source: text("source").$type<DraftWriteJournalSource>().notNull().default("agent"),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
@@ -147,7 +144,7 @@ export const branchWriteJournal = pgTable(
     /** Immutable live-journal head captured when this draft mutation row is created. */
     draftBaseUpdateSeq: bigint("draft_base_update_seq", { mode: "number" }).notNull(),
     updateMeta: jsonb("update_meta"),
-    status: text("status").$type<BranchWriteJournalStatus>().notNull().default("active"),
+    status: text("status").$type<DraftWriteJournalStatus>().notNull().default("active"),
     pushedAt: timestamp("pushed_at", { withTimezone: true }),
     reviewedBy: uuid("reviewed_by")
       .$type<UserId>()
@@ -156,14 +153,14 @@ export const branchWriteJournal = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
-    index("branch_write_journal_branch").on(table.branchId, table.generation, table.id),
-    index("branch_write_journal_thread_turn").on(table.branchId, table.threadId, table.turnId),
-    index("branch_write_journal_active")
-      .on(table.branchId, table.generation, table.status)
+    index("draft_write_journal_draft").on(table.draftId, table.generation, table.id),
+    index("draft_write_journal_thread_turn").on(table.draftId, table.threadId, table.turnId),
+    index("draft_write_journal_active")
+      .on(table.draftId, table.generation, table.status)
       .where(sql`${table.status} = 'active'`),
-    check("branch_write_journal_source_valid", sql`${table.source} IN ('agent', 'writer')`),
+    check("draft_write_journal_source_valid", sql`${table.source} IN ('agent', 'writer')`),
     check(
-      "branch_write_journal_status_valid",
+      "draft_write_journal_status_valid",
       sql`${table.status} IN ('active', 'pushed', 'discarded', 'rollback_pending')`,
     ),
   ],
@@ -173,8 +170,8 @@ export const pushLineage = pgTable(
   "push_lineage",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    branchId: text("branch_id").references(() => documentBranches.id, { onDelete: "set null" }),
-    branchGeneration: integer("branch_generation").notNull(),
+    draftId: text("draft_id").references(() => documentDrafts.id, { onDelete: "set null" }),
+    draftGeneration: integer("draft_generation").notNull(),
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
@@ -197,7 +194,7 @@ export const pushLineage = pgTable(
   (table) => [
     uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
     index("push_lineage_document").on(table.documentId),
-    index("push_lineage_branch").on(table.branchId, table.branchGeneration),
+    index("push_lineage_draft").on(table.draftId, table.draftGeneration),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
   ],
@@ -291,7 +288,7 @@ export const branchPushSettlementHolds = pgTable(
       .notNull()
       .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
     itemKey: text("item_key").notNull(),
-    /** The text member held with the item; null for a branchless item. */
+    /** The text member held with the item; null for an item without a text draft. */
     documentId: uuid("document_id").$type<DocumentId>(),
     reason: jsonb("reason").$type<unknown>().notNull(),
     decidedIn: text("decided_in").$type<"check" | "completion">().notNull(),
@@ -651,24 +648,24 @@ export const changeTrailDirtyLog = pgTable(
 /**
  * The record of one writer Apply or Discard, keyed by the client's command id so a resend
  * answers the first command's outcome. It lives beside the batches it points at, which keeps
- * `drafts.ts` free of an import cycle.
+ * `branches.ts` free of an import cycle.
  */
-export const draftCommands = pgTable(
-  "draft_commands",
+export const branchCommands = pgTable(
+  "branch_commands",
   {
-    id: uuid("id").$type<DraftCommandId>().primaryKey(),
+    id: uuid("id").$type<BranchCommandId>().primaryKey(),
     workId: uuid("work_id")
       .$type<WorkId>()
       .notNull()
       .references(() => works.id, { onDelete: "cascade" }),
-    draftId: uuid("draft_id")
-      .$type<DraftId>()
-      .references(() => drafts.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .references(() => branches.id, { onDelete: "cascade" }),
     accountId: uuid("account_id")
       .$type<UserId>()
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<DraftCommandKind>().notNull(),
+    kind: text("kind").$type<BranchCommandKind>().notNull(),
     /** Hash of the canonical command envelope; another digest under this id is a conflict. */
     requestDigest: text("request_digest").notNull(),
     /** Set when an Apply stages; completion or withdrawal settles the row with the batch. */
@@ -677,22 +674,22 @@ export const draftCommands = pgTable(
       { onDelete: "set null" },
     ),
     state: text("state").$type<"pending" | "done">().notNull().default("pending"),
-    result: jsonb("result").$type<DraftCommandResult>(),
+    result: jsonb("result").$type<BranchCommandResult>(),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
-    index("draft_commands_work").on(table.workId),
-    index("draft_commands_settlement_batch")
+    index("branch_commands_work").on(table.workId),
+    index("branch_commands_settlement_batch")
       .on(table.settlementBatchId)
       .where(sql`${table.settlementBatchId} IS NOT NULL`),
     check(
-      "draft_commands_kind_valid",
-      sql`${table.kind} IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_draft')`,
+      "branch_commands_kind_valid",
+      sql`${table.kind} IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
     ),
-    check("draft_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
+    check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
     check(
-      "draft_commands_done_shape",
+      "branch_commands_done_shape",
       sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
     ),
   ],

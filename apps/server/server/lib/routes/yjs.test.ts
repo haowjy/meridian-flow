@@ -2,14 +2,14 @@ import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
-import { createBranchCoordinator } from "../../domains/collab/domain/branch-coordinator.js";
-import { createBranchPullService } from "../../domains/collab/domain/branch-pulls.js";
-import { readBranchContent } from "../../domains/collab/test-support/branch-store-seam.js";
+import { createDraftCoordinator } from "../../domains/collab/domain/draft-coordinator.js";
+import { createDraftPullService } from "../../domains/collab/domain/draft-pulls.js";
+import { readDraftContent } from "../../domains/collab/test-support/draft-store-seam.js";
 import {
-  MemoryBranchStore,
-  memoryBranch,
-  testBranchRow,
-} from "../../domains/collab/test-support/memory-branch-store.js";
+  MemoryDraftStore,
+  memoryDraft,
+  testDraftRow,
+} from "../../domains/collab/test-support/memory-draft-store.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
@@ -20,12 +20,12 @@ import {
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import {
   admitWriterSync,
-  type BranchHandshakeState,
   createHocuspocus,
   createYjsGateway,
+  type DraftHandshakeState,
 } from "../yjs-ws-handler.js";
 
-const documentName = "branch:branch_1:gen:3";
+const documentName = "draft:draft_1:gen:3";
 
 const payload = new Uint8Array([1, 2, 3]);
 
@@ -38,8 +38,8 @@ function services(stale: boolean) {
     },
     eventSink: {} as never,
     documentSync: {
-      rejectStaleBranchSyncStep1: vi.fn(async () => stale),
-      admitBranchWriterUpdate: vi.fn(async () => undefined),
+      rejectStaleDraftSyncStep1: vi.fn(async () => stale),
+      admitDraftWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
 }
@@ -60,8 +60,8 @@ function connectionConfig() {
   return { readOnly: false, isAuthenticated: false };
 }
 
-describe("Yjs branch handshake route guard", () => {
-  it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
+describe("Yjs draft handshake route guard", () => {
+  it("pulls live changes into a Work draft without blocking draft-room connection", async () => {
     const live = new Y.Doc({ gc: false });
     live.getText("content").insert(0, "live advanced");
     const loadedRoom = new Y.Doc({ gc: false });
@@ -69,10 +69,10 @@ describe("Yjs branch handshake route guard", () => {
     const pullBlocked = new Promise<void>((resolve) => {
       releasePull = resolve;
     });
-    const store = new MemoryBranchStore([
-      memoryBranch(
-        testBranchRow({
-          branchId: "branch_1",
+    const store = new MemoryDraftStore([
+      memoryDraft(
+        testDraftRow({
+          draftId: "draft_1",
           documentId: "document-1" as never,
           workId: "work-1" as never,
           generation: 3,
@@ -86,37 +86,37 @@ describe("Yjs branch handshake route guard", () => {
       await pullBlocked;
       return commitRewrite(rewrite);
     };
-    const branchCoordinator = createBranchCoordinator({
+    const draftCoordinator = createDraftCoordinator({
       onAppendCommitted: () => {},
       store,
-      onBranchUpdate: ({ update }) => {
+      onDraftUpdate: ({ update }) => {
         Y.applyUpdate(loadedRoom, update);
       },
     });
-    const branchPulls = createBranchPullService({
+    const draftPulls = createDraftPullService({
       outsideTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
         recover: async () => {},
       },
-      branchCoordinator,
-      branches: {
-        listActiveWorkDraftBranchIds: async () => ["branch_1"],
-        ensureThreadPeerBranch: async () => ({
-          branch: { branchId: "thread-peer", upstreamBranchId: "branch_1" },
+      draftCoordinator,
+      drafts: {
+        listActiveWorkDraftIds: async () => ["draft_1"],
+        ensureThreadPeerDraft: async () => ({
+          documentDraft: { draftId: "thread-peer", upstreamDraftId: "draft_1" },
           state: new Uint8Array(),
         }),
       },
     });
-    const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
+    const flushDraftLivePull = vi.fn(draftPulls.flushLivePull);
     const hocuspocus = createHocuspocus(
       {
         fileAccess: createAllowAllFileAccess(),
         fileAccessChanges: createLocalFileAccessChanges(),
         documentSync: {
           bindHocuspocus: vi.fn(),
-          resolveBranchHocuspocusRoom: vi.fn(async () => ({
-            branchId: "branch_1",
+          resolveDraftHocuspocusRoom: vi.fn(async () => ({
+            draftId: "draft_1",
             documentId: "document-1",
             workId: "work-1",
             generation: 3,
@@ -124,7 +124,7 @@ describe("Yjs branch handshake route guard", () => {
             status: "active",
           })),
           headSchemaVersion: vi.fn(async () => null),
-          flushBranchLivePull,
+          flushDraftLivePull,
         } as never,
         liveDocuments: {
           findById: async () => ({
@@ -145,21 +145,21 @@ describe("Yjs branch handshake route guard", () => {
         context: { userId: "user-1", clientSchemaVersion: COLLAB_SCHEMA_VERSION },
       } as never),
     ).resolves.toBeUndefined();
-    expect(flushBranchLivePull).toHaveBeenCalledWith("document-1");
+    expect(flushDraftLivePull).toHaveBeenCalledWith("document-1");
     expect(loadedRoom.getText("content").toString()).toBe("");
 
     releasePull?.();
-    await flushBranchLivePull.mock.results[0]?.value;
+    await flushDraftLivePull.mock.results[0]?.value;
     await vi.waitFor(() => {
       expect(loadedRoom.getText("content").toString()).toBe("live advanced");
     });
     const persisted = new Y.Doc({ gc: false });
-    Y.applyUpdate(persisted, await readBranchContent(store, "branch_1"));
+    Y.applyUpdate(persisted, await readDraftContent(store, "draft_1"));
     expect(persisted.getText("content").toString()).toBe("live advanced");
   });
 
-  it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
-    const admitBranchWriterUpdate = vi.fn(async () => {
+  it("rejects hostile draft payloads before returning them to Hocuspocus", async () => {
+    const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
     const closeTransport = vi.fn();
@@ -169,7 +169,7 @@ describe("Yjs branch handshake route guard", () => {
       admitWriterSync({
         services: {
           ...services(false),
-          documentSync: { admitBranchWriterUpdate } as never,
+          documentSync: { admitDraftWriterUpdate } as never,
         },
         documentName,
         document,
@@ -178,12 +178,12 @@ describe("Yjs branch handshake route guard", () => {
         userId: "user-1" as never,
         closeTransport,
         context: {
-          branchSyncState: new Map([["branch_1:3", "passed"]]),
+          draftSyncState: new Map([["draft_1:3", "passed"]]),
         },
       }),
-    ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
-    expect(admitBranchWriterUpdate).toHaveBeenCalledWith({
-      branchId: "branch_1",
+    ).rejects.toMatchObject({ reason: "draft-update-admission-failed", code: 1008 });
+    expect(admitDraftWriterUpdate).toHaveBeenCalledWith({
+      draftId: "draft_1",
       expectedGeneration: 3,
       update: new Uint8Array([1, 2, 3]),
       origin: { type: "user", userId: "user-1" },
@@ -191,13 +191,13 @@ describe("Yjs branch handshake route guard", () => {
     });
     expect(closeTransport).toHaveBeenCalledWith({
       code: 1008,
-      reason: "branch-update-admission-failed",
+      reason: "draft-update-admission-failed",
     });
   });
 
-  it("waits for branch durability before returning the update to Hocuspocus", async () => {
+  it("waits for draft durability before returning the update to Hocuspocus", async () => {
     let commit: (() => void) | undefined;
-    const admitBranchWriterUpdate = vi.fn(
+    const admitDraftWriterUpdate = vi.fn(
       () =>
         new Promise<void>((resolve) => {
           commit = resolve;
@@ -206,7 +206,7 @@ describe("Yjs branch handshake route guard", () => {
     const admission = admitWriterSync({
       services: {
         ...services(false),
-        documentSync: { admitBranchWriterUpdate } as never,
+        documentSync: { admitDraftWriterUpdate } as never,
       },
       documentName,
       document: new Y.Doc(),
@@ -214,7 +214,7 @@ describe("Yjs branch handshake route guard", () => {
       payload,
       userId: "user-1" as never,
       context: {
-        branchSyncState: new Map([["branch_1:3", "passed"]]),
+        draftSyncState: new Map([["draft_1:3", "passed"]]),
       },
     });
 
@@ -232,7 +232,7 @@ describe("Yjs branch handshake route guard", () => {
   });
 
   it("rejects update-first sync messages", async () => {
-    const state = new Map<string, BranchHandshakeState>();
+    const state = new Map<string, DraftHandshakeState>();
     await expect(
       admitWriterSync({
         services: services(false),
@@ -241,14 +241,14 @@ describe("Yjs branch handshake route guard", () => {
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        context: { branchSyncState: state },
+        context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
-    expect(state.get("branch_1:3")).toBe("rejected");
+    ).rejects.toMatchObject({ reason: "draft-stale-doc", code: 4205 });
+    expect(state.get("draft_1:3")).toBe("rejected");
   });
 
   it("keeps a rejected room rejected when a later step1 would pass", async () => {
-    const state = new Map<string, BranchHandshakeState>();
+    const state = new Map<string, DraftHandshakeState>();
     await expect(
       admitWriterSync({
         services: services(false),
@@ -257,9 +257,9 @@ describe("Yjs branch handshake route guard", () => {
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        context: { branchSyncState: state },
+        context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "branch-stale-doc" });
+    ).rejects.toMatchObject({ reason: "draft-stale-doc" });
     await expect(
       admitWriterSync({
         services: services(false),
@@ -268,19 +268,19 @@ describe("Yjs branch handshake route guard", () => {
         syncType: messageYjsSyncStep1,
         payload,
         userId: "user-1" as never,
-        context: { branchSyncState: state },
+        context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
-    expect(state.get("branch_1:3")).toBe("rejected");
+    ).rejects.toMatchObject({ reason: "draft-stale-doc", code: 4205 });
+    expect(state.get("draft_1:3")).toBe("rejected");
   });
 
-  it("clears branch sync state through the route close handler", async () => {
-    const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
+  it("clears draft sync state through the route close handler", async () => {
+    const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
       hocuspocus: { handleClose },
-      branchSyncState: state,
+      draftSyncState: state,
       offlineSyncUpdates: new Set<string>(),
     };
 
@@ -290,13 +290,13 @@ describe("Yjs branch handshake route guard", () => {
     expect(state.size).toBe(0);
   });
 
-  it("clears branch sync state through the route error handler", async () => {
-    const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
+  it("clears draft sync state through the route error handler", async () => {
+    const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
       hocuspocus: { handleClose },
-      branchSyncState: state,
+      draftSyncState: state,
       offlineSyncUpdates: new Set<string>(),
     };
 
@@ -494,15 +494,15 @@ describe("Yjs room access", () => {
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),
       admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true, joinedSettlement: false })),
-      resolveBranchHocuspocusRoom: vi.fn(async () => ({
-        branchId: "branch_1",
+      resolveDraftHocuspocusRoom: vi.fn(async () => ({
+        draftId: "draft_1",
         documentId: liveRoom,
         workId: "work-1",
         generation: 3,
         schemaVersion: COLLAB_SCHEMA_VERSION,
         status: "active",
       })),
-      flushBranchLivePull: vi.fn(async () => undefined),
+      flushDraftLivePull: vi.fn(async () => undefined),
     };
     return {
       fileAccess: {

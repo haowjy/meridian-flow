@@ -35,7 +35,7 @@ inverse target and drops out of Undo as it does from lineage. Final address
 liveness stays with the lineage reader.
 
 Card authorization and change-viewer discovery share immutable edit and
-placement targets with inverse admission; mutation and branch transport
+placement targets with inverse admission; mutation and draft transport
 journals are never authorization lineage. Card inverse rows are writer rows
 with no turn, and restoration correspondence comes from certified aliases on
 immutable parts, never equal text. Save and rollback take a
@@ -51,7 +51,7 @@ model handle.
 ## Holds, effects, and failures
 
 A pending inverse holds the roots whose draft identity differs from live. Holds
-and destinations are branch-scoped and prepared from the inverse's one
+and destinations are draft-scoped and prepared from the inverse's one
 captured view. Only intersecting holds can select a holding draft. A skipped hold keeps
 the draft blocking so Apply/Discard remains reachable even when visible prose
 equals live.
@@ -65,7 +65,7 @@ locks.
 An inverse is an attempt. It captures its documents in one read snapshot with
 no lock or lease (live state, live heads, drafts merged over live) and plans
 off every lock. Its commit scope takes the live mutexes, then one savepoint
-whose first locks are the Work rows (the captured branches' Works and the bound
+whose first locks are the Work rows (the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed: a seam boundary), then its
 documents' mutation locks in id order; the inverse takes no lock of its own,
 since the captured fences order two inverses of one edit. Inside it, each
@@ -74,10 +74,10 @@ destination is an exact checkpoint rewrite at its captured revision. A miss
 unwinds the whole attempt and recaptures. After four misses one more capture is
 planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
-the card and `internal_error` ("the draft changed while reversing; try again")
+the card and `internal_error` ("the document changed while reversing; try again")
 for model Undo, Redo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope. `markBlocking` is its own short write:
-Work rows, then the held branch rows, then the bump.
+Work rows, then the held draft rows, then the bump.
 
 A card outcome reports committed destination per document. Draft Undo says that
 Apply is needed to change the manuscript. The reverse endpoint may return

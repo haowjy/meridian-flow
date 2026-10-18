@@ -20,7 +20,7 @@
     "./runtime": "./src/runtime/index.ts",
     "./agents": "./src/agents/index.ts",
     "./preferences": "./src/preferences/index.ts",
-    "./drafts": "./src/drafts/index.ts",
+    "./branches": "./src/branches/index.ts",
     "./failures": "./src/failures/index.ts"
   },
   "scripts": {

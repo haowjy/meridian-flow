@@ -32,16 +32,16 @@ import type {
   WriteToolErrorOutput,
 } from "./tool-context.js";
 
-/** The principal with its drafted writes routed to `work`'s draft, or live for null. */
-export function withDraftWork(principal: Principal, work: WorkRef | null): Principal {
+/** The principal with its drafted writes routed to `work`'s drafts, or live for null. */
+export function withBranchWork(principal: Principal, work: WorkRef | null): Principal {
   return principal.agent
-    ? { ...principal, agent: { ...principal.agent, draftWork: work } }
+    ? { ...principal, agent: { ...principal.agent, branchWork: work } }
     : principal;
 }
 
 /**
  * The agent a tool call acts as (file-access §8): the thread's person, its
- * delegation chain read fresh, and the Work whose draft its drafted writes
+ * delegation chain read fresh, and the Work whose drafts its drafted writes
  * land in.
  */
 export async function agentPrincipal(
@@ -54,8 +54,8 @@ export async function agentPrincipal(
     accountId: thread.userId as Principal["accountId"],
     agent: {
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      draftWork: execution.draftOwner
-        ? { id: execution.draftOwner.workId, slug: execution.scope.workSlug }
+      branchWork: execution.branchOwner
+        ? { id: execution.branchOwner.workId, slug: execution.scope.workSlug }
         : null,
     },
   };
@@ -63,21 +63,21 @@ export async function agentPrincipal(
 
 /**
  * An explicit `version: "draft"` outside draft mode reads the draft the Work
- * kept (a chat switched to auto-apply, or another chat drafts there; D62),
+ * kept (a chat switched to auto-apply, or another chat writes drafts there; D62),
  * so the result says `draft`. With
  * no kept draft of this document it reads live, as `draft` always did there.
  */
 export async function keptDraftReader(
-  deps: Pick<ToolWiringDeps, "drafts">,
+  deps: Pick<ToolWiringDeps, "branches">,
   principal: Principal,
   execution: ThreadExecutionContext,
   documentId: string,
 ): Promise<Principal> {
-  if (!principal.agent || principal.agent.draftWork || execution.draftOwner) return principal;
+  if (!principal.agent || principal.agent.branchWork || execution.branchOwner) return principal;
   const { workId, workSlug } = execution.scope;
-  const drafts = await deps.drafts.draftReview.list({ workId });
+  const drafts = await deps.branches.draftReview.list({ workId });
   if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
-  return withDraftWork(principal, { id: workId, slug: workSlug });
+  return withBranchWork(principal, { id: workId, slug: workSlug });
 }
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */

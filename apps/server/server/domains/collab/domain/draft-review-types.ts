@@ -1,5 +1,5 @@
 /** Journal-extended public review operations; presentation types live in contracts. */
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewOperation } from "@meridian/contracts/branches";
 
 declare const sourceUpdateIdBrand: unique symbol;
 declare const physicalSourceUpdateIdBrand: unique symbol;

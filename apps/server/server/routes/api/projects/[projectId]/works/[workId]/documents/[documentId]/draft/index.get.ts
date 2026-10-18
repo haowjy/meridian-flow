@@ -4,15 +4,15 @@ import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro
 import { requireAppUser } from "../../../../../../../../../lib/auth-gate.js";
 import {
   handleWorkDraftPreviewRequest,
-  selectDraftRouteServices,
-} from "../../../../../../../../../lib/draft-review-route.js";
+  selectBranchRouteServices,
+} from "../../../../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const query = getQuery(event);
   const itemKey = typeof query.itemKey === "string" ? query.itemKey : undefined;
   if (!itemKey) throw createError({ statusCode: 400, message: "itemKey is required" });
-  return handleWorkDraftPreviewRequest(selectDraftRouteServices(app), {
+  return handleWorkDraftPreviewRequest(selectBranchRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,

@@ -22,10 +22,10 @@ describe("branch-push durable projection (postgres)", () => {
   beforeEach(() => resetSettlementFixture(db));
   afterAll(() => closeDatabase(db));
 
-  it("replays the canonical whole branch when an active edit depends on a discarded row", async () => {
+  it("replays the canonical whole draft when an active edit depends on a discarded row", async () => {
     const warm = createHarness(db);
-    const branchId = await warm.seedDiscardedDependencyPush();
-    await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+    const draftId = await warm.seedDiscardedDependencyPush();
+    await expect(warm.push(draftId)).resolves.toMatchObject({ status: "pushed" });
     await expect(warm.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
     warm.destroyWarmState();
 
@@ -52,8 +52,8 @@ describe("branch-push durable projection (postgres)", () => {
         throw new Error("injected fault after joined revision settlement");
       },
     });
-    const branchId = await harness.seedDestructivePush("oracle-joined-recovery-version");
-    await expect(harness.push(branchId)).rejects.toThrow(
+    const draftId = await harness.seedDestructivePush("oracle-joined-recovery-version");
+    await expect(harness.push(draftId)).rejects.toThrow(
       "injected fault after joined revision settlement",
     );
     // Trail settlement shares the completion transaction: the fault rolled it back.
@@ -118,9 +118,9 @@ describe("branch-push durable projection (postgres)", () => {
         await appendWriterPrefix(ALPHA_ID, "Joined writer: ");
       },
     });
-    const branchId = await harness.seedDestructivePush("oracle-folded-away-restoration");
+    const draftId = await harness.seedDestructivePush("oracle-folded-away-restoration");
 
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(draftId)).resolves.toMatchObject({ status: "pushed" });
 
     expect(pushId).not.toBeNull();
     const restored = await db.select().from(schema.changeTrailDocumentDetails);
@@ -144,8 +144,8 @@ describe("branch-push durable projection (postgres)", () => {
         throw new Error("death after manifest loss");
       },
     });
-    const branchId = await owner.seedDestructivePush("missing-manifest");
-    await expect(owner.push(branchId)).rejects.toThrow("death after manifest loss");
+    const draftId = await owner.seedDestructivePush("missing-manifest");
+    await expect(owner.push(draftId)).rejects.toThrow("death after manifest loss");
     owner.destroyWarmState();
     await expirePendingClaims(db);
     const cold = createHarness(db);

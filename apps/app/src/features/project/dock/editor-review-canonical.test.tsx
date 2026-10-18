@@ -12,12 +12,12 @@ it.each([
   "document",
 ])("keeps a moved review with address identity %s", async (documentId) => {
   function Harness() {
-    const [itemKey, setItemKey] = useState<string | null>("branch");
+    const [itemKey, setItemKey] = useState<string | null>("draft");
     const [destination, setDestination] = useState("waiting");
     const group = {
       documentId: "document",
       contextLocation: { scheme: "kb", path: "/Withern" },
-      draft: { itemKey: "branch" },
+      draft: { itemKey: "draft" },
     };
     const review = {
       controller: { workId: "work", inlineReview: null },
@@ -59,7 +59,7 @@ it.each([
   await withReactRoot(<Harness />, async () => {
     await act(async () => undefined);
     expect(document.querySelector("output")?.textContent).toBe(
-      documentId ? "branch:kb:document" : "branch:waiting",
+      documentId ? "draft:kb:document" : "draft:waiting",
     );
   });
 });

@@ -7,17 +7,17 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
-  branchWriteJournal,
   type Database,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
+  draftWriteJournal,
   type EditOrigin,
   type EditPlacement,
 } from "@meridian/database";
 import { and, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { bumpBranchRevisions } from "../../../shared/branch-revisions.js";
+import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -35,7 +35,7 @@ export interface ReceiptWrite {
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
 }
-/** Caller holds the authoritative document/branch mutation lock and its event transaction. */
+/** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");
@@ -73,11 +73,11 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
   for (const [ordinal, p] of input.receipts.entries()) {
     if (p.origin.kind !== "pending") continue;
     await db
-      .update(branchWriteJournal)
+      .update(draftWriteJournal)
       .set({
-        updateMeta: sql`coalesce(${branchWriteJournal.updateMeta}, '{}'::jsonb) || ${JSON.stringify({ documentEdit: { editId: edit.id, ordinal } })}::jsonb`,
+        updateMeta: sql`coalesce(${draftWriteJournal.updateMeta}, '{}'::jsonb) || ${JSON.stringify({ documentEdit: { editId: edit.id, ordinal } })}::jsonb`,
       })
-      .where(eq(branchWriteJournal.id, p.origin.rowId));
+      .where(eq(draftWriteJournal.id, p.origin.rowId));
   }
   const live = input.receipts.filter((p) => p.origin.kind === "live");
   for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
@@ -108,7 +108,7 @@ export function captureReceiptRows(
 }
 export async function placeDraftRows(
   db: Db,
-  branchId: string,
+  draftId: string,
   generation: number,
   rowIds: readonly number[],
   placement: EditPlacement,
@@ -120,7 +120,7 @@ export async function placeDraftRows(
     .where(
       and(
         sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
+        sql`${documentEditParts.placement}->>'draftId' = ${draftId}`,
         sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
         sql`(${documentEditParts.placement}->>'rowId')::bigint IN (${sql.join(
           rowIds.map((id) => sql`${id}`),
@@ -130,7 +130,7 @@ export async function placeDraftRows(
     )
     .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
   // Clearing a hold is a review-membership change, written through the metadata door.
-  if (placed.length) await bumpBranchRevisions(db, [branchId], { blocking: false });
+  if (placed.length) await bumpDraftRevisions(db, [draftId], { blocking: false });
   if (placement.kind === "live" && placed.length === 1) {
     await db
       .update(documentYjsUpdates)
@@ -140,7 +140,7 @@ export async function placeDraftRows(
 }
 export async function settleDraftGeneration(
   db: Db,
-  branchId: string,
+  draftId: string,
   generation: number,
   kind: "discarded" | "retired",
 ): Promise<void> {
@@ -150,7 +150,7 @@ export async function settleDraftGeneration(
     .where(
       and(
         sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
+        sql`${documentEditParts.placement}->>'draftId' = ${draftId}`,
         sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
       ),
     );

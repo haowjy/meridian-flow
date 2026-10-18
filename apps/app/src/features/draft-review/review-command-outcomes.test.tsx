@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /** Network answers projected through real review scopes, mutations and header models. */
 
-import type { DraftDiscardResponse } from "@meridian/contracts/drafts";
+import type { DraftDiscardResponse } from "@meridian/contracts/branches";
 import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   applied,
@@ -37,9 +37,9 @@ async function open(p: () => ScopeProbe) {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
 });
 afterEach(() => {
@@ -64,7 +64,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
   const answer = deferredReviewAnswer<DraftDiscardResponse>();
   fixture.network.discardDraft
     .mockReturnValueOnce(answer.promise)
-    .mockResolvedValue({ status: "stale", draftId: listed.draftId, itemKey: "draft-a" });
+    .mockResolvedValue({ status: "stale", branchId: listed.branchId, itemKey: "draft-a" });
   await fixture.render(async (p) => {
     await open(p);
     let done!: Promise<unknown>;
@@ -79,7 +79,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
     await act(async () => {
       answer.resolve({
         status: "stale",
-        draftId: listed.draftId,
+        branchId: listed.branchId,
         itemKey: "draft-a",
         itemClosed: true,
       } as DraftDiscardResponse);
@@ -95,11 +95,11 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
 
 it("a whole batch continues after a late refusal, attributes it to the departed file and never navigates back", async () => {
   const draftC = { documentId: "document-c", itemKey: "draft-c" };
-  fixture.network.listWorkDrafts.mockResolvedValue({
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({
     items: [listed, listedB, { ...listed, ...draftC, documentName: "Chapter 14" }],
   });
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
-  fixture.network.applyAllDrafts.mockReturnValueOnce(answer.promise as never);
+  fixture.network.applyBranchDrafts.mockReturnValueOnce(answer.promise as never);
   const navigate = vi.fn();
   await fixture.render(
     async (p) => {
@@ -113,7 +113,7 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
       await act(async () => {
         answer.resolve({
           status: "completed",
-          draftId: listed.draftId,
+          branchId: listed.branchId,
           items: [
             {
               itemKey: "draft-a",
@@ -125,7 +125,7 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
         } as never);
         await done;
       });
-      expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
+      expect(fixture.network.applyBranchDrafts).toHaveBeenCalledTimes(1);
       await settleReact(() =>
         expect(
           p().header.failedElsewhere.map(({ row, failure }) => [row.documentId, failure.code]),
@@ -140,8 +140,8 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
 });
 
 it("a batch's current-file failure leaves its review usable and unfinished", async () => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
-  fixture.network.applyAllDrafts.mockRejectedValue(new HttpResponseError("refused", 500, null));
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.applyBranchDrafts.mockRejectedValue(new HttpResponseError("refused", 500, null));
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
@@ -152,7 +152,7 @@ it("a batch's current-file failure leaves its review usable and unfinished", asy
     expect(p().header.completing).toBeNull();
     expect(p().presented.controller.inlineReview).toMatchObject({ itemKey: "draft-a" });
     expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
-    expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
+    expect(fixture.network.applyBranchDrafts).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -183,7 +183,7 @@ it.each([
   "apply",
   "discard",
 ] as const)("offline whole %s batch refuses every file before reconnect", async (mode) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed, listedB] });
   await fixture.render(async (p) => {
     await open(p);
     vi.useFakeTimers();
@@ -191,7 +191,7 @@ it.each([
     const reachability = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     try {
       onlineManager.setOnline(true);
-      fixture.network.listWorkDrafts.mockReturnValue(new Promise(() => {}));
+      fixture.network.listWorkBranchDrafts.mockReturnValue(new Promise(() => {}));
       let outcomes: unknown;
       await act(async () => {
         void p()
@@ -259,7 +259,7 @@ it.each([
   "applyDraft",
   "discardDraft",
 ] as const)("offline header %s stays here and reconnect dispatches neither real export", async (command) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed, listedB] });
   const navigate = vi.fn();
   await fixture.render(
     async (p) => {
@@ -408,7 +408,7 @@ it.each([
   "apply",
   "discard",
 ] as const)("a late whole %s answer must not close the next generation already under review", async (mode) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
   const answer = deferredReviewAnswer<void>();
   if (mode === "apply")
@@ -417,36 +417,34 @@ it.each([
 
   await fixture.render(async (p) => {
     await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() =>
-      expect(p().presented.controller.inlineReview?.branchGeneration).toBe(1),
-    );
+    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(1));
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().presented.controller[mode]("document-a", "draft-a");
     });
     const nextPreview = {
       ...previewOf("new"),
-      branchGeneration: 2,
+      draftGeneration: 2,
       reviewRoomName: "room-generation-2",
     };
-    const nextRow = { ...listed, branchGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
+    const nextRow = { ...listed, draftGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
     fixture.network.getDraftPreview.mockResolvedValue(nextPreview);
-    fixture.network.listWorkDrafts.mockResolvedValue({ items: [nextRow] });
+    fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [nextRow] });
     await act(async () => {
       p().queryClient.setQueryData(
         projectQueryKeys.workDraftPreview("project-a", "work-a", "document-a", "draft-a"),
         nextPreview,
       );
-      p().queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), [nextRow]);
+      p().queryClient.setQueryData(projectQueryKeys.workBranchDrafts("project-a", "work-a"), [
+        nextRow,
+      ]);
     });
-    await settleReact(() =>
-      expect(p().presented.controller.inlineReview?.branchGeneration).toBe(2),
-    );
+    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2));
     await act(async () => {
       answer.resolve();
       await done;
     });
-    expect(p().presented.controller.inlineReview?.branchGeneration).toBe(2);
+    expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2);
   });
 });
 
@@ -454,7 +452,7 @@ it.each([
   "apply",
   "discard",
 ] as const)("a new document's one change dispatches whole %s", async (mode) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({
     items: [{ ...listed, isNew: true, wholeItem: true }],
   });
   fixture.network.getDraftPreview.mockResolvedValue({
@@ -475,7 +473,7 @@ it.each([
       "work-a",
       "document-a",
       expect.objectContaining({
-        draftId: listed.draftId,
+        branchId: listed.branchId,
         itemKey: "draft-a",
         commandId: expect.any(String),
       }),

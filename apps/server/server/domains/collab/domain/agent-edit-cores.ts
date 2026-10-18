@@ -35,8 +35,8 @@ export type RefusedResponseDocument =
   | {
       documentId: DocumentId;
       /**
-       * The draft its writes were pinned to moved on before the save (closed, or this
-       * document's draft applied or discarded): the save never re-drafts them (§2.5).
+       * The branch its writes were pinned to moved on before the save (closed, or this
+       * document's draft applied or discarded): the save never retargets them to a new branch (§2.5).
        */
       reason: StagedWriteRejectionReason;
     };
@@ -73,13 +73,13 @@ export type ThreadPeerAgentEditCore = Omit<
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /**
-   * Retire exactly these peers on `documentId` after their branches closed or were deleted:
+   * Retire exactly these peers on `documentId` after their drafts closed or were deleted:
    * their staged writes are refused with the reason, then their runtimes and pulled baselines
-   * go. Durable branch rows are the caller's; other threads and documents are untouched.
+   * go. Durable draft rows are the caller's; other threads and documents are untouched.
    */
   retireThreadPeers(
     documentId: string,
-    peers: readonly { threadId: string; peerBranchId: string; reason: DiscardedWriteReason }[],
+    peers: readonly { threadId: string; peerDraftId: string; reason: DiscardedWriteReason }[],
   ): Promise<void>;
   /** Where this reply's writes to a document go, once it has written there. */
   responseDestination(responseId: string, documentId: string): FileDestination | undefined;

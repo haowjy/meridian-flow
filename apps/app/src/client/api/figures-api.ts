@@ -37,7 +37,7 @@ export type UploadFigureInput = {
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
   /**
-   * The Work the viewer is in. A picture still in a Work's draft is readable
+   * The Work the viewer is in. A picture still in a Work's branch is readable
    * only through that Work, so the request names it.
    */
   workId?: string;

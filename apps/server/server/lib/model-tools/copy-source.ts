@@ -170,7 +170,7 @@ export function fromMessage(source: CopySource, message: string): string {
 /**
  * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
  * write, so it has no write handle and isn't part of the reply's save. In a
- * draft-mode chat it lands in the draft as its own hidden row (12b-Q2).
+ * draft-mode chat it lands in the branch as its own hidden row (12b-Q2).
  */
 export async function copyBinary(
   deps: ToolWiringDeps,
@@ -197,7 +197,7 @@ export async function copyBinary(
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
   // The port's placement decided where the copy landed; only the Work's slug is ours to add.
   const destination = copied.value.placement;
-  const draftWork = context.resolution.primaryDraftWork;
+  const branchWork = context.resolution.primaryBranchWork;
   return {
     output: modelResult({
       command: "copy",
@@ -206,7 +206,7 @@ export async function copyBinary(
       payload: {
         path: copied.value.uri,
         destination,
-        ...(destination === "draft" ? { draftWork: draftWork?.slug ?? "/" } : {}),
+        ...(destination === "draft" ? { draftWork: branchWork?.slug ?? "/" } : {}),
         copied: { from: source.uri },
       },
     }),

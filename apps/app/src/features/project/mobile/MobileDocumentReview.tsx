@@ -16,7 +16,7 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";

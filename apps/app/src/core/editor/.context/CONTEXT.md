@@ -68,8 +68,8 @@ barrier that drains that open.
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
 - Live sessions may use a qualified, generation-aware IndexedDB key. Review
-  branch sessions use no local cache because a cache can recover into the wrong
-  review generation. Unacknowledged branch edits survive retirement only through
+  draft sessions use no local cache because a cache can recover into the wrong
+  review generation. Unacknowledged draft edits survive retirement only through
   the transport outbox and its handoff path.
 
 `DocumentSession` status combines persistence and transport: `detached`,
@@ -161,10 +161,10 @@ identity in anchors or holds.
 - Writer-visible save state: an outage (`offline` or a stalled cache adoption)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
-  healthy sessions show nothing. A branch (draft) room has no cache, so its
+  healthy sessions show nothing. A draft room has no cache, so its
   outage copy is "Not saved yet (keep this tab open until you're back online)":
-  unacknowledged branch edits are lost if the tab closes or the writer signs out
-  before acknowledgement. Never show a branch room the "Saved locally" copy.
+  unacknowledged draft edits are lost if the tab closes or the writer signs out
+  before acknowledgement. Never show a draft room the "Saved locally" copy.
 - Draft review colors a hunk by author (agent jade, writer gold, nested
   authorship per span). A merge artifact or unclassified hunk is neutral, never
   an invented AI color.
@@ -175,7 +175,7 @@ identity in anchors or holds.
 
 These mechanics implement the ownership rules in the guide. Keep the policy
 centralized: a new surface must use these seams rather than add a competing
-keyboard, pointer, drop, or branch-recovery answer.
+keyboard, pointer, drop, or draft-recovery answer.
 
 ### Pointer, keyboard, and drop policy
 
@@ -204,23 +204,23 @@ keyboard, pointer, drop, or branch-recovery answer.
   Eligibility reads document text; do not replace this rule with
   `allowSpaces: false` or a Space key handler.
 
-### Branch retirement
+### Draft retirement
 
-- Branch retirement never replays the retired AI snapshot. The transport owns
-  the outbox; `BranchRoomPool` drains it on release or carries it on reset.
-  `BranchWriterHandoff` is account-epoch owned, not review-UI owned, and
+- Draft retirement never replays the retired AI snapshot. The transport owns
+  the outbox; `DraftRoomPool` drains it on release or carries it on reset.
+  `DraftWriterHandoff` is account-epoch owned, not review-UI owned, and
   re-expresses only pending writer operations whose anchors survive under a
   fresh client. The rest is dropped, reported once through the
   document-scoped ref, and released.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement, `refused` rejects pending edits,
   and `schema` fences the room.
-- A branch room's update refusal (`1008`) is bounded in the transport: after
+- A draft room's update refusal (`1008`) is bounded in the transport: after
   three in a row with no acknowledgement between, the room ends `terminal`
-  `BRANCH_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.
-  It keeps its outbox, and `BranchRoomPool` does not retire it while an owner
+  `DRAFT_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.
+  It keeps its outbox, and `DraftRoomPool` does not retire it while an owner
   retains it: the review editor stays mounted read-only with the unsent text,
   and the save pill offers Reopen draft, which rebuilds the room from the
   server (a re-forked draft answers that reconnect as superseded). Live rooms
-  never count refusals. A `4207 branch-prefix-missing` close is a plain reconnect,
+  never count refusals. A `4207 draft-prefix-missing` close is a plain reconnect,
   never a refusal: the next handshake's SyncStep2 uploads the missing bytes.

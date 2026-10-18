@@ -70,7 +70,7 @@ function MobileDocumentHostForRoute(props: MobileDocumentHostProps) {
     );
   const tab = props.route.tab;
   // A pending new-document draft has no live room and the server refuses one: its
-  // branch is hosted alone, exactly as the desktop does.
+  // draft room is hosted alone, exactly as the desktop does.
   if (tab?.kind === "tracked" && isDraftOnly(tab))
     return <MobileDraftOnlyDocumentHost {...props} tab={tab} />;
   return <MobileServerDocumentHost {...props} />;

@@ -85,7 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: WORK,
           projectId: PROJECT,
           createdByUserId: USER,
-          name: "Draft",
+          name: "Branch",
           slug: "draft",
         },
       ]);

@@ -16,7 +16,7 @@
  * receives them.
  */
 
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewOperation } from "@meridian/contracts/branches";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
@@ -31,11 +31,11 @@ export interface UseInlineReviewSyncOptions {
   documentId: string;
   itemKey: string;
   /**
-   * The draft generation the review shows (`InlineDraftReview.branchGeneration`).
+   * The draft generation the review shows (`InlineDraftReview.draftGeneration`).
    * A preview of another generation is not projected: its model describes a
    * room this editor is not in. Undefined while the review has not learned it.
    */
-  branchGeneration?: number;
+  draftGeneration?: number;
   onInlineModelAvailable?: (
     identity: string,
     documentId: string,
@@ -51,7 +51,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     workId,
     documentId,
     itemKey,
-    branchGeneration,
+    draftGeneration,
     onInlineModelAvailable,
   } = options;
   const { inline } = useDraftPreview(projectId, workId, documentId, itemKey, {
@@ -79,7 +79,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     }
 
     const reviewId = preview.itemKey;
-    if (branchGeneration !== undefined && preview.branchGeneration !== branchGeneration) return;
+    if (draftGeneration !== undefined && preview.draftGeneration !== draftGeneration) return;
 
     const operations = preview.operations;
     const hunks = preview.hunks;
@@ -97,5 +97,5 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     editor.commands.setInlineReviewModel(model);
     lastPushedPreviewRef.current = inline;
     onInlineModelAvailable?.(previewIdentity, documentId, reviewId, operations);
-  }, [editor, inline, branchGeneration, documentId, onInlineModelAvailable]);
+  }, [editor, inline, draftGeneration, documentId, onInlineModelAvailable]);
 }

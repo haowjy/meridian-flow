@@ -249,7 +249,7 @@ function ActiveSessionEditorView({
   // What a pasted `[[Name]]` may name: the Editor's link index (the same one
   // its links resolve against and link-ahead checks), in Manuscript, KB, User,
   // and this Work's Scratch, the areas a link names a document in (Uploads
-  // hold files, Unfiled holds untitled drafts).
+  // hold files, Unfiled holds untitled documents).
   const pasteTargets = useMemo(
     () =>
       linkableDocuments.documents.flatMap((document) => {

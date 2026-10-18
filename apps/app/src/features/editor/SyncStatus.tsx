@@ -9,7 +9,7 @@
  *   - `destroyed`   → "Closed" (session torn down); always wins
  *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial); always wins
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
- *     A draft (branch) room has no local cache, so its edits live only in this
+ *     A draft room has no local cache, so its edits live only in this
  *     tab's memory; it says "Not saved yet (keep this tab open until you're
  *     back online)" instead. It begins when the status is `offline` or when `adoptionStalled` (a cached
  *     session that is `detached` because adopting it failed). It stays through
@@ -145,7 +145,7 @@ export function SyncStatus({ session, onReopen }: SyncStatusProps) {
     ) : snapshot.status === "access-lost" ? (
       <Trans>Access lost (not saving to the server)</Trans>
     ) : phase === "awaiting" ? (
-      snapshot.room.kind === "branch" ? (
+      snapshot.room.kind === "draft" ? (
         <Trans>Not saved yet (keep this tab open until you're back online)</Trans>
       ) : (
         <Trans>Saved locally (offline)</Trans>

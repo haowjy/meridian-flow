@@ -19,7 +19,7 @@ export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
-  peerBranchId?: string;
+  peerDraftId?: string;
 }
 
 export interface RuntimeRecoveryDocument {
@@ -66,7 +66,7 @@ export interface RuntimeStore {
 
 export interface RuntimeEvictOptions {
   markLiveDocStale?: boolean;
-  peerBranchId?: string;
+  peerDraftId?: string;
 }
 
 export function createRuntimeStore(deps: {
@@ -152,12 +152,12 @@ export function createRuntimeStore(deps: {
       if (runtime.threadId !== threadId) continue;
       const runtimeDocId = docIdFromRuntimeKey(key);
       if (docId !== null && runtimeDocId !== docId) continue;
-      if (options.peerBranchId && runtime.peerBranchId !== options.peerBranchId) continue;
+      if (options.peerDraftId && runtime.peerDraftId !== options.peerDraftId) continue;
       evicted = true;
       runtimeDocs.delete(key);
       runtime.session.documents.delete(runtimeDocId);
     }
-    if (options.markLiveDocStale && docId && (!options.peerBranchId || evicted))
+    if (options.markLiveDocStale && docId && (!options.peerDraftId || evicted))
       staleLiveDocs.add(docId);
   }
 

@@ -1,6 +1,6 @@
 /** Retained, projected open-review presentation data, without focus or command bindings. */
 import { useMemo, useRef } from "react";
-import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
+import { intentKeys, useChangeCommandRecords } from "@/client/query/branch-command-record";
 import { type ActivePreview, previewWithoutKeys } from "@/client/query/draft-projection";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import {
@@ -38,9 +38,9 @@ export function useOpenReviewChanges(
   // The review lists the changes of the generation it shows. A preview of
   // another one is the next proposal on its way in (the review re-enters it) or
   // the close's own reset: it is not this review's to list.
-  const shown = inline?.branchGeneration;
+  const shown = inline?.draftGeneration;
   const own =
-    active && (shown === undefined || active.branchGeneration === shown)
+    active && (shown === undefined || active.draftGeneration === shown)
       ? reviewChangesOfPreview(active)
       : null;
   // While the review and its preview disagree about the generation (the next
@@ -80,7 +80,7 @@ export function useOpenReviewChanges(
     active !== null &&
     heldObserved !== null &&
     shown !== undefined &&
-    (active.branchGeneration < shown || reviewChangesOfPreview(active).length > 0);
+    (active.draftGeneration < shown || reviewChangesOfPreview(active).length > 0);
   const changes = own ?? (keeping ? heldChanges : NO_CHANGES);
   const settling = keeping && changes.length > 0;
   const draftRef = useMemo(
@@ -97,7 +97,7 @@ export function useOpenReviewChanges(
     ? "idle"
     : active
       ? adoptsGeneration(inline, {
-          branchGeneration: active.branchGeneration,
+          draftGeneration: active.draftGeneration,
           proposal: reviewChangesOfPreview(active).length > 0,
         }) && !settling
         ? "loading"

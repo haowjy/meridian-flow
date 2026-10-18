@@ -1,7 +1,7 @@
 /**
  * The edit grants one write call carries, confirmed inside each write seam's
  * own transaction (file-access §5). The caller binds them to the call's async
- * scope; a seam (journal append and reversal, branch commit and push, the
+ * scope; a seam (journal append and reversal, draft commit and push, the
  * namespace transaction) locks their Works with its own in id order, then
  * confirms them before taking any advisory lock.
  *

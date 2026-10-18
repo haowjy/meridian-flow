@@ -47,7 +47,7 @@ type ResponseWriteLifecycleCommitResult =
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
-  | { status: "draft_closed"; responseId: string; mode: "draft" };
+  | { status: "branch_closed"; responseId: string; mode: "draft" };
 
 /** Why the reply's save left out a document's changes (D29, D42). */
 function refusedAtSave(denial: FileAccessDenied): {
@@ -60,7 +60,7 @@ function refusedAtSave(denial: FileAccessDenied): {
 
 /**
  * Reverse a reply's create (contract §12.5): a live create is deleted; a drafted one ends
- * its draft's use of the document, unless another thread's committed text makes it stand.
+ * its branch's use of the document, unless another thread's committed text makes it stand.
  */
 export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
@@ -110,7 +110,7 @@ export function createAgentEditResponseWriteLifecycle(
       const mapResult = (
         result: Awaited<ReturnType<typeof deps.documentSync.finalizeResponseCommit>>,
       ): ResponseWriteLifecycleCommitResult => {
-        if (result.status === "draft_closed") {
+        if (result.status === "branch_closed") {
           return { status: result.status, responseId: result.responseId, mode: result.mode };
         }
         return {

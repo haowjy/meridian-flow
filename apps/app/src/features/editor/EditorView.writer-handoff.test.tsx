@@ -8,8 +8,8 @@ import * as encoding from "lib0/encoding";
 import { act, useEffect, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import { DocumentSocketHarness } from "@/core/transport/test-support/DocumentSocketHarness";
@@ -45,13 +45,13 @@ afterEach(async () => {
 });
 
 const mocks = vi.hoisted(() => ({
-  listWorkDrafts: vi.fn(),
+  listWorkBranchDrafts: vi.fn(),
   getDraftPreview: vi.fn(),
   applyDraftChanges: vi.fn(),
   discardDraft: vi.fn(),
 }));
 
-vi.mock("@/client/api/drafts-api", () => mocks);
+vi.mock("@/client/api/branches-api", () => mocks);
 
 vi.mock("@/features/editor/useInlineReviewSync", () => ({
   useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
@@ -69,7 +69,7 @@ let review: ReturnType<typeof useDraftReview> | null = null;
 
 let unmountReview!: () => void;
 function WorkList() {
-  const { drafts } = useWorkDrafts("project-a", "work-a");
+  const { drafts } = useWorkBranchDrafts("project-a", "work-a");
   return <output data-work-list>{drafts?.map((draft) => draft.itemKey).join(",")}</output>;
 }
 
@@ -117,16 +117,16 @@ async function reviewOpened() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   review = null;
   heldCarryLookup = null;
-  mocks.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  mocks.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
 });
 
-import { branchRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { branchHandoffHarness } from "@/test-support/branch-handoff-harness";
+import { draftHandoffHarness } from "@/test-support/draft-handoff-harness";
 
 let nativeRoom: string | null = null;
 function syncRoom(room: string) {
@@ -148,26 +148,26 @@ function syncRoom(room: string) {
 }
 let testQueryClient: QueryClient;
 let heldCarryLookup: (() => Promise<string | null>) | null = null;
-let runtime: ReturnType<typeof branchHandoffHarness>;
+let runtime: ReturnType<typeof draftHandoffHarness>;
 const realRegistry = {
-  retainBranchRooms: (owner: string, rooms: Parameters<typeof runtime.pool.retain>[1]) =>
+  retainDraftRooms: (owner: string, rooms: Parameters<typeof runtime.pool.retain>[1]) =>
     runtime.pool.retain(
       owner,
       rooms.map((room) => (heldCarryLookup ? { ...room, currentRoom: heldCarryLookup } : room)),
     ),
-  releaseBranchRooms: (owner: string) => runtime.pool.release(owner),
-  getBranchRoom: (room: string) => {
+  releaseDraftRooms: (owner: string) => runtime.pool.release(owner),
+  getDraftRoom: (room: string) => {
     const session = runtime.pool.get(room);
     syncRoom(room);
     return session;
   },
-  rebuildBranchRoom: async (room: string) => {
+  rebuildDraftRoom: async (room: string) => {
     const session = await runtime.pool.rebuild(room);
     syncRoom(room);
     return session;
   },
 };
-const branchEditor = (): Editor => {
+const draftEditor = (): Editor => {
   const dom = document.querySelector<HTMLElement & { editor?: Editor }>(
     "[data-editor-surface=review] .ProseMirror",
   );
@@ -183,12 +183,12 @@ async function withWriterReview(
   ) => Promise<void>,
 ) {
   vi.useFakeTimers();
-  const oldRoom = branchRoomName("writer-loss", 1);
-  const newRoom = options.sameRoom ? oldRoom : branchRoomName("writer-loss", 2);
+  const oldRoom = draftRoomName("writer-loss", 1);
+  const newRoom = options.sameRoom ? oldRoom : draftRoomName("writer-loss", 2);
   nativeRoom = options.native ? oldRoom : null;
   heldCarryLookup = options.currentRoom ?? null;
   DocumentSocketHarness.instances.length = 0;
-  runtime = branchHandoffHarness(
+  runtime = draftHandoffHarness(
     options.native
       ? (context) =>
           createHocuspocusDocumentTransport({
@@ -203,7 +203,7 @@ async function withWriterReview(
     await renderEditor(async () => {
       await reviewOpened();
       await act(async () => {
-        branchEditor().commands.insertContent("UNACKNOWLEDGED WRITER WORDS");
+        draftEditor().commands.insertContent("UNACKNOWLEDGED WRITER WORDS");
       });
       const old = runtime.pool.peek(oldRoom);
       if (!old) throw new Error("No source review session");
@@ -220,15 +220,15 @@ async function withWriterReview(
 function successor(room: string, ids: string[], listedDraft: boolean) {
   mocks.getDraftPreview.mockResolvedValue({
     ...previewOf(...ids),
-    branchGeneration: 2,
+    draftGeneration: 2,
     reviewRoomName: room,
   });
-  mocks.listWorkDrafts.mockResolvedValue({
-    items: listedDraft ? [{ ...listed, branchGeneration: 2 }] : [],
+  mocks.listWorkBranchDrafts.mockResolvedValue({
+    items: listedDraft ? [{ ...listed, draftGeneration: 2 }] : [],
   });
 }
 const previewKey = projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a");
-const listKey = projectQueryKeys.workDrafts("project-a", "work-a");
+const listKey = projectQueryKeys.workBranchDrafts("project-a", "work-a");
 async function deliver(room: string) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(20);
@@ -246,24 +246,24 @@ async function acknowledge(room: string) {
 }
 
 it.each([
-  "branch-generation-stale",
-  "branch-stale-doc",
+  "draft-generation-stale",
+  "draft-stale-doc",
 ] as const)("writer edit survives reentry after %s", async (reason) => {
   await withWriterReview(
-    { sameRoom: reason === "branch-stale-doc" },
+    { sameRoom: reason === "draft-stale-doc" },
     async (oldRoom, newRoom, old) => {
       successor(newRoom, ["5"], true);
       await act(async () =>
         runtime.wire(oldRoom).emit({
           kind: "reset",
           reason,
-          disposition: reason === "branch-stale-doc" ? "rebuild" : "superseded",
+          disposition: reason === "draft-stale-doc" ? "rebuild" : "superseded",
         }),
       );
       await deliver(newRoom);
       expect(surfaces()).toEqual(["review"]);
       expect(old.document.isDestroyed).toBe(true);
-      expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+      expect(draftEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
       await acknowledge(newRoom);
     },
   );
@@ -285,14 +285,14 @@ it("delivers unmounted writing before publishing the draft list after acknowledg
       expect(runtime.pool.peek(oldRoom)).toBe(old);
       runtime
         .wire(oldRoom)
-        .emit({ kind: "reset", reason: "branch-generation-stale", disposition: "superseded" });
+        .emit({ kind: "reset", reason: "draft-generation-stale", disposition: "superseded" });
     });
     await deliver(newRoom);
     expect(surfaces()).toEqual([]);
     expect(old.document.isDestroyed).toBe(true);
     expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-    mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
+    mocks.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
     await acknowledge(newRoom);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
     expect(runtime.pool.peek(newRoom)).toBeUndefined();
@@ -311,16 +311,16 @@ it("preserves successor typing made before writer carry resolution", async () =>
         () =>
           new Promise((resolve) => {
             locate = (room) =>
-              resolve({ ...previewOf("5"), branchGeneration: 2, reviewRoomName: room });
+              resolve({ ...previewOf("5"), draftGeneration: 2, reviewRoomName: room });
           }),
       );
       runtime
         .wire(oldRoom)
-        .emit({ kind: "reset", reason: "branch-generation-stale", disposition: "superseded" });
+        .emit({ kind: "reset", reason: "draft-generation-stale", disposition: "superseded" });
       await vi.advanceTimersByTimeAsync(20);
     });
     await act(async () => {
-      branchEditor().commands.insertContent("SUCCESSOR WORDS");
+      draftEditor().commands.insertContent("SUCCESSOR WORDS");
       locate(newRoom);
     });
     await act(async () => {
@@ -329,8 +329,8 @@ it("preserves successor typing made before writer carry resolution", async () =>
     });
     expect(surfaces()).toEqual(["review"]);
     expect(old.document.isDestroyed).toBe(true);
-    expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
-    expect(branchEditor().getText()).toContain("SUCCESSOR WORDS");
+    expect(draftEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+    expect(draftEditor().getText()).toContain("SUCCESSOR WORDS");
     await acknowledge(newRoom);
   });
 });
@@ -359,7 +359,7 @@ it("keeps native unacknowledged writing through HTTP-before-reset remote whole D
         const socket = DocumentSocketHarness.instances.at(-1);
         if (!socket) throw new Error("Missing native socket");
         socket.receive(oldRoom, MessageType.CLOSE, (encoder) =>
-          encoding.writeVarString(encoder, "branch-generation-stale"),
+          encoding.writeVarString(encoder, "draft-generation-stale"),
         );
       });
       await act(async () => {
@@ -369,7 +369,7 @@ it("keeps native unacknowledged writing through HTTP-before-reset remote whole D
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(testQueryClient.getQueryData(previewKey)).toMatchObject({
-        branchGeneration: 2,
+        draftGeneration: 2,
         operations: [],
       });
       expect(review?.controller.inlineReview?.itemKey).toBe("draft-a");
@@ -383,16 +383,16 @@ it("keeps native unacknowledged writing through HTTP-before-reset remote whole D
       mocks.getDraftPreview.mockResolvedValue({
         ...previewOf("writer"),
         operations: [{ ...previewOf("writer").operations[0], kind: "writer" }],
-        branchGeneration: 2,
+        draftGeneration: 2,
         reviewRoomName: newRoom,
       });
       await acknowledge(newRoom);
       expect(surfaces()).toEqual(["review"]);
-      expect(review?.controller.inlineReview?.branchGeneration).toBe(2);
+      expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
       expect(testQueryClient.getQueryData(previewKey)).toMatchObject({
         operations: [expect.objectContaining({ kind: "writer" })],
       });
-      expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+      expect(draftEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
       expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
     },
   );

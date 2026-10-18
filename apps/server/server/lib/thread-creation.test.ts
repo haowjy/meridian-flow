@@ -42,7 +42,7 @@ async function fixture() {
     id: crypto.randomUUID(),
     projectId: project.id,
     userId: "owner",
-    title: "Draft a scene",
+    title: "Branch a scene",
     workId: null,
     agentSelection: { catalogEntryId: entry.id, definitionRevisionId: entry.selectedRevisionId },
   };

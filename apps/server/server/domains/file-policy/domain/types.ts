@@ -63,14 +63,14 @@ export interface WorkRef {
 
 /**
  * Who is asking. A person acts alone; an agent acts for the person, under its
- * delegation chain, and in draft mode routes drafted sources to `draftWork`.
+ * delegation chain, and in draft mode routes drafted sources to `branchWork`.
  */
 export interface Principal {
   accountId: UserId;
   agent?: {
     chain: AgentChain;
-    /** The Work whose draft drafted sources land in; null outside draft mode. */
-    draftWork: WorkRef | null;
+    /** The Work whose branch drafted sources land in; null outside draft mode. */
+    branchWork: WorkRef | null;
   };
 }
 
@@ -141,15 +141,15 @@ export interface FileFacts {
   self: FileNode | null;
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
   ancestors: readonly FileNode[];
-  /** The Work whose draft this access goes through, when one was asked about. */
-  draftWork?: FileWorkFacts;
+  /** The Work whose branch this access goes through, when one was asked about. */
+  branchWork?: FileWorkFacts;
 }
 
 // ---------------------------------------------------------------------------
 // Decisions
 // ---------------------------------------------------------------------------
 
-/** Where a write lands: the live document, or a Work's draft (D20). */
+/** Where a write lands: the live document, or a Work's branch (D20). */
 export type FileDestination =
   | { kind: "live" }
   | { kind: "draft"; workId: WorkId; workSlug: string | null };
@@ -207,13 +207,13 @@ export function targetDocumentId(target: FileTarget): DocumentId {
 }
 
 /**
- * The named Works a write to this file locks (§5): its owner and its draft's
+ * The named Works a write to this file locks (§5): its owner and its branch's
  * Work. The project and No Work can't be archived, so they lock nothing.
  */
 export function grantWorkIds(facts: FileFacts): WorkId[] {
   const ids: WorkId[] = [];
   if (facts.ownerWork && !facts.ownerWork.isNoWork) ids.push(facts.ownerWork.id);
-  if (facts.draftWork && !facts.draftWork.isNoWork) ids.push(facts.draftWork.id);
+  if (facts.branchWork && !facts.branchWork.isNoWork) ids.push(facts.branchWork.id);
   return ids;
 }
 

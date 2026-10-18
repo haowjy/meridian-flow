@@ -3,14 +3,14 @@
  * NOT NULL DEFAULT -1` as a catalog change under `SET LOCAL lock_timeout = '2s'`, with no
  * backfill and no CHECK, so an old server's creator keeps inserting during the rollout.
  *
- * On its own scratch database, migrated to the migration before 0064 and seeded with drafts as
+ * On its own scratch database, migrated to the migration before 0064 and seeded with document drafts as
  * the pre-phase-4 creator wrote them:
  * 1. a reader holding `document_branches` open: 0064 gives up within its lock timeout
  *    (`55P03`) instead of queueing readers behind it, and a reader started meanwhile completes;
  * 2. released: 0064 applies while a reader loops, no read waits past the timeout, the table
  *    is not rewritten (`relfilenode` unchanged) and every existing row reads `-1`;
  * 3. the old creator's insert (no baseline, no watermark) succeeds after 0064 and
- *    `staleEffectBranches` selects it.
+ *    the historical stale-effect predicate selects it.
  *
  * Negative control on `586e58ae1e`: there is no 0064.
  */
@@ -53,10 +53,20 @@ function migrationsBefore0064() {
   const journalPath = join(directory, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: { tag: string }[] };
   const index = journal.entries.findIndex((entry) => entry.tag === tag);
+  const nextEntry = journal.entries[index];
+  if (!nextEntry) throw new Error("Missing 0064 journal entry");
   for (const entry of journal.entries.slice(index)) rmSync(join(directory, `${entry.tag}.sql`));
   journal.entries = journal.entries.slice(0, index);
   writeFileSync(journalPath, JSON.stringify(journal));
-  return { tag, directory };
+  return {
+    directory,
+    upgrade() {
+      // The probe measures 0064, not later migrations or the 0068 vocabulary rename.
+      writeFileSync(join(directory, file), readFileSync(join(MIGRATIONS, file)));
+      journal.entries.push(nextEntry);
+      writeFileSync(journalPath, JSON.stringify(journal));
+    },
+  };
 }
 
 async function migrateQuietly(databaseUrl: string, migrationsDirectory: string) {
@@ -86,13 +96,19 @@ export const migrationOnline: Probe = {
       const harness = await openHarness(url);
       opened = harness;
       // The review's seed, as the pre-phase-4 creator wrote it: no baseline, revision 0.
-      const work = await harness.seedWork("migration");
+      const workId = randomUUID();
+      const branchId = randomUUID();
+      await sql`insert into works(id,project_id,created_by_user_id,name,slug)
+        values (${workId},${harness.ids.project},${harness.ids.user},'migration','migration')`;
+      // These are historical 0063 names: the current adapters target the renamed schema.
+      await sql`insert into drafts(id,project_id,origin_work_id,created_by)
+        values (${branchId},${harness.ids.project},${workId},${harness.ids.user})`;
       const insertOldCreatorRow = async () => {
         const { documentId } = await harness.seedDocument("migration");
         const seed = paragraphDoc("Base");
         const id = `branch_${randomUUID()}`;
         await sql`insert into document_branches (id, document_id, kind, draft_id, status, state, state_vector, revision)
-          values (${id}, ${documentId}, 'work_draft', ${work.draftId}, 'active',
+          values (${id}, ${documentId}, 'work_draft', ${branchId}, 'active',
             ${Buffer.from(Y.encodeStateAsUpdate(seed))}, ${Buffer.from(Y.encodeStateVector(seed))}, 0)`;
         seed.destroy();
         return id;
@@ -102,6 +118,8 @@ export const migrationOnline: Probe = {
         { relfilenode: number }[]
       >`
         select relfilenode from pg_class where relname = 'document_branches'`;
+
+      before.upgrade();
 
       // 1. A reader holds the table: 0064 must give up, not queue readers behind it.
       const holding = gate();
@@ -113,7 +131,7 @@ export const migrationOnline: Probe = {
       });
       await holding.wait;
       const attemptStarted = performance.now();
-      const attempt = settled(migrateQuietly(url, MIGRATIONS));
+      const attempt = settled(migrateQuietly(url, before.directory));
       const readerStarted = performance.now();
       await sql`select count(*) from document_branches`;
       const readerMs = Math.round(performance.now() - readerStarted);
@@ -143,7 +161,7 @@ export const migrationOnline: Probe = {
         }
       })();
       const migrated = performance.now();
-      await migrateQuietly(url, MIGRATIONS);
+      await migrateQuietly(url, before.directory);
       const migrateMs = Math.round(performance.now() - migrated);
       reading = false;
       await reader;
@@ -170,10 +188,12 @@ export const migrationOnline: Probe = {
 
       // 3. An old server's creator during the rollout.
       const oldRow = await insertOldCreatorRow();
-      const stale = await harness.store.staleEffectBranches({ limit: 50 });
-      const selected = stale.some((row) => row.branchId === oldRow);
+      const stale = await sql<{ id: string }[]>`select id from document_branches
+        where kind = 'work_draft' and status = 'active' and has_effect_revision < revision
+        order by updated_at, id limit 50`;
+      const selected = stale.some((row) => row.id === oldRow);
       observe("3 old creator", { inserted: oldRow.slice(0, 20), selected, stale: stale.length });
-      assert.ok(selected, "the old creator's row is selected by staleEffectBranches");
+      assert.ok(selected, "the old creator's row is selected by the stale-effect predicate");
     } finally {
       await opened?.close();
       await sql.end();

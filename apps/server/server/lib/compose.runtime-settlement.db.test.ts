@@ -59,9 +59,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "runtime-settlement",
         defaultAiWriteMode: "direct",
       });
-      // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+      // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
       await db
-        .insert(schema.drafts)
+        .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
@@ -216,15 +216,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
       const drafts = await db
         .select({
-          documentId: schema.documentBranches.documentId,
-          workId: schema.drafts.originWorkId,
+          documentId: schema.documentDrafts.documentId,
+          workId: schema.branches.originWorkId,
         })
-        .from(schema.documentBranches)
-        .innerJoin(schema.drafts, eq(schema.drafts.id, schema.documentBranches.draftId))
+        .from(schema.documentDrafts)
+        .innerJoin(schema.branches, eq(schema.branches.id, schema.documentDrafts.branchId))
         .where(
           and(
-            eq(schema.documentBranches.kind, "work_draft"),
-            eq(schema.documentBranches.documentId, DOC_ID),
+            eq(schema.documentDrafts.kind, "work_draft"),
+            eq(schema.documentDrafts.documentId, DOC_ID),
           ),
         );
       expect(drafts).toEqual([{ documentId: DOC_ID, workId: NO_WORK_ID }]);
@@ -340,12 +340,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         writerAfterRead ? "Writer V2 unseen." : "Writer V1 observed.",
       );
       const [draft] = await db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
+        .select({ id: schema.documentDrafts.id })
+        .from(schema.documentDrafts)
         .where(
           and(
-            eq(schema.documentBranches.kind, "work_draft"),
-            eq(schema.documentBranches.documentId, DOC_ID),
+            eq(schema.documentDrafts.kind, "work_draft"),
+            eq(schema.documentDrafts.documentId, DOC_ID),
           ),
         );
       if (!draft) throw new Error("the reply's draft is missing");

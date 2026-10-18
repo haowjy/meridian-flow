@@ -129,7 +129,7 @@ describe("browsed folder", () => {
   // A scheme root has no folder; "/" would read as a missing folder on the phone.
   it.each([
     [`${P}/editor/browse/manuscript`, null],
-    [`${P}/editor/browse/manuscript/arc-1/drafts`, "/arc-1/drafts"],
+    [`${P}/editor/browse/manuscript/arc-1/branches`, "/arc-1/branches"],
     [`${P}/editor/manuscript/chapter.md`, null],
   ])("%s browses %s", (href, folder) => {
     const parsed = parse(href);

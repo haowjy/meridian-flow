@@ -217,7 +217,7 @@ export class AccountResourceReplica {
   /**
    * Reserve a document under a client-minted id. `destination` is where the writer put it (the
    * sidebar's New file, a link's Create): it goes out with the create so the server can join a
-   * draft's document waiting there, and the replica shows it there at once. Without one the
+   * branch's new document waiting there, and the replica shows it there at once. Without one the
    * create is nameless.
    */
   async reserveDocument(

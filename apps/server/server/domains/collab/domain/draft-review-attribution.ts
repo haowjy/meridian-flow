@@ -1,6 +1,6 @@
 /** Replays draft history into an attribution index, preserving explicit coverage failure. */
 
-import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
+import type { ReviewDeletedSpan } from "@meridian/contracts/branches";
 import { restorationAliasesFromMetadata } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
@@ -124,7 +124,7 @@ export function indexDraftUpdates(input: {
         .filter((range): range is ClockRange => range !== null)
         .flatMap((range) => splitAtAliasBoundaries(range, certifiedAliases, introduced));
 
-      Y.applyUpdate(replayDoc, update.updateData, { origin: { type: "branch-review" } });
+      Y.applyUpdate(replayDoc, update.updateData, { origin: { type: "draft-review" } });
 
       for (const alias of certifiedAliases) {
         aliases.push(alias);

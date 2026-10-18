@@ -15,7 +15,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
+import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
 import { WorkChangeFile } from "./WorkChangeFile";
@@ -41,8 +41,8 @@ export function WorkChanges({
   matchesSearch: WorkFileSearch;
 }) {
   const workId = work.id;
-  const controller = useWorkDraftCommands({ projectId, work });
-  const drafts = useWorkDrafts(projectId, workId);
+  const controller = useWorkBranchCommands({ projectId, work });
+  const drafts = useWorkBranchDrafts(projectId, workId);
   const touch = usePhoneShell() === true;
   const files = drafts.files ?? [];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);

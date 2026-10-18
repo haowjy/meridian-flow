@@ -1,6 +1,6 @@
 /**
- * Account-scoped owner of live document sessions and generation-fenced branch rooms.
- * Live acquisition is lease-required; branch rooms remain generation-qualified.
+ * Account-scoped owner of live document sessions and generation-fenced draft rooms.
+ * Live acquisition is lease-required; draft rooms remain generation-qualified.
  */
 import type {
   AccountId,
@@ -32,14 +32,14 @@ export {
   type LocalResourceLifetimePort,
 } from "./document-session-coordination-contract";
 
-import { BranchRoomPool, type BranchRoomRef } from "./branch-room-pool";
-import { BranchWriterHandoff } from "./branch-writer-handoff";
 import type {
   LiveSessionIncarnationPort,
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
+import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import { DraftWriterHandoff } from "./draft-writer-handoff";
 import { LocalDocumentSessionTransfers } from "./local-document-session-transfers";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
@@ -71,12 +71,12 @@ export class DocumentSessionRegistry
     (key) =>
       new DocumentSessionAuthorityError(
         "authority-unavailable",
-        `${key.kind === "live" ? "Live" : "Branch"} session teardown is unfinished`,
+        `${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`,
       ),
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
-  private readonly branchRooms: BranchRoomPool;
-  private readonly writerHandoff: BranchWriterHandoff;
+  private readonly draftRooms: DraftRoomPool;
+  private readonly writerHandoff: DraftWriterHandoff;
   private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
@@ -118,7 +118,7 @@ export class DocumentSessionRegistry
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     epochSignal: AbortSignal = new AbortController().signal,
   ) {
-    this.branchRooms = new BranchRoomPool({
+    this.draftRooms = new DraftRoomPool({
       openSession: (roomKey) => {
         const session = this.createSession(roomKey, { kind: "none" });
         this.attachSessionTransport(session);
@@ -128,8 +128,8 @@ export class DocumentSessionRegistry
       teardownGraceMs,
       carry: (carry) => this.writerHandoff.carry(carry),
     });
-    this.writerHandoff = new BranchWriterHandoff({
-      pool: this.branchRooms,
+    this.writerHandoff = new DraftWriterHandoff({
+      pool: this.draftRooms,
       epochSignal,
       retryDelaysMs: [100, 500, 1_000, 5_000],
     });
@@ -270,20 +270,20 @@ export class DocumentSessionRegistry
     return () => this.retainedObservers.delete(observer);
   }
 
-  retainBranchRooms(ownerId: string, refs: readonly BranchRoomRef[]): void {
-    this.branchRooms.retain(ownerId, refs);
+  retainDraftRooms(ownerId: string, refs: readonly DraftRoomRef[]): void {
+    this.draftRooms.retain(ownerId, refs);
   }
 
-  releaseBranchRooms(ownerId: string): void {
-    this.branchRooms.release(ownerId);
+  releaseDraftRooms(ownerId: string): void {
+    this.draftRooms.release(ownerId);
   }
 
-  rebuildBranchRoom(roomKey: string): Promise<DocumentSession> {
-    return this.branchRooms.rebuild(roomKey);
+  rebuildDraftRoom(roomKey: string): Promise<DocumentSession> {
+    return this.draftRooms.rebuild(roomKey);
   }
 
-  getBranchRoom(roomKey: string): DocumentSession {
-    return this.branchRooms.get(roomKey);
+  getDraftRoom(roomKey: string): DocumentSession {
+    return this.draftRooms.get(roomKey);
   }
 
   async whenAuthorityReady(): Promise<void> {
@@ -342,7 +342,7 @@ export class DocumentSessionRegistry
     return attempt;
   }
 
-  observeBranchRoom(
+  observeDraftRoom(
     roomKey: string,
     observer: (snapshot: DocumentSessionSnapshot) => void,
   ): () => void {
@@ -353,7 +353,7 @@ export class DocumentSessionRegistry
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
     this.writerHandoff.dispose();
-    this.branchRooms.invalidate();
+    this.draftRooms.invalidate();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
     this.pendingTeardownTimers.clear();
@@ -625,8 +625,8 @@ export class DocumentSessionRegistry
   /**
    * Drop a live room whose pending edits the server refused, even when no
    * editor host holds it: revoking each lease's access tears the session down
-   * and clears its local copy. Branch rooms hold no lease; their editor
-   * rebuilds them in place (`rebuildBranchRoom`).
+   * and clears its local copy. Draft rooms hold no lease; their editor
+   * rebuilds them in place (`rebuildDraftRoom`).
    */
   private dropRefusedRoom(session: DocumentSession): void {
     if (this.refusedRoomDrops.has(session) || session.resetDisposition !== "refused") return;
@@ -755,7 +755,7 @@ export class DocumentSessionRegistry
     }
     observers.set(
       observer,
-      (this.branchRooms.peek(roomKey) ?? this.liveRooms.get(roomKey)?.session)?.subscribe(observer),
+      (this.draftRooms.peek(roomKey) ?? this.liveRooms.get(roomKey)?.session)?.subscribe(observer),
     );
     return () => {
       observers?.get(observer)?.();

@@ -65,7 +65,7 @@ export function useReviewRefresh({
       void Promise.all([
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workDrafts(projectId, workId),
+            queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
           },
           { cancelRefetch: false },
         ),

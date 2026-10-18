@@ -3,12 +3,12 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
   contextAvailabilityHeads,
   contextCatalogEntries,
   contextSources,
-  documentBranches,
+  documentDrafts,
   documents,
-  drafts,
   projects,
   users,
   works,
@@ -19,9 +19,9 @@ import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import {
-  createDrizzleBranchJournalReadStore,
+  createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
+  createDrizzleWorkBranchPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -30,8 +30,8 @@ import {
   createDrizzlePendingSettlementStore,
   stageSettlementBatchWithinTx,
 } from "../collab/adapters/drizzle-pending-settlement.js";
-import { trailContributionReplacement } from "../collab/domain/branch-trail-projection.js";
-import { appendBranchRows, proseBranchUpdate } from "../collab/test-support/branch-store-seam.js";
+import { trailContributionReplacement } from "../collab/domain/draft-trail-projection.js";
+import { appendDraftRows, proseDraftUpdate } from "../collab/test-support/draft-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -48,8 +48,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const WORK_ID = "00000000-0000-4000-8000-000000000943";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000944";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000945";
-    const BRANCH_ID = "branch_work_projection_pending_owner";
-    const DRAFT_ID = "00000000-0000-4000-8000-00000000094b";
+    const DRAFT_ID = "draft_work_projection_pending_owner";
+    const BRANCH_ID = "00000000-0000-4000-8000-00000000094b";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
@@ -84,17 +84,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         fileType: "markdown",
       });
-      await db.insert(drafts).values({
-        id: DRAFT_ID,
+      await db.insert(branches).values({
+        id: BRANCH_ID,
         projectId: PROJECT_ID,
         originWorkId: WORK_ID,
         createdBy: USER_ID,
       });
-      await db.insert(documentBranches).values({
-        id: BRANCH_ID,
+      await db.insert(documentDrafts).values({
+        id: DRAFT_ID,
         documentId: DOCUMENT_ID,
         kind: "work_draft",
-        draftId: DRAFT_ID,
+        branchId: BRANCH_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
@@ -104,7 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const projection = createWorkProjectionMutation({
         db,
-        pendingCounts: createDrizzleWorkDraftPendingStore(db),
+        pendingCounts: createDrizzleWorkBranchPendingStore(db),
         availability,
         catalog,
       });
@@ -144,23 +144,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("drives real discard, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(db, {
+      const drafts = createDrizzleDraftStore(db, {
         workProjection: projection,
-        drafts: createDrizzleDraftStore(db),
+        branches: createDrizzleBranchStore(db),
       });
       const appendJournal = (updateMeta: unknown) =>
-        appendBranchRows(branches, BRANCH_ID, [
-          { updateData: proseBranchUpdate(), source: "agent", updateMeta },
+        appendDraftRows(drafts, DRAFT_ID, [
+          { updateData: proseDraftUpdate(), source: "agent", updateMeta },
         ]);
       const initial = await projectionState();
       await appendJournal({ kind: "edit" });
       // An append touches no Work (#931); the projection's effect write touches it once.
       await expect(projectionState()).resolves.toEqual(initial);
-      const judged = await branches.getBranch(BRANCH_ID);
-      if (!judged) throw new Error("the branch is gone");
+      const judged = await drafts.getDraft(DRAFT_ID);
+      if (!judged) throw new Error("the draft is gone");
       await expect(
-        branches.writeEffect({
-          branchId: BRANCH_ID,
+        drafts.writeEffect({
+          draftId: DRAFT_ID,
           revision: judged.revision,
           hasEffect: true,
           workId: judged.workId,
@@ -171,23 +171,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await appendJournal({ kind: "edit" });
       await expect(projectionState()).resolves.toEqual(appended);
       // The count stays 1: the projection's next write sends nothing.
-      const again = await branches.getBranch(BRANCH_ID);
-      if (!again) throw new Error("the branch is gone");
-      await branches.writeEffect({
-        branchId: BRANCH_ID,
+      const again = await drafts.getDraft(DRAFT_ID);
+      if (!again) throw new Error("the draft is gone");
+      await drafts.writeEffect({
+        draftId: DRAFT_ID,
         revision: again.revision,
         hasEffect: true,
         workId: again.workId,
       });
       await expect(projectionState()).resolves.toEqual(appended);
 
-      const journal = createDrizzleBranchJournalReadStore(db);
-      const rows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
-      // Each commit fences on the revision it read, so every one reads the branch as it stands.
-      const currentBranch = async () => {
-        const branch = await branches.getBranch(BRANCH_ID);
-        if (!branch) throw new Error("the branch is gone");
-        return branch;
+      const journal = createDrizzleDraftJournalReadStore(db);
+      const rows = await journal.listReviewableJournalRows(DRAFT_ID, 1);
+      // Each commit fences on the revision it read, so every one reads the draft as it stands.
+      const currentDraft = async () => {
+        const documentDraft = await drafts.getDraft(DRAFT_ID);
+        if (!documentDraft) throw new Error("the draft is gone");
+        return documentDraft;
       };
       const emptyState = { state: new Uint8Array([0, 0]), stateVector: new Uint8Array([0]) };
       const pushStore = createDrizzlePushCommitStore(
@@ -200,7 +200,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         runInDrizzleTransaction(db, async () => {
           await pushStore.commitDiscard({
-            branch: await currentBranch(),
+            documentDraft: await currentDraft(),
             journalRows: rows,
             ...emptyState,
           });
@@ -209,29 +209,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("forced owner rollback");
       await expect(projectionState()).resolves.toEqual(appended);
       expect(
-        (await journal.listReviewableJournalRows(BRANCH_ID, 1)).map(({ status }) => status),
+        (await journal.listReviewableJournalRows(DRAFT_ID, 1)).map(({ status }) => status),
       ).toEqual(rows.map(({ status }) => status));
 
       await pushStore.commitDiscard({
-        branch: await currentBranch(),
+        documentDraft: await currentDraft(),
         journalRows: rows,
         ...emptyState,
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      // The discard closed those rows and left the branch equal to live; a fresh write makes it
+      // The discard closed those rows and left the draft equal to live; a fresh write makes it
       // differ again, and its projection stores the count, before the push stages its row.
       await appendJournal({ kind: "edit" });
-      const rewritten = await currentBranch();
-      await branches.writeEffect({
-        branchId: BRANCH_ID,
+      const rewritten = await currentDraft();
+      await drafts.writeEffect({
+        draftId: DRAFT_ID,
         revision: rewritten.revision,
         hasEffect: true,
         workId: rewritten.workId,
       });
       const staged = await projectionState();
       expect(staged.entityRevision).toBe((discarded.entityRevision ?? 0n) + 1n);
-      const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
+      const pushRows = await journal.listReviewableJournalRows(DRAFT_ID, 1);
       const validUpdate = Y.encodeStateAsUpdate(new Y.Doc());
       const trail = {
         documentId: DOCUMENT_ID,
@@ -248,7 +248,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         pushes: [
           {
-            branch: await currentBranch(),
+            documentDraft: await currentDraft(),
             journalRows: pushRows,
             pushUpdate: validUpdate,
             idempotencyKey: "work-projection-pending-owner-push",
@@ -341,8 +341,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         pushes: [
           {
-            branch: await currentBranch(),
-            journalRows: await journal.listReviewableJournalRows(BRANCH_ID, 1),
+            documentDraft: await currentDraft(),
+            journalRows: await journal.listReviewableJournalRows(DRAFT_ID, 1),
             pushUpdate: validUpdate,
             idempotencyKey: "work-projection-pending-owner-push",
             trail,

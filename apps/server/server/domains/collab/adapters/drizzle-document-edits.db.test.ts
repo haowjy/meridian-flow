@@ -2,7 +2,6 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { readBranchContent } from "../test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -21,7 +20,8 @@ import {
   setupResponseDraft,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";
-import { commitBranchEdit, reviewDriver } from "../test-support/draft-review-requests.js";
+import { commitDraftEdit, reviewDriver } from "../test-support/draft-review-requests.js";
+import { readDraftContent } from "../test-support/draft-store-seam.js";
 
 describe("document edit receipts (Postgres)", () => {
   const db = createTestDatabase();
@@ -40,16 +40,16 @@ describe("document edit receipts (Postgres)", () => {
       harness.destroyWarmState();
     });
     async function expectSurvivor() {
-      const { branchId, rows } = draft;
+      const { draftId, rows } = draft;
       // Surviving immutable receipts point at new journal rows with exactly the
       // same identities, bytes and ordinal. The discarded part remains terminal.
       const successor = await db
         .select()
-        .from(schema.branchWriteJournal)
+        .from(schema.draftWriteJournal)
         .where(
           and(
-            eq(schema.branchWriteJournal.branchId, branchId),
-            eq(schema.branchWriteJournal.generation, 2),
+            eq(schema.draftWriteJournal.draftId, draftId),
+            eq(schema.draftWriteJournal.generation, 2),
           ),
         );
       const survivor = successor.filter((row) => row.toolCallId === rows[1].toolCallId);
@@ -60,10 +60,10 @@ describe("document edit receipts (Postgres)", () => {
       );
     }
     it("writer insertion after Discard lands restored text", async () => {
-      const { fixture, branchId, review } = draft;
-      const snapshot = await fixture.branchStore.getBranch(branchId);
-      if (!snapshot) throw new Error("Missing branch");
-      const content = await readBranchContent(fixture.branchStore, branchId);
+      const { fixture, draftId, review } = draft;
+      const snapshot = await fixture.draftStore.getDraft(draftId);
+      if (!snapshot) throw new Error("Missing draft");
+      const content = await readDraftContent(fixture.draftStore, draftId);
       const room = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(room, content);
@@ -74,8 +74,8 @@ describe("document edit receipts (Postgres)", () => {
         const paragraph = room.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
         (paragraph.get(0) as Y.XmlText).insert(2, "X");
         expect(
-          await fixture.branchCoordinator.commitWriterUpdate({
-            branchId,
+          await fixture.draftCoordinator.commitWriterUpdate({
+            draftId,
             expectedGeneration: snapshot.generation,
             updateData: delta,
             roomDocument: room,
@@ -90,7 +90,7 @@ describe("document edit receipts (Postgres)", () => {
       await expectSurvivor();
     });
     it("successive replies can discard the restored word", async () => {
-      const { fixture, branchId, responseId, context, review } = draft;
+      const { fixture, draftId, responseId, context, review } = draft;
       for (const [index, text] of ["silver", "copper"].entries()) {
         // Save each distinct reply, as in the original production witness.
         const id = index === 0 ? responseId : await createResponse(db, 3);
@@ -109,7 +109,7 @@ describe("document edit receipts (Postgres)", () => {
         ).toMatchObject({ status: "success" });
         await harness.commit(id);
         await review(text);
-        expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
+        expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nazure\n\ngreen\n");
       }
       await expectSurvivor();
     });
@@ -159,14 +159,14 @@ describe("document edit receipts (Postgres)", () => {
     const responseId = await createResponse(db, 1);
     try {
       await harness.seedWriterDocument("red\n\nblue", responseId);
-      const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-      const branchId = branch.branchId;
+      const documentDraft = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+      const draftId = documentDraft.draftId;
       const review = reviewDriver(fixture.collab.draftReview);
       let ordinal = 0;
       const replace = async (paragraph: number, text: string) => {
-        const snapshot = await fixture.branchStore.getBranch(branchId);
-        if (!snapshot) throw new Error("Missing branch");
-        const content = await readBranchContent(fixture.branchStore, branchId);
+        const snapshot = await fixture.draftStore.getDraft(draftId);
+        if (!snapshot) throw new Error("Missing draft");
+        const content = await readDraftContent(fixture.draftStore, draftId);
         const doc = new Y.Doc({ gc: false });
         try {
           Y.applyUpdate(doc, content);
@@ -179,13 +179,13 @@ describe("document edit receipts (Postgres)", () => {
             if (text) value.insert(0, text);
           });
           expect(
-            await fixture.branchCoordinator.commitSegmentRows({
-              branchId,
+            await fixture.draftCoordinator.commitSegmentRows({
+              draftId,
               sourceDoc: doc,
               expectedGeneration: snapshot.generation,
               rows: [
                 {
-                  branchId,
+                  draftId,
                   updateData: Y.mergeUpdates(deltas),
                   source: actor,
                   actorUserId: actor === "writer" ? (USER_ID as never) : null,
@@ -215,7 +215,7 @@ describe("document edit receipts (Postgres)", () => {
       await replace(0, operation === "apply from deletion" ? "" : "gold");
       await replace(1, "azure");
       await reviewRed(false);
-      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n");
+      expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nazure\n");
       await replace(0, operation === "delete" || operation === "apply deletion" ? "" : "silver");
       const apply = operation.startsWith("apply");
       await reviewRed(apply);
@@ -226,7 +226,7 @@ describe("document edit receipts (Postgres)", () => {
             : "silver\n\nblue\n"
           : "red\n\nblue\n",
       );
-      expect(await fixture.draftMarkdown(branchId)).toBe(
+      expect(await fixture.draftMarkdown(draftId)).toBe(
         apply
           ? operation === "apply deletion"
             ? "\u00a0\n\nazure\n"
@@ -247,7 +247,7 @@ describe("document edit receipts (Postgres)", () => {
         const preview = await review.activePreview(ALPHA_ID);
         expect(preview.operations.map((op) => op.afterExcerpt)).toEqual(["azure"]);
         expect(await review.applyChanges(ALPHA_ID, preview)).toMatchObject({ status: "applied" });
-        expect(await harness.liveMarkdown(ALPHA_ID)).toBe(await fixture.draftMarkdown(branchId));
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe(await fixture.draftMarkdown(draftId));
       }
     } finally {
       harness.cancelScheduledPulls();
@@ -260,12 +260,12 @@ describe("document edit receipts (Postgres)", () => {
   ] as const)("successive selective Discards of %s changes preserve exact content", async (kind) => {
     const harness = createHarness(db);
     try {
-      const { fixture, branchId, rows } = await stageDraft(db, harness, "red\n\nblue", kind, [
+      const { fixture, draftId, rows } = await stageDraft(db, harness, "red\n\nblue", kind, [
         ["red", kind === "insert" ? " gold" : "gold"],
         ["blue", kind === "insert" ? " silver" : "silver"],
       ]);
       const review = reviewDriver(fixture.collab.draftReview);
-      expect(await fixture.draftMarkdown(branchId)).toBe(
+      expect(await fixture.draftMarkdown(draftId)).toBe(
         kind === "insert" ? "red gold\n\nblue silver\n" : "gold\n\nsilver\n",
       );
       let survivorToken: string | undefined;
@@ -277,7 +277,7 @@ describe("document edit receipts (Postgres)", () => {
         expect(
           await review.discardChanges(ALPHA_ID, preview, [preview.operations[0].operationId]),
         ).toMatchObject({ status: "discarded" });
-        expect(await fixture.draftMarkdown(branchId)).toBe(
+        expect(await fixture.draftMarkdown(draftId)).toBe(
           n === 0
             ? kind === "insert"
               ? "red\n\nblue silver\n"
@@ -288,14 +288,14 @@ describe("document edit receipts (Postgres)", () => {
       }
       const originals = await db
         .select()
-        .from(schema.branchWriteJournal)
+        .from(schema.draftWriteJournal)
         .where(
           and(
-            eq(schema.branchWriteJournal.branchId, branchId),
-            eq(schema.branchWriteJournal.source, "agent"),
+            eq(schema.draftWriteJournal.draftId, draftId),
+            eq(schema.draftWriteJournal.source, "agent"),
           ),
         )
-        .orderBy(schema.branchWriteJournal.id);
+        .orderBy(schema.draftWriteJournal.id);
       expect(
         originals
           .filter((row) => rows.some((original) => original.id === row.id))
@@ -315,7 +315,7 @@ describe("document edit receipts (Postgres)", () => {
   ] as const)("admits a held class request after another Discard: %s", async (scenario) => {
     const harness = createHarness(db);
     try {
-      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
+      const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
         ["red", "gold"],
         ["blue", "silver"],
       ]);
@@ -334,11 +334,11 @@ describe("document edit receipts (Postgres)", () => {
       expect(after.operations[0].operationId).not.toBe(b.operationId);
       expect(after.operations[0].closureClassId).toBe(b.closureClassId);
       expect(after.operations[0].admissionToken).toBe(b.admissionToken);
-      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nsilver\n");
+      expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nsilver\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
 
       if (scenario === "changed") {
-        await commitBranchEdit(fixture, branchId, { source: "writer" }, (doc) => {
+        await commitDraftEdit(fixture, draftId, { source: "writer" }, (doc) => {
           const paragraph = doc.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
           (paragraph.get(0) as Y.XmlText).delete(4, 2);
         });
@@ -368,7 +368,7 @@ describe("document edit receipts (Postgres)", () => {
               : "discarded",
       });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
-      expect(await fixture.draftMarkdown(branchId)).toBe(
+      expect(await fixture.draftMarkdown(draftId)).toBe(
         scenario === "apply"
           ? "red\n\nsilver\n"
           : scenario === "changed"
@@ -383,7 +383,7 @@ describe("document edit receipts (Postgres)", () => {
   it.each([false, true])("a grown clicked AI class is stale (refork first: %s)", async (refork) => {
     const harness = createHarness(db);
     try {
-      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
+      const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
         ["red", "gold"],
         ["blue", "silver"],
       ]);
@@ -416,12 +416,12 @@ describe("document edit receipts (Postgres)", () => {
       expect(grown.operations.map((op) => op.closureClassId)).not.toContain(b.closureClassId);
       expect(grown.operations.map((op) => op.partKey)).toContain(b.partKey);
       const expectedDraft = refork ? "red\n\nsilver bright\n" : "gold\n\nsilver bright\n";
-      expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
+      expect(await fixture.draftMarkdown(draftId)).toBe(expectedDraft);
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
       expect(await review.discardChanges(ALPHA_ID, before, [b.operationId])).toMatchObject({
         status: "stale",
       });
-      expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
+      expect(await fixture.draftMarkdown(draftId)).toBe(expectedDraft);
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
     } finally {
       harness.cancelScheduledPulls();
@@ -434,12 +434,12 @@ describe("document edit receipts (Postgres)", () => {
   ] as const)("held writer class after re-journaling: %s", async (identity) => {
     const harness = createHarness(db);
     try {
-      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
+      const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
         ["red", "gold"],
       ]);
-      const snapshot = await fixture.branchStore.getBranch(branchId);
-      if (!snapshot) throw new Error("Missing branch");
-      const content = await readBranchContent(fixture.branchStore, branchId);
+      const snapshot = await fixture.draftStore.getDraft(draftId);
+      if (!snapshot) throw new Error("Missing draft");
+      const content = await readDraftContent(fixture.draftStore, draftId);
       const room = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(room, content);
@@ -449,8 +449,8 @@ describe("document edit receipts (Postgres)", () => {
         });
         const paragraph = room.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
         (paragraph.get(0) as Y.XmlText).insert(4, " writer");
-        await fixture.branchCoordinator.commitWriterUpdate({
-          branchId,
+        await fixture.draftCoordinator.commitWriterUpdate({
+          draftId,
           expectedGeneration: snapshot.generation,
           updateData: update,
           roomDocument: room,
@@ -462,12 +462,12 @@ describe("document edit receipts (Postgres)", () => {
       if (identity === "without-part") {
         // Exercise the supported row-ID fallback when immutable capture metadata is absent.
         await db
-          .update(schema.branchWriteJournal)
+          .update(schema.draftWriteJournal)
           .set({ updateMeta: null })
           .where(
             and(
-              eq(schema.branchWriteJournal.branchId, branchId),
-              eq(schema.branchWriteJournal.source, "writer"),
+              eq(schema.draftWriteJournal.draftId, draftId),
+              eq(schema.draftWriteJournal.source, "writer"),
             ),
           );
       }
@@ -493,7 +493,7 @@ describe("document edit receipts (Postgres)", () => {
       expect(await review.discardChanges(ALPHA_ID, before, [writer.operationId])).toMatchObject({
         status: identity === "captured" ? "discarded" : "gone",
       });
-      expect(await fixture.draftMarkdown(branchId)).toBe(
+      expect(await fixture.draftMarkdown(draftId)).toBe(
         identity === "captured" ? "red\n\nblue\n" : "red\n\nblue writer\n",
       );
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");

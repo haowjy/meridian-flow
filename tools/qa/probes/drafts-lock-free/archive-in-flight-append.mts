@@ -1,10 +1,10 @@
 /**
- * Phase 4 (design §5, F6, D30 Q3): Archive locks no branch row; the append keeps the Work
+ * Phase 4 (design §5, F6, D30 Q3): Archive locks no draft row; the append keeps the Work
  * predicate in its `UPDATE` and rechecks the lifecycle in its post-lock read. What remains is
  * the honest window: a key whose post-lock read ran before Archive committed may land in the
  * archived draft; every later key is refused.
  *
- * - Arm 1 (holder): a frame holds at `branch.append.beforeCommit` while Archive commits; the
+ * - Arm 1 (holder): a frame holds at `draft.append.beforeCommit` while Archive commits; the
  *   row commits, the text holds the token under `archived`, the next frame is refused, and
  *   after unarchive the next frame lands with the token kept.
  * - Arm 2 (queued waiter): a second frame waits on the first's row when Archive commits; after
@@ -12,7 +12,7 @@
  * - Arm 3: a frame started after Archive is refused by the predicate.
  *
  * Each arm types one key first, so the measured keys flip no review membership on today's code.
- * Negative control on `586e58ae1e`: Archive's `fenceWorkBranches` waits on the held row (arms
+ * Negative control on `586e58ae1e`: Archive's `fenceWorkDrafts` waits on the held row (arms
  * 1 and 2 report the wait instead of an Archive that committed).
  */
 import assert from "node:assert/strict";
@@ -43,17 +43,17 @@ export const archiveInFlightAppend: Probe = {
       return { draft, tab };
     }
 
-    /** Archive on its own connection, while something holds the branch row. */
+    /** Archive on its own connection, while something holds the draft row. */
     async function archiveWhileHeld(workId: string) {
       const archive = settled(independently(() => harness.works.archive(workId as never)));
-      const observed = await settledOrWaiting(harness, archive, /document_branches/);
+      const observed = await settledOrWaiting(harness, archive, /document_drafts/);
       return { archive, observed };
     }
 
     await runArms({
       async "1-holder"() {
         const { draft, tab } = await draftWithOneKey("archive-holder");
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const frame = independently(() => tab.send(keystroke(tab.room, " TOKEN")));
           await pause.entered;
@@ -61,11 +61,11 @@ export const archiveInFlightAppend: Probe = {
           pause.release();
           const outcome = await frame;
           const archived = await archive;
-          const held = await harness.readBranch(draft.branchId);
+          const held = await harness.readDraft(draft.draftId);
           const next = await tab.send(keystroke(tab.room, " REFUSED"));
           await harness.works.unarchive(draft.workId);
           const after = await tab.send(keystroke(tab.room, " AFTER"));
-          const durable = await harness.readBranch(draft.branchId);
+          const durable = await harness.readDraft(draft.draftId);
           observe("arm 1", {
             archiveWhileHeld: observed.settled ? "committed" : observed.waiting,
             archived: archived.ok,
@@ -78,7 +78,7 @@ export const archiveInFlightAppend: Probe = {
           assert.equal(
             observed.settled,
             true,
-            "Archive commits while the frame holds the branch row",
+            "Archive commits while the frame holds the draft row",
           );
           assert.equal(outcome, "appended");
           assert.equal(held.lifecycle, "archived");
@@ -96,18 +96,18 @@ export const archiveInFlightAppend: Probe = {
 
       async "2-queued-waiter"() {
         const { draft, tab } = await draftWithOneKey("archive-queued");
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const first = independently(() => tab.send(keystroke(tab.room, " FIRST", 950_001)));
           await pause.entered;
           const queued = independently(() => tab.send(keystroke(tab.room, " QUEUED", 950_002)));
-          const queuedWait = await harness.waitForLockWaiter(/document_branches/);
+          const queuedWait = await harness.waitForLockWaiter(/document_drafts/);
           const { archive, observed } = await archiveWhileHeld(draft.workId);
           pause.release();
           const outcomes = [await first, await queued];
           await archive;
-          const rows = await journalRows(harness, draft.branchId);
-          const durable = await harness.readBranch(draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
+          const durable = await harness.readDraft(draft.draftId);
           observe("arm 2", {
             queuedWait,
             archiveWhileHeld: observed.settled ? "committed" : observed.waiting,
@@ -132,7 +132,7 @@ export const archiveInFlightAppend: Probe = {
         try {
           await harness.works.archive(draft.workId);
           const outcome = await tab.send(keystroke(tab.room, " LATE"));
-          const rows = await journalRows(harness, draft.branchId);
+          const rows = await journalRows(harness, draft.draftId);
           observe("arm 3", { outcome, rows: rows.length });
           assert.ok(typeof outcome === "object", "refused");
           assert.equal(rows.length, 1);

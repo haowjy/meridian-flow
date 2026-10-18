@@ -1,7 +1,7 @@
 /**
  * Final-gate F1: a model Undo is a grant seam. Its first locks are the bound grants' Works, in id
- * order with the captured branches' Works, and the grants are confirmed before any inverse or
- * document lock. A live-only inverse (a named Work's Scratch) captures no branch, so the grant is
+ * order with the captured drafts' Works, and the grants are confirmed before any inverse or
+ * document lock. A live-only inverse (a named Work's Scratch) captures no draft, so the grant is
  * its only route to the Work. Two orders against Archive on an independent connection:
  *
  * - lifecycle first: Archive commits before the inverse's commit scope; the confirmation, read
@@ -68,7 +68,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
   const inverse = createDrizzleTurnInverseService({
     db: harness.db,
     journal: harness.persistence.journal,
-    branches: harness.store,
+    drafts: harness.store,
     // The live coordinator's room is a fresh read of the journal; delivery is inert.
     coordinator: {
       withDocument: async <T,>(id: string, run: (doc: Y.Doc) => Promise<T>) => {
@@ -81,7 +81,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
       },
       recover: async () => {},
     } as never,
-    branchCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: { async deliverCommitted() {} },
     resolveDocumentUri: async () => `scratch://@${label}/probe.md`,
     refreshDocument: async () => {},
     flushLivePull: async () => {},
@@ -94,7 +94,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
         threadId: work.threadId,
         turnId: work.turnId,
         documentIds: [documentId],
-        branchId: null,
+        draftId: null,
         model: true,
       } as never,
       { command: "undo", file: "probe.md" },

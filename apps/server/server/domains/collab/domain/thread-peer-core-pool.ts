@@ -15,7 +15,7 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DraftId, LinkView } from "@meridian/contracts";
+import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
@@ -30,7 +30,7 @@ import {
   sameDestination,
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
-import { runBoundedAttempts } from "./branch-attempts.js";
+import { runBoundedAttempts } from "./draft-attempts.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -45,16 +45,16 @@ export type ResponseTransactionHooks = {
   ): Promise<T>;
 };
 
-import { ThreadPeerPullLost } from "./branch-pulls.js";
-import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-store.js";
-import type { Drafts } from "./drafts.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { Branches } from "./branches.js";
+import { ThreadPeerPullLost } from "./draft-pulls.js";
+import { DraftCasConflictError, DraftStaleUpdateError } from "./draft-store.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
 
 type PulledThreadPeer = {
-  peerBranchId: string;
-  upstreamBranchId: string;
-  branchGeneration: number;
+  peerDraftId: string;
+  upstreamDraftId: string;
+  draftGeneration: number;
   afterJournalId?: number;
   liveJournalSeq?: number;
   attributionBaseline: Uint8Array;
@@ -65,9 +65,9 @@ type ResponseRecord = ReplyRecord;
 /** A reply save's commit attempts (section 2.4): four, then the save fails as today. */
 const SAVE_ATTEMPTS = 4;
 
-/** A miss the next attempt can resolve: a branch moved, or a buffer changed, since preparing. */
+/** A miss the next attempt can resolve: a draft moved, or a buffer changed, since preparing. */
 function isSaveAttemptMiss(cause: unknown): boolean {
-  return cause instanceof BranchCasConflictError || cause instanceof ResponseAttemptStaleError;
+  return cause instanceof DraftCasConflictError || cause instanceof ResponseAttemptStaleError;
 }
 
 /**
@@ -78,8 +78,8 @@ function isSaveAttemptMiss(cause: unknown): boolean {
  * that commits at once, and once for the whole reply at its save (§5.2).
  */
 export function createThreadPeerCorePool(input: {
-  drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
-  branches: Pick<ApplicationBranchStore, "getBranch">;
+  branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
+  drafts: Pick<ApplicationDraftStore, "getDraft">;
   fences: ReplySaveFences;
   liveUtilityCore: LiveAgentEditCore;
   /**
@@ -94,12 +94,12 @@ export function createThreadPeerCorePool(input: {
   pullThreadPeer(input: {
     documentId: DocumentId;
     threadId: ThreadId;
-    draftId?: DraftId;
+    branchId?: BranchId;
   }): Promise<PulledThreadPeer | undefined>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * One save attempt's commit scope inside the response transaction: a savepoint, so a
-   * miss rolls back every document the attempt wrote and releases the branch rows it took.
+   * miss rolls back every document the attempt wrote and releases the draft rows it took.
    */
   attemptScope<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
@@ -121,7 +121,7 @@ export function createThreadPeerCorePool(input: {
   const responses = new Map<string, ResponseRecord>();
   // D41: the version of each document the model last read or wrote, per thread.
   // Process-local like the runtime docs it guards; a restart forgets it.
-  const lastSeen = new Map<string, { destination: FileDestination; peerBranchId?: string }>();
+  const lastSeen = new Map<string, { destination: FileDestination; peerDraftId?: string }>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   /**
@@ -222,7 +222,7 @@ export function createThreadPeerCorePool(input: {
     const pulled = await input.pullThreadPeer({
       documentId,
       threadId: context.threadId as ThreadId,
-      draftId: context.linkView?.kind === "draft" ? context.linkView.draftId : undefined,
+      branchId: context.linkView?.kind === "branch" ? context.linkView.branchId : undefined,
     });
     if (!pulled) return context;
     // Fresh calls rebuild the runtime from the pulled peer. A previous reply's
@@ -237,9 +237,9 @@ export function createThreadPeerCorePool(input: {
       ...context,
       interactionContext: {
         mode: "threadPeer" as const,
-        peerBranchId: pulled.peerBranchId,
-        upstreamBranchId: pulled.upstreamBranchId,
-        branchGeneration: pulled.branchGeneration,
+        peerDraftId: pulled.peerDraftId,
+        upstreamDraftId: pulled.upstreamDraftId,
+        draftGeneration: pulled.draftGeneration,
         afterJournalId: pulled.afterJournalId ?? 0,
         liveJournalSeq: pulled.liveJournalSeq,
         attributionBaseline: pulled.attributionBaseline,
@@ -279,15 +279,15 @@ export function createThreadPeerCorePool(input: {
       : (pinned?.grant.destination ?? requested);
     await evictIdleCores();
     const routedContext = await routedTo(context, destination, pinned?.linkView);
-    // A read never makes a draft (S1): a draft destination whose Work has no active draft
+    // A read never makes a branch (S1): a draft destination whose Work has no active branch
     // reads the live document through the live core and makes no peer.
-    const noDraft =
-      !pinned && destination.kind === "draft" && routedContext.linkView.kind !== "draft";
-    const core = noDraft
+    const noBranch =
+      !pinned && destination.kind === "draft" && routedContext.linkView.kind !== "branch";
+    const core = noBranch
       ? input.liveUtilityCore
       : (pinned?.core ?? coreForDestination(destination, context.threadId));
     const callContext =
-      command.format === "edits" || noDraft
+      command.format === "edits" || noBranch
         ? routedContext
         : await threadPeerContext(core, documentId, routedContext);
     const outcome = await core.read(command, callContext);
@@ -295,9 +295,9 @@ export function createThreadPeerCorePool(input: {
     if (documentId && context.threadId) {
       lastSeen.set(seenKey(context.threadId, documentId), {
         destination,
-        peerBranchId:
+        peerDraftId:
           callContext.interactionContext?.mode === "threadPeer"
-            ? callContext.interactionContext.peerBranchId
+            ? callContext.interactionContext.peerDraftId
             : undefined,
       });
     }
@@ -319,7 +319,7 @@ export function createThreadPeerCorePool(input: {
       : undefined;
     const pinned = documentId ? record?.documents.get(documentId) : undefined;
     // A document keeps its first destination for the rest of the reply, so a
-    // mid-reply rebind or draft regeneration never splits it across two saves.
+    // mid-reply rebind or branch regeneration never splits it across two saves.
     // The chat's mode can't change mid-reply: it changes only between replies (D62).
     const destination = pinned?.grant.destination ?? grant.destination;
     if (documentId && context.threadId) {
@@ -335,13 +335,13 @@ export function createThreadPeerCorePool(input: {
     await evictIdleCores();
     const immediateInverse =
       command.command === "undo" || command.command === "redo" || command.command === "revert";
-    const draftView: LinkView | undefined =
+    const branchView: LinkView | undefined =
       pinned || destination.kind !== "draft" || immediateInverse
         ? undefined
         : {
-            kind: "draft",
-            draftId: (
-              await input.drafts.ensureActiveForWrite({
+            kind: "branch",
+            branchId: (
+              await input.branches.ensureActiveForWrite({
                 workId: destination.workId,
                 projectId: grant.facts.projectId,
                 threadId: (context.threadId as ThreadId | undefined) ?? null,
@@ -349,7 +349,7 @@ export function createThreadPeerCorePool(input: {
               })
             ).id,
           };
-    const routedContext = await routedTo(context, destination, pinned?.linkView ?? draftView);
+    const routedContext = await routedTo(context, destination, pinned?.linkView ?? branchView);
     let entry = pinned;
     if (record && documentId && !pinned && !immediateInverse) {
       entry = { core, grant, linkView: routedContext.linkView };
@@ -361,23 +361,23 @@ export function createThreadPeerCorePool(input: {
       if (!immediateInverse) pinStaged(entry, callContext);
       return core.write(command, callContext);
     };
-    // An immediate drafted write that lost its draft to a close (Discard all) between the
+    // An immediate drafted write that lost its branch to a close (Discard all) between the
     // ensure and its commit refuses like a save does, never as a crash.
-    const draftClosedUnder = async () =>
-      draftView?.kind === "draft" &&
+    const branchClosedUnder = async () =>
+      branchView?.kind === "branch" &&
       destination.kind === "draft" &&
-      !sameView(await input.drafts.viewForWork(destination.workId), draftView);
+      !sameView(await input.branches.viewForWork(destination.workId), branchView);
     const immediate = async (): Promise<WriteOutcome> => {
       try {
         const done = await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
-        return done.isError && done.status === "internal_error" && (await draftClosedUnder())
-          ? draftChanged(command)
+        return done.isError && done.status === "internal_error" && (await branchClosedUnder())
+          ? branchClosed(command)
           : done;
       } catch (cause) {
-        if (!(await draftClosedUnder())) throw cause;
+        if (!(await branchClosedUnder())) throw cause;
         if (documentId && context.threadId)
           await core.invalidateThreadDocument(documentId, context.threadId);
-        return draftChanged(command);
+        return branchClosed(command);
       }
     };
     // A staged write whose peer pull lost to Discard all or an item Discard: the same named
@@ -390,7 +390,7 @@ export function createThreadPeerCorePool(input: {
         // The reply's earlier staged writes stay: the retirement refuses them with their own receipts.
         if (!reason) throw cause;
         // An entry this attempt installed and never pinned routes the reply to the closed
-        // draft, and retirement matches pins only: drop it so the retry ensures a fresh draft.
+        // branch, and retirement matches pins only: drop it so the retry ensures a fresh branch.
         if (record && documentId && entry && entry !== pinned && !entry.pin) {
           if (record.documents.get(documentId) === entry) record.documents.delete(documentId);
         }
@@ -402,9 +402,9 @@ export function createThreadPeerCorePool(input: {
       if (context.threadId)
         lastSeen.set(seenKey(context.threadId, documentId), {
           destination,
-          peerBranchId:
+          peerDraftId:
             callContext.interactionContext?.mode === "threadPeer"
-              ? callContext.interactionContext.peerBranchId
+              ? callContext.interactionContext.peerDraftId
               : undefined,
         });
       if (!context.responseIdentity?.editScopeId && destination.kind === "live")
@@ -414,9 +414,9 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * Why a failed peer pull is Discard's doing, in the save fence's precedence: the draft it
+   * Why a failed peer pull is Discard's doing, in the save fence's precedence: the branch it
    * pulled for is closed, else the upstream it captured is closed or gone, else its peer is.
-   * Any other failure, or a pull whose branches are all still live, is not a Discard.
+   * Any other failure, or a pull whose branch and drafts are all still active, is not a Discard.
    */
   async function discardLossReason(
     cause: unknown,
@@ -425,18 +425,18 @@ export function createThreadPeerCorePool(input: {
     const lost = cause instanceof ThreadPeerPullLost;
     if (
       !lost &&
-      !(cause instanceof BranchStaleUpdateError || cause instanceof BranchCasConflictError)
+      !(cause instanceof DraftStaleUpdateError || cause instanceof DraftCasConflictError)
     )
       return undefined;
-    if (view.kind === "draft" && !(await input.drafts.shareActive(view.draftId)))
+    if (view.kind === "branch" && !(await input.branches.shareActive(view.branchId)))
       return "discarded_draft";
     if (!lost) return undefined;
-    const gone = async (branchId: string) => {
-      const branch = await input.branches.getBranch(branchId);
-      return !branch || branch.status === "closed";
+    const gone = async (draftId: string) => {
+      const documentDraft = await input.drafts.getDraft(draftId);
+      return !documentDraft || documentDraft.status === "closed";
     };
-    if (await gone(cause.upstreamBranchId)) return "discarded_document";
-    return (await gone(cause.peerBranchId)) ? "discarded_edit" : undefined;
+    if (await gone(cause.upstreamDraftId)) return "discarded_document";
+    return (await gone(cause.peerDraftId)) ? "discarded_edit" : undefined;
   }
 
   /**
@@ -496,27 +496,27 @@ export function createThreadPeerCorePool(input: {
     docId: string,
     peers: readonly {
       threadId: string;
-      peerBranchId: string;
+      peerDraftId: string;
       reason: import("@meridian/agent-edit/integration").DiscardedWriteReason;
     }[],
   ): Promise<void> {
     const errors: unknown[] = [];
-    for (const { threadId, peerBranchId, reason } of peers) {
-      if (!docId || !threadId || !peerBranchId)
-        throw new Error("Retirement names one document, thread and peer branch");
+    for (const { threadId, peerDraftId, reason } of peers) {
+      if (!docId || !threadId || !peerDraftId)
+        throw new Error("Retirement names one document, thread and peer draft");
       const id = threadId as ThreadId;
       const key = seenKey(id, docId as DocumentId);
-      if (lastSeen.get(key)?.peerBranchId === peerBranchId) lastSeen.delete(key);
+      if (lastSeen.get(key)?.peerDraftId === peerDraftId) lastSeen.delete(key);
       for (const record of responses.values()) {
         if (record.threadId !== id) continue;
         for (const core of record.participants) record.receipting.add(core);
         const entry = record.documents.get(docId as DocumentId);
-        if (entry?.pin?.peerBranchId === peerBranchId) record.documents.delete(docId as DocumentId);
+        if (entry?.pin?.peerDraftId === peerDraftId) record.documents.delete(docId as DocumentId);
       }
       // Response-pinned owners survive cache eviction and must lose these buffers too.
       for (const core of new Set([...ownersForThread(id), input.liveUtilityCore])) {
         try {
-          await core.retirePeer({ documentId: docId, threadId, peerBranchId, reason });
+          await core.retirePeer({ documentId: docId, threadId, peerDraftId, reason });
         } catch (cause) {
           errors.push(cause);
         }
@@ -535,25 +535,25 @@ export function createThreadPeerCorePool(input: {
       pinnedView ??
       (destination.kind === "live"
         ? { kind: "live" as const }
-        : await input.drafts.viewForWork(destination.workId));
+        : await input.branches.viewForWork(destination.workId));
     return { ...context, linkView };
   }
 
   return asThreadPeerAgentEditCore({
     read,
     write,
-    refuseStaged(responseId, docId, reason, peerBranchId) {
+    refuseStaged(responseId, docId, reason, peerDraftId) {
       const record = responses.get(responseId);
       for (const core of record?.participants ?? []) {
-        core.refuseStaged(responseId, docId, reason, peerBranchId);
+        core.refuseStaged(responseId, docId, reason, peerDraftId);
         record?.receipting.add(core);
       }
       const entry = record?.documents.get(docId as DocumentId);
-      if (entry && (!peerBranchId || entry.pin?.peerBranchId === peerBranchId))
+      if (entry && (!peerDraftId || entry.pin?.peerDraftId === peerDraftId))
         record?.documents.delete(docId as DocumentId);
     },
-    retirePeer: ({ documentId, threadId, peerBranchId, reason }) =>
-      retireThreadPeers(documentId, [{ threadId, peerBranchId, reason }]),
+    retirePeer: ({ documentId, threadId, peerDraftId, reason }) =>
+      retireThreadPeers(documentId, [{ threadId, peerDraftId, reason }]),
     recover(docId) {
       return Promise.all([
         input.liveUtilityCore.recover(docId),
@@ -603,7 +603,7 @@ export function createThreadPeerCorePool(input: {
             const results: ResponseCommitSuccessResult[] = [];
             // The attempt a failed save fails with; none once installing began.
             let failing: Map<AgentEditCore, ResponseCommitAttempt> | undefined;
-            // One scope per attempt, before its first branch-store lock: a miss on any
+            // One scope per attempt, before its first draft-store lock: a miss on any
             // document unwinds every document's rows, receipts and placements, and the
             // attempts' process-local state is dropped with them (decision D7: `confirm`
             // ran once above and is not replayed; a retry recomputes under its locks).
@@ -784,8 +784,8 @@ function readRequired(
   };
 }
 
-/** The Work's draft this write ensured closed before the write landed. */
-function draftChanged(command: WriteCommand): WriteOutcome {
+/** The Work's branch this write ensured closed before the write landed. */
+function branchClosed(command: WriteCommand): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
   const message = `This file's draft changed before your write landed (it was applied or discarded), so this change wasn't kept. Read ${path} again before editing.`;
   return {
@@ -818,8 +818,8 @@ function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): Wr
   };
 }
 
-function sameView(a: { kind: string; draftId?: string }, b: LinkView): boolean {
-  return a.kind === "draft" && b.kind === "draft" ? a.draftId === b.draftId : a.kind === b.kind;
+function sameView(a: { kind: string; branchId?: string }, b: LinkView): boolean {
+  return a.kind === "branch" && b.kind === "branch" ? a.branchId === b.branchId : a.kind === b.kind;
 }
 
 function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {

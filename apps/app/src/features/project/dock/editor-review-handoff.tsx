@@ -13,7 +13,7 @@ import {
 import {
   clearDraftReviewLaunchFailure,
   failDraftReviewLaunch,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";

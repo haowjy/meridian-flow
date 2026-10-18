@@ -9,12 +9,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
-  createDrizzleDraftStore,
-  createDrizzleDraftWriteBoundary,
-} from "./adapters/drizzle-drafts.js";
-import { ThreadPeerPullLost } from "./domain/branch-pulls.js";
+  createDrizzleBranchStore,
+  createDrizzleBranchWriteBoundary,
+} from "./adapters/drizzle-branches.js";
+import { createBranches } from "./domain/branches.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
-import { createDrafts } from "./domain/drafts.js";
+import { ThreadPeerPullLost } from "./domain/draft-pulls.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -97,7 +97,7 @@ describe("reply save refusals (postgres)", () => {
   }
 
   it("1: independent staged writes survive a per-change Discard and land at generation +1", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await write("gold", "silver", "w-gold")).toMatchObject({ phase: "staged" });
     const preview = await review.activePreview(ALPHA_ID);
@@ -109,12 +109,12 @@ describe("reply save refusals (postgres)", () => {
     });
     const saved = await harness.commit(responseId);
     expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount: 2 }] });
-    expect(await fixture.draftMarkdown(branchId)).toBe("silver\n\nblue\n\nlime\n");
-    expect(await harness.branchGeneration(branchId)).toBe(2);
+    expect(await fixture.draftMarkdown(draftId)).toBe("silver\n\nblue\n\nlime\n");
+    expect(await harness.draftGeneration(draftId)).toBe(2);
   });
 
   it("3: Discard all while staged refuses the save with one receipt per write and nothing live", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await write("gold", "silver", "w-gold")).toMatchObject({ phase: "staged" });
     expect(await review.discardAll()).toMatchObject({ status: "discarded" });
@@ -125,11 +125,11 @@ describe("reply save refusals (postgres)", () => {
     ]);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n\ngreen\n");
     expect(await review.list()).toEqual([]);
-    expect(await fixture.draftMarkdown(branchId)).toContain("gold");
+    expect(await fixture.draftMarkdown(draftId)).toContain("gold");
   });
 
   it("2: after two reforks and a prepared read, only edits on discarded text fail", async () => {
-    const { fixture, branchId, responseId, review, write, core, context } = await setup();
+    const { fixture, draftId, responseId, review, write, core, context } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await write("azure", "cyan", "w-azure")).toMatchObject({ phase: "staged" });
     const first = await review.activePreview(ALPHA_ID);
@@ -142,11 +142,11 @@ describe("reply save refusals (postgres)", () => {
     await review.discardChanges(ALPHA_ID, second);
     const saved = await harness.commit(responseId);
     expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nlime\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\nlime\n");
   });
 
   it("4: a mixed reply saves its other document and receipts the refused one", async () => {
-    const { fixture, branchId, responseId, review, write, core, context } = await setup();
+    const { fixture, draftId, responseId, review, write, core, context } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(
       await core.write(
@@ -165,13 +165,13 @@ describe("reply save refusals (postgres)", () => {
     const saved = await harness.commit(responseId);
     expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
     expect(saved.documents.map((doc) => doc.documentId).sort()).toEqual([ALPHA_ID, BETA_ID].sort());
-    const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
-    expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    const beta = await fixture.draftStore.resolveWorkDraftForThread(BETA_ID, THREAD_ID);
+    expect(await fixture.draftMarkdown(beta.draftId)).toBe("Beta staged.\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
   });
 
   it("5: a write after Discard all in the same reply lands in a fresh draft beside the first refusal", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await review.discardAll()).toMatchObject({ status: "discarded" });
     const later = await write("blue", "navy", "w-blue");
@@ -179,32 +179,32 @@ describe("reply save refusals (postgres)", () => {
     const saved = await harness.commit(responseId);
     expect(refused(saved)).toEqual([[ALPHA_ID, DRAFT]]);
     expect(saved.documents[0]?.receipts).toHaveLength(2);
-    const fresh = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    expect(fresh.branchId).not.toBe(branchId);
-    expect(await fixture.draftMarkdown(fresh.branchId)).toBe("red\n\nnavy\n\ngreen\n");
+    const fresh = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+    expect(fresh.draftId).not.toBe(draftId);
+    expect(await fixture.draftMarkdown(fresh.draftId)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
-  const draftsOf = () =>
-    createDrafts({
-      store: createDrizzleDraftStore(db),
-      boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
+  const branchesOf = () =>
+    createBranches({
+      store: createDrizzleBranchStore(db),
+      boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
     });
-  /** Marks `documentId` as created by `workId`'s active draft, making that draft if need be. */
+  /** Marks `documentId` as created by `workId`'s active branch, making that branch if need be. */
   async function claimCreate(documentId: string, workId: WorkId, threadId: string) {
-    const draft = await draftsOf().ensureActiveForWrite({
+    const branch = await branchesOf().ensureActiveForWrite({
       workId,
       projectId: PROJECT_ID as never,
       threadId: threadId as never,
       userId: USER_ID as never,
     });
-    await db.insert(schema.draftTreeChanges).values({
-      draftId: draft.id,
+    await db.insert(schema.branchTreeChanges).values({
+      branchId: branch.id,
       nodeKind: "document",
       nodeId: documentId as never,
       created: true,
     });
   }
-  /** A document the draft created and has not revealed: hidden, with its tree row. */
+  /** A document the branch created and has not revealed: hidden, with its tree row. */
   async function hiddenCreate(documentId: string, name: string) {
     await db.insert(schema.documents).values({
       id: documentId as never,
@@ -215,7 +215,7 @@ describe("reply save refusals (postgres)", () => {
     });
     await claimCreate(documentId, WORK_ID, THREAD_ID);
   }
-  /** Work B's draft claims the same hidden create, as two chats creating one path would. */
+  /** Work B's branch claims the same hidden create, as two chats creating one path would. */
   async function shareHiddenCreate(fixture: Fixture) {
     await seedSecondWork(fixture);
     await claimCreate(NEW_ID, WORK_B_ID, THREAD_B_ID);
@@ -230,7 +230,7 @@ describe("reply save refusals (postgres)", () => {
     };
   };
 
-  /** A reply that created `NEW_ID` in the draft and saved, then a second reply staging an edit on it. */
+  /** A reply that created `NEW_ID` in the branch and saved, then a second reply staging an edit on it. */
   async function createdThenStaged() {
     const base = await setup();
     const { core } = base;
@@ -280,15 +280,15 @@ describe("reply save refusals (postgres)", () => {
       .set({ hidden: false })
       .where(eq(schema.documents.id, NEW_ID as never));
     await db
-      .delete(schema.draftTreeChanges)
-      .where(eq(schema.draftTreeChanges.nodeId, NEW_ID as never));
+      .delete(schema.branchTreeChanges)
+      .where(eq(schema.branchTreeChanges.nodeId, NEW_ID as never));
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(second);
     expect(refused(saved)).toEqual([[NEW_ID, EDIT]]);
     void fixture;
   });
 
-  it("15b: another Work revealing the create before Discard's transaction keeps the branch and refuses discarded_edit", async () => {
+  it("15b: another Work revealing the create before Discard's transaction keeps the draft and refuses discarded_edit", async () => {
     const { second, review, fixture } = await createdThenStaged();
     const remove = setCollabHook("discard.beforeCommitScope", async () => {
       remove();
@@ -299,26 +299,26 @@ describe("reply save refusals (postgres)", () => {
     });
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     expect(refused(await harness.commit(second))).toEqual([[NEW_ID, EDIT]]);
-    // The draft's own branch, by kind: the closed thread peer shares the document, and an
+    // The branch's own draft, by kind: the closed thread peer shares the document, and an
     // unordered select returns whichever row Postgres happens to place first.
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, NEW_ID as never),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, NEW_ID as never),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
-    expect(branch?.status).toBe("active");
-    // Reset from live, not closed: the branch holds exactly what the revealed document does.
-    expect(await fixture.draftMarkdown(branch?.id as string)).toBe(
+    expect(documentDraft?.status).toBe("active");
+    // Reset from live, not closed: the draft holds exactly what the revealed document does.
+    expect(await fixture.draftMarkdown(documentDraft?.id as string)).toBe(
       await harness.liveMarkdown(NEW_ID),
     );
   });
 
-  it("11: Apply all while staged drains the draft, which stays active, and the write lands in it even once the chat writes direct", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+  it("11: Apply all while staged drains the branch, which stays active, and the write lands in its draft even once the chat writes direct", async () => {
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await review.applyAll()).toMatchObject({ status: "completed" });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("gold\n\nazure\n\ngreen\n");
@@ -327,17 +327,17 @@ describe("reply save refusals (postgres)", () => {
       .set({ aiWriteMode: "direct" })
       .where(eq(schema.threads.id, THREAD_ID as never));
     expect(refused(await harness.commit(responseId))).toEqual([]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\nlime\n");
-    expect((await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId).not.toBeNull();
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nazure\n\nlime\n");
+    expect((await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId).not.toBeNull();
   });
 
   it("11b: item Discard of a drained item still drops the staged write of a reply opened after Apply", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await review.applyAll()).toMatchObject({ status: "completed" });
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nazure\n\ngreen\n");
   });
 
   it("9 and 14: an item Discard refuses this Work's staged writes, never another Work's on the same document", async () => {
@@ -386,9 +386,9 @@ describe("reply save refusals (postgres)", () => {
     expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
     expect(refused(await harness.commit(responseB))).toEqual([]);
-    const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_B_ID);
-    expect(await fixture.draftMarkdown(beta.branchId)).toBe("red\n\nblue\n\nemerald\n");
-    // A later reply writes the document again, through a fresh peer on the reset branch.
+    const beta = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_B_ID);
+    expect(await fixture.draftMarkdown(beta.draftId)).toBe("red\n\nblue\n\nemerald\n");
+    // A later reply writes the document again, through a fresh peer on the reset draft.
     const next = await createResponse(db, 3);
     expect(
       await core.write(
@@ -404,24 +404,24 @@ describe("reply save refusals (postgres)", () => {
       ),
     ).toMatchObject({ phase: "staged" });
     expect(refused(await harness.commit(next))).toEqual([]);
-    const mine = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    expect(await fixture.draftMarkdown(mine.branchId)).toBe("red\n\nnavy\n\ngreen\n");
+    const mine = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+    expect(await fixture.draftMarkdown(mine.draftId)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
   it("16: a per-change Discard re-forking the upstream after a peer pull's read abandons the pull", async () => {
     const { fixture, review, core } = await setup();
-    const peer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+    const peer = await fixture.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID);
     const preview = await review.activePreview(ALPHA_ID);
     const azure = preview.operations.find((op) => op.afterExcerpt === "azure");
     // The Discard commits after the pull read its upstream and before it persists the peer:
     // the peer's commit holds the epoch it read, so the stale capture is never merged back.
-    const pull = fixture.branchCoordinator.pullFromDoc;
+    const pull = fixture.draftCoordinator.pullFromDoc;
     const outcomes: string[] = [];
-    fixture.branchCoordinator.pullFromDoc = async (input) => {
-      if (input.branchId === peer.branchId && !outcomes.length)
+    fixture.draftCoordinator.pullFromDoc = async (input) => {
+      if (input.draftId === peer.draftId && !outcomes.length)
         await review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]);
-      const outcome = await pull.call(fixture.branchCoordinator, input);
-      if (input.branchId === peer.branchId) outcomes.push(outcome);
+      const outcome = await pull.call(fixture.draftCoordinator, input);
+      if (input.draftId === peer.draftId) outcomes.push(outcome);
       return outcome;
     };
     try {
@@ -433,7 +433,7 @@ describe("reply save refusals (postgres)", () => {
         ),
       ).rejects.toBeInstanceOf(ThreadPeerPullLost);
     } finally {
-      fixture.branchCoordinator.pullFromDoc = pull;
+      fixture.draftCoordinator.pullFromDoc = pull;
     }
     expect(outcomes[0]).toBe("upstreamMoved");
     const next = await core.read(
@@ -443,7 +443,7 @@ describe("reply save refusals (postgres)", () => {
     expect(JSON.stringify(next.result)).not.toContain("azure");
   });
 
-  describe("17: a save between a Discard's commit and its retirement is refused by branch state", () => {
+  describe("17: a save between a Discard's commit and its retirement is refused by draft state", () => {
     it("an edited document refuses discarded_edit", async () => {
       const { responseId, review, write } = await setup();
       expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
@@ -458,9 +458,9 @@ describe("reply save refusals (postgres)", () => {
 
     it.each([
       { name: "a revealed create", reveal: true, other: false, copy: EDIT },
-      { name: "a hidden create another Work's draft uses", reveal: false, other: true, copy: DOC },
-      { name: "a hidden create no other draft uses", reveal: false, other: false, copy: DOC },
-    ])("$name refuses its branch state's copy", async ({ reveal, other, copy }) => {
+      { name: "a hidden create another Work's branch uses", reveal: false, other: true, copy: DOC },
+      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: DOC },
+    ])("$name refuses its draft state's copy", async ({ reveal, other, copy }) => {
       const { second, review, fixture } = await createdThenStaged();
       if (reveal) {
         await db
@@ -468,8 +468,8 @@ describe("reply save refusals (postgres)", () => {
           .set({ hidden: false })
           .where(eq(schema.documents.id, NEW_ID as never));
         await db
-          .delete(schema.draftTreeChanges)
-          .where(eq(schema.draftTreeChanges.nodeId, NEW_ID as never));
+          .delete(schema.branchTreeChanges)
+          .where(eq(schema.branchTreeChanges.nodeId, NEW_ID as never));
       }
       if (other) {
         await seedSecondWork(fixture);
@@ -503,7 +503,7 @@ describe("reply save refusals (postgres)", () => {
     const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let once = true;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardItem(ALPHA_ID);
@@ -528,8 +528,12 @@ describe("reply save refusals (postgres)", () => {
   ] as const;
   it.each(
     pullPhases.flatMap((phase) => [
-      { phase, other: false, name: "last use deletes the branch rows" },
-      { phase, other: true, name: "another Work's draft still uses the create, so its rows close" },
+      { phase, other: false, name: "last use deletes the draft rows" },
+      {
+        phase,
+        other: true,
+        name: "another Work's branch still uses the create, so its rows close",
+      },
     ]),
   )("23b: Discard of a hidden create $phase of a write's pull names the document ($name)", async ({
     phase,
@@ -540,7 +544,7 @@ describe("reply save refusals (postgres)", () => {
       await seedSecondWork(fixture);
       await shareHiddenCreate(fixture);
     }
-    const ensure = fixture.branchStore.ensureThreadPeerBranch;
+    const ensure = fixture.draftStore.ensureThreadPeerDraft;
     let once = true;
     let ensures = 0;
     const discardOnce = async () => {
@@ -548,14 +552,14 @@ describe("reply save refusals (postgres)", () => {
       once = false;
       await review.discardItem(NEW_ID);
     };
-    fixture.branchStore.ensureThreadPeerBranch = (async (...args: Parameters<typeof ensure>) => {
+    fixture.draftStore.ensureThreadPeerDraft = (async (...args: Parameters<typeof ensure>) => {
       ensures += 1;
       if (phase === "before the second ensure" && ensures === 2) await discardOnce();
-      const peer = await ensure.apply(fixture.branchStore, args);
+      const peer = await ensure.apply(fixture.draftStore, args);
       if (phase === "after the first ensure" && ensures === 1) await discardOnce();
       return peer;
     }) as typeof ensure;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (phase === "before the upstream read") await discardOnce();
     });
     let late: Awaited<ReturnType<typeof core.write>>;
@@ -573,7 +577,7 @@ describe("reply save refusals (postgres)", () => {
       );
     } finally {
       unhook();
-      fixture.branchStore.ensureThreadPeerBranch = ensure;
+      fixture.draftStore.ensureThreadPeerDraft = ensure;
     }
     // An early Discard may let the write run against a fresh peer and fail as a missing
     // find, but the reply still names the discarded document; none crash.
@@ -586,7 +590,7 @@ describe("reply save refusals (postgres)", () => {
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
     const { responseId, review, write, core, context } = await setup();
     let once = true;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardAll();
@@ -609,7 +613,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("22c: a first write paused after its capture and before staging is refused at the write once Discard retires its peer", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     const prepare = fixture.links.prepare;
     let once = true;
     fixture.links.prepare = (async (...args: Parameters<typeof prepare>) => {
@@ -628,7 +632,7 @@ describe("reply save refusals (postgres)", () => {
     expect(paused).toMatchObject({ isError: true, status: "invalid_write" });
     expect(JSON.stringify(paused.result)).toContain(EDIT);
     expect(refused(await harness.commit(responseId))).toEqual([]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     const next = responseContext(await createResponse(db, 3));
     expect(
       await fixture.collab.agentEdit().write(
@@ -646,7 +650,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("19: a new reply writes through a fresh peer while the old retirement is held", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     let next: string | undefined;
     let oldSaved: Saved | undefined;
@@ -672,11 +676,11 @@ describe("reply save refusals (postgres)", () => {
     const nextSaved = await harness.commit(next as string);
     expect(refused(oldSaved as Saved)).toEqual([[ALPHA_ID, EDIT]]);
     expect(refused(nextSaved)).toEqual([]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nnavy\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
   it("21: a same-reply write after the old peer's delayed retirement commits; the old write is receipted separately", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     const remove = setCollabHook("discard.beforeRetirement", async () => {
       remove();
@@ -685,7 +689,7 @@ describe("reply save refusals (postgres)", () => {
     expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(responseId);
     expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nnavy\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nnavy\n\ngreen\n");
   });
 
   it("6: archiving the Work while staged refuses its writes with the denial copy and saves the others", async () => {

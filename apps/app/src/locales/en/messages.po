@@ -128,8 +128,13 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "{0, plural, other {# drafts have changes to this}}"
-msgstr "{0, plural, other {# drafts have changes to this}}"
+#~ msgid "{0, plural, other {# drafts have changes to this}}"
+#~ msgstr "{0, plural, other {# drafts have changes to this}}"
+
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "{0, plural, other {# Works have drafts for this}}"
+msgstr "{0, plural, other {# Works have drafts for this}}"
 
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -354,8 +359,12 @@ msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
-msgstr "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
+#~ msgid "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
+#~ msgstr "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
+msgstr "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -407,13 +416,13 @@ msgid "A chat you had open was deleted."
 msgstr "A chat you had open was deleted."
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A draft has changes to this"
-msgstr "A draft has changes to this"
+#~ msgid "A draft has changes to this"
+#~ msgstr "A draft has changes to this"
 
 #. placeholder {0}: only.label
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "A draft has changes to this ({0})"
-msgstr "A draft has changes to this ({0})"
+#~ msgid "A draft has changes to this ({0})"
+#~ msgstr "A draft has changes to this ({0})"
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -449,6 +458,15 @@ msgstr "A table keeps at least one row."
 #: src/features/project/work/WorkCollection.tsx
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr "A Work groups the chats and drafts for one piece of writing."
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "A Work has drafts for this"
+msgstr "A Work has drafts for this"
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "A Work has drafts for this ({0})"
+msgstr "A Work has drafts for this ({0})"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -1913,8 +1931,8 @@ msgid "Draft"
 msgstr "Draft"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "Draft ({waiting})"
-msgstr "Draft ({waiting})"
+#~ msgid "Draft ({waiting})"
+#~ msgstr "Draft ({waiting})"
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
@@ -1923,6 +1941,10 @@ msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
 msgstr "Draft review"
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+msgid "Drafts ({waiting})"
+msgstr "Drafts ({waiting})"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -4089,8 +4111,12 @@ msgid "Text size"
 msgstr "Text size"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be made because the draft is archived."
-msgstr "That change can't be made because the draft is archived."
+#~ msgid "That change can't be made because the draft is archived."
+#~ msgstr "That change can't be made because the draft is archived."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be made because this Work's drafts are archived."
+msgstr "That change can't be made because this Work's drafts are archived."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be redone because it is held for review."
@@ -4719,12 +4745,20 @@ msgid "Turns {0}"
 msgstr "Turns {0}"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two files in the draft share the path {name}. Review the draft to keep one."
-msgstr "Two files in the draft share the path {name}. Review the draft to keep one."
+#~ msgid "Two files in the draft share the path {name}. Review the draft to keep one."
+#~ msgstr "Two files in the draft share the path {name}. Review the draft to keep one."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two files in the draft share this path. Review the draft to keep one."
-msgstr "Two files in the draft share this path. Review the draft to keep one."
+#~ msgid "Two files in the draft share this path. Review the draft to keep one."
+#~ msgstr "Two files in the draft share this path. Review the draft to keep one."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
+msgstr "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
+msgstr "Two of this Work's drafts share this path. Review the drafts to keep one."
 
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
@@ -4789,8 +4823,12 @@ msgid "Undoing…"
 msgstr "Undoing…"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undone in your draft. Apply it to change your manuscript."
-msgstr "Undone in your draft. Apply it to change your manuscript."
+#~ msgid "Undone in your draft. Apply it to change your manuscript."
+#~ msgstr "Undone in your draft. Apply it to change your manuscript."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undone in your drafts. Apply them to change your manuscript."
+msgstr "Undone in your drafts. Apply them to change your manuscript."
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
@@ -4805,8 +4843,12 @@ msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
 #: src/features/editor/DocumentDraftHint.tsx
-msgid "Unnamed draft"
-msgstr "Unnamed draft"
+#~ msgid "Unnamed draft"
+#~ msgstr "Unnamed draft"
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Unnamed Work"
+msgstr "Unnamed Work"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/mobile/MobileProject.tsx

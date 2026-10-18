@@ -264,7 +264,7 @@ export function TurnEditsReceipt({
               data-turn-draft-outcome
               role="status"
             >
-              <Trans>Undone in your draft. Apply it to change your manuscript.</Trans>
+              <Trans>Undone in your drafts. Apply them to change your manuscript.</Trans>
             </p>
           ) : null}
           {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (

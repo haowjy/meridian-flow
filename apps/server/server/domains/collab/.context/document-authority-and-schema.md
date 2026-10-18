@@ -65,7 +65,7 @@ and reserved provenance namespace mutations before append or Yjs apply.
 WebSocket admission checks the declared schema major/minor against the specific
 live or Work-draft head for each connection. Patch differences do not gate;
 major incompatibility and a client behind the head use the typed transport
-closures. Head and branch schema stamps are monotonic, so a rolled-back server
+closures. Head and draft schema stamps are monotonic, so a rolled-back server
 never lowers the durable version. Transport close mechanics belong to the
 server transport boundary, not this document engine.
 

@@ -4,29 +4,29 @@
  * it, and the pauses that order two writers by a hook or a held call rather than by a sleep.
  */
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
-import {
-  type BranchProjectionDiagnostics,
-  createBranchProjection,
-} from "../../../../apps/server/server/domains/collab/domain/branch-projection.ts";
-import { createBranchPullService } from "../../../../apps/server/server/domains/collab/domain/branch-pulls.ts";
-import {
-  type BranchStore,
-  materializeBranchRead,
-} from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
-import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/branch-writer-frames.ts";
 import {
   type CollabHookPoint,
   setCollabHook,
 } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
 import { documentEffectsEqual } from "../../../../apps/server/server/domains/collab/domain/document-content.ts";
+import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import {
+  createDraftProjection,
+  type DraftProjectionDiagnostics,
+} from "../../../../apps/server/server/domains/collab/domain/draft-projection.ts";
+import { createDraftPullService } from "../../../../apps/server/server/domains/collab/domain/draft-pulls.ts";
+import {
+  type DraftStore,
+  materializeDraftRead,
+} from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
+import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-writer-frames.ts";
 import { runOutsideWrite } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { gate, type Harness, settled, Y } from "./harness.mts";
 
 /** The resync close: not a refusal, never counted by the client (design §2.7, D30). */
-export const PREFIX_MISSING_CLOSE = WS_CLOSE.BRANCH_PREFIX_MISSING;
+export const PREFIX_MISSING_CLOSE = WS_CLOSE.DRAFT_PREFIX_MISSING;
 
-export type EffectWrite = Awaited<ReturnType<BranchStore["writeEffect"]>>;
+export type EffectWrite = Awaited<ReturnType<DraftStore["writeEffect"]>>;
 
 const noop = () => {};
 
@@ -34,17 +34,17 @@ const noop = () => {};
 export function phase4Coordinator(
   harness: Harness,
   input: {
-    store?: BranchStore;
-    onAppendCommitted?: (branchId: string) => void;
-    onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
+    store?: DraftStore;
+    onAppendCommitted?: (draftId: string) => void;
+    onDraftUpdate?: (input: { draftId: string; update: Uint8Array }) => void;
     diagnostics?: Partial<WriterFrameDiagnostics>;
   } = {},
 ) {
-  return createBranchCoordinator({
+  return createDraftCoordinator({
     store: input.store ?? harness.store,
     attemptScope: harness.attemptScope,
     onAppendCommitted: input.onAppendCommitted ?? noop,
-    ...(input.onBranchUpdate ? { onBranchUpdate: input.onBranchUpdate } : {}),
+    ...(input.onDraftUpdate ? { onDraftUpdate: input.onDraftUpdate } : {}),
     diagnostics: {
       compactionFailed: noop,
       roomReconciled: noop,
@@ -64,16 +64,16 @@ export type FrameOutcome =
 export async function frameOutcome(promise: Promise<{ admitted: boolean }>): Promise<FrameOutcome> {
   const result = await settled(promise);
   if (result.ok) return result.value.admitted ? "appended" : "contained";
-  if (result.name === "BranchPrefixMissingError") return "prefixMissing";
+  if (result.name === "DraftPrefixMissingError") return "prefixMissing";
   return { refused: result.name, message: result.message };
 }
 
-/** The branch's journal rows of every generation, in id order. */
-export async function journalRows(harness: Harness, branchId: string) {
+/** The draft's journal rows of every generation, in id order. */
+export async function journalRows(harness: Harness, draftId: string) {
   const rows = await harness.raw<
     { id: string; source: string; update_data: Uint8Array; update_meta: unknown }[]
-  >`select id, source, update_data, update_meta from branch_write_journal
-    where branch_id = ${branchId} order by id`;
+  >`select id, source, update_data, update_meta from draft_write_journal
+    where draft_id = ${draftId} order by id`;
   return rows.map((row) => ({
     id: Number(row.id),
     source: row.source,
@@ -84,8 +84,8 @@ export async function journalRows(harness: Harness, branchId: string) {
 
 type Range = { client: number; clock: number; len: number };
 
-/** Every receipt on the branch's rows: one entry per `document_edits` row, parts in order. */
-export async function receipts(harness: Harness, branchId: string) {
+/** Every receipt on the draft's rows: one entry per `document_edits` row, parts in order. */
+export async function receipts(harness: Harness, draftId: string) {
   const rows = await harness.raw<
     {
       edit_id: string;
@@ -96,8 +96,8 @@ export async function receipts(harness: Harness, branchId: string) {
     }[]
   >`select p.edit_id, p.ordinal, p.origin->>'rowId' as row_id, p.effect, p.frontier
     from document_edit_parts p
-    join branch_write_journal j on j.id = (p.origin->>'rowId')::bigint
-    where p.origin->>'kind' = 'pending' and j.branch_id = ${branchId}
+    join draft_write_journal j on j.id = (p.origin->>'rowId')::bigint
+    where p.origin->>'kind' = 'pending' and j.draft_id = ${draftId}
     order by p.edit_id, p.ordinal`;
   const edits = new Map<
     string,
@@ -122,11 +122,11 @@ export async function receipts(harness: Harness, branchId: string) {
   );
 }
 
-/** The branch row's sequence and projection columns; `watermark` is null before 0064. */
-export async function branchRow(harness: Harness, branchId: string) {
+/** The draft row's sequence and projection columns; `watermark` is null before 0064. */
+export async function draftRow(harness: Harness, draftId: string) {
   const [row] = await harness.raw<Record<string, unknown>[]>`
-    select * from document_branches where id = ${branchId}`;
-  if (!row) throw new Error(`Branch ${branchId} is missing`);
+    select * from document_drafts where id = ${draftId}`;
+  if (!row) throw new Error(`Draft ${draftId} is missing`);
   return {
     revision: Number(row.revision),
     checkpointSeq: Number(row.checkpoint_seq),
@@ -172,13 +172,13 @@ export function pauseAt(point: CollabHookPoint, when: () => boolean = () => true
 
 /**
  * `store` whose first `appendRows` holds after the frame judged its bytes off the lock and
- * before it takes the branch row: "A read at r; B commits; A appends".
+ * before it takes the draft row: "A read at r; B commits; A appends".
  */
-export function pausedAppend(store: BranchStore) {
+export function pausedAppend(store: DraftStore) {
   const entered = gate();
   const release = gate();
   let held = false;
-  const paused: BranchStore = {
+  const paused: DraftStore = {
     ...store,
     async appendRows(input) {
       if (!held) {
@@ -230,21 +230,21 @@ export function captureUpdate(doc: Y.Doc, change: () => void): Uint8Array {
   return captured;
 }
 
-/** A fresh Work, its draft and one document over `text`, with the draft's branch ensured. */
+/** A fresh Work, its branch and one document over `text`, with the document's draft ensured in that branch. */
 export async function seedDraft(harness: Harness, label: string, text = "Base") {
   const work = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, text);
-  const branch = await harness.store.ensureDraftBranch({
+  const documentDraft = await harness.store.ensureDocumentDraft({
     documentId,
-    draftId: work.draftId,
+    branchId: work.branchId,
     liveDoc: live,
   });
-  const { generation } = await harness.readBranch(branch.branchId);
-  return { ...work, documentId, live, branchId: branch.branchId, generation };
+  const { generation } = await harness.readDraft(documentDraft.draftId);
+  return { ...work, documentId, live, draftId: documentDraft.draftId, generation };
 }
 
 type Frames = {
-  commitWriterUpdate: ReturnType<typeof createBranchCoordinator>["commitWriterUpdate"];
+  commitWriterUpdate: ReturnType<typeof createDraftCoordinator>["commitWriterUpdate"];
 };
 
 /**
@@ -254,15 +254,15 @@ type Frames = {
 export async function openRoom(
   harness: Harness,
   coordinator: Frames,
-  draft: { branchId: string; generation: number },
+  draft: { draftId: string; generation: number },
 ) {
-  const room = await durableDoc(harness, draft.branchId);
+  const room = await durableDoc(harness, draft.draftId);
   return {
     room,
     async send(update: Uint8Array): Promise<FrameOutcome> {
       const outcome = await frameOutcome(
         coordinator.commitWriterUpdate({
-          branchId: draft.branchId,
+          draftId: draft.draftId,
           expectedGeneration: draft.generation,
           updateData: update,
           roomDocument: room,
@@ -303,11 +303,11 @@ export function nth<T>(items: readonly T[], index: number): T {
   return item;
 }
 
-/** The branch as committed now, materialized; the caller destroys it. */
-export async function durableDoc(harness: Harness, branchId: string): Promise<Y.Doc> {
-  const read = await harness.store.readBranchAt(branchId);
-  if (!read) throw new Error(`Branch ${branchId} is missing`);
-  return materializeBranchRead(read);
+/** The draft as committed now, materialized; the caller destroys it. */
+export async function durableDoc(harness: Harness, draftId: string): Promise<Y.Doc> {
+  const read = await harness.store.readDraftAt(draftId);
+  if (!read) throw new Error(`Draft ${draftId} is missing`);
+  return materializeDraftRead(read);
 }
 
 /**
@@ -317,17 +317,17 @@ export async function durableDoc(harness: Harness, branchId: string): Promise<Y.
  */
 export async function openProcess(
   harness: Harness,
-  draft: { branchId: string },
-  store: BranchStore = harness.store,
+  draft: { draftId: string },
+  store: DraftStore = harness.store,
 ) {
-  const room = await durableDoc(harness, draft.branchId);
+  const room = await durableDoc(harness, draft.draftId);
   const dirty: string[] = [];
   const coordinator = phase4Coordinator(harness, {
     store,
-    onAppendCommitted: (branchId) => dirty.push(branchId),
-    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
+    onAppendCommitted: (draftId) => dirty.push(draftId),
+    onDraftUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
   });
-  await coordinator.readBranch(draft.branchId, async () => {});
+  await coordinator.readDraft(draft.draftId, async () => {});
   return { room, coordinator, dirty };
 }
 
@@ -411,34 +411,34 @@ export async function workBadge(harness: Harness, workId: string) {
 
 /**
  * A process with the projection job wired as composition wires it (§3.1, §3.2): every durable
- * append marks its branch dirty. `captures` counts live snapshots per document (the legacy
+ * append marks its draft dirty. `captures` counts live snapshots per document (the legacy
  * pull); `blocked` and `failed` are the job's diagnostics.
  */
 export async function openProjected(
   harness: Harness,
-  options: { store?: BranchStore; maxRuns?: number } = {},
+  options: { store?: DraftStore; maxRuns?: number } = {},
 ) {
   const store = options.store ?? harness.store;
   const marks: string[] = [];
-  const blocked: { branchId: string; documentId: string }[] = [];
-  const failed: { branchId: string; cause: unknown }[] = [];
+  const blocked: { draftId: string; documentId: string }[] = [];
+  const failed: { draftId: string; cause: unknown }[] = [];
   const captures = new Map<string, number>();
-  const diagnostics: BranchProjectionDiagnostics = {
+  const diagnostics: DraftProjectionDiagnostics = {
     projectionFailed: (input) => void failed.push(input),
     projectionBaselineBlocked: (input) => void blocked.push(input),
   };
-  let projection: ReturnType<typeof createBranchProjection> | undefined;
+  let projection: ReturnType<typeof createDraftProjection> | undefined;
   const coordinator = phase4Coordinator(harness, {
     store,
-    onAppendCommitted(branchId) {
-      marks.push(branchId);
-      projection?.markDirty(branchId);
+    onAppendCommitted(draftId) {
+      marks.push(draftId);
+      projection?.markDirty(draftId);
     },
   });
-  const pulls = createBranchPullService({
+  const pulls = createDraftPullService({
     outsideTransaction: (operation) => operation(),
-    branches: harness.store,
-    branchCoordinator: coordinator,
+    drafts: harness.store,
+    draftCoordinator: coordinator,
     liveCoordinator: {
       async withDocument(documentId: string, fn: (doc: Y.Doc) => Promise<unknown>) {
         captures.set(documentId, (captures.get(documentId) ?? 0) + 1);
@@ -452,7 +452,7 @@ export async function openProjected(
       recover: async () => {},
     } as never,
   });
-  projection = createBranchProjection({
+  projection = createDraftProjection({
     coordinator,
     store,
     pulls,
@@ -476,13 +476,13 @@ export async function openProjected(
   };
 }
 
-/** `has_effect` as the projection must judge it: the branch against its stored `live_cut`. */
-export async function judgedEffect(harness: Harness, branchId: string): Promise<boolean | null> {
+/** `has_effect` as the projection must judge it: the draft against its stored `live_cut`. */
+export async function judgedEffect(harness: Harness, draftId: string): Promise<boolean | null> {
   const [row] = await harness.raw<{ live_cut: Uint8Array | null }[]>`
-    select live_cut from document_branches where id = ${branchId}`;
+    select live_cut from document_drafts where id = ${draftId}`;
   if (!row?.live_cut) return null;
   const baseline = new Y.Doc({ gc: false });
-  const doc = await durableDoc(harness, branchId);
+  const doc = await durableDoc(harness, draftId);
   try {
     Y.applyUpdate(baseline, new Uint8Array(row.live_cut));
     return !documentEffectsEqual(doc, baseline);
@@ -493,9 +493,9 @@ export async function judgedEffect(harness: Harness, branchId: string): Promise<
 }
 
 /** `store` whose `writeEffect` outcomes are counted. */
-export function countingEffects(store: BranchStore) {
+export function countingEffects(store: DraftStore) {
   const outcomes: Record<EffectWrite, number> = { written: 0, moved: 0, contended: 0 };
-  const counted: BranchStore = {
+  const counted: DraftStore = {
     ...store,
     async writeEffect(input) {
       const outcome = await store.writeEffect(input);

@@ -12,7 +12,7 @@ not need a separate reversal planner or mutable receipt.
 ## Connection ownership
 
 Audit paths that hold a pooled connection while acquiring another:
-`ensureThreadPeerBranch` when called from an ambient transaction and
+`ensureThreadPeerDraft` when called from an ambient transaction and
 `createDeferredLiveProjectionCoordinator.withDocument` inside a response
 transaction. Restructure only if concurrency measurements show pool
 exhaustion; preserve the lock order and independent root pull transactions.
@@ -38,7 +38,7 @@ The concurrent-journal scan still decodes retained candidates because its floor
 is a commit-bound attribution cursor, not a global maximum. Profile retained
 state materialization, encodes, persistence, and thread-peer pulls before
 choosing an incremental checkpoint or captured-state design. Keep delete-only
-changes, the revision fence on branch rewrites (appends are sequenced and
+changes, the revision fence on draft rewrites (appends are sequenced and
 unfenced), the generation fence on rooms,
 and the final concurrency fence intact. [#932] tracks the provenance side:
 sequence it after the diff-based review re-lands ([#862]), so nothing that
@@ -50,9 +50,9 @@ Thread-peer and Work-draft generations remain independent. A reset must evict
 the affected thread peers individually; audit for missing invalidation paths
 before considering a unified generation API.
 
-## Branch store follow-ups
+## Draft store follow-ups
 
-These mechanisms still run beside the branch store and each has an owner.
+These mechanisms still run beside the draft store and each has an owner.
 Do not port them onto the store or extend them.
 
 - **Apply and settlement.** Settlement claims with renewal, `plan_version`, the
@@ -68,7 +68,7 @@ Do not port them onto the store or extend them.
 - **Work projection on operations** ([#931]): keystrokes already take no Work
   lock and count nothing (the projection job does it afterward), and the Works
   mutation boundary no longer counts. Operations (pulls, Apply staging, Discard,
-  Undo, branch creation) still lock the Work for lifecycle order and touch it in
+  Undo, draft creation) still lock the Work for lifecycle order and touch it in
   their own transaction. Decide whether anything of #931 remains before
   scheduling it.
 - **Live documents** ([#934]) still use the in-process `withDocument` mutex,

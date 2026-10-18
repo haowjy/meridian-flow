@@ -32,29 +32,29 @@ import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
-  createDrizzleBranchJournalReadStore,
+  createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
 } from "./adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
+import {
+  createDrizzleBranchStore,
+  createDrizzleBranchWriteBoundary,
+} from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
-import {
-  createDrizzleDraftStore,
-  createDrizzleDraftWriteBoundary,
-} from "./adapters/drizzle-drafts.js";
+import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
   stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
 import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
-import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
-import { createDrafts } from "./domain/drafts.js";
+import { createBranches } from "./domain/branches.js";
+import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
-import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import { resetDatabase } from "./test-support/change-trail-postgres-harness.js";
+import { commitJournaledUpdate } from "./test-support/draft-update-writes.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -77,17 +77,17 @@ describe("branch-push durable projection", () => {
     },
     async recover() {},
   };
-  const drafts = createDrafts({
-    store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
+  const branches = createBranches({
+    store: createDrizzleBranchStore(db),
+    boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
-  const branchStore = createDrizzleBranchStore(db, {
+  const draftStore = createDrizzleDraftStore(db, {
     workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
     },
-    drafts,
+    branches,
   });
 
   afterAll(async () => {
@@ -184,7 +184,7 @@ describe("branch-push durable projection", () => {
       },
     };
     const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
-    const journalReadStore = createDrizzleBranchJournalReadStore(db);
+    const journalReadStore = createDrizzleDraftJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
       stageSettlementBatchWithinTx,
@@ -203,27 +203,27 @@ describe("branch-push durable projection", () => {
       { steps: [] },
       createTestWorkProjectionMutation(db),
     );
-    const branchCoordinator = createBranchCoordinator({
+    const draftCoordinator = createDraftCoordinator({
       onAppendCommitted: () => {},
-      store: branchStore,
+      store: draftStore,
     });
     const liveDoc = createCollabYDoc({ gc: false });
-    const draft = await drafts.ensureActiveForWrite({
+    const branch = await branches.ensureActiveForWrite({
       workId: workId as never,
       projectId: projectId as never,
       threadId: null,
       userId: userId as never,
     });
-    const branch = await branchStore.ensureDraftBranch({
+    const documentDraft = await draftStore.ensureDocumentDraft({
       documentId: documentId as never,
-      draftId: draft.id,
+      branchId: branch.id,
       liveDoc,
     });
-    const branchDoc = createCollabYDoc({ gc: false });
-    model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Recovered projection"));
-    await commitJournaledUpdate(branchCoordinator, {
-      branchId: branch.branchId,
-      updateData: Y.encodeStateAsUpdate(branchDoc),
+    const draftDoc = createCollabYDoc({ gc: false });
+    model.insertBlocks(toDocHandle(draftDoc), null, codec.parse("Recovered projection"));
+    await commitJournaledUpdate(draftCoordinator, {
+      draftId: documentDraft.draftId,
+      updateData: Y.encodeStateAsUpdate(draftDoc),
       source: "agent",
       threadId: threadId as never,
       turnId: turnId as never,
@@ -232,7 +232,7 @@ describe("branch-push durable projection", () => {
     const branchPush = createBranchPushService({
       links: createStaticDocumentLinkScopes(),
       changeEventDelivery: { deliver() {} },
-      branchStore,
+      draftStore,
       journalReadStore,
       commitStore,
       settlementStore,
@@ -242,7 +242,7 @@ describe("branch-push durable projection", () => {
       codec: createAgentEditCodecFactory(codec),
     });
 
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
+    await expect(branchPush.pushToLive({ draftId: documentDraft.draftId })).rejects.toThrow(
       "injected generic projection failure",
     );
     const journalAfterFailure = await db
@@ -307,7 +307,7 @@ describe("branch-push durable projection", () => {
       .where(eq(documentDerivations.documentId, documentId));
     expect(watermark?.projectionAdmissionSequence).toBe(2n);
 
-    branchDoc.destroy();
+    draftDoc.destroy();
     liveDoc.destroy();
   });
 
@@ -401,7 +401,7 @@ describe("branch-push durable projection", () => {
       resolveFiletype: async () => "markdown",
     });
     const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
-    const journalReadStore = createDrizzleBranchJournalReadStore(db);
+    const journalReadStore = createDrizzleDraftJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
       stageSettlementBatchWithinTx,
@@ -409,27 +409,27 @@ describe("branch-push durable projection", () => {
       undefined,
       createTestWorkProjectionMutation(db),
     );
-    const branchCoordinator = createBranchCoordinator({
+    const draftCoordinator = createDraftCoordinator({
       onAppendCommitted: () => {},
-      store: branchStore,
+      store: draftStore,
     });
     const liveDoc = createCollabYDoc({ gc: false });
-    const draft = await drafts.ensureActiveForWrite({
+    const branch = await branches.ensureActiveForWrite({
       workId: workId as never,
       projectId: projectId as never,
       threadId: null,
       userId: userId as never,
     });
-    const branch = await branchStore.ensureDraftBranch({
+    const documentDraft = await draftStore.ensureDocumentDraft({
       documentId: documentId as never,
-      draftId: draft.id,
+      branchId: branch.id,
       liveDoc,
     });
-    const branchDoc = createCollabYDoc({ gc: false });
-    model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Never completed"));
-    await commitJournaledUpdate(branchCoordinator, {
-      branchId: branch.branchId,
-      updateData: Y.encodeStateAsUpdate(branchDoc),
+    const draftDoc = createCollabYDoc({ gc: false });
+    model.insertBlocks(toDocHandle(draftDoc), null, codec.parse("Never completed"));
+    await commitJournaledUpdate(draftCoordinator, {
+      draftId: documentDraft.draftId,
+      updateData: Y.encodeStateAsUpdate(draftDoc),
       source: "agent",
       threadId: threadId as never,
       turnId: turnId as never,
@@ -438,7 +438,7 @@ describe("branch-push durable projection", () => {
     const branchPush = createBranchPushService({
       links: createStaticDocumentLinkScopes(),
       changeEventDelivery: { deliver() {} },
-      branchStore,
+      draftStore,
       journalReadStore,
       commitStore,
       settlementStore: createDrizzlePendingSettlementStore(
@@ -462,7 +462,7 @@ describe("branch-push durable projection", () => {
       },
     });
 
-    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
+    await expect(branchPush.pushToLive({ draftId: documentDraft.draftId })).rejects.toThrow(
       /remains pending after bounded retries/,
     );
 
@@ -502,7 +502,7 @@ describe("branch-push durable projection", () => {
     expect(project?.lastActivityAt.toISOString()).toBe(old.toISOString());
     expect(journal).toEqual([]);
 
-    branchDoc.destroy();
+    draftDoc.destroy();
     liveDoc.destroy();
   });
 });

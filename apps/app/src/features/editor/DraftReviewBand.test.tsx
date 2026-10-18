@@ -6,7 +6,7 @@ import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
 import type { ContextTab } from "@/client/stores";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
@@ -34,7 +34,7 @@ import { DraftReviewBand } from "./DraftReviewBand";
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 beforeEach(() => {
   vi.useFakeTimers();
-  resetDraftCommandRecords();
+  resetBranchCommandRecords();
   i18n.loadAndActivate({ locale: "en", messages: {} });
   fixture = createReviewScopeFixture();
   vi.spyOn(projectsApi, "listProjectWorks").mockReturnValue(new Promise(() => {}));
@@ -66,7 +66,7 @@ it("focuses this document, then applies and discards its classes without closing
     itemKey: "draft-b",
     documentName: "Other chapter",
   };
-  network.listWorkDrafts.mockResolvedValue({ items: [listed, other] });
+  network.listWorkBranchDrafts.mockResolvedValue({ items: [listed, other] });
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
     itemKey: id,
@@ -101,7 +101,7 @@ it("focuses this document, then applies and discards its classes without closing
           "document-a",
           {
             commandId: expect.any(String),
-            draftId: "work-draft-a",
+            branchId: "work-branch-a",
             itemKey: "draft-a",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
@@ -122,7 +122,7 @@ it("focuses this document, then applies and discards its classes without closing
           "document-a",
           {
             commandId: expect.any(String),
-            draftId: "work-draft-a",
+            branchId: "work-branch-a",
             itemKey: "draft-a",
             closureClassIds: ["class-2"],
             memberPartKeys: [],
@@ -165,7 +165,7 @@ it.each([
   "desktop",
   "phone",
 ] as const)("%s steps with marks hidden without restoring them", async (surface) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
   const navigate = vi.fn();
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
@@ -251,7 +251,7 @@ it.each([
   );
 });
 
-/** The tab of the document under review; a local reservation, which has no drafts to hint at. */
+/** The tab of the document under review; a local reservation, which has no branches to hint at. */
 const reviewedTab = {
   kind: "new",
   documentId: "document-a",

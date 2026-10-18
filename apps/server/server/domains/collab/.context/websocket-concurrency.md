@@ -7,7 +7,7 @@ durable authority synchronously before applying or broadcasting.
 `withDocument()` serializes coordinator callers only. Writer admission is
 journal-first; optional sweep detection may degrade to no elevation but never
 supplies apply authority. Agent-edit's
-`applyCommittedUpdateWithRecheck`, branch push, and reversal execution all use
+`applyCommittedUpdateWithRecheck`, draft push, and reversal execution all use
 this final recheck. Take sorted live-document locks before any transaction (the
 lock order in [CONTEXT.md](CONTEXT.md)), and do not treat the coordinator mutex
 as coverage for socket writes.
@@ -21,12 +21,12 @@ The push LOCK-WS cut captures the complete Yjs update at the first instruction
 inside each live-document lock. Rechecks compare complete updates, including
 delete-only divergence; state vectors alone are insufficient.
 
-Branch rooms have no coordinator serialization at all: a Work-draft writer
-frame is one sequenced append, ordered by the branch row's lock and finalized
+Draft rooms have no coordinator serialization at all: a Work-draft writer
+frame is one sequenced append, ordered by the draft row's lock and finalized
 there against the committed prefix, never fenced by a revision (see the append
 contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). A frame
 racing another write waits for the row lock once and never judges again; no
-branch mutex exists to hold against a frame.
+draft mutex exists to hold against a frame.
 
 A live-room writer frame is judged new the same way, where it serializes:
 collab's `LiveWriterJournal.appendWriterUpdate` port holds the document

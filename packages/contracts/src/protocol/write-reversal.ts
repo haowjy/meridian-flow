@@ -41,7 +41,7 @@ export type WriteStatus = "success" | WriteErrorStatus | UndoRedoOutcome;
 
 export interface DocumentReversalResult {
   uri: string;
-  destination?: { kind: "live" } | { kind: "draft"; branchId: string };
+  destination?: { kind: "live" } | { kind: "draft"; draftId: string };
   status: WriteStatus;
   text?: string;
 }

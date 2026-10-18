@@ -35,8 +35,8 @@ export async function lockNamespaceKeys(
 /**
  * Seam C (file-access §5): Work rows in id order, the bound edit grants'
  * confirmation, then every advisory lock sorted by key, before provisioning
- * or publishing any source. A draft write's Work joins the Work locks, and
- * `afterWorkLocks` (the draft row, contract §14) runs before any namespace key.
+ * or publishing any source. A branch write's Work joins the Work locks, and
+ * `afterWorkLocks` (the branch row, contract §14) runs before any namespace key.
  */
 export async function lockContextNamespaces(
   db: Database,
@@ -227,7 +227,7 @@ export async function hasOppositeContextEntry(
 
 /**
  * Check the complete arriving Work tree before restoring either table. Hidden rows are a
- * draft's and stay hidden through a restore, so they neither arrive nor occupy (F11).
+ * branch's and stay hidden through a restore, so they neither arrive nor occupy (F11).
  */
 export async function guardWorkContextRestore(db: Database, workId: string): Promise<void> {
   const sources = await currentDrizzleDb(db)
