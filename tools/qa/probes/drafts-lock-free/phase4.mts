@@ -6,7 +6,10 @@
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
-import { createBranchProjection } from "../../../../apps/server/server/domains/collab/domain/branch-projection.ts";
+import {
+  type BranchProjectionDiagnostics,
+  createBranchProjection,
+} from "../../../../apps/server/server/domains/collab/domain/branch-projection.ts";
 import { createBranchPullService } from "../../../../apps/server/server/domains/collab/domain/branch-pulls.ts";
 import {
   type BranchStore,
@@ -46,8 +49,6 @@ export function phase4Coordinator(
     diagnostics: {
       compactionFailed: noop,
       roomReconciled: noop,
-      projectionFailed: noop,
-      projectionBaselineBlocked: noop,
       appendPrefixMissing: noop,
       ...input.diagnostics,
     },
@@ -423,11 +424,10 @@ export async function openProjected(
   const blocked: { branchId: string; documentId: string }[] = [];
   const failed: { branchId: string; cause: unknown }[] = [];
   const captures = new Map<string, number>();
-  const diagnostics = {
-    projectionFailed: (input: { branchId: string; cause: unknown }) => failed.push(input),
-    projectionBaselineBlocked: (input: { branchId: string; documentId: string }) =>
-      blocked.push(input),
-  } as Pick<WriterFrameDiagnostics, "projectionFailed" | "projectionBaselineBlocked">;
+  const diagnostics: BranchProjectionDiagnostics = {
+    projectionFailed: (input) => void failed.push(input),
+    projectionBaselineBlocked: (input) => void blocked.push(input),
+  };
   let projection: ReturnType<typeof createBranchProjection> | undefined;
   const coordinator = phase4Coordinator(harness, {
     store,
@@ -435,7 +435,6 @@ export async function openProjected(
       marks.push(branchId);
       projection?.markDirty(branchId);
     },
-    diagnostics,
   });
   const pulls = createBranchPullService({
     outsideTransaction: (operation) => operation(),
