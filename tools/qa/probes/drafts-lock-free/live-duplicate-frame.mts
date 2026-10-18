@@ -1,9 +1,11 @@
 /**
  * One live keystroke delivered on two sockets of the same live room (a second tab relaying a
  * peer's update, issue #946), admitted through the production live admission port as
- * Hocuspocus's `beforeSync` does, then applied to the room. Three arms: the second copy after
+ * Hocuspocus's `beforeSync` does, then applied to the room. Five arms: the second copy after
  * the first is applied, both copies concurrent (the second arrives inside the first's admission
- * transaction), and a delete-only update sent twice concurrently. Whatever the interleaving, a
+ * transaction), a delete-only update sent twice concurrently, and an update whose predecessor
+ * has not arrived yet (Yjs holds it pending) sent twice, sequentially and concurrently, before
+ * that predecessor. Whatever the interleaving, a
  * copy whose structs and deletes the stored document already holds writes no journal row, no
  * human edit and no admission sequence.
  */
@@ -70,18 +72,38 @@ export const liveDuplicateFrame: Probe = {
       return update;
     };
 
-    const arms: [string, number, (u: Uint8Array) => Promise<boolean[]>, () => void][] = [
-      ["sequential", KEYS, twice.sequential, () => text.insert(text.length, "s")],
-      ["concurrent", KEYS, twice.concurrent, () => text.insert(text.length, "c")],
-      ["delete-only concurrent", DELETES, twice.concurrent, () => text.delete(0, 1)],
+    // Each update sent twice, `count` times over.
+    const repeated =
+      (count: number, run: (u: Uint8Array) => Promise<boolean[]>, edit: () => void) => async () => {
+        const admitted: boolean[] = [];
+        for (let i = 0; i < count; i += 1) admitted.push(...(await run(updateOf(edit))));
+        return admitted;
+      };
+    // A frame whose predecessor has not arrived: the stored document holds it as Yjs pending
+    // structs, which its state vector and snapshot leave out. The tail goes twice, then the prefix.
+    const missingPrefix = (run: (u: Uint8Array) => Promise<boolean[]>) => async () => {
+      const prefix = updateOf(() => text.insert(text.length, " prefix"));
+      const tail = updateOf(() => text.insert(text.length, " tail"));
+      return [...(await run(tail)), await frame(prefix)];
+    };
+
+    const arms: [string, number, () => Promise<boolean[]>][] = [
+      ["sequential", KEYS, repeated(KEYS, twice.sequential, () => text.insert(text.length, "s"))],
+      ["concurrent", KEYS, repeated(KEYS, twice.concurrent, () => text.insert(text.length, "c"))],
+      [
+        "delete-only concurrent",
+        DELETES,
+        repeated(DELETES, twice.concurrent, () => text.delete(0, 1)),
+      ],
+      ["missing-prefix sequential", 2, missingPrefix(twice.sequential)],
+      ["missing-prefix concurrent", 2, missingPrefix(twice.concurrent)],
     ];
     let failed = false;
-    for (const [arm, count, run, edit] of arms) {
+    for (const [arm, count, run] of arms) {
       const [{ start }] = await raw<
         { start: number }[]
       >`select coalesce(max(id),0)::int start from document_yjs_updates where document_id=${documentId}`;
-      const admitted: boolean[] = [];
-      for (let i = 0; i < count; i += 1) admitted.push(...(await run(updateOf(edit))));
+      const admitted = await run();
       const rows = await raw<{ h: string; seq: string }[]>`
         select md5(update_data) h, admission_sequence::text seq from document_yjs_updates
         where document_id=${documentId} and id>${start} and origin_type='human'`;

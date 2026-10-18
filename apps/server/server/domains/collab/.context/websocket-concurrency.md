@@ -34,7 +34,9 @@ mutation lock, reads the stored document and judges the update against it, then
 inserts. A copy whose structs and deletes are already stored returns
 `{ status: "contained" }`, as a draft append does, and writes no row, no receipt
 and no settlement join, and is acknowledged (#946: a second tab relaying a
-peer's keystroke on its own socket). The
+peer's keystroke on its own socket). "Stored" includes what Yjs holds pending:
+an update whose predecessor has not arrived, and a delete of a clock not yet
+seen, which its state vector and snapshot leave out. The
 pre-lock check against the room is only a fast refusal for reconnect replays;
 the room lags admissions still in their transaction.
 
