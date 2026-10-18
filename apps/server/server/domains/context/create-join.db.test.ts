@@ -1,5 +1,5 @@
 /**
- * A writer's instant create at a path where a draft's new document waits is that
+ * A writer's instant create at a path where a branch's new document waits is that
  * document (#757). The draft's document is a real document, hidden only because it is a
  * draft; the create unhides it and the device's minted id forwards to it. Nothing of the
  * draft's text moves: the writer's text goes to live, the draft's stays in the draft.
@@ -14,7 +14,7 @@ import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 
 describeBranchTreeDb("a create joins a draft's document (postgres)", (start, db) => {
-  it("answers joined, turns the draft's item into an edit, and replays unchanged, after a move and after a delete", async () => {
+  it("answers joined, turns the branch's item into an edit, and replays unchanged, after a move and after a delete", async () => {
     const { s } = await start();
     const drafting = await s.work("Drafting", "draft");
     const hidden = await s.model(drafting).create("chapters/Withern", "The draft's Withern.");

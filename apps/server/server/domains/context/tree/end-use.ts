@@ -1,10 +1,10 @@
 /**
- * End of use (contract §12.2 steps 3–5, §12.4, §12.5): a draft stops using documents it
- * created, and what no active draft uses any more is tombstoned, its storage released,
+ * End of use (contract §12.2 steps 3–5, §12.4, §12.5): a branch stops using documents it
+ * created, and what no active branch uses any more is tombstoned, its storage released,
  * with every hidden ancestor it leaves empty; a rolled-back reply's create is retracted
  * the same way, and an inconsistent hidden node met by a read is repaired by it too.
  *
- * Every function runs in its caller's transaction, which holds the Work, the draft (when
+ * Every function runs in its caller's transaction, which holds the Work, the branch (when
  * there is one) and the namespaces. Hidden nodes are tombstoned, never hard-deleted.
  */
 import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
@@ -46,8 +46,8 @@ const NOTHING_ENDED: EndedUse = Object.freeze({
 });
 
 /**
- * The draft stops using these documents: its rows go,
- * then each hidden document no active draft uses any more is tombstoned (`tombstoneUnused`).
+ * The branch stops using these documents: its rows go,
+ * then each hidden document no active branch uses any more is tombstoned (`tombstoneUnused`).
  * A revealed document is live and stays.
  */
 export async function endUse(
@@ -61,10 +61,10 @@ export async function endUse(
 }
 
 /**
- * Each of these documents that is hidden, not a tombstone, and used by no active draft is
+ * Each of these documents that is hidden, not a tombstone, and used by no active branch is
  * tombstoned under its lock (`deleted_at`, a location version bump, `hidden` kept) and
  * its storage released (R8); then its hidden folders bottom-up while nothing live sits
- * under them and no draft places anything there (`keepFolders`: a create that is about
+ * under them and no branch places anything there (`keepFolders`: a create that is about
  * to place its own document in that folder). The caller holds the namespaces of the
  * documents' sources. A binary's object keys come back for deletion after commit.
  */
@@ -111,15 +111,15 @@ export async function tombstoneUnused(
   return { tombstoned, releasedObjects, releasedDrafts };
 }
 
-/** What an end of use touches: documents, and every source they sit in now or in a draft. */
+/** What an end of use touches: documents, and every source they sit in now or in a branch. */
 export type EndUseScope = {
   documentIds: readonly DocumentId[];
   sourceIds: readonly ContextSourceId[];
 };
 
 /**
- * What to lock for an end of use: each draft's created documents (all of them, or the
- * named ones) at their rows and at the draft's location, and other documents where they
+ * What to lock for an end of use: each branch's created documents (all of them, or the
+ * named ones) at their rows and at the branch's location, and other documents where they
  * sit now (an item's text, a node a read repairs).
  */
 export type EndUseRequest = {
@@ -139,7 +139,7 @@ export class EndUseScopeChangedError extends Error {
 /**
  * Which of `ids` are hidden now, read in the caller's transaction. Under the caller's
  * document locks this is the visibility an end of use acts on (another Work's Apply may
- * have revealed a draft's create since the caller resolved it).
+ * have revealed a branch's create since the caller resolved it).
  */
 export async function hiddenDocumentIds(
   db: Database,
@@ -169,7 +169,7 @@ export async function readEndUseScope(db: Database, request: EndUseRequest): Pro
 }
 
 /**
- * The one verified acquisition every end of use takes, after the caller's Work and draft
+ * The one verified acquisition every end of use takes, after the caller's Work and branch
  * locks (§14): the namespaces of exactly the sources read, then the scope read again; a
  * document that moved to a source not locked, or a new one, throws
  * `EndUseScopeChangedError`, so the caller aborts its transaction and rediscovers (no
@@ -196,9 +196,9 @@ export async function acquireEndUseScope(
 }
 
 /**
- * Reverse a draft's create for a rolled-back reply or a failed create (§12.5, O-11). The
- * tree half only: collab's `retractDraft` decides whether the draft's text branch holds
- * another contribution (then the create stands) and otherwise removes it; the draft's use
+ * Reverse a branch's create for a rolled-back reply or a failed create (§12.5, O-11). The
+ * tree half only: collab's `retractDraft` decides whether the document's draft holds
+ * another contribution (then the create stands) and otherwise removes it; the branch's use
  * then ends.
  */
 export async function retractCreate(

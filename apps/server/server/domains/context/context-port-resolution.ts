@@ -24,7 +24,7 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
-  /** The thread's Work when the chat branches AI writes; null in auto-apply. */
+  /** The thread's Work when the chat writes drafts; null in auto-apply. */
   primaryBranchWork: WorkRef | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;

@@ -132,11 +132,11 @@ export type BranchUse = { branchId: BranchId; originWorkId: WorkId | null; creat
 export type IdentityStatus =
   /**
    * Visible in this view, at `address` in this view. A hidden one is visible only in a
-   * branch that uses it: `draft` is that branch (the document still reads "in a branch").
+   * branch that uses it: `branch` is that branch (the document still reads "in a draft").
    */
   | { kind: "visible"; address: NodeAddress; hidden: boolean; branch?: BranchUse }
   /**
-   * Hidden and not used by this view's branch. `draft` is the reader's own if it uses it,
+   * Hidden and not used by this view's branch. `branch` is the reader's own if it uses it,
    * otherwise the oldest active branch that uses it; `address` is where that branch has it.
    * No content access, no path occupancy.
    */
@@ -771,11 +771,11 @@ export function createTreeReader(
       [...new Set(edited)].filter((id) => isUuid(id) && !createdIds.has(id)),
     );
     const items: { origin: "created" | "edited"; row: DocumentIdentityRow }[] = [
-      // A tombstone is no longer the draft's: repair-on-touch drops its row (§12.4).
+      // A tombstone is no longer the branch's: repair-on-touch drops its row (§12.4).
       ...created
         .filter((row) => !(row.hidden && row.deleted))
         .map((row) => ({ origin: "created" as const, row })),
-      // A hidden document the draft didn't create isn't in the draft's view.
+      // A hidden document the branch didn't create isn't in the branch's view.
       ...editedRows.filter((row) => !row.hidden).map((row) => ({ origin: "edited" as const, row })),
     ];
     const chains = await loadFolderChains(
@@ -785,7 +785,7 @@ export function createTreeReader(
     const chainOf = (folderId: FolderId | null) =>
       folderId === null ? [] : (chains.get(folderId) ?? []);
 
-    // Every path a target needs, in the draft's view: its own, then each ancestor folder's,
+    // Every path a target needs, in the branch's view: its own, then each ancestor folder's,
     // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
     // Each is a claim of its kind, so the clash is the one Apply's live holds would see.
     const needs = items.flatMap(({ row }, item) => {

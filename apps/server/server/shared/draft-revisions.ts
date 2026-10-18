@@ -1,5 +1,5 @@
 /**
- * The one door for a branch metadata write outside a content write: a close, a hold flag, a
+ * The one door for a draft metadata write outside a content write: a close, a hold flag, a
  * journal row's status flip. The rows are locked in id order and their `revision` bumped with
  * the change, so a write judged at the old revision cannot commit over it. Content writes go
  * through `appendRowsWithinTx` and `commitRewriteWithinTx` instead.
@@ -9,17 +9,17 @@ import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { DrizzleDb } from "./drizzle-transaction.js";
 
 export type DraftRevisionChange = {
-  /** Sets the hold flag; a branch already holding this value is left alone. */
+  /** Sets the hold flag; a draft already holding this value is left alone. */
   blocking?: boolean;
-  /** Closes the branch; one already closed is left alone. */
+  /** Closes the draft; one already closed is left alone. */
   status?: "closed";
-  /** The branch must still be active at exactly this revision, or nothing is written. */
+  /** The draft must still be active at exactly this revision, or nothing is written. */
   expectedRevision?: number;
 };
 
 /**
  * `draftIds` locked in id order and bumped with `change`; returns the drafts it wrote. A
- * branch the change would not alter, or one that moved past `expectedRevision`, is skipped.
+ * draft the change would not alter, or one that moved past `expectedRevision`, is skipped.
  */
 export async function bumpDraftRevisions(
   db: Pick<DrizzleDb, "select" | "update">,

@@ -60,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("loads documents, branches and containers with their ancestors", async () => {
+    it("loads documents, drafts and containers with their ancestors", async () => {
       const facts = createDrizzleFileFacts(
         database.current,
         createTestWorkProjectionMutation(database.current),

@@ -102,7 +102,7 @@ type YjsConnectionAdmission =
       /** The file the room serves, asked again once the room is registered. */
       fileTarget: FileTarget;
       access: YjsRoomAccess;
-      /** The Works whose lifecycle decides this access: the file's owner, the draft's Work. */
+      /** The Works whose lifecycle decides this access: the file's owner, the draft's origin Work. */
       accessWorkIds: WorkId[];
     }
   | {
@@ -401,9 +401,9 @@ async function admitDraftSync(
     context: input.context,
   });
   if (!carriesUpdate(input.syncType, input.payload)) return;
-  // A draft branch room is a collaborative room like any other: the writer is
+  // A draft room is a collaborative room like any other: the writer is
   // one more peer in it. Client frames run the same durable admission the
-  // agent's own branch writes do.
+  // agent's own draft writes do.
   try {
     await input.services.documentSync.admitDraftWriterUpdate({
       draftId: room.draftId,

@@ -60,8 +60,8 @@ function connectionConfig() {
   return { readOnly: false, isAuthenticated: false };
 }
 
-describe("Yjs branch handshake route guard", () => {
-  it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
+describe("Yjs draft handshake route guard", () => {
+  it("pulls live changes into a Work draft without blocking draft-room connection", async () => {
     const live = new Y.Doc({ gc: false });
     live.getText("content").insert(0, "live advanced");
     const loadedRoom = new Y.Doc({ gc: false });
@@ -158,7 +158,7 @@ describe("Yjs branch handshake route guard", () => {
     expect(persisted.getText("content").toString()).toBe("live advanced");
   });
 
-  it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
+  it("rejects hostile draft payloads before returning them to Hocuspocus", async () => {
     const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
@@ -195,7 +195,7 @@ describe("Yjs branch handshake route guard", () => {
     });
   });
 
-  it("waits for branch durability before returning the update to Hocuspocus", async () => {
+  it("waits for draft durability before returning the update to Hocuspocus", async () => {
     let commit: (() => void) | undefined;
     const admitDraftWriterUpdate = vi.fn(
       () =>
@@ -274,7 +274,7 @@ describe("Yjs branch handshake route guard", () => {
     expect(state.get("draft_1:3")).toBe("rejected");
   });
 
-  it("clears branch sync state through the route close handler", async () => {
+  it("clears draft sync state through the route close handler", async () => {
     const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
@@ -290,7 +290,7 @@ describe("Yjs branch handshake route guard", () => {
     expect(state.size).toBe(0);
   });
 
-  it("clears branch sync state through the route error handler", async () => {
+  it("clears draft sync state through the route error handler", async () => {
     const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());

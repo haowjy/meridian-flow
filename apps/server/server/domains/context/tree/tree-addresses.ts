@@ -54,7 +54,7 @@ export type DocumentAddress = DocumentCoordinates & {
   /** Decoded canonical URI. */
   uri: string;
   deleted: boolean;
-  /** A draft's new document, in no live view; its address is its row's, not a draft's. */
+  /** A branch's new document, in no live view; its address is its row's, not a branch overlay. */
   hidden: boolean;
   image: boolean;
 };
@@ -301,7 +301,7 @@ export function chainPrefix(chain: readonly FolderLink[]): string {
     .join("");
 }
 
-/** A node's location in some view: the row's, or a draft's. */
+/** A node's location in some view: the row's, or a branch's. */
 export type NodeLocation = {
   documentId: DocumentId;
   contextSourceId: ContextSourceId;

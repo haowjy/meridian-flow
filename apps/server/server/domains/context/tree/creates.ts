@@ -1,13 +1,13 @@
 /**
- * Creates at a path (contract §6.2–§6.4): a draft's create makes or joins a hidden live
+ * Creates at a path (contract §6.2–§6.4): a branch's create makes or joins a hidden live
  * row; a live create at a hidden node's path reveals it instead of inserting a twin. Both
  * pick a hidden candidate the same way, and repair on touch: a hidden document no active
- * draft uses, met under its lock, is tombstoned (§12.4).
+ * branch uses, met under its lock, is tombstoned (§12.4).
  *
  * Every function runs in its caller's transaction, which already holds the locks §14
- * names before the document locks taken here: Work rows, the draft row, then namespace
- * advisory locks. A draft's create never seeds live content: a new text row gets an empty
- * live Yjs document, and its text lives in the draft's branch.
+ * names before the document locks taken here: Work rows, the branch row, then namespace
+ * advisory locks. A branch's create never seeds live content: a new text row gets an empty
+ * live Yjs document, and its text lives in the document's draft.
  */
 import type {
   BranchId,
@@ -50,11 +50,11 @@ import {
 // ---------------------------------------------------------------------------------------
 
 /**
- * A draft's create at `dir/name.extension` (§6.2): hidden folders as needed, then the
- * document, joined when another draft's hidden text document sits at the path, recorded
- * as the draft's `created` row at the draft's location, with the draft's branch and its
+ * A branch's create at `dir/name.extension` (§6.2): hidden folders as needed, then the
+ * document, joined when another branch's hidden text document sits at the path, recorded
+ * as the branch's `created` row at the branch's location, with the document's draft and its
  * settlements of unsettled ahead refs at that address. Runs in the command transaction
- * that holds the drafting Work, the draft and the source's namespace.
+ * that holds the drafting Work, the branch and the source's namespace.
  */
 export async function createInBranch(
   db: Database,
@@ -69,7 +69,7 @@ export async function createInBranch(
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
     /** Empty live Yjs for a new text row (never seeded). */
     ensureEmptyContent(documentId: DocumentId): Promise<void>;
-    /** The draft's branch on a text document, seeded from its empty live document. */
+    /** The branch's draft of a text document, seeded from its empty live document. */
     ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
     repair?: Pick<HiddenNodeRepair, "report">;
@@ -90,7 +90,7 @@ export async function createInBranch(
     return Ok({ kind: "existing", documentId: occupant.node.document.id, binary });
   }
 
-  // Folders a draft doesn't see yet: a hidden live folder at the location is joined (a
+  // Folders a branch doesn't see yet: a hidden live folder at the location is joined (a
   // folder's use is implied by what is placed under it), else a new hidden one is made.
   const { contextSourceId } = input;
   const walk = await walkFolders(db, view, contextSourceId, input.dir, async (gap) => {
@@ -104,7 +104,7 @@ export async function createInBranch(
         : { code: "conflict", occupantKind: "file" },
     );
   }
-  if (walk.kind !== "walked") throw new Error("A draft's folder walk fills every gap");
+  if (walk.kind !== "walked") throw new Error("A branch's folder walk fills every gap");
   const slot: DocumentSlot = {
     contextSourceId,
     folderId: walk.folderId,
@@ -282,10 +282,10 @@ export async function createLive(
 // ---------------------------------------------------------------------------------------
 
 /**
- * The oldest valid hidden text document at the slot that some active draft uses
+ * The oldest valid hidden text document at the slot that some active branch uses
  * (excluding the ones `excludeBranchId` already uses). Unlocked, a look holding nothing.
  * With `lock`, every candidate's document lock is taken in one id-ordered pass before any
- * is chosen, then each is revalidated under its lock, and a candidate no active draft
+ * is chosen, then each is revalidated under its lock, and a candidate no active branch
  * uses is an inconsistent row, tombstoned here (repair on touch).
  */
 async function pickHiddenCandidate(

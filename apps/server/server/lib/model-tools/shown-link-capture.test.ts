@@ -48,7 +48,7 @@ const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
 const BRANCH_ID = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "branch", branchId: BRANCH_ID };
+const BRANCH: LinkView = { kind: "branch", branchId: BRANCH_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -179,12 +179,12 @@ async function harness(
     branches: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled
-      // in a reply's pinned draft, not the live grant it was routed with.
+      // in a reply's pinned branch view, not the live grant it was routed with.
       read: async (_command: unknown, context: { includeNodes?: boolean }) => {
         if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
         const n = plainReads++;
         await options.read?.();
-        return success("read", [fact(91 + 10 * n)], DRAFT);
+        return success("read", [fact(91 + 10 * n)], BRANCH);
       },
       write: async (
         _command: unknown,

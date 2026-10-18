@@ -60,7 +60,7 @@ function refusedAtSave(denial: FileAccessDenied): {
 
 /**
  * Reverse a reply's create (contract §12.5): a live create is deleted; a drafted one ends
- * its draft's use of the document, unless another thread's committed text makes it stand.
+ * its branch's use of the document, unless another thread's committed text makes it stand.
  */
 export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;

@@ -51,7 +51,7 @@ export function permissionDeniedMessage(denial: PermissionDenial): string {
 
 /**
  * An archived Work's own files are read-only (D29); a draft-mode chat's write
- * that would land in its draft meets a frozen draft (D30, D31), and switching
+ * that would land in this Work's drafts meets frozen drafts (D30, D31), and switching
  * the chat to auto-apply is the writer's way out (D62). Only an agent the
  * action policy lets unarchive is offered the call.
  */

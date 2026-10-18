@@ -1,11 +1,11 @@
 /**
  * The application mutation boundary for Works: the one owner of Work-first lock order for
- * every lifecycle or structural write that holds a Work's draft, branch or document row, which
+ * every lifecycle or structural write that holds a Work's branch, draft or document row, which
  * is how those writes order themselves against the Work's lifecycle transitions, and the
  * canonical transaction participant for every mutation visible in a Works snapshot. It owns
  * the Work's stored pending count (the badge): every Work a transaction locks through it is
  * recounted at commit, and only a moved count bumps the Work's revision and sends a notice. An
- * ordinary branch append (a keystroke) never enters it: the draft-effect projection runs after
+ * ordinary draft append (a keystroke) never enters it: the draft-effect projection runs after
  * every append and recounts then, through `mutate`.
  */
 import type { BranchId } from "@meridian/contracts";
@@ -42,8 +42,8 @@ export type WorkWriteOptions = {
   /** With the bound edit grants' Works, then the grants' confirmation (file-access §5). */
   seam?: boolean;
   /**
-   * Refuses unless every Work of the set is active: a named branch that doesn't exist is an
-   * error, and one whose draft has no origin Work is frozen (`missing`).
+   * Refuses unless every Work of the set is active: a named draft that doesn't exist is an
+   * error, and one whose branch has no origin Work is frozen (`missing`).
    */
   requireActive?: boolean;
 };
@@ -51,7 +51,7 @@ export type WorkWriteOptions = {
 export type LockedWorkWriteSet = {
   /** Every locked Work's lifecycle, read under its lock. */
   works: ReadonlyMap<string, LockedWork>;
-  /** Each named branch that exists, with its draft's Work (`null`: frozen). */
+  /** Each named draft that exists, with its branch's Work (`null`: frozen). */
   drafts: readonly BranchDraftRef[];
 };
 
@@ -184,12 +184,12 @@ export function createWorkProjectionMutation(input: {
     const drafts = await branchDraftRefs(input.db, [...draftIds]);
     if (options.requireActive) {
       if (drafts.length !== draftIds.size) throw new Error("Draft not found");
-      // A draft whose origin Work is gone is frozen, as a missing Work is.
+      // A draft whose branch has no origin Work is frozen, as a missing Work is.
       const frozen = drafts.find((row) => row.workId === null);
       if (frozen) throw new WorkLifecycleUnavailableError(frozen.branchId, "missing");
     }
     const branchIds = [...new Set(set.branches ?? [])];
-    // A draft's Work is its origin Work, as the pending projection maps a draft.
+    // A branch's Work is its origin Work, as the pending projection maps a branch.
     const branchWorks =
       branchIds.length === 0
         ? []
@@ -243,8 +243,8 @@ export function createWorkProjectionMutation(input: {
     },
     lockWorks: lockWriteSet,
     /**
-     * The set's Works locked before `operation` takes any draft or branch row, so every
-     * structural branch write enters Work, then draft, then branch, the order Archive takes
+     * The set's Works locked before `operation` takes any branch or draft row, so every
+     * structural draft write enters Work, then branch, then draft, the order Archive takes
      * (decision D12).
      */
     mutate(set, operation, options) {

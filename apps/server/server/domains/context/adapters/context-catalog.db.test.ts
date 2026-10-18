@@ -71,7 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (rows.length) await db.insert(contextSources).values(rows);
     }
 
-    it("resolves a hidden created document only in its own draft address view", async () => {
+    it("resolves a hidden created document only in its own branch address view", async () => {
       const db = database.current;
       const scenario = await branchTreeScenario(db);
       const work = await scenario.work("Review", "draft");
@@ -144,7 +144,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
       expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
 
-      // Apply reveals the draft's document: it joins the live tree.
+      // Apply reveals the branch's document: it joins the live tree.
       await db.update(documents).set({ hidden: false }).where(eq(documents.id, DRAFT_DOCUMENT_ID));
       await catalog.refreshProject(PROJECT_ID);
       await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({

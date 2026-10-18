@@ -312,7 +312,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
         // A binary copy lands where a create would: in a draft-mode chat, a hidden row
-        // holding the draft's own object (12b-Q2).
+        // holding the branch's own object (12b-Q2).
         return inContainer(deps, principal, parsed.command, target, () =>
           copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
         );

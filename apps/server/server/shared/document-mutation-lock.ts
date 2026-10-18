@@ -1,4 +1,4 @@
-/** Postgres transaction lock serializing mutations of one live document or branch. */
+/** Postgres transaction lock serializing mutations of one live document or draft. */
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 

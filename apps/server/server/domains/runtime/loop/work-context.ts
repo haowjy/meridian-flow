@@ -78,7 +78,7 @@ function currentWorkLines(
 
 /**
  * Where this chat's AI writes land (D9, D62): the chat's mode over its Work.
- * An archived Work freezes its own scratch and draft (D29, D30); only an agent
+ * An archived Work freezes its own scratch and branch (D29, D30); only an agent
  * the action policy lets unarchive is offered that, and only a draft-mode chat
  * has auto-apply as a way out (D31). One description, two presentations: the
  * Work context's `writes:` line and the switch notice.
@@ -87,7 +87,7 @@ export function describeWriteMode(input: {
   mode: AiWriteMode;
   archived: boolean;
   mayUnarchive: boolean;
-  /** The chat has no Work, so its branches are shared with the project's other chats that have none. */
+  /** The chat is bound to No Work, so its drafts are shared with the project's other chats bound to No Work. */
   noWork: boolean;
 }): { label: string; instructions: string[] } {
   if (input.archived) {

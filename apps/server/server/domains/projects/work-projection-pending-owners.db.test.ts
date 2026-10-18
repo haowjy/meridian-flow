@@ -157,7 +157,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // An append touches no Work (#931); the projection's effect write touches it once.
       await expect(projectionState()).resolves.toEqual(initial);
       const judged = await drafts.getDraft(DRAFT_ID);
-      if (!judged) throw new Error("the branch is gone");
+      if (!judged) throw new Error("the draft is gone");
       await expect(
         drafts.writeEffect({
           draftId: DRAFT_ID,
@@ -172,7 +172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(projectionState()).resolves.toEqual(appended);
       // The count stays 1: the projection's next write sends nothing.
       const again = await drafts.getDraft(DRAFT_ID);
-      if (!again) throw new Error("the branch is gone");
+      if (!again) throw new Error("the draft is gone");
       await drafts.writeEffect({
         draftId: DRAFT_ID,
         revision: again.revision,
@@ -183,10 +183,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const journal = createDrizzleDraftJournalReadStore(db);
       const rows = await journal.listReviewableJournalRows(DRAFT_ID, 1);
-      // Each commit fences on the revision it read, so every one reads the branch as it stands.
+      // Each commit fences on the revision it read, so every one reads the draft as it stands.
       const currentDraft = async () => {
         const documentDraft = await drafts.getDraft(DRAFT_ID);
-        if (!documentDraft) throw new Error("the branch is gone");
+        if (!documentDraft) throw new Error("the draft is gone");
         return documentDraft;
       };
       const emptyState = { state: new Uint8Array([0, 0]), stateVector: new Uint8Array([0]) };
@@ -219,7 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      // The discard closed those rows and left the branch equal to live; a fresh write makes it
+      // The discard closed those rows and left the draft equal to live; a fresh write makes it
       // differ again, and its projection stores the count, before the push stages its row.
       await appendJournal({ kind: "edit" });
       const rewritten = await currentDraft();

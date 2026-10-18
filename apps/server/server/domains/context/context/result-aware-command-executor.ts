@@ -15,7 +15,7 @@ export interface ResultAwareCommandExecutor<TError> {
     scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
-  /** A command in a Work's draft, which the transaction makes (`ensure`) and locks. */
+  /** A command in a Work's branch, which the transaction makes (`ensure`) and locks. */
   runInBranch<T>(
     branch: ContextCommandBranch & { mode: "ensure" },
     operation: (branch: ContextCommandActiveBranch) => Promise<Result<T, TError>>,
@@ -83,8 +83,8 @@ export function createResultAwareCommandExecutor<TError>(input: {
     runInBranch(branch, operation) {
       return run(
         ({ branch: active }) => {
-          // The transaction contract: an `ensure` command always resolves a draft.
-          if (!active) throw new Error("An ensuring command transaction resolved no draft");
+          // The transaction contract: an `ensure` command always resolves a branch.
+          if (!active) throw new Error("An ensuring command transaction resolved no branch");
           return operation(active);
         },
         undefined,

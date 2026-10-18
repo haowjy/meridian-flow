@@ -171,7 +171,7 @@ export interface ContextSchemeAdapter {
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
   /**
    * Reverse this adapter's create of `documentId` (contract §12.5): a draft placement
-   * retracts the draft's use itself; `live` asks the caller to delete the document.
+   * retracts the branch's use itself; `live` asks the caller to delete the document.
    */
   retractCreate(
     path: string,

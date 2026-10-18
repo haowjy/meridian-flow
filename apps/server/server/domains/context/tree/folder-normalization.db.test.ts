@@ -3,7 +3,7 @@
  * a delete or a move out of where branches hold folders splits hidden contents into twins
  * at their paths (F-1, F-3), a move between project sources carries them (F-2), a visible
  * folder arriving at a hidden folder's path absorbs it (F-4), and neither race leaves a
- * draft's create behind (I-4, I-5).
+ * branch's create behind (I-4, I-5).
  */
 import { randomUUID } from "node:crypto";
 import { createDb } from "@meridian/database";
@@ -132,7 +132,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect.objectContaining({ deleted: true, locationVersion: 1n }),
         ]);
       expect
-        .soft(await idAt(scenario, ascension, "world/places/harbor"), "the draft still sees it")
+        .soft(await idAt(scenario, ascension, "world/places/harbor"), "the branch still sees it")
         .toBe(harbor);
       expect.soft(await idAt(scenario, "live", "world/places/harbor"), "live does not").toBeNull();
     });
@@ -162,7 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           contextSourceId: kb,
           locationVersion: before.locationVersion + 1n,
         });
-        expect.soft(await idAt(scenario, work, `kb://${path}`), `${path}: in its draft`).toBe(id);
+        expect.soft(await idAt(scenario, work, `kb://${path}`), `${path}: in its branch`).toBe(id);
         expect.soft(await idAt(scenario, work, path), `${path}: not left behind`).toBeNull();
         expect.soft(await idAt(scenario, "live", `kb://${path}`), `${path}: not live`).toBeNull();
       }
@@ -215,7 +215,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect
           .soft(
             await idAt(scenario, ascension, `${origin}/places/harbor`),
-            `${destination}: the draft still sees it`,
+            `${destination}: the branch still sees it`,
           )
           .toBe(harbor);
         expect
@@ -255,7 +255,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
     });
 
-    it("absorbs a hidden folder beside a same-named visible document: a draft clash, never a live refusal (F-4)", async () => {
+    it("absorbs a hidden folder beside a same-named visible document: a branch clash, never a live refusal (F-4)", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
       const kaelFile = await scenario.seedLive("branches/kael");
@@ -284,9 +284,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { kind: "branch", branchId: branch.id },
         { contextSourceId: scenario.project.sources.manuscript, path: "ideas/kael" },
       );
-      expect.soft(resolved.kind, "two nodes at one path in the draft").toBe("ambiguous");
+      expect.soft(resolved.kind, "two nodes at one path in the branch").toBe("ambiguous");
       const [item] = await createTreeReader(committed).treeState(branch.id);
-      expect.soft(item?.conflict, "a clash in the draft's view").toEqual({
+      expect.soft(item?.conflict, "a clash in the branch's view").toEqual({
         kind: "clash",
         withNode: { kind: "document", id: kaelFile },
         at: "ideas/kael",
@@ -306,7 +306,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 
-    it("answers a path two of a draft's documents share with the clash, never one of them (absorb)", async () => {
+    it("answers a path two of a branch's documents share with the clash, never one of them (absorb)", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
       await scenario.seedLiveFolder("branches");
@@ -331,7 +331,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it.each([
       { first: "rename" as const, at: "absorb.beforeRepoint" as const },
       { first: "create" as const, at: "createInBranch.afterCandidateLock" as const },
-    ])("never leaves a draft's create under an absorbed folder, $first first (I-4)", async ({
+    ])("never leaves a branch's create under an absorbed folder, $first first (I-4)", async ({
       first,
       at,
     }) => {
@@ -367,7 +367,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it.each([
       { first: "remove" as const, at: "split.beforeRepoint" as const },
       { first: "create" as const, at: "createInBranch.afterCandidateLock" as const },
-    ])("never leaves a draft's create in a split folder, $first first (I-5)", async ({
+    ])("never leaves a branch's create in a split folder, $first first (I-5)", async ({
       first,
       at,
     }) => {

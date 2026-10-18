@@ -461,7 +461,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
         // The draft-effect projection's write, which stores the count the append moved.
         const appended = await drafts.getDraft(draftId);
-        if (!appended) throw new Error(`missing branch ${draftId}`);
+        if (!appended) throw new Error(`missing draft ${draftId}`);
         await drafts.writeEffect({
           draftId,
           revision: appended.revision,
@@ -509,7 +509,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await runInDrizzleTransaction(db, async () => {
         for (const value of draftInputs) {
           const documentDraft = await drafts.getDraft(value.draftId);
-          if (!documentDraft) throw new Error(`missing branch ${value.draftId}`);
+          if (!documentDraft) throw new Error(`missing draft ${value.draftId}`);
           await pushStore.commitDiscard({
             documentDraft,
             journalRows: await journal.listReviewableJournalRows(value.draftId, 1),

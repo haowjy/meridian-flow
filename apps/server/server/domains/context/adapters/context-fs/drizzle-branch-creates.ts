@@ -1,7 +1,7 @@
 /**
- * Postgres draft creates for one source: the tree owner's hidden-node lifecycle with the
- * collab half injected (the draft's branch is ensured and retracted by collab, which owns
- * branch lifecycle, journals and pooled cores).
+ * Postgres branch creates for one source: the tree owner's hidden-node lifecycle with the
+ * collab half injected (the branch's document draft is ensured and retracted by collab, which owns
+ * draft lifecycle, journals and pooled cores).
  */
 import type { Database } from "@meridian/database";
 import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
@@ -21,7 +21,7 @@ export function createDrizzleBranchCreates(deps: {
   repair?: Pick<HiddenNodeRepair, "report">;
 }): BranchCreatePort {
   /**
-   * The source, with its namespace held (§14: after the command's Work and draft, before
+   * The source, with its namespace held (§14: after the command's Work and branch, before
    * any document lock). A resolved source id is cached across commands, so the lock is
    * taken here, every command, never left to provisioning.
    */

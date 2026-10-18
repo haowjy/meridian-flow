@@ -43,7 +43,7 @@ fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
 committed migration chain through the real runner, then exercises typed server
 consumers. Do not regenerate historical fixture bytes with current writers.
 
-Draft-tree suites build one world per case: `branch-tree-seeds.ts` writes rows the
+Branch-tree suites build one world per case: `branch-tree-seeds.ts` writes rows the
 way the product leaves them (no runtime); `branch-tree-commands.ts` drives the
 composed runtime (model replies, the writer's route cores, readers' ports,
 review commands: `review`, `apply` and `applyAll` call the review route cores

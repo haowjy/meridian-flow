@@ -69,7 +69,7 @@ export interface Principal {
   accountId: UserId;
   agent?: {
     chain: AgentChain;
-    /** The Work whose draft drafted sources land in; null outside draft mode. */
+    /** The Work whose branch drafted sources land in; null outside draft mode. */
     branchWork: WorkRef | null;
   };
 }
@@ -141,7 +141,7 @@ export interface FileFacts {
   self: FileNode | null;
   /** Nearest first: folders up to the source, the source, the owning Work, the project. */
   ancestors: readonly FileNode[];
-  /** The Work whose draft this access goes through, when one was asked about. */
+  /** The Work whose branch this access goes through, when one was asked about. */
   branchWork?: FileWorkFacts;
 }
 
@@ -149,7 +149,7 @@ export interface FileFacts {
 // Decisions
 // ---------------------------------------------------------------------------
 
-/** Where a write lands: the live document, or a Work's draft (D20). */
+/** Where a write lands: the live document, or a Work's branch (D20). */
 export type FileDestination =
   | { kind: "live" }
   | { kind: "draft"; workId: WorkId; workSlug: string | null };

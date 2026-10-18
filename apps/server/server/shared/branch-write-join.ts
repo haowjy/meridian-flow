@@ -1,6 +1,6 @@
 /**
- * Which ambient transactions a draft write may join. `ensureActiveForWrite` locks the
- * Work row and then the draft row, so it may only join a transaction that has locked
+ * Which ambient transactions a branch write may join. `ensureActiveForWrite` locks the
+ * Work row and then the branch row, so it may only join a transaction that has locked
  * nothing but Works (global lock order); any other ambient caller is refused rather than
  * joined. The ContextFS command boundary approves its own transaction after its Work
  * locks and before any namespace or document lock.
@@ -11,11 +11,11 @@ import {
   setDrizzleTransactionLocal,
 } from "./drizzle-transaction.js";
 
-const approvedJoin = { name: "draft-write-join" };
+const approvedJoin = { name: "branch-write-join" };
 
 export class BranchWriteJoinRefusedError extends Error {
   constructor() {
-    super("A draft write may only join a command transaction that has locked nothing but Works");
+    super("A branch write may only join a command transaction that has locked nothing but Works");
     this.name = "BranchWriteJoinRefusedError";
   }
 }

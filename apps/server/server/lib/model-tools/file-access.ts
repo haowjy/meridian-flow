@@ -32,7 +32,7 @@ import type {
   WriteToolErrorOutput,
 } from "./tool-context.js";
 
-/** The principal with its drafted writes routed to `work`'s draft, or live for null. */
+/** The principal with its drafted writes routed to `work`'s drafts, or live for null. */
 export function withBranchWork(principal: Principal, work: WorkRef | null): Principal {
   return principal.agent
     ? { ...principal, agent: { ...principal.agent, branchWork: work } }
@@ -41,7 +41,7 @@ export function withBranchWork(principal: Principal, work: WorkRef | null): Prin
 
 /**
  * The agent a tool call acts as (file-access §8): the thread's person, its
- * delegation chain read fresh, and the Work whose draft its drafted writes
+ * delegation chain read fresh, and the Work whose drafts its drafted writes
  * land in.
  */
 export async function agentPrincipal(
@@ -63,7 +63,7 @@ export async function agentPrincipal(
 
 /**
  * An explicit `version: "draft"` outside draft mode reads the draft the Work
- * kept (a chat switched to auto-apply, or another chat branches there; D62),
+ * kept (a chat switched to auto-apply, or another chat writes drafts there; D62),
  * so the result says `draft`. With
  * no kept draft of this document it reads live, as `draft` always did there.
  */
@@ -75,8 +75,8 @@ export async function keptDraftReader(
 ): Promise<Principal> {
   if (!principal.agent || principal.agent.branchWork || execution.branchOwner) return principal;
   const { workId, workSlug } = execution.scope;
-  const branches = await deps.branches.draftReview.list({ workId });
-  if (!branches.some((draft) => draft.documentId === documentId)) return principal;
+  const drafts = await deps.branches.draftReview.list({ workId });
+  if (!drafts.some((draft) => draft.documentId === documentId)) return principal;
   return withBranchWork(principal, { id: workId, slug: workSlug });
 }
 

@@ -1,6 +1,6 @@
 /**
- * The hidden-node reader chokepoints (contract §16.3, F15): a draft's hidden document is
- * absent from every live surface (C-1a) and present in its draft's view (C-1b). One
+ * The hidden-node reader chokepoints (contract §16.3, F15): a branch's hidden document is
+ * absent from every live surface (C-1a) and present in its branch's view (C-1b). One
  * subject, built through the product path, is read by every row of each table with
  * `expect.soft`, so a failure names every leaking surface. Rows only read; the probes
  * that must write (recording a recent, reserving an upload name, a bootstrap) are their
@@ -59,10 +59,10 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     const MAP = "atlas/map.png";
 
     /**
-     * One subject through the product path: Ascension's draft creates harbor with text,
+     * One subject through the product path: Ascension's branch creates harbor with text,
      * copies a live chart in as its own hidden picture, and discards a create. States the
-     * product can't reach yet are seeded on the draft's other creates: tombstones the
-     * draft still names, a create the draft moved, a hidden holder's link rows, a recent.
+     * product can't reach yet are seeded on the branch's other creates: tombstones the
+     * branch still names, a create the branch moved, a hidden holder's link rows, a recent.
      */
     async function subject() {
       const runtime = await runtimes.compose();
@@ -99,7 +99,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       const discarded = await model.create("discarded", "Discarded.");
       await scenario.discard(ascension, [discarded]);
 
-      // Tombstones the draft still names (stale change rows).
+      // Tombstones the branch still names (stale change rows).
       const tombstones = [
         await model.create("gone", "Gone."),
         await model.create("retired/gone", "Retired."),
@@ -116,7 +116,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .select({ folderId: documents.folderId })
         .from(documents)
         .where(eq(documents.id, anchor));
-      if (!anchorRow?.folderId) throw new Error("Missing the draft's folder");
+      if (!anchorRow?.folderId) throw new Error("Missing the branch's folder");
       await db
         .update(documents)
         .set({ folderId: anchorRow.folderId })
@@ -151,7 +151,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       ]);
       await ports.linkAheadRegistry.settleArrivals([harbor]);
 
-      // For the picture's denials: a rival Work's draft and another account's Work.
+      // For the picture's denials: a rival Work's branch and another account's Work.
       const rival = await scenario.work("Rival", "draft");
       await scenario.model(rival).create("rival", "The rival's.");
       const foreign = await branchTreeScenario(db, { runtime, runtimes });
@@ -503,10 +503,10 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       for (const row of rows) expect.soft(await row.run(), row.surface).toEqual(row.expected);
     });
 
-    it("reads independent draft-aware surfaces in the creating draft (C-1b)", async () => {
+    it("reads independent branch-aware surfaces in the creating branch (C-1b)", async () => {
       const s = await subject();
       const { ports } = s.runtime;
-      const draftFs = s.scenario.view(s.ascension);
+      const branchFs = s.scenario.view(s.ascension);
       const view = { kind: "branch", branchId: s.branch.id } as const;
       const input = { projectId: s.projectId, documentIds: [s.relocated], view };
       const actor = { userId: s.userId };
@@ -514,7 +514,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS stat in D",
           run: async () => {
-            const stat = await draftFs.stat(HARBOR);
+            const stat = await branchFs.stat(HARBOR);
             return stat.ok ? stat.value.documentId : stat.error.code;
           },
           expected: s.harbor,
@@ -522,7 +522,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS ls in D",
           run: async () => {
-            const listing = await draftFs.ls("lore/places");
+            const listing = await branchFs.ls("lore/places");
             return listing.ok
               ? listing.value.entries.map((entry) => [entry.uri, entry.documentId])
               : listing.error.code;
@@ -532,7 +532,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS read in D",
           run: async () => {
-            const read = await draftFs.read(HARBOR);
+            const read = await branchFs.read(HARBOR);
             return read.ok
               ? [read.value.documentId, read.value.content.includes(HARBOR_TEXT)]
               : read.error.code;
@@ -542,7 +542,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS search in D",
           run: async () => {
-            const hits = await draftFs.search("smells of salt");
+            const hits = await branchFs.search("smells of salt");
             return hits.ok
               ? hits.value.flatMap((hit) => (hit.documentId === s.harbor ? [hit.uri] : []))
               : hits.error.code;
@@ -551,7 +551,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         },
         {
           surface: "ContextFS locate in D",
-          run: () => draftFs.locate(s.harbor),
+          run: () => branchFs.locate(s.harbor),
           expected: HARBOR_URI,
         },
         {
@@ -625,7 +625,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           expected: "manuscript://draft-location",
         },
         {
-          surface: "figure other same-project Work's active draft",
+          surface: "figure other same-project Work's active branch",
           run: () => s.figure(s.rival.id),
           expected: denied(),
         },
@@ -664,7 +664,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           },
         },
         {
-          surface: "draft link scope",
+          surface: "branch link scope",
           run: async () => {
             const { identity } = await s.link(view, s.draftRef);
             return identity.kind === "document"
@@ -704,7 +704,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           expected: expect.any(String),
         },
         {
-          surface: "draft-view file access",
+          surface: "branch-view file access",
           run: async () =>
             (
               await ports.fileAccess.listAccess({ accountId: s.userId }, [s.harbor], {

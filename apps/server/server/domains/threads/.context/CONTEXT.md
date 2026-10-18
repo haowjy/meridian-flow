@@ -148,7 +148,7 @@ The active-document resolver is the sole definition of documents relevant to a
 thread: it unions explicit `thread_documents` attachments with documents
 touched by turns, and the same definition drives active-thread notice fan-out
 and retention. `threads.ai_write_mode` (`'direct'` | `'draft'`) is the chat's
-mode: whether its AI edits wait in its Work's draft or go live (D62). A chat
+mode: whether its AI edits wait in its Work's drafts or go live (D62). A chat
 copies it at creation (`aiWriteMode`, else its Work's
 `works.default_ai_write_mode`; subagents copy the parent, forks and handoffs
 copy the source chat), and rebind, archive, and restore never change it.
@@ -156,7 +156,7 @@ Write-time routing reads the thread's mode over its current primary Work
 (`threadExecutionContext`); `turns.ai_write_mode` records each reply's mode, and
 the mode changes only between replies via the thread controls queue
 (`POST /api/threads/:id/controls`, `{ kind: "write_mode" }`). Switching to
-auto-apply applies nothing: pending drafts stay for review, and branches carry
+auto-apply applies nothing: pending drafts stay for review, and drafts carry
 no push policy (D59). Branch review policy remains in
 [collab](../../collab/.context/CONTEXT.md).
 

@@ -1,8 +1,8 @@
 /**
- * The draft-tree DB tests' world and seed verbs (contract §16.1): a project with its
+ * The branch-tree DB tests' world and seed verbs (contract §16.1): a project with its
  * sources, Works with their primary threads, rows written the way the product's creates
  * leave them, written through the tree's own row writers. No composed runtime: command
- * verbs, the link resolve route's answer among them, live in `draft-tree-commands.ts`.
+ * verbs, the link resolve route's answer among them, live in `branch-tree-commands.ts`.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
  * the other project sources, or `user://` for the account's personal source (in its
@@ -74,17 +74,17 @@ export interface BranchTreeWorld {
   work(name: string, mode: "draft" | "direct"): Promise<ScenarioWork>;
   /** Another thread whose primary Work is `work`, in that Work's mode. */
   thread(work: ScenarioWork): Promise<ScenarioWork>;
-  /** The Work's active draft, made at the write boundary if absent. */
+  /** The Work's active branch, made at the write boundary if absent. */
   branchOf(work: ScenarioWork): Promise<Branch>;
   /** A live document, with live folders made as needed. */
   seedLive(path: string): Promise<DocumentId>;
   /** A live folder chain; returns the leaf. */
   seedLiveFolder(path: string): Promise<FolderId>;
   /**
-   * A document the Work's draft created: hidden folders made (or joined) as needed, a
-   * hidden document at the path, and the draft's `created` row at that location. Makes
-   * the Work's draft if it has none. A new document, unless `join` names a hidden one this
-   * draft then uses at `path` too (the row a create's join leaves, at a location of its own).
+   * A document the Work's branch created: hidden folders made (or joined) as needed, a
+   * hidden document at the path, and the branch's `created` row at that location. Makes
+   * the Work's branch if it has none. A new document, unless `join` names a hidden one this
+   * branch then uses at `path` too (the row a create's join leaves, at a location of its own).
    */
   seedHidden(
     work: ScenarioWork,
@@ -149,7 +149,7 @@ export async function branchTreeWorld(
   if (!options.account) {
     await db
       .insert(users)
-      .values(conformanceUserValues(userId, `draft-tree-scenario-${userId.slice(0, 8)}`));
+      .values(conformanceUserValues(userId, `branch-tree-scenario-${userId.slice(0, 8)}`));
   }
   await db.insert(projects).values({
     id: projectId,
@@ -308,12 +308,12 @@ export function branchTreeWorldOver(
       return leaf;
     },
     async seedHidden(work, path, hiddenOptions = {}) {
-      const draft = await branchOf(work);
+      const branch = await branchOf(work);
       const { sourceId, dir, filename } = locate(path);
-      // A draft places under the folders it sees and makes hidden ones past the first gap.
+      // A branch places under the folders it sees and makes hidden ones past the first gap.
       const walk = await walkFolders(
         db,
-        { kind: "branch", branchId: draft.id },
+        { kind: "branch", branchId: branch.id },
         sourceId,
         dir,
         (gap) => insertFolder(db, { contextSourceId: sourceId, ...gap }, { hidden: true }),
@@ -322,7 +322,7 @@ export function branchTreeWorldOver(
       const documentId =
         hiddenOptions.join ?? (await insertDocument(sourceId, walk.folderId, filename, true));
       await recordCreated(db, {
-        branchId: draft.id,
+        branchId: branch.id,
         documentId,
       });
       return documentId;

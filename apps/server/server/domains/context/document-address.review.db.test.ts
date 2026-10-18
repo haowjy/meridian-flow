@@ -1,4 +1,4 @@
-/** Real draft tree and file policy keep colliding browser addresses identity-bound. */
+/** Real branch tree and file policy keep colliding browser addresses identity-bound. */
 import { documents } from "@meridian/database/schema";
 import { expect, it } from "vitest";
 import { handleDocumentAddressRequest } from "../../lib/document-address-route.js";

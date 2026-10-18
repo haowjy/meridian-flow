@@ -610,7 +610,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   /** The one branches resolver: draft placements read and write through it (§2.3). */
   branches: Branches;
   /**
-   * The Work mutation boundary (decision D17): a draft command locks its draft's Work first
+   * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
    * and touches the Work's projection after it (§13.2, S3).
    */
   pendingBranch: {
@@ -666,31 +666,31 @@ export function createProductionUnifiedContextPortFactory(options: {
   }
 
   /**
-   * One command transaction (§2.3, §14): Works (a draft write's Work among them), then the
-   * draft row, then every namespace key in order; nothing above it holds a Work row.
+   * One command transaction (§2.3, §14): Works (a branch write's Work among them), then the
+   * branch row, then every namespace key in order; nothing above it holds a Work row.
    */
   function commandTransaction(projectId: string, userId: string): ContextCommandTransaction {
     return {
       run: (operation, scopes = [], commandOptions = {}) =>
         runInDrizzleTransaction(options.db, async () => {
-          const draftWrite = commandOptions.branch;
+          const branchWrite = commandOptions.branch;
           const command: ContextCommandContext = { branch: null };
           const lockedScopes = typeof scopes === "function" ? await scopes() : scopes;
           await lockContextNamespaces(options.db, { projectId, userId }, lockedScopes, {
-            workIds: draftWrite ? [draftWrite.workId] : [],
+            workIds: branchWrite ? [branchWrite.workId] : [],
             sourceIds: commandOptions.sourceIds ?? [],
             afterWorkLocks: async () => {
-              if (!draftWrite) return;
+              if (!branchWrite) return;
               approveBranchWriteJoin();
-              if (draftWrite.mode === "ensure") {
+              if (branchWrite.mode === "ensure") {
                 command.branch = await options.branches.ensureActiveForWrite({
-                  workId: draftWrite.workId,
+                  workId: branchWrite.workId,
                   projectId: projectId as ProjectId,
-                  threadId: draftWrite.threadId,
-                  userId: draftWrite.userId,
+                  threadId: branchWrite.threadId,
+                  userId: branchWrite.userId,
                 });
               } else {
-                const active = await options.branches.activeForWork(draftWrite.workId);
+                const active = await options.branches.activeForWork(branchWrite.workId);
                 command.branch = active ? await options.branches.lockActive(active.id) : null;
               }
             },

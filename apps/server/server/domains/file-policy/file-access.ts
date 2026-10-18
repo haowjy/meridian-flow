@@ -53,7 +53,7 @@ export interface FileAccess {
    * already locked the Works the grants' facts name (`grantWorkIds`), in one
    * id-ordered select with its own. Re-reads facts and each agent chain, and
    * re-runs the policy at each grant's destination. A file whose owner or
-   * draft Work moved outside that locked set is refused, since locking it now
+   * branch Work moved outside that locked set is refused, since locking it now
    * would break the id order. Refused grants are returned, not thrown, so the
    * rest of the reply can commit.
    */
@@ -164,7 +164,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   };
 }
 
-/** An agent's document or container access may go through its draft-mode chat's Work draft. */
+/** An agent's document or container access may go through its draft-mode chat's Work branch. */
 function factsRequest(principal: Principal, target: FileTarget): FileFactsRequest {
   const branchWork = principal.agent?.branchWork;
   return target.kind !== "draft" && branchWork

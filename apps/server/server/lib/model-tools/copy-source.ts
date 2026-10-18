@@ -170,7 +170,7 @@ export function fromMessage(source: CopySource, message: string): string {
 /**
  * A binary copy duplicates the stored object at once (D24). It isn't a Yjs
  * write, so it has no write handle and isn't part of the reply's save. In a
- * draft-mode chat it lands in the draft as its own hidden row (12b-Q2).
+ * draft-mode chat it lands in the branch as its own hidden row (12b-Q2).
  */
 export async function copyBinary(
   deps: ToolWiringDeps,
@@ -181,7 +181,7 @@ export async function copyBinary(
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
   const destinationUri = splitDocumentFile(input.path).filePath;
-  // Binary files have no branches or revisions, so the copy always reads the live file.
+  // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
     port: context.port,
     objectStore: deps.objectStore,

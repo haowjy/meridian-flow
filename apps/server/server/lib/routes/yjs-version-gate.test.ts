@@ -225,7 +225,7 @@ describe("Yjs connect-time schema version gate", () => {
     expect(services.documentSync.admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("gates branch rooms at the same strict monotonic edge", async () => {
+  it("gates draft rooms at the same strict monotonic edge", async () => {
     const hocuspocus = createHocuspocus(
       versionGateServices({ draftHead: COLLAB_SCHEMA_VERSION }) as never,
       createYjsRoomAccessIndex(),
@@ -252,7 +252,7 @@ describe("Yjs connect-time schema version gate", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("refuses major-mismatched live and branch heads per connection", async () => {
+  it("refuses major-mismatched live and draft heads per connection", async () => {
     const majorMismatchHead = OTHER_MAJOR_HEAD;
     const services = versionGateServices({
       liveHead: majorMismatchHead,
@@ -298,7 +298,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it.each([
     ["live", liveDocumentName],
-    ["branch", draftRoomName],
+    ["draft", draftRoomName],
   ])("keeps the typed stale-head close on the %s document-load guard", async (_kind, room) => {
     const services = versionGateServices({ liveHead: null });
     Object.assign(services.documentSync, {

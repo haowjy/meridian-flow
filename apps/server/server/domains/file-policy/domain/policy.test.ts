@@ -90,7 +90,7 @@ describe("file policy", () => {
     expect([result.level, result.limitedBy]).toEqual([level, limitedBy]);
   });
 
-  it("routes drafted sources to the agent's draft and caps them by the draft's Work", () => {
+  it("routes drafted sources to the agent's Work branch and caps them by its Work", () => {
     const drafting = (branchWork: FileWorkFacts): [Principal, FileFacts] => [
       { accountId: OWNER, agent: { chain: [link("edit", branchWork.id)], branchWork } },
       file("manuscript", null, { branchWork }),
