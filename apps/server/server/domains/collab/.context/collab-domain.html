@@ -556,16 +556,22 @@ A draft review room is an ordinary collaborative room; the writer is one more
 peer. The transport first enforces the stale-client handshake: a sync step 1
 whose state vector reaches into clocks discarded by a branch reset closes with
 <code>4205 branch-stale-doc</code>, and no update is accepted before that
-handshake passes. Admission then runs the same sequence on a private clone of the branch's
-committed replica, holding no lock: the branch must be an active
-<code>work_draft</code> at the room's generation and the room must contain the
-replica; then containment and fresh authorship. The frame's
-<code>branch_write_journal</code> row (source <code>writer</code>) is appended at
-the revision it was judged at, in one statement that also requires the Work to
-be active. If another write committed first, the append misses and the frame
-judges again on the new revision; only the fourth attempt holds the Work and
-branch rows, so a keystroke that keeps losing races still lands. No mutex, lease or document lock is taken. A failure
-closes with <code>1008 branch-update-admission-failed</code>. Branch rooms never
+handshake passes. Admission then judges the frame once on a private clone of the
+branch's committed replica, holding no lock: the branch must be an active
+<code>work_draft</code> at the room's generation, a room behind the replica is
+reconciled to it, and containment and fresh authorship are early exits only.
+The frame is then appended once, sequenced rather than fenced: the append's
+statement locks the branch row (requiring the Work to be active), bumps whatever
+revision it holds, and finalizes the update against the committed prefix under
+that lock (novel bytes, authorship, receipts) before inserting its
+<code>branch_write_journal</code> rows (source <code>writer</code>). A
+concurrent write costs the frame one row-lock wait, never a second judgement,
+and no Work lock is taken (see the append contract in
+<a href="CONTEXT.md#transaction-and-lock-contracts">CONTEXT.md</a>). No mutex,
+lease or document lock is taken. A refusal closes with
+<code>1008 branch-update-admission-failed</code>; an update whose prefix the
+journal lacks closes with <code>4207 branch-prefix-missing</code>, which the
+client treats as a reconnect. Branch rooms never
 re-persist in <code>onStoreDocument</code>; every branch mutation is already
 durable.
 </p>
@@ -615,10 +621,11 @@ the thread's Work.
     applies the merged update in one synchronous block. In direct mode that
     target is the live room. In draft mode it is the thread peer, and the
     thread-peer coordinator then commits the peer's ordered segment updates into the Work draft
-    (each segment's <code>branch_write_journal</code> rows appended at the
-    branch's revision inside the reply's bounded attempt, through
-    <code>admitCertifiedMutation</code> when the write carries a semantic edit
-    IR; a moved branch makes the attempt prepare again).</li>
+    (each segment's <code>branch_write_journal</code> rows validated against
+    their semantic edit IR, when they carry one, by
+    <code>admitSegmentRows</code>, then appended once, sequenced like a
+    frame's; only a thread peer's exact catch-up checkpoint misses on a moved
+    revision, and that miss makes the reply's bounded attempt prepare again).</li>
 </ol>
 <p class="ref"><code>packages/agent-edit/src/tool/response-committer.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>appendBatch</code>, <code>domain/branch-agent-edit.ts</code>, <code>domain/branch-coordinator.ts</code> <code>commitSegmentRows</code></p>
 <p>

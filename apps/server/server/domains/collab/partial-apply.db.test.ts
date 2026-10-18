@@ -926,7 +926,7 @@ async function journalStatuses(branchId: string) {
 
 /**
  * The branch's revision. A write that changes review membership (a row's status, a close) must
- * move it, or a frame that predicted its membership flip at the old revision commits over it.
+ * move it, so an exact rewrite computed at the old revision misses.
  */
 async function branchRevision(branchId: string): Promise<number> {
   const [row] = await db

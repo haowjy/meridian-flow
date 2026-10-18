@@ -22,10 +22,11 @@ inside each live-document lock. Rechecks compare complete updates, including
 delete-only divergence; state vectors alone are insufficient.
 
 Branch rooms have no coordinator serialization at all: a Work-draft writer
-frame is an optimistic append at its replica's revision (see the transaction
-and lock contracts in [CONTEXT.md](CONTEXT.md)). Every other branch write moves
-the revision, so a frame racing it misses and judges again; no branch mutex
-exists to hold against a frame.
+frame is one sequenced append, ordered by the branch row's lock and finalized
+there against the committed prefix, never fenced by a revision (see the append
+contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). A frame
+racing another write waits for the row lock once and never judges again; no
+branch mutex exists to hold against a frame.
 
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus

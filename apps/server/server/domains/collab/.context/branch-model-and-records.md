@@ -111,8 +111,11 @@ re-landing diff-based review ([#862]) deletes: `refreshDraftEffect`'s conditiona
 Thread-peer and Work-draft resolution return metadata only (id, generation,
 status, lifecycle); content is read through the coordinator.
 
-Writes go through two doors. `appendRows` adds rows past the checkpoint at the
-judged revision, allocating their ids under the row lock. `commitRewrite` writes
+Writes go through two doors. `appendRows` adds rows past the checkpoint,
+sequenced by the branch row's lock rather than fenced by a revision: it bumps
+whatever revision the row holds, allocates the ids under that lock, and
+finalizes the update against the committed prefix there (see the append
+contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). `commitRewrite` writes
 a new checkpoint covering every row of the branch, under an `exact` policy (the
 revision it was computed at) or a `fold` policy (any appends since its cursor are
 applied, or discarded by a reset). Pulls, resets, selective Discard, the
@@ -156,8 +159,10 @@ captures a durable cut after the releasing transaction commits. A dropped or
 late checkpoint costs replay time, never data.
 
 Branch mutations are durable before Hocuspocus apply, broadcast, or ack. The
-awaited admission path validates authority/generation, exact containment, and
-fresh provenance, then appends at the revision it judged. `onChange` does not
+awaited admission path checks the generation and the room, exits early on a
+contained or reserved-authorship update, then appends once; containment,
+authorship and receipts are decided again under the row lock against what is
+committed. `onChange` does not
 own branch persistence. The transport layer only authenticates, adapts peers,
 and delegates this ordering.
 
