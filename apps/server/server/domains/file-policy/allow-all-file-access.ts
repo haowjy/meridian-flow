@@ -12,8 +12,8 @@ const OPEN_PROJECT = "00000000-0000-4000-8000-00000000a11a" as ProjectId;
 
 function openFacts(request: FileFactsRequest): FileFacts {
   const { target } = request;
-  const draftWorkId: WorkId | undefined =
-    target.kind === "draft" ? target.workId : request.draftWorkId;
+  const branchWorkId: WorkId | undefined =
+    target.kind === "draft" ? target.workId : request.branchWorkId;
   return {
     target,
     projectId: OPEN_PROJECT,
@@ -24,10 +24,10 @@ function openFacts(request: FileFactsRequest): FileFacts {
     scheme: target.kind === "container" ? target.scheme : "manuscript",
     self: target.kind === "container" ? null : { kind: "document", id: target.documentId },
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
-    ...(draftWorkId
+    ...(branchWorkId
       ? {
-          draftWork: {
-            id: draftWorkId,
+          branchWork: {
+            id: branchWorkId,
             slug: null,
             isNoWork: false,
             archived: false,
@@ -44,13 +44,13 @@ export function createAllowAllFileAccess(): FileAccess {
       async load(request) {
         return openFacts(request);
       },
-      async loadList(documentIds, draftWorkId) {
+      async loadList(documentIds, branchWorkId) {
         return new Map(
           documentIds.map((documentId: DocumentId) => [
             documentId,
             openFacts({
               target: { kind: "document", documentId },
-              ...(draftWorkId ? { draftWorkId } : {}),
+              ...(branchWorkId ? { branchWorkId } : {}),
             }),
           ]),
         );

@@ -22,7 +22,7 @@ import {
 } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { DocumentLinkScopes, Drafts } from "../domains/collab/index.js";
+import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
 import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
@@ -36,8 +36,8 @@ export interface DocumentLinkRouteDeps {
   linkScopes: DocumentLinkScopes;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
-  /** The selected Work's view: its active draft, or live when it has none (F7). */
-  drafts: Pick<Drafts, "viewForWork">;
+  /** The selected Work's view: its active branch, or live when it has none (F7). */
+  branches: Pick<Branches, "viewForWork">;
 }
 
 type DocumentAnswer = Extract<DocumentLinkAnswer, { state: "document" }>["document"];
@@ -49,20 +49,20 @@ export async function handleDocumentLinkResolveRequest(
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
   // Lineage is Scratch's owner, not a replacement for the chat's No Work
-  // draft view: project-document refs still read in that Work's draft view.
+  // branch view: project-document refs still read in that Work's branch view.
   const workId = request.rootThreadId
     ? ((await deps.workAuthorityResolver.noWork(projectId as ProjectId))?.workId ?? null)
     : (request.workId ?? null);
-  // The selected Work must be this project's; a draft view is never provisioned for any other.
+  // The selected Work must be this project's; a branch view is never provisioned for any other.
   if (
     workId &&
     !(await deps.workAuthorityResolver.byId(projectId as ProjectId, workId as WorkId))
   ) {
     throwContextWorkUnavailableHttpError("work_missing");
   }
-  // A Work's draft view is the live tree plus what that draft created.
+  // A Work's branch view is the live tree plus what that branch created.
   const view: LinkView = workId
-    ? await deps.drafts.viewForWork(workId as WorkId)
+    ? await deps.branches.viewForWork(workId as WorkId)
     : { kind: "live" };
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
   let holderUri: string | undefined;
@@ -116,7 +116,7 @@ export async function handleDocumentLinkResolveRequest(
   );
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
-  // Address-only links the live tree left unanswered: a Work's draft may have created them.
+  // Address-only links the live tree left unanswered: a Work's branch may have created them.
   const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
@@ -167,23 +167,23 @@ export async function handleDocumentLinkResolveRequest(
     );
     for (const { index, document } of found) {
       if (access.has(document.id as DocumentId)) {
-        answers[index] = { state: "document", document, inDraft: false };
+        answers[index] = { state: "document", document, inBranch: false };
       }
     }
   }
   if (unanswered.length > 0) {
-    await answerFromDraftView(deps, { projectId, userId, view, unanswered, answers });
+    await answerFromBranchView(deps, { projectId, userId, view, unanswered, answers });
   }
   return holderUri === undefined ? { answers } : { answers, holderUri };
 }
 
 /**
- * Names the document a Work's draft created at an address the live tree leaves empty (the
- * scope's `draftCreatedAt`: exact, then the one extension-omitted match). A live occupant
- * keeps winning, since these never reached one; another draft's creation and what the
+ * Names the document a Work's branch created at an address the live tree leaves empty (the
+ * scope's `branchCreatedAt`: exact, then the one extension-omitted match). A live occupant
+ * keeps winning, since these never reached one; another branch's creation and what the
  * reader may not read stay missing.
  */
-async function answerFromDraftView(
+async function answerFromBranchView(
   deps: DocumentLinkRouteDeps,
   input: {
     projectId: string;
@@ -194,7 +194,7 @@ async function answerFromDraftView(
   },
 ): Promise<void> {
   const { projectId, userId, view, unanswered, answers } = input;
-  if (view.kind !== "draft") return;
+  if (view.kind !== "branch") return;
   await deps.linkScopes.within({ projectId, viewer: { accountId: userId } }, async () => {
     await deps.linkScopes.prepare({
       holders: [],
@@ -202,9 +202,9 @@ async function answerFromDraftView(
       addresses: unanswered.map(({ uri }) => uri),
     });
     for (const { index, uri } of unanswered) {
-      const document = deps.linkScopes.draftCreatedAt({ view, uri });
+      const document = deps.linkScopes.branchCreatedAt({ view, uri });
       if (!document) continue;
-      answers[index] = answerOf({ kind: "document", document, inDraft: true });
+      answers[index] = answerOf({ kind: "document", document, inBranch: true });
     }
   });
 }
@@ -214,14 +214,14 @@ function answerOf(resolution: LinkResolution): DocumentLinkAnswer {
   // Rule 3: the client keeps the settlement and never answers this ref by address again.
   const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
   if (resolution.kind === "document") {
-    const { document, inDraft } = resolution;
+    const { document, inBranch } = resolution;
     const described = describeDocument(document);
     return described
       ? {
           state: "document",
           document: described,
-          inDraft,
-          ...(document.draft ? { draft: document.draft } : {}),
+          inBranch,
+          ...(document.branch ? { branch: document.branch } : {}),
           ...marks,
         }
       : { state: "gone", ...marks };

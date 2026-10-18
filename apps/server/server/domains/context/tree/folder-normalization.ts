@@ -1,13 +1,13 @@
 /**
- * Live folder normalization (contract §8.2, §8.3): write-time repairs that keep a draft's
- * hidden contents where that draft placed them when the writer renames, moves or deletes
+ * Live folder normalization (contract §8.2, §8.3): write-time repairs that keep a branch's
+ * hidden contents where that branch placed them when the writer renames, moves or deletes
  * a live folder. A visible folder arriving at a hidden folder's path absorbs it; a delete
  * or a move out of the project splits hidden contents off into hidden twins at their old
  * paths.
  *
  * Every function runs in its caller's transaction, which holds the namespace locks of
- * every source involved; every draft tree write takes those too, so nothing a draft
- * writes can interleave. No draft lock is taken here.
+ * every source involved; every branch tree write takes those too, so nothing a branch
+ * writes can interleave. No branch lock is taken here.
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
@@ -29,7 +29,7 @@ import {
  * A live folder landed at a hidden folder's path: fold the hidden one into it, recursively
  * (§8.2). Same-named child folders fold into each other; everything else is reparented.
  * Nothing is refused: a hidden node that lands beside a node of the other kind stays
- * hidden there; the tree view owns the clash the drafts that use it see (F11).
+ * hidden there; the tree view owns the clash the branches that use it see (F11).
  */
 export async function absorbHiddenFolder(
   db: Database,

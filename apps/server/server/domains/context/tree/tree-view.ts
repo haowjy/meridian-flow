@@ -1,14 +1,14 @@
 /**
- * The tree view: which documents and folders a reader sees, live or in one draft
- * (target model "Readers"). A hidden node is in no live view; in a draft that created
- * it, it is an ordinary node at the draft's location. Readers select from
+ * The tree view: which documents and folders a reader sees, live or in one branch
+ * (target model "Readers"). A hidden node is in no live view; in a branch that created
+ * it, it is an ordinary node at the branch's location. Readers select from
  * `visibleDocuments(view)` / `visibleFolders(view)` or ask the `TreeReader`; neither
  * they nor anything outside this module reads the hidden column.
  */
 import type {
+  BranchId,
   ContextSourceId,
   DocumentId,
-  DraftId,
   FolderId,
   ProjectId,
   WorkId,
@@ -35,10 +35,10 @@ import {
 } from "./tree-addresses.js";
 import {
   type DocumentIdentityRow,
-  loadActiveDraftUses,
+  loadActiveBranchUses,
+  loadBranchCreatedDocuments,
   loadDocumentIdentityRows,
   loadDocumentIdsAt,
-  loadDraftCreatedDocuments,
   loadFolderIdsAt,
   type PathSlot,
   type VisibleDocumentsSubquery,
@@ -62,7 +62,7 @@ export {
   visibleFoldersSql,
 } from "./tree-view-sql.js";
 
-export type TreeView = { kind: "live" } | { kind: "draft"; draftId: DraftId };
+export type TreeView = { kind: "live" } | { kind: "branch"; branchId: BranchId };
 export const LIVE_TREE: TreeView = Object.freeze({ kind: "live" });
 
 export type NodeRef = { kind: "document"; id: DocumentId } | { kind: "folder"; id: FolderId };
@@ -127,35 +127,35 @@ export type TreeNode =
   | { kind: "document"; document: VisibleDocument }
   | { kind: "folder"; folder: VisibleFolder };
 
-export type DraftUse = { draftId: DraftId; originWorkId: WorkId | null; createdAt: Date };
+export type BranchUse = { branchId: BranchId; originWorkId: WorkId | null; createdAt: Date };
 
 export type IdentityStatus =
   /**
    * Visible in this view, at `address` in this view. A hidden one is visible only in a
-   * draft that uses it: `draft` is that draft (the document still reads "in a draft").
+   * branch that uses it: `branch` is that branch (the document still reads "in a draft").
    */
-  | { kind: "visible"; address: NodeAddress; hidden: boolean; draft?: DraftUse }
+  | { kind: "visible"; address: NodeAddress; hidden: boolean; branch?: BranchUse }
   /**
-   * Hidden and not used by this view's draft. `draft` is the reader's own if it uses it,
-   * otherwise the oldest active draft that uses it; `address` is where that draft has it.
+   * Hidden and not used by this view's branch. `branch` is the reader's own if it uses it,
+   * otherwise the oldest active branch that uses it; `address` is where that branch has it.
    * No content access, no path occupancy.
    */
   | {
       kind: "hidden";
       documentId: DocumentId;
-      draft: DraftUse;
-      usedBy: readonly DraftUse[];
+      branch: BranchUse;
+      usedBy: readonly BranchUse[];
       address: NodeAddress;
     }
   /** Soft-deleted while visible; the last address it held (decision 15). */
   | { kind: "deleted"; documentId: DocumentId; lastAddress: NodeAddress | null }
-  /** A tombstone, a hidden node no draft uses, a missing id, or an address that can't be spelled. */
+  /** A tombstone, a hidden node no branch uses, a missing id, or an address that can't be spelled. */
   | { kind: "gone"; documentId: DocumentId };
 
 export type TreeStateNode = {
   nodeKind: "document";
   nodeId: DocumentId;
-  /** created: the draft has a `created` row. edited: the caller names it (text only). */
+  /** created: the branch has a `created` row. edited: the caller names it (text only). */
   origin: "created" | "edited";
   /** Created and still hidden: "new". */
   hidden: boolean;
@@ -180,7 +180,7 @@ export type TreeStateNode = {
   conflict:
     | { kind: "none" }
     /**
-     * 5a (F11): a different node visible in the draft holds the target path, or a
+     * 5a (F11): a different node visible in the branch holds the target path, or a
      * document holds the path of a folder the target needs.
      */
     | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
@@ -238,12 +238,12 @@ export interface TreeReader {
     addresses: readonly DocumentCoordinates[],
   ): Promise<ReadonlyMap<string, DocumentId[]>>;
   /**
-   * The draft's created documents, plus the edited documents the caller names (the
-   * draft's branches with rows; the tree view doesn't read branches). `only` limits the
+   * The branch's created documents, plus the edited documents the caller names (the
+   * branch's drafts with rows; the tree view doesn't read drafts). `only` limits the
    * created ones to these ids, so one item's lookup costs one item.
    */
   treeState(
-    draftId: DraftId,
+    branchId: BranchId,
     edited?: readonly DocumentId[],
     only?: readonly DocumentId[],
   ): Promise<TreeStateNode[]>;
@@ -302,7 +302,7 @@ function folderPath(chain: readonly FolderLink[] | undefined, filename: string):
 }
 
 /**
- * `repair`: where `identityStatus` sends a hidden, live document no active draft uses (an
+ * `repair`: where `identityStatus` sends a hidden, live document no active branch uses (an
  * inconsistent row it answers `gone` for) to be tombstoned after the read (§12.4).
  */
 export function createTreeReader(
@@ -624,15 +624,15 @@ export function createTreeReader(
     const hiddenIds = [...rows.values()]
       .filter((row) => row.hidden && !row.deleted)
       .map((row) => row.id);
-    const uses = new Map<DocumentId, DraftUse[]>();
-    for (const use of await loadActiveDraftUses(tx(), hiddenIds)) {
-      uses.set(use.documentId, [...(uses.get(use.documentId) ?? []), draftUse(use)]);
+    const uses = new Map<DocumentId, BranchUse[]>();
+    for (const use of await loadActiveBranchUses(tx(), hiddenIds)) {
+      uses.set(use.documentId, [...(uses.get(use.documentId) ?? []), branchUse(use)]);
     }
 
     // Decide first, then spell every chosen location in one batch.
     type Pending =
-      | { kind: "visible"; location: NodeLocation; hidden: boolean; draft?: DraftUse }
-      | { kind: "hidden"; location: NodeLocation; draft: DraftUse; usedBy: DraftUse[] }
+      | { kind: "visible"; location: NodeLocation; hidden: boolean; branch?: BranchUse }
+      | { kind: "hidden"; location: NodeLocation; branch: BranchUse; usedBy: BranchUse[] }
       | { kind: "deleted"; location: NodeLocation }
       | { kind: "gone" };
     const decided = new Map<DocumentId, Pending>();
@@ -644,19 +644,19 @@ export function createTreeReader(
         decided.set(id, { kind: "gone" });
       } else if (shown) {
         const own =
-          row.hidden && view.kind === "draft"
-            ? uses.get(id)?.find((use) => use.draftId === view.draftId)
+          row.hidden && view.kind === "branch"
+            ? uses.get(id)?.find((use) => use.branchId === view.branchId)
             : undefined;
         decided.set(id, {
           kind: "visible",
           location: rowLocation(shown),
           hidden: row.hidden,
-          ...(own ? { draft: own } : {}),
+          ...(own ? { branch: own } : {}),
         });
       } else if (row.hidden) {
         const usedBy = uses.get(id) ?? [];
         const chosen =
-          (view.kind === "draft" && usedBy.find((use) => use.draftId === view.draftId)) ||
+          (view.kind === "branch" && usedBy.find((use) => use.branchId === view.branchId)) ||
           usedBy[0];
         decided.set(
           id,
@@ -664,7 +664,7 @@ export function createTreeReader(
             ? {
                 kind: "hidden",
                 location: rowLocation(row),
-                draft: chosen,
+                branch: chosen,
                 usedBy,
               }
             : { kind: "gone" },
@@ -698,13 +698,13 @@ export function createTreeReader(
           kind: "visible",
           address,
           hidden: pending.hidden,
-          ...(pending.draft ? { draft: pending.draft } : {}),
+          ...(pending.branch ? { branch: pending.branch } : {}),
         });
       } else {
         out.set(id, {
           kind: "hidden",
           documentId: id,
-          draft: pending.draft,
+          branch: pending.branch,
           usedBy: pending.usedBy,
           address,
         });
@@ -757,13 +757,13 @@ export function createTreeReader(
   }
 
   async function treeState(
-    draftId: DraftId,
+    branchId: BranchId,
     edited: readonly DocumentId[] = [],
     only?: readonly DocumentId[],
   ): Promise<TreeStateNode[]> {
-    const view: TreeView = { kind: "draft", draftId };
-    const created = isUuid(draftId)
-      ? await loadDraftCreatedDocuments(tx(), draftId, only?.filter(isUuid))
+    const view: TreeView = { kind: "branch", branchId };
+    const created = isUuid(branchId)
+      ? await loadBranchCreatedDocuments(tx(), branchId, only?.filter(isUuid))
       : [];
     const createdIds = new Set(created.map((row) => row.id));
     const editedRows = await loadDocumentIdentityRows(
@@ -771,11 +771,11 @@ export function createTreeReader(
       [...new Set(edited)].filter((id) => isUuid(id) && !createdIds.has(id)),
     );
     const items: { origin: "created" | "edited"; row: DocumentIdentityRow }[] = [
-      // A tombstone is no longer the draft's: repair-on-touch drops its row (§12.4).
+      // A tombstone is no longer the branch's: repair-on-touch drops its row (§12.4).
       ...created
         .filter((row) => !(row.hidden && row.deleted))
         .map((row) => ({ origin: "created" as const, row })),
-      // A hidden document the draft didn't create isn't in the draft's view.
+      // A hidden document the branch didn't create isn't in the branch's view.
       ...editedRows.filter((row) => !row.hidden).map((row) => ({ origin: "edited" as const, row })),
     ];
     const chains = await loadFolderChains(
@@ -785,7 +785,7 @@ export function createTreeReader(
     const chainOf = (folderId: FolderId | null) =>
       folderId === null ? [] : (chains.get(folderId) ?? []);
 
-    // Every path a target needs, in the draft's view: its own, then each ancestor folder's,
+    // Every path a target needs, in the branch's view: its own, then each ancestor folder's,
     // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
     // Each is a claim of its kind, so the clash is the one Apply's live holds would see.
     const needs = items.flatMap(({ row }, item) => {
@@ -975,6 +975,6 @@ function rowLocation(
   };
 }
 
-function draftUse(use: Awaited<ReturnType<typeof loadActiveDraftUses>>[number]): DraftUse {
-  return { draftId: use.draftId, originWorkId: use.originWorkId, createdAt: use.draftCreatedAt };
+function branchUse(use: Awaited<ReturnType<typeof loadActiveBranchUses>>[number]): BranchUse {
+  return { branchId: use.branchId, originWorkId: use.originWorkId, createdAt: use.branchCreatedAt };
 }

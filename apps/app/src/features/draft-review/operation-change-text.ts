@@ -4,7 +4,7 @@ import type {
   ReviewFormattingChange,
   ReviewHunk,
   ReviewOperation,
-} from "@meridian/contracts/drafts";
+} from "@meridian/contracts/branches";
 
 export type ChangeTextRun = { kind: "removed" | "added"; text: string };
 export type OperationChangeText = {

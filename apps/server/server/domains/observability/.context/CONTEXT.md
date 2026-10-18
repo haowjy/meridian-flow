@@ -28,7 +28,7 @@ messages.
 
 The process sink carries active HTTP/WebSocket trace scope. Request and domain
 joins are explicit at emit sites; detached work retains its scope, while shared
-Yjs persistence creates a new trace and emits its document/branch joins.
+Yjs persistence creates a new trace and emits its document/draft joins.
 
 ## Wiring
 

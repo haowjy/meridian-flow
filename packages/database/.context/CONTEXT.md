@@ -44,6 +44,20 @@ fixture can be retired only after a later frozen migration supersedes it.
 
 ## Schema contracts
 
+A `branches` row is a Work's pending file tree. `document_drafts` stores each
+document version, with writes in `draft_write_journal`; `branch_tree_changes`
+and `branch_commands` belong to the whole branch. The `branch_push_*` tables
+retain their batch-level names. Migration `0068` renames metadata and replaces
+both trail functions atomically. `0069` preserves opaque document-draft IDs and
+rewrites JSON in native-primary-key pages of at most 500 rows, committing each
+receipt's origin/placement and each settlement's payload/tag together. Link views
+and their tuple digests change together (equivalent showings retain the greatest
+sequence), then the pending-placement index is replaced concurrently. Command
+fingerprints retain their original canonical key/kind encoding in
+`collab/domain/branch-commands.ts`; stored hashes alone cannot be translated after
+an API vocabulary change.
+
+
 Drizzle timestamp helpers use JS `Date` mode. The small set of string-mode
 columns is deliberate; do not extend it casually. Never bind a JS `Date` inside
 a raw `sql` fragment: use a typed comparator or an explicit timestamptz cast.
@@ -68,11 +82,11 @@ Forward-turn inverses and write provenance live in immutable `document_edits`
 and `document_edit_parts`; the legacy reconstruction tables and the unused
 mutation provenance sink are retired.
 
-The change-trail signal triggers on `branch_write_journal`, `document_edits`
-and `document_edit_parts` fire inside a writer keystroke's branch row lock,
+The change-trail signal triggers on `draft_write_journal`, `document_edits`
+and `document_edit_parts` fire inside a writer keystroke's draft row lock,
 three per key, so their cost is that writer's save latency and every other
 writer's wait on the draft. `change_trail_owners` is defined only in migrations
-(the current body is `0065_change_trail_owner_cost.sql`, not `src/functions/`):
+(the current body is `0068_draft_branch_names.sql`, not `src/functions/`):
 a replacement keeps `SET jit = off` (its recursive CTE's unbounded estimate
 otherwise makes PostgreSQL compile LLVM code on every call, 15 ms empty and
 hundreds once the tables grow), its primary-key journal lookup and its early
@@ -83,7 +97,7 @@ Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
 owned rows identify exactly what a restore revives; their FKs are `ON DELETE
 SET NULL` so a stale marker never deletes, and purge deletes marked rows
-explicitly. Draft branches carry no marker: soft delete leaves drafts alone and
+explicitly. Branches and their drafts carry no marker: soft delete leaves them alone and
 purge disposes of them. The dropped `works.visibility` and `persistence` were
 speculative and must not return; if multi-writer sharing or ephemeral-Work GC
 comes back, design new columns. No Work is a locked Work, not a sharing

@@ -1,6 +1,6 @@
 /** Canonical rich document content and visible effect clocks, independent of Yjs history. */
 import { isDeepStrictEqual } from "node:util";
-import type { ReviewFormattingChange } from "@meridian/contracts/drafts";
+import type { ReviewFormattingChange } from "@meridian/contracts/branches";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { ClockRange } from "./draft-review-attribution.js";

@@ -2,7 +2,7 @@
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
  * for addresses with no document yet, settled by the first live document that
  * arrives at the exact address (or at registration, if one is already there). Binding
- * is global and once; drafts store nothing about ahead refs.
+ * is global and once; branches store nothing about ahead refs.
  */
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";

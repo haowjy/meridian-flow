@@ -64,16 +64,16 @@ storage, not the text engine.
 
 ## Views, identity, and revisions
 
-The tree module supplies `LIVE_TREE` and `{ kind: "draft", draftId }`. ContextFS
-uses that view for `stat`, `read`, `list`, `search`, and `locate`; a draft's
-hidden document or folder appears only in that draft. A draft create has an
-empty live Y.Doc and text in the branch until Apply. The hidden predicate has
+The tree module supplies `LIVE_TREE` and `{ kind: "branch", branchId }`. ContextFS
+uses that view for `stat`, `read`, `list`, `search`, and `locate`; a branch's
+hidden document or folder appears only in that branch. A draft create has an
+empty live Y.Doc and text in its draft until Apply. The hidden predicate has
 one owner in [tree](../tree/AGENTS.md); callers never inspect hidden columns.
 
 `DocumentRevisions.current` resolves the thread's current primary Work and the
 chat's write mode, checks project-final availability, and delegates effective
 document reads to collab. A `version: "live"` request uses live text and the
-live tree; a draft request uses the selected Work's tree and branch. The port
+live tree; a draft request uses the selected Work's branch tree and the document's draft. The port
 may run inside a thread- or Work-locked transaction, subject to collab's
 independent pull transaction rules. It reports settled authority, not a
 response's staged overlay.
@@ -91,24 +91,24 @@ check.
 Placement is chosen once per command. Live create can reveal a hidden node at
 its path instead of inserting a twin and admits text on a clone before warm
 room publication after commit. Draft placement creates or joins a hidden row
-and records its draft use; whole-file seed, `mkdir`, and other live-seeding
+and records its branch use; whole-file seed, `mkdir`, and other live-seeding
 operations are not draft operations. A client-minted untitled ID is idempotent
 across authorized project and Work schemes; retries return the materialized
 canonical location rather than allocating another document. That path installs
 an empty Yjs authority and never seeds non-empty Markdown: the client owns the
 initial CRDT content. The writer's
-instant create is never refused for a name: a draft's hidden text document at
+instant create is never refused for a name: a branch's hidden text document at
 that path is unhidden and keeps its id, the device's minted id forwards to it
 (`document_forwards`, answered `joined`, and link resolution follows forwards for
 ids no document holds), and a visible occupant sends the create to the first
 free name. `retractCreate` reverses a create for a rolled-back reply or failed
-write: a draft placement ends the draft's use unless another thread's committed
-text makes the document stand, and only that Work's draft branch, peers, and
+write: a draft placement ends the branch's use unless another thread's committed
+text makes the document stand, and only that Work's document draft, peers, and
 rooms retire.
 
-A hidden node with no active draft use is tombstoned, never left live. End of
+A hidden node with no active branch use is tombstoned, never left live. End of
 use locks and rechecks the complete namespace/document scope, releases its
-storage and branches, and prunes empty hidden folders. A moved scope aborts
+storage and drafts, and prunes empty hidden folders. A moved scope aborts
 and rediscovers. Read-time repair may schedule the same end-use operation but
 must not silently change the read result. Work restore checks the complete
 arriving tree before unhiding it.
@@ -123,9 +123,9 @@ links (`linkUpdate: { links, documents }`) from live content holders in the
 request project only: hidden draft holders, personal and other-project holders,
 and a moved holder's own links to unmoved documents are not counted. A live
 folder rename or move that lands on a hidden folder's path absorbs it (never
-refused); a recursive delete, or a move to a source fewer drafts may hold,
+refused); a recursive delete, or a move to a source fewer branches may hold,
 first splits hidden contents into hidden twins at their old paths, so a
-writer's live folder operations never disturb a draft's hidden rows. Identity moves resolve a folder
+writer's live folder operations never disturb a branch's hidden rows. Identity moves resolve a folder
 in the live view, then resolve it again under namespace locks; stale plans
 return `stale_target`, proven occupation returns a typed conflict, and absent,
 terminal, or denied identity destinations return `destination_missing`.
@@ -141,7 +141,7 @@ stays deleted.
 
 ## Catalog and publication
 
-The catalog is a live tree view, not a second visibility policy. Draft-hidden
+The catalog is a live tree view, not a second visibility policy. Branch-hidden
 rows and folders never enter it. `ContextFS` owns single-source transactions;
 `ContextTreeMover` owns full preflight-through-CAS tree transactions. Apply's
 tree step and the Discard kernel reconcile every affected source inside their
@@ -192,12 +192,12 @@ ref through the final tree. Every tracked create, upload, move-in, Work
 restore, and Apply settles arrivals once in its completion transaction. A ref
 binds once, to the first live document at its exact address, for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
-as is. A draft's hidden create and a deleted row are no arrival. Lineage
+as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
 capture each other's waiting refs; a soft-deleted Work keeps its identity, so
 refs to its address wait for restore. Refs in a draft's text register globally
 and best effort (an agent's mint, a link typed in the review room, and Apply's
-prerequisite for the branches it publishes); a failed registration never fails
+prerequisite for the drafts it publishes); a failed registration never fails
 Apply. The context link-scope adapter must receive the same scope instance as
 collab, whose [document authority notes](../../collab/.context/document-authority-and-schema.md)
 hold the scope rules.
@@ -214,13 +214,13 @@ reach the document by identity; an alias returns only when that identity is
 currently available to the request owner in the requested project.
 
 A link resolver is not a capability. A reader who cannot reach a ref receives
-`gone` without a location. A hidden document may answer `inDraft` with the
-selected draft and path. Holder binding is stable by document identity, and
+`gone` without a location. A hidden document may answer `inBranch` with the
+selected branch and path. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
 Browser addresses normally resolve in the live tree. A review address may
-supply `reviewWorkId` and an item key `${draftId}:${documentId}`; the server
-checks that item against active review items, then reads the draft tree. Stale,
+supply `reviewWorkId` and an item key `${branchId}:${documentId}`; the server
+checks that item against active review items, then reads the branch tree. Stale,
 foreign, or mismatched selectors return unavailable rather than falling back
 to live. The address resolver returns the canonical current locator; it never
 makes a path-only URL a capability.
@@ -233,7 +233,7 @@ lock with trash/restore liveness. The source remains while any lineage member
 is live, hides when the last member leaves, and restores with a live member.
 The first chat may be trashed and still names its lineage; `ls` lists only
 available notes. A lineage root names Scratch ownership, never a reader: draft
-visibility for link answers comes from the selected Work's draft tree view, so
+visibility for link answers comes from the selected Work's branch tree view, so
 never pass `rootThreadId` as the viewing thread. Rebinding a chat selects a
 different bare Scratch owner and never moves notes; the durable Work-switch
 Notice names the previous Scratch root. Work purge explicitly removes lineage sources in its purge

@@ -17,8 +17,8 @@ import {
   type ReviewHunk,
   type ReviewOperation,
   type ThreadDraftListItem,
-} from "@meridian/contracts/drafts";
-import type { ChangeSelection } from "@/client/query/draft-command-record";
+} from "@meridian/contracts/branches";
+import type { ChangeSelection } from "@/client/query/branch-command-record";
 import { wholeItemHidden } from "@/client/query/draft-projection";
 import {
   attributionThreadIds,
@@ -163,7 +163,7 @@ function changesOf(preview: ActivePreview): readonly ReviewChange[] {
 /**
  * The one change of a whole-item item (created, binary or deleted live), whatever
  * its operation count: it has no live target for selective commands, so item
- * Apply and Discard settle it. A branchless item (an image, an empty create)
+ * Apply and Discard settle it. An item without a document-draft row (an image, an empty create)
  * has no preview and passes none; it still shows one change, by its file name.
  */
 export function wholeItemChange(

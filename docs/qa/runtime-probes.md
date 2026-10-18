@@ -445,7 +445,7 @@ restart smoke check.
   unlinks stay what was written (`[Renamed target](merged-729-730) waits.`,
   `Target waits.`, `[Tar drafted get](merged-729-730) waits.`,
   `[Target](merged-729-730) returns.`); the suffix is never linked. Holder
-  journals (updates, checkpoints, head sequence, state vector, draft branch
+  journals (updates, checkpoints, head sequence, state vector, draft
   journal rows) are identical before and after every move. `ch9` reads `ch9`
   then `ch10` and ignores the later `ch9`. Stale-path block edits keep the
   document. A deleted target answers `gone` with no location from
@@ -468,7 +468,7 @@ restart smoke check.
 ## RP-13: Apply one change row, then Discard all, moves no prose
 
 - **Protects:** applying a single change row changes exactly that row's prose, and
-  a following Discard all closes the draft without touching the document again,
+  a following Discard all closes the branch without touching the document again,
   including when the row list is filtered and the applied row was never opened.
   This replaces the deleted `WorkChanges` unit case, which drove the same claim
   through the client's row component.
@@ -476,39 +476,39 @@ restart smoke check.
 - **Precondition:** a project with one Work, a document in it, and a chat bound to
   that Work so the model's write lands as a draft on the Work rather than live.
 - **Steps:** script one mock write of a known sentence, send it, and wait for the
-  draft to settle. Then read the Work's whole draft and keep the document before
+  draft to settle. Then read the Work's branch list and keep the document before
   and after each command:
 
   ```bash
   ./mf mock script '[{"text":"RP13 first draft sentence."}]' --json > "$E/script.json"
   ./mf thread send "$T" 'RP13 write' --json > "$E/send.ndjson"
   ./mf doc read "$DOC" --json > "$E/before.json"
-  ./mf api GET "/api/projects/$P/works/$W/drafts" --json > "$E/draft.json"
+  ./mf api GET "/api/projects/$P/works/$W/branches" --json > "$E/branches.json"
 
-  DRAFT=$(jq -r '.drafts[0].id' "$E/draft.json")
-  ITEM=$(jq -r '.drafts[0].items[0].itemKey' "$E/draft.json")
-  TOKEN=$(jq -r '.drafts[0].items[0].locationToken' "$E/draft.json")
+  BRANCH=$(jq -r '.items[0].branchId' "$E/branches.json")
+  ITEM=$(jq -r '.items[0].itemKey' "$E/branches.json")
+  TOKEN=$(jq -r '.items[0].tokens.locationToken' "$E/branches.json")
   APPLY=$(node -p 'crypto.randomUUID()')
 
-  ./mf api POST "/api/projects/$P/works/$W/drafts/apply" \
-    --data "{\"draftId\":\"$DRAFT\",\"commandId\":\"$APPLY\",\"items\":[{\"itemKey\":\"$ITEM\",\"locationToken\":\"$TOKEN\"}]}" \
+  ./mf api POST "/api/projects/$P/works/$W/branches/apply" \
+    --data "{\"branchId\":\"$BRANCH\",\"commandId\":\"$APPLY\",\"items\":[{\"itemKey\":\"$ITEM\",\"locationToken\":\"$TOKEN\"}]}" \
     --json > "$E/apply.json"
   ./mf doc read "$DOC" --json > "$E/after-apply.json"
 
   DISCARD=$(node -p 'crypto.randomUUID()')
-  ./mf api POST "/api/projects/$P/works/$W/drafts/discard" \
-    --data "{\"draftId\":\"$DRAFT\",\"commandId\":\"$DISCARD\"}" --json > "$E/discard.json"
+  ./mf api POST "/api/projects/$P/works/$W/branches/discard" \
+    --data "{\"branchId\":\"$BRANCH\",\"commandId\":\"$DISCARD\"}" --json > "$E/discard.json"
   ./mf doc read "$DOC" --json > "$E/after-discard.json"
-  ./mf api GET "/api/projects/$P/works/$W/drafts" --json > "$E/drafts-after.json"
+  ./mf api GET "/api/projects/$P/works/$W/branches" --json > "$E/branches-after.json"
   ```
 
 - **Expect:** `apply` answers `completed` and moves only the applied row's text;
   `discard` answers `{"status":"discarded"}`; `after-discard.json` is byte-identical
   to `after-apply.json` (Discard never writes prose, whatever the row filter shows);
-  and the draft read afterwards does not report that draft as active. A `stale` or
-  `gone` apply status means the tokens from `draft.json` were already superseded, and
+  and the branch list afterwards does not report that branch as active. A `stale` or
+  `gone` apply status means the tokens from `branches.json` were already superseded, and
   the run must be restarted rather than interpreted.
-- **Evidence:** the four document reads, `apply.json`, `discard.json`, the draft read
+- **Evidence:** the four document reads, `apply.json`, `discard.json`, the branch list
   before and after, and the mock script id.
 - **Last run:** not recorded.
 

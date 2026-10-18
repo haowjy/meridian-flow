@@ -286,7 +286,7 @@ type ResponseWriteCommitOutcome =
       /** Documents the save left out; their writes did not land (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
-  | { status: "draft_closed"; responseId: string; mode: "draft" };
+  | { status: "branch_closed"; responseId: string; mode: "draft" };
 
 function settledReceipt(
   receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
@@ -2397,7 +2397,7 @@ async function executeLoop({
             if (scope.hasWrites && isSaveBoundary(call)) {
               const boundary = await scope.commit();
 
-              if (boundary.status === "draft_closed") {
+              if (boundary.status === "branch_closed") {
                 return exitRun(true, abortTerminal());
               }
               scope.rotate();
@@ -2480,7 +2480,7 @@ async function executeLoop({
           const concurrentEdits = await scope.commit();
           responseScope = undefined;
 
-          if (concurrentEdits.status === "draft_closed") {
+          if (concurrentEdits.status === "branch_closed") {
             return exitRun(true, abortTerminal());
           }
 

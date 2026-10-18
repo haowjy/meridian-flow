@@ -26,9 +26,9 @@ level = min(person term, lifecycle term, agent term)
 
 `domain/policy.ts` is pure. `SOURCE_RULES` decides whether a source is drafted
 (Scratch and Uploads are never drafted) and the agent cap. File facts use the
-canonical draft resolver and the selected tree view; hidden identities outside
+canonical branch resolver and the selected tree view; hidden identities outside
 that view have no facts, and neither does a Work's draft of a document it may
-not hold (`draftMayHold`: its project's, or its account's `user://`).
+not hold (`branchMayHold`: its project's, or its account's `user://`).
 
 ## Grants and service boundary
 
@@ -47,11 +47,11 @@ and lets a reply save the rest. Read agent-chain state fresh on every tool call;
 a Work switch or rebind must affect the next call.
 
 Targets are explicit: `document` for ordinary file access, `draft` for a
-Work-draft view, and `container` for creates. A create in a folder needs both
+Work-branch view, and `container` for creates. A create in a folder needs both
 the container grant and the document grant it will write. Denials preserve a
 wire reason and the facts needed for allowed recovery; deleted reads are
 `not_found` (HTTP 404) and archived Work writes are `work_archived` (HTTP 403).
-People always write live; only an agent principal carries a draft Work.
+People always write live; only an agent principal carries a branch Work.
 
 ## Route and seam rules
 
@@ -62,7 +62,7 @@ async context so agent-edit remains grant-free.
 
 The write-seam order is:
 
-1. in-process branch critical sections;
+1. in-process live-document critical sections;
 2. Work lifecycle rows in ID order and grant confirmation;
 3. advisory namespace, source, or intake locks;
 4. document mutation locks in ID order.

@@ -95,11 +95,11 @@ and the project thread lists instead (the chat feed is not among them: it waits 
 items (another tab's queue, cancel or withdrawal): `useSwitchView` compares that key between
 records, taking the first record as its baseline, and calls `invalidateWriteModeReads`.
 
-The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
-Work's draft list, in the trigger (while in Draft) and the menu option (in either mode); with none it reads "Draft".
-The count matters most from Auto-apply, when the writer is about to switch into a draft, so the
-`useWorkDrafts` read carries no mode gate. It counts the Work's draft, while the draft dock (`DraftDock`)
-lists only this chat's changes, so "Draft (2)" beside a one-document draft dock is correct.
+The composer control shows the number of documents waiting as "Drafts (3)", from the
+Work's drafts list, in the trigger (while in Draft) and the menu option (in either mode); with none it reads "Draft".
+The count matters most from Auto-apply, when the writer is about to switch into draft mode, so the
+`useWorkBranchDrafts` read carries no mode gate. It counts the Work's pending document drafts, while the draft dock (`DraftDock`)
+lists only this chat's changes, so "Drafts (2)" beside a one-document draft dock is correct.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

@@ -14,7 +14,7 @@ import {
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   type ContextTab,
   getContextTabs,
@@ -404,7 +404,7 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
+  const editorDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     reviewBoundAddressResult(addressBinding, documentLookup.data),

@@ -5,10 +5,10 @@
  * document's path reveals it instead of inserting a twin; a changed candidate rolls back
  * and rediscovers once.
  *
- * The writer's instant create (`createOptimistic`) is the same pipeline: a draft's new
- * document is a real document that is hidden only because it is a draft, so a create at
- * its path unhides it. The device's minted id forwards to it. Nothing of the draft's text
- * moves: the writer's text goes to live, and the draft's stays in the draft for review.
+ * The writer's instant create (`createOptimistic`) is the same pipeline: a branch's new
+ * document is a real document, hidden only because it exists only in a branch, so a create
+ * at its path unhides it. The device's minted id forwards to it. Nothing of its draft text
+ * moves: the writer's text goes to live, and the document's draft stays pending for review.
  */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import { type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
@@ -281,7 +281,7 @@ export class LiveCreate {
   /**
    * The writer's instant create under the id their device minted (New file, a link's
    * Create, the editor's New document): never refused for a name. At the final path:
-   * nothing there inserts the device's id; a draft's hidden text document there is
+   * nothing there inserts the device's id; a branch's hidden text document there is
    * unhidden, keeps its own id, and the device's id forwards to it (`joined`); a visible
    * node there leaves the create at the first free name. A replay answers from the
    * forward first. `leaf` is null for a nameless create, which takes `Untitled N`.

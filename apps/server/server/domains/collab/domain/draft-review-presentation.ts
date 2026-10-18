@@ -4,7 +4,7 @@ import type {
   ReviewHunk,
   ReviewHunkSpan,
   ReviewOperationClassification,
-} from "@meridian/contracts/drafts";
+} from "@meridian/contracts/branches";
 import * as Y from "yjs";
 
 export type PresentationClockRange = {

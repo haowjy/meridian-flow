@@ -5,7 +5,7 @@
  * `historySummary` reads the typed value.
  */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 

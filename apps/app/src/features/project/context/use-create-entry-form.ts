@@ -86,8 +86,8 @@ export function useCreateEntryForm({
           workId: null,
         });
         if (!destinationParent) throw new Error(t`Couldn't create this file.`);
-        // The destination goes out with the create, so a draft's document waiting at this
-        // name is joined instead of a twin being made.
+        // The destination goes out with the create, so a branch's new document waiting at
+        // this name is joined instead of a twin being made.
         const reservation = await resources.reserveDocument(projectId, parent, {
           parent: destinationParent,
           name,

@@ -20,7 +20,7 @@ import type {
   TurnInverseStore,
 } from "./turn-inverse-service.js";
 
-type Query = TurnInverseQuery & { model: true; branchId: string | null };
+type Query = TurnInverseQuery & { model: true; draftId: string | null };
 type Entry = { id: string; handle: string; parts: StoredInversePart[] };
 const eligible = (part: StoredInversePart) =>
   part.placement.kind === "live" || part.placement.kind === "pending";
@@ -88,16 +88,16 @@ export function createModelInversePolicy(store: TurnInverseStore) {
   function planner(document: InverseDocument, query: Query) {
     const context = prepareHolds([document]).get(document.documentId);
     if (!context) throw new Error("Missing inverse hold context");
-    const draft = query.branchId ? document.drafts.get(query.branchId) : undefined;
+    const draft = query.draftId ? document.drafts.get(query.draftId) : undefined;
     const view = draft?.doc ?? document.live;
     const own = entries(document, query.threadId);
     const actions = inspectionActions(document.history, own);
     const inspections = new Map<Y.Doc, Inspection>();
     inspections.set(document.live, inspectionContext(context.liveIndex, actions));
-    for (const [id, branch] of document.drafts) {
+    for (const [id, documentDraft] of document.drafts) {
       const index = context.views.get(id);
       if (!index) throw new Error("Missing inverse draft index");
-      inspections.set(branch.doc, inspectionContext(index, actions));
+      inspections.set(documentDraft.doc, inspectionContext(index, actions));
     }
     const inspect = (current = view) => {
       const inspection = inspections.get(current);
@@ -109,9 +109,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       context.liveIndex
         .roots(part.effect)
         .flatMap((root) => [...(context.holds.get(root) ?? [])])
-        .find((id) => id !== query.branchId);
-    const version = (branchId: string | null) =>
-      branchId ? `draft (${document.drafts.get(branchId)?.name ?? "unavailable"})` : "live";
+        .find((id) => id !== query.draftId);
+    const version = (draftId: string | null) =>
+      draftId ? `draft (${document.drafts.get(draftId)?.name ?? "unavailable"})` : "live";
     function refusal(
       part: StoredInversePart,
       handle: string,
@@ -134,15 +134,15 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: `cant_${direction}_discarded`,
           message: `The user ${part.placement.kind === "discarded" ? "discarded" : "settled"} ${handle}; it is already gone. ${follow}`,
         };
-      const branchId = part.placement.kind === "pending" ? part.placement.branchId : null;
+      const draftId = part.placement.kind === "pending" ? part.placement.draftId : null;
       if (
-        branchId !== query.branchId ||
+        draftId !== query.draftId ||
         (part.placement.kind === "pending" &&
-          part.placement.generation !== draft?.branch.generation)
+          part.placement.generation !== draft?.documentDraft.generation)
       )
         return {
           status: `cant_${direction}_elsewhere`,
-          message: `${handle} is in another version (${version(branchId)}). You can ${direction} only in the version you write to. ${follow}`,
+          message: `${handle} is in another version (${version(draftId)}). You can ${direction} only in the version you write to. ${follow}`,
         };
       const held = holder(part);
       if (held) {
@@ -209,7 +209,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,
       actionId = randomUUID();
-    if (query.branchId && !policy.draft)
+    if (query.draftId && !policy.draft)
       return {
         status: "cant_undo_elsewhere",
         message: `The draft is unavailable. Read ${document.uri} and make a new replace in your current destination.`,
@@ -269,19 +269,19 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               editScopeId: query.responseIdentity?.editScopeId ?? null,
               actor: "agent",
               wId: null,
-              origin: query.branchId
+              origin: query.draftId
                 ? {
                     kind: "pending",
-                    branchId: query.branchId,
-                    generation: policy.draft?.branch.generation ?? 0,
+                    draftId: query.draftId,
+                    generation: policy.draft?.documentDraft.generation ?? 0,
                     rowId: 0,
                   }
                 : { kind: "live", seq: 0 },
-              placement: query.branchId
+              placement: query.draftId
                 ? {
                     kind: "pending",
-                    branchId: query.branchId,
-                    generation: policy.draft?.branch.generation ?? 0,
+                    draftId: query.draftId,
+                    generation: policy.draft?.documentDraft.generation ?? 0,
                     rowId: 0,
                   }
                 : { kind: "live", seq: 0 },
@@ -415,7 +415,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             plans: [
               {
                 document,
-                branchId: query.branchId,
+                draftId: query.draftId,
                 computed,
                 consumes,
                 skips: [],
@@ -490,7 +490,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const displayInspection = (part: StoredInversePart) =>
           policy.inspect(
             part.placement.kind === "pending"
-              ? (document.drafts.get(part.placement.branchId)?.doc ?? policy.view)
+              ? (document.drafts.get(part.placement.draftId)?.doc ?? policy.view)
               : document.live,
           );
         const displayParts = new Map<Inspection, StoredInversePart[]>();
@@ -573,7 +573,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: "success",
           actionId: randomUUID(),
           message: [
-            `your edits to ${document.uri}, newest first (version: ${policy.version(query.branchId)})`,
+            `your edits to ${document.uri}, newest first (version: ${policy.version(query.draftId)})`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),

@@ -1,6 +1,6 @@
 /**
  * Populated upgrade contract for 0044/0045 (and D62's 0046/0047 on top): the Work-branch foundation's data moves and
- * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
+ * online retry, and `main`'s pending draft creates arriving hidden with their branches' uses.
  * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037), the namespace
  * observation versions (0038/0039) and #713's edit ledger and dirty signals (0040/0041) run
  * over them first, as they do in a deploy; #713's edit rows are seeded after 0041.
@@ -15,9 +15,9 @@ import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import { afterEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../../../../tools/dev/lib/migration-runner.js";
+import { branchTreeCommands } from "./branch-tree-commands.js";
+import { branchTreeWorldOver, personalUserSource, type ScenarioWork } from "./branch-tree-seeds.js";
 import { useComposedRuntimes } from "./composed-runtime.js";
-import { draftTreeCommands } from "./draft-tree-commands.js";
-import { draftTreeWorldOver, personalUserSource, type ScenarioWork } from "./draft-tree-seeds.js";
 import {
   createScratchDatabase,
   journalIndex,
@@ -48,7 +48,7 @@ async function seedMainShape(sql: postgres.Sql) {
   const bytes = Buffer.from([0, 0]);
   await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'foundation-upgrade', 'foundation@example.test')`;
   await sql`INSERT INTO projects (id, user_id, name, slug) VALUES (${id(2)}, ${id(1)}, 'Upgrade', 'upgrade')`;
-  // Work 3 drafts; Work 4 was deleted with its draft branch closed; Work 5 never drafted.
+  // Work 3 drafts; Work 4 was deleted with its document draft closed; Work 5 never drafted.
   await sql`INSERT INTO works (id, project_id, created_by_user_id, name, slug, deleted_at) VALUES
     (${id(3)}, ${id(2)}, ${id(1)}, 'Drafting', 'drafting', NULL),
     (${id(4)}, ${id(2)}, ${id(1)}, 'Deleted', 'deleted', '2026-09-01T00:00:00Z'),
@@ -80,8 +80,8 @@ async function seedMainShape(sql: postgres.Sql) {
 }
 
 /**
- * #713's rows on a Work draft branch (pending edits and parts, dirty signals), in the shape
- * 0040/0041 leave: parts on branches the foundation deletes retire, the rest keep their branch.
+ * #713's rows on a Work document draft (pending edits and parts, dirty signals), in the shape
+ * 0040/0041 leave: parts on drafts the foundation deletes retire, the rest keep their draft.
  */
 async function seedEditLedger(sql: postgres.Sql) {
   const bytes = Buffer.from([0, 0]);
@@ -91,13 +91,13 @@ async function seedEditLedger(sql: postgres.Sql) {
     ["orphan", id(12), "orphan-peer"],
     ["manifest", id(13), "manifest-draft"],
   ] as const;
-  for (const [index, [name, documentId, branchId]] of parts.entries()) {
+  for (const [index, [name, documentId, draftId]] of parts.entries()) {
     const edit = id(60 + index);
     await sql`INSERT INTO document_edits (id, document_id, thread_id, actor, kind)
       VALUES (${edit}, ${documentId}, ${id(20)}, 'agent', 'write')`;
     await sql`INSERT INTO document_edit_parts (edit_id, ordinal, update, effect, frontier, origin, placement)
       VALUES (${edit}, 0, ${bytes}, ${sql.json({ name })}, ${sql.json([])}, ${sql.json({ kind: "pending" })},
-        ${sql.json({ kind: "pending", branchId, generation: 1 })})`;
+        ${sql.json({ kind: "pending", branchId: draftId, generation: 1 })})`;
   }
   await sql`INSERT INTO document_edit_parts (edit_id, ordinal, update, effect, frontier, origin, placement)
     VALUES (${id(60)}, 1, ${bytes}, ${sql.json({ name: "live-done" })}, ${sql.json([])}, ${sql.json({ kind: "pending" })},
@@ -243,7 +243,7 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         { thread_id: id(20), turn_id: null },
         { thread_id: id(20), turn_id: null },
       ]);
-      // Parts pending on a branch the migration deleted (orphan peer, manifest) retire; the rest stay.
+      // Parts pending on a draft the migration deleted (orphan peer, manifest) retire; the rest stay.
       expect(
         await target`SELECT edit_id, ordinal, placement FROM document_edit_parts ORDER BY edit_id, ordinal`,
       ).toEqual([
@@ -345,20 +345,21 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         expect(batch.abandoned_at).toBeNull();
       }
 
-      // One draft per Work with branches; a peer takes its upstream's draft; an ownerless peer goes.
-      const drafts = await target`
+      // One branch per Work with drafts; a peer takes its upstream's branch; an ownerless peer goes.
+      const branches = await target`
         SELECT id, origin_work_id, created_by, status, project_id FROM drafts ORDER BY origin_work_id`;
-      expect(drafts.map(({ id: _, ...draft }) => draft)).toEqual([
+      expect(branches.map(({ id: _, ...branch }) => branch)).toEqual([
         { origin_work_id: id(3), created_by: id(1), status: "active", project_id: id(2) },
         { origin_work_id: id(4), created_by: id(1), status: "active", project_id: id(2) },
       ]);
-      const draftOf = (work: string) => drafts.find((draft) => draft.origin_work_id === work)?.id;
+      const branchOf = (work: string) =>
+        branches.find((branch) => branch.origin_work_id === work)?.id;
       expect(await target`SELECT id, draft_id, status FROM document_branches ORDER BY id`).toEqual([
-        { id: "draft-closed", draft_id: draftOf(id(3)), status: "closed" },
-        // Soft delete no longer closes draft branches, so the one a Work delete closed reopens.
-        { id: "draft-deleted-work", draft_id: draftOf(id(4)), status: "active" },
-        { id: "draft-live", draft_id: draftOf(id(3)), status: "active" },
-        { id: "peer", draft_id: draftOf(id(3)), status: "active" },
+        { id: "draft-closed", draft_id: branchOf(id(3)), status: "closed" },
+        // Soft delete no longer closes document drafts, so the one a Work delete closed reopens.
+        { id: "draft-deleted-work", draft_id: branchOf(id(4)), status: "active" },
+        { id: "draft-live", draft_id: branchOf(id(3)), status: "active" },
+        { id: "peer", draft_id: branchOf(id(3)), status: "active" },
       ]);
       expect(
         await target`SELECT column_name FROM information_schema.columns
@@ -488,7 +489,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     return db;
   });
 
-  it("stay hidden, listed new in each draft that uses them, revealed and tombstoned by id", async () => {
+  it("stay hidden, listed new in each branch that uses them, revealed and tombstoned by id", async () => {
     scratch = await createScratchDatabase(databaseUrl ?? "", "pending_create_upgrade");
     const target = scratch.sql;
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-pending-create-upgrade-"));
@@ -518,8 +519,8 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
         user: personal.sourceId,
       },
     };
-    const world = draftTreeWorldOver(db, project, [id(3) as WorkId, id(4) as WorkId]);
-    const s = { ...world, ...draftTreeCommands(world, () => ({ runtime, runtimes })) };
+    const world = branchTreeWorldOver(db, project, [id(3) as WorkId, id(4) as WorkId]);
+    const s = { ...world, ...branchTreeCommands(world, () => ({ runtime, runtimes })) };
     const work = (n: number, thread: number, turn: number, slug: string): ScenarioWork => ({
       id: id(n) as WorkId,
       slug,
@@ -537,11 +538,11 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
         await target`SELECT deleted_at IS NOT NULL AS gone FROM documents WHERE id = ${documentId}`
       )[0]?.gone;
 
-    // Each draft's create is identity only; the name migration ran first, so the hidden row
+    // Each branch's create is identity only; the name migration ran first, so the hidden row
     // holds the canonical place.
-    expect(await target`SELECT node_id FROM draft_tree_changes ORDER BY node_id, draft_id`).toEqual(
-      [{ node_id: created }, { node_id: shared }, { node_id: shared }],
-    );
+    expect(
+      await target`SELECT node_id FROM branch_tree_changes ORDER BY node_id, branch_id`,
+    ).toEqual([{ node_id: created }, { node_id: shared }, { node_id: shared }]);
     expect(
       await target`SELECT id, name, extension FROM documents WHERE id IN (${created}, ${shared}) ORDER BY id`,
     ).toEqual(
@@ -556,12 +557,12 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     expect(await live.idAt("shared.md")).toBeNull();
     expect(await live.idAt("gone.md")).toBeNull();
     expect(await live.idAt("kept.md")).toBe(kept);
-    // Each draft that used it lists it new; one `main` discarded is tombstoned.
+    // Each branch that used it lists it new; one `main` discarded is tombstoned.
     expect((await isNew(alpha)).sort()).toEqual([created, shared].sort());
     expect(await isNew(beta)).toEqual([shared]);
     expect(await tombstoned(discarded)).toBe(true);
-    // A Work whose only branch was the manifest's has no draft.
-    expect(await s.draftStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
+    // A Work whose only draft was the manifest's has no branch.
+    expect(await s.branchStatuses(work(5, 20, 22, "gamma"))).toEqual([]);
 
     // A live create at any prose spelling of its path reveals the same identity.
     expect(await s.writer.create("new.md")).toMatchObject({
@@ -570,7 +571,7 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
     });
     expect(await live.idAt("new.md")).toBe(created);
 
-    // The last use's Discard tombstones it; an earlier one leaves it to the other draft.
+    // The last use's Discard tombstones it; an earlier one leaves it to the other branch.
     await s.discard(alpha, [shared]);
     expect(await tombstoned(shared)).toBe(false);
     expect(await isNew(beta)).toEqual([shared]);

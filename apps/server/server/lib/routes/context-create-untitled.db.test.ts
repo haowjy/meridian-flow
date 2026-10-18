@@ -99,11 +99,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let failNextCatalogWrite = true;
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
         catalogMutations: {
           async refreshSources(ids, invalidated) {
             if (failNextCatalogWrite) {
@@ -148,11 +148,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");

@@ -1,19 +1,19 @@
 /** One project lifecycle owner settles remote dispositions for every Work with draft-only presentations. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { DraftRef } from "@/client/query/draft-command-record";
+import type { DraftRef } from "@/client/query/branch-command-record";
 import {
-  currentDraftCommandRecords,
-  draftCommandFailure,
-  pendingDraftCommand,
-  useDraftCommandRecords,
-} from "@/client/query/draft-command-record";
+  branchCommandFailure,
+  currentBranchCommandRecords,
+  pendingBranchCommand,
+  useBranchCommandRecords,
+} from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
@@ -70,8 +70,8 @@ function WorkSettlement({
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
-  const drafts = useWorkDrafts(projectId, workId);
-  const records = useDraftCommandRecords();
+  const drafts = useWorkBranchDrafts(projectId, workId);
+  const records = useBranchCommandRecords();
   const projection = useObservedResourceProjection(resources, projectId);
   // A draft-only tab whose draft left the active list was disposed of
   // elsewhere. The list cannot say how, so the catalog decides: a document
@@ -81,8 +81,8 @@ function WorkSettlement({
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
       draft.workId === workId &&
-      !pendingDraftCommand(currentDraftCommandRecords(), draft) &&
-      !draftCommandFailure(currentDraftCommandRecords(), draft) &&
+      !pendingBranchCommand(currentBranchCommandRecords(), draft) &&
+      !branchCommandFailure(currentBranchCommandRecords(), draft) &&
       !activeDrafts.some((row) => row.itemKey === draft.itemKey);
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
@@ -109,7 +109,7 @@ function WorkSettlement({
           queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
           const currentDrafts =
             queryClient.getQueryData<ThreadDraftListItem[]>(
-              projectQueryKeys.workDrafts(projectId, workId),
+              projectQueryKeys.workBranchDrafts(projectId, workId),
             ) ?? [];
           for (const draft of lifecycle.presentations(projectId)) {
             if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)

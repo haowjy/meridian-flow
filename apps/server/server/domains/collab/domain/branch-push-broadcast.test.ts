@@ -7,7 +7,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
-import { testBranchRow } from "../test-support/memory-branch-store.js";
+import { testDraftRow } from "../test-support/memory-draft-store.js";
 import type {
   PendingSettlementBatch,
   PreparedPushCommit,
@@ -15,7 +15,7 @@ import type {
   PushLineageRow,
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
-import type { BranchSnapshot } from "./branch-store.js";
+import type { DraftSnapshot } from "./draft-store.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
@@ -65,8 +65,8 @@ function projection(input: {
   };
 }
 
-function branch(documentId: DocumentId, _doc: Y.Doc): BranchSnapshot {
-  return testBranchRow({ branchId: `branch-${documentId}`, documentId, workId: WORK_ID });
+function documentDraft(documentId: DocumentId, _doc: Y.Doc): DraftSnapshot {
+  return testDraftRow({ draftId: `draft-${documentId}`, documentId, workId: WORK_ID });
 }
 
 function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): PreparedPushCommit {
@@ -80,7 +80,7 @@ function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): P
     changes: [],
   };
   return {
-    branch: branch(documentId, liveDoc),
+    documentDraft: documentDraft(documentId, liveDoc),
     journalRows: [],
     pushUpdate,
     idempotencyKey: `push-${pushId}`,
@@ -93,9 +93,9 @@ function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): P
 function pushRow(prepared: PreparedPushCommit, id: number): PushLineageRow {
   return {
     id,
-    branchId: prepared.branch.branchId,
-    branchGeneration: prepared.branch.generation,
-    documentId: prepared.branch.documentId,
+    draftId: prepared.documentDraft.draftId,
+    draftGeneration: prepared.documentDraft.generation,
+    documentId: prepared.documentDraft.documentId,
     journalIds: [],
     upstreamUpdateSeq: null,
     idempotencyKey: prepared.idempotencyKey,

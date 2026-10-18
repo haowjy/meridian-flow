@@ -7,20 +7,20 @@
 import { AsyncResource } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import type { DraftId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import * as Y from "yjs";
-import { createDrizzleWorkDraftPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
+import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
+import { createDrizzleBranchStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
 import {
   type AppendCommitted,
-  createDrizzleBranchStore,
-} from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
-import { createDrizzleDraftStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-drafts.ts";
+  createDrizzleDraftStore,
+} from "../../../../apps/server/server/domains/collab/adapters/drizzle-drafts.ts";
 import { createDrizzleCollabPersistence } from "../../../../apps/server/server/domains/collab/adapters/drizzle-journal.ts";
-import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
-import { materializeBranchRead } from "../../../../apps/server/server/domains/collab/domain/branch-store.ts";
+import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createWorkProjectionMutation } from "../../../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { runInDrizzleSavepoint } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
@@ -90,27 +90,27 @@ export async function openHarness(url: string) {
   await raw`insert into projects(id,user_id,name,slug) values (${ids.project},${ids.user},'probe','probe')`;
   await raw`insert into context_sources(id,project_id,name,slug,scope,is_primary) values (${ids.source},${ids.project},'probe','probe','project',true)`;
 
-  const pending = createDrizzleWorkDraftPendingStore(db);
+  const pending = createDrizzleWorkBranchPendingStore(db);
   const projection = createWorkProjectionMutation({
     db,
     availability: { advance: async () => "0" },
     catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
     pendingCounts: pending,
   });
-  const drafts = createDrizzleDraftStore(db);
+  const branches = createDrizzleBranchStore(db);
   const persistence = createDrizzleCollabPersistence(db);
   /** Every committed append's sequence-point timing, in commit order. */
   const appends: AppendCommitted[] = [];
-  const store = createDrizzleBranchStore(db, {
+  const store = createDrizzleDraftStore(db, {
     workProjection: projection,
-    drafts,
+    branches,
     live: persistence,
     onAppendSequenced: (detail) => appends.push(detail),
   });
   const attemptScope = <T,>(operation: () => Promise<T>) => runInDrizzleSavepoint(db, operation);
-  const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store, attemptScope });
+  const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store, attemptScope });
   // The real Work lifecycle writer. Its file-access and Scratch ports are inert: the probes
-  // observe the Work row, its branch fences and the locks, not access or Scratch notices.
+  // observe the Work row, its draft fences and the locks, not access or Scratch notices.
   const works = createDrizzleWorkRepository({
     db,
     projectionMutation: projection,
@@ -125,7 +125,7 @@ export async function openHarness(url: string) {
     raw,
     ids,
     projection,
-    drafts,
+    branches,
     persistence,
     store,
     appends,
@@ -133,19 +133,19 @@ export async function openHarness(url: string) {
     coordinator,
     works,
 
-    /** A fresh Work with its active draft, and a thread bound to it. */
+    /** A fresh Work with its active branch, and a thread bound to it. */
     async seedWork(label: string) {
       const workId = randomUUID() as WorkId;
-      const draftId = randomUUID() as DraftId;
+      const branchId = randomUUID() as BranchId;
       const threadId = randomUUID();
       const turnId = randomUUID();
       const slug = `${label}-${workId.slice(0, 8)}`;
       await raw`insert into works(id,project_id,created_by_user_id,name,slug) values (${workId},${ids.project},${ids.user},${label},${slug})`;
-      await raw`insert into drafts(id,project_id,origin_work_id,created_by) values (${draftId},${ids.project},${workId},${ids.user})`;
+      await raw`insert into branches(id,project_id,origin_work_id,created_by) values (${branchId},${ids.project},${workId},${ids.user})`;
       await raw`insert into threads(id,root_thread_id,project_id,created_by_user_id,title,kind,status,ai_write_mode) values (${threadId},${threadId},${ids.project},${ids.user},${label},'primary','idle','draft')`;
       await raw`insert into turns(id,thread_id,position,role,origin,status) values (${turnId},${threadId},1,'assistant','assistant','complete')`;
       await raw`insert into thread_works(thread_id,work_id,project_id,is_primary) values (${threadId},${workId},${ids.project},true)`;
-      return { workId, draftId, threadId, turnId };
+      return { workId, branchId, threadId, turnId };
     },
 
     /** A live document holding one paragraph of `text`; the caller owns the returned doc. */
@@ -164,17 +164,17 @@ export async function openHarness(url: string) {
       return Boolean(row?.archived);
     },
 
-    /** The branch's durable state through the production one-statement read. */
-    async readBranch(branchId: string) {
-      const read = await store.readBranchAt(branchId);
-      if (!read) throw new Error(`Branch ${branchId} is missing`);
-      const doc = materializeBranchRead(read);
+    /** The draft's durable state through the production one-statement read. */
+    async readDraft(draftId: string) {
+      const read = await store.readDraftAt(draftId);
+      if (!read) throw new Error(`Draft ${draftId} is missing`);
+      const doc = materializeDraftRead(read);
       try {
         return {
-          lifecycle: read.branch.lifecycle,
-          revision: read.branch.revision,
-          checkpointRevision: read.branch.checkpointRevision,
-          generation: read.branch.generation,
+          lifecycle: read.documentDraft.lifecycle,
+          revision: read.documentDraft.revision,
+          checkpointRevision: read.documentDraft.checkpointRevision,
+          generation: read.documentDraft.generation,
           tail: read.tail.length,
           text: doc.getXmlFragment("prosemirror").toString(),
         };

@@ -82,7 +82,7 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
-    // The Works badge: documents the Work's active draft changes, as the collab pending
+    // The Works badge: documents the Work's active branch changes, as the collab pending
     // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
     // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
@@ -227,7 +227,7 @@ export const folders = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
-    /** A draft's new folder: in no live view until placed (read only through the tree view). */
+    /** A branch's new folder: in no live view until placed (read only through the tree view). */
     hidden: boolean("hidden").notNull().default(false),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
@@ -284,7 +284,7 @@ export const documents = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
-    /** A draft's new document: in no live view until placed (read only through the tree view). */
+    /** A branch's new document: in no live view until placed (read only through the tree view). */
     hidden: boolean("hidden").notNull().default(false),
   },
   (table) => [
@@ -324,7 +324,7 @@ export const documents = pgTable(
 );
 
 /**
- * A device's create that joined a draft's document: `fromDocumentId` is the id the device
+ * A device's create that joined a branch's document: `fromDocumentId` is the id the device
  * minted and never got a `documents` row, now meaning `toDocumentId`. No FK on the
  * source id, which names no row; deleting the target drops the forward with it.
  */

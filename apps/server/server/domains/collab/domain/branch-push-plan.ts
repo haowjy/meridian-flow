@@ -10,9 +10,9 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import type { BranchJournalRow } from "./branch-journal.js";
 import type { ApplyBlockChange } from "./branch-push-contracts.js";
 import { documentDifference } from "./document-difference.js";
+import type { DraftJournalRow } from "./draft-journal.js";
 
 export class BranchPushEffectVerificationError extends Error {
   constructor(
@@ -29,7 +29,7 @@ export class BranchPushEffectVerificationError extends Error {
 
 export function assertRowsIntegrated(
   doc: Y.Doc,
-  rows: readonly BranchJournalRow[],
+  rows: readonly DraftJournalRow[],
   operation: string,
 ): void {
   const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
@@ -49,8 +49,8 @@ export function assertRowsIntegrated(
   }
 }
 
-export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
-  return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
+export function wholeDraftPushUpdate(input: { draftDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
+  return Y.encodeStateAsUpdate(input.draftDoc, Y.encodeStateVector(input.liveDoc));
 }
 
 export function applyBlockChanges(input: {
@@ -99,25 +99,25 @@ export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<
 }
 
 export function stablePushIdempotencyKey(input: {
-  branchId: string;
+  draftId: string;
   generation: number;
   journalIds: number[];
 }): string {
   return createHash("sha256")
-    .update(input.branchId)
+    .update(input.draftId)
     .update("\0")
     .update(String(input.generation))
     .update("\0")
     .update([...input.journalIds].sort((a, b) => a - b).join(","))
     .digest("hex");
 }
-export class BranchPeerIntegrationError extends Error {
+export class DraftPeerIntegrationError extends Error {
   constructor(
     readonly operation: string,
     readonly journalIds: readonly number[],
   ) {
     super(`${operation} left pending Yjs dependencies for journal rows ${journalIds.join(",")}`);
-    this.name = "BranchPeerIntegrationError";
+    this.name = "DraftPeerIntegrationError";
   }
 }
 
@@ -128,7 +128,7 @@ export function assertNoPendingIntegration(
 ): void {
   const { pendingStructs, pendingDs } = doc.store;
   if (hasPending(pendingStructs) || hasPending(pendingDs)) {
-    throw new BranchPeerIntegrationError(operation, journalIds);
+    throw new DraftPeerIntegrationError(operation, journalIds);
   }
 }
 

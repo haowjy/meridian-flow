@@ -1,12 +1,12 @@
 /** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import {
   type DraftRef,
   useChangeCommandRecords,
   wholeDraftDisposition,
   wholeDraftPending,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { usePresentedDraftReview } from "./DraftReviewProvider";
 import {
@@ -17,7 +17,7 @@ import {
 } from "./draft-changes";
 import { type ReviewChange, reviewChangesOfPreview, wholeItemChange } from "./review-changes";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
-import type { WorkDraftCommands } from "./useWorkDraftCommands";
+import type { WorkBranchCommands } from "./useWorkBranchCommands";
 
 const EMPTY: readonly ReviewChange[] = [];
 
@@ -29,7 +29,7 @@ export function useDraftView(
     enabled = true,
     item,
   }: {
-    controller: Pick<WorkDraftCommands, "commandChange" | "changesLocked">;
+    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked">;
     enabled?: boolean;
     item?: ThreadDraftListItem;
   },
@@ -45,14 +45,14 @@ export function useDraftView(
     open?.documentId === draft.documentId &&
     open.itemKey === draft.itemKey;
   const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const branchless = item?.branchGeneration === null;
-  const entry = useDraftPreviews(enabled && !sharing && !branchless ? [draft] : [], {
+  const withoutDocumentDraft = item?.draftGeneration === null;
+  const entry = useDraftPreviews(enabled && !sharing && !withoutDocumentDraft ? [draft] : [], {
     openReview: open,
   })[0];
   const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
   const { items, hiding } = useChangeItems(
     draft,
-    branchless && item && enabled
+    withoutDocumentDraft && item && enabled
       ? wholeDraftDisposition(records, draft, undefined, item) === null
         ? [wholeItemChange(item)]
         : EMPTY
@@ -61,7 +61,7 @@ export function useDraftView(
         : EMPTY,
   );
   const status =
-    branchless && enabled
+    withoutDocumentDraft && enabled
       ? "ready"
       : !entry
         ? "idle"
@@ -86,7 +86,7 @@ export function useDraftView(
         itemKey: draft.itemKey,
         status,
         items: status === "ready" ? items : [],
-        unlisted: !branchless && status === "ready" && items.length === 0 && !hiding,
+        unlisted: !withoutDocumentDraft && status === "ready" && items.length === 0 && !hiding,
         ...(entry?.status === "error" ? { retry: entry.retry } : {}),
       };
   return {

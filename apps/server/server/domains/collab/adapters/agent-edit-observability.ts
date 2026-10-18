@@ -12,54 +12,54 @@ import {
   errorMessageOf,
   unknownToEventPayload,
 } from "../../observability/index.js";
-import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
-import type { BranchProjectionDiagnostics } from "../domain/branch-projection.js";
-import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
-import type { WriterFrameDiagnostics } from "../domain/branch-writer-frames.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
-import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
+import type { DraftAgentEditDiagnostics } from "../domain/draft-agent-edit.js";
+import type { DraftAheadDiagnostics } from "../domain/draft-ahead-registration.js";
+import type { DraftProjectionDiagnostics } from "../domain/draft-projection.js";
+import type { DraftPullDiagnostics } from "../domain/draft-pulls.js";
+import type { WriterFrameDiagnostics } from "../domain/draft-writer-frames.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
-import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
-import type { AppendCommitted, RewriteCommitted } from "./drizzle-branches.js";
+import type { DraftReviewDiagnostics } from "../domain/work-branch-review-service.js";
+import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
 
 /** The effect projection job's failures and blocked legacy baselines. */
-export function createBranchProjectionDiagnostics(
+export function createDraftProjectionDiagnostics(
   eventSink?: EventSink,
-): BranchProjectionDiagnostics {
+): DraftProjectionDiagnostics {
   return {
-    projectionFailed({ branchId, cause }) {
+    projectionFailed({ draftId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
-        source: "collab.branch",
+        source: "collab.draft",
         name: "projection.failed",
-        correlation: { branchId },
+        correlation: { draftId },
         payload: unknownToEventPayload(cause),
       });
     },
-    projectionBaselineBlocked({ branchId, documentId }) {
+    projectionBaselineBlocked({ draftId, documentId }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "warn",
-        source: "collab.branch",
+        source: "collab.draft",
         name: "projection_baseline_blocked",
-        correlation: { branchId, documentId },
+        correlation: { draftId, documentId },
         payload: {},
       });
     },
   };
 }
 
-export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
+export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiagnostics {
   return {
     backgroundFailed({ documentId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
-        source: "collab.branch_pull",
+        source: "collab.draft_pull",
         name: "background.failed",
         correlation: { documentId },
         payload: unknownToEventPayload(cause),
@@ -69,40 +69,40 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
 }
 
 /**
- * The branch coordinator's events: a background fold that failed, a room found behind its
- * branch and reconciled, and an update that arrived before its prefix.
+ * The draft coordinator's events: a background fold that failed, a room found behind its
+ * draft and reconciled, and an update that arrived before its prefix.
  */
 export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
   return {
-    appendPrefixMissing({ branchId, clocks }) {
+    appendPrefixMissing({ draftId, clocks }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "warn",
-        source: "collab.branch",
+        source: "collab.draft",
         name: "append_prefix_missing",
-        correlation: { branchId },
+        correlation: { draftId },
         payload: { clocks: clocks.slice(0, 16) },
       });
     },
-    roomReconciled({ branchId, generation, trigger, ...payload }) {
+    roomReconciled({ draftId, generation, trigger, ...payload }) {
       if (!eventSink) return;
       // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
       // registering behind a commit that landed during its load is the expected race.
       emitEvent(eventSink, {
         level: trigger === "frame" ? "warn" : "info",
-        source: "collab.branch",
+        source: "collab.draft",
         name: "room_reconciled",
-        correlation: { branchId, branchGeneration: generation },
+        correlation: { draftId, draftGeneration: generation },
         payload: { trigger, ...payload },
       });
     },
-    compactionFailed({ branchId, cause }) {
+    compactionFailed({ draftId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
-        source: "collab.branch",
+        source: "collab.draft",
         name: "compaction.failed",
-        correlation: { branchId },
+        correlation: { draftId },
         payload: unknownToEventPayload(cause),
       });
     },
@@ -110,47 +110,45 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
 }
 
 /**
- * An append's sequence point: how long its `UPDATE` waited for the branch row and how long it
+ * An append's sequence point: how long its `UPDATE` waited for the draft row and how long it
  * held the row to `COMMIT`, per keystroke, so at debug level.
  */
 export function createAppendCommittedEvent(
   eventSink: EventSink,
 ): (detail: AppendCommitted) => void {
-  return ({ branchId, ...payload }) =>
+  return ({ draftId, ...payload }) =>
     emitEvent(eventSink, {
       level: "debug",
-      source: "collab.branch",
+      source: "collab.draft",
       name: "append_committed",
-      correlation: { branchId },
+      correlation: { draftId },
       payload,
     });
 }
 
-/** P2's commit bound: how long a committed rewrite held its branch row, and the tail it read. */
+/** P2's commit bound: how long a committed rewrite held its draft row, and the tail it read. */
 export function createRewriteCommittedEvent(
   eventSink: EventSink,
 ): (detail: RewriteCommitted) => void {
-  return ({ branchId, ...payload }) =>
+  return ({ draftId, ...payload }) =>
     emitEvent(eventSink, {
       level: "info",
-      source: "collab.branch",
+      source: "collab.draft",
       name: "rewrite_committed",
-      correlation: { branchId },
+      correlation: { draftId },
       payload,
     });
 }
 
-export function createDraftBranchAheadDiagnostics(
-  eventSink?: EventSink,
-): DraftBranchAheadDiagnostics {
+export function createDraftAheadDiagnostics(eventSink?: EventSink): DraftAheadDiagnostics {
   return {
-    registrationFailed({ branchId, cause }) {
+    registrationFailed({ draftId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "warn",
         source: "collab.draft_links",
         name: "registration.failed",
-        correlation: { branchId },
+        correlation: { draftId },
         payload: unknownToEventPayload(cause),
       });
     },
@@ -180,15 +178,13 @@ export function createResponseTransactionDiagnostics(
   };
 }
 
-export function createBranchAgentEditDiagnostics(
-  eventSink?: EventSink,
-): BranchAgentEditDiagnostics {
+export function createDraftAgentEditDiagnostics(eventSink?: EventSink): DraftAgentEditDiagnostics {
   return {
     stagedWriteNoop(payload) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
-        source: "collab.branch_agent_edit",
+        source: "collab.draft_agent_edit",
         name: "staged_write.no_durable_journal_row",
         payload,
       });
@@ -197,7 +193,7 @@ export function createBranchAgentEditDiagnostics(
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "warn",
-        source: "collab.branch_pending_journal",
+        source: "collab.draft_pending_journal",
         name: "mutation_less_entry_dropped",
         payload,
       });
@@ -210,9 +206,9 @@ export function createBranchAgentEditDiagnostics(
         name: "reply_pin.identity_mismatch",
         correlation: {
           documentId: payload.documentId,
-          draftId: payload.pin.draftId,
-          peerBranchId: payload.pin.peerBranchId,
-          upstreamBranchId: payload.pin.upstreamBranchId,
+          branchId: payload.pin.branchId,
+          peerDraftId: payload.pin.peerDraftId,
+          upstreamDraftId: payload.pin.upstreamDraftId,
         },
         payload: { threadId: payload.threadId ?? null, refusal: "integration" },
       });

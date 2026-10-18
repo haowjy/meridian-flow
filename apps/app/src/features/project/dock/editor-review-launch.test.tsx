@@ -43,7 +43,7 @@ it.each([
           const target: AiDraftLaunchTarget = {
             workId: "work-a",
             documentId: "document-a",
-            itemKey: "branch-a",
+            itemKey: "draft-a",
             contextLocation: { scheme, path: "folder/chapter.md" },
             isNew,
           };
@@ -68,7 +68,7 @@ it.each([
           if (isNew)
             expect(tabs[0]).toMatchObject({
               reviews: {
-                "work-a": { itemKey: "branch-a", tabInstanceToken: expect.any(String) },
+                "work-a": { itemKey: "draft-a", tabInstanceToken: expect.any(String) },
               },
             });
         }

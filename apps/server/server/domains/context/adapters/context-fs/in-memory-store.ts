@@ -379,7 +379,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async listHiddenNames(): Promise<string[]> {
-    // In memory nothing is ever hidden: drafts and the tree view are Postgres's.
+    // In memory nothing is ever hidden: branches and the tree view are Postgres's.
     return [];
   }
 

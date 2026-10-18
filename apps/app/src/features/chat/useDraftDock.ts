@@ -2,14 +2,14 @@
 import { t } from "@lingui/core/macro";
 import { useCallback, useMemo, useState } from "react";
 import {
+  type BranchCommandFailure,
+  branchCommandFailure,
   type ChangeCommandState,
   changeCommandState,
-  type DraftCommandFailure,
-  draftCommandFailure,
   useChangeCommandRecords,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
-import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import {
   type DraftImagePreviewTarget,
@@ -18,7 +18,7 @@ import {
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
-import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
+import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
 
@@ -27,11 +27,11 @@ export type DraftDockModel = ReturnType<typeof useDraftDock>;
 /** Failures held on a file: selective commands and the draft itself (including Review launches). */
 export type DockFileFailure =
   | { kind: "changes"; failure: Extract<ChangeCommandState, { phase: "failed" }> }
-  | { kind: "draft"; failure: DraftCommandFailure };
+  | { kind: "draft"; failure: BranchCommandFailure };
 
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
-  const controller = useBoundWorkDraftCommands();
-  const listedFiles = useWorkDrafts(controller.projectId, controller.workId).files ?? [];
+  const controller = useBoundWorkBranchCommands();
+  const listedFiles = useWorkBranchDrafts(controller.projectId, controller.workId).files ?? [];
   const presented = usePresentedDraftReview().controller;
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -49,7 +49,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const targets = useMemo(
     () =>
       candidates
-        .filter((row) => row.draft.branchGeneration !== null)
+        .filter((row) => row.draft.draftGeneration !== null)
         .map((row) => ({
           projectId,
           workId,
@@ -82,7 +82,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
       // A draft-only picture has no review room: it opens as a preview.
-      if (file.row.draft.branchGeneration === null) {
+      if (file.row.draft.draftGeneration === null) {
         if (isDraftImagePath(file.row.contextLocation?.path))
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;
@@ -115,7 +115,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
       itemKey: file.row.draft.itemKey,
     };
     const state = changeCommandState(records, ref, selectionOf(file.changes));
-    const held = draftCommandFailure(records.drafts, ref);
+    const held = branchCommandFailure(records.drafts, ref);
     return [
       ...(state?.phase === "failed" ? [{ kind: "changes" as const, failure: state }] : []),
       ...(held ? [{ kind: "draft" as const, failure: held }] : []),

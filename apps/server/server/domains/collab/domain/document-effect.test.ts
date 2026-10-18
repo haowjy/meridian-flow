@@ -10,13 +10,13 @@ import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { applyBlockChanges } from "./branch-push-plan.js";
-import {
-  journalAttributionByChangedBlock,
-  preparedTrailChanges,
-} from "./branch-trail-projection.js";
 import { documentEffectsEqual } from "./document-content.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
+import {
+  journalAttributionByChangedBlock,
+  preparedTrailChanges,
+} from "./draft-trail-projection.js";
 
 it.each([
   "marks",
@@ -177,7 +177,7 @@ function verifyRichChange(kind: string, before: string, after: string) {
           .filter((row) => ids.has(row.id as never))
           .map((row) => ({
             id: row.id,
-            branchId: "draft",
+            draftId: "draft",
             generation: 1,
             wId: row.id,
             source: "agent" as const,
@@ -383,7 +383,7 @@ function verifyReplacementTrail(
     model,
     rows: rows.map((row) => ({
       ...row,
-      branchId: "draft",
+      draftId: "draft",
       generation: 1,
       wId: row.id,
       source: "agent" as const,

@@ -1,7 +1,7 @@
 /**
- * Decision D12: every structural branch write takes Work, then draft, then branch, the order
+ * Decision D12: every structural draft write takes Work, then branch, then draft, the order
  * Archive takes. A live→draft pull holds its Work row through its commit; an Archive that
- * starts meanwhile waits on that row rather than deadlocking against the branch row the pull
+ * starts meanwhile waits on that row rather than deadlocking against the draft row the pull
  * also holds, and then commits its lifecycle transition. The archived draft keeps pulling
  * (D23).
  */
@@ -22,14 +22,18 @@ export const d12PullBeforeArchive: Probe = {
   expected:
     "Archive waits on the Work row the paused pull holds; both commit; the next pull is `pulled`",
   async run(harness) {
-    const { workId, draftId } = await harness.seedWork("pull-archive");
+    const { workId, branchId } = await harness.seedWork("pull-archive");
     const { documentId, live } = await harness.seedDocument("pull-archive", "Base");
-    const branch = await harness.store.ensureDraftBranch({ documentId, draftId, liveDoc: live });
+    const documentDraft = await harness.store.ensureDocumentDraft({
+      documentId,
+      branchId,
+      liveDoc: live,
+    });
     appendToFirstParagraph(live, " pulled");
     const paused = gate();
     const resume = gate();
     let first = true;
-    const remove = setCollabHook("branch.rewrite.beforeCommit", async () => {
+    const remove = setCollabHook("draft.rewrite.beforeCommit", async () => {
       if (!first) return;
       first = false;
       paused.open();
@@ -37,7 +41,7 @@ export const d12PullBeforeArchive: Probe = {
     });
     try {
       const pull = settled(
-        harness.coordinator.pullFromDoc({ branchId: branch.branchId, upstream: live }),
+        harness.coordinator.pullFromDoc({ draftId: documentDraft.draftId, upstream: live }),
       );
       await paused.wait;
       const archive = settled(independently(() => harness.works.archive(workId)));
@@ -45,9 +49,9 @@ export const d12PullBeforeArchive: Probe = {
       resume.open();
       const pulled = await pull;
       const archived = await archive;
-      const after = await harness.readBranch(branch.branchId);
+      const after = await harness.readDraft(documentDraft.draftId);
       const next = await harness.coordinator.pullFromDoc({
-        branchId: branch.branchId,
+        draftId: documentDraft.draftId,
         upstream: live,
       });
       observe("archive held off", waiting);

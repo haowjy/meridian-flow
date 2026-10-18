@@ -1,17 +1,17 @@
 /** Pure preview and closed-set selection from one detached authority observation. */
 import { createHash } from "node:crypto";
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
-import { branchRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { ReviewSelectionCommand } from "../contracts.js";
-import { type BranchJournalRow, branchJournalRevision } from "./branch-journal.js";
 import { BranchPushCommitConflictError, DraftChangeRefusal } from "./branch-push-contracts.js";
-import type { BranchSnapshot } from "./branch-store.js";
 import { documentDifference } from "./document-difference.js";
 import { documentRevision } from "./document-revision.js";
+import { type DraftJournalRow, draftJournalRevision } from "./draft-journal.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { DraftReviewOperationInternal } from "./draft-review-types.js";
+import type { DraftSnapshot } from "./draft-store.js";
 import type { ReviewCut } from "./ports/review-cut.js";
 
 export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel) {
@@ -19,7 +19,7 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
   const draftDoc = createCollabYDoc({ gc: false });
   try {
     Y.applyUpdate(liveDoc, cut.live.state);
-    Y.applyUpdate(draftDoc, cut.branch.state);
+    Y.applyUpdate(draftDoc, cut.documentDraft.state);
     // Live moves ahead of the draft between debounced pulls. What the draft has not pulled
     // yet is not its change: review the draft as its next pull will leave it, or live's new
     // text reads as the draft's unattributed removal.
@@ -65,12 +65,12 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
     const draftRevisionToken = `d2:${createHash("sha256")
       .update(
         JSON.stringify([
-          cut.branch.branchId,
-          cut.branch.generation,
+          cut.documentDraft.draftId,
+          cut.documentDraft.generation,
           documentRevision(draftDoc, cut.links.draft),
           documentRevision(liveDoc, cut.links.live),
           cut.live.revision,
-          branchJournalRevision(cut.history),
+          draftJournalRevision(cut.history),
           // A reveal or a relocation of the item stales a held selection.
           cut.item.tokens.locationToken,
           cut.item.isNew,
@@ -81,10 +81,10 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
       diagnostics: review.diagnostics,
       preview: {
         status: "active" as const,
-        draftId: cut.item.draftId,
+        branchId: cut.item.branchId,
         itemKey: cut.item.itemKey,
-        branchGeneration: cut.branch.generation,
-        reviewRoomName: branchRoomName(cut.branch.branchId, cut.branch.generation),
+        draftGeneration: cut.documentDraft.generation,
+        reviewRoomName: draftRoomName(cut.documentDraft.draftId, cut.documentDraft.generation),
         isNewDocument: cut.item.isNew,
         item: cut.item,
         liveRevisionToken: cut.live.revision,
@@ -102,24 +102,24 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
 export function selectReviewCut(
   cut: ReviewCut,
   model: YProsemirrorDocumentModel,
-  snapshot: BranchSnapshot,
-  rows: readonly BranchJournalRow[],
+  snapshot: DraftSnapshot,
+  rows: readonly DraftJournalRow[],
   command: ReviewSelectionCommand,
 ) {
   // Selection must describe the exact basis the existing durability protocol
-  // will admit, not a newer independently captured branch or row-status view.
+  // will admit, not a newer independently captured draft or row-status view.
   if (
-    cut.branch.generation !== snapshot.generation ||
-    branchJournalRevision(reviewRows(cut)) !== branchJournalRevision(rows)
+    cut.documentDraft.generation !== snapshot.generation ||
+    draftJournalRevision(reviewRows(cut)) !== draftJournalRevision(rows)
   )
     throw command.kind === "apply"
       ? new DraftChangeRefusal("stale")
-      : new BranchPushCommitConflictError(snapshot.branchId);
+      : new BranchPushCommitConflictError(snapshot.draftId);
   // A revision is stricter than the content it fences: a metadata-only bump (a hold, an
   // effect refresh, a lifecycle freeze) moves it without moving the bytes. The attempt
   // recaptures both reads; the recaptured cut's tokens then refuse only a content move.
-  if (cut.branch.revision !== snapshot.revision)
-    throw new BranchPushCommitConflictError(snapshot.branchId);
+  if (cut.documentDraft.revision !== snapshot.revision)
+    throw new BranchPushCommitConflictError(snapshot.draftId);
   const { preview } = deriveReviewCut(cut, model);
   if (command.liveRevisionToken !== preview.liveRevisionToken)
     throw new DraftChangeRefusal("stale");
@@ -203,7 +203,7 @@ function reviewRows(cut: ReviewCut) {
 /** Closed rows replay their full rich effect without incorporating independent draft typing. */
 function classAdmissionTokens(
   liveDoc: Y.Doc,
-  rows: readonly BranchJournalRow[],
+  rows: readonly DraftJournalRow[],
   operations: readonly DraftReviewOperationInternal[],
   model: YProsemirrorDocumentModel,
 ): Map<string, string> {

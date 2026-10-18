@@ -8,19 +8,19 @@
  * gateway (`createYjsGateway`: Hocuspocus, `beforeSync` admission, the persistence service,
  * the coordinator and store) on the scratch database. No port, no dev stack. A "server" is one
  * gateway with its own coordinator; a restart replaces it. The server can be held at
- * `branch.append.beforeCommit` while the socket drops.
+ * `draft.append.beforeCommit` while the socket drops.
  *
  * (f) one tab typing at 50 ms, the socket dropped three times while the server holds that
  *     connection's last frame uncommitted, so every reconnect starts behind a causal gap;
  * (g) partial acknowledgement: five keys sent, three acknowledged, the socket dropped;
  * (h) a server restart mid-burst, typing on through it;
- * (i) a reload while offline: the unsent keys are gone (W42, no branch cache before PR B), the
+ * (i) a reload while offline: the unsent keys are gone (W42, no draft cache before PR B), the
  *     reloaded tab syncs and types;
  * (k) a raw y-protocols client sending a dependent Update before its SyncStep2: one `4207`,
  *     then its next connection's SyncStep2 lands.
  * Across (f)–(i): no `1008`, no `4207`, no terminal state, every key durable once and in order,
  * no clock journaled twice (released echoes write nothing), a receipt for every row, the outbox
- * empty after the last acknowledgement, and on every branch connection `step1, step2` before
+ * empty after the last acknowledgement, and on every draft connection `step1, step2` before
  * any update. First-acknowledgement latency after each open is reported.
  *
  * The transport layer's own cases (four `4207` closes keep the outbox, wire order, a socket
@@ -252,12 +252,12 @@ function openServer(harness: Harness, workId: string) {
   const binding = createHocuspocusBinding();
   const prefixMissing: unknown[] = [];
   const coordinator = phase4Coordinator(harness, {
-    onBranchUpdate: (update) => binding.deliverBranchUpdate(update),
+    onDraftUpdate: (update) => binding.deliverDraftUpdate(update),
     diagnostics: { appendPrefixMissing: (input) => prefixMissing.push(input) },
   });
   const persistence = createHocuspocusPersistenceService({
-    branchStore: harness.store,
-    branchCoordinator: coordinator,
+    draftStore: harness.store,
+    draftCoordinator: coordinator,
     journal: {} as never,
     hocuspocus: () => binding.current(),
     metaForOrigin: () => ({ origin: "system", seq: 0 }) as never,
@@ -265,7 +265,7 @@ function openServer(harness: Harness, workId: string) {
   });
   const grant = (target: unknown) => ({
     level: "edit",
-    facts: { target, ownerWork: null, draftWork: { id: workId, isNoWork: false } },
+    facts: { target, ownerWork: null, branchWork: { id: workId, isNoWork: false } },
   });
   const gateway = createYjsGateway({
     liveDocuments: { findById: async () => ({ kind: "missing" }) },
@@ -277,7 +277,7 @@ function openServer(harness: Harness, workId: string) {
     documentSync: {
       ...persistence,
       bindHocuspocus: binding.bind,
-      flushBranchLivePull: async () => {},
+      flushDraftLivePull: async () => {},
     },
     eventSink: { emit() {} },
   } as never);
@@ -324,9 +324,9 @@ type Server = ReturnType<typeof openServer>;
 /** A writing tab on `draft`, driven by a 50 ms typing loop the arms start and stop. */
 async function openWriter(
   client: { openTab(roomName: string): Tab },
-  draft: { branchId: string; generation: number },
+  draft: { draftId: string; generation: number },
 ) {
-  const tab = client.openTab(`branch:${draft.branchId}:gen:${draft.generation}`);
+  const tab = client.openTab(`draft:${draft.draftId}:gen:${draft.generation}`);
   await within(5_000, async () => tab.loaded(), Boolean).catch((cause) => {
     const socket = PipeSocket.all.at(-1);
     throw new Error(
@@ -373,7 +373,7 @@ async function openWriter(
 async function settleAndCheck(
   harness: Harness,
   label: string,
-  draft: { branchId: string },
+  draft: { draftId: string },
   writer: Awaited<ReturnType<typeof openWriter>>,
   sockets: PipeSocket[],
   options: { lost?: readonly string[] } = {},
@@ -384,9 +384,9 @@ async function settleAndCheck(
     async () => ({ outbox: tab.unacknowledged() === null, saved: tab.acknowledged() }),
     (s) => s.outbox && s.saved,
   );
-  const durable = (await harness.readBranch(draft.branchId)).text;
-  const rows = await journalRows(harness, draft.branchId);
-  const parts = (await receipts(harness, draft.branchId)).flat();
+  const durable = (await harness.readDraft(draft.draftId)).text;
+  const rows = await journalRows(harness, draft.draftId);
+  const parts = (await receipts(harness, draft.draftId)).flat();
   const clocks = new Map<string, number>();
   for (const row of rows)
     for (const struct of Y.decodeUpdate(row.update).structs)
@@ -401,8 +401,8 @@ async function settleAndCheck(
   const closes = sockets.flatMap((s) =>
     s.closedWith && s.closedWith.by === "server" ? [s.closedWith.code] : [],
   );
-  const branchSockets = sockets.filter((s) => s.sent.some((f) => f.room.startsWith("branch:")));
-  const wire = branchSockets.map((s) => s.syncKinds().slice(0, 3).join(","));
+  const draftSockets = sockets.filter((s) => s.sent.some((f) => f.room.startsWith("draft:")));
+  const wire = draftSockets.map((s) => s.syncKinds().slice(0, 3).join(","));
   const lost = new Set(options.lost ?? []);
   const surviving = tokens.filter((token) => !lost.has(token));
   const positions = surviving.map((token) => durable.indexOf(token));
@@ -417,7 +417,7 @@ async function settleAndCheck(
     unreceipted,
     wire,
     firstAckMs: percentiles(
-      branchSockets.flatMap((s) => (s.firstAckMs() === null ? [] : [s.firstAckMs() as number])),
+      draftSockets.flatMap((s) => (s.firstAckMs() === null ? [] : [s.firstAckMs() as number])),
     ),
   });
   assert.deepEqual(
@@ -443,7 +443,7 @@ async function settleAndCheck(
   for (const kinds of wire)
     assert.ok(
       kinds === "step1,step2,update" || kinds === "step1,step2" || kinds === "step1",
-      `branch wire order: ${kinds}`,
+      `draft wire order: ${kinds}`,
     );
 }
 
@@ -451,7 +451,7 @@ export const clientResync: Probe = {
   name: "client-resync",
   decision: "D30 (§2.7 R1/G1–G3)",
   expected:
-    "(f)–(i): no 1008, no 4207, no terminal state, every key durable once in order, step1, step2 first on each branch socket; (k) the raw dependent Update closes 4207 and its SyncStep2 lands",
+    "(f)–(i): no 1008, no 4207, no terminal state, every key durable once in order, step1, step2 first on each draft socket; (k) the raw dependent Update closes 4207 and its SyncStep2 lands",
   async run(harness) {
     const globals = globalThis as { WebSocket: unknown; window?: unknown };
     const native = { WebSocket: globals.WebSocket, window: globals.window };
@@ -474,13 +474,13 @@ export const clientResync: Probe = {
             writer.start();
             for (let drop = 0; drop < 3; drop += 1) {
               await sleep(600);
-              const pause = pauseAt("branch.append.beforeCommit");
+              const pause = pauseAt("draft.append.beforeCommit");
               try {
                 await deadline(pause.entered, 10_000, "a held append");
                 const socket = PipeSocket.all.at(-1);
                 socket?.drop();
                 // The next connection's SyncStep2 queues on the row the held frame owns.
-                await harness.waitForLockWaiter(/document_branches/, 10_000);
+                await harness.waitForLockWaiter(/document_drafts/, 10_000);
               } finally {
                 pause.remove();
               }
@@ -508,13 +508,13 @@ export const clientResync: Probe = {
             // Hold the fourth of the next five keys' appends: three acknowledged, one held
             // uncommitted, one queued behind it on the connection.
             let appends = 0;
-            const held = pauseAt("branch.append.beforeCommit", () => appends++ === 3);
+            const held = pauseAt("draft.append.beforeCommit", () => appends++ === 3);
             await writer.typeKeys(5, true);
             await deadline(held.entered, 10_000, "the fourth append held");
             const socket = PipeSocket.all.at(-1);
             const acks = socket?.received.filter((f) => f.type === 8).length ?? 0;
             socket?.drop();
-            await harness.waitForLockWaiter(/document_branches/, 10_000);
+            await harness.waitForLockWaiter(/document_drafts/, 10_000);
             held.remove();
             await writer.typeKeys(2);
             observe("g acks before the drop", acks);
@@ -580,7 +580,7 @@ export const clientResync: Probe = {
           const draft = await seedDraft(harness, "resync-raw");
           const server = openServer(harness, draft.workId);
           PipeSocket.connector = (socket) => server.accept(socket);
-          const room = `branch:${draft.branchId}:gen:${draft.generation}`;
+          const room = `draft:${draft.draftId}:gen:${draft.generation}`;
           const peer = new Y.Doc({ gc: false });
           peer.clientID = 970_001;
           Y.applyUpdate(peer, Y.encodeStateAsUpdate(draft.live));
@@ -620,7 +620,7 @@ export const clientResync: Probe = {
               sync(room, 0, Y.encodeStateVector(peer)),
               sync(room, 1, Y.encodeStateAsUpdate(peer, before)),
             ]);
-            const durable = (await harness.readBranch(draft.branchId)).text;
+            const durable = (await harness.readDraft(draft.draftId)).text;
             observe("k", {
               first: first.closedWith,
               prefixMissing: server.prefixMissing.length,

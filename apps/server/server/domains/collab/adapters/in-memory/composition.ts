@@ -5,7 +5,7 @@ import {
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DraftId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
@@ -14,21 +14,21 @@ import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type {
-  BranchPeerShadowAccess,
   BranchPushAccess,
+  CollabBranches,
   CollabDomain,
-  CollabDrafts,
   CommandOutcome,
+  DraftPeerShadowAccess,
 } from "../../contracts.js";
 import {
   attributionFromMeta,
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
+import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
-import { createDrafts } from "../../domain/drafts.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
@@ -54,7 +54,7 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
-import { createInMemoryDraftStore, createInMemoryDraftWriteBoundary } from "./drafts.js";
+import { createInMemoryBranchStore, createInMemoryBranchWriteBoundary } from "./branches.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -94,23 +94,23 @@ export function createInMemoryCollabDomain(): CollabDomain {
     resolveDocumentFiletype: async () => null,
     observability: createAgentEditObservabilityOptions({}),
   });
-  const drafts = createDrafts({
-    store: createInMemoryDraftStore(),
-    boundary: createInMemoryDraftWriteBoundary(),
+  const branches = createBranches({
+    store: createInMemoryBranchStore(),
+    boundary: createInMemoryBranchWriteBoundary(),
   });
-  // No Work drafts exist in memory, so the pool routes both destinations to the live core.
+  // No Work branches exist in memory, so the pool routes both destinations to the live core.
   const fileAccess = createAllowAllFileAccess();
   const agentEdit = createThreadPeerCorePool({
-    drafts,
-    branches: { getBranch: async () => null },
+    branches,
+    drafts: { getDraft: async () => null },
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
     pullThreadPeer: async () => undefined,
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
     fences: createReplySaveFences({
       liveUtilityCore: runtime.liveUtilityCore,
-      branches: { getBranch: async () => null },
-      drafts,
+      drafts: { getDraft: async () => null },
+      branches,
       fileAccess,
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
@@ -161,22 +161,22 @@ export function createInMemoryCollabDomain(): CollabDomain {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,
       headSchemaVersion: async () => null,
-      resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
+      resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
-      loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
+      loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
-      admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
+      admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
       storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
-      storeHocuspocusBranch: hocuspocusPersistence.storeHocuspocusBranch,
+      storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
-      drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
-      closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
-      rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
-      enrollHocuspocusBranchRoom: hocuspocusPersistence.enrollHocuspocusBranchRoom,
+      drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
+      closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
+      rejectStaleDraftSyncStep1: hocuspocusPersistence.rejectStaleDraftSyncStep1,
+      enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads,
@@ -202,7 +202,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
-      branchEffects: { sweep: async () => 0, flush: async () => {} },
+      draftEffects: { sweep: async () => 0, flush: async () => {} },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });
@@ -227,21 +227,21 @@ export function createInMemoryCollabDomain(): CollabDomain {
       },
     },
     branchPush: IN_MEMORY_BRANCH_PUSH_STUB,
-    branchPeers: createInMemoryBranchPeerStub(
+    draftPeers: createInMemoryDraftPeerStub(
       runtime.markdownDocuments,
       coordinator,
       runtime.model,
       runtime.codec,
       links,
     ),
-    drafts: createInMemoryDraftStub(),
-    draftResolver: {
-      drafts,
-      // No drafts in memory: a purged Work has none to dispose of.
-      workDraftDisposal: {
+    branches: createInMemoryBranchStub(),
+    branchResolver: {
+      branches,
+      // No branches in memory: a purged Work has none to dispose of.
+      workBranchDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
       },
-      // No draft branches in memory: nothing to register.
+      // No document drafts in memory: nothing to register.
       draftLinks: { flush: async () => {} },
     },
     documentCreation,
@@ -254,7 +254,7 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   },
 };
 
-function createInMemoryBranchPeerStub(
+function createInMemoryDraftPeerStub(
   documents: {
     readVersionedMarkdown(
       documentId: string,
@@ -268,13 +268,13 @@ function createInMemoryBranchPeerStub(
   model: YProsemirrorDocumentModel,
   codec: AgentEditCodecFactory,
   links: DocumentLinkScopes,
-): BranchPeerShadowAccess {
+): DraftPeerShadowAccess {
   return {
     async readEffectiveRevision(input) {
       const read = await documents.readVersionedMarkdown(input.documentId);
       return read.ok ? read.value.revision : null;
     },
-    async flushBranchLivePull() {},
+    async flushDraftLivePull() {},
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
@@ -292,19 +292,19 @@ function createInMemoryBranchPeerStub(
           holder: { uri: scope.holder.uri, view: LIVE_VIEW },
         });
       }),
-    async ensureCreatedDraftBranch() {
-      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
+    async ensureCreatedDocumentDraft() {
+      throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },
-    async retractCreatedDraftBranch() {
-      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
+    async retractCreatedDocumentDraft() {
+      throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },
   };
 }
 
-function createInMemoryDraftStub(): CollabDrafts {
-  const gone = async (input: { draftId: string }): Promise<CommandOutcome> => ({
+function createInMemoryBranchStub(): CollabBranches {
+  const gone = async (input: { branchId: string }): Promise<CommandOutcome> => ({
     kind: "result",
-    result: { status: "gone", draftId: input.draftId as DraftId },
+    result: { status: "gone", branchId: input.branchId as BranchId },
   });
   return {
     draftReview: {
@@ -312,13 +312,13 @@ function createInMemoryDraftStub(): CollabDrafts {
         return [];
       },
       async listItems() {
-        return { draftId: null, items: [], threadTitles: new Map() };
+        return { branchId: null, items: [], threadTitles: new Map() };
       },
-      async draftsChangingDocument() {
+      async branchesChangingDocument() {
         return [];
       },
       async items() {
-        return { draftId: null, items: [] };
+        return { branchId: null, items: [] };
       },
       async resolveItem() {
         return null;
@@ -338,7 +338,7 @@ function createInMemoryDraftStub(): CollabDrafts {
         kind: "result",
         result: {
           status: "gone",
-          draftId: input.envelope.draftId as DraftId,
+          branchId: input.envelope.branchId as BranchId,
           itemKey: input.itemKey,
         },
       }),
@@ -347,7 +347,7 @@ function createInMemoryDraftStub(): CollabDrafts {
         kind: "result",
         result: {
           status: "gone",
-          draftId: input.envelope.draftId as DraftId,
+          branchId: input.envelope.branchId as BranchId,
           itemKey: input.itemKey,
         },
       }),

@@ -6,7 +6,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { releaseDocumentStorage, tombstoneDocuments } from "../context/tree/node-rows.js";
-import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -20,6 +19,7 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -63,13 +63,13 @@ describe("forward card inverse", () => {
           ),
         ).toMatchObject({ status: "success", phase: "staged" });
       await harness.commit(responseId);
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
+        .from(schema.documentDrafts)
         .where(
           and(
-            eq(schema.documentBranches.documentId, ALPHA_ID),
-            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentDrafts.documentId, ALPHA_ID),
+            eq(schema.documentDrafts.kind, "work_draft"),
           ),
         );
       const original = "Alpha Beta.\n\nBlue.\n";
@@ -79,7 +79,7 @@ describe("forward card inverse", () => {
           : kind === "delete"
             ? "Alpha .\n\n.\n"
             : "Alpha Gamma.\n\nSilver.\n";
-      expect(await view.draftMarkdown(branch.id)).toBe(edited);
+      expect(await view.draftMarkdown(documentDraft.id)).toBe(edited);
       if (placement === "applied")
         expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
       if (placement === "mixed") {
@@ -106,7 +106,9 @@ describe("forward card inverse", () => {
           documents: [
             {
               destination:
-                placement === "applied" ? { kind: "live" } : { kind: "draft", branchId: branch.id },
+                placement === "applied"
+                  ? { kind: "live" }
+                  : { kind: "draft", draftId: documentDraft.id },
             },
           ],
         });
@@ -135,7 +137,7 @@ describe("forward card inverse", () => {
         expect(
           placement === "applied"
             ? await harness.liveMarkdown(ALPHA_ID)
-            : await view.draftMarkdown(branch.id),
+            : await view.draftMarkdown(documentDraft.id),
         ).toBe(direction === "undo" ? original : edited);
         if (placement === "mixed") expect(await harness.liveMarkdown(ALPHA_ID)).toBe(mixedLive);
       }
@@ -272,24 +274,24 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed" });
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, await branchContent(db, branch.id));
+      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.branchCoordinator.commitWriterUpdate({
-        branchId: branch.id,
-        expectedGeneration: branch.generation,
+      await view.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.id,
+        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,
@@ -309,7 +311,7 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "expired", acceptedParts: 0 });
-    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Be!ta.\n\nBlue.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Be!ta.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();

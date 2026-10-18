@@ -36,23 +36,23 @@ const SOURCE_AGENT_CAPS: Readonly<Record<ContextUriScheme, FileAccessLevel>> = {
   uploads: "read",
 };
 
-/** Whether agent writes to this source go to the Work draft in draft mode. */
+/** Whether agent writes to this source go to the Work branch in draft mode. */
 export function isDrafted(scheme: ContextUriScheme): boolean {
   return isDraftedScheme(scheme);
 }
 
 /**
  * Where an agent's access to a file of this source goes: its draft-mode
- * Work's draft for a drafted source, otherwise live. People always write
+ * Work's branch for a drafted source, otherwise live. People always write
  * live. List and view paths ask this per source; tool calls carry it on
  * their grant (`destinationFor`).
  */
 export function sourceDestination(
   scheme: ContextUriScheme,
-  draftWork: WorkRef | null,
+  branchWork: WorkRef | null,
 ): FileDestination {
-  return draftWork && isDrafted(scheme)
-    ? { kind: "draft", workId: draftWork.id, workSlug: draftWork.slug }
+  return branchWork && isDrafted(scheme)
+    ? { kind: "draft", workId: branchWork.id, workSlug: branchWork.slug }
     : { kind: "live" };
 }
 
@@ -65,14 +65,14 @@ export interface NodeGrant {
 /**
  * Where this access reads or writes: an explicit draft target is that draft;
  * an agent in draft mode writes a drafted source's document, or creates in a
- * drafted source's folder, through its Work draft.
+ * drafted source's folder, through its Work branch.
  */
 function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
-    return { kind: "draft", workId: target.workId, workSlug: facts.draftWork?.slug ?? null };
+    return { kind: "draft", workId: target.workId, workSlug: facts.branchWork?.slug ?? null };
   }
-  return sourceDestination(facts.scheme, principal.agent?.draftWork ?? null);
+  return sourceDestination(facts.scheme, principal.agent?.branchWork ?? null);
 }
 
 /** The whole decision: the destination, then the level there. */
@@ -131,10 +131,10 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
-    if (!facts.draftWork || facts.draftWork.id !== at.workId) {
-      throw new Error(`File facts lack the draft Work ${at.workId}`);
+    if (!facts.branchWork || facts.branchWork.id !== at.workId) {
+      throw new Error(`File facts lack the branch Work ${at.workId}`);
     }
-    terms.push(...workTerms(facts.draftWork));
+    terms.push(...workTerms(facts.branchWork));
   }
   return terms;
 }

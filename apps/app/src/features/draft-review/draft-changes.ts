@@ -1,22 +1,22 @@
 /** Shared change presentation data and failures. Open and listed bindings add their own command authority; only the open review adds focus and stepping. */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse } from "@meridian/contracts/branches";
 import { useMemo } from "react";
 
 import {
+  type BranchCommandFailure,
+  branchCommandFailure,
+  branchCommandKey,
   type ChangeCommandState,
   changeCommandState,
-  type DraftCommandFailure,
-  draftCommandFailure,
-  draftCommandKey,
-  pendingDraftCommand,
+  pendingBranchCommand,
   useChangeCommandRecords,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { selectionOf } from "./change-selection";
 import type { ReviewChange } from "./review-changes";
 
 export type ReviewChangeItem = {
   change: ReviewChange;
-  draftFailure?: DraftCommandFailure | null;
+  draftFailure?: BranchCommandFailure | null;
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
 };
 
@@ -85,15 +85,15 @@ export function useChangeItems(
           change,
           failure: state?.phase === "failed" ? state : null,
           ...(change.target.kind === "draft" && draft
-            ? { draftFailure: draftCommandFailure(records.drafts, draft) }
+            ? { draftFailure: branchCommandFailure(records.drafts, draft) }
             : {}),
         };
       }),
     [changes, records, draft],
   );
   const hiding = draft
-    ? Object.values(records.queued).some((entry) => entry.prefix === draftCommandKey(draft)) ||
-      pendingDraftCommand(records.drafts, draft) !== null
+    ? Object.values(records.queued).some((entry) => entry.prefix === branchCommandKey(draft)) ||
+      pendingBranchCommand(records.drafts, draft) !== null
     : false;
   return { items, hiding };
 }

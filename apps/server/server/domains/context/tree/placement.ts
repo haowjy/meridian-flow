@@ -3,7 +3,7 @@
  * `place` reveals a hidden node or restores a soft-deleted one at its final location with
  * its ancestors; `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
  * folder at a path instead of making a twin. Both walk folders through `walkFolders`, the
- * walk draft and live creates share. Both are tree writes only: they return what they
+ * walk branch and live creates share. Both are tree writes only: they return what they
  * placed, and their callers refresh the catalog.
  *
  * Every function runs in its caller's transaction, which holds the namespaces of every
@@ -48,7 +48,7 @@ export type FolderWalk =
  * The one folder walk, root to leaf in `view`: each segment's folder there, one lookup
  * per step, until the first segment the view shows nothing at. From that gap on, every
  * segment is a gap `onGap` fills (or leaves, with null): nothing below a gap is in the
- * view, since a hidden folder holds only hidden nodes (TM invariant 2) and a draft sees
+ * view, since a hidden folder holds only hidden nodes (TM invariant 2) and a branch sees
  * every folder it placed something under.
  */
 export async function walkFolders(
@@ -103,7 +103,7 @@ export async function ensureLiveFolderPath(
     await claimDocumentLocation(db, contextSourceId, gap.parentId, gap.name);
     if (hidden) {
       await updatePlacedFolder(db, hidden, { parentId: gap.parentId, clear: "hidden" });
-      // Another draft's hidden folder at the same path folds into the revealed one.
+      // Another branch's hidden folder at the same path folds into the revealed one.
       await absorbAt(db, hidden);
     }
     created.push(folderId);

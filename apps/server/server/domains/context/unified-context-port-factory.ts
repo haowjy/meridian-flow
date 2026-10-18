@@ -7,7 +7,7 @@
  * thread resolution to context-port-resolution.ts.
  */
 
-import type { CanonicalContextAuthority, DraftId } from "@meridian/contracts";
+import type { BranchId, CanonicalContextAuthority } from "@meridian/contracts";
 import {
   canonicalContextUri,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
@@ -17,11 +17,11 @@ import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works"
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
-import { approveDraftWriteJoin } from "../../shared/draft-write-join.js";
+import { approveBranchWriteJoin } from "../../shared/branch-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import type { Drafts } from "../collab/domain/drafts.js";
+import type { Branches } from "../collab/domain/branches.js";
 import type { DocumentDerivationService } from "../collab/domain/ports/document-derivations.js";
-import type { BranchPeerShadowAccess, DocumentCreationAggregate } from "../collab/index.js";
+import type { DocumentCreationAggregate, DraftPeerShadowAccess } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
@@ -33,7 +33,7 @@ import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
 import type { ContextPlacement } from "./adapters/context-fs/create-placement.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
-import { createDrizzleDraftCreates } from "./adapters/context-fs/drizzle-draft-creates.js";
+import { createDrizzleBranchCreates } from "./adapters/context-fs/drizzle-branch-creates.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
 import {
@@ -53,6 +53,7 @@ import {
   createWorkContextDocumentStore,
   findNoWorkId,
 } from "./context-source-provisioning.js";
+import type { BranchCreatePort } from "./ports/branch-create.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
@@ -69,7 +70,6 @@ import type {
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import type { DraftCreatePort } from "./ports/draft-create.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -137,16 +137,16 @@ interface AdapterAssembly {
   commandTransaction?: ContextCommandTransaction;
   thread?: ThreadContextView;
   /**
-   * Where draft-mode threads' creates may land: Postgres resolves drafts and makes draft
+   * Where draft-mode threads' creates may land: Postgres resolves branches and makes draft
    * creates per source; the in-memory port is explicitly live-only.
    */
-  placements: "live-only" | DraftPlacements;
+  placements: "live-only" | BranchPlacements;
   owner: { projectId: string; userId: string };
 }
 
-type DraftPlacements = {
-  drafts: Pick<Drafts, "viewForWork">;
-  creates(store: ContextDocumentStore): DraftCreatePort;
+type BranchPlacements = {
+  branches: Pick<Branches, "viewForWork">;
+  creates(store: ContextDocumentStore): BranchCreatePort;
 };
 
 /**
@@ -161,14 +161,14 @@ function placementFor(
 ): ContextPlacement {
   const { thread, placements } = assembly;
   if (!thread || placements === "live-only") return { kind: "live" };
-  const destination = sourceDestination(scheme, thread.draftWork);
+  const destination = sourceDestination(scheme, thread.branchWork);
   if (destination.kind !== "draft") return { kind: "live" };
   return {
     kind: "draft",
     workId: destination.workId as WorkId,
     threadId: thread.threadId as ThreadId,
     userId: assembly.owner.userId as UserId,
-    drafts: placements.drafts,
+    branches: placements.branches,
     creates: placements.creates(store),
   };
 }
@@ -599,7 +599,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
   documentSync: ContextFSDeps["documentSync"] &
     DocumentCreationAggregate &
-    Pick<BranchPeerShadowAccess, "ensureCreatedDraftBranch" | "retractCreatedDraftBranch">;
+    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
@@ -607,14 +607,14 @@ export function createProductionUnifiedContextPortFactory(options: {
   arrivals?: DocumentArrivals;
   /** Repair on touch (§12.4): creates report what they repaired; the mover's link count reads repair. */
   hiddenNodeRepair?: HiddenNodeRepair;
-  /** The one drafts resolver: draft placements read and write through it (§2.3). */
-  drafts: Drafts;
+  /** The one branches resolver: draft placements read and write through it (§2.3). */
+  branches: Branches;
   /**
-   * The Work mutation boundary (decision D17): a draft command locks its draft's Work first
+   * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
    * and touches the Work's projection after it (§13.2, S3).
    */
-  pendingDraft: {
-    mutate<T>(set: { drafts: readonly DraftId[] }, operation: () => Promise<T>): Promise<T>;
+  pendingBranch: {
+    mutate<T>(set: { branches: readonly BranchId[] }, operation: () => Promise<T>): Promise<T>;
   };
 }): UnifiedContextPortFactory {
   const catalogMutations =
@@ -636,14 +636,14 @@ export function createProductionUnifiedContextPortFactory(options: {
   });
   storeResolvers.chatFiles = chatFiles;
 
-  const placements: DraftPlacements = {
-    drafts: options.drafts,
+  const placements: BranchPlacements = {
+    branches: options.branches,
     creates: (store) =>
-      createDrizzleDraftCreates({
+      createDrizzleBranchCreates({
         db: options.db,
         sourceId: () => store.contextSourceId(),
         documents: options.documentSync,
-        branches: options.documentSync,
+        drafts: options.documentSync,
         ...(options.hiddenNodeRepair ? { repair: options.hiddenNodeRepair } : {}),
       }),
   };
@@ -666,38 +666,38 @@ export function createProductionUnifiedContextPortFactory(options: {
   }
 
   /**
-   * One command transaction (§2.3, §14): Works (a draft write's Work among them), then the
-   * draft row, then every namespace key in order; nothing above it holds a Work row.
+   * One command transaction (§2.3, §14): Works (a branch write's Work among them), then the
+   * branch row, then every namespace key in order; nothing above it holds a Work row.
    */
   function commandTransaction(projectId: string, userId: string): ContextCommandTransaction {
     return {
       run: (operation, scopes = [], commandOptions = {}) =>
         runInDrizzleTransaction(options.db, async () => {
-          const draftWrite = commandOptions.draft;
-          const command: ContextCommandContext = { draft: null };
+          const branchWrite = commandOptions.branch;
+          const command: ContextCommandContext = { branch: null };
           const lockedScopes = typeof scopes === "function" ? await scopes() : scopes;
           await lockContextNamespaces(options.db, { projectId, userId }, lockedScopes, {
-            workIds: draftWrite ? [draftWrite.workId] : [],
+            workIds: branchWrite ? [branchWrite.workId] : [],
             sourceIds: commandOptions.sourceIds ?? [],
             afterWorkLocks: async () => {
-              if (!draftWrite) return;
-              approveDraftWriteJoin();
-              if (draftWrite.mode === "ensure") {
-                command.draft = await options.drafts.ensureActiveForWrite({
-                  workId: draftWrite.workId,
+              if (!branchWrite) return;
+              approveBranchWriteJoin();
+              if (branchWrite.mode === "ensure") {
+                command.branch = await options.branches.ensureActiveForWrite({
+                  workId: branchWrite.workId,
                   projectId: projectId as ProjectId,
-                  threadId: draftWrite.threadId,
-                  userId: draftWrite.userId,
+                  threadId: branchWrite.threadId,
+                  userId: branchWrite.userId,
                 });
               } else {
-                const active = await options.drafts.activeForWork(draftWrite.workId);
-                command.draft = active ? await options.drafts.lockActive(active.id) : null;
+                const active = await options.branches.activeForWork(branchWrite.workId);
+                command.branch = active ? await options.branches.lockActive(active.id) : null;
               }
             },
           });
-          const draft = command.draft;
-          return draft
-            ? options.pendingDraft.mutate({ drafts: [draft.id] }, () => operation(command))
+          const branch = command.branch;
+          return branch
+            ? options.pendingBranch.mutate({ branches: [branch.id] }, () => operation(command))
             : operation(command);
         }),
     };

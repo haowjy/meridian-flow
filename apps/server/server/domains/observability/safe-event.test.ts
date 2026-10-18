@@ -93,7 +93,7 @@ describe("sanitizeEventRecord byte boundary", () => {
         toolCallId: huge,
         errorCode: huge,
         documentId: huge,
-        branchId: huge,
+        draftId: huge,
         yjsSpans: huge,
       },
       stream: {
@@ -134,10 +134,10 @@ describe("sanitizeEventRecord byte boundary", () => {
 describe("errorMessageOf", () => {
   it("keeps an internal error's message bounded, drops quoted text and secrets, and survives the sanitizer", () => {
     const error = new Error(
-      `Branch branch_1 failed on "the dragon is her father" with Bearer abc.def-ghi ${"x ".repeat(300)}`,
+      `Draft draft_1 failed on "the dragon is her father" with Bearer abc.def-ghi ${"x ".repeat(300)}`,
     );
     const payload = errorMessageOf(error);
-    expect(payload?.errorMessage).toMatch(/^Branch branch_1 failed on … with \[redacted-secret\]/);
+    expect(payload?.errorMessage).toMatch(/^Draft draft_1 failed on … with \[redacted-secret\]/);
     expect(payload?.errorMessage.length).toBeLessThanOrEqual(200);
     expect(sanitize({ ...payload })).toEqual(payload);
     expect(errorMessageOf("not an error")).toBeUndefined();

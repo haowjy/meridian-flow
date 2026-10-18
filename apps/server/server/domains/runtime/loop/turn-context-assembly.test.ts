@@ -22,7 +22,7 @@ function emptyWorkContext(projectId: string): WorkContextReader {
               workSlug: testWorkSlug("test-work"),
             },
             aiWriteMode: "direct",
-            draftOwner: null,
+            branchOwner: null,
           },
         },
       };

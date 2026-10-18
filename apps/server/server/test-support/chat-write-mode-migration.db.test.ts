@@ -33,7 +33,7 @@ async function seedWorkModeShape(sql: postgres.Sql) {
     (${id(3)}, ${id(2)}, ${id(1)}, 'No Work', NULL, true, 'draft'),
     (${id(4)}, ${id(2)}, ${id(1)}, 'Drafting', 'drafting', false, 'draft'),
     (${id(5)}, ${id(2)}, ${id(1)}, 'Live', 'live', false, 'direct')`;
-  // 10 drafts; 11 was deleted with it; 12 is 10's subagent; 13 was rebound from the drafting
+  // 10 branches; 11 was deleted with it; 12 is 10's subagent; 13 was rebound from the drafting
   // Work to the live one; 14 has no membership; 15 is a No Work chat.
   await sql`INSERT INTO threads (id, project_id, root_thread_id, created_by_user_id, deleted_at) VALUES
     (${id(10)}, ${id(2)}, ${id(10)}, ${id(1)}, NULL),

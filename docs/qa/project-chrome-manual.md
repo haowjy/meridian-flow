@@ -64,7 +64,7 @@ row list, which a document read cannot see.)
 
 13. Accept a batch of draft targets, then apply. **All accepted targets disappear at
     the click**; a refused target restores **independently** of the rest.
-14. Create a new document. It has **one review door**, and whole-draft commands appear
+14. Create a new document. It has **one review door**, and Apply all and Discard all appear
     in chat and in Work rows.
 
 ## Project shell and dock
@@ -100,7 +100,7 @@ Work has no Work-level write-mode control and no "Apply it now or keep them for
 review?" confirmation; each chat owns its write mode.
 
 31. Open a Work page. It **shows no write-mode control**. Open a chat in it: the
-    composer has a **Draft or Auto-apply menu** showing "Draft (N)" while N changes
+    composer has a **Draft or Auto-apply menu** showing "Drafts (N)" while N changes
     wait for review. Switching one chat's mode leaves the others as they were.
 
 ## Rename feedback and hand-off

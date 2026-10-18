@@ -7,8 +7,8 @@ import type { ContextSourceId, DocumentId, FolderId, ThreadId } from "@meridian/
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
-  documentBranches,
   documentDerivations,
+  documentDrafts,
   documentLinks,
   documentMarkdownProjections,
   documents,
@@ -125,43 +125,43 @@ export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): 
 
 /**
  * A tombstoned hidden document's storage goes (R8, contract §12.2 step 4): its live Yjs,
- * every branch on it (their journals and trail rows cascade; by the caller's revalidation
- * no draft uses one), its derived rows and its own outgoing link rows. The row itself and
+ * every draft on it (their journals and trail rows cascade; by the caller's revalidation
+ * no branch uses one), its derived rows and its own outgoing link rows. The row itself and
  * every record pointing at it stay: a bound link or ahead ref still resolves it to gone.
  */
 export async function releaseDocumentStorage(
   db: Database,
   ids: readonly DocumentId[],
-): Promise<ReleasedBranch[]> {
+): Promise<ReleasedDraft[]> {
   if (ids.length === 0) return [];
   const tx = currentDrizzleDb(db);
   const list = [...ids];
   await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
   await tx.delete(documentYjsCheckpoints).where(inArray(documentYjsCheckpoints.documentId, list));
   await tx.delete(documentYjsUpdates).where(inArray(documentYjsUpdates.documentId, list));
-  const branches = await tx
-    .delete(documentBranches)
-    .where(inArray(documentBranches.documentId, list))
+  const drafts = await tx
+    .delete(documentDrafts)
+    .where(inArray(documentDrafts.documentId, list))
     .returning({
-      branchId: documentBranches.id,
-      documentId: documentBranches.documentId,
-      threadId: documentBranches.threadId,
+      draftId: documentDrafts.id,
+      documentId: documentDrafts.documentId,
+      threadId: documentDrafts.threadId,
     });
   await tx.delete(documentDerivations).where(inArray(documentDerivations.documentId, list));
   await tx
     .delete(documentMarkdownProjections)
     .where(inArray(documentMarkdownProjections.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
-  return branches.map((branch) => ({
-    branchId: branch.branchId,
-    documentId: branch.documentId as DocumentId,
-    threadId: branch.threadId as ThreadId | null,
+  return drafts.map((documentDraft) => ({
+    draftId: documentDraft.draftId,
+    documentId: documentDraft.documentId as DocumentId,
+    threadId: documentDraft.threadId as ThreadId | null,
   }));
 }
 
-/** A branch a tombstone's release deleted: collab retires its room and thread state after commit. */
-export type ReleasedBranch = {
-  branchId: string;
+/** A draft a tombstone's release deleted: collab retires its room and thread state after commit. */
+export type ReleasedDraft = {
+  draftId: string;
   documentId: DocumentId;
   threadId: ThreadId | null;
 };

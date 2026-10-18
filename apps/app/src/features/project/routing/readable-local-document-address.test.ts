@@ -4,7 +4,7 @@ import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import {
   gateLiveView,
   reconcileDocumentAddress,

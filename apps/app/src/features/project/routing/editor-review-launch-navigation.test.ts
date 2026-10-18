@@ -63,12 +63,12 @@ describe("review launch navigation", () => {
     const { open, history } = setup(lookup);
     const result = await open(
       { scheme: "manuscript", path: "/chapters/new.md", documentId: "doc-1", workId },
-      { replaceIfSameDocument: true, itemKey: "draft-1:doc-1" },
+      { replaceIfSameDocument: true, itemKey: "branch-1:doc-1" },
     );
     expect(result.kind).toBe("applied");
     expect(lookup).not.toHaveBeenCalled();
     expect(history.location.href).toContain("/editor/manuscript/chapters/new.md");
-    expect(history.location.href).toContain("draft-1");
+    expect(history.location.href).toContain("branch-1");
   });
 
   it("a live answer opened with its prepared tab never carries a parked hidden sibling's item key", async () => {
@@ -81,12 +81,12 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [workId]: { itemKey: "draft-hidden:doc-hidden", tabInstanceToken: "token" } },
+      reviews: { [workId]: { itemKey: "branch-hidden:doc-hidden", tabInstanceToken: "token" } },
     } as never;
     useContextTabsStore.getState().openTab(projectId, hidden, undefined, workId);
     const { open, history } = setup(
       vi.fn(async () => ({ kind: "failed" as const })),
-      `/p/${projectId}/editor/manuscript/Scene.md?work=${workId}&item=draft-hidden:doc-hidden`,
+      `/p/${projectId}/editor/manuscript/Scene.md?work=${workId}&item=branch-hidden:doc-hidden`,
       "doc-hidden",
     );
     const live = { ...(hidden as object), documentId: "doc-live", reviews: undefined } as never;
@@ -108,7 +108,7 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      reviews: { [workId]: { itemKey: "draft-1:doc-1", tabInstanceToken: "token" } },
+      reviews: { [workId]: { itemKey: "branch-1:doc-1", tabInstanceToken: "token" } },
       tabInstanceId: "tab-1",
     } as never;
     const result = await open(
@@ -116,7 +116,7 @@ describe("review launch navigation", () => {
       { tab },
     );
     expect(result.kind).toBe("applied");
-    expect(history.location.href).toContain("item=draft-1");
+    expect(history.location.href).toContain("item=branch-1");
   });
 
   describe("Editor address repair", () => {
@@ -167,13 +167,13 @@ describe("review launch navigation", () => {
         editable: true,
         filetype: "markdown" as const,
         schemaType: "document" as const,
-        reviews: { [workId]: { itemKey: "draft-c:doc-c", tabInstanceToken: "token" } },
+        reviews: { [workId]: { itemKey: "branch-c:doc-c", tabInstanceToken: "token" } },
       } as never;
       useContextTabsStore.getState().openTab(projectId, tab, undefined, workId);
       const history = repair("gone.md", "fallback.md", undefined);
       await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
-      expect(history.location.href).toContain("item=draft-c");
-      expect(history.location.href).not.toContain("item=draft-1");
+      expect(history.location.href).toContain("item=branch-c");
+      expect(history.location.href).not.toContain("item=branch-1");
     });
   });
 });

@@ -125,7 +125,7 @@ export function createRuntimeHarness(
               workSlug: testWorkSlug("test-work"),
             },
             aiWriteMode: "direct" as const,
-            draftOwner: null,
+            branchOwner: null,
           },
         },
       };

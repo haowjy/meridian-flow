@@ -7,10 +7,10 @@ import type * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
-  createDrizzleDraftStore,
-  createDrizzleDraftWriteBoundary,
-} from "./adapters/drizzle-drafts.js";
-import { createDrafts } from "./domain/drafts.js";
+  createDrizzleBranchStore,
+  createDrizzleBranchWriteBoundary,
+} from "./adapters/drizzle-branches.js";
+import { createBranches } from "./domain/branches.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -31,7 +31,7 @@ import {
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import { commitBranchEdit, reviewDriver } from "./test-support/draft-review-requests.js";
+import { commitDraftEdit, reviewDriver } from "./test-support/draft-review-requests.js";
 
 const NEW_ID = "00000000-0000-4000-8000-000000000830";
 const INVERSE = "an inverse removed the text it edited";
@@ -63,7 +63,7 @@ describe("inverse integration (postgres)", () => {
   });
   afterAll(() => closeDatabase(db));
 
-  async function claimCreate(draftId: string, documentId: string) {
+  async function claimCreate(branchId: string, documentId: string) {
     await db.insert(schema.documents).values({
       id: documentId as never,
       contextSourceId: SOURCE_ID,
@@ -71,8 +71,8 @@ describe("inverse integration (postgres)", () => {
       extension: "",
       hidden: true,
     });
-    await db.insert(schema.draftTreeChanges).values({
-      draftId: draftId as never,
+    await db.insert(schema.branchTreeChanges).values({
+      branchId: branchId as never,
       nodeKind: "document",
       nodeId: documentId as never,
       created: true,
@@ -92,12 +92,12 @@ describe("inverse integration (postgres)", () => {
   };
 
   it("18: rollback runs the pool, then the inverse, then the create's retraction", async () => {
-    const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
-    const draftId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId;
-    if (!draftId) throw new Error("No active draft");
-    await claimCreate(draftId, NEW_ID);
+    const branchId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId;
+    if (!branchId) throw new Error("No active branch");
+    await claimCreate(branchId, NEW_ID);
     const reply = await createResponse(db, 2);
     const core = fixture.collab.agentEdit();
     const context = responseContext(reply);
@@ -105,8 +105,8 @@ describe("inverse integration (postgres)", () => {
     expect(
       await core.write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, context),
     ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
-    // The create is still staged, and another thread's peer sits on its draft branch.
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
+    // The create is still staged, and another thread's peer sits on its draft.
     expect(
       await core.write(
         { command: "create", file: "created", documentId: NEW_ID as never, content: "New." },
@@ -119,10 +119,12 @@ describe("inverse integration (postgres)", () => {
       { sessionId: THREAD_B_ID, threadId: THREAD_B_ID, turnId: TURN_ID, grant: grantFor(NEW_ID) },
     );
     const peersOfCreate = async () =>
-      (await db.select().from(schema.documentBranches)).filter(
-        (branch) => branch.documentId === NEW_ID,
+      (await db.select().from(schema.documentDrafts)).filter(
+        (documentDraft) => documentDraft.documentId === NEW_ID,
       );
-    expect((await peersOfCreate()).some((branch) => branch.threadId === THREAD_B_ID)).toBe(true);
+    expect(
+      (await peersOfCreate()).some((documentDraft) => documentDraft.threadId === THREAD_B_ID),
+    ).toBe(true);
 
     const rolledBack = await fixture.collab.finalizeResponseRollback(
       { providerResponseId: reply, editScopeId: reply },
@@ -130,11 +132,11 @@ describe("inverse integration (postgres)", () => {
     );
     expect(rolledBack.stagedCreates.discarded).toEqual([NEW_ID]);
     // The inverse ran: the reply's accepted Undo part is out of the draft.
-    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
     expect(
-      await fixture.branchStore.retractCreatedDraftBranch({
+      await fixture.draftStore.retractCreatedDocumentDraft({
         documentId: NEW_ID as never,
-        draftId: draftId as never,
+        branchId: branchId as never,
       }),
     ).toMatchObject({ outcome: "retracted" });
     expect(await peersOfCreate()).toEqual([]);
@@ -144,7 +146,7 @@ describe("inverse integration (postgres)", () => {
     "model write undo",
     "card Undo",
   ] as const)("22: a %s lands an inverse while another reply is staged: a write on its removals fails with its dependents, an independent one lands", async (how) => {
-    const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
       ["blue", "azure"],
     ]);
@@ -189,14 +191,14 @@ describe("inverse integration (postgres)", () => {
       "w-independent": "success",
     });
     expect(messages(saved)).toContain(INVERSE);
-    const text = await fixture.draftMarkdown(branchId);
+    const text = await fixture.draftMarkdown(draftId);
     expect(text).toContain("lime");
     expect(text).not.toContain("cyan");
     expect(text).not.toContain("teal");
   });
 
   it("22: an ordinary writer deletion of the text a staged write edits admits that write", async () => {
-    const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
     const staged = await createResponse(db, 2);
@@ -213,7 +215,7 @@ describe("inverse integration (postgres)", () => {
         responseContext(staged),
       ),
     ).toMatchObject({ phase: "staged" });
-    await commitBranchEdit(fixture, branchId, { source: "writer" }, (doc: Y.Doc) => {
+    await commitDraftEdit(fixture, draftId, { source: "writer" }, (doc: Y.Doc) => {
       const paragraph = doc.getXmlFragment("prosemirror").get(2) as Y.XmlElement;
       (paragraph.get(0) as Y.XmlText).delete(0, 5);
     });
@@ -222,13 +224,13 @@ describe("inverse integration (postgres)", () => {
   });
 
   it("6.4: model undo after the chat's Work moved refuses elsewhere and touches nothing", async () => {
-    const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
     await seedSecondWork(fixture);
-    await createDrafts({
-      store: createDrizzleDraftStore(db),
-      boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
+    await createBranches({
+      store: createDrizzleBranchStore(db),
+      boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
     }).ensureActiveForWrite({
       workId: WORK_B_ID,
       projectId: PROJECT_ID as never,
@@ -247,7 +249,7 @@ describe("inverse integration (postgres)", () => {
         .agentEdit()
         .write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, moved),
     ).toMatchObject({ status: "cant_undo_elsewhere" });
-    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\ngreen\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
   });
 
   it("6.2: card Undo of a turn whose draft was discarded skips every part by name", async () => {
@@ -277,9 +279,9 @@ describe("inverse integration (postgres)", () => {
     const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
-    const draftId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId;
-    if (!draftId) throw new Error("No active draft");
-    await claimCreate(draftId, NEW_ID);
+    const branchId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).branchId;
+    if (!branchId) throw new Error("No active branch");
+    await claimCreate(branchId, NEW_ID);
     const reply = await createResponse(db, 2);
     expect(
       await fixture.collab
@@ -305,6 +307,6 @@ describe("inverse integration (postgres)", () => {
     expect(turnUndo).toMatchObject({ status: "reversed", skips: [] });
     const kept = await item();
     expect(kept).toMatchObject({ listed: true, item: { origin: "created", wholeItem: true } });
-    expect((await fixture.draftMarkdown(kept?.draftBranchId as string)).trim()).toBe("");
+    expect((await fixture.draftMarkdown(kept?.draftId as string)).trim()).toBe("");
   });
 });

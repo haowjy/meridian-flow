@@ -42,7 +42,7 @@ describe("Hocuspocus change-event delivery", () => {
         }
       }
     });
-    const branchBroadcast = vi.fn();
+    const draftBroadcast = vi.fn();
     const disconnectedBroadcast = vi.fn();
     const documents = new Map<string, unknown>([
       [
@@ -50,8 +50,8 @@ describe("Hocuspocus change-event delivery", () => {
         { getConnections: () => liveConnections, broadcastStateless: liveBroadcast },
       ],
       [
-        `branch:${message.documentId}:gen:1`,
-        { getConnections: () => [connection("writer-a")], broadcastStateless: branchBroadcast },
+        `draft:${message.documentId}:gen:1`,
+        { getConnections: () => [connection("writer-a")], broadcastStateless: draftBroadcast },
       ],
       [
         "00000000-0000-4000-8000-000000000002",
@@ -75,7 +75,7 @@ describe("Hocuspocus change-event delivery", () => {
       changes: [{ changeId: "change-1", swept: false }],
     });
     expect(deliveries.has(unidentified)).toBe(false);
-    expect(branchBroadcast).not.toHaveBeenCalled();
+    expect(draftBroadcast).not.toHaveBeenCalled();
     expect(disconnectedBroadcast).not.toHaveBeenCalled();
   });
 });

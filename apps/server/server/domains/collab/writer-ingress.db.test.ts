@@ -79,13 +79,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values([
           {
             documentId: DOCUMENT_ID as never,
-            branchGeneration: 1,
+            draftGeneration: 1,
             journalIds: [],
             idempotencyKey: "writer-join-1",
           },
           {
             documentId: DOCUMENT_ID as never,
-            branchGeneration: 1,
+            draftGeneration: 1,
             journalIds: [],
             idempotencyKey: "writer-join-2",
           },

@@ -15,9 +15,9 @@ import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
@@ -71,9 +71,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (rows.length) await db.insert(contextSources).values(rows);
     }
 
-    it("resolves a hidden created document only in its own draft address view", async () => {
+    it("resolves a hidden created document only in its own branch address view", async () => {
       const db = database.current;
-      const scenario = await draftTreeScenario(db);
+      const scenario = await branchTreeScenario(db);
       const work = await scenario.work("Review", "draft");
       const rival = await scenario.work("Rival", "draft");
       const documentId = await scenario.seedHidden(work, "chapters/one");
@@ -92,13 +92,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         resolver.resolve({
           ...input,
-          view: { kind: "draft", draftId: (await scenario.draftOf(work)).id },
+          view: { kind: "branch", branchId: (await scenario.branchOf(work)).id },
         }),
       ).resolves.toMatchObject({ kind: "current", document: { documentId } });
       await expect(
         resolver.resolve({
           ...input,
-          view: { kind: "draft", draftId: (await scenario.draftOf(rival)).id },
+          view: { kind: "branch", branchId: (await scenario.branchOf(rival)).id },
         }),
       ).resolves.toEqual({ kind: "unavailable" });
     });
@@ -144,7 +144,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
       expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
 
-      // Apply reveals the draft's document: it joins the live tree.
+      // Apply reveals the branch's document: it joins the live tree.
       await db.update(documents).set({ hidden: false }).where(eq(documents.id, DRAFT_DOCUMENT_ID));
       await catalog.refreshProject(PROJECT_ID);
       await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({
@@ -580,7 +580,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
-          pendingCounts: createDrizzleWorkDraftPendingStore(db),
+          pendingCounts: createDrizzleWorkBranchPendingStore(db),
           availability,
           catalog,
         }),
@@ -615,7 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
-          pendingCounts: createDrizzleWorkDraftPendingStore(db),
+          pendingCounts: createDrizzleWorkBranchPendingStore(db),
           availability,
           catalog: {
             async refreshProject(projectId) {
@@ -742,7 +742,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: NAMED,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
-          name: "Draft",
+          name: "Branch",
           slug: "draft",
         },
       ]);

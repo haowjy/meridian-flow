@@ -63,8 +63,8 @@ colour (crimson AI, gold writer), and a removal the server could not attribute
 is struck in no author's colour. Focus emphasizes every operation sharing the
 change's `closureClassId`.
 
-Desktop review mounts the server draft projection in an editable Yjs branch;
-the writer is a peer and edits land in that branch. Phone review uses the same
+Desktop review mounts the server draft projection in an editable Yjs draft;
+the writer is a peer and edits land in that draft. Phone review uses the same
 projection read-only. Review marks, removed-text widgets, attribution,
 `mergeArtifact`, and the merge flag come from the server model. Removed text is
 not part of the Y.Doc or TipTap document, so it cannot be typed into or saved;
@@ -113,7 +113,7 @@ editor document.
 
 The peer-mark surface reads the projection plugin's click/Enter/caret state.
 The editor feature holds no duplicate mark state. Trail evidence is read-only;
-review branches without a projection naturally stand down. Action controls wait
+review drafts without a projection naturally stand down. Action controls wait
 for trail detail instead of rendering a partial action row. Receipt Undo/Redo
 is the sole reversal authority for AI changes. *Open conversation* routes
 through `requestConversationReveal`, so the chat side expands the owning turn

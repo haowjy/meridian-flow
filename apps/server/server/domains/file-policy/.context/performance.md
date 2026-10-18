@@ -2,12 +2,12 @@
 
 This page records the performance constraints that shape file authorization.
 Keep reads batched and authorization fresh; do not trade correctness for a
-cache that hides Work switches or draft-view changes.
+cache that hides Work switches or branch-view changes.
 
 ## Constraints
 
 - `listAccess` and tree facts are set-oriented. Resolve locations and folder
-  ancestry for an identity set, grouped by draft view, rather than once per
+  ancestry for an identity set, grouped by branch view, rather than once per
   document or ancestor.
 - Agent-chain reads are linear in chain depth. Read the binding fresh for each
   tool call so a rebind is visible on the next call.

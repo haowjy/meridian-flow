@@ -3,7 +3,7 @@
 import { validateSemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { AppendBranchJournalInput } from "./branch-store.js";
+import type { AppendDraftJournalInput } from "./draft-store.js";
 import { validateClientUpdateAdmission, validateProvenanceGraph } from "./provenance.js";
 
 export type AuthorshipSource =
@@ -134,8 +134,8 @@ function validateFreshAuthorship(
 
 /**
  * `source` replicated whole into `target` from a frozen copy: the identity replication every
- * branch seed, pull and reset uses. The candidate's provenance is validated before `target`
- * changes; persistence belongs to the branch store.
+ * draft seed, pull and reset uses. The candidate's provenance is validated before `target`
+ * changes; persistence belongs to the draft store.
  */
 export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
   const update = Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
@@ -145,14 +145,14 @@ export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
 }
 
 /**
- * A branch's journal rows applied to `doc`, validated per logical write: the rows of one
+ * A draft's journal rows applied to `doc`, validated per logical write: the rows of one
  * semantic edit against its IR (document and input revision) before any of them applies,
  * each other row on its own.
  */
 export function admitSegmentRows(
   doc: Y.Doc,
   documentId: string,
-  journals: readonly AppendBranchJournalInput[],
+  journals: readonly AppendDraftJournalInput[],
 ): void {
   for (let index = 0; index < journals.length; ) {
     const first = journals[index];
@@ -194,7 +194,7 @@ export function assertSegmentRowsComplete(source: Y.Doc, admitted: Y.Doc): void 
     });
     Y.applyUpdate(probe, Y.encodeStateAsUpdate(source, Y.encodeStateVector(admitted)));
     if (probe.store.pendingStructs || probe.store.pendingDs)
-      throw new Error("Branch sync delta has unresolved Yjs dependencies");
+      throw new Error("Draft sync delta has unresolved Yjs dependencies");
     if (changed) throw new Error("Segment write left an unjournaled residual");
   } finally {
     probe.destroy();

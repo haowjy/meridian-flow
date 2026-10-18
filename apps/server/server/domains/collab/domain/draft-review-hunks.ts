@@ -1,7 +1,7 @@
 /** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
 import type { AgentEditModel } from "@meridian/agent-edit/integration";
-import type { ReviewBlockDisplay, ReviewHunk } from "@meridian/contracts/drafts";
+import type { ReviewBlockDisplay, ReviewHunk } from "@meridian/contracts/branches";
 import type * as Y from "yjs";
 import {
   diffAlignedBlocks,
@@ -16,7 +16,7 @@ import {
   type ClockRange,
   computeDraftReviewOperations,
   type IndexedDraftUpdate,
-} from "./draft-review-operations.js";
+} from "./draft-review-operation-graph.js";
 import type { DraftReviewDiagnostic, DraftReviewOperationInternal } from "./draft-review-types.js";
 
 export type DraftReviewHunkInput = {

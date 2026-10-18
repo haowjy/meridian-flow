@@ -35,7 +35,7 @@ export function testFileGrant(
       ancestors: [],
       ...(destination.kind === "draft"
         ? {
-            draftWork: {
+            branchWork: {
               id: destination.workId,
               slug: destination.workSlug,
               isNoWork: false,

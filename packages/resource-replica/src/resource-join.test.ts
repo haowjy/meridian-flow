@@ -1,4 +1,4 @@
-/** A create that joins a draft's document changes the reservation's identity and nothing else. */
+/** A create that joins a branch's document changes the reservation's identity and nothing else. */
 import { describe, expect, it } from "vitest";
 import { catalogViewFromSnapshot } from "./catalog";
 import { planCatalogInstallation } from "./catalog-installation";
@@ -23,7 +23,7 @@ const joined: Extract<NamespaceOutcome, { kind: "create" }> = {
   kind: "create",
   result: {
     status: "joined",
-    documentId: "draft-document",
+    documentId: "branch-document",
     address: { scheme: "manuscript", path: "Chapter 2.md", name: "Chapter 2.md", workId: null },
   },
 };
@@ -98,7 +98,7 @@ function join(record: ResourceRecord): ResourceRecord {
   return write.next;
 }
 
-describe("a create that joins a draft's document", () => {
+describe("a create that joins a branch's document", () => {
   it("keeps the handle and typed content under the joined id, with the old id as an alias", () => {
     const record = answered(submitted());
     // Only the app can settle a join: it re-identifies the session around the commit.
@@ -108,13 +108,13 @@ describe("a create that joins a draft's document", () => {
 
     expect(next.resource).toMatchObject({
       handle: "handle",
-      identity: { documentId: "draft-document", revision: 2 },
+      identity: { documentId: "branch-document", revision: 2 },
       content: { kind: "exact", databaseName: "typed-content" },
       aliases: { reserved: { introducedAtIdentityRevision: 2 } },
       lifecycle: { kind: "acknowledged" },
       obligations: {
         sessionAdoption: {
-          documentId: "draft-document",
+          documentId: "branch-document",
           identityRevision: 2,
           exactDatabaseName: "typed-content",
         },
@@ -130,7 +130,7 @@ describe("a create that joins a draft's document", () => {
     const afterCatalog = planCatalogInstallation({
       projectId: "project",
       records: [submitted()],
-      view: catalogWithJoin("draft-document"),
+      view: catalogWithJoin("branch-document"),
     });
 
     // Catalog first: the reservation follows the join and no second record is discovered.
@@ -138,7 +138,7 @@ describe("a create that joins a draft's document", () => {
     const followed = afterCatalog.resources[0]?.next as ResourceRecord;
     expect(followed.resource).toMatchObject({
       handle: "handle",
-      identity: { documentId: "draft-document" },
+      identity: { documentId: "branch-document" },
       canonical: { name: "Chapter 2.md" },
     });
     expect(followed.intents).toMatchObject([{ state: "submitted" }]);
@@ -151,7 +151,7 @@ describe("a create that joins a draft's document", () => {
     const afterBoth = planCatalogInstallation({
       projectId: "project",
       records: [afterAnswer],
-      view: catalogWithJoin("draft-document"),
+      view: catalogWithJoin("branch-document"),
     });
     expect(afterBoth.resources.filter((write) => write.expectedRevision === null)).toEqual([]);
   });

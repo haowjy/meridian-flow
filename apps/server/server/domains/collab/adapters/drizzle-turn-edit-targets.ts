@@ -23,7 +23,7 @@ export async function readTurnEditTargets(
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
     .where(
       and(
-        // Lineage hides tombstoned documents, and a Discarded draft-created one has no storage left to lock.
+        // Lineage hides tombstoned documents, and a Discarded branch-created one has no storage left to lock.
         documentNotDeletedSql(documentEdits.documentId),
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,

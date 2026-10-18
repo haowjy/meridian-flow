@@ -17,12 +17,7 @@ import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
 } from "../test-support/in-memory-pending-settlement-store.js";
-import {
-  MemoryBranchStore,
-  memoryBranch,
-  testBranchRow,
-} from "../test-support/memory-branch-store.js";
-import type { BranchJournalRow } from "./branch-journal.js";
+import { MemoryDraftStore, memoryDraft, testDraftRow } from "../test-support/memory-draft-store.js";
 import { createBranchPushService } from "./branch-push.js";
 import type {
   BranchPushReadStore,
@@ -32,7 +27,8 @@ import type {
   PushLineageRow,
   SettlementBatchIdentity,
 } from "./branch-push-contracts.js";
-import type { BranchSnapshot, BranchStore } from "./branch-store.js";
+import type { DraftJournalRow } from "./draft-journal.js";
+import type { DraftSnapshot, DraftStore } from "./draft-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
@@ -56,26 +52,26 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
-/** A branch row and the content its checkpoint starts with. */
-type SeededBranch = { branch: BranchSnapshot; state: Uint8Array };
+/** A draft row and the content its checkpoint starts with. */
+type SeededDraft = { documentDraft: DraftSnapshot; state: Uint8Array };
 
-function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): SeededBranch {
+function draftFromDoc(draftId: string, documentId: DocumentId, doc: Y.Doc): SeededDraft {
   return {
-    branch: testBranchRow({ branchId, documentId, workId: WORK_ID }),
+    documentDraft: testDraftRow({ draftId, documentId, workId: WORK_ID }),
     state: Y.encodeStateAsUpdate(doc),
   };
 }
 
 function rowFor(
-  branch: BranchSnapshot,
+  documentDraft: DraftSnapshot,
   id: number,
   updateData: Uint8Array,
   updateMeta?: unknown,
-): BranchJournalRow {
+): DraftJournalRow {
   return {
     id,
-    branchId: branch.branchId,
-    generation: branch.generation,
+    draftId: documentDraft.draftId,
+    generation: documentDraft.generation,
     wId: id,
     source: "agent",
     threadId: THREAD_ID,
@@ -92,7 +88,7 @@ class StateBackedPushStores implements BranchPushReadStore, PushCommitStore {
   readonly pushes: PushLineageRow[];
 
   constructor(
-    readonly rows: BranchJournalRow[],
+    readonly rows: DraftJournalRow[],
     pushes: readonly PushLineageRow[],
     private readonly journal: ReturnType<typeof createInMemoryJournal>,
     private readonly settlements: InMemoryPendingSettlementStore,
@@ -100,72 +96,71 @@ class StateBackedPushStores implements BranchPushReadStore, PushCommitStore {
     this.pushes = [...pushes];
   }
 
-  async listActiveJournalRows(branchId: string, generation: number) {
+  async listActiveJournalRows(draftId: string, generation: number) {
     return this.rows.filter(
-      (row) =>
-        row.branchId === branchId && row.generation === generation && row.status === "active",
+      (row) => row.draftId === draftId && row.generation === generation && row.status === "active",
     );
   }
 
-  async listReviewableJournalRows(branchId: string, generation: number) {
+  async listReviewableJournalRows(draftId: string, generation: number) {
     return this.rows.filter(
       (row) =>
-        row.branchId === branchId &&
+        row.draftId === draftId &&
         row.generation === generation &&
         (row.status === "active" || row.status === "rollback_pending"),
     );
   }
 
   async listConcurrentJournalRows(
-    branchId: string,
+    draftId: string,
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ) {
     return this.rows.filter(
       (row) =>
-        row.branchId !== branchId &&
+        row.draftId !== draftId &&
         row.generation <= generation &&
         row.status === "pushed" &&
         row.id > (options.afterJournalId ?? 0) &&
         this.pushes.some(
-          (push) => push.branchId === row.branchId && push.documentId === options.documentId,
+          (push) => push.draftId === row.draftId && push.documentId === options.documentId,
         ),
     );
   }
 
-  async latestPushForBranch(branchId: string, generation: number) {
+  async latestPushForDraft(draftId: string, generation: number) {
     return (
       [...this.pushes]
         .reverse()
-        .find((push) => push.branchId === branchId && push.branchGeneration === generation) ?? null
+        .find((push) => push.draftId === draftId && push.draftGeneration === generation) ?? null
     );
   }
 
   async listJournalRowsForTurn(input: {
-    branchId?: string;
+    draftId?: string;
     generation?: number;
     threadId: ThreadId;
     turnId: TurnId;
-    statuses?: readonly BranchJournalRow["status"][];
+    statuses?: readonly DraftJournalRow["status"][];
   }) {
     return this.rows.filter(
       (row) =>
         row.threadId === input.threadId &&
         row.turnId === input.turnId &&
-        (input.branchId === undefined || row.branchId === input.branchId) &&
+        (input.draftId === undefined || row.draftId === input.draftId) &&
         (input.generation === undefined || row.generation === input.generation) &&
         (!input.statuses || input.statuses.includes(row.status)),
     );
   }
 
-  async listJournalRowsForBranch(input: {
-    branchId: string;
+  async listJournalRowsForDraft(input: {
+    draftId: string;
     generation: number;
     throughJournalId?: number;
   }) {
     return this.rows.filter(
       (row) =>
-        row.branchId === input.branchId &&
+        row.draftId === input.draftId &&
         row.generation === input.generation &&
         (input.throughJournalId === undefined || row.id <= input.throughJournalId),
     );
@@ -215,16 +210,20 @@ class StateBackedPushStores implements BranchPushReadStore, PushCommitStore {
   }
 
   private async insertPush(input: PreparedPushCommit): Promise<PushLineageRow> {
-    const upstreamUpdateSeq = await this.journal.append(input.branch.documentId, input.pushUpdate, {
-      origin: `push:${input.branch.branchId}`,
-      seq: 0,
-    });
+    const upstreamUpdateSeq = await this.journal.append(
+      input.documentDraft.documentId,
+      input.pushUpdate,
+      {
+        origin: `push:${input.documentDraft.draftId}`,
+        seq: 0,
+      },
+    );
     for (const candidate of input.journalRows) candidate.status = "pushed";
     const push: PushLineageRow = {
       id: this.pushes.length + 1,
-      branchId: input.branch.branchId,
-      branchGeneration: input.branch.generation,
-      documentId: input.branch.documentId,
+      draftId: input.documentDraft.draftId,
+      draftGeneration: input.documentDraft.generation,
+      documentId: input.documentDraft.documentId,
       journalIds: input.journalRows.map((row) => row.id),
       upstreamUpdateSeq,
       idempotencyKey: input.idempotencyKey,
@@ -239,8 +238,8 @@ class StateBackedPushStores implements BranchPushReadStore, PushCommitStore {
 
 function serviceFixture(input: {
   links?: DocumentLinkScopes;
-  branches: readonly SeededBranch[];
-  rows: BranchJournalRow[];
+  drafts: readonly SeededDraft[];
+  rows: DraftJournalRow[];
   pushes?: readonly PushLineageRow[];
   journal: ReturnType<typeof createInMemoryJournal>;
   liveDocs: ReadonlyMap<DocumentId, Y.Doc>;
@@ -252,8 +251,8 @@ function serviceFixture(input: {
     input.journal,
     settlements,
   );
-  const branchStore: BranchStore = new MemoryBranchStore(
-    input.branches.map((seeded) => memoryBranch(seeded.branch, seeded.state)),
+  const draftStore: DraftStore = new MemoryDraftStore(
+    input.drafts.map((seeded) => memoryDraft(seeded.documentDraft, seeded.state)),
   );
   const liveCoordinator: DocumentCoordinator = {
     async withDocument(documentId, run) {
@@ -268,7 +267,7 @@ function serviceFixture(input: {
     service: createBranchPushService({
       links: input.links ?? createStaticDocumentLinkScopes(),
       changeEventDelivery: { deliver() {} },
-      branchStore,
+      draftStore,
       journalReadStore: stores,
       commitStore: stores,
       settlementStore: settlements,
@@ -282,16 +281,16 @@ function serviceFixture(input: {
 
 async function blindConflictFixture(options: { links?: DocumentLinkScopes } = {}) {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
-  const contentBranchDoc = cloneDoc(contentLive);
-  const doomed = model.getBlocks(toDocHandle(contentBranchDoc))[0];
-  if (!doomed) throw new Error("Missing branch block");
-  const beforeDelete = Y.encodeStateVector(contentBranchDoc);
-  model.deleteBlock(toDocHandle(contentBranchDoc), doomed);
-  const contentBranch = branchFromDoc("branch_content", CONTENT_ID, contentBranchDoc);
+  const contentDraftDoc = cloneDoc(contentLive);
+  const doomed = model.getBlocks(toDocHandle(contentDraftDoc))[0];
+  if (!doomed) throw new Error("Missing draft block");
+  const beforeDelete = Y.encodeStateVector(contentDraftDoc);
+  model.deleteBlock(toDocHandle(contentDraftDoc), doomed);
+  const contentDraft = draftFromDoc("draft_content", CONTENT_ID, contentDraftDoc);
   const row = rowFor(
-    contentBranch.branch,
+    contentDraft.documentDraft,
     1,
-    Y.encodeStateAsUpdate(contentBranchDoc, beforeDelete),
+    Y.encodeStateAsUpdate(contentDraftDoc, beforeDelete),
   );
   const journal = createInMemoryJournal();
   await journal.append(CONTENT_ID, Y.encodeStateAsUpdate(contentLive), {
@@ -311,17 +310,17 @@ async function blindConflictFixture(options: { links?: DocumentLinkScopes } = {}
     origin: "human:writer",
     seq: 0,
   });
-  Y.applyUpdate(contentBranchDoc, Y.encodeStateAsUpdate(contentLive));
-  contentBranch.state = Y.encodeStateAsUpdate(contentBranchDoc);
+  Y.applyUpdate(contentDraftDoc, Y.encodeStateAsUpdate(contentLive));
+  contentDraft.state = Y.encodeStateAsUpdate(contentDraftDoc);
 
   const fixture = serviceFixture({
     ...options,
-    branches: [contentBranch],
+    drafts: [contentDraft],
     rows: [row],
     journal,
     liveDocs: new Map([[CONTENT_ID, contentLive]]),
   });
-  return { ...fixture, contentBranch: contentBranch.branch };
+  return { ...fixture, contentDraft: contentDraft.documentDraft };
 }
 
 describe("branch push review regressions", () => {
@@ -329,7 +328,7 @@ describe("branch push review regressions", () => {
     const whole = await blindConflictFixture();
     await expect(
       whole.service.pushToLive({
-        branchId: whole.contentBranch.branchId,
+        draftId: whole.contentDraft.draftId,
       }),
     ).resolves.toMatchObject({ status: "pushed" });
   });

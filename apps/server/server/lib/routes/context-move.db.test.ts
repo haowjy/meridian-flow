@@ -148,11 +148,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     async function yjsState(documentId: string) {
-      const branches = await db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.documentId, documentId));
-      const branchIds = new Set(branches.map((branch) => branch.id));
+      const drafts = await db
+        .select({ id: schema.documentDrafts.id })
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.documentId, documentId));
+      const draftIds = new Set(drafts.map((documentDraft) => documentDraft.id));
       return {
         checkpoints: await db
           .select()
@@ -166,8 +166,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentYjsUpdates)
           .where(eq(schema.documentYjsUpdates.documentId, documentId)),
-        journal: (await db.select().from(schema.branchWriteJournal)).filter((row) =>
-          branchIds.has(row.branchId),
+        journal: (await db.select().from(schema.draftWriteJournal)).filter((row) =>
+          draftIds.has(row.draftId),
         ),
       };
     }
@@ -187,11 +187,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "current-work",
       });
       const contextPorts = createProductionUnifiedContextPortFactory({
-        pendingDraft: createTestWorkProjectionMutation(db),
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");

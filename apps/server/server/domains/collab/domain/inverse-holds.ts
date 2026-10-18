@@ -11,9 +11,9 @@ export function prepareHolds(documents: InverseDocument[]) {
       const heldRoots = new Map<string, Set<string>>();
       for (const part of document.history) {
         if (part.kind === "write" || part.placement.kind !== "pending") continue;
-        const id = part.placement.branchId,
+        const id = part.placement.draftId,
           draft = document.drafts.get(id);
-        if (!draft || draft.branch.generation !== part.placement.generation) continue;
+        if (!draft || draft.documentDraft.generation !== part.placement.generation) continue;
         const roots = heldRoots.get(id) ?? new Set<string>();
         for (const root of liveIndex.roots(part.effect)) roots.add(root);
         heldRoots.set(id, roots);

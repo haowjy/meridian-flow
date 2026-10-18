@@ -5,7 +5,7 @@
  */
 export type TreeHookPoint =
   | "absorb.beforeRepoint"
-  | "createInDraft.afterCandidateLock"
+  | "createInBranch.afterCandidateLock"
   | "createLive.afterLease"
   | "createLive.afterCandidateLock"
   | "endUse.afterRevalidate"

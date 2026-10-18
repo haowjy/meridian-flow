@@ -91,8 +91,8 @@ export function ContextDocumentHost({
     : null;
   const reviewItemKey = reviewRoomName ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
-  // the server refuses one. Review hosts the draft branch alone.
-  const branchOnly = isDraftOnly(tab);
+  // the server refuses one. Review hosts the draft room alone.
+  const draftOnly = isDraftOnly(tab);
   // `readOnly` is the Work's scope (archived freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
@@ -103,7 +103,7 @@ export function ContextDocumentHost({
     retry?: () => void,
   ): ReactNode => {
     if (!mountEditor) return null;
-    const hosted = session !== null || branchOnly || Boolean(selectedReviewItemKey);
+    const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {
@@ -174,7 +174,7 @@ export function ContextDocumentHost({
                 )}
               />
               <EditorView
-                draftOnly={branchOnly}
+                draftOnly={draftOnly}
                 onCloseDraftOnly={
                   onCloseDraftOnly ??
                   (() => {
@@ -214,7 +214,7 @@ export function ContextDocumentHost({
       documentId={tab.documentId}
       resourceHandle={tab.resourceHandle}
       availabilityRevision={availabilityRevision}
-      liveRoom={!branchOnly}
+      liveRoom={!draftOnly}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
@@ -228,7 +228,7 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
 }
 
 /**
- * A room's scope follows its Work: an archived Work's draft and scratch are
+ * A room's scope follows its Work: an archived Work's drafts and scratch are
  * read-only (D33). The front editor already follows its room; when the server
  * names a scope that `readOnly` doesn't show, this tab's Works catalog is
  * behind (another tab archived or unarchived the Work), and the archived
@@ -245,7 +245,7 @@ function RoomScopeCatalogCheck({
   readOnly,
 }: {
   projectId: string;
-  /** Null while a draft-only document is hosted by its branch room alone. */
+  /** Null while a draft-only document is hosted by its draft room alone. */
   session: DocumentSession | null;
   reviewRoomName: string | null;
   /** The Work a review room belongs to; its archive state is that room's expected scope. */
@@ -267,7 +267,7 @@ function RoomScopeCatalogCheck({
   useEffect(() => {
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName
-      ? registry.observeBranchRoom(reviewRoomName, observer)
+      ? registry.observeDraftRoom(reviewRoomName, observer)
       : session?.subscribe(observer);
   }, [registry, reviewRoomName, session]);
   useEffect(() => {

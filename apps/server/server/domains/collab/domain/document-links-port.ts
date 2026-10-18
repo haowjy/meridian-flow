@@ -45,7 +45,7 @@ export function liveViewFor(_documentId: string, _context: WriteContext | undefi
 
 /**
  * The registry rows for minted ahead refs: each under the project its holder scope had,
- * and in the draft its holder was minted in (B7), so the draft's occupant settles it there.
+ * and in the branch its holder was minted in (B7), so the branch's occupant settles it there.
  */
 export function aheadRegistrations(mints: readonly AheadMint[]) {
   return mints.map((mint) => {
@@ -57,7 +57,7 @@ export function aheadRegistrations(mints: readonly AheadMint[]) {
       aheadId: parsed.aheadId,
       holderProjectId: mint.holderProjectId,
       address: mint.address,
-      ...(mint.view.kind === "draft" ? { draftId: mint.view.draftId } : {}),
+      ...(mint.view.kind === "branch" ? { branchId: mint.view.branchId } : {}),
     };
   });
 }
