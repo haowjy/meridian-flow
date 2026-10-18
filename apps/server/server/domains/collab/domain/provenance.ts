@@ -780,10 +780,10 @@ function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): Li
 
 function allStringRanges(doc: Y.Doc): RangeIndex<true> {
   const index = new RangeIndex<true>("historical string target");
-  const store = (doc as unknown as { store: { clients: Map<number, YItemLike[]> } }).store;
-  for (const structs of store.clients.values()) {
+  for (const structs of doc.store.clients.values()) {
     for (const item of structs) {
-      if (item.content.constructor?.name !== "ContentString") continue;
+      // A gc-enabled writer's update carries GC structs for prose it deleted before syncing.
+      if (!(item instanceof Y.Item) || !(item.content instanceof Y.ContentString)) continue;
       index.add(
         { clientID: item.id.client, clock: item.id.clock, length: item.length },
         true,
