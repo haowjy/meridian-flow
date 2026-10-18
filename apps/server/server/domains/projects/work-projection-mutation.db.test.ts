@@ -27,6 +27,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -207,6 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const projection = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -306,6 +308,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const measured = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -331,8 +334,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(contextCatalogCommits)
         .where(eq(contextCatalogCommits.scopeKey, scopeKey));
       await runInDrizzleTransaction(db, async () => {
-        await measured.touchWorks([WORK_ID]);
-        await measured.touchWorks([SECOND_WORK_ID]);
+        await measured.touchWorks([WORK_ID], new Date());
+        await measured.touchWorks([SECOND_WORK_ID], new Date());
         expect(wakes).toHaveLength(0);
       });
       const [headAfter] = await db
@@ -390,6 +393,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const measured = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -399,14 +403,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(contextCatalogScopeHeads)
         .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
       await runInDrizzleTransaction(db, async () => {
-        await measured.touchWorks([WORK_ID]);
+        await measured.touchWorks([WORK_ID], new Date());
         await expect(
           runInDrizzleSavepoint(db, async () => {
-            await measured.touchWorks([SECOND_WORK_ID]);
+            await measured.touchWorks([SECOND_WORK_ID], new Date());
             throw new Error("failed child");
           }),
         ).rejects.toThrow("failed child");
-        await measured.touchWorks([SECOND_WORK_ID]);
+        await measured.touchWorks([SECOND_WORK_ID], new Date());
         await runInDrizzleSavepoint(db, () => measured.publishWorks([WORK_ID]));
         expect(wakes).toHaveLength(0);
       });
@@ -443,6 +447,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const projection = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -454,6 +459,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await appendBranchRows(branches, branchId, [
           { updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } },
         ]);
+        // The draft-effect projection's write, which stores the count the append moved.
+        const appended = await branches.getBranch(branchId);
+        if (!appended) throw new Error(`missing branch ${branchId}`);
+        await branches.writeEffect({
+          branchId,
+          revision: appended.revision,
+          hasEffect: true,
+          workId: appended.workId,
+        });
       }
       wakes.length = 0;
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });

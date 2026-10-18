@@ -140,7 +140,6 @@ function stores(
       return { status: "inserted", pushes: rows };
     },
     commitDiscard: async () => {},
-    lockDraftWorks: async () => new Set<string>(),
   };
   const loaded = async () => {
     if (!staged) throw new Error("no staged batch");

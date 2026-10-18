@@ -22,10 +22,5 @@ export function settleBefore<T extends object>(target: T, flush: () => Promise<v
 export function convergedReview<C extends CollabDomain>(collab: C): C {
   const flush = () => collab.branchEffects.flush();
   settleBefore(collab.draftReview, flush);
-  const count = collab.countPendingByWorkIds.bind(collab);
-  collab.countPendingByWorkIds = async (workIds) => {
-    await flush();
-    return count(workIds);
-  };
   return collab;
 }

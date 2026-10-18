@@ -690,7 +690,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
-      countPendingByWorkIds: workDraftPendingStore.countPendingByWorkIds,
     },
     branchPeers,
     drafts,

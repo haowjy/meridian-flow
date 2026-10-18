@@ -309,6 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const projection = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });

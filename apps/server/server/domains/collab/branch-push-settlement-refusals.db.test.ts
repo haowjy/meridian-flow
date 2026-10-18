@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
+import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-branch-push.js";
 import type { SettlementBatchScope } from "./domain/ports/settlement-publication.js";
 import {
   ALPHA_ID,
@@ -72,6 +73,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     const deferred: string[] = [];
     const workPublication = createWorkProjectionMutation({
       db,
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       availability: {
         async advance() {
           deferred.push("availability");
