@@ -288,7 +288,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "active",
       });
       expect(nextPeer.branchId).not.toBe(oldPeer.branchId);
-      // A close is a review-membership input: it moves the revision a frame predicted at (§2.5).
+      // A close moves the revision, so an exact rewrite computed before it misses.
       expect(oldRow).toMatchObject({ status: "closed", revision: oldPeer.revision + 1 });
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
@@ -363,7 +363,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         captureQueries = false;
       }
-      // The membership flip is predicted on the candidate: the Work is touched, never counted.
+      // An append locks no Work and counts no pending drafts (#931).
       expect(
         measuredQueries.filter((query) =>
           query.startsWith('(select "drafts"."origin_work_id", "document_branches"."document_id"'),

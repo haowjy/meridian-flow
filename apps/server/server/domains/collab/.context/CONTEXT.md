@@ -288,15 +288,17 @@ fence orders it against every other write, so a frame that lands meanwhile is
 folded in and a rewrite that commits first makes it miss until the next frame
 past the bound. A failure is logged as `collab.branch` `compaction.failed`.
 
-Every bounded branch write (frame, reply save, inverse, pull, segment rows,
-selective and item Discard) runs its attempts through `runBoundedAttempts`
-(`domain/branch-attempts.ts`): capture and compute off every lock, one commit
-scope per attempt (a root transaction, or one savepoint inside an ambient one)
-opened before its first branch-store lock, and a miss that leaves that scope
-before the next capture. The attempt owns its candidates: one completed
-attempt transfers them to publication, and any unwind disposes the rest,
-including a write whose own statement succeeded in a scope a later miss rolled
-back. The bound's exhaustion outcome stays with each caller.
+Every branch write runs through `runBoundedAttempts`
+(`domain/branch-attempts.ts`), the one owner of a candidate's lifetime: capture
+and compute off every lock, one commit scope per attempt (a root transaction,
+or one savepoint inside an ambient one) opened before its first branch-store
+lock, and a miss that leaves that scope before the next capture. The attempt
+owns its candidates: a completed attempt transfers them to publication, and any
+unwind disposes the rest, including a write whose own statement succeeded in a
+scope a later miss rolled back. An append (a frame, segment rows) is one
+attempt and never retries; only exact and fold rewrites (a reply save's peer
+checkpoints, an inverse, a pull, Apply staging, selective and item Discard)
+recapture on a miss. The bound's exhaustion outcome stays with each caller.
 
 A reply save is an attempt across every participating core: prepare replays
 each staged document on a candidate, consume appends per upstream inside one
@@ -306,8 +308,11 @@ runs once, and an attempt prepared before it is disposed if it throws. The
 save and a thread core's tool-time accesses hold no branch: they prepare
 through the coordinator's save operations (`withTransient`,
 `prepareStagedRows`, `prepareCatchUp`, `commitSegmentRows`), which read
-committed replicas and write only through revision-fenced attempts, and read
-the journal through one `BranchReplayJournalReads` port. The confirmation is
+committed replicas and read the journal through one `BranchReplayJournalReads`
+port. The reply's rows reach each branch as a sequenced append, like a frame's,
+and never miss on a revision; a peer's catch-up checkpoint (`prepareCatchUp`) is
+an exact rewrite, so a moved peer is the branch miss that makes the save attempt
+again. The confirmation is
 the retained exception: it runs once, outside the save attempt, and holds
 its Work rows and draft and live advisory locks across attempts 2 to 4; only
 branch rows release on the savepoint rollback. Apply, selective Discard and
