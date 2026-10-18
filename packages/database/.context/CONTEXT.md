@@ -48,8 +48,14 @@ A `branches` row is a Work's pending file tree. `document_drafts` stores each
 document version, with writes in `draft_write_journal`; `branch_tree_changes`
 and `branch_commands` belong to the whole branch. The `branch_push_*` tables
 retain their batch-level names. Migration `0068` renames metadata and replaces
-both trail functions atomically. `0069` rewrites stored IDs and JSON in bounded
-committed batches, then replaces the pending-placement index concurrently.
+both trail functions atomically. `0069` preserves opaque document-draft IDs and
+rewrites JSON in native-primary-key pages of at most 500 rows, committing each
+receipt's origin/placement and each settlement's payload/tag together. Link views
+and their tuple digests change together (equivalent showings retain the greatest
+sequence), then the pending-placement index is replaced concurrently. Command
+fingerprints retain their original canonical key/kind encoding in
+`collab/domain/branch-commands.ts`; stored hashes alone cannot be translated after
+an API vocabulary change.
 
 
 Drizzle timestamp helpers use JS `Date` mode. The small set of string-mode
