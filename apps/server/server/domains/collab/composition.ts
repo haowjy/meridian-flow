@@ -32,6 +32,7 @@ import {
   createAgentEditObservabilityOptions,
   createAppendCommittedEvent,
   createBranchAgentEditDiagnostics,
+  createBranchProjectionDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
   createDraftBranchAheadDiagnostics,
@@ -241,7 +242,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: branchCoordinator,
     store: branches,
     pulls: branchPulls,
-    diagnostics: writerFrameDiagnostics,
+    diagnostics: createBranchProjectionDiagnostics(deps.eventSink),
     outsideTransaction: runOutsideWrite,
   });
 

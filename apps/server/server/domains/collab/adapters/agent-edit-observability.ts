@@ -13,6 +13,7 @@ import {
   unknownToEventPayload,
 } from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
+import type { BranchProjectionDiagnostics } from "../domain/branch-projection.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { WriterFrameDiagnostics } from "../domain/branch-writer-frames.js";
@@ -24,38 +25,11 @@ import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-branches.js";
 
-export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
+/** The effect projection job's failures and blocked legacy baselines. */
+export function createBranchProjectionDiagnostics(
+  eventSink?: EventSink,
+): BranchProjectionDiagnostics {
   return {
-    backgroundFailed({ documentId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.branch_pull",
-        name: "background.failed",
-        correlation: { documentId },
-        payload: unknownToEventPayload(cause),
-      });
-    },
-  };
-}
-
-/**
- * The branch coordinator's events: a background fold that failed, a room found behind its
- * branch and reconciled, an update that arrived before its prefix, and the projection job's
- * failures.
- */
-export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
-  return {
-    appendPrefixMissing({ branchId, clocks }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.branch",
-        name: "append_prefix_missing",
-        correlation: { branchId },
-        payload: { clocks: clocks.slice(0, 16) },
-      });
-    },
     projectionFailed({ branchId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
@@ -74,6 +48,40 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         name: "projection_baseline_blocked",
         correlation: { branchId, documentId },
         payload: {},
+      });
+    },
+  };
+}
+
+export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
+  return {
+    backgroundFailed({ documentId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.branch_pull",
+        name: "background.failed",
+        correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/**
+ * The branch coordinator's events: a background fold that failed, a room found behind its
+ * branch and reconciled, and an update that arrived before its prefix.
+ */
+export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
+  return {
+    appendPrefixMissing({ branchId, clocks }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.branch",
+        name: "append_prefix_missing",
+        correlation: { branchId },
+        payload: { clocks: clocks.slice(0, 16) },
       });
     },
     roomReconciled({ branchId, generation, trigger, ...payload }) {

@@ -99,8 +99,6 @@ export function openGateway(
     diagnostics: {
       compactionFailed() {},
       appendPrefixMissing() {},
-      projectionFailed() {},
-      projectionBaselineBlocked() {},
       roomReconciled: (input) => reconciled.push(input),
     },
   });

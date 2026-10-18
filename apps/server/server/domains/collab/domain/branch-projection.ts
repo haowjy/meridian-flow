@@ -15,7 +15,6 @@ import * as Y from "yjs";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import { BranchMissingError, type BranchStore, type StaleEffectCursor } from "./branch-store.js";
-import type { WriterFrameDiagnostics } from "./branch-writer-frames.js";
 import {
   type EffectFingerprint,
   effectFingerprint,
@@ -46,6 +45,16 @@ export type BranchProjection = {
   dispose(): void;
 };
 
+export type BranchProjectionDiagnostics = {
+  /** A projection run failed; the branch is retried on its backoff and never dropped. */
+  projectionFailed(input: { branchId: string; cause: unknown }): void;
+  /**
+   * A legacy branch's baseline cannot be established: its document has a terminally blocked
+   * settlement. Once per process; the branch waits for its next append or a restart.
+   */
+  projectionBaselineBlocked(input: { branchId: string; documentId: string }): void;
+};
+
 type Outcome = "done" | "drop" | "moved" | "contended" | "fenced" | "parked";
 
 type Entry = {
@@ -65,7 +74,7 @@ export function createBranchProjection(input: {
   coordinator: Pick<BranchCoordinator, "readBranch">;
   store: Pick<BranchStore, "readEffectBaseline" | "writeEffect" | "staleEffectBranches">;
   pulls: Pick<BranchPullService, "pullWorkDraft">;
-  diagnostics?: Pick<WriterFrameDiagnostics, "projectionFailed" | "projectionBaselineBlocked">;
+  diagnostics?: BranchProjectionDiagnostics;
   /** Runs a body outside every ambient transaction and write grant. */
   outsideTransaction<T>(operation: () => T): T;
   maxRuns?: number;

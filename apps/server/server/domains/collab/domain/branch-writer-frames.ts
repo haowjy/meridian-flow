@@ -47,13 +47,6 @@ export type WriterFrameDiagnostics = {
     branchId: string;
     clocks: readonly { client: number; clock: number }[];
   }): void;
-  /** A projection run failed; the branch is retried on its backoff and never dropped. */
-  projectionFailed(input: { branchId: string; cause: unknown }): void;
-  /**
-   * A legacy branch's baseline cannot be established: its document has a terminally blocked
-   * settlement. Once per process; the branch waits for its next append or a restart.
-   */
-  projectionBaselineBlocked(input: { branchId: string; documentId: string }): void;
 };
 
 export function createWriterFrames(
