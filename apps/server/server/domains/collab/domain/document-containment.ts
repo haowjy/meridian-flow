@@ -39,13 +39,29 @@ export function createDocumentContainment() {
     contains(document: Y.Doc, update: Uint8Array): boolean {
       const cached = cacheFor(document);
       cached.stateVector ??= Y.decodeStateVector(Y.encodeStateVector(document));
-
-      // Struct novelty is sufficient to reject containment. The inverse is not
-      // sufficient: delete-only updates must still use the exact predicate.
-      for (const [clientId, endClock] of Y.parseUpdateMeta(update).to) {
-        if (endClock > (cached.stateVector.get(clientId) ?? 0)) return false;
-      }
-      return Y.snapshotContainsUpdate(snapshotFor(document), update);
+      return containedIn(cached.stateVector, () => snapshotFor(document), update);
     },
   };
+}
+
+/** `update` judged against `document` once, with no cache: for a document built per call. */
+export function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
+  return containedIn(
+    Y.decodeStateVector(Y.encodeStateVector(document)),
+    () => Y.snapshot(document),
+    update,
+  );
+}
+
+function containedIn(
+  stateVector: Map<number, number>,
+  snapshot: () => Y.Snapshot,
+  update: Uint8Array,
+): boolean {
+  // Struct novelty is sufficient to reject containment. The inverse is not
+  // sufficient: delete-only updates must still use the exact predicate.
+  for (const [clientId, endClock] of Y.parseUpdateMeta(update).to) {
+    if (endClock > (stateVector.get(clientId) ?? 0)) return false;
+  }
+  return Y.snapshotContainsUpdate(snapshot(), update);
 }

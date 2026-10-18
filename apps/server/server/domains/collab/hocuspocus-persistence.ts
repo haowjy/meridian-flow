@@ -466,8 +466,9 @@ export function createHocuspocusPersistenceService(
               throw new Error("retired-durable-authority-generation");
             }
           },
-          // Reconnects replay cached state and delete sets that Yjs would discard
-          // on apply; admitting them wastes storage and pollutes safety signals.
+          // A fast path only: reconnects replay cached state and delete sets the room already
+          // holds, refused here without a transaction. The room lags admissions still in their
+          // transaction, so the journal judges novelty again under the document lock (#946).
           isContained: () => documentContainment.contains(input.document, input.update),
           async append() {
             const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
@@ -503,7 +504,9 @@ export function createHocuspocusPersistenceService(
             }
           },
         });
-        if (!admission.admitted) return { admitted: false, joinedSettlement: false };
+        // Refused before the lock, or under it: another copy of this update was stored first.
+        if (!admission.admitted || !admission.value)
+          return { admitted: false, joinedSettlement: false };
         deps.onLiveUpdatePersisted?.(input.documentId);
         return {
           admitted: true,

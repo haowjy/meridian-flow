@@ -28,6 +28,14 @@ contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). A frame
 racing another write waits for the row lock once and never judges again; no
 branch mutex exists to hold against a frame.
 
+A live-room writer frame is judged new the same way, where it serializes: the
+journal's `appendWriterUpdate` holds the document mutation lock and compares the
+update with the stored state, so a copy whose structs and deletes are already
+stored writes no row, no receipt and no settlement join, and is acknowledged
+(#946: a second tab relaying a peer's keystroke on its own socket). The
+pre-lock check against the room is only a fast refusal for reconnect replays;
+the room lags admissions still in their transaction.
+
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
 error to preserve that transport code.
