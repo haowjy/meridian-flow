@@ -330,7 +330,7 @@ export function createBranchPullService(input: {
     peerBranchId: string,
     upstream: { branchId: string; generation: number; state: Uint8Array },
   ): Promise<PullOutcome> {
-    const upstreamDoc = docFromSnapshot(upstream.state);
+    const upstreamDoc = yjsUpdateFromState(upstream.state);
     try {
       return await input.branchCoordinator.pullFromDoc({
         branchId: peerBranchId,
@@ -352,8 +352,4 @@ class PeerPullRefused extends Error {
     super(`Thread peer ${peerBranchId} pull was refused: ${outcome}`);
     this.name = "PeerPullRefused";
   }
-}
-
-function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
-  return yjsUpdateFromState(snapshot);
 }

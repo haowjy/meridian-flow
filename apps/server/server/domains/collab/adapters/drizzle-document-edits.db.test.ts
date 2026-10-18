@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { readBranchContent } from "../test-support/branch-store-seam.js";
-import { commitSegmentRows } from "../test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -180,7 +179,7 @@ describe("document edit receipts (Postgres)", () => {
             if (text) value.insert(0, text);
           });
           expect(
-            await commitSegmentRows(fixture.branchCoordinator, {
+            await fixture.branchCoordinator.commitSegmentRows({
               branchId,
               sourceDoc: doc,
               expectedGeneration: snapshot.generation,

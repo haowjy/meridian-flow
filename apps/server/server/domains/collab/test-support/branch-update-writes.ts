@@ -1,18 +1,10 @@
 /** Test writes that reach a branch through the coordinator operations a reply's save uses. */
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchCoordinator, SegmentRowsInput } from "../domain/branch-coordinator.js";
+import type { BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { AppendBranchJournalInput, BranchStore } from "../domain/branch-store.js";
 
 type SaveDoors = Pick<BranchCoordinator, "readBranch" | "commitSegmentRows" | "resetFromDoc">;
-
-/** Commits segment rows to one branch the way a save does. */
-export function commitSegmentRows(
-  coordinator: SaveDoors,
-  input: SegmentRowsInput,
-): Promise<boolean> {
-  return coordinator.commitSegmentRows(input);
-}
 
 /** Journals `updateData` as one row on the branch's current generation. */
 export async function commitJournaledUpdate(

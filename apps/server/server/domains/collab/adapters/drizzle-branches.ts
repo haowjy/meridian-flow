@@ -72,8 +72,6 @@ import {
 } from "./drizzle-branch-storage.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
 
-export type DrizzleBranchStore = ApplicationBranchStore;
-
 export type RewriteCommitted = {
   branchId: string;
   rewrite: CommitRewriteInput["operation"]["kind"];
@@ -114,7 +112,7 @@ export function createDrizzleBranchStore(
     /** An `appendRows` committed: its wait for the row lock and its hold to `COMMIT`. */
     onAppendSequenced?: (detail: AppendCommitted) => void;
   },
-): DrizzleBranchStore {
+): ApplicationBranchStore {
   const { live, workProjection, drafts, onRewriteCommitted, onAppendSequenced } = deps;
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
