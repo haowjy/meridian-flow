@@ -945,7 +945,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         }
 
         if (compactedThroughSeq > 0) {
-          // Publish every retired prefix, even when an ordinary checkpoint
+          // Advance the head past every retired prefix, even when an ordinary checkpoint
           // already covers it and this compaction folds no new rows.
           await txDb
             .update(documentYjsHeads)

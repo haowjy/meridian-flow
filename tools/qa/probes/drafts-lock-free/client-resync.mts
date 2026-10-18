@@ -252,7 +252,7 @@ function openServer(harness: Harness, workId: string) {
   const binding = createHocuspocusBinding();
   const prefixMissing: unknown[] = [];
   const coordinator = phase4Coordinator(harness, {
-    onBranchUpdate: (update) => binding.publishBranchUpdate(update),
+    onBranchUpdate: (update) => binding.deliverBranchUpdate(update),
     diagnostics: { appendPrefixMissing: (input) => prefixMissing.push(input) },
   });
   const persistence = createHocuspocusPersistenceService({

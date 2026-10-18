@@ -434,7 +434,7 @@ describe("document revisions (postgres and collab)", () => {
     );
   });
 
-  it("publishes a root-committed pull even when its caller response aborts", async () => {
+  it("delivers a root-committed pull even when its caller response aborts", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();

@@ -140,7 +140,6 @@ function stores(
       return { status: "inserted", pushes: rows };
     },
     commitDiscard: async () => {},
-    lockDraftWorks: async () => new Set<string>(),
   };
   const loaded = async () => {
     if (!staged) throw new Error("no staged batch");
@@ -181,7 +180,7 @@ function stores(
         ),
       };
     },
-    checkPublication: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
+    checkApply: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
     listRecoverableBatchIds: async () => [],
   };
   return { commitStore, settlementStore };

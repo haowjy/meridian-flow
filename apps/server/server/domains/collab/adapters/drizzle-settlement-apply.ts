@@ -1,5 +1,5 @@
 /**
- * Publication steps inside a settlement transaction: planning them, taking the
+ * Apply steps inside a settlement transaction: planning them, taking the
  * batch's locks in the global order over everything they declare, and
  * combining their admission decisions. The pre-staging check and the
  * completion both call `planAndLock`, so they plan the same steps and lock the
@@ -12,24 +12,24 @@ import { asc, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type { PublicationCheckResult } from "../domain/ports/pending-settlement-store.js";
+import type { ApplyCheckResult } from "../domain/ports/pending-settlement-store.js";
 import type {
-  PublicationAdmission,
-  PublicationItemHold,
-  PublicationItemOutcome,
+  ApplyAdmission,
+  ApplyItemHold,
+  ApplyItemOutcome,
+  SettlementApplyPlan,
+  SettlementApplyStep,
   SettlementBatchScope,
   SettlementNamespaceLocks,
-  SettlementPublicationPlan,
-  SettlementPublicationStep,
-} from "../domain/ports/settlement-publication.js";
+} from "../domain/ports/settlement-apply.js";
 
 /** Where Apply's tree work joins settlement, and the namespace locks it needs. */
-export type SettlementPublication = {
+export type SettlementApply = {
   namespaces?: SettlementNamespaceLocks;
-  steps: readonly SettlementPublicationStep[];
+  steps: readonly SettlementApplyStep[];
 };
 
-export type PlannedStep = { step: number; kind: string; plan: SettlementPublicationPlan };
+export type PlannedStep = { step: number; kind: string; plan: SettlementApplyPlan };
 
 /**
  * Plans every step from the scope, then locks, each over the whole batch at
@@ -40,15 +40,15 @@ export type PlannedStep = { step: number; kind: string; plan: SettlementPublicat
  */
 export async function planAndLock(
   db: DrizzleDb,
-  publication: SettlementPublication,
+  settlementApply: SettlementApply,
   scope: SettlementBatchScope,
   members: { workIds: readonly WorkId[]; documentIds: readonly DocumentId[] },
   /** Work-first order's one owner (decision D17). */
   workBoundary: Pick<WorkProjectionMutation, "lockWorks">,
 ): Promise<PlannedStep[]> {
-  const planned = await Promise.all(publication.steps.map((step) => step.plan(scope)));
+  const planned = await Promise.all(settlementApply.steps.map((step) => step.plan(scope)));
   const plans = planned.flatMap((plan, step) =>
-    plan ? [{ step, kind: (publication.steps[step] as SettlementPublicationStep).kind, plan }] : [],
+    plan ? [{ step, kind: (settlementApply.steps[step] as SettlementApplyStep).kind, plan }] : [],
   );
   await workBoundary.lockWorks({
     works: [...members.workIds, ...plans.flatMap(({ plan }) => plan.workIds ?? [])],
@@ -65,10 +65,10 @@ export async function planAndLock(
   const documentIds = sortedUnique(plans.flatMap(({ plan }) => plan.namespaceDocumentIds ?? []));
   const sourceIds = sortedUnique(plans.flatMap(({ plan }) => plan.namespaceSourceIds ?? []));
   if (documentIds.length > 0 || sourceIds.length > 0) {
-    if (!publication.namespaces) {
-      throw new Error("A publication step needs namespace locks this store cannot take");
+    if (!settlementApply.namespaces) {
+      throw new Error("An Apply step needs namespace locks this store cannot take");
     }
-    await publication.namespaces.lockNamespaces({ documentIds, sourceIds });
+    await settlementApply.namespaces.lockNamespaces({ documentIds, sourceIds });
   }
   for (const documentId of sortedUnique([
     ...members.documentIds,
@@ -82,10 +82,10 @@ export async function planAndLock(
 /** Every plan's completion decision, in order: any refusal refuses the batch; holds are unioned. */
 export async function decideAdmission(
   plans: readonly PlannedStep[],
-  decide: (plan: SettlementPublicationPlan) => Promise<PublicationAdmission> | undefined,
-): Promise<PublicationAdmission> {
-  const hold = new Map<string, PublicationItemHold>();
-  const outcomes: PublicationItemOutcome[] = [];
+  decide: (plan: SettlementApplyPlan) => Promise<ApplyAdmission> | undefined,
+): Promise<ApplyAdmission> {
+  const hold = new Map<string, ApplyItemHold>();
+  const outcomes: ApplyItemOutcome[] = [];
   for (const { plan } of plans) {
     const admission = await decide(plan);
     if (!admission) continue;
@@ -105,8 +105,8 @@ export async function decideAdmission(
 export async function decideCheck(
   plans: readonly PlannedStep[],
   payloads: ReadonlyMap<string, JsonValue>,
-): Promise<PublicationCheckResult> {
-  const hold = new Map<string, PublicationItemHold>();
+): Promise<ApplyCheckResult> {
+  const hold = new Map<string, ApplyItemHold>();
   const staged = new Map(payloads);
   for (const { kind, plan } of plans) {
     const admission = await plan.check?.();
@@ -118,7 +118,7 @@ export async function decideCheck(
     if (admission.payload !== undefined) {
       staged.set(kind, admission.payload);
     } else if ((admission.hold?.length ?? 0) > 0 && payloads.has(kind)) {
-      throw new Error(`Publication step ${kind} held items without refining its payload`);
+      throw new Error(`Apply step ${kind} held items without refining its payload`);
     }
   }
   return { kind: "proceed", hold: [...hold.values()], payloads: staged };

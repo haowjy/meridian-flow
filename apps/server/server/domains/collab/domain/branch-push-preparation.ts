@@ -9,7 +9,7 @@ import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirr
 import * as Y from "yjs";
 import type { BranchJournalRow } from "./branch-journal.js";
 import type { PreparedPush } from "./branch-push-contracts.js";
-import { publicationBlockChanges } from "./branch-push-plan.js";
+import { applyBlockChanges } from "./branch-push-plan.js";
 import type { BranchSnapshot } from "./branch-store.js";
 import {
   journalAttributionByChangedBlock,
@@ -83,7 +83,7 @@ export async function preparePushUnderLiveLock(
     const afterBodies = new Map(
       after.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
     );
-    const changedBlocks = publicationBlockChanges({
+    const changedBlocks = applyBlockChanges({
       model: input.model,
       beforeDoc: lockCutDoc,
       afterDoc,
@@ -92,7 +92,7 @@ export async function preparePushUnderLiveLock(
         const body = (doc === lockCutDoc ? beforeBodies : afterBodies).get(
           `${identity.clientID}:${identity.clock}`,
         );
-        if (body === undefined) throw new Error("Publication block is missing its rich snapshot");
+        if (body === undefined) throw new Error("Apply block is missing its rich snapshot");
         return body;
       },
     });

@@ -1,4 +1,5 @@
 /** PostgreSQL barriers for real discard, push, and rollback Work projection owners. */
+
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -20,6 +21,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -102,6 +104,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const projection = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -167,6 +170,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(appended.entityRevision).toBe((initial.entityRevision ?? 0n) + 1n);
       await appendJournal({ kind: "edit" });
       await expect(projectionState()).resolves.toEqual(appended);
+      // The count stays 1: the projection's next write sends nothing.
+      const again = await branches.getBranch(BRANCH_ID);
+      if (!again) throw new Error("the branch is gone");
+      await branches.writeEffect({
+        branchId: BRANCH_ID,
+        revision: again.revision,
+        hasEffect: true,
+        workId: again.workId,
+      });
+      await expect(projectionState()).resolves.toEqual(appended);
 
       const journal = createDrizzleBranchJournalReadStore(db);
       const rows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
@@ -207,13 +220,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
       // The discard closed those rows and left the branch equal to live; a fresh write makes it
-      // differ again before the push stages its row.
-      await db
-        .update(documentBranches)
-        .set({ hasEffect: true })
-        .where(eq(documentBranches.id, BRANCH_ID));
+      // differ again, and its projection stores the count, before the push stages its row.
       await appendJournal({ kind: "edit" });
+      const rewritten = await currentBranch();
+      await branches.writeEffect({
+        branchId: BRANCH_ID,
+        revision: rewritten.revision,
+        hasEffect: true,
+        workId: rewritten.workId,
+      });
       const staged = await projectionState();
+      expect(staged.entityRevision).toBe((discarded.entityRevision ?? 0n) + 1n);
       const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
       const validUpdate = Y.encodeStateAsUpdate(new Y.Doc());
       const trail = {
@@ -246,7 +263,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
 
       // Withdrawal makes the draft pending again: a refused batch, then a batch whose only
-      // member is held, each publish the Work like the push that staged them did.
+      // member is held, each notify the Work like the push that staged them did.
       let decision: "refuse" | "hold" = "refuse";
       const settlement = createDrizzlePendingSettlementStore(
         db,
@@ -304,9 +321,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           afterCommit() {},
         });
       };
-      const expectPublishedAfter = async (
-        previous: Awaited<ReturnType<typeof projectionState>>,
-      ) => {
+      const expectNotifiedAfter = async (previous: Awaited<ReturnType<typeof projectionState>>) => {
         const state = await projectionState();
         expect(state.entityRevision).toBe((previous.entityRevision ?? 0n) + 1n);
         expect(BigInt(state.catalogEntityRevision ?? "0")).toBe(state.entityRevision);
@@ -316,7 +331,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         settle("00000000-0000-4000-8000-000000000948", "00000000-0000-4000-8000-000000000947"),
       ).resolves.toMatchObject({ status: "refused" });
-      const refused = await expectPublishedAfter(pushed);
+      const refused = await expectNotifiedAfter(pushed);
 
       decision = "hold";
       await pushStore.commitPushBatch({
@@ -336,11 +351,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         ],
       });
-      const repushed = await expectPublishedAfter(refused);
+      const repushed = await expectNotifiedAfter(refused);
       await expect(
         settle("00000000-0000-4000-8000-000000000949", "00000000-0000-4000-8000-00000000094a"),
       ).resolves.toMatchObject({ status: "completed", held: [{ itemKey: "chapter" }] });
-      await expectPublishedAfter(repushed);
+      await expectNotifiedAfter(repushed);
     });
   });
 }

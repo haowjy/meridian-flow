@@ -3,13 +3,13 @@
  * committed replica (admissibility, the room, the cheap echo exit, authorship as an early
  * rejection) and appended once, sequenced by the branch row's lock and finalized there against
  * what is committed (design §2), and the background tail fold a committed frame can trigger.
- * The runtime (`branch-coordinator.ts`) owns the replicas, candidates and publication; this
+ * The runtime (`branch-coordinator.ts`) owns the replicas, candidates and their installation; this
  * module owns only what a frame decides before the lock.
  */
 import type * as Y from "yjs";
 import type {
   BranchRuntime,
-  PublishedReplica,
+  CommittedReplica,
   RoomReconcileTrigger,
 } from "./branch-coordinator.js";
 import { BranchStaleUpdateError } from "./branch-store.js";
@@ -120,9 +120,9 @@ export function createWriterFrames(
    * next frame.
    */
   function compactIfLong(branchId: string): void {
-    const long = ({ tail }: PublishedReplica) =>
+    const long = ({ tail }: CommittedReplica) =>
       tail.rows >= COMPACT_TAIL_ROWS || tail.bytes >= COMPACT_TAIL_BYTES;
-    const replica = runtime.published(branchId);
+    const replica = runtime.committed(branchId);
     if (!replica || compacting.has(branchId) || !long(replica)) return;
     compacting.add(branchId);
     void (async () => {

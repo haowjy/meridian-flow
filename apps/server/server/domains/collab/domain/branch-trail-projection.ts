@@ -10,8 +10,8 @@ import * as Y from "yjs";
 import type { NoticePort } from "../../notices/index.js";
 import type { BranchJournalRow } from "./branch-journal.js";
 import type {
+  ApplyBlockChange,
   PreparedPush,
-  PublicationBlockChange,
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
@@ -166,7 +166,7 @@ function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
 
 export function preparedTrailChanges(input: {
   documentId: DocumentId;
-  changedBlocks: readonly PublicationBlockChange[];
+  changedBlocks: readonly ApplyBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
   operations: readonly ReplacementOperation[];
@@ -454,7 +454,7 @@ export function buildDurablePushTrail(input: {
   };
 }
 
-/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
+/** Net Apply ownership uses the same clock attribution as review, not canceled keystrokes. */
 function draftOperationIdsByChangedBlock(input: {
   liveDoc: Y.Doc;
   draftDoc: Y.Doc;

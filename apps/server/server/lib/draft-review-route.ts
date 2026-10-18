@@ -41,7 +41,7 @@ import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/fi
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
-import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
+import { draftApplyHttpAnswer } from "./draft-apply-http.js";
 import {
   documentTarget,
   isFileAccessRefusal,
@@ -502,7 +502,7 @@ async function commandIngress(
 }
 
 /**
- * Item Apply (§4.5): one rendered item through the one publication. A held or stale item
+ * Item Apply (§4.5): one rendered item through the one Apply path. A held or stale item
  * answers 409, never `applied`; a command id already used answers its stored result.
  */
 export async function handleApplyWorkDraftRequest(
@@ -780,9 +780,9 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
-    // Throws the HTTP error of a known publication failure; the service already answered a
+    // Throws the HTTP error of a known Apply failure; the service already answered a
     // staged Apply as pending, so a value here is nothing to return.
-    draftPublicationHttpAnswer(cause);
+    draftApplyHttpAnswer(cause);
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }

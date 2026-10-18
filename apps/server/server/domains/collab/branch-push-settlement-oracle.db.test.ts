@@ -66,7 +66,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       },
       // Another process writes the second member's draft after the batch staged it.
       afterDurableCommit: async () => competingWrite?.(),
-      publicationSteps: [
+      applySteps: [
         {
           kind: "test_first_effect",
           async plan() {

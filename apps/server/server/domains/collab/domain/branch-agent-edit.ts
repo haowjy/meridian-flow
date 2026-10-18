@@ -257,7 +257,7 @@ export function createBranchAgentEditCoordinator(input: {
           async persist() {
             for (const entry of writes) await entry.persist();
           },
-          // Publication waits for the enclosing root commit: the coordinator defers it.
+          // Installing the replica waits for the enclosing root commit: the coordinator defers it.
           transfer() {
             for (const entry of writes) entry.transfer();
           },

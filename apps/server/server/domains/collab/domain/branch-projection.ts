@@ -1,6 +1,6 @@
 /**
  * The projection job (design §3.2): a work draft's `has_effect`, its watermark and its Work's
- * touch, derived from the published replica after an append commits, never on the keystroke.
+ * touch, derived from the committed replica after an append commits, never on the keystroke.
  * Marked dirty by every committed append, coalesced per branch, run at most `maxRuns` at a time,
  * retried on backoff, and repaired by a finite sweep over the persisted stale set. Process-local:
  * two processes judging one branch at one revision write the same value twice.
@@ -193,7 +193,7 @@ export function createBranchProjection(input: {
     arm(branchId, entry, Math.min(BACKOFF_MS * 2 ** (entry.failures - 1), MAX_BACKOFF_MS));
   }
 
-  /** One judgement of the branch at its published revision, and its write. */
+  /** One judgement of the branch at its committed revision, and its write. */
   async function judge(branchId: string): Promise<Outcome> {
     let judged:
       | { kind: "done" }

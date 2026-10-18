@@ -86,7 +86,7 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
       () => s.writer.move("chapter.md", "chapter-2.md"),
     );
     expect.soft(raced.b.ok, "the rename lands").toBe(true);
-    expect.soft(raced.a, "completion publishes").toMatchObject({
+    expect.soft(raced.a, "completion applies").toMatchObject({
       ok: true,
       value: { status: "completed" },
     });

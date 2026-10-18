@@ -271,7 +271,7 @@ describe("BranchCoordinator", () => {
   });
 });
 
-it("publishes ordered segment rows once and rejects reused clients and unjournaled residuals", async () => {
+it("installs ordered segment rows once and rejects reused clients and unjournaled residuals", async () => {
   const store = new MemoryBranchStore();
   const base = docWithText("start");
   store.branches.set("work", branchSnapshot({ branchId: "work", doc: base }));

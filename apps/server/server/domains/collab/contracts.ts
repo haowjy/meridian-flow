@@ -29,13 +29,13 @@ import type {
 export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { ApplyItemRef } from "./domain/draft-apply.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type {
   CommandLookup,
   CommandLookupKey,
   DraftCommandEnvelope,
 } from "./domain/draft-commands.js";
-import type { ApplyItemRef } from "./domain/draft-publication.js";
 import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
 import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
@@ -455,7 +455,6 @@ export type TurnLiveLineageAccess = {
 
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
-  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
 
 /**

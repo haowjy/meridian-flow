@@ -162,7 +162,7 @@ prop that drifts.
   <tr>
     <td><strong>Leaving it</strong></td>
     <td>—</td>
-    <td>Apply (publish whole branch) or Discard (by discard class).</td>
+    <td>Apply (whole branch) or Discard (by discard class).</td>
   </tr>
 </table>
 </div>
@@ -216,14 +216,14 @@ carries the tokens its review rendered (location version, the live text's
 full-state fingerprint, the branch generation); Apply compares them under the
 batch's locks and answers <code>stale</code> when any moved, so the writer
 looks again. A deletion moves the fingerprint, which a state vector would miss.
-This is item and per-change Apply; whole Apply publishes the current branch.
+This is item and per-change Apply; whole Apply applies the current branch.
 Pulls (live to draft) need no consent.
-(<code>domain/draft-publication.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code>)
+(<code>domain/draft-apply.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code>)
 </p>
 
 <h2>The durable record</h2>
 <ul class="rule-list">
-  <li><strong>Change trails are the sole durable publication record.</strong>
+  <li><strong>Change trails are the sole durable Apply record.</strong>
       Settlement keeps exact authored rows plus a canonical reconciliation
       row, so cold replay matches the live merge.</li>
   <li><strong>A completed turn rests as one compact receipt.</strong>
@@ -245,7 +245,7 @@ Pulls (live to draft) need no consent.
       fact.</li>
   <li><strong>Popover Restore</strong> — a second reversal authority
       competing with receipt Undo.</li>
-  <li><strong>Publish-time rebase</strong> — rejected on product grounds: it
+  <li><strong>Apply-time rebase</strong> — rejected on product grounds: it
       would have the machine arbitrate meaning. Preserved as a rejected
       alternative in the work archive
       (<code>archive/work/draft-simplify/design/publish-time-rebase.md</code>).</li>

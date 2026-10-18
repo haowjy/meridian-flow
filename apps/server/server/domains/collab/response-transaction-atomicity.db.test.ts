@@ -111,7 +111,7 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("retry-response");
   });
 
-  it("publishes two draft-only documents back to back without retaining the branch lock", async () => {
+  it("saves two draft-only documents back to back without retaining the branch lock", async () => {
     const harness = createHarness(db);
     const fixture = harness.crossWorkProbeFixture();
     const created = [

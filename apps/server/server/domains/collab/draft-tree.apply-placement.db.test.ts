@@ -82,7 +82,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       contextLocation: { scheme: "manuscript", path: "/characters/kael-fix" },
       conflict: null,
     });
-    expect.soft(await s.applyAll(ascension), "one command, one publication").toEqual({
+    expect.soft(await s.applyAll(ascension), "one command, one Apply").toEqual({
       status: "completed",
       draftId: reviewed.draftId,
       items: [{ itemKey: reviewed.itemKey, status: "applied", notes: [] }],
@@ -176,7 +176,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       .where(and(eq(folders.name, "ideas"), sql`${folders.deletedAt} IS NULL`));
     expect.soft(ideas, "one live ideas folder").toHaveLength(1);
 
-    // A reveal that recovery publishes reaches the catalog's delta stream: a replica
+    // A reveal that recovery applies reaches the catalog's delta stream: a replica
     // replaying from a cursor taken before the Apply learns of the file (F23, E-R4).
     const { contextCatalog } = runtime.ports;
     const scope = { kind: "project" as const, projectId: s.project.id };

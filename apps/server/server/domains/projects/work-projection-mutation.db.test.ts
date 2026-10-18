@@ -1,4 +1,4 @@
-/** PostgreSQL barriers for the production Work projection publication owner. */
+/** PostgreSQL barriers for the production Works-changed notice owner. */
 
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -27,6 +27,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -43,9 +44,9 @@ import { createWorkProjectionMutation } from "./adapters/work-projection-mutatio
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("Work projection publication owner (postgres)", () => {});
+  describe.skip("Works-changed notice owner (postgres)", () => {});
 } else {
-  describe("Work projection publication owner (postgres)", () => {
+  describe("Works-changed notice owner (postgres)", () => {
     const USER_ID = "00000000-0000-4000-8000-000000000901";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
     const WORK_ID = "00000000-0000-4000-8000-000000000903";
@@ -207,6 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const projection = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -276,7 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(projectionState()).resolves.toEqual(before);
       await expect(repos.turns.findById(TURN_ID)).resolves.toBeNull();
     });
-    it("publishes document activity through the same atomic owner", async () => {
+    it("notifies document activity through the same atomic owner", async () => {
       const { projection } = await fixture();
       const effects = createDrizzleDocumentProjectionEffects(database.current, projection);
       const before = await projectionState();
@@ -306,6 +308,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const measured = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -331,8 +334,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(contextCatalogCommits)
         .where(eq(contextCatalogCommits.scopeKey, scopeKey));
       await runInDrizzleTransaction(db, async () => {
-        await measured.touchWorks([WORK_ID]);
-        await measured.touchWorks([SECOND_WORK_ID]);
+        await measured.touchWorks([WORK_ID], new Date());
+        await measured.touchWorks([SECOND_WORK_ID], new Date());
         expect(wakes).toHaveLength(0);
       });
       const [headAfter] = await db
@@ -374,7 +377,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect((await projectionState()).entityRevision).toBe(2n);
     });
-    it("discards failed savepoint Work state, merges successful state, and publishes once", async () => {
+    it("discards failed savepoint Work state, merges successful state, and notifies once", async () => {
       const db = database.current;
       const wakes: unknown[] = [];
       await fixture();
@@ -390,6 +393,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const measured = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -399,15 +403,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(contextCatalogScopeHeads)
         .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
       await runInDrizzleTransaction(db, async () => {
-        await measured.touchWorks([WORK_ID]);
+        await measured.touchWorks([WORK_ID], new Date());
         await expect(
           runInDrizzleSavepoint(db, async () => {
-            await measured.touchWorks([SECOND_WORK_ID]);
+            await measured.touchWorks([SECOND_WORK_ID], new Date());
             throw new Error("failed child");
           }),
         ).rejects.toThrow("failed child");
-        await measured.touchWorks([SECOND_WORK_ID]);
-        await runInDrizzleSavepoint(db, () => measured.publishWorks([WORK_ID]));
+        await measured.touchWorks([SECOND_WORK_ID], new Date());
+        await runInDrizzleSavepoint(db, () => measured.notifyWorksChanged([WORK_ID]));
         expect(wakes).toHaveLength(0);
       });
       const [headAfter] = await db
@@ -427,7 +431,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(headAfter?.revision).toBe((headBefore?.revision ?? 0) + 1);
       expect(wakes).toHaveLength(1);
     });
-    it("coalesces distinct real discard owners into one project publication", async () => {
+    it("coalesces distinct real discard owners into one project notice", async () => {
       const db = database.current;
       const wakes: unknown[] = [];
       await fixture();
@@ -443,6 +447,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const projection = createWorkProjectionMutation({
         db,
+        pendingCounts: createDrizzleWorkDraftPendingStore(db),
         availability,
         catalog,
       });
@@ -454,6 +459,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await appendBranchRows(branches, branchId, [
           { updateData: proseBranchUpdate(), source: "agent", updateMeta: { kind: "edit" } },
         ]);
+        // The draft-effect projection's write, which stores the count the append moved.
+        const appended = await branches.getBranch(branchId);
+        if (!appended) throw new Error(`missing branch ${branchId}`);
+        await branches.writeEffect({
+          branchId,
+          revision: appended.revision,
+          hasEffect: true,
+          workId: appended.workId,
+        });
       }
       wakes.length = 0;
       const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });

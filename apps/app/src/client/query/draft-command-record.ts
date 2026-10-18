@@ -132,12 +132,12 @@ export function shareDraftObservation(prior: unknown, next: unknown): unknown {
 }
 
 let boundAccountId: string | null = null;
-/** Moves on every account change: work admitted in an earlier one can no longer publish. */
+/** Moves on every account change: work admitted in an earlier one can no longer record. */
 let accountEpoch = 0;
 
 /**
  * An admitted command's capability over its own claim. Everything the command
- * publishes after an await (answers, confirmations, failures, release) goes
+ * records after an await (answers, confirmations, failures, release) goes
  * through it, and lands only while this claim is still the draft's pending one
  * in the account epoch it was admitted in.
  */
@@ -163,12 +163,12 @@ export function currentAccountEpoch(): number {
   return accountEpoch;
 }
 
-/** A claim, or a bare draft for publication that is not behind an await (and so cannot outlive anything). */
-type Publisher = DraftClaim | DraftRef;
-function mayPublish(by: Publisher): boolean {
+/** A claim, or a bare draft for a record write that is not behind an await (and so cannot outlive anything). */
+type RecordWriter = DraftClaim | DraftRef;
+function mayRecord(by: RecordWriter): boolean {
   return !("token" in by) || claimIsLive(by);
 }
-function draftOf(by: Publisher): DraftRef {
+function draftOf(by: RecordWriter): DraftRef {
   return "token" in by ? by.draft : by;
 }
 
@@ -270,7 +270,7 @@ export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: Clos
   const draft = draftOf(by);
   const record = recordFor(draft);
   if (
-    !mayPublish(by) ||
+    !mayRecord(by) ||
     record?.phase !== "pending" ||
     !record.command ||
     (record.command.target === "all" && !record.command.completesDraft)
@@ -284,7 +284,7 @@ export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: Clos
   }));
 }
 
-/** Publish an addressed selection result before caches refresh or the claim is released. */
+/** Records an addressed selection result before caches refresh or the claim is released. */
 export function answerDraftSelection(
   by: DraftClaim | DraftRef,
   outcome: PendingChangeCommand["outcome"],
@@ -292,7 +292,7 @@ export function answerDraftSelection(
   const draft = draftOf(by);
   const record = recordFor(draft);
   const command = pendingChangeCommand(currentDraftCommandRecords(), draft);
-  if (command && record?.phase === "pending" && mayPublish(by))
+  if (command && record?.phase === "pending" && mayRecord(by))
     setRecord(draft, () => ({
       phase: "pending",
       command: { ...command, outcome },
@@ -307,11 +307,11 @@ export function answerDraftSelection(
  */
 export function releaseDraftCommand(by: DraftClaim | DraftRef): void {
   const draft = draftOf(by);
-  if (recordFor(draft)?.phase === "pending" && mayPublish(by)) setRecord(draft, () => null);
+  if (recordFor(draft)?.phase === "pending" && mayRecord(by)) setRecord(draft, () => null);
 }
 
 export function failDraftCommand(by: DraftClaim | DraftRef, failure: DraftCommandFailure): void {
-  if (mayPublish(by)) setRecord(draftOf(by), (at) => ({ phase: "failed", failure, at }), true);
+  if (mayRecord(by)) setRecord(draftOf(by), (at) => ({ phase: "failed", failure, at }), true);
 }
 
 /** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
@@ -336,7 +336,7 @@ export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
 }
 
 export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
-  if (!mayPublish(by)) return;
+  if (!mayRecord(by)) return;
   const draft = draftOf(by);
   const prior = recordFor(draft);
   if (
@@ -473,7 +473,7 @@ export function bindDraftCommandAccount(accountId: string): void {
   resetDraftCommandRecords();
 }
 
-/** Clears what is shown and revokes every claim: an answer that arrives later has nothing to publish into. */
+/** Clears what is shown and revokes every claim: an answer that arrives later has nothing to record into. */
 export function resetDraftCommandRecords(): void {
   accountEpoch += 1;
   const unsent = Object.values(useDraftCommandStore.getState().queued);
@@ -756,7 +756,7 @@ export function failChangeCommand(
   code: ChangeFailureCode,
   refusal?: ServerRefusal,
 ): void {
-  if (!mayPublish(by)) return;
+  if (!mayRecord(by)) return;
   setChangeRecord(draftOf(by), selection, (at) => ({
     phase: "failed",
     mode,
@@ -776,7 +776,7 @@ export function confirmChangeCommand(
   selection: ChangeSelection,
   mode: ChangeCommandMode,
 ): void {
-  if (!mayPublish(by)) return;
+  if (!mayRecord(by)) return;
   setChangeRecord(draftOf(by), selection, (at) => ({
     phase: "confirmed",
     mode,

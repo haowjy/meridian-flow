@@ -252,9 +252,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async recoverPendingLiveSettlements() {
     return 0;
   },
-  async countPendingByWorkIds() {
-    return new Map();
-  },
 };
 
 function createInMemoryBranchPeerStub(

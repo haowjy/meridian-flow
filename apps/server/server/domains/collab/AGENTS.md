@@ -33,7 +33,7 @@ review settlement, and Hocuspocus admission. It composes
   projection job. Rewrites keep their revision fence. Anything that runs when a
   journal or receipt row is inserted, triggers included, adds to every keystroke's
   row hold.
-- A reply saves every document it wrote in one transaction. Live publication
+- A reply saves every document it wrote in one transaction. Live delivery
   reaches open editors only after commit; failed response replay drops only the
   rejected logical write and its dependent closure.
 - Derive read models from a journal-locked durable cut, not a warm room paired
