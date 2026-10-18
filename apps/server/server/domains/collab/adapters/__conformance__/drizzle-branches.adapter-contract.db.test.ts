@@ -6,7 +6,6 @@ import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import {
   commitJournaledUpdate,
-  commitSegmentRows,
   resetBranchFromDoc,
 } from "../../test-support/branch-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
@@ -354,7 +353,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           store: measuredStore,
         });
         expect(
-          await commitSegmentRows(coordinator, {
+          await coordinator.commitSegmentRows({
             branchId: branch.branchId,
             expectedGeneration: snapshot.generation,
             sourceDoc: source,

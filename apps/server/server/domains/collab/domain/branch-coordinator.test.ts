@@ -4,11 +4,7 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { appendBranchRows } from "../test-support/branch-store-seam.js";
-import {
-  commitJournaledUpdate,
-  commitSegmentRows,
-  resetBranchFromDoc,
-} from "../test-support/branch-update-writes.js";
+import { commitJournaledUpdate, resetBranchFromDoc } from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type MemoryBranch,
@@ -159,7 +155,7 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store });
     await expect(
-      commitSegmentRows(coordinator, {
+      coordinator.commitSegmentRows({
         branchId: "work",
         sourceDoc: sourceDoc,
         expectedGeneration: beforeWork.generation,
@@ -303,7 +299,7 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
     onBranchUpdate: () => broadcasts++,
   });
   await expect(
-    commitSegmentRows(coordinator, {
+    coordinator.commitSegmentRows({
       branchId: "work",
       expectedGeneration: 1,
       sourceDoc,
@@ -311,7 +307,7 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
     }),
   ).rejects.toThrow("unjournaled residual");
   expect(store.journal).toHaveLength(0);
-  await commitSegmentRows(coordinator, {
+  await coordinator.commitSegmentRows({
     branchId: "work",
     expectedGeneration: 1,
     sourceDoc,
@@ -321,7 +317,7 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   expect(broadcasts).toBe(1);
   expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   await expect(
-    commitSegmentRows(coordinator, {
+    coordinator.commitSegmentRows({
       branchId: "work",
       expectedGeneration: 1,
       sourceDoc,
