@@ -10,8 +10,9 @@ type CachedDocumentSnapshot = {
 /**
  * Retains one exact snapshot for each current document state. Yjs update events
  * invalidate the snapshot synchronously, including for delete-only mutations
- * whose state vector does not change. Pending state is read per call: an update
- * that only adds to it emits no update event.
+ * whose state vector does not change. Pending state is not tied to this cache:
+ * an update that only adds to it emits no update event, so its index is keyed by
+ * the pending bytes instead.
  */
 export function createDocumentContainment() {
   const snapshots = new WeakMap<Y.Doc, CachedDocumentSnapshot>();
@@ -77,10 +78,7 @@ function containedIn(
     return Y.snapshotContainsUpdate(snapshot(), update);
   }
 
-  // Pending bytes are V2 updates; incoming frames are V1.
-  const pending = pendingStructs
-    ? clockRanges(Y.decodeUpdateV2(pendingStructs.update).structs)
-    : [];
+  const pending = pendingStructs ? pendingIndexFor(pendingStructs.update) : EMPTY_INDEX;
   const incoming = Y.decodeUpdate(update);
   for (const struct of incoming.structs) {
     // A Skip marks a hole in a merged update; applying it is a no-op.
@@ -97,28 +95,71 @@ function containedIn(
   return Y.equalDeleteSets(stored, Y.mergeDeleteSets([stored, incoming.ds]));
 }
 
-type ClockRange = { client: number; start: number; end: number };
+/** Per client, the pending clock ranges sorted by start with touching ranges merged. */
+type PendingIndex = Map<number, { starts: number[]; ends: number[] }>;
 
-function clockRanges(structs: readonly (Y.Item | Y.GC | Y.Skip)[]): ClockRange[] {
-  return structs
-    .filter((struct) => !(struct instanceof Y.Skip))
-    .map((struct) => ({
-      client: struct.id.client,
-      start: struct.id.clock,
-      end: struct.id.clock + struct.length,
-    }));
+const EMPTY_INDEX: PendingIndex = new Map();
+
+// Keyed by the pending bytes themselves: Yjs replaces `pendingStructs.update` with a fresh
+// array whenever pending state changes, and a pending-only change fires no update event, so
+// identity is the one signal that tracks it exactly. Building the index once per pending
+// state keeps a check linear in the incoming update; rebuilding it per struct made a
+// 20,000-Item frame block the process for seconds.
+const pendingIndexes = new WeakMap<Uint8Array, PendingIndex>();
+
+function pendingIndexFor(update: Uint8Array): PendingIndex {
+  let index = pendingIndexes.get(update);
+  if (!index) {
+    // Pending bytes are V2 updates; incoming frames are V1.
+    index = buildPendingIndex(Y.decodeUpdateV2(update).structs);
+    pendingIndexes.set(update, index);
+  }
+  return index;
 }
 
-/** Whether `ranges` of `client` cover `[start, end)` without a gap. */
-function covers(ranges: readonly ClockRange[], client: number, start: number, end: number) {
-  let reached = start;
-  const sorted = ranges
-    .filter((range) => range.client === client && range.end > start)
-    .sort((left, right) => left.start - right.start);
-  for (const range of sorted) {
-    if (range.start > reached) return false;
-    reached = Math.max(reached, range.end);
-    if (reached >= end) return true;
+function buildPendingIndex(structs: readonly (Y.Item | Y.GC | Y.Skip)[]): PendingIndex {
+  const byClient = new Map<number, { start: number; end: number }[]>();
+  for (const struct of structs) {
+    if (struct instanceof Y.Skip) continue;
+    const { client, clock } = struct.id;
+    let ranges = byClient.get(client);
+    if (!ranges) {
+      ranges = [];
+      byClient.set(client, ranges);
+    }
+    ranges.push({ start: clock, end: clock + struct.length });
   }
-  return reached >= end;
+  const index: PendingIndex = new Map();
+  for (const [client, ranges] of byClient) {
+    ranges.sort((left, right) => left.start - right.start);
+    const starts: number[] = [];
+    const ends: number[] = [];
+    for (const range of ranges) {
+      const last = ends.length - 1;
+      // Merge only ranges that touch or overlap; a gap must stay a gap.
+      if (last >= 0 && range.start <= ends[last]) ends[last] = Math.max(ends[last], range.end);
+      else {
+        starts.push(range.start);
+        ends.push(range.end);
+      }
+    }
+    index.set(client, { starts, ends });
+  }
+  return index;
+}
+
+/** Whether pending ranges of `client` cover `[start, end)` without a gap. */
+function covers(index: PendingIndex, client: number, start: number, end: number) {
+  const ranges = index.get(client);
+  if (!ranges) return false;
+  // Coalesced ranges are disjoint and gapped, so coverage needs one range spanning the query:
+  // the last one starting at or before `start`.
+  let low = 0;
+  let high = ranges.starts.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (ranges.starts[middle] <= start) low = middle + 1;
+    else high = middle;
+  }
+  return low > 0 && ranges.ends[low - 1] >= end;
 }

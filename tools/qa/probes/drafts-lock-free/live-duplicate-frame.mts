@@ -1,11 +1,12 @@
 /**
  * One live keystroke delivered on two sockets of the same live room (a second tab relaying a
  * peer's update, issue #946), admitted through the production live admission port as
- * Hocuspocus's `beforeSync` does, then applied to the room. Five arms: the second copy after
+ * Hocuspocus's `beforeSync` does, then applied to the room. Six arms: the second copy after
  * the first is applied, both copies concurrent (the second arrives inside the first's admission
  * transaction), a delete-only update sent twice concurrently, and an update whose predecessor
  * has not arrived yet (Yjs holds it pending) sent twice, sequentially and concurrently, before
- * that predecessor. Whatever the interleaving, a
+ * that predecessor, the last also with a 10,000-Item tail whose duplicate must be judged within a
+time bound (any client can send such a frame, and admission blocks the process). Whatever the interleaving, a
  * copy whose structs and deletes the stored document already holds writes no journal row, no
  * human edit and no admission sequence.
  */
@@ -20,12 +21,16 @@ import { type Harness, observe, type Probe, Y } from "./harness.mts";
 
 const KEYS = 20;
 const DELETES = 5;
+// A pending tail this large took ~0.8 s to judge when containment re-sorted the pending ranges
+// per incoming struct; the linear check takes a few milliseconds.
+const LARGE_PENDING_ITEMS = 10_000;
+const LARGE_PENDING_BOUND_MS = 100;
 
 export const liveDuplicateFrame: Probe = {
   name: "live-duplicate-frame",
   decision: "#946 one novelty owner under the document lock",
   expected:
-    "every arm: one admitted frame, one journal row and one human edit per update; admission sequences have no gaps; journal text equals the room's",
+    "every arm: one admitted frame, one journal row and one human edit per update; admission sequences have no gaps; journal text equals the room's; a 10,000-Item pending duplicate is judged within 100 ms",
   async run(harness: Harness) {
     const { raw, ids, persistence } = harness;
     const { documentId, live: seed } = await harness.seedDocument("dup");
@@ -81,10 +86,24 @@ export const liveDuplicateFrame: Probe = {
       };
     // A frame whose predecessor has not arrived: the stored document holds it as Yjs pending
     // structs, which its state vector and snapshot leave out. The tail goes twice, then the prefix.
-    const missingPrefix = (run: (u: Uint8Array) => Promise<boolean[]>) => async () => {
-      const prefix = updateOf(() => text.insert(text.length, " prefix"));
-      const tail = updateOf(() => text.insert(text.length, " tail"));
-      return [...(await run(tail)), await frame(prefix)];
+    const missingPrefix =
+      (
+        run: (u: Uint8Array) => Promise<boolean[]>,
+        tailEdit = () => text.insert(text.length, " tail"),
+      ) =>
+      async () => {
+        const prefix = updateOf(() => text.insert(text.length, " prefix"));
+        const tail = updateOf(tailEdit);
+        return [...(await run(tail)), await frame(prefix)];
+      };
+    // Inserting at the start never extends the previous Item, so each character is its own struct.
+    let duplicateMs = 0;
+    const timedSequential = async (u: Uint8Array) => {
+      const first = await frame(u);
+      const start = performance.now();
+      const second = await frame(u);
+      duplicateMs = performance.now() - start;
+      return [first, second];
     };
 
     const arms: [string, number, () => Promise<boolean[]>][] = [
@@ -97,6 +116,15 @@ export const liveDuplicateFrame: Probe = {
       ],
       ["missing-prefix sequential", 2, missingPrefix(twice.sequential)],
       ["missing-prefix concurrent", 2, missingPrefix(twice.concurrent)],
+      [
+        "large missing-prefix sequential",
+        2,
+        missingPrefix(timedSequential, () =>
+          tab.transact(() => {
+            for (let i = 0; i < LARGE_PENDING_ITEMS; i += 1) text.insert(0, "x");
+          }),
+        ),
+      ],
     ];
     let failed = false;
     for (const [arm, count, run] of arms) {
@@ -121,7 +149,8 @@ export const liveDuplicateFrame: Probe = {
         humanEdits: edits,
         sequenceGaps: gaps.length,
       };
-      observe(arm, result);
+      observe(arm, arm.startsWith("large") ? { ...result, duplicateMs } : result);
+      if (arm.startsWith("large") && duplicateMs > LARGE_PENDING_BOUND_MS) failed = true;
       if (
         result.framesAdmitted !== count ||
         result.journalRows !== count ||
@@ -134,6 +163,6 @@ export const liveDuplicateFrame: Probe = {
     const journalText = await harness.liveText(documentId);
     observe("text", { room: roomText, journalMatchesRoom: journalText === roomText });
     assert.equal(journalText, roomText);
-    assert.equal(failed, false, "a duplicate copy was journaled");
+    assert.equal(failed, false, "a duplicate copy was journaled or judged too slowly");
   },
 };
