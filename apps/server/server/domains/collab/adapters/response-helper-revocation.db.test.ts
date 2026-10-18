@@ -411,7 +411,7 @@ describe("response helper revocation (Postgres)", () => {
     });
     // Pause the read before it reads any branch, so Discard commits ahead of it.
     let once = true;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();

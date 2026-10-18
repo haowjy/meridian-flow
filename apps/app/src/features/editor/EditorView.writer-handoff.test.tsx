@@ -9,7 +9,7 @@ import { act, useEffect, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { resetBranchCommandRecords } from "@/client/query/branch-command-record";
-import { useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import { DocumentSocketHarness } from "@/core/transport/test-support/DocumentSocketHarness";
@@ -45,7 +45,7 @@ afterEach(async () => {
 });
 
 const mocks = vi.hoisted(() => ({
-  listWorkBranches: vi.fn(),
+  listWorkBranchDrafts: vi.fn(),
   getDraftPreview: vi.fn(),
   applyDraftChanges: vi.fn(),
   discardDraft: vi.fn(),
@@ -69,8 +69,8 @@ let review: ReturnType<typeof useDraftReview> | null = null;
 
 let unmountReview!: () => void;
 function WorkList() {
-  const { branches } = useWorkBranches("project-a", "work-a");
-  return <output data-work-list>{branches?.map((draft) => draft.itemKey).join(",")}</output>;
+  const { drafts } = useWorkBranchDrafts("project-a", "work-a");
+  return <output data-work-list>{drafts?.map((draft) => draft.itemKey).join(",")}</output>;
 }
 
 function Scope() {
@@ -120,7 +120,7 @@ beforeEach(() => {
   resetBranchCommandRecords();
   review = null;
   heldCarryLookup = null;
-  mocks.listWorkBranches.mockResolvedValue({ items: [listed] });
+  mocks.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
 });
 
@@ -223,12 +223,12 @@ function successor(room: string, ids: string[], listedDraft: boolean) {
     draftGeneration: 2,
     reviewRoomName: room,
   });
-  mocks.listWorkBranches.mockResolvedValue({
+  mocks.listWorkBranchDrafts.mockResolvedValue({
     items: listedDraft ? [{ ...listed, draftGeneration: 2 }] : [],
   });
 }
-const previewKey = projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, "draft-a");
-const listKey = projectQueryKeys.workBranches("project-a", "work-a");
+const previewKey = projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a");
+const listKey = projectQueryKeys.workBranchDrafts("project-a", "work-a");
 async function deliver(room: string) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(20);
@@ -292,7 +292,7 @@ it("delivers unmounted writing before publishing the draft list after acknowledg
     expect(old.document.isDestroyed).toBe(true);
     expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-    mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
+    mocks.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
     await acknowledge(newRoom);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
     expect(runtime.pool.peek(newRoom)).toBeUndefined();

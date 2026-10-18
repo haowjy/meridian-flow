@@ -3,7 +3,7 @@
  * the lock is held to `COMMIT`, so a fold's `checkpoint_seq = max(id)` under `FOR UPDATE` is a
  * complete prefix. The append drops its revision predicate; this is what keeps the fold exact.
  *
- * - Arm 1: process A's frame holds at `branch.append.beforeCommit` (rows inserted, row held);
+ * - Arm 1: process A's frame holds at `draft.append.beforeCommit` (rows inserted, row held);
  *   process B's live pull waits on A's row (`pg_stat_activity`); after A commits, the pull's
  *   checkpoint covers A's id, the tail is empty and A's token is materialized.
  * - Arm 2 (negative control, raw SQL): a low-id `INSERT` with no row lock held open while a
@@ -57,7 +57,7 @@ export const appendTailOrder: Probe = {
           roomDocument: a.room,
         });
         Y.applyUpdate(a.room, warm);
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const frame = independently(() =>
             frameOutcome(

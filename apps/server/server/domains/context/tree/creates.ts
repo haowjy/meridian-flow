@@ -118,7 +118,7 @@ export async function createInBranch(
     documentId =
       (
         await pickHiddenCandidate(db, slot, {
-          excludeDraftId: input.branchId,
+          excludeBranchId: input.branchId,
           lock: "createInBranch.afterCandidateLock",
           ...(input.repair ? { repair: input.repair } : {}),
         })
@@ -283,7 +283,7 @@ export async function createLive(
 
 /**
  * The oldest valid hidden text document at the slot that some active draft uses
- * (excluding the ones `excludeDraftId` already uses). Unlocked, a look holding nothing.
+ * (excluding the ones `excludeBranchId` already uses). Unlocked, a look holding nothing.
  * With `lock`, every candidate's document lock is taken in one id-ordered pass before any
  * is chosen, then each is revalidated under its lock, and a candidate no active draft
  * uses is an inconsistent row, tombstoned here (repair on touch).
@@ -292,12 +292,12 @@ async function pickHiddenCandidate(
   db: Database,
   slot: DocumentSlot,
   options: {
-    excludeDraftId?: BranchId;
+    excludeBranchId?: BranchId;
     lock?: TreeHookPoint;
     repair?: Pick<HiddenNodeRepair, "report">;
   } = {},
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
-  const filter = options.excludeDraftId ? { excludeDraftId: options.excludeDraftId } : {};
+  const filter = options.excludeBranchId ? { excludeBranchId: options.excludeBranchId } : {};
   const candidates = await loadHiddenDocumentCandidates(db, slot, filter);
   const firstUsed = (rows: typeof candidates) => {
     const used = rows.find((candidate) => candidate.activeUses > 0);

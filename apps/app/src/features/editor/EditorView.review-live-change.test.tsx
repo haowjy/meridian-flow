@@ -79,7 +79,7 @@ beforeEach(() => {
   });
   resetBranchCommandRecords();
   review = null;
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
 });
 afterEach(() => {

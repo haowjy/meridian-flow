@@ -30,13 +30,13 @@ afterEach(async () => {
   await sessions.dispose();
 });
 
-const previewKey = projectQueryKeys.workBranchPreview(
+const previewKey = projectQueryKeys.workDraftPreview(
   "project-a",
   "work-a",
   "document-a",
   "draft-a",
 );
-const listKey = projectQueryKeys.workBranches("project-a", "work-a");
+const listKey = projectQueryKeys.workBranchDrafts("project-a", "work-a");
 const proposal = (generation: number, ...ids: string[]) => ({
   ...previewOf(...ids),
   draftGeneration: generation,
@@ -47,7 +47,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetBranchCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1", "2"));
 });
 afterEach(() => {
@@ -128,7 +128,7 @@ it("a newer proposal beats the old command and a lagging list, with monotonic ca
     expect(probe().presented.controller.inlineReview?.completion?.phase).toBe("pending");
     const next = proposal(2, "3");
     fixture.network.getDraftPreview.mockResolvedValue(next);
-    fixture.network.listWorkBranches.mockResolvedValue({ items: [] });
+    fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [] });
     await act(async () => {
       probe().queryClient.setQueryData(previewKey, next);
       probe().queryClient.setQueryData(listKey, []);
@@ -181,7 +181,7 @@ it("a room-opening read cannot resurrect a change confirmed while the read waite
 
 it("lets the entry read answer before a stale empty list can exit review", async () => {
   const read = deferredReviewAnswer<ReturnType<typeof proposal>>();
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [] });
   fixture.network.getDraftPreview.mockReturnValue(read.promise);
   await fixture.render(async (probe) => {
     probe().queryClient.setQueryData(listKey, []);
@@ -193,7 +193,7 @@ it("lets the entry read answer before a stale empty list can exit review", async
 });
 
 it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", async (draftOnly) => {
-  fixture.network.listWorkBranches.mockReturnValue(new Promise(() => {}));
+  fixture.network.listWorkBranchDrafts.mockReturnValue(new Promise(() => {}));
   fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", itemKey: "draft-a" });
   await fixture.render(async (probe) => {
     if (draftOnly) probe().queryClient.setQueryData(listKey, [{ ...listed, isNew: true }]);
@@ -233,7 +233,7 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
       getDraftRoom: () => session,
     } as unknown as LiveDocumentSessionRegistry,
   });
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1"));
   await fixture.render(async (probe) => {
     await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));

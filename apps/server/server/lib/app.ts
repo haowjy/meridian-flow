@@ -66,7 +66,7 @@ async function createAppServices(): Promise<AppServices> {
       },
       { name: "change-trail", delayMs: CHANGE_TRAIL_POLL_MS, run: app.changeTrailDelivery.drain },
       {
-        name: "branch-effects",
+        name: "draft-effects",
         delayMs: DRAFT_EFFECT_SWEEP_MS,
         run: app.documentSync.draftEffects.sweep,
       },

@@ -13,7 +13,7 @@ import {
 } from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
-import { useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   useObservedResourceProjection,
   useOptionalAccountResourceReplica,
@@ -70,7 +70,7 @@ function WorkSettlement({
 }) {
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
-  const branches = useWorkBranches(projectId, workId);
+  const drafts = useWorkBranchDrafts(projectId, workId);
   const records = useBranchCommandRecords();
   const projection = useObservedResourceProjection(resources, projectId);
   // A draft-only tab whose draft left the active list was disposed of
@@ -78,22 +78,21 @@ function WorkSettlement({
   // that now exists was applied, otherwise the draft was discarded.
   useEffect(() => {
     if (!resources || !projectId || !workId) return;
-    if (branches.status !== "ready" && branches.status !== "empty") return;
-    const isOrphan = (draft: DraftRef, activeBranches: readonly ThreadDraftListItem[]) =>
+    if (drafts.status !== "ready" && drafts.status !== "empty") return;
+    const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
       draft.workId === workId &&
       !pendingBranchCommand(currentBranchCommandRecords(), draft) &&
       !branchCommandFailure(currentBranchCommandRecords(), draft) &&
-      !activeBranches.some((row) => row.itemKey === draft.itemKey);
-    const activeBranches = branches.branches ?? [];
-    if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeBranches)))
-      return;
+      !activeDrafts.some((row) => row.itemKey === draft.itemKey);
+    const activeDrafts = drafts.drafts ?? [];
+    if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 
     const scopeFor = (draft: DraftOnlyPresentation) =>
       contextCatalogScope(projectId, draft.contextLocation.scheme, { workId: draft.workId });
     const scopes = new Map(
       lifecycle
         .presentations(projectId)
-        .filter((draft) => isOrphan(draft, activeBranches))
+        .filter((draft) => isOrphan(draft, activeDrafts))
         .flatMap((draft) => {
           const scope = scopeFor(draft);
           return scope ? [[JSON.stringify(scope), scope] as const] : [];
@@ -110,7 +109,7 @@ function WorkSettlement({
           queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
           const currentBranches =
             queryClient.getQueryData<ThreadDraftListItem[]>(
-              projectQueryKeys.workBranches(projectId, workId),
+              projectQueryKeys.workBranchDrafts(projectId, workId),
             ) ?? [];
           for (const draft of lifecycle.presentations(projectId)) {
             if (!isOrphan(draft, currentBranches) || JSON.stringify(scopeFor(draft)) !== key)
@@ -127,8 +126,8 @@ function WorkSettlement({
     lifecycle,
     records,
     membership,
-    branches.branches,
-    branches.status,
+    drafts.drafts,
+    drafts.status,
     projectId,
     queryClient,
     resources,
@@ -144,11 +143,11 @@ function WorkSettlement({
   // once for every Work. A tab the writer was looking at keeps the review it
   // showed, opened over the live document: the view the chip's Branch choice gives.
   useEffect(() => {
-    if (branches.status !== "ready") return;
+    if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);
     const promoting = new Set<string>();
     for (const draft of lifecycle.presentations(projectId)) {
-      const row = branches.branches?.find((candidate) => candidate.itemKey === draft.itemKey);
+      const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
       if (draft.workId !== workId || !row || !identities.byDocumentId(draft.documentId)) continue;
       if (promoting.has(draft.documentId)) continue;
       promoting.add(draft.documentId);
@@ -188,8 +187,8 @@ function WorkSettlement({
   }, [
     lifecycle,
     membership,
-    branches.branches,
-    branches.status,
+    drafts.drafts,
+    drafts.status,
     projection.records,
     projectId,
     workId,

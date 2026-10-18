@@ -73,7 +73,7 @@ type Entry = {
 export function createDraftProjection(input: {
   coordinator: Pick<DraftCoordinator, "readDraft">;
   store: Pick<DraftStore, "readEffectBaseline" | "writeEffect" | "staleEffectDrafts">;
-  pulls: Pick<DraftPullService, "pullWorkBranch">;
+  pulls: Pick<DraftPullService, "pullWorkDraft">;
   diagnostics?: DraftProjectionDiagnostics;
   /** Runs a body outside every ambient transaction and write grant. */
   outsideTransaction<T>(operation: () => T): T;
@@ -199,7 +199,7 @@ export function createDraftProjection(input: {
       | { kind: "done" }
       | {
           kind: "legacy";
-          documentId: Parameters<DraftPullService["pullWorkBranch"]>[0]["documentId"];
+          documentId: Parameters<DraftPullService["pullWorkDraft"]>[0]["documentId"];
         }
       | {
           kind: "judged";
@@ -235,7 +235,7 @@ export function createDraftProjection(input: {
     if (judged.kind === "legacy") {
       // A legacy row's baseline is live's current state, established by the branch-scoped
       // exact pull, which writes `live_cut`, `has_effect` and the watermark itself.
-      const pulled = await input.pulls.pullWorkBranch({ documentId: judged.documentId, draftId });
+      const pulled = await input.pulls.pullWorkDraft({ documentId: judged.documentId, draftId });
       if (pulled === "pulled" || pulled === "upstreamMoved") return "done";
       if (pulled === "closed") return "drop";
       if (pulled === "fenced") return "fenced";

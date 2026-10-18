@@ -1,5 +1,5 @@
 /**
- * useWorkBranches — reviewable AI draft list for one Work.
+ * useWorkBranchDrafts — reviewable AI draft list for one Work (one entry per document).
  *
  * Projects one catalog-labelled file per active document draft, in stable order.
  */
@@ -7,7 +7,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-import { listWorkBranches } from "@/client/api/branches-api";
+import { listWorkBranchDrafts } from "@/client/api/branches-api";
 import {
   readBranchesAfterCommands,
   shareDraftObservation,
@@ -19,36 +19,36 @@ import { projectQueryKeys } from "./project-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
 import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
 
-export type ThreadBranchesStatus = ListQueryStatus<ThreadDraftListItem> & {
+export type WorkDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   /** Raw query rows for generation evidence and command fences. */
-  branches: ThreadDraftListItem[] | null;
+  drafts: ThreadDraftListItem[] | null;
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
 };
 
 /** The one Work draft-list query, shared by every reader so the list is fetched once. */
-export function workBranchesQueryOptions(projectId: string, workId: string) {
+export function workBranchDraftsQueryOptions(projectId: string, workId: string) {
   return {
-    queryKey: projectQueryKeys.workBranches(projectId, workId),
+    queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
     queryFn: () =>
       readBranchesAfterCommands({ projectId, workId }, () =>
-        listWorkBranches(projectId, workId).then((response) => response.items),
+        listWorkBranchDrafts(projectId, workId).then((response) => response.items),
       ),
     staleTime: 15_000,
     structuralSharing: shareDraftObservation,
   };
 }
 
-export function useWorkBranches(
+export function useWorkBranchDrafts(
   projectId: string | null,
   workId: string | null,
   options?: { enabled?: boolean },
-): ThreadBranchesStatus {
+): WorkDraftListStatus {
   const callerEnabled = options?.enabled ?? true;
   const enabled = callerEnabled && Boolean(projectId) && Boolean(workId);
   const result = unwrapListQuery(
     useQuery({
-      ...workBranchesQueryOptions(projectId ?? "", workId ?? ""),
+      ...workBranchDraftsQueryOptions(projectId ?? "", workId ?? ""),
       enabled,
     }),
   );
@@ -101,7 +101,7 @@ export function useWorkBranches(
       ...result,
       data: null,
       status: "disabled",
-      branches: null,
+      drafts: null,
       files: null,
       fileForDocument,
     };
@@ -116,7 +116,7 @@ export function useWorkBranches(
           ? "ready"
           : "empty"
         : result.status,
-    branches: result.data,
+    drafts: result.data,
     files,
     fileForDocument,
   };

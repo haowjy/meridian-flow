@@ -211,7 +211,7 @@ row's Review a silent no-op).
 ## Probe B — no verb re-enable window during dispositions
 
 Regression guard for the pump-tail window (mutations dropped `isPending`
-before the workBranches refetch settled, re-enabling verbs against stale rows
+before the workBranchDrafts refetch settled, re-enabling verbs against stale rows
 for ~200ms).
 
 1. Stage 2–3 drafts across documents. Open the Work page's Files tab and the

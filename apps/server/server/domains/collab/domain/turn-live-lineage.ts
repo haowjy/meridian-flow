@@ -4,7 +4,7 @@ import type { TurnReceiptChip } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { TurnReceiptStateStore } from "./turn-receipt.js";
 
-export type TurnEditedDocumentScope = "live" | "branch";
+export type TurnEditedDocumentScope = "live" | "draft";
 
 export type TurnEditedDocument = {
   documentId: DocumentId;

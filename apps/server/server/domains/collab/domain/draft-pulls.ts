@@ -20,7 +20,7 @@ import {
 } from "./draft-store.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
-export type WorkBranchLookup = {
+export type WorkDraftLookup = {
   listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
   ensureThreadPeerDraft(input: {
     documentId: DocumentId;
@@ -43,7 +43,7 @@ export type DraftPullService = {
    * Live merged into one work draft, answered for that branch: the projection job's way to
    * establish a legacy branch's baseline (design §3.3). Deleted with the null-baseline arm.
    */
-  pullWorkBranch(input: { documentId: DocumentId; draftId: string }): Promise<PullOutcome>;
+  pullWorkDraft(input: { documentId: DocumentId; draftId: string }): Promise<PullOutcome>;
   pullThreadPeer(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -82,7 +82,7 @@ export function createDraftPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
   liveCoordinator: DocumentCoordinator;
   draftCoordinator: DraftCoordinator;
-  drafts: WorkBranchLookup;
+  drafts: WorkDraftLookup;
   debounceMs?: number;
   maxDebounceMs?: number;
   concurrentJournalWatermarks?: DraftConcurrentJournalWatermarks;
@@ -238,7 +238,7 @@ export function createDraftPullService(input: {
       return run(documentId);
     },
 
-    pullWorkBranch({ documentId, draftId }) {
+    pullWorkDraft({ documentId, draftId }) {
       return outsideCallerTransactions(async () => {
         const liveDoc = await liveSnapshot(documentId);
         try {
@@ -286,7 +286,7 @@ export function createDraftPullService(input: {
           // capture is abandoned, never merged back. The pull's attempts are root
           // transactions of their own: it commits even when the caller's transaction aborts.
           const upstream = await input.outsideTransaction(async () => {
-            await collabHook("branch.beforeAccess");
+            await collabHook("draft.beforeAccess");
             const read = await input.draftCoordinator.readDraft(upstreamDraftId, (doc, snapshot) =>
               Promise.resolve({
                 generation: snapshot.generation,

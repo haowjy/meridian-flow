@@ -3,7 +3,7 @@ import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 
 /** An active branch with changes to one document, oldest first, and the Work it came from. */
-export type DocumentDraftOrigin = {
+export type DocumentBranchOrigin = {
   branchId: BranchId;
   originWorkId: WorkId;
   /** The origin Work's name; null for the locked No Work row, which has none to show. */
@@ -52,6 +52,6 @@ export type WorkBranchPendingStore = {
   listBranchesChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
-  }): Promise<DocumentDraftOrigin[]>;
+  }): Promise<DocumentBranchOrigin[]>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };

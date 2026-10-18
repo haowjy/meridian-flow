@@ -658,7 +658,8 @@ export function createDraftCoordinator(input: {
           },
         });
         if (outcome.status === "contained") return { contained: true };
-        if (outcome.status === "refused") throw new DraftStaleUpdateError(snapshot.draftId);
+        if (outcome.status === "refused")
+          throw new DraftStaleUpdateError(`Draft ${snapshot.draftId}`);
         if (outcome.status === "prefixMissing") {
           input.diagnostics?.appendPrefixMissing({
             draftId: snapshot.draftId,
@@ -934,7 +935,7 @@ export function createDraftCoordinator(input: {
     const { snapshot } = base;
     assertWritableDraft(snapshot);
     if (snapshot.generation !== batch.expectedGeneration)
-      throw new DraftStaleUpdateError(batch.draftId);
+      throw new DraftStaleUpdateError(`Draft ${batch.draftId}`);
     const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
     const write = journals.length ? attempt.own(prepareRows(base, journals)) : null;
     assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
@@ -989,6 +990,6 @@ export function createDraftCoordinator(input: {
 
 function assertWritableDraft(snapshot: DraftSnapshot): void {
   if (snapshot.status !== "active") {
-    throw new DraftStaleUpdateError(snapshot.draftId);
+    throw new DraftStaleUpdateError(`Draft ${snapshot.draftId}`);
   }
 }

@@ -33,7 +33,7 @@ import type {
 } from "./tool-context.js";
 
 /** The principal with its drafted writes routed to `work`'s draft, or live for null. */
-export function withDraftWork(principal: Principal, work: WorkRef | null): Principal {
+export function withBranchWork(principal: Principal, work: WorkRef | null): Principal {
   return principal.agent
     ? { ...principal, agent: { ...principal.agent, branchWork: work } }
     : principal;
@@ -77,7 +77,7 @@ export async function keptDraftReader(
   const { workId, workSlug } = execution.scope;
   const branches = await deps.branches.draftReview.list({ workId });
   if (!branches.some((draft) => draft.documentId === documentId)) return principal;
-  return withDraftWork(principal, { id: workId, slug: workSlug });
+  return withBranchWork(principal, { id: workId, slug: workSlug });
 }
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */

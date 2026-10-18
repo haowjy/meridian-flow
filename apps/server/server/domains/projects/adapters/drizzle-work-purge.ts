@@ -57,15 +57,15 @@ export function createDrizzleWorkPurger(deps: {
     workId: WorkId,
     cutoff: Date,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
-    return deps.branches.withDisposal(workId, (disposeBranches) =>
-      purgeLocked(workId, cutoff, disposeBranches),
+    return deps.branches.withDisposal(workId, (disposeDrafts) =>
+      purgeLocked(workId, cutoff, disposeDrafts),
     );
   }
 
   async function purgeLocked(
     workId: WorkId,
     cutoff: Date,
-    disposeBranches: () => Promise<{ releasedObjects: readonly string[] }>,
+    disposeDrafts: () => Promise<{ releasedObjects: readonly string[] }>,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -151,7 +151,7 @@ export function createDrizzleWorkPurger(deps: {
       ]);
       // F10: the Work's branches end through the Discard kernel, after this proof and before
       // their rows go, so nothing they created stays live and their storage is released.
-      const disposed = await disposeBranches();
+      const disposed = await disposeDrafts();
       const objectKeys = [
         ...uploads.map(({ objectKey }) => objectKey),
         ...[...results, ...binaries].flatMap(({ storageUrl }) => {

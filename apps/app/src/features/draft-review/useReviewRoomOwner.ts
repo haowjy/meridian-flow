@@ -13,7 +13,7 @@ import {
 import { projectDraft, projectDraftList } from "@/client/query/draft-projection";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
-import { workBranchesQueryOptions } from "@/client/query/useWorkBranches";
+import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import type { PresentedDocument } from "@/features/project/presented-document";
@@ -52,7 +52,7 @@ export function useReviewRoomOwner({
   const horizon = useRef({ key, queryClient, registry });
   horizon.current = { key, queryClient, registry };
   const { data: rows } = useQuery({
-    ...workBranchesQueryOptions(projectId, workId),
+    ...workBranchDraftsQueryOptions(projectId, workId),
     enabled: false,
   });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
@@ -138,7 +138,7 @@ export function useReviewRoomOwner({
       !disposing
     ) {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workBranchPreview(projectId, workId, documentId, itemKey),
+        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
       });
     }
   }, [

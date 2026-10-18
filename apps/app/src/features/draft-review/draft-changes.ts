@@ -85,7 +85,7 @@ export function useChangeItems(
           change,
           failure: state?.phase === "failed" ? state : null,
           ...(change.target.kind === "draft" && draft
-            ? { draftFailure: branchCommandFailure(records.branches, draft) }
+            ? { draftFailure: branchCommandFailure(records.drafts, draft) }
             : {}),
         };
       }),
@@ -93,7 +93,7 @@ export function useChangeItems(
   );
   const hiding = draft
     ? Object.values(records.queued).some((entry) => entry.prefix === branchCommandKey(draft)) ||
-      pendingBranchCommand(records.branches, draft) !== null
+      pendingBranchCommand(records.drafts, draft) !== null
     : false;
   return { items, hiding };
 }

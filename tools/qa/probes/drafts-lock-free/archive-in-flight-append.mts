@@ -4,7 +4,7 @@
  * the honest window: a key whose post-lock read ran before Archive committed may land in the
  * archived draft; every later key is refused.
  *
- * - Arm 1 (holder): a frame holds at `branch.append.beforeCommit` while Archive commits; the
+ * - Arm 1 (holder): a frame holds at `draft.append.beforeCommit` while Archive commits; the
  *   row commits, the text holds the token under `archived`, the next frame is refused, and
  *   after unarchive the next frame lands with the token kept.
  * - Arm 2 (queued waiter): a second frame waits on the first's row when Archive commits; after
@@ -53,7 +53,7 @@ export const archiveInFlightAppend: Probe = {
     await runArms({
       async "1-holder"() {
         const { draft, tab } = await draftWithOneKey("archive-holder");
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const frame = independently(() => tab.send(keystroke(tab.room, " TOKEN")));
           await pause.entered;
@@ -96,7 +96,7 @@ export const archiveInFlightAppend: Probe = {
 
       async "2-queued-waiter"() {
         const { draft, tab } = await draftWithOneKey("archive-queued");
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const first = independently(() => tab.send(keystroke(tab.room, " FIRST", 950_001)));
           await pause.entered;

@@ -14,7 +14,7 @@ import {
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   type ContextTab,
   getContextTabs,
@@ -404,7 +404,7 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorBranches = useWorkBranches(projectId, documentDestination ? workId : null);
+  const editorDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     reviewBoundAddressResult(addressBinding, documentLookup.data),
@@ -418,7 +418,7 @@ function ReadableProjectDestination({
       isFetching: addressCatalogFetching,
       isError: addressCatalogError,
     },
-    editorBranches,
+    editorDrafts,
     (documentId) => workspaceTabs.some((tab) => !isDraftOnly(tab) && tab.documentId === documentId),
     reconciledDocumentAddress.view,
   );
@@ -479,8 +479,8 @@ function ReadableProjectDestination({
     switchFailure.clear();
     void documentLookup.refetch();
     refetchAddressCatalog();
-    editorBranches.refetch();
-  }, [documentLookup.refetch, refetchAddressCatalog, editorBranches.refetch]);
+    editorDrafts.refetch();
+  }, [documentLookup.refetch, refetchAddressCatalog, editorDrafts.refetch]);
   const editorIssue = resourceDestination
     ? "resource-viewing"
     : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"

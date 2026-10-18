@@ -24,7 +24,7 @@ export type TurnEditDocument = {
   documentId: string;
   path: string;
   uri: string;
-  scope: "live" | "branch";
+  scope: "live" | "draft";
 };
 
 function hasTurnEditsReceiptDocuments(

@@ -25,16 +25,16 @@ import {
 } from "./branch-command-record";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
-import { useWorkBranches } from "./useWorkBranches";
+import { useWorkBranchDrafts } from "./useWorkBranchDrafts";
 
 const api = vi.hoisted(() => ({
   applyDraft: vi.fn(),
   applyDraftChanges: vi.fn(),
   getDraftPreview: vi.fn(),
   discardDraft: vi.fn(),
-  listWorkBranches: vi.fn(),
-  applyAllBranches: vi.fn(),
-  discardAllBranches: vi.fn(),
+  listWorkBranchDrafts: vi.fn(),
+  applyBranchDrafts: vi.fn(),
+  discardBranch: vi.fn(),
   observeBranchCommand: vi.fn(),
 }));
 vi.mock("@/client/api/branches-api", () => api);
@@ -76,12 +76,14 @@ type Harness = {
 async function withHarness(run: (harness: Harness) => Promise<void>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData(
-    projectQueryKeys.workBranches(input.projectId, input.workId),
+    projectQueryKeys.workBranchDrafts(input.projectId, input.workId),
     listing(input.itemKey).items,
   );
   let branches: string[] = [];
   function Capture() {
-    branches = (useWorkBranches("project-a", "work-a").data ?? []).map((draft) => draft.itemKey);
+    branches = (useWorkBranchDrafts("project-a", "work-a").data ?? []).map(
+      (draft) => draft.itemKey,
+    );
     return null;
   }
   await withReactRoot(
@@ -111,13 +113,13 @@ describe("draft command executor", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     resetBranchCommandRecords();
-    api.listWorkBranches.mockResolvedValue(listing("draft-a"));
+    api.listWorkBranchDrafts.mockResolvedValue(listing("draft-a"));
   });
 
   it("refreshes document hints after a Work-wide Discard, like an item's own command", async () => {
     await withHarness(async ({ queryClient, listed }) => {
       await settleReact(() => expect(listed()).toEqual(["draft-a"]));
-      api.discardAllBranches.mockResolvedValue({
+      api.discardBranch.mockResolvedValue({
         status: "discarded",
         branchId: listing("draft-a").items[0].branchId,
       });
@@ -134,7 +136,7 @@ describe("draft command executor", () => {
     await withHarness(async ({ apply, listed }) => {
       await settleReact(() => expect(listed()).toEqual(["draft-a"]));
       api.applyDraft.mockRejectedValue(lost());
-      api.listWorkBranches.mockResolvedValue(listing());
+      api.listWorkBranchDrafts.mockResolvedValue(listing());
       await act(async () => {
         const done = apply();
         await vi.advanceTimersByTimeAsync(6000);
@@ -147,7 +149,7 @@ describe("draft command executor", () => {
   it("drops a confirmed draft at once, and no initial read that started earlier brings it back", async () => {
     // No cached list: nothing but the read fence can keep the older read's
     // draft out, since a later refetch would be cancelled by the invalidation.
-    api.listWorkBranches.mockReturnValue(new Promise(() => undefined));
+    api.listWorkBranchDrafts.mockReturnValue(new Promise(() => undefined));
     await withHarness(async ({ apply, listed, queryClient }) => {
       const confirmation = deferred<unknown>();
       api.applyDraft.mockReturnValue(confirmation.promise);
@@ -156,7 +158,7 @@ describe("draft command executor", () => {
       await act(async () => {
         applied = apply();
       });
-      api.listWorkBranches.mockReturnValueOnce(older.promise);
+      api.listWorkBranchDrafts.mockReturnValueOnce(older.promise);
       await act(async () => {
         void queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
       });
@@ -167,7 +169,7 @@ describe("draft command executor", () => {
       await act(async () => older.resolve(listing("draft-a")));
       await settleReact(() => expect(listed()).toEqual([]));
       expect(
-        queryClient.getQueryData(projectQueryKeys.workBranches("project-a", "work-a")),
+        queryClient.getQueryData(projectQueryKeys.workBranchDrafts("project-a", "work-a")),
       ).toEqual(listing("draft-a").items);
     });
   });
@@ -193,7 +195,7 @@ it("an answer from before an account change cannot settle the new account's clai
     .mockReturnValueOnce(newAnswer.promise);
   const client = new QueryClient();
   client.setQueryData(
-    projectQueryKeys.workBranches(input.projectId, input.workId),
+    projectQueryKeys.workBranchDrafts(input.projectId, input.workId),
     listing(input.itemKey).items,
   );
   const refresh = deferred<void>();
@@ -263,11 +265,11 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     api.getDraftPreview.mockReset();
     const client = new QueryClient();
     client.setQueryData(
-      projectQueryKeys.workBranches(input.projectId, input.workId),
+      projectQueryKeys.workBranchDrafts(input.projectId, input.workId),
       listing(input.itemKey).items,
     );
     client.setQueryData(
-      projectQueryKeys.workBranchPreview(
+      projectQueryKeys.workDraftPreview(
         input.projectId,
         input.workId,
         input.documentId,
@@ -338,7 +340,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     const client = seeded(a, b);
     const other = { ...input, documentId: "doc-b", itemKey: "draft-b" };
     client.setQueryData(
-      projectQueryKeys.workBranchPreview(
+      projectQueryKeys.workDraftPreview(
         other.projectId,
         other.workId,
         other.documentId,
@@ -527,7 +529,7 @@ describe("command-record outcome matrix", () => {
     resetBranchCommandRecords();
     client = new QueryClient();
     client.setQueryData(
-      projectQueryKeys.workBranches(input.projectId, input.workId),
+      projectQueryKeys.workBranchDrafts(input.projectId, input.workId),
       listing(input.itemKey).items,
     );
   });
@@ -550,7 +552,7 @@ describe("command-record outcome matrix", () => {
     const refresh = deferred<void>();
     vi.spyOn(client, "invalidateQueries").mockReturnValue(refresh.promise);
     const done = startBranchCommand(client, command).outcome;
-    client.setQueryData(projectQueryKeys.workBranches(input.projectId, input.workId), []);
+    client.setQueryData(projectQueryKeys.workBranchDrafts(input.projectId, input.workId), []);
     await vi.advanceTimersByTimeAsync(1000);
     expect(pendingBranchCommand(currentBranchCommandRecords(), input)).not.toBeNull();
     observed.resolve({ state: "done", result: result(itemClosed) });
@@ -676,7 +678,7 @@ describe("command-record outcome matrix", () => {
       isNew: true,
       wholeItem: true,
     });
-    client.setQueryData(projectQueryKeys.workBranches(input.projectId, input.workId), [
+    client.setQueryData(projectQueryKeys.workBranchDrafts(input.projectId, input.workId), [
       branchless("a"),
       branchless("b"),
     ]);
@@ -701,9 +703,9 @@ describe("command-record outcome matrix", () => {
     expect(first.commandId).not.toEqual(second.commandId);
   });
   it("discards a corrupt item missing from the list using the preview's branchId", async () => {
-    client.setQueryData(projectQueryKeys.workBranches(input.projectId, input.workId), []);
+    client.setQueryData(projectQueryKeys.workBranchDrafts(input.projectId, input.workId), []);
     client.setQueryData(
-      projectQueryKeys.workBranchPreview(
+      projectQueryKeys.workDraftPreview(
         input.projectId,
         input.workId,
         input.documentId,

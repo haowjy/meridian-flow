@@ -150,12 +150,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             live,
             history: parts.filter((part) => part.documentId === documentId),
-            branches: new Map(),
+            drafts: new Map(),
           };
           documents.push(document);
-          const branches = new Map<
+          const drafts = new Map<
             string,
-            InverseDocument["branches"] extends ReadonlyMap<string, infer D> ? D : never
+            InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
           >();
           for (const draftId of draftIds) {
             const read = await input.drafts.readDraftAt(draftId);
@@ -175,14 +175,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   .from(works)
                   .where(eq(works.id, documentDraft.workId))
               : [];
-            branches.set(draftId, {
+            drafts.set(draftId, {
               documentDraft,
               doc,
               name: name?.slug ? `@${name.slug}` : "@/",
               frozen: documentDraft.lifecycle !== "active",
             });
           }
-          document.branches = branches;
+          document.drafts = drafts;
         }
       } catch (cause) {
         destroyDocuments(documents);
@@ -256,7 +256,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     describePart(document, part) {
       const doc =
         part.origin.kind === "pending"
-          ? (document.branches.get(part.origin.draftId)?.doc ?? document.live)
+          ? (document.drafts.get(part.origin.draftId)?.doc ?? document.live)
           : document.live;
       const own = new Y.Doc({ gc: false });
       try {
@@ -319,7 +319,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   /** Each part of a plan applied to its view with its restoration provenance; no I/O. */
   function planDocument(plan: PreparedDocumentInverse, query: TurnInverseQuery): PlannedInverse {
     const document = plan.document;
-    const draftEntry = plan.draftId ? document.branches.get(plan.draftId) : undefined;
+    const draftEntry = plan.draftId ? document.drafts.get(plan.draftId) : undefined;
     const view = draftEntry?.doc ?? document.live;
     const edits = plan.computed.edits.map((edit) => ({
       edit,
@@ -614,6 +614,6 @@ class InverseAttemptMiss extends Error {
 function destroyDocuments(documents: readonly InverseDocument[]): void {
   for (const document of documents) {
     document.live.destroy();
-    for (const draft of document.branches.values()) draft.doc.destroy();
+    for (const draft of document.drafts.values()) draft.doc.destroy();
   }
 }

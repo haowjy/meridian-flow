@@ -11,7 +11,7 @@
  *     the 100 ms `lock_timeout` (per lock acquisition, C1); the next tick is a new pass;
  *     releasing the Work lets the 50 land on their backoff.
  * (d) legacy rows (null `live_cut`, `has_effect` true, watermark -1): one sweep establishes each
- *     resolvable baseline through `pullWorkBranch` and ends fresh; the one on a document with a
+ *     resolvable baseline through `pullWorkDraft` and ends fresh; the one on a document with a
  *     terminally blocked settlement is diagnosed once, stays at -1, takes no further live
  *     snapshot across three ticks, and lands fresh once the batch completes and a key arrives.
  *

@@ -38,8 +38,8 @@ import {
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import {
   branchMayHold,
+  loadBranchHolder,
   loadDocumentOwner,
-  loadDraftHolder,
 } from "../../context/tree/branch-ownership.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -182,9 +182,9 @@ export function createDrizzleDraftStore(
     return workProjection.mutate({ branches: [input.branchId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
       if (!(await branches.shareActive(input.branchId))) {
-        throw new DraftStaleUpdateError(`draft:${input.branchId}`);
+        throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
-      await assertDraftableInDraft(input.documentId, input.branchId);
+      await assertDraftableInBranch(input.documentId, input.branchId);
       // A draft create's ensure and a thread peer's racing root ensure get one branch.
       const [inserted] = await currentDrizzleDb(db)
         .insert(documentDrafts)
@@ -330,13 +330,16 @@ export function createDrizzleDraftStore(
    * Every draft branch is created here, so no entry point can pair a document with a
    * draft that may not hold it.
    */
-  async function assertDraftableInDraft(documentId: DocumentId, branchId: BranchId): Promise<void> {
+  async function assertDraftableInBranch(
+    documentId: DocumentId,
+    branchId: BranchId,
+  ): Promise<void> {
     const tx = currentDrizzleDb(db);
     const owner = await loadDocumentOwner(tx, documentId);
     if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
       throw new Error(`Document ${documentId} is in ${owner.scheme}://, which is never drafted`);
     }
-    const holder = await loadDraftHolder(tx, branchId);
+    const holder = await loadBranchHolder(tx, branchId);
     if (!owner || !holder || !branchMayHold(holder, owner)) {
       throw new Error(`Branch ${branchId} may not hold document ${documentId}`);
     }
@@ -359,22 +362,22 @@ export function createDrizzleDraftStore(
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId !== input.branchId) return null;
       if (!(await branches.shareActive(input.branchId))) {
-        throw new DraftStaleUpdateError(`draft:${input.branchId}`);
+        throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       return { documentDraft: existing, state: await encodedDraft(existing.draftId) };
     };
     const createPeer = async (): Promise<EnsuredPeer> => {
       if (!(await branches.shareActive(input.branchId))) {
-        throw new DraftStaleUpdateError(`draft:${input.branchId}`);
+        throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId === input.branchId) {
         return { documentDraft: existing, state: await encodedDraft(existing.draftId) };
       }
-      const workBranch = await activeDocumentDraft(input.documentId, input.branchId);
-      if (!workBranch) throw new DraftStaleUpdateError(`draft:${input.branchId}`);
-      const upstream = await readDraftAt(currentDrizzleDb(db), workBranch.draftId);
-      if (!upstream) throw new Error(`Draft ${workBranch.draftId} does not exist`);
+      const workDraft = await activeDocumentDraft(input.documentId, input.branchId);
+      if (!workDraft) throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
+      const upstream = await readDraftAt(currentDrizzleDb(db), workDraft.draftId);
+      if (!upstream) throw new Error(`Draft ${workDraft.draftId} does not exist`);
       const upstreamDoc = materializeDraftRead(upstream);
       let seed: { state: Buffer; stateVector: Buffer };
       try {
@@ -390,13 +393,13 @@ export function createDrizzleDraftStore(
           id: `draft_${randomUUID()}`,
           documentId: input.documentId,
           kind: "thread_peer",
-          upstreamDraftId: workBranch.draftId,
+          upstreamDraftId: workDraft.draftId,
           branchId: input.branchId,
           threadId: input.threadId,
           status: "active",
           ...seed,
           hasEffect: false,
-          schemaVersion: packCollabSchemaVersion(workBranch.schemaVersion),
+          schemaVersion: packCollabSchemaVersion(workDraft.schemaVersion),
         })
         .returning({ id: documentDrafts.id });
       if (!row) throw new Error("Failed to create document branch");
@@ -532,7 +535,7 @@ export function createDrizzleDraftStore(
         });
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
-        await collabHook("branch.append.beforeCommit");
+        await collabHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
           deferUntilDrizzleCommit(() =>
@@ -677,7 +680,7 @@ export function createDrizzleDraftStore(
           outcome.generation - 1,
           operation.editDisposition,
         );
-      await collabHook("branch.rewrite.beforeCommit");
+      await collabHook("draft.rewrite.beforeCommit");
       return {
         status: "committed",
         revision: outcome.revision,

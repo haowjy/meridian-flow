@@ -9,7 +9,7 @@ import {
   useChangeCommandRecords,
 } from "@/client/query/branch-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
-import { useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import {
   type DraftImagePreviewTarget,
@@ -31,7 +31,7 @@ export type DockFileFailure =
 
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
   const controller = useBoundWorkBranchCommands();
-  const listedFiles = useWorkBranches(controller.projectId, controller.workId).files ?? [];
+  const listedFiles = useWorkBranchDrafts(controller.projectId, controller.workId).files ?? [];
   const presented = usePresentedDraftReview().controller;
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -115,7 +115,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
       itemKey: file.row.draft.itemKey,
     };
     const state = changeCommandState(records, ref, selectionOf(file.changes));
-    const held = branchCommandFailure(records.branches, ref);
+    const held = branchCommandFailure(records.drafts, ref);
     return [
       ...(state?.phase === "failed" ? [{ kind: "changes" as const, failure: state }] : []),
       ...(held ? [{ kind: "draft" as const, failure: held }] : []),

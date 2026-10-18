@@ -56,7 +56,7 @@ export interface EventCorrelation {
 
 export interface TraceStreamRef {
   /**
-   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:branch:<id>:gen:3`,
+   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:draft:<id>:gen:3`,
    * `thread:<threadId>`, or `gateway:<gatewayCallId>`.
    */
   streamId: string;

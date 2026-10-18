@@ -22,7 +22,7 @@ afterEach(async () => {
 });
 
 const review = { documentId: "document-a", itemKey: "draft-a" };
-const previewKey = projectQueryKeys.workBranchPreview("p", "w", "document-a", "draft-a");
+const previewKey = projectQueryKeys.workDraftPreview("p", "w", "document-a", "draft-a");
 
 function Owner() {
   useReviewRefresh({

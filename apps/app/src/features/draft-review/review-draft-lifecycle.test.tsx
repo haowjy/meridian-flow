@@ -119,7 +119,7 @@ beforeEach(() => {
   });
   removal.bindRouteSelection("project-a", revision, { kind: "server", documentId: "document-a" });
   fixture = createReviewScopeFixture({ removal });
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [listedA, listedB] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listedA, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
     itemKey: id,
@@ -328,7 +328,7 @@ it.each([
 
 it("bulk progress reaches the next draft at confirmation without waiting for navigation", async () => {
   const navigate = vi.fn(() => new Promise<never>(() => {}));
-  fixture.network.applyAllBranches.mockResolvedValue({
+  fixture.network.applyBranchDrafts.mockResolvedValue({
     status: "completed",
     branchId: listed.branchId,
     items: [
@@ -340,13 +340,13 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
     async (p) => {
       await open(p);
       await act(async () => {
-        expect(await p().presented.controller.disposeBranches("apply", [draftA, draftB])).toEqual([
+        expect(await p().presented.controller.disposeDrafts("apply", [draftA, draftB])).toEqual([
           { kind: "applied" },
           { kind: "applied" },
         ]);
       });
       expect(navigate).toHaveBeenCalled();
-      expect(fixture.network.applyAllBranches).toHaveBeenCalledTimes(1);
+      expect(fixture.network.applyBranchDrafts).toHaveBeenCalledTimes(1);
       expect(p().presented.controller.isDisposing).toBe(false);
     },
     {
@@ -413,12 +413,12 @@ it("an unopened list follows a remote write and disposition through updated list
         ...previewOf(...(id === "draft-b" ? ids : ["1", "2"])),
         itemKey: id,
       }));
-      fixture.network.listWorkBranches.mockResolvedValue({
+      fixture.network.listWorkBranchDrafts.mockResolvedValue({
         items: [listedA, { ...listedB, updatedAt: stamp }],
       });
       await act(async () => {
         await p().queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workBranches("project-a", "work-a"),
+          queryKey: projectQueryKeys.workBranchDrafts("project-a", "work-a"),
         });
       });
     };

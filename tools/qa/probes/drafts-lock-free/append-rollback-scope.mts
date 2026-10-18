@@ -70,7 +70,7 @@ export const appendRollbackScope: Probe = {
       const u1 = keystroke(tab.room, "A", 900_101);
       const before = (await harness.readDraft(draft.draftId)).revision;
       dirty.length = 0;
-      const pause = pauseAt("branch.append.beforeCommit");
+      const pause = pauseAt("draft.append.beforeCommit");
       try {
         const first = independently(() => tab.send(u1));
         await pause.entered;

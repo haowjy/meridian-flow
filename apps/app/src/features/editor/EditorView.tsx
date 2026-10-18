@@ -242,7 +242,7 @@ export function EditorView(props: EditorViewProps) {
     const { restoring } = intentKeys(commandRecords, draftRef);
     for (const key of restoring) discarded.current.keys.add(key);
     for (const record of Object.values(
-      commandRecords.branches[branchCommandKey(draftRef)]?.outcomes ?? {},
+      commandRecords.drafts[branchCommandKey(draftRef)]?.outcomes ?? {},
     ))
       if (record.phase === "failed")
         for (const key of selectionKeys(record))

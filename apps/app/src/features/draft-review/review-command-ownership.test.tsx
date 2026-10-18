@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetBranchCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-b" ? ["3"] : ["1", "2"])),
     itemKey: id,

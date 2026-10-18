@@ -88,13 +88,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
   function planner(document: InverseDocument, query: Query) {
     const context = prepareHolds([document]).get(document.documentId);
     if (!context) throw new Error("Missing inverse hold context");
-    const draft = query.draftId ? document.branches.get(query.draftId) : undefined;
+    const draft = query.draftId ? document.drafts.get(query.draftId) : undefined;
     const view = draft?.doc ?? document.live;
     const own = entries(document, query.threadId);
     const actions = inspectionActions(document.history, own);
     const inspections = new Map<Y.Doc, Inspection>();
     inspections.set(document.live, inspectionContext(context.liveIndex, actions));
-    for (const [id, documentDraft] of document.branches) {
+    for (const [id, documentDraft] of document.drafts) {
       const index = context.views.get(id);
       if (!index) throw new Error("Missing inverse draft index");
       inspections.set(documentDraft.doc, inspectionContext(index, actions));
@@ -111,7 +111,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         .flatMap((root) => [...(context.holds.get(root) ?? [])])
         .find((id) => id !== query.draftId);
     const version = (draftId: string | null) =>
-      draftId ? `draft (${document.branches.get(draftId)?.name ?? "unavailable"})` : "live";
+      draftId ? `draft (${document.drafts.get(draftId)?.name ?? "unavailable"})` : "live";
     function refusal(
       part: StoredInversePart,
       handle: string,
@@ -149,7 +149,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         blocking.add(held);
         return {
           status: `cant_${direction}_held`,
-          message: `Another draft (${document.branches.get(held)?.name ?? "unavailable"}) holds a restored copy of ${handle}'s text. The user can apply or discard that draft. ${follow}`,
+          message: `Another draft (${document.drafts.get(held)?.name ?? "unavailable"}) holds a restored copy of ${handle}'s text. The user can apply or discard that draft. ${follow}`,
         };
       }
       const state = inspection.states([part])[0];
@@ -173,7 +173,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const reason = !eligible(part)
           ? "already removed"
           : held
-            ? `held by the draft in ${document.branches.get(held)?.name ?? "unavailable"}`
+            ? `held by the draft in ${document.drafts.get(held)?.name ?? "unavailable"}`
             : inspection.rolledBack(part)
               ? "rolled back"
               : state.state === "undone"
@@ -490,7 +490,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const displayInspection = (part: StoredInversePart) =>
           policy.inspect(
             part.placement.kind === "pending"
-              ? (document.branches.get(part.placement.draftId)?.doc ?? policy.view)
+              ? (document.drafts.get(part.placement.draftId)?.doc ?? policy.view)
               : document.live,
           );
         const displayParts = new Map<Inspection, StoredInversePart[]>();

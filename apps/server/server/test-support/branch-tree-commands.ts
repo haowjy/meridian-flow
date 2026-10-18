@@ -27,9 +27,9 @@ import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
   type CommandRouteResult,
   handleApplyAllWorkBranchRequest,
-  handleApplyWorkBranchRequest,
+  handleApplyWorkDraftRequest,
   handleDiscardAllWorkBranchRequest,
-  handleDiscardWorkBranchRequest,
+  handleDiscardWorkDraftRequest,
   handleWorkBranchListRequest,
   selectBranchRouteServices,
 } from "../lib/branch-review-route.js";
@@ -591,7 +591,7 @@ export function branchTreeCommands(
     await eachItem(work, items, "discard", async ({ documentId, branchId, itemKey }) => {
       results.push(
         (
-          await handleDiscardWorkBranchRequest(routes(), {
+          await handleDiscardWorkDraftRequest(routes(), {
             projectId,
             workId: work.id,
             documentId,
@@ -668,7 +668,7 @@ export function branchTreeCommands(
         const item = items.find((candidate) => candidate.documentId === documentId);
         if (!item?.draftGeneration) throw new Error(`No draft branch of ${documentId} to apply`);
         results.push(
-          await handleApplyWorkBranchRequest(routes(), {
+          await handleApplyWorkDraftRequest(routes(), {
             projectId,
             workId: work.id,
             documentId,

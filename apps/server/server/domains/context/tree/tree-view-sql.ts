@@ -510,13 +510,13 @@ const textDocument = sql`d.storage_url IS NULL AND d.file_type NOT IN (${sql.joi
 /**
  * Hidden, live text documents at `slot`, oldest first, matched by the row's own location,
  * excluding the documents
- * `excludeDraftId` already uses (§6.2 step 3). Binaries are never candidates (12b-Q2).
+ * `excludeBranchId` already uses (§6.2 step 3). Binaries are never candidates (12b-Q2).
  * `ids` narrows the match to rows already locked, for revalidation under their locks.
  */
 export async function loadHiddenDocumentCandidates(
   db: DrizzleDb,
   slot: DocumentSlot,
-  options: { excludeDraftId?: BranchId; ids?: readonly DocumentId[] } = {},
+  options: { excludeBranchId?: BranchId; ids?: readonly DocumentId[] } = {},
 ): Promise<HiddenDocumentCandidate[]> {
   if (options.ids && options.ids.length === 0) return [];
   const sameFolder = (column: string) =>
@@ -537,9 +537,9 @@ export async function loadHiddenDocumentCandidates(
       AND d.context_source_id = ${slot.contextSourceId}::uuid AND ${sameFolder("d.folder_id")}
       AND d.name = ${slot.name} AND d.extension = ${slot.extension}
       ${
-        options.excludeDraftId
+        options.excludeBranchId
           ? sql`AND NOT EXISTS (SELECT 1 FROM branch_tree_changes x
-              WHERE x.branch_id = ${options.excludeDraftId}::uuid AND x.node_kind = 'document'
+              WHERE x.branch_id = ${options.excludeBranchId}::uuid AND x.node_kind = 'document'
                 AND x.node_id = d.id)`
           : sql``
       }

@@ -503,7 +503,7 @@ describe("reply save refusals (postgres)", () => {
     const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let once = true;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardItem(ALPHA_ID);
@@ -555,7 +555,7 @@ describe("reply save refusals (postgres)", () => {
       if (phase === "after the first ensure" && ensures === 1) await discardOnce();
       return peer;
     }) as typeof ensure;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (phase === "before the upstream read") await discardOnce();
     });
     let late: Awaited<ReturnType<typeof core.write>>;
@@ -586,7 +586,7 @@ describe("reply save refusals (postgres)", () => {
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
     const { responseId, review, write, core, context } = await setup();
     let once = true;
-    const unhook = setCollabHook("branch.beforeAccess", async () => {
+    const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardAll();

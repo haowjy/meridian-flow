@@ -121,7 +121,7 @@ describe("DraftReviewProvider remote settlement", () => {
     });
     if (!tab) throw new Error("Branch tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
-    fixture.network.listWorkBranches.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
+    fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
     // An observation joined from before the Apply would say the document is absent.
     resources.acquireCatalog.mockResolvedValue({ entries: new Map() });
     resources.acquireCatalogAfter.mockResolvedValue({
@@ -233,11 +233,11 @@ describe("DraftReviewProvider remote settlement", () => {
       </QueryClientProvider>,
       async () => {
         useDockDocumentStore.setState({ accountId: "account-a" });
-        await vi.waitFor(() => expect(fixture.network.listWorkBranches).toHaveBeenCalled());
+        await vi.waitFor(() => expect(fixture.network.listWorkBranchDrafts).toHaveBeenCalled());
         await act(async () => undefined);
         expect(resources.acquireCatalogAfter).not.toHaveBeenCalled();
 
-        fixture.network.listWorkBranches.mockResolvedValue({ items: [] });
+        fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [] });
         const emptyPreview = {
           ...preview,
           draftGeneration: mode === "discard" ? 2 : 1,
@@ -247,11 +247,11 @@ describe("DraftReviewProvider remote settlement", () => {
         fixture.network.getDraftPreview.mockResolvedValue(emptyPreview);
         await act(async () => {
           queryClient.setQueryData(
-            projectQueryKeys.workBranchPreview("project-a", "work-a", "document-a", "draft-a"),
+            projectQueryKeys.workDraftPreview("project-a", "work-a", "document-a", "draft-a"),
             emptyPreview,
           );
           await queryClient.refetchQueries({
-            queryKey: projectQueryKeys.workBranches("project-a", "work-a"),
+            queryKey: projectQueryKeys.workBranchDrafts("project-a", "work-a"),
           });
         });
 

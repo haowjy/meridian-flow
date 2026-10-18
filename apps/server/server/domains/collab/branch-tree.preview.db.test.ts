@@ -7,11 +7,11 @@ import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import {
   handleApplyAllWorkBranchRequest,
-  handleApplyWorkBranchRequest,
+  handleApplyWorkDraftRequest,
   handleDiscardAllWorkBranchRequest,
-  handleDiscardWorkBranchRequest,
+  handleDiscardWorkDraftRequest,
   handleWorkBranchListRequest,
-  handleWorkBranchPreviewRequest,
+  handleWorkDraftPreviewRequest,
   selectBranchRouteServices,
 } from "../../lib/branch-review-route.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
@@ -35,7 +35,7 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
         const row = review.items.find((item) => item.documentId === documentId);
         expect(row).toMatchObject({ contextLocation: { scheme, path }, isNew: isNewDocument });
         if (!row) throw new Error("Expected a review row");
-        const preview = await handleWorkBranchPreviewRequest(
+        const preview = await handleWorkDraftPreviewRequest(
           selectBranchRouteServices(runtime.app),
           {
             projectId: s.project.id,
@@ -84,9 +84,9 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     });
     expect(await rows()).toEqual(deletedRows);
     for (const request of [
-      () => handleWorkBranchPreviewRequest(deps, documentInput),
-      () => handleApplyWorkBranchRequest(deps, { ...input, documentId, request: body }),
-      () => handleDiscardWorkBranchRequest(deps, { ...input, documentId, request: body }),
+      () => handleWorkDraftPreviewRequest(deps, documentInput),
+      () => handleApplyWorkDraftRequest(deps, { ...input, documentId, request: body }),
+      () => handleDiscardWorkDraftRequest(deps, { ...input, documentId, request: body }),
       () =>
         handleApplyAllWorkBranchRequest(deps, {
           ...input,
@@ -113,7 +113,7 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     );
     expect(restored.deletedAt).toBeNull();
     expect((await handleWorkBranchListRequest(deps, input)).items).toEqual(listed.items);
-    const preview = await handleWorkBranchPreviewRequest(deps, documentInput);
+    const preview = await handleWorkDraftPreviewRequest(deps, documentInput);
     expect(preview.status).toBe("active");
     expect(await s.view(work).text("chapter.md")).toContain("Pending words.");
   });
@@ -138,17 +138,17 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
       documentId,
       itemKey: item.itemKey,
     };
-    const preview = await handleWorkBranchPreviewRequest(deps, input);
+    const preview = await handleWorkDraftPreviewRequest(deps, input);
     expect(preview.status).toBe("active");
     expect(JSON.stringify(preview.status === "active" ? preview.hunks : null)).toContain("Pending");
     // Another Work's key names nothing here.
     expect(
-      await handleWorkBranchPreviewRequest(deps, { ...input, itemKey: foreign.itemKey }),
+      await handleWorkDraftPreviewRequest(deps, { ...input, itemKey: foreign.itemKey }),
     ).toMatchObject({ status: "gone" });
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, work.id));
-    expect((await handleWorkBranchPreviewRequest(deps, input)).status).toBe("active");
+    expect((await handleWorkDraftPreviewRequest(deps, input)).status).toBe("active");
     await expect(
-      handleApplyWorkBranchRequest(deps, {
+      handleApplyWorkDraftRequest(deps, {
         ...input,
         request: { branchId: item.branchId, itemKey: item.itemKey, commandId: randomUUID() },
       }),
