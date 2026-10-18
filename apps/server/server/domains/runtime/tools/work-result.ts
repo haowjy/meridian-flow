@@ -102,7 +102,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 
 /**
  * One Work: slug, name, status, then the goal cut to `goalLength` (0 omits it),
- * pending changes only when there are some, and archived. `verbose` adds a line of dates.
+ * how many documents have pending changes only when some do, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
@@ -129,7 +129,9 @@ function workRef(work: Pick<ModelWork, "slug">): string {
 }
 
 function pending(count: number): string {
-  return count === 1 ? "1 pending change" : `${count} pending changes`;
+  return count === 1
+    ? "1 document with pending changes"
+    : `${count} documents with pending changes`;
 }
 
 /** The text cut to `length` at a word boundary, marked with `…`. */
