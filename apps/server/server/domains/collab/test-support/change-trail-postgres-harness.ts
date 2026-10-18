@@ -46,7 +46,7 @@ import { createDraftDiscard } from "../domain/draft-discard.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
-import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
+import type { SettlementApplyStep } from "../domain/ports/settlement-apply.js";
 import { writeMarkdown } from "./bound-writes.js";
 import { readResolvedBranch } from "./branch-store-seam.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
@@ -85,7 +85,7 @@ const { createDrizzleDraftTreeStep } = await import("../adapters/drizzle-draft-t
 const { expirePendingSettlementClaims } = await import(
   "../../../test-support/settlement-claims.js"
 );
-const { createDraftPublication } = await import("../domain/draft-publication.js");
+const { createDraftApply } = await import("../domain/draft-apply.js");
 const { createDraftReviewItems } = await import("../domain/draft-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
 const { lockDocumentNamespaces } = await import(
@@ -321,8 +321,8 @@ export type ChangeTrailHarnessOptions = {
   arrivals?: DocumentArrivals;
   /** Inside a withdrawal (refusal or hold), at its first write. */
   duringWithdrawal?: () => Promise<void>;
-  /** Publication steps after the draft tree step, in the order they run. */
-  publicationSteps?: readonly SettlementPublicationStep[];
+  /** Apply steps after the draft tree step, in the order they run. */
+  applySteps?: readonly SettlementApplyStep[];
 };
 
 export type MatrixDraftStep = {
@@ -518,7 +518,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       steps: [
         createDrizzleDraftTreeStep(db, {
           drafts: workDrafts,
-          // The real Work-first boundary, with no catalog or availability publication.
+          // The real Work-first boundary, with no catalog or availability notice.
           workProjection: createTestWorkProjectionMutation(db),
           // The harness keeps no catalog.
           catalog: { refreshSources: async () => "" },
@@ -527,7 +527,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           liveDoc: (documentId) => readLiveDoc(persistence.journal, documentId),
           ...(options.arrivals ? { arrivals: options.arrivals } : {}),
         }),
-        ...(options.publicationSteps ?? []),
+        ...(options.applySteps ?? []),
       ],
     },
     createTestWorkProjectionMutation(db),
@@ -809,7 +809,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         resolveThreadTitles: lookups.resolveThreadTitles,
       }),
     ),
-    publication: createDraftPublication({
+    draftApply: createDraftApply({
       drafts: workDrafts,
       reviewItems,
       push: realBranchPush,
@@ -965,7 +965,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       await stageBeta();
     }
     preCommitBranchHashes = await databaseBranchHashes();
-    // Staging pulls legitimately publish into loaded branch rooms. Start the
+    // Staging pulls legitimately deliver into loaded branch rooms. Start the
     // measurement window after staging so it covers only the commit attempt.
     branchBroadcasts.length = 0;
     watermarkCommits.length = 0;

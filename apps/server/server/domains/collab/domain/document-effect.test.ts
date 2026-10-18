@@ -1,4 +1,4 @@
-/** Rich review classes publish and discard exact trees without inventing text effects. */
+/** Rich review classes apply and discard exact trees without inventing text effects. */
 import {
   createAgentEditCodecFactory,
   snapshotBlocks,
@@ -9,7 +9,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import { publicationBlockChanges } from "./branch-push-plan.js";
+import { applyBlockChanges } from "./branch-push-plan.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
@@ -91,7 +91,7 @@ function verifyRichChange(kind: string, before: string, after: string) {
     if (kind === "bold") {
       draft.getMap("documents").set("managed-document", true);
       expect(documentEffectsEqual(live, draft)).toBe(false);
-      expect(publicationBlockChanges({ model, beforeDoc: live, afterDoc: draft })).toEqual([]);
+      expect(applyBlockChanges({ model, beforeDoc: live, afterDoc: draft })).toEqual([]);
       draft.getMap("documents").delete("managed-document");
       expect(documentEffectsEqual(live, draft)).toBe(true);
     }
@@ -119,7 +119,7 @@ function verifyRichChange(kind: string, before: string, after: string) {
         computeDraftReviewHunks({ liveDoc: live, draftDoc: draft, model, draftUpdates: rows })
           .hunks,
       ).toEqual([]);
-      expect(publicationBlockChanges({ model, beforeDoc: live, afterDoc: draft })).toEqual([]);
+      expect(applyBlockChanges({ model, beforeDoc: live, afterDoc: draft })).toEqual([]);
     }
     write(10, () => {
       if (kind === "list type") {
@@ -168,8 +168,8 @@ function verifyRichChange(kind: string, before: string, after: string) {
       expect(trees(applied)).toEqual(expected(`${after}\n\nControl`));
       expect(trees(discarded)).toEqual(expected(`${before}\n\nWriter control`));
       expect(documentEffectsEqual(live, applied)).toBe(false);
-      const published = publicationBlockChanges({ model, beforeDoc: live, afterDoc: applied });
-      expect(published.length).toBeGreaterThan(0);
+      const changes = applyBlockChanges({ model, beforeDoc: live, afterDoc: applied });
+      expect(changes.length).toBeGreaterThan(0);
       const attribution = journalAttributionByChangedBlock({
         liveDoc: live,
         model,
@@ -189,7 +189,7 @@ function verifyRichChange(kind: string, before: string, after: string) {
             status: "active" as const,
           })),
       });
-      for (const change of published)
+      for (const change of changes)
         expect(attribution.ownersByBlock.get(change.blockId)).toEqual([
           { threadId: "chat", turnId: `turn-${source}` },
         ]);
@@ -294,10 +294,10 @@ function verifyHistoryDifference(
     });
     expect(preview.diagnostics).toEqual([]);
     expect(preview.operations.every((op) => op.canApplyOrDiscard !== false)).toBe(true);
-    const publication = publicationBlockChanges({ model, beforeDoc: live, afterDoc: draft });
+    const changes = applyBlockChanges({ model, beforeDoc: live, afterDoc: draft });
     if (kind === "recreated run") {
       expect(preview.hunks).toHaveLength(1);
-      expect(publication).toHaveLength(1);
+      expect(changes).toHaveLength(1);
       expect(preview.operations.map((op) => op.sourceUpdateIds)).toEqual([[2]]);
     } else if (kind === "writer") {
       expect(
@@ -310,7 +310,7 @@ function verifyHistoryDifference(
         kind: "block",
         formatting: [{ kind: "structure" }],
       });
-      expect(publication).toHaveLength(2);
+      expect(changes).toHaveLength(2);
       const sources = preview.operations
         .filter((op) => op.closureClassId === preview.operations[0].closureClassId)
         .flatMap((op) => op.sourceUpdateIds);
@@ -367,7 +367,7 @@ function verifyReplacementTrail(
         block.serialized,
       ]),
     );
-  const changedBlocks = publicationBlockChanges({
+  const changedBlocks = applyBlockChanges({
     model,
     beforeDoc: live,
     afterDoc: draft,

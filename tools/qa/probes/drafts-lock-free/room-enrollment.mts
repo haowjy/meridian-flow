@@ -73,7 +73,7 @@ function pausedRead(store: BranchStore) {
 
 /**
  * One server process: the production coordinator, binding, persistence service and gateway
- * over `store`. `dropDelivery` loses the first room update the coordinator publishes.
+ * over `store`. `dropDelivery` loses the first room update the coordinator delivers.
  */
 export function openGateway(
   harness: Harness,
@@ -92,7 +92,7 @@ export function openGateway(
         drop = false;
         return;
       }
-      binding.publishBranchUpdate(update);
+      binding.deliverBranchUpdate(update);
     },
     onBranchReset: ({ branchId, generation }) => binding.closeBranch(branchId, generation),
     applyToRoom: binding.applyToRoom,

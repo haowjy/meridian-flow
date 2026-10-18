@@ -1,7 +1,7 @@
 /**
- * The branch runtime and the operations on it. The runtime holds one immutable published
+ * The branch runtime and the operations on it. The runtime holds one immutable committed
  * replica per branch, prepares every write on a private candidate (append, rewrite, reset) and
- * publishes it only once its attempt completes; the operations (pull, reset, a reply's staged
+ * installs it only once its attempt completes; the operations (pull, reset, a reply's staged
  * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
  * fold they trigger are `branch-writer-frames.ts`, over the same runtime surface.
  */
@@ -53,7 +53,7 @@ import {
  * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
  * `encoded` is its update bytes, computed once when first needed.
  */
-export type PublishedReplica = {
+export type CommittedReplica = {
   readonly revision: number;
   readonly checkpointRevision: number;
   readonly seq: number;
@@ -64,12 +64,12 @@ export type PublishedReplica = {
 };
 
 /**
- * A replica on its way to publication: `next`, and when it was built by applying `rows` to
+ * A replica on its way to installation: `next`, and when it was built by applying `rows` to
  * `from`, those two, so delivery can send the rows instead of diffing whole documents.
  */
 type Transition = {
-  readonly next: PublishedReplica;
-  readonly from?: PublishedReplica;
+  readonly next: CommittedReplica;
+  readonly from?: CommittedReplica;
   readonly rows?: readonly Uint8Array[];
 };
 
@@ -91,7 +91,7 @@ function grownTail(tail: TailSize, updates: readonly Uint8Array[]): TailSize {
 /** What a branch operation works from: the row as read and the committed replica at it. */
 export type BranchBase = {
   snapshot: BranchSnapshot;
-  replica: PublishedReplica;
+  replica: CommittedReplica;
 };
 
 /** An exact-predicate write's attempt policy; the last miss is `moved`'s (default: throw). */
@@ -107,9 +107,9 @@ type CommitAttemptOptions<T> = {
  */
 export type BranchRuntime = {
   loadBase(branchId: string): Promise<BranchBase>;
-  /** The replica published for the branch, if any: read it, never mutate it. */
-  published(branchId: string): PublishedReplica | undefined;
-  cloneReplica(replica: PublishedReplica): Y.Doc;
+  /** The replica committed for the branch, if any: read it, never mutate it. */
+  committed(branchId: string): CommittedReplica | undefined;
+  cloneReplica(replica: CommittedReplica): Y.Doc;
   containment: ReturnType<typeof createDocumentContainment>;
   /**
    * Brings `room` up to `replica` when it lacks any of the replica's content, reported as a
@@ -118,7 +118,7 @@ export type BranchRuntime = {
   reconcileRoom(input: {
     branchId: string;
     room: Y.Doc;
-    replica: PublishedReplica;
+    replica: CommittedReplica;
     trigger: RoomReconcileTrigger;
   }): void;
   /**
@@ -136,7 +136,7 @@ export type BranchRuntime = {
     candidate: Y.Doc,
     rewrite: Omit<CommitRewriteInput, "branchId" | "doc">,
   ): PreparedBranchWrite;
-  foldPolicy(replica: PublishedReplica): RewritePolicy;
+  foldPolicy(replica: CommittedReplica): RewritePolicy;
   /** `write` as one whole attempt: true when it wrote, false when it was contained. */
   commitOnce(
     write: PreparedBranchWrite,
@@ -153,7 +153,7 @@ export type RoomReconcileTrigger = "frame" | "enrollment" | "handshake";
 /**
  * A branch write prepared on a private candidate, an `AttemptCandidate` of the attempt that
  * prepared it: nothing is persisted until `persist` runs inside that attempt's commit scope,
- * nothing is visible until `transfer` hands it to publication once the whole attempt
+ * nothing is visible until `transfer` hands it to installation once the whole attempt
  * completed, and `dispose` drops it on any unwind. A rewrite's `persist` throws
  * `BranchCasConflictError` when the branch moved since the candidate's base; an append's never
  * does (it is sequenced, not fenced) and resolves false when everything it carried was already
@@ -255,7 +255,7 @@ export type BranchCoordinator = {
   ): Promise<T>;
   // A reply's save (contract §2.3) prepares through these and acquires nothing: every write
   // is an attempt fenced by the revision it was prepared at.
-  /** A private copy of the branch for `fn` to change; nothing it does is kept or published. */
+  /** A private copy of the branch for `fn` to change; nothing it does is kept or installed. */
   withTransient<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
@@ -278,11 +278,11 @@ export type BranchCoordinator = {
   /** A writer frame (`branch-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { branchId: string; generation: number }): void;
-  /** Brings this process's rooms up to what is committed now: a read, published as any other. */
+  /** Brings this process's rooms up to what is committed now: a read, installed as any other. */
   deliverCommitted(branchId: string): Promise<void>;
   /**
    * Brings a registered room up to what is committed on its generation (decisions D26, D27):
-   * at its enrollment, from which on every published transition reaches it, and at each tab's
+   * at its enrollment, from which on every installed transition reaches it, and at each tab's
    * handshake, so a room that missed a delivery heals on the next exchange whether or not the
    * tab may write. Returns the base it reconciled against, or null when the branch closed or
    * left the room's generation.
@@ -313,7 +313,7 @@ export function createBranchCoordinator(input: {
 }): BranchCoordinator {
   const attemptScope = input.attemptScope ?? NO_ATTEMPT_SCOPE;
   const documentContainment = createDocumentContainment();
-  const published = new Map<string, PublishedReplica>();
+  const committed = new Map<string, CommittedReplica>();
 
   /**
    * An exact-predicate write's attempts: a moved branch recaptures, and the last miss is
@@ -391,13 +391,13 @@ export function createBranchCoordinator(input: {
   }
 
   /**
-   * The branch as committed now, from the published replica when its revision still holds,
+   * The branch as committed now, from the committed replica when its revision still holds,
    * caught up from the tail when only appends landed since, otherwise materialized. What the
    * catch-up adds reaches this process's rooms too: another process's commits arrive nowhere
    * else, and a room missing them would fence every frame typed into it.
    */
   async function loadBase(branchId: string): Promise<BranchBase> {
-    const current = published.get(branchId);
+    const current = committed.get(branchId);
     const read = await input.store.readBranchAt(
       branchId,
       current ? { checkpointRevision: current.checkpointRevision, seq: current.seq } : undefined,
@@ -408,7 +408,7 @@ export function createBranchCoordinator(input: {
     return { snapshot, replica: replicaFor(read, current) };
   }
 
-  function replicaFor(read: BranchRead, current: PublishedReplica | undefined): PublishedReplica {
+  function replicaFor(read: BranchRead, current: CommittedReplica | undefined): CommittedReplica {
     const { branch } = read;
     if (current?.revision === branch.revision) return current;
     try {
@@ -417,7 +417,7 @@ export function createBranchCoordinator(input: {
         // Only appends (or metadata-only bumps) since the replica: apply the tail to a copy.
         const doc = rows.length ? cloneReplica(current) : current.doc;
         for (const row of rows) Y.applyUpdate(doc, row);
-        const next: PublishedReplica = {
+        const next: CommittedReplica = {
           revision: branch.revision,
           checkpointRevision: branch.checkpointRevision,
           seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
@@ -429,7 +429,7 @@ export function createBranchCoordinator(input: {
         install(branch.branchId, { next, from: current, rows });
         return next;
       }
-      const next: PublishedReplica = {
+      const next: CommittedReplica = {
         revision: branch.revision,
         checkpointRevision: branch.checkpointRevision,
         seq: Math.max(branch.checkpointSeq, ...read.tail.map((row) => row.id)),
@@ -450,20 +450,20 @@ export function createBranchCoordinator(input: {
   }
 
   /**
-   * The one way a replica becomes the branch's published replica, and so the one way content
+   * The one way a replica becomes the branch's committed replica, and so the one way content
    * reaches this process's registered rooms (decision D25); a room that registers, or misses a
    * delivery, behind it is brought up by `reconcileRoom` (D26). It runs when the transaction the replica was
    * read or written in commits (a savepoint's rows only once its root commits too), installs
-   * only past the replica published by then, and hands the rooms what separates the two. A
-   * lower or equal revision installs nothing and sends nothing: the published replica already
+   * only past the replica installed by then, and hands the rooms what separates the two. A
+   * lower or equal revision installs nothing and sends nothing: the committed replica already
    * holds its content, and so do the rooms. A candidate whose transaction rolls back is
    * destroyed instead.
    */
   function install(branchId: string, transition: Transition, owned = false): void {
-    const publish = () => {
-      const previous = published.get(branchId);
+    const install = () => {
+      const previous = committed.get(branchId);
       if (previous && previous.revision >= transition.next.revision) return;
-      published.set(branchId, transition.next);
+      committed.set(branchId, transition.next);
       if (!previous) return;
       if (previous.generation !== transition.next.generation) {
         // Another process re-forked the branch: rooms on an older generation close.
@@ -474,7 +474,7 @@ export function createBranchCoordinator(input: {
       if (update) input.onBranchUpdate?.({ branchId, update });
     };
     const abort = owned ? () => transition.next.doc.destroy() : undefined;
-    if (!input.store.deferUntilCommit(publish, abort)) publish();
+    if (!input.store.deferUntilCommit(install, abort)) install();
   }
 
   /**
@@ -487,7 +487,7 @@ export function createBranchCoordinator(input: {
    * generation. Yjs applies a repeat as a no-op, so a room that already holds part of it is
    * unharmed.
    */
-  function deliveryFrom(previous: PublishedReplica, transition: Transition): Uint8Array | null {
+  function deliveryFrom(previous: CommittedReplica, transition: Transition): Uint8Array | null {
     const { from, rows, next } = transition;
     if (
       rows &&
@@ -504,7 +504,7 @@ export function createBranchCoordinator(input: {
 
   /**
    * The other half of delivery (decision D26): `install` sends each transition to the rooms
-   * registered when it publishes, and this repairs a room that joined, or missed a delivery,
+   * registered when it installs, and this repairs a room that joined, or missed a delivery,
    * behind `replica`. The room gets the replica's structs past its state vector and the
    * replica's delete set, so a delete-only gap is covered too.
    */
@@ -539,13 +539,13 @@ export function createBranchCoordinator(input: {
     return base;
   }
 
-  function encodedOf(replica: PublishedReplica): Uint8Array {
+  function encodedOf(replica: CommittedReplica): Uint8Array {
     replica.encoded ??= Y.encodeStateAsUpdate(replica.doc);
     return replica.encoded;
   }
 
   /** A private, mutable copy of a replica: one apply of its cached bytes. */
-  function cloneReplica(replica: PublishedReplica): Y.Doc {
+  function cloneReplica(replica: CommittedReplica): Y.Doc {
     const doc = createCollabYDoc({ gc: false });
     Y.applyUpdate(doc, encodedOf(replica));
     return doc;
@@ -554,7 +554,7 @@ export function createBranchCoordinator(input: {
   /**
    * The one lifetime of a prepared write: prepared (nothing persisted), persisted in its
    * attempt (written, but the attempt can still roll it back), transferred (the attempt
-   * completed; publication owns the committed replica, or a reset closes the room). Disposing
+   * completed; installation owns the committed replica, or a reset closes the room). Disposing
    * destroys every document the write owns in every state but the last, so a write whose own
    * statement succeeded in a scope that a later miss rolled back is dropped like one that never
    * ran. A contained append persisted nothing and transfers nothing.
@@ -592,7 +592,7 @@ export function createBranchCoordinator(input: {
           return;
         }
         if ("resetTo" in committed) {
-          // A reset's candidate is never published: the room closes on the new generation.
+          // A reset's candidate is never installed: the room closes on the new generation.
           destroyOwned();
           notifyReset({ branchId: write.branchId, generation: committed.resetTo });
           return;
@@ -720,7 +720,7 @@ export function createBranchCoordinator(input: {
           throw new BranchRewriteRefused(branchId, outcome.status);
         if (outcome.status !== "committed") throw new BranchCasConflictError(branchId);
         if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
-        // The fold may have applied rows this process never published: delivery diffs the
+        // The fold may have applied rows this process never installed: delivery diffs the
         // documents rather than trusting anything computed before the lock.
         return { next: { ...outcome, doc: candidate, tail: EMPTY_TAIL } };
       },
@@ -766,7 +766,7 @@ export function createBranchCoordinator(input: {
   }
 
   /** A fold over everything appended past `replica`'s cursor. */
-  function foldPolicy(replica: PublishedReplica): RewritePolicy {
+  function foldPolicy(replica: CommittedReplica): RewritePolicy {
     return { kind: "fold", checkpointRevision: replica.checkpointRevision, seq: replica.seq };
   }
 
@@ -795,12 +795,12 @@ export function createBranchCoordinator(input: {
 
   /** A re-fork committed: the replica is dropped and rooms on older generations close. */
   function notifyReset(reset: { branchId: string; generation: number }): void {
-    const publish = () => {
-      const current = published.get(reset.branchId);
-      if (current && current.generation < reset.generation) published.delete(reset.branchId);
+    const install = () => {
+      const current = committed.get(reset.branchId);
+      if (current && current.generation < reset.generation) committed.delete(reset.branchId);
       input.onBranchReset?.(reset);
     };
-    if (!input.store.deferUntilCommit(publish)) publish();
+    if (!input.store.deferUntilCommit(install)) install();
   }
 
   /**
@@ -946,7 +946,7 @@ export function createBranchCoordinator(input: {
   const frames = createWriterFrames(
     {
       loadBase,
-      published: (branchId) => published.get(branchId),
+      committed: (branchId) => committed.get(branchId),
       cloneReplica,
       containment: documentContainment,
       reconcileRoom,

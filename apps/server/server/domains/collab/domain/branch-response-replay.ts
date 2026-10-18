@@ -129,7 +129,7 @@ export function reconcileStagedBranchWrites(
     subtractRanges(suppliedRanges(residual), inserted).length ||
     subtractRanges(subtractRanges(deleteRanges(residual), currentDeletes), deleted).length
   )
-    throw new Error("Response publication left an unexplained generation residual");
+    throw new Error("Response segment write left an unexplained generation residual");
   // Never merge helper state into the candidate, even when the residual is explained.
   return {
     keptEntries: kept.map((row) => row.entry),

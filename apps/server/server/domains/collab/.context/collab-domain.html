@@ -667,7 +667,7 @@ cold execution produce the same live document.
     four attempts Apply answers <code>stale</code>. No branch lease or mutex
     is taken.</li>
   <li><strong>Durable commit.</strong> One transaction writes
-    <code>push_lineage</code> (publication identity and idempotency key), the
+    <code>push_lineage</code> (Apply identity and idempotency key), the
     <code>branch_push_settlement_outbox</code> row (lock cut, push update,
     trail seed, claim), and the required change trail.</li>
   <li><strong>Settle.</strong> Drain writer admissions that started before
@@ -685,7 +685,7 @@ cold execution produce the same live document.
 <p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>withCompletionFence</code> and <code>completeStagedPush</code></p>
 <p>
 The reconcile row exists because the active authored rows alone can omit
-causal dependencies of the branch state being published; replaying only them
+causal dependencies of the branch state being applied; replaying only them
 cold would not reproduce the merged live document. It is coverage, not an
 author: dependency checks ignore it and it is never a reversal target. A crash
 after the durable commit leaves a pending outbox row that the recovery lane
@@ -696,7 +696,7 @@ completes with the same code path. Depth lives in
 
 <h3>The change trail and receipts</h3>
 <ul class="rule-list">
-  <li><strong>Change trail.</strong> The sole durable publication record: one
+  <li><strong>Change trail.</strong> The sole durable Apply record: one
     folded set of before/after block changes per turn (or one shared trail per
     thread), keyed by Yjs <code>{clientID, clock}</code> identity. It is
     written by push commit and settlement, and by offline reconciliation.
@@ -705,7 +705,7 @@ completes with the same code path. Depth lives in
   <li><strong>Trail dirty signals.</strong> Mutation transactions append to
     <code>change_trail_dirty_log</code>. The change-trail worker reconciles
     affected owners from durable journal cuts; its completion transaction
-    consumes the signals and publishes derived changes.
+    consumes the signals and records derived changes.
     <span class="ref"><code>adapters/drizzle-change-trail-aggregate.ts</code>, <code>adapters/change-trail-worker.ts</code></span></li>
   <li><strong>Receipts.</strong> Live and draft receipt actions use immutable
     edits and parts with their current placements. Card Undo/Redo and
@@ -881,8 +881,8 @@ The points below are the ones that change how you reason about edits here.
     structs keep their original Yjs identities and attribution. A pull
     computes off every lock, enters the Works mutation boundary, and commits as
     a fold over its replica's cursor, so writer rows appended meanwhile are
-    folded in rather than making it miss. It publishes the delta to an open
-    review room through the normal branch update publisher. An archived
+    folded in rather than making it miss. It delivers the delta to an open
+    review room through the normal branch update delivery. An archived
     Work's draft keeps pulling, so it applies cleanly after unarchive; see the
     archive contract in <a href="CONTEXT.md">CONTEXT.md</a>.
     <span class="ref"><code>domain/branch-coordinator.ts</code> <code>pullFromDoc</code></span></li>
@@ -893,7 +893,7 @@ The points below are the ones that change how you reason about edits here.
     revision, class identities, member keys) and answer <code>stale</code> or
     <code>gone</code> when it changed. A new document drafted only in the Work
     is pushed together with its project-manifest entry in one batch.
-    <span class="ref"><code>packages/contracts/src/drafts/review.ts</code>, <code>domain/draft-publication.ts</code>, <code>domain/work-draft-review-service.ts</code>, <code>domain/branch-push.ts</code></span></li>
+    <span class="ref"><code>packages/contracts/src/drafts/review.ts</code>, <code>domain/draft-apply.ts</code>, <code>domain/work-draft-review-service.ts</code>, <code>domain/branch-push.ts</code></span></li>
   <li><strong>Discard has two shapes.</strong> Whole Discard closes the draft
     and its branches (and removes a draft-only document's manifest entry) and
     requires the Work to be active. Selective and item Discard re-fork the
@@ -1060,7 +1060,7 @@ graph.
     construction); the live coordinator over it.</li>
   <li><strong>Branches.</strong> The branch store over the Works mutation
     boundary (a required dependency: it owns Work-first lock order), the
-    branch coordinator (published replicas, private candidates, attempts and
+    branch coordinator (committed replicas, private candidates, attempts and
     the operations on them), writer-frame admission, the pull service, and the
     projection job, which every committed append marks dirty
     (<code>onAppendCommitted</code>, a required coordinator input) and which
@@ -1118,7 +1118,7 @@ same interfaces for tests. Rules for this file are in
   <li><a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/index.md">Collab decisions index</a> and <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/index.md">concurrent-safety decisions index</a></li>
   <li>Journal: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/concurrent-awareness-journal-first-durability.md">journal-first durability</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/lock-ws-invariant.md">LOCK-WS</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/response-transaction-unit-of-work.md">response transaction unit of work</a></li>
   <li>Merge and settlement: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/agent-writes-merge-report-and-recover.md">agent writes merge</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/trail/ai-change-event-projections.md">durable change trails</a></li>
-  <li>Branches: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/model/draft-branch-topology.md">draft-branch topology</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-publication-pipeline.md">publication pipeline</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-echo-attribution.md">echo attribution</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/drafts-without-locks.md">drafts without locks</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-branches.md">Work lifecycle fences branches</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/content-apply-member.md">content Apply member</a></li>
+  <li>Branches: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/model/draft-branch-topology.md">draft-branch topology</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-publication-pipeline.md">Apply pipeline</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/branch-echo-attribution.md">echo attribution</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/drafts-without-locks.md">drafts without locks</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-branches.md">Work lifecycle fences branches</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/content-apply-member.md">content Apply member</a></li>
   <li>Reversal: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/reversal/revert-is-a-forward-edit.md">revert is a forward edit</a></li>
   <li>Schema: <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/collab-schema-fence.md">schema fence</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/schema-coherence-invariant.md">schema coherence</a>, <a href="https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/schema/repair-first-never-disable.md">repair first, never disable</a></li>
 </ul>

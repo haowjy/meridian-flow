@@ -515,7 +515,7 @@ export function createMarkdownDocumentEngine(
       );
       const recover = () => deps.coordinator.recover(typedDocumentId);
       // An enclosing aggregate may still roll back after the checkpoint is
-      // written. Publish only after that durable boundary.
+      // written. Recover the rooms only after that durable boundary.
       if (!deps.deferUntilCommit?.(recover)) await recover();
       if (seeded) {
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });

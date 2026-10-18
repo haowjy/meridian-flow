@@ -17,6 +17,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { Ok } from "../../../shared/result.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
@@ -579,6 +580,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
+          pendingCounts: createDrizzleWorkDraftPendingStore(db),
           availability,
           catalog,
         }),
@@ -613,6 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
+          pendingCounts: createDrizzleWorkDraftPendingStore(db),
           availability,
           catalog: {
             async refreshProject(projectId) {

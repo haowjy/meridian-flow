@@ -66,14 +66,14 @@ describe("assignReviewClasses", () => {
       expect(operations[2]?.closureClassId).toBe(operations[0]?.closureClassId);
     } else {
       expect(operations[2]?.closureClassId).not.toBe(operations[0]?.closureClassId);
-      const published = new Y.Doc({ gc: false });
-      Y.applyUpdate(published, Y.encodeStateAsUpdate(base));
+      const delivered = new Y.Doc({ gc: false });
+      Y.applyUpdate(delivered, Y.encodeStateAsUpdate(base));
       const selected = operations[0]?.closureUpdateIds ?? [];
       for (const update of updates.filter((row) => selected.some((id) => id === row.id)))
-        Y.applyUpdate(published, update.updateData);
-      expect(published.getText("chapter").toString()).toContain("WRITERBIT");
-      expect(published.getText("chapter").toString()).not.toContain("GOLDPLAIN");
-      expect(published.store.pendingStructs).toBeNull();
+        Y.applyUpdate(delivered, update.updateData);
+      expect(delivered.getText("chapter").toString()).toContain("WRITERBIT");
+      expect(delivered.getText("chapter").toString()).not.toContain("GOLDPLAIN");
+      expect(delivered.store.pendingStructs).toBeNull();
       const independent = new Y.Doc({ gc: false });
       Y.applyUpdate(independent, Y.encodeStateAsUpdate(base));
       const elsewhere = updates[2];
@@ -83,7 +83,7 @@ describe("assignReviewClasses", () => {
       expect(independent.getText("chapter").toString()).not.toContain("WRITERBIT");
       expect(independent.store.pendingStructs).toBeNull();
       independent.destroy();
-      published.destroy();
+      delivered.destroy();
     }
     draft.destroy();
     base.destroy();

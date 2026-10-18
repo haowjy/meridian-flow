@@ -40,7 +40,7 @@ describe("branch-push durable projection (postgres)", () => {
     cold.destroyWarmState();
   });
 
-  it("a joined revision publishes one trail version across a rolled-back completion", async () => {
+  it("a joined revision records one trail version across a rolled-back completion", async () => {
     let faulted = false;
     const harness = createHarness(db, {
       afterDurableCommit: async ({ appendWriterPrefix }) => {

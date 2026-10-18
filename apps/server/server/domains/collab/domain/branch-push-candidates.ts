@@ -1,11 +1,11 @@
-/** Builds the candidate batches a publication stages: whole-branch, or the rows a review selected. */
+/** Builds the candidate batches an Apply stages: whole-branch, or the rows a review selected. */
 import { randomUUID } from "node:crypto";
 import type { UserId } from "@meridian/contracts/runtime";
 import type { BranchJournalRow } from "./branch-journal.js";
 import {
+  type ApplyPayloads,
   BranchPushCommitConflictError,
   type CandidateBatch,
-  type PublicationPayloads,
 } from "./branch-push-contracts.js";
 import type { BranchSnapshot } from "./branch-store.js";
 
@@ -16,7 +16,7 @@ type CandidateSource = {
 
 export function buildWholeBranchCandidates(input: {
   sources: readonly CandidateSource[];
-  payloads?: PublicationPayloads;
+  payloads?: ApplyPayloads;
   pushedByUserId?: UserId;
 }): CandidateBatch {
   return {
@@ -37,7 +37,7 @@ export function buildSelectedRowCandidates(input: {
   source: CandidateSource;
   journalIds: readonly number[];
   expectedLiveRevision: string;
-  payloads?: PublicationPayloads;
+  payloads?: ApplyPayloads;
   pushedByUserId?: UserId;
 }): CandidateBatch {
   const selected = new Set(input.journalIds);

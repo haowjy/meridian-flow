@@ -21,7 +21,7 @@ export type CommandSettlement<R> =
   | { kind: "result"; result: R }
   /** The server marked the command's batch `blocked`: terminal, never retried. */
   | { kind: "blocked" }
-  /** The claim ended while the command was out; nothing is published for it. */
+  /** The claim ended while the command was out; nothing is recorded for it. */
   | { kind: "revoked" };
 
 type Observation = DraftCommandObservation | { state: "unknown" };

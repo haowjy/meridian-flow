@@ -119,9 +119,9 @@ import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
+import { createDraftApply } from "./domain/draft-apply.js";
 import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import { createDraftDiscard } from "./domain/draft-discard.js";
-import { createDraftPublication } from "./domain/draft-publication.js";
 import { createDraftReviewIdentity } from "./domain/draft-review-identity.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
@@ -218,7 +218,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branchCoordinator = createBranchCoordinator({
     store: branches,
     attemptScope,
-    onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
+    onBranchUpdate: hocuspocusBinding.deliverBranchUpdate,
     onBranchReset: ({ branchId, generation }) =>
       hocuspocusBinding.closeBranch(branchId, generation),
     applyToRoom: hocuspocusBinding.applyToRoom,
@@ -348,7 +348,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         lockNamespaces: ({ documentIds, sourceIds }) =>
           lockDocumentNamespaces(deps.db, documentIds, sourceIds),
       },
-      // Apply's tree work publishes with the text it applies (contract §11.2).
+      // Apply's tree work lands with the text it applies (contract §11.2).
       steps: [
         createDrizzleDraftTreeStep(deps.db, {
           drafts: workDrafts,
@@ -538,7 +538,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
     }),
   });
-  const publication = createDraftPublication({
+  const draftApply = createDraftApply({
     drafts: workDrafts,
     reviewItems,
     push: branchPush,
@@ -569,7 +569,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts: workDrafts,
     reviewItems,
     identity,
-    publication,
+    draftApply,
     discard,
     branchReview,
     commands: createDrizzleDraftCommands(deps.db),
@@ -690,7 +690,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
-      countPendingByWorkIds: workDraftPendingStore.countPendingByWorkIds,
     },
     branchPeers,
     drafts,

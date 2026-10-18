@@ -27,18 +27,18 @@ export const d12CreateDuringArchive: Probe = {
     const paused = gate();
     const finish = gate();
     let pause = true;
-    // Archive's projection publication runs inside its transaction, after its Work update.
+    // Archive's Works notice runs inside its transaction, after its Work update.
     const works = createDrizzleWorkRepository({
       db: harness.db,
       projectionMutation: {
         ...harness.projection,
-        async publishWorks(ids) {
+        async notifyWorksChanged(ids) {
           if (pause) {
             pause = false;
             paused.open();
             await finish.wait;
           }
-          return harness.projection.publishWorks(ids);
+          return harness.projection.notifyWorksChanged(ids);
         },
       },
       fileAccessChanges: { publish: async () => {} },

@@ -5,7 +5,7 @@
  * nothing registers it. After each admitted writer update the branch is read, debounced,
  * and every `ahead:` key in it is registered, best effort: a target created live and then
  * moved before Apply would otherwise leave the link at the old path. Drafts store nothing
- * about the ref and Apply needs no prerequisite: after publication the derive sweep
+ * about the ref and Apply needs no prerequisite: after the Apply the derive sweep
  * registers anything this missed.
  */
 import { parseLinkRef, resolveDocumentHref } from "@meridian/contracts";

@@ -1,7 +1,7 @@
 # Collab — branch model and durable records
 
 This page defines the durable vocabulary and provenance boundaries for Work
-drafts, branches, review items, and publication records. Do not use a draft ID,
+drafts, branches, review items, and Apply records. Do not use a draft ID,
 branch ID, item key, or presented address interchangeably.
 
 ## Vocabulary
@@ -22,7 +22,7 @@ Thread peers fork from that branch and share its upstream. The server resolves
 every item key through the identity module; no caller accepts an ambiguous bare
 ID. A document with no branch can still be an item and can still be applied.
 
-## Lifecycle and publication
+## Lifecycle and Apply
 
 Draft capture, Apply, Discard, and redo require an active Work under the shared
 lifecycle row lock and grant confirmation. Discard runs as one attempt: it locks the Work, draft, namespaces, and documents, then resets
@@ -45,7 +45,7 @@ the draft once. Reusing a `commandId` returns its recorded result without
 reapplying it. A per-change command on a whole-document-only item refuses
 `whole_item`.
 
-A durable thread peer has no unpublished authored state after reply finalization:
+A durable thread peer has no uncommitted authored state after reply finalization:
 its writes enter the shared Work draft atomically. Before a new call, pull tests
 whether the parent contains the peer's complete update, including deletes. A
 retired peer is reset rather than merged back. A rebind closes the old peer and
@@ -145,18 +145,18 @@ private copy, so a failed commit never changes what a reader holds.
 
 The live journal is the durable content source. A branch is stored as a
 checkpoint plus its tail; branch write rows carry review status. `push_lineage`
-provides publication identity and idempotency. The change trail is the durable
-publication record; a `system:reconcile` row carries causal replay coverage
+provides Apply identity and idempotency. The change trail is the durable
+Apply record; a `system:reconcile` row carries causal replay coverage
 without becoming a semantic author or inverse target. Immutable edit parts keep
 authored identity through settlement.
 
-Pending-publication counts are distinct pending documents per Work (the active
+Pending counts (the Works badge) are distinct pending documents per Work (the active
 draft's branches with reviewable rows plus its change rows, so a created
-document counts before it has text), never raw journal-row totals. Tree
+document counts before it has text), never raw journal-row totals; each Work stores its count (`works.pending_document_count`), reconciled by the Works boundary. Tree
 presence comes from context's tree views, never a Yjs manifest.
 
 Live-to-draft pulls run independently of the caller's response transaction and
-publish to loaded branch rooms after durability. Checkpoints are a separate
+deliver to loaded branch rooms after durability. Checkpoints are a separate
 authority concern: a room release queues its immutable binding, and a worker
 captures a durable cut after the releasing transaction commits. A dropped or
 late checkpoint costs replay time, never data.

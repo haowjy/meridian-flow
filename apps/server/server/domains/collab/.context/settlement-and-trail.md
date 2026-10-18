@@ -3,7 +3,7 @@
 This page records the single push pipeline and its durable settlement boundary.
 Live-document locks, journal admission, the staging transaction's row locks,
 trail projection, and completion fencing must remain ordered; no caller may
-publish a partial push.
+apply a partial push.
 
 ## Push pipeline
 
@@ -17,7 +17,7 @@ scope has closed.
 
 Whole-branch and selected-row builders produce one candidate batch consumed by
 the shared push pipeline. Locked preparation computes the diff from the live
-cut; trail projection turns that diff into the sole durable publication
+cut; trail projection turns that diff into the sole durable Apply
 record. A typed branch generation supplies idempotency, not a second diff.
 
 The transition captures the immutable LOCK-WS cut, admits concurrent rows
@@ -28,7 +28,7 @@ the committed replace-set to connected bare-document rooms only after the
 completion fence reports applied or already applied. Delivery is a session hint,
 not a durable outbox and cannot make a committed push fail.
 
-Whole Apply publishes the current branch, including rows created after a
+Whole Apply applies the current branch, including rows created after a
 preview. Per-change Apply and Discard replay only complete selected classes and
 require their displayed live revision, class identities, immutable member keys,
 and server-vended admission evidence. A missing or changed selected class
@@ -39,7 +39,7 @@ never after a durable outbox handoff.
 
 ## Trail and attribution
 
-The change trail is the durable publication record. It carries document-scoped
+The change trail is the durable Apply record. It carries document-scoped
 Yjs block identities `{ clientID, clock }`, nullable before/after identities,
 and authorized evidence for receipts and navigation. Display hash prefixes and
 serialized prose are not durable identity. Before/After evidence is read-only;
@@ -62,7 +62,7 @@ or provenance shortcut. Immutable edit parts and certified restoration aliases
 retain authorship across settlement. Trail projection must never infer an
 owner from equal text, rendered position, or an ambiguous relocation chain.
 
-Trail, receipt, journal disposition, publication, settlement, and turn-lifecycle
+Trail, receipt, journal disposition, Apply, settlement, and turn-lifecycle
 producers append dirty signals in their own transaction. Reconciliation follows
 those signals through one semantic owner resolver under sorted aggregate locks,
 then deletes exactly the signals it observed. Sequence allocation is not commit
@@ -105,10 +105,10 @@ settlements, owner keys, and outbox rows. It keeps its own root transaction,
 uses a wraparound cursor, and acquires selected trail locks in sorted order.
 Unfinished shells remain eligible after signal consumption.
 
-## Undo-restored publication
+## Undo-restored Apply
 
 Net live-to-draft hunks use the same clock attribution index as review. A
 cancelled writer delete/restore must not add writer ownership to an AI-only
-publication. Certified restoration aliases replay from journal metadata;
+Apply. Certified restoration aliases replay from journal metadata;
 physical writer rows remain untouched. Apply trail and receipt keep the
 originating AI turn, including during cold replay.

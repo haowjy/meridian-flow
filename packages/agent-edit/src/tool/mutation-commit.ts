@@ -52,7 +52,7 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
-  /** Frozen host cut before checked publication, for terminal receipt reporting. */
+  /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
   access?: DocumentAccess;
   turnId?: string;
@@ -85,7 +85,7 @@ export interface CommitPreflightInput {
   touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
-  /** Frozen host cut before checked publication, for terminal receipt reporting. */
+  /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
   access?: DocumentAccess;
   ownTurnId?: string;
@@ -154,7 +154,7 @@ export interface MutationCommit {
     reportingOnly?: boolean;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
-    /** Frozen host cut before checked publication, for terminal receipt reporting. */
+    /** Frozen host cut before the checked commit, for terminal receipt reporting. */
     reportingCut?: Uint8Array;
     access?: DocumentAccess;
     ownTurnId?: string;
@@ -206,7 +206,7 @@ export function createMutationCommit(deps: {
     reportingOnly?: boolean;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
-    /** Frozen host cut before checked publication, for terminal receipt reporting. */
+    /** Frozen host cut before the checked commit, for terminal receipt reporting. */
     reportingCut?: Uint8Array;
     access?: DocumentAccess;
     ownTurnId?: string;
