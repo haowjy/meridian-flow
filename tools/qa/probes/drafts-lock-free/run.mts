@@ -30,6 +30,7 @@ import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
 import { migrationOnline } from "./migration-online.mts";
+import { reviewUnpulledLive } from "./review-unpulled-live.mts";
 import {
   coldLoadCommit,
   coldLoadReset,
@@ -67,6 +68,8 @@ const PROBES: readonly Probe[] = [
   effectWatermarkSweep,
   migrationOnline,
   clientResync,
+  // A draft's review while live is ahead of its last pull (owner report, live-edit-review).
+  reviewUnpulledLive,
 ];
 
 function parseArgs(argv: readonly string[]) {

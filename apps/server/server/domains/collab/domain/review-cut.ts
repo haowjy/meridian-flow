@@ -20,6 +20,10 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
   try {
     Y.applyUpdate(liveDoc, cut.live.state);
     Y.applyUpdate(draftDoc, cut.branch.state);
+    // Live moves ahead of the draft between debounced pulls. What the draft has not pulled
+    // yet is not its change: review the draft as its next pull will leave it, or live's new
+    // text reads as the draft's unattributed removal.
+    Y.applyUpdate(draftDoc, Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(draftDoc)));
     const rows = reviewRows(cut);
     const review = computeDraftReviewHunks({
       liveDoc,
