@@ -82,7 +82,7 @@ describe("session composer drafts", () => {
     vi.advanceTimersByTime(300);
     expect(write).toHaveBeenCalledTimes(1);
     const restored = new ComposerSessionDraft(account, scope, () => tab).initialDraft;
-    if (!restored) throw new Error("Branch was not restored");
+    if (!restored) throw new Error("Draft was not restored");
     expect(serializeComposerDraft(restored.doc).references).toEqual(submitted.references);
     expect(serializeComposerDraft(restored.doc).text).toBe(submitted.text);
     expect(JSON.stringify(restored)).not.toContain("composerUpload");

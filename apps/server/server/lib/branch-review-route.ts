@@ -75,11 +75,11 @@ export async function requireBranchWorkAccess(
 ): Promise<Work> {
   const project = await deps.projects.findById(input.projectId);
   if (!project || project.userId !== input.userId || project.deletedAt) {
-    throw createError({ statusCode: 404, message: "Branch not found" });
+    throw createError({ statusCode: 404, message: "Work not found" });
   }
   const work = await deps.works.findById(input.workId);
   if (!work || work.projectId !== input.projectId || work.deletedAt) {
-    throw createError({ statusCode: 404, message: "Branch not found" });
+    throw createError({ statusCode: 404, message: "Work not found" });
   }
   return work;
 }
@@ -208,7 +208,7 @@ function respond(
         return { httpStatus: 409, body: outcome.result };
       }
       if (options.itemApply && status === "gone") {
-        throw createError({ statusCode: 404, message: "Branch not found" });
+        throw createError({ statusCode: 404, message: "Draft not found" });
       }
       return { httpStatus: 200, body: outcome.result };
     }
@@ -325,7 +325,7 @@ async function restoreGrant<N extends FileNeed = "edit">(
 ): Promise<FileGrant<N>> {
   const parsed = item.path ? parseUnifiedContextUri(item.path) : null;
   if (!parsed?.ok || !isProjectScopedScheme(parsed.value.scheme)) {
-    throw createError({ statusCode: 404, message: "Branch not found" });
+    throw createError({ statusCode: 404, message: "Draft not found" });
   }
   const grant = await deps.fileAccess.authorizeAt(
     { accountId: input.userId },
@@ -337,8 +337,7 @@ async function restoreGrant<N extends FileNeed = "edit">(
     { kind: "draft", workId: input.workId, workSlug: null },
     need,
   );
-  if (isFileAccessDenied(grant))
-    throw createError({ statusCode: 404, message: "Branch not found" });
+  if (isFileAccessDenied(grant)) throw createError({ statusCode: 404, message: "Draft not found" });
   return grant;
 }
 
@@ -528,7 +527,7 @@ export async function handleApplyWorkDraftRequest(
     if (!item) {
       return {
         refusal: () => {
-          throw createError({ statusCode: 404, message: "Branch not found" });
+          throw createError({ statusCode: 404, message: "Draft not found" });
         },
       };
     }
@@ -789,7 +788,7 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     }
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
     if (cause instanceof Error && cause.message === "draft_not_found") {
-      throw createError({ statusCode: 404, message: "Branch not found" });
+      throw createError({ statusCode: 404, message: "Draft not found" });
     }
     throw cause;
   }

@@ -151,7 +151,7 @@ function draftPlacement(
         : placement.branches.viewForWork(placement.workId),
     refuse: (operation) => ({
       code: "invalid_operation",
-      message: `A draft can't ${operation}; create the file empty and write into it`,
+      message: `In draft mode, you can't ${operation}; create the file empty and write into it`,
     }),
     ensureTracked(path, options) {
       return inBranch(async (branch) => {
@@ -228,7 +228,7 @@ function draftPlacement(
 export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
   code: "invalid_operation",
   reason: "ambiguous_path",
-  message: "More than one file has this path in the draft; review the draft to resolve the clash",
+  message: "Two of this Work's drafts share this path. Review the drafts to keep one.",
 };
 
 function createFault(fault: CreateFault): AdapterFault {

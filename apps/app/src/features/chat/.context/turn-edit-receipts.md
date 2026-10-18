@@ -35,7 +35,7 @@ staged create and leaves an empty document, the same as undoing any create
 and the document stays openable.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
-(`live-active`, `branch-active`, reversed, dependent, or expired) decides whether
+(`live-active`, `work-active`, reversed, dependent, or expired) decides whether
 it is available. Unavailable actions render a compact `Can't undo` pill; the
 server-derived reason appears only after expansion. Captured Before/After
 excerpts remain visible after document loss and reload, and deleted live anchors

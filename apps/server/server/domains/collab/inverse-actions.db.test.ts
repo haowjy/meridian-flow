@@ -78,7 +78,7 @@ it.each([
       destination === "draft"
         ? (
             await db
-              .select({ branchId: schema.documentDrafts.id })
+              .select({ draftId: schema.documentDrafts.id })
               .from(schema.documentDrafts)
               .where(
                 and(
@@ -102,7 +102,7 @@ it.each([
       const [documentDraft] = await db
         .select()
         .from(schema.documentDrafts)
-        .where(eq(schema.documentDrafts.id, draft.branchId));
+        .where(eq(schema.documentDrafts.id, draft.draftId));
       const doc = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
@@ -124,8 +124,7 @@ it.each([
         });
       });
     }
-    const text = () =>
-      draft ? view.draftMarkdown(draft.branchId) : harness.liveMarkdown(ALPHA_ID);
+    const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(
       await view.collab.reverseTurn({
@@ -199,7 +198,7 @@ it.each([
       destination === "draft"
         ? (
             await db
-              .select({ branchId: schema.documentDrafts.id })
+              .select({ draftId: schema.documentDrafts.id })
               .from(schema.documentDrafts)
               .where(
                 and(
@@ -209,8 +208,7 @@ it.each([
               )
           )[0]
         : null;
-    const text = () =>
-      draft ? view.draftMarkdown(draft.branchId) : harness.liveMarkdown(ALPHA_ID);
+    const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
     expect(await text()).toBe("Alpha Beta.\n\nBlue.\n");
     for (let retry = 0; retry < 2; retry++) {
       await view.collab.finalizeResponseRollback(failed.responseIdentity, {

@@ -80,7 +80,7 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     const deletedRows = await rows();
     await expect(handleWorkBranchListRequest(deps, input)).rejects.toMatchObject({
       statusCode: 404,
-      message: "Branch not found",
+      message: "Work not found",
     });
     expect(await rows()).toEqual(deletedRows);
     for (const request of [
@@ -104,7 +104,7 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     ]) {
       await expect(request()).rejects.toMatchObject({
         statusCode: 404,
-        message: "Branch not found",
+        message: "Work not found",
       });
     }
     const restored = await restoreWork(

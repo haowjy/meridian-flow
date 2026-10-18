@@ -76,8 +76,8 @@ export function TraceFilters({ entries, filters, onChange }: TraceFiltersProps) 
       </select>
       <Input
         className={fieldClass}
-        aria-label="Filter by document, branch, or stream correlation"
-        placeholder="document / branch / stream"
+        aria-label="Filter by document, draft, or stream correlation"
+        placeholder="document / draft / stream"
         value={filters.correlation}
         onChange={(event) => patch({ correlation: event.target.value })}
       />

@@ -88,7 +88,7 @@ type five more keys. PASS: the first tab's editor turns read-only in place witho
 reload or a jump in scroll position; each key typed before that is either saved or shown
 as not saved, never silently dropped; the keys after unarchive are acknowledged; and the
 draft read with `./mf` after a reload equals what the editor showed while archived plus
-the post-unarchive keys. A `1008 branch-update-admission-failed` close is expected only
+the post-unarchive keys. A `1008 draft-update-admission-failed` close is expected only
 for a key sent between Archive's commit and the read-only notice, and no `4207` appears.
 Record the archive click time, each close and the notice's arrival. The seam
 behind it is the `archive-in-flight-append` probe in
@@ -1047,7 +1047,7 @@ Capture `agent-browser console` and `errors` at the end of each: clean is part o
 `GET /api/projects/:p/documents/:d/branches` answers the active drafts in the project with changes to the
 document (`branchId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
 review. The editor shows a line under the identity row for every draft other than the one the view works
-in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
+in: "A Work has drafts for this (Northern Arc)" with Review, or "2 Works have drafts for this" with a
 menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
 at 390x844.
 
@@ -1060,7 +1060,7 @@ at 390x844.
 3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
    once, and on another device on focus or the catalog wake.
 4. **A document no draft touches** shows no hint.
-5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.
+5. **Two drafts** edit one document: "2 Works have drafts for this", and Review lists both by label.
 
 ## Vocabulary rename upgrade (#880)
 
