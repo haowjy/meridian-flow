@@ -660,12 +660,15 @@ function incomingContains(
   );
 }
 
+/** Only `Y.Item` structs insert text; `Skip` (a clock gap) and `GC` (collected deletion) do not. */
 export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
-  return decodeAdmittedUpdate(update).structs.map((struct) => ({
-    clientID: struct.id.client,
-    clock: struct.id.clock,
-    length: struct.length,
-  }));
+  return decodeAdmittedUpdate(update)
+    .structs.filter((struct): struct is Y.Item => struct instanceof Y.Item)
+    .map((struct) => ({
+      clientID: struct.id.client,
+      clock: struct.id.clock,
+      length: struct.length,
+    }));
 }
 
 function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
