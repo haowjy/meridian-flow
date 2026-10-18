@@ -128,12 +128,6 @@ ALTER INDEX "push_lineage_branch" RENAME TO "push_lineage_draft";
 --> statement-breakpoint
 ALTER SEQUENCE "branch_write_journal_id_seq" RENAME TO "draft_write_journal_id_seq";
 --> statement-breakpoint
-ALTER TABLE "document_drafts" ALTER CONSTRAINT "document_drafts_upstream_draft_id_document_drafts_id_fk" DEFERRABLE INITIALLY IMMEDIATE;
---> statement-breakpoint
-ALTER TABLE "draft_write_journal" ALTER CONSTRAINT "draft_write_journal_draft_id_document_drafts_id_fk" DEFERRABLE INITIALLY IMMEDIATE;
---> statement-breakpoint
-ALTER TABLE "push_lineage" ALTER CONSTRAINT "push_lineage_draft_id_document_drafts_id_fk" DEFERRABLE INITIALLY IMMEDIATE;
---> statement-breakpoint
 ALTER TABLE branch_commands DROP CONSTRAINT branch_commands_kind_valid;
 --> statement-breakpoint
 ALTER TABLE branch_commands ADD CONSTRAINT branch_commands_kind_valid CHECK (kind IN ('apply_items','apply_changes','discard_items','discard_changes','discard_branch')) NOT VALID;

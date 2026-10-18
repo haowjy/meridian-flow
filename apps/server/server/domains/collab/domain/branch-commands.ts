@@ -28,13 +28,30 @@ export function commandDigest(envelope: {
   selectors: Record<string, string | null>;
   body: unknown;
 }): string {
-  return createHash("sha256").update(canonicalJson(envelope)).digest("hex");
+  return createHash("sha256")
+    .update(
+      canonicalJson({
+        ...envelope,
+        kind: envelope.kind === "discard_branch" ? "discard_draft" : envelope.kind,
+      }),
+    )
+    .digest("hex");
 }
 
+// These spellings are the persisted fingerprint encoding, not API vocabulary. Receipts store
+// only the hash, so a terminology change cannot translate their original envelopes afterwards.
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
+      .map(([key, item]): [string, unknown] => [
+        key === "branchId"
+          ? "draftId"
+          : key === "draftGenerationToken"
+            ? "branchGenerationToken"
+            : key,
+        item,
+      ])
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
