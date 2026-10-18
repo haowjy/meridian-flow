@@ -191,9 +191,10 @@ locks the Works a write names, directly or through its drafts and branches,
 `FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
 inverse, document or branch lock, so every write enters Work, draft, document,
 branch, the order the transitions take. A caller hands it its whole write set
-once: `mutate` to lock, write, then touch every Work of the set (the write set
-is the invalidation set; a touch whose pending count did not move is an
-accepted extra publication, cheaper than counting before and after), and `lockWorks` for order alone (opening or closing a
+once: `mutate` to lock and write, after which the boundary reconciles each Work's
+stored pending count at commit and notifies only a Work whose count moved (one
+SQL count per Work per transaction; `projects/.context/CONTEXT.md`), and
+`lockWorks` for order alone (opening or closing a
 draft, Apply's batch plan, a reply save's grants). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
