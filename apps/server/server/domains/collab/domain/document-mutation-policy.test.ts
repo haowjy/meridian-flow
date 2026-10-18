@@ -63,6 +63,23 @@ describe("document mutation policy operations", () => {
     expect(Y.encodeStateAsUpdate(target)).toEqual(beforeTarget);
   });
 
+  it("replicates a live state that holds a writer's garbage-collected structs", () => {
+    // A writer's gc-enabled editor collects prose it deleted before syncing, so its update
+    // carries GC structs that the live document keeps verbatim.
+    const writer = new Y.Doc();
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.push([new Y.XmlText("draft")]);
+    writer.getXmlFragment("prosemirror").push([paragraph, new Y.XmlElement("paragraph")]);
+    writer.getXmlFragment("prosemirror").delete(0, 1);
+    const live = new Y.Doc({ gc: false });
+    Y.applyUpdate(live, Y.encodeStateAsUpdate(writer));
+    const target = new Y.Doc({ gc: false });
+
+    replicateFrozenSource(live, target);
+
+    expect(Y.encodeStateVector(target)).toEqual(Y.encodeStateVector(live));
+  });
+
   it("refuses replacement while old-generation settlement is unresolved", async () => {
     const port = replacementPort({ unresolvedSettlements: vi.fn(async () => 1) });
 

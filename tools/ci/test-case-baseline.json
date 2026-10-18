@@ -250,7 +250,7 @@
     "apps/server/server/domains/collab/domain/document-containment.test.ts": 2,
     "apps/server/server/domains/collab/domain/document-effect.test.ts": 7,
     "apps/server/server/domains/collab/domain/document-link-rows.test.ts": 2,
-    "apps/server/server/domains/collab/domain/document-mutation-policy.test.ts": 4,
+    "apps/server/server/domains/collab/domain/document-mutation-policy.test.ts": 5,
     "apps/server/server/domains/collab/domain/document-revision.test.ts": 1,
     "apps/server/server/domains/collab/domain/draft-review-attribution.test.ts": 20,
     "apps/server/server/domains/collab/domain/draft-review-class-replay.test.ts": 3,
