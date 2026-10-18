@@ -16,9 +16,6 @@ text matches; the seam is `src/model/markdown-text-view.ts` and
   the host provides `stagedWrites`. Split them behind one save seam chosen per
   host at composition, with required host capabilities
   ([#938](https://github.com/haowjy/meridian-flow/issues/938)).
-- `summarizeMutationEcho` and its types in `src/tool/mutation-commit.ts` have
-  no caller; delete them
-  ([#937](https://github.com/haowjy/meridian-flow/issues/937)).
 
 ## Deferred until earned
 

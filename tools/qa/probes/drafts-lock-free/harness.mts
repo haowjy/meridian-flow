@@ -93,7 +93,6 @@ export async function openHarness(url: string) {
   const pending = createDrizzleWorkDraftPendingStore(db);
   const projection = createWorkProjectionMutation({
     db,
-    pending,
     availability: { advance: async () => "0" },
     catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
   });

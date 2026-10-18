@@ -1,13 +1,15 @@
 /**
  * The application mutation boundary for Works: the one owner of Work-first lock order for
- * every write that holds a Work's draft, branch or document row, which is how those writes
- * order themselves against the Work's lifecycle transitions, and the canonical transaction
- * participant for every mutation visible in a Works snapshot.
+ * every lifecycle or structural write that holds a Work's draft, branch or document row, which
+ * is how those writes order themselves against the Work's lifecycle transitions, and the
+ * canonical transaction participant for every mutation visible in a Works snapshot. An
+ * ordinary branch append (a keystroke) never enters it: the draft-effect projection publishes
+ * the Work's badge afterwards, independently, through `mutate`.
  */
 import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { works } from "@meridian/database/schema";
+import { drafts, works } from "@meridian/database/schema";
 import { inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -16,11 +18,7 @@ import {
   isInDrizzleTransaction,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import {
-  type DraftBranchWork,
-  draftBranchWorks,
-  draftOriginWorkIds,
-} from "../../../shared/work-draft-lifecycle.js";
+import { type DraftBranchWork, draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import {
   type LockedWork,
   lockSeamWorks,
@@ -29,7 +27,6 @@ import {
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
 import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
-import type { WorkDraftPendingCounts } from "../ports/work-draft-pending-counts.js";
 
 /** The Works a write names: directly, or through the drafts and branches it changes. */
 export type WorkWriteSet = {
@@ -65,22 +62,12 @@ export type WorkProjectionMutation = {
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
   /**
-   * The set's Works locked first, then touches the ones whose pending count `operation`
-   * changed: a write to draft tree rows or branches whose effect on review membership is
-   * known only after it runs (contract §13.2: a branchless image create or an empty tracked
-   * create moves the Work's badge too).
+   * The set's Works locked first, then `operation`, then every resolved Work touched: the
+   * write set is the invalidation set. A Work whose pending count `operation` left unchanged
+   * still gets a revision and a publication (W47); the count itself stays a read-model
+   * concern (`list-work-catalog.ts`).
    */
-  mutatePending<T>(
-    set: WorkWriteSet,
-    operation: () => Promise<T>,
-    options?: WorkWriteOptions,
-  ): Promise<T>;
-  /**
-   * A write whose caller already knows it moves these Works' review membership (the draft-effect
-   * projection's write, once per typing burst): Works locked first, touched after `operation`,
-   * no count query.
-   */
-  mutateKnownWorks<T>(workIds: readonly WorkId[], operation: () => Promise<T>): Promise<T>;
+  mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
 };
 
 const PUBLICATION_STATE = {};
@@ -93,8 +80,6 @@ export function createWorkProjectionMutation(input: {
   db: Database;
   availability: Pick<ProjectContextAvailabilityMutationPort, "advance">;
   catalog: ContextCatalogLifecyclePort;
-  /** Read in the caller's transaction, so before and after count what the list and catalog do. */
-  pending: WorkDraftPendingCounts;
 }): WorkProjectionMutation {
   const publicationParticipant: DrizzleTransactionParticipant<PublicationState> = {
     key: PUBLICATION_STATE,
@@ -161,10 +146,19 @@ export function createWorkProjectionMutation(input: {
       const frozen = branches.find((row) => row.workId === null);
       if (frozen) throw new WorkLifecycleUnavailableError(frozen.draftId, "missing");
     }
+    const draftIds = [...new Set(set.drafts ?? [])];
+    // A draft's Work is its origin Work, as the pending projection maps a draft.
+    const draftWorks =
+      draftIds.length === 0
+        ? []
+        : await currentDrizzleDb(input.db)
+            .select({ workId: drafts.originWorkId })
+            .from(drafts)
+            .where(inArray(drafts.id, draftIds));
     const workIds = [
       ...new Set([
         ...(set.works ?? []),
-        ...(await draftOriginWorkIds(input.db, set.drafts ?? [])),
+        ...draftWorks.flatMap(({ workId }) => (workId ? [workId as WorkId] : [])),
         ...branches.flatMap((row) => (row.workId ? [row.workId] : [])),
       ]),
     ].sort() as WorkId[];
@@ -181,30 +175,6 @@ export function createWorkProjectionMutation(input: {
       }
     }
     return { works: locked, branches, workIds };
-  }
-
-  /**
-   * The set's Works locked before `operation` takes any draft or branch row, so every branch
-   * write that can move a Work's projection enters Work, then draft, then branch, the order
-   * Archive takes (decision D12). Then their pending counts before and after `operation`;
-   * touch those that moved.
-   */
-  function enrollPendingChange<T>(
-    set: WorkWriteSet,
-    operation: () => Promise<T>,
-    options?: WorkWriteOptions,
-  ): Promise<T> {
-    return runInDrizzleTransaction(input.db, async () => {
-      const { workIds } = await lockWriteSet(set, options);
-      if (workIds.length === 0) return operation();
-      const before = await input.pending.countPendingByWorkIds(workIds);
-      const result = await operation();
-      const after = await input.pending.countPendingByWorkIds(workIds);
-      await mutation.touchWorks(
-        workIds.filter((workId) => (before.get(workId) ?? 0) !== (after.get(workId) ?? 0)),
-      );
-      return result;
-    });
   }
 
   const mutation: WorkProjectionMutation = {
@@ -233,10 +203,14 @@ export function createWorkProjectionMutation(input: {
       const { works: locked, branches } = await lockWriteSet(set, options);
       return { works: locked, branches };
     },
-    mutatePending: enrollPendingChange,
-    mutateKnownWorks(workIds, operation) {
+    /**
+     * The set's Works locked before `operation` takes any draft or branch row, so every
+     * structural branch write enters Work, then draft, then branch, the order Archive takes
+     * (decision D12).
+     */
+    mutate(set, operation, options) {
       return runInDrizzleTransaction(input.db, async () => {
-        await lockWriteSet({ works: workIds });
+        const { workIds } = await lockWriteSet(set, options);
         const result = await operation();
         await mutation.touchWorks(workIds);
         return result;

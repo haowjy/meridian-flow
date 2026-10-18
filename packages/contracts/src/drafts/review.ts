@@ -364,7 +364,6 @@ export const DraftApplyItemRefSchema = z.object({
   liveTextToken: z.string().max(100).optional(),
   branchGenerationToken: z.string().max(40).optional(),
 });
-export type DraftApplyItemRef = z.infer<typeof DraftApplyItemRefSchema>;
 
 export const DraftApplyAllRequestSchema = z.object({
   /** The whole draft the dock rendered (a drafts row; D68). */

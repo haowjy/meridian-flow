@@ -183,7 +183,7 @@ export function createDrizzleDraftDiscard(
     drafts: Pick<Drafts, "lockActive" | "close">;
     branches: Pick<ApplicationBranchStore, "readBranchAt" | "closeThreadPeersOf">;
     coordinator: Pick<BranchCoordinator, "resetFromDoc">;
-    workProjection: Pick<WorkProjectionMutation, "mutatePending">;
+    workProjection: Pick<WorkProjectionMutation, "mutate">;
   },
 ): DrizzleDraftDiscard {
   /**
@@ -309,7 +309,7 @@ export function createDrizzleDraftDiscard(
         }
         // The Work and the draft enter the Work boundary before the draft row and the scope
         // locks (decision D17).
-        return deps.workProjection.mutatePending(
+        return deps.workProjection.mutate(
           { works: [workId as WorkId], drafts: [input.draftId] },
           async () => {
             if (!(await deps.drafts.lockActive(input.draftId))) return null;

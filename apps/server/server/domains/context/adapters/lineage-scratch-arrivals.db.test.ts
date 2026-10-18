@@ -15,7 +15,6 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
@@ -110,7 +109,6 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           db,
           availability,
           catalog,
-          pending: createDrizzleWorkDraftPendingStore(db),
         }),
         fileAccessChanges: createLocalFileAccessChanges(),
       });

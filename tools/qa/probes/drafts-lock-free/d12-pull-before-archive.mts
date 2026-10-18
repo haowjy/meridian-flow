@@ -1,8 +1,8 @@
 /**
- * Decision D12: every branch write that can move a Work's projection takes Work, then draft,
- * then branch, the order Archive takes. A live→draft pull holds its Work row through its
- * commit; an Archive that starts meanwhile waits on that row rather than deadlocking against the
- * branch row the pull also holds, and then fences the branch. The archived draft keeps pulling
+ * Decision D12: every structural branch write takes Work, then draft, then branch, the order
+ * Archive takes. A live→draft pull holds its Work row through its commit; an Archive that
+ * starts meanwhile waits on that row rather than deadlocking against the branch row the pull
+ * also holds, and then commits its lifecycle transition. The archived draft keeps pulling
  * (D23).
  */
 import assert from "node:assert/strict";
