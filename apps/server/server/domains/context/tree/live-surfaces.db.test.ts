@@ -484,7 +484,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           expected: [true, { branchId: s.branch.id, workId: s.ascension.id }, HARBOR_URI],
         },
         {
-          // Owner amendment 12a: an unbound ref at a draft's hidden path reads "in a draft".
+          // Owner amendment 12a: an unbound ref at a branch's hidden path reads "in a draft".
           surface: "hidden address reads in a draft",
           run: async () => {
             const { occupant } = await s.link({ kind: "live" }, s.liveRef);

@@ -60,7 +60,7 @@ export interface FileAccess {
   confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
-   * with an agent's draft rows decided at the draft. A document the principal
+   * with an agent's drafted documents decided in its branch. A document the principal
    * can't read is absent, so callers drop it.
    */
   listAccess(

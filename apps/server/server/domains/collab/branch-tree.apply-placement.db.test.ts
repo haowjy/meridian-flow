@@ -168,7 +168,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
       },
     ]);
     const live = s.view("live");
-    expect.soft(await live.idAt("ideas/kael/notes"), "at the draft's path").toBe(notes);
+    expect.soft(await live.idAt("ideas/kael/notes"), "at its path in the branch").toBe(notes);
     expect.soft(await live.idAt("ideas/plan"), "the renamed folder's file").toBe(plan);
     const ideas = await db
       .select({ id: folders.id })

@@ -28,7 +28,7 @@ export type DocumentIdentityAddressInput = Pick<
 > & { documentId: DocumentId };
 
 export interface DocumentAddressResolver {
-  /** A validated review branch selects identity, never the occupant of its locator. */
+  /** A validated review item (one document's draft) selects identity, never the occupant of its locator. */
   resolveById(input: DocumentIdentityAddressInput): Promise<DocumentAddressResult>;
   resolve(input: DocumentAddressInput): Promise<DocumentAddressResult>;
 }

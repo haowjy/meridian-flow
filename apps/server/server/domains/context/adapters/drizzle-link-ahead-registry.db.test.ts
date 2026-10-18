@@ -466,7 +466,7 @@ if (!RUN) {
             live,
           });
         }
-        expect.soft(live, "the revealed draft document").toBe(kael);
+        expect.soft(live, "the revealed branch document").toBe(kael);
       });
 
       it("registers the writer's link typed in the draft's review room, best effort and globally (L-3)", async () => {

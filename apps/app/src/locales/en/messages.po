@@ -4823,8 +4823,12 @@ msgid "Undoing…"
 msgstr "Undoing…"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undone in your draft. Apply it to change your manuscript."
-msgstr "Undone in your draft. Apply it to change your manuscript."
+#~ msgid "Undone in your draft. Apply it to change your manuscript."
+#~ msgstr "Undone in your draft. Apply it to change your manuscript."
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undone in your drafts. Apply them to change your manuscript."
+msgstr "Undone in your drafts. Apply them to change your manuscript."
 
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"

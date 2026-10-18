@@ -217,7 +217,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
           expect(document.body.textContent).toContain("“Mara” → “I”");
           expect(document.body.textContent).toContain("discarded");
           expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
-            "Undone in your draft. Apply it to change your manuscript.",
+            "Undone in your drafts. Apply them to change your manuscript.",
           );
         });
         await act(async () => {

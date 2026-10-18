@@ -1,8 +1,8 @@
 /**
  * A writer's instant create at a path where a branch's new document waits is that
- * document (#757). The draft's document is a real document, hidden only because it is a
- * draft; the create unhides it and the device's minted id forwards to it. Nothing of the
- * draft's text moves: the writer's text goes to live, the draft's stays in the draft.
+ * document (#757). That document is real, hidden only because it exists only in a branch;
+ * the create unhides it and the device's minted id forwards to it. Nothing of its draft
+ * text moves: the writer's text goes to live, and the document's draft stays pending.
  * Driven through the create-untitled route core, as the sidebar's New file calls it.
  */
 import type { DocumentId } from "@meridian/contracts";
@@ -13,7 +13,7 @@ import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 
-describeBranchTreeDb("a create joins a draft's document (postgres)", (start, db) => {
+describeBranchTreeDb("a create joins a branch's new document (postgres)", (start, db) => {
   it("answers joined, turns the branch's item into an edit, and replays unchanged, after a move and after a delete", async () => {
     const { s } = await start();
     const drafting = await s.work("Drafting", "draft");
@@ -27,9 +27,11 @@ describeBranchTreeDb("a create joins a draft's document (postgres)", (start, db)
       documentId: hidden,
       address: { scheme: "manuscript", path: "chapters/Withern", name: "Withern" },
     };
-    expect.soft(joined, "the draft's document, at its address").toEqual(first);
+    expect.soft(joined, "the branch's document, at its address").toEqual(first);
 
-    expect.soft(await s.view("live").idAt("chapters/Withern"), "live, the draft's id").toBe(hidden);
+    expect
+      .soft(await s.view("live").idAt("chapters/Withern"), "live, the hidden document's id")
+      .toBe(hidden);
     expect
       .soft(itemFor(await s.items(drafting), hidden).isNew, "the review item is now an edit")
       .toBe(false);
@@ -88,7 +90,7 @@ describeBranchTreeDb("a create joins a draft's document (postgres)", (start, db)
 
     const answer = await s.writer.createNameless(crypto.randomUUID() as DocumentId);
     expect.soft(answer).toMatchObject({ status: "created", name: "Untitled 2" });
-    expect.soft(await s.view("live").idAt("Untitled 1"), "the draft's stays hidden").toBeNull();
+    expect.soft(await s.view("live").idAt("Untitled 1"), "the branch's stays hidden").toBeNull();
     expect(itemFor(await s.items(drafting), hidden).isNew).toBe(true);
   });
 });

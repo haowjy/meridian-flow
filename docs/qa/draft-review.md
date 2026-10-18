@@ -812,7 +812,7 @@ into another inverse row.
   B's unrelated hold must not choose A's destination. Apply leaves the latter
   text unchanged, with no extra restored copy.
 - For mixed applied/pending parts, use the card's Undo button. The card says
-  **Undone in your draft. Apply it to change your manuscript.** beside its
+  **Undone in your drafts. Apply them to change your manuscript.** beside its
   outcome, not in a toast. The live manuscript remains unchanged until Apply.
 - Connect a live Yjs room before acting on a document with no active draft.
   Keep the connection and its local replica open through Undo and Redo. Drive
@@ -993,14 +993,14 @@ the `links/resolve` response held by an owned fetch seam. A live chapter holding
 exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
 
 
-## A writer's New file joins the draft's document (browser, #757)
+## A writer's New file joins a branch's new document (browser, #757)
 
 A branch's new document is a real document with a draft, hidden live until its creation is
 applied or joined. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
 with an ordinary draft over it. The device's instant create carries its destination, so the
 server joins the document waiting there. The only device work is identity: the reservation's id
-becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
-text stays in the draft for review.
+becomes the joined id, and what the writer typed is kept. No draft text is merged; the document's draft
+stays pending for review.
 
 Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work with
 `aiWriteMode: "draft"` and a thread bound to it. `./mf thread send <thread> go --mock @script`
@@ -1020,7 +1020,7 @@ then the phone 390x844 with touch emulation.
    line, set offline off. PASS: the same as step 1 once the connection returns; before it, the
    row sits at `Chapter 2` in the Manuscript, not under Unfiled.
 3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
-   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
+   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the joined document; the rename is
    not offered for repair.
 4. **A link's Create.** The Create button exists only on a link that reads "doesn't exist yet", and
    following an "In a draft" link opens the review instead. So make the link in the editor (select
