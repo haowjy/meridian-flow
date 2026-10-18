@@ -19,14 +19,19 @@
  *    effect run, comparing against the stored value, bumps the revision within 1 s (the review's
  *    `row-only-membership-flip`; a before/after count would see 1 → 1 and stay silent);
  * 4. two processes typing inside one debounce: the stored value equals the materialized
- *    comparison and `has_effect_revision = revision`.
+ *    comparison and `has_effect_revision = revision`;
+ * 5. a membership change under `lockWorks` alone, as Apply's completion makes one: the Work is
+ *    recounted at commit (pending 1 → 0 with a revision), with no append to trigger it.
  *
  * Negative control on `586e58ae1e` (inline effect, no job, no watermark): arms 1, 2 and 4 fail
  * on the watermark; arm 3 passed there through the inline membership flip.
  */
 import assert from "node:assert/strict";
 import { sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { independently, observe, openHarness, type Probe } from "./harness.mts";
 import {
   branchRow,
@@ -220,6 +225,34 @@ export const effectProjection: Probe = {
             b.room.destroy();
             draft.live.destroy();
             await other.close();
+          }
+        },
+
+        async "5-membership-under-lockWorks"() {
+          const draft = await seedDraft(harness, "effect-lock-works");
+          const tab = await openRoom(harness, p.coordinator, draft);
+          try {
+            assert.equal(await tab.send(keystroke(tab.room, " held")), "appended");
+            const pending = await within(
+              1_000,
+              () => workBadge(harness, draft.workId),
+              (b) => b.pending === 1,
+            );
+            // Apply's completion locks its Works through `lockWorks` (`planAndLock`), not
+            // `mutate`, and changes membership under them; no append follows to recount.
+            await runInDrizzleTransaction(harness.db, async () => {
+              await harness.projection.lockWorks({ branches: [draft.branchId] });
+              await currentDrizzleDb(harness.db).execute(
+                sql`update branch_write_journal set status = 'pushed', pushed_at = now() where branch_id = ${draft.branchId}`,
+              );
+            });
+            const locked = await workBadge(harness, draft.workId);
+            observe("arm 5", { pending: pending.observation, afterLockWorks: locked });
+            assert.equal(locked.pending, 0, "a Work locked through the boundary is recounted");
+            assert.ok(locked.entityRevision > pending.observation.entityRevision);
+          } finally {
+            tab.room.destroy();
+            draft.live.destroy();
           }
         },
       });

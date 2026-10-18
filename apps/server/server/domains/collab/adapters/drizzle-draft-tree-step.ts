@@ -32,7 +32,6 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
-import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchSnapshot, BranchStore } from "../domain/branch-store.js";
 import { BranchCasConflictError, materializeBranchRead } from "../domain/branch-store.js";
@@ -76,7 +75,6 @@ export function createDrizzleDraftTreeStep(
     coordinator: Pick<BranchCoordinator, "resetFromDoc">;
     /** The live document as the completion transaction sees it, admissions included. */
     liveDoc(documentId: DocumentId): Promise<Y.Doc>;
-    workProjection: Pick<WorkProjectionMutation, "mutate">;
     /** Catalog reconciliation in the completion transaction, so its replay sees the tree (F23). */
     catalog: ContextCatalogMutationPort;
     arrivals?: DocumentArrivals;
@@ -414,13 +412,12 @@ export function createDrizzleDraftTreeStep(
               installed.catalog.roots,
             );
           }
-          await deps.workProjection.mutate({ drafts: [payload.draftId] }, async () => {
-            await dropDocumentRows(db, {
-              draftId: payload.draftId,
-              documentIds: apply
-                .filter(({ node }) => node.origin === "created")
-                .map(({ node }) => node.nodeId),
-            });
+          // The draft's Work was locked by `planAndLock` and is recounted at commit.
+          await dropDocumentRows(db, {
+            draftId: payload.draftId,
+            documentIds: apply
+              .filter(({ node }) => node.origin === "created")
+              .map(({ node }) => node.nodeId),
           });
           const settled = await settleDrainedItems(apply, new Set(admitted));
           const result = completedResult(settled);

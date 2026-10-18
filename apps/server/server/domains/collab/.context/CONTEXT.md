@@ -191,11 +191,11 @@ locks the Works a write names, directly or through its drafts and branches,
 `FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
 inverse, document or branch lock, so every write enters Work, draft, document,
 branch, the order the transitions take. A caller hands it its whole write set
-once: `mutate` to lock and write, after which the boundary reconciles each Work's
-stored pending count at commit and notifies only a Work whose count moved (one
-SQL count per Work per transaction; `projects/.context/CONTEXT.md`), and
-`lockWorks` for order alone (opening or closing a
-draft, Apply's batch plan, a reply save's grants). `seam` adds the bound edit
+once, through `lockWorks` (opening a draft, Apply's batch plan, a reply save's
+grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
+either way has its stored pending count reconciled at commit, and only a Work
+whose count moved is notified (one SQL count per Work per transaction;
+`projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a draft branch

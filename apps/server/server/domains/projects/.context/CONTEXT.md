@@ -89,21 +89,24 @@ keystroke (collab `.context/CONTEXT.md`).
 
 Collab's lifecycle and structural branch and draft writes take Work rows only
 through `adapters/work-projection-mutation.ts`, the Works mutation boundary: the
-one owner of Work-first lock order (Work, draft, document, branch). Its
-`mutate(set, operation)` locks the set's Works and runs the write; at commit it
-reconciles each locked Work's pending count once (one SQL aggregate over
-collab's membership rule, `WorkDraftPendingCounts`, however many `mutate`s the
-transaction ran) against the stored value, and only a Work whose count moved
-gets a revision bump and a Works-changed notice. A structural write that leaves
-the count alone sends nothing: the count is the only thing collab's writes
-change in a Works snapshot. `touchWorks(set, at)` is activity (`lastActivityAt`:
-a turn, a document edit, Apply completion) and always notifies;
-lifecycle and metadata writes notify directly. `lockWorks(set)` takes the lock
-order alone (opening or closing a draft, Apply's batch plan, a reply save's
-grants); nothing it guards changes a count. A writer keystroke is an append and
-never enters the boundary, even one that moves its draft in or out of review:
-the independent draft-effect projection runs after every append (and its sweep
-after a crash) and reconciles through `mutate` then. Because the comparison is
+one owner of Work-first lock order (Work, draft, document, branch). A
+transaction that locks a Work through the boundary recounts it at commit:
+`lockWorks(set)` locks the set's Works (opening a draft, Apply's batch plan, a
+reply save's grants), `mutate(set, operation)` is `lockWorks` then the write
+(closing a draft through Discard, branch writes, the draft-effect projection).
+At commit each locked Work's pending count is reconciled once (one SQL aggregate
+over collab's membership rule, `WorkDraftPendingCounts`, however many locks the
+transaction took) against the stored value, and only a Work whose count moved
+gets a revision bump and a Works-changed notice. A write that leaves the count
+alone sends nothing: the count is the only thing collab's writes change in a
+Works snapshot. Apply's completion, which places draft rows and clears their
+`blocking` under `lockWorks`, is covered the same way. `touchWorks(set, at)` is
+activity (`lastActivityAt`: a turn, a document edit, Apply completion) and
+always notifies; lifecycle and metadata writes notify directly. A writer
+keystroke is an append and never enters the boundary, even one that moves its
+draft in or out of review: the independent draft-effect projection runs after
+every append (and its sweep after a crash) and reconciles through `mutate`
+then. Because the comparison is
 against the stored value, not a count taken before the transaction, a count an
 append moved outside the boundary is still announced by the next reconcile
 (the `effect-projection` probe's staging arm).
