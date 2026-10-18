@@ -1,5 +1,5 @@
 /**
- * Phase 4 (design §2.1, §2.2, §2.4): an append takes the branch row with no revision predicate
+ * Phase 4 (design §2.1, §2.2, §2.4): an append takes the draft row with no revision predicate
  * and judges against what committed before it took the lock. Process A judges a key on revision
  * r and is held before its `appendRows`; process B, on its own connections, commits meanwhile;
  * A then appends once, with no retry.

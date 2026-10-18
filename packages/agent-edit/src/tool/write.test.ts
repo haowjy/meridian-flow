@@ -131,7 +131,7 @@ describe("write tool dispatch", () => {
     await ctx.core.read({ file: "chapter.md" }, context);
 
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
-    ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
+    ctx.coordinator.failNextForDoc("chapter.md", new Error("draft snapshot failure"));
 
     const failed = await ctx.core.write(
       {
@@ -147,7 +147,7 @@ describe("write tool dispatch", () => {
           mode: "threadPeer",
           afterJournalId: 0,
           draftGeneration: 1,
-          peerDraftId: "branch-peer",
+          peerDraftId: "draft-peer",
         },
       },
     );
@@ -173,7 +173,7 @@ describe("write tool dispatch", () => {
           mode: "threadPeer",
           afterJournalId: 0,
           draftGeneration: 1,
-          peerDraftId: "branch-peer",
+          peerDraftId: "draft-peer",
         },
       },
     );

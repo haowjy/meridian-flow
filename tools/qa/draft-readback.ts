@@ -1,9 +1,9 @@
 /**
- * Durable readback of one document branch for the lock-free branches probes: reads the branch
+ * Durable readback of one document draft for the lock-free drafts probes: reads the draft
  * through the server's own `readDraftAt` (one statement: row, checkpoint and tail) and prints its
  * fences, its tail, its materialized text and a hash of its state.
  *
- *   pnpm exec tsx tools/qa/branch-readback.ts <draftId> [--db <url>]
+ *   pnpm exec tsx tools/qa/draft-readback.ts <draftId> [--db <url>]
  *
  * Without `--db` it reads this worktree's dev database.
  */
@@ -19,7 +19,7 @@ import { applyDevEnvToProcess } from "../dev/lib/dev-env";
 function parseArgs(argv: readonly string[]): { draftId: string; db?: string } {
   const [draftId, ...rest] = argv;
   if (!draftId || draftId.startsWith("--")) {
-    throw new Error("usage: tsx tools/qa/branch-readback.ts <draftId> [--db <url>]");
+    throw new Error("usage: tsx tools/qa/draft-readback.ts <draftId> [--db <url>]");
   }
   const at = rest.indexOf("--db");
   const db = at >= 0 ? rest[at + 1] : undefined;

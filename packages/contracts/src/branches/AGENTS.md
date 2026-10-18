@@ -1,4 +1,4 @@
-# contracts/branches — Work-draft review wire DTOs
+# contracts/branches — branch review wire DTOs
 
 This directory owns review wire vocabulary. `branchId` names the Work's pending
 file tree, `itemKey` names one document review, and `commandId` names one writer

@@ -75,7 +75,7 @@ export const d18SampledDiscard: Probe = {
         documentDraft: {
           draftId: "draft_sampling",
           documentId: "doc",
-          branchId: "draft",
+          branchId: "branch",
           kind: "work_draft",
           status: "active",
           generation,
@@ -86,7 +86,7 @@ export const d18SampledDiscard: Probe = {
         live: { state: Y.encodeStateAsUpdate(base), revision: "unchanged-live" },
         links: { live: links, draft: links },
         item: {
-          branchId: "draft",
+          branchId: "branch",
           itemKey: "item",
           wholeItem: false,
           isNew: false,

@@ -85,9 +85,9 @@ export type WriteRejection =
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
-  /** Where a write landed: the live document, or the draft of the Work named by `draftWork`. */
+  /** Where a write landed: the live document, or the document's draft in the Work named by `draftWork`. */
   destination?: "live" | "draft";
-  /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
+  /** The slug of the Work containing the document's draft, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
   /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
@@ -110,7 +110,7 @@ export interface AgentEditModelPayload {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
-    /** The version actually read; the host fills it in, since only it knows branches. */
+    /** The version actually read; the host fills it in, since only it knows the selected document draft. */
     version?: "draft" | "live";
   };
   blocks?: AgentEditBlockGroup[];

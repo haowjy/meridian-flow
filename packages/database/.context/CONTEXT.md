@@ -97,7 +97,7 @@ Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
 owned rows identify exactly what a restore revives; their FKs are `ON DELETE
 SET NULL` so a stale marker never deletes, and purge deletes marked rows
-explicitly. Branch drafts carry no marker: soft delete leaves branches alone and
+explicitly. Branches and their drafts carry no marker: soft delete leaves them alone and
 purge disposes of them. The dropped `works.visibility` and `persistence` were
 speculative and must not return; if multi-writer sharing or ephemeral-Work GC
 comes back, design new columns. No Work is a locked Work, not a sharing

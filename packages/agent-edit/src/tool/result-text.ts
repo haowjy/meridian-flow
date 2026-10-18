@@ -95,7 +95,7 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
 
 /**
  * The version a write changed, in `read`'s terms (D50): `live`, or `draft
- * (@work)` for a write held in a named Work's draft; No Work's draft has no
+ * (@work)` for a write held in a document draft in a named Work; No Work has no
  * slug to name, so it is plain `draft`. Undo and redo name none.
  */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {

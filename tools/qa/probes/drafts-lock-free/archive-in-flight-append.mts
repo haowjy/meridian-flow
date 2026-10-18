@@ -1,5 +1,5 @@
 /**
- * Phase 4 (design §5, F6, D30 Q3): Archive locks no branch row; the append keeps the Work
+ * Phase 4 (design §5, F6, D30 Q3): Archive locks no draft row; the append keeps the Work
  * predicate in its `UPDATE` and rechecks the lifecycle in its post-lock read. What remains is
  * the honest window: a key whose post-lock read ran before Archive committed may land in the
  * archived draft; every later key is refused.
@@ -43,7 +43,7 @@ export const archiveInFlightAppend: Probe = {
       return { draft, tab };
     }
 
-    /** Archive on its own connection, while something holds the branch row. */
+    /** Archive on its own connection, while something holds the draft row. */
     async function archiveWhileHeld(workId: string) {
       const archive = settled(independently(() => harness.works.archive(workId as never)));
       const observed = await settledOrWaiting(harness, archive, /document_drafts/);
@@ -78,7 +78,7 @@ export const archiveInFlightAppend: Probe = {
           assert.equal(
             observed.settled,
             true,
-            "Archive commits while the frame holds the branch row",
+            "Archive commits while the frame holds the draft row",
           );
           assert.equal(outcome, "appended");
           assert.equal(held.lifecycle, "archived");

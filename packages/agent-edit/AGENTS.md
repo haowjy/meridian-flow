@@ -25,7 +25,7 @@ best-effort and never mutates recovery state.
   The journal boundary decides whether rollback discards or recovers.
 - Yjs merge is trusted. Destructive policy is report-only; it never blocks an
   otherwise valid agent write. Echo reports best-effort direct-write
-  destructive evidence, and that evidence never feeds branch-settlement sweep
+  destructive evidence, and that evidence never feeds draft-settlement sweep
   or apply authority.
 - Attribution is host-provided per interaction and must not depend on
   session-lifetime snapshots.

@@ -64,7 +64,7 @@ row list, which a document read cannot see.)
 
 13. Accept a batch of draft targets, then apply. **All accepted targets disappear at
     the click**; a refused target restores **independently** of the rest.
-14. Create a new document. It has **one review door**, and whole-draft commands appear
+14. Create a new document. It has **one review door**, and Apply all and Discard all appear
     in chat and in Work rows.
 
 ## Project shell and dock

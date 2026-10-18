@@ -245,7 +245,7 @@ describe("decideCleanupEligibility", () => {
 });
 
 describe("parseNonSymbolicRefNames", () => {
-  it("drops symbolic refs and keeps real branch rows", () => {
+  it("drops symbolic refs and keeps real draft rows", () => {
     expect(
       parseNonSymbolicRefNames(
         [

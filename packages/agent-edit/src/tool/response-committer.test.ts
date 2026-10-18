@@ -252,7 +252,7 @@ describe("response committer", () => {
           interactionContext: {
             mode: "threadPeer",
             draftGeneration: 1,
-            peerDraftId: "branch-peer",
+            peerDraftId: "draft-peer",
           },
         },
       );

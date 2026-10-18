@@ -1,6 +1,6 @@
 /**
  * Two server processes over one draft (the P6 cell without sockets): each process has its own
- * branch coordinator, store and room, and a row one process commits reaches the other only
+ * draft coordinator, store and room, and a row one process commits reaches the other only
  * through the database. Every way this process's committed replica advances must carry what it
  * adds into its room (decision D25), or the next frame typed into that room is fenced:
  *
@@ -214,7 +214,7 @@ export const twoProcessFold: Probe = {
     try {
       appendToFirstParagraph(f.live, " LIVE");
       // A's pull has merged live into its candidate; B commits before the pull's rewrite runs,
-      // so the rewrite folds B's row in under the branch lock.
+      // so the rewrite folds B's row in under the draft lock.
       const pull = f.a.coordinator.pullFromDoc({ draftId: f.draftId, upstream: f.live });
       await pause.entered.wait;
       const foreign = await type(f.b, f.draftId, f.generation, " FOREIGN");

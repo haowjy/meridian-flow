@@ -22,7 +22,7 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Browsing live with no `?work=`, there is no Version chip for another Work's draft; the open
+  Browsing live with no `?work=`, there is no Version chip for another Work's drafts; the open
   document's draft hint (below) says so instead. Use `?work=<the drafting Work>` for the chip.
 
 Capture `agent-browser console` and `errors` at the end of every scenario —
@@ -81,7 +81,7 @@ paint cover still holds the page is not evidence about the successor's caret.
 
 Archive takes no lock on the draft ([the archive window][archive-window]): a
 key whose server check finished before Archive committed may land in the archived
-draft; every later key is refused. Open an owned named Work's draft at 50k words in one
+draft; every later key is refused. Open a 50k-word document draft in an owned named Work in one
 tab, start native typing at 200 ms a key, and archive the Work from a second tab's
 Works catalog mid-burst. Keep typing for two seconds after the click, then unarchive and
 type five more keys. PASS: the first tab's editor turns read-only in place without a
@@ -99,7 +99,7 @@ behind it is the `archive-in-flight-append` probe in
 ## Per-change Discard of a long writer change
 
 Type more than 500 keystrokes into one paragraph of an owned draft (each frame is one
-member part of the same change), wait until `./mf` shows the branch's revision has
+member part of the same change), wait until `./mf` shows the draft's revision has
 stopped moving, then open the change list at phone width (390px) and Discard the
 writer's row. PASS: the `/draft/discard` POST answers 200 with at most 500
 `memberPartKeys` and `memberPartKeysComplete: false`, the writer's text leaves the draft, the model's change stays, and no
@@ -139,7 +139,7 @@ Use tool `path` arguments, not the agent-edit core's internal `file` name.
 
 Read the Work's drafts and the document preview through `./mf api`. PASS:
 two selectable classes, one heading-level change and one bold change. Open the
-Editor with that Work ID and draft ID; its change list uses the usual rows,
+Editor with that Work ID and the item's `itemKey`; its change list uses the usual rows,
 with localized `Heading 2 → 3` and `Bold on “red”` descriptions. Both blocks
 are tinted, with no duplicate struck-through copy of their unchanged text.
 
@@ -236,7 +236,7 @@ for ~200ms).
 ## Probe C — active-only disposition and recovery journey
 
 1. Apply a draft on an existing document. PASS: its active row disappears,
-   live content matches the whole current branch (including writer edits made
+   live content matches the whole current draft (including writer edits made
    after the last preview), and no closed draft receipt or per-card Undo
    appears.
 2. Open a surviving peer mark and confirm it offers evidence/navigation only.
@@ -312,8 +312,8 @@ for ~200ms).
 
 ## Probe G — the chat-scoped draft dock
 
-Use real chat writes, not synthetic database branches: selective Discard needs
-individually addressable branch journal rows. Run at desktop width and on the
+Use real chat writes, not synthetic database drafts: selective Discard needs
+individually addressable draft journal rows (`draft_write_journal`). Run at desktop width and on the
 phone (390px, coarse pointer), recreating the fixture before each disposition.
 Set it up with [`./mf`](../debugging.md), then use the browser only to exercise
 and inspect the surfaces.
@@ -423,7 +423,7 @@ from CLI success. Record screenshots and the fresh API reads per action.
    Discarding then No changes left appears only in the existing review/path row. A formatting-only draft says formatting remains, not finished.
    Next draft preserves sorted-file position; Back to live is offered when alone.
 5. No Work-page link or success toast appears in either list. Phone sheet title
-   says Changes without a count, and its list button has no count badge. Whole-draft Discard lives in the version menu and dispatches without
+   says Changes without a count, and its list button has no count badge. Discard all lives in the version menu and dispatches without
    an approval dialog. The list button remains usable while review enters/leaves and marks hide.
 
 6. **Marks, rows and arrivals.** With list open, hide marks, step Previous/Next
@@ -686,7 +686,7 @@ and every staged result's settlement ID, not only its grouped `wN` handle.
   Discard azure. Read and save still succeed, with a failed bronze receipt
   and exactly `red / blue / green`.
 - Stage `gold → gild`, `gild → bronze` and independent `green → lime`.
-  Discard gold and refuse the next Work-draft `commitDraftMutation` once
+  Discard gold and refuse the next Work-draft journal append (`DraftStore.appendRows`) once
   through that existing test port. Restore it and retry. Both rejected
   settlement IDs remain, lime commits, and the draft is `red / azure / lime`.
 - In that grouped-handle reply, the next tool names the document and handle
@@ -764,7 +764,7 @@ reuse another worktree's project, database, thread or browser session.
    live reads remain seeded until Apply. There must be one addition, not two.
 4. Apply that document's draft via
    `POST /api/projects/<project>/works/<work>/documents/<document>/draft/apply`
-   with `{"branchId":"<draft ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
+   with `{"branchId":"<branch ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
    Assert the entire `content` value, including terminal newlines:
    insertion `"Seed.\n\nAdded once.\n"`; replacement `"Alpha Gamma.\n"`.
 5. For named partial skips, script a turn inserting `One addition.` and
@@ -780,7 +780,7 @@ reuse another worktree's project, database, thread or browser session.
    card, without a success screen or a global toast.
 
 The durable PostgreSQL matrix adds split placement, overlapping parts in one
-view, branch-keyed restoration holds and release, typing inside restored text,
+view, draft-keyed restoration holds and release, typing inside restored text,
 selective Discard of an inverse, staged-response dependency drops, per-response
 rollback and checkpoint failure after root commit. Run it with:
 
@@ -995,8 +995,8 @@ exists only in a draft must settle on the "in a draft" state without reading "Do
 
 ## A writer's New file joins the draft's document (browser, #757)
 
-A draft's new document is a real document with a draft, hidden live only because it is a
-draft. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
+A branch's new document is a real document with a draft, hidden live until its creation is
+applied or joined. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
 with an ordinary draft over it. The device's instant create carries its destination, so the
 server joins the document waiting there. The only device work is identity: the reservation's id
 becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
@@ -1009,7 +1009,7 @@ then the phone 390x844 with touch emulation.
 
 1. **Online.** Open the project. Sidebar, Manuscript, New file, `Chapter 2`, Enter, and type a
    line at once.
-   PASS: one `Chapter 2` row and one tab, on the draft's document (same id as the Work's draft
+   PASS: one `Chapter 2` row and one tab, on the branch's document (same id as the Work's review
    item, read with `./mf api`); the typed line is kept; the Work's review item is an edit, not
    new. As soon as the create's answer lands, with no reload or navigation, the open document
    shows the "Live" chip with the version menu, and Draft opens that draft's review. Measure
@@ -1042,11 +1042,11 @@ With no `?work=` the document shows the draft hint instead of the Live chip (see
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
 
-## An open document says when a draft has changes to it (browser, #757)
+## An open document says when a Work has drafts for it (browser, #757)
 
-`GET /api/projects/:p/documents/:d/branches` answers the active drafts in the project with changes to the
+`GET /api/projects/:p/documents/:d/branches` answers the active branches in the project with changes to the
 document (`branchId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
-review. The editor shows a line under the identity row for every draft other than the one the view works
+review. The editor shows a line under the identity row for every branch other than the one the view works
 in: "A Work has drafts for this (Northern Arc)" with Review, or "2 Works have drafts for this" with a
 menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
 at 390x844.
@@ -1057,7 +1057,7 @@ at 390x844.
    `MutationObserver` on `[data-document-draft-hint]`); note `uptime`.
 2. **A live document a draft edits.** Open it with no Work and from Work B: the hint. Open it in Work A: the
    Live chip only, no hint.
-3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
+3. **After Discard** of Work A's drafts (Work page, Discard all changes): the hint goes on this device at
    once, and on another device on focus or the catalog wake.
 4. **A document no draft touches** shows no hint.
 5. **Two drafts** edit one document: "2 Works have drafts for this", and Review lists both by label.
@@ -1068,7 +1068,7 @@ Upgrade a populated database through `0067` without resetting it, then apply
 `0068_draft_branch_names.sql` and `0069_draft_branch_values_online.sql`. Check a
 pending document and peer, journal and publication references, receipt origin
 and placement JSON, a staged tree payload, and a recorded command result.
-The document IDs use `draft_`; their parent set uses `branchId`. Both trail
+The draft IDs use `draft_`; their parent set uses `branchId`. Both trail
 functions must still return the journal's owners after the table rename.
 
 Start `pnpm dev` with `MODEL_PROVIDER=mock`. Use `./mf` to create a Work and chat,

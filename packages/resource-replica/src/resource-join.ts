@@ -1,8 +1,8 @@
 /**
  * The device's side of a join: its instant create landed on a document that already existed.
  *
- * A draft's new document is a real document, hidden live only because it is a draft; creating
- * it live unhides it, and its draft stays an ordinary draft over it. The device made its own id
+ * A branch's new document is a real document, hidden live until its creation is applied or joined;
+ * creating it live unhides it, and its draft stays an ordinary draft over it. The device made its own id
  * for the instant create, so the only work here is identity. The reservation's id becomes the
  * joined id, the handle stays, the old id becomes an alias, queued intents are rebased, and the
  * session-adoption witness sends what the writer typed to the joined room. No draft text is

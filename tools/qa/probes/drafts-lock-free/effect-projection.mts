@@ -1,6 +1,6 @@
 /**
- * Phase 4 (design §3.1–3.4, F3/F4): a keystroke's append and the branch's derived state are two
- * events. The append marks its branch dirty; the projection job judges `has_effect` against the
+ * Phase 4 (design §3.1–3.4, F3/F4): a keystroke's append and the draft's derived state are two
+ * events. The append marks its draft dirty; the projection job judges `has_effect` against the
  * stored baseline 250 ms after the last key (at most 1 s after the first unserved one), writes it
  * with its watermark, and reconciles the Work's stored pending count, bumping its revision only
  * when the count moved (W47, D41); a write a key overtook re-judges at once. No keystroke locks
@@ -167,7 +167,7 @@ export const effectProjection: Probe = {
               () => workBadge(harness, draft.workId),
               (b) => b.pending === 1,
             );
-            // Apply staging's effect on the branch: every row pushed under a revision bump,
+            // Apply staging's effect on the draft: every row pushed under a revision bump,
             // `has_effect` untouched (an exact rewrite, `drizzle-branch-push.ts`), inside the
             // Works boundary as `commitPushBatch` runs it.
             await harness.projection.mutate({ drafts: [draft.draftId] }, async () => {

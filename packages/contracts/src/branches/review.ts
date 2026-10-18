@@ -47,7 +47,7 @@ export interface ThreadDraftListItem {
   /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only. */
   wholeItem: boolean;
   documentName: string | null;
-  /** The document URI's scheme and leading-slash path in the draft's view, independent of the Work. */
+  /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   conflict: DraftItemConflict | null;
   tokens: DraftItemTokens;
@@ -59,15 +59,15 @@ export interface ThreadDraftListItem {
 }
 
 /**
- * One active draft with changes to a document, for the hint on an open document. A draft is
- * named by its own `label`; `originWorkId` is where it came from, which today's review
- * address still needs and a draft without a Work will not have.
+ * One document's draft in an active branch, for the hint on an open document. The branch is
+ * named by its own `label`; `originWorkId` is the branch's origin Work, which today's review
+ * address still needs and a branch without an origin Work will not have.
  */
 export interface DocumentDraftHint {
   branchId: BranchId;
   /** The draft's review identity for the document, as in the list. */
   itemKey: DraftItemKey;
-  /** How the draft is named to the writer; null when it has no name (the client words that). */
+  /** How the branch is named to the writer; null when it has no name (the client words that). */
   label: string | null;
   originWorkId: string | null;
 }
@@ -84,9 +84,9 @@ type ActiveDraftPreviewBase = {
   status: "active";
   branchId: BranchId;
   itemKey: DraftItemKey;
-  /** The branch generation (see `ThreadDraftListItem.draftGeneration`) that `reviewRoomName` and the tokens belong to. */
+  /** The draft generation (see `ThreadDraftListItem.draftGeneration`) that `reviewRoomName` and the tokens belong to. */
   draftGeneration: number;
-  /** Hocuspocus room name for inline branch review; already generation-fenced. Opaque to the client. */
+  /** Hocuspocus room name for inline draft review; already generation-fenced. Opaque to the client. */
   reviewRoomName: string;
   liveRevisionToken: string;
   draftRevisionToken: string;
@@ -107,7 +107,7 @@ export type DraftPreviewResponse =
   | DraftPreviewRefusal;
 
 /**
- * The change an operation is across branch generations: its part key, which a
+ * The change an operation is across draft generations: its part key, which a
  * re-fork keeps while it gives the row a new `operationId`. An operation with no
  * part key is only the row it is.
  */
@@ -118,10 +118,10 @@ export function operationKey(operation: Pick<ReviewOperation, "operationId" | "p
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
-  /** The journal row carrying this change in the item's current branch generation. Admission names rows; it is not continuity. */
+  /** The journal row carrying this change in the item's current draft generation. Admission names rows; it is not continuity. */
   operationId: string;
   /**
-   * The change's identity across branch generations: `<editId>:<ordinal>` of the
+   * The change's identity across draft generations: `<editId>:<ordinal>` of the
    * recorded edit part the row carries. A re-fork re-journals surviving rows
    * under new `operationId`s with the same part key, so this is what a queued
    * click, a focus or a held failure finds its change by. Absent for a row that
@@ -366,7 +366,7 @@ export const DraftApplyItemRefSchema = z.object({
 });
 
 export const BranchApplyAllRequestSchema = z.object({
-  /** The whole draft the dock rendered (a branches row; D68). */
+  /** The whole branch the dock rendered (a `branches` row; D68). */
   branchId: z.string().uuid(),
   commandId: BranchCommandIdSchema,
   /** Each item once: a selection is a set. */
@@ -382,7 +382,7 @@ export type BranchApplyAllRequest = z.infer<typeof BranchApplyAllRequestSchema>;
 
 /**
  * `completed` means the command settled, including selections whose items were all held. Apply never
- * closes the branch, so the result carries no draft closure.
+ * closes the branch, so the result carries no branch closure.
  */
 export type BranchApplyAllResponse =
   | DraftApplyPendingResponse
@@ -391,7 +391,7 @@ export type BranchApplyAllResponse =
   | { status: "gone"; branchId: BranchId };
 
 export const BranchDiscardAllRequestSchema = z.object({
-  /** A branches row (D68), never a branch id. */
+  /** A `branches` row id (D68), never a per-document draft id. */
   branchId: z.string().uuid(),
   commandId: BranchCommandIdSchema,
 });

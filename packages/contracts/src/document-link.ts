@@ -20,7 +20,7 @@ import {
 import { parseLinkRef } from "./document-ref.js";
 import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
-/** The tree a link is read in: live, or one draft's view (the live tree plus what it created). */
+/** The tree a link is read in: live, or one branch's view (the live tree plus what it created). */
 export type LinkView = { kind: "live" } | { kind: "branch"; branchId: string };
 
 export interface LinkHolder {

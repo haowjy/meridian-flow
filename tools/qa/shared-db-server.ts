@@ -1,6 +1,6 @@
 /**
  * A second `apps/server` process on a database another process already uses, for the lock-free
- * branches two-process probe (P6): two servers, one database, one branch.
+ * drafts two-process probe (P6): two servers, one database, one draft.
  *
  *   pnpm exec tsx tools/qa/shared-db-server.ts <database-url> <prefix>.server.meridian
  *

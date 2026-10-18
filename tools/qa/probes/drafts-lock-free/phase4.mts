@@ -68,7 +68,7 @@ export async function frameOutcome(promise: Promise<{ admitted: boolean }>): Pro
   return { refused: result.name, message: result.message };
 }
 
-/** The branch's journal rows of every generation, in id order. */
+/** The draft's journal rows of every generation, in id order. */
 export async function journalRows(harness: Harness, draftId: string) {
   const rows = await harness.raw<
     { id: string; source: string; update_data: Uint8Array; update_meta: unknown }[]
@@ -84,7 +84,7 @@ export async function journalRows(harness: Harness, draftId: string) {
 
 type Range = { client: number; clock: number; len: number };
 
-/** Every receipt on the branch's rows: one entry per `document_edits` row, parts in order. */
+/** Every receipt on the draft's rows: one entry per `document_edits` row, parts in order. */
 export async function receipts(harness: Harness, draftId: string) {
   const rows = await harness.raw<
     {
@@ -122,7 +122,7 @@ export async function receipts(harness: Harness, draftId: string) {
   );
 }
 
-/** The branch row's sequence and projection columns; `watermark` is null before 0064. */
+/** The draft row's sequence and projection columns; `watermark` is null before 0064. */
 export async function draftRow(harness: Harness, draftId: string) {
   const [row] = await harness.raw<Record<string, unknown>[]>`
     select * from document_drafts where id = ${draftId}`;
@@ -172,7 +172,7 @@ export function pauseAt(point: CollabHookPoint, when: () => boolean = () => true
 
 /**
  * `store` whose first `appendRows` holds after the frame judged its bytes off the lock and
- * before it takes the branch row: "A read at r; B commits; A appends".
+ * before it takes the draft row: "A read at r; B commits; A appends".
  */
 export function pausedAppend(store: DraftStore) {
   const entered = gate();
@@ -230,7 +230,7 @@ export function captureUpdate(doc: Y.Doc, change: () => void): Uint8Array {
   return captured;
 }
 
-/** A fresh Work, its draft and one document over `text`, with the draft's branch ensured. */
+/** A fresh Work, its branch and one document over `text`, with the document's draft ensured in that branch. */
 export async function seedDraft(harness: Harness, label: string, text = "Base") {
   const work = await harness.seedWork(label);
   const { documentId, live } = await harness.seedDocument(label, text);
@@ -303,7 +303,7 @@ export function nth<T>(items: readonly T[], index: number): T {
   return item;
 }
 
-/** The branch as committed now, materialized; the caller destroys it. */
+/** The draft as committed now, materialized; the caller destroys it. */
 export async function durableDoc(harness: Harness, draftId: string): Promise<Y.Doc> {
   const read = await harness.store.readDraftAt(draftId);
   if (!read) throw new Error(`Draft ${draftId} is missing`);
@@ -411,7 +411,7 @@ export async function workBadge(harness: Harness, workId: string) {
 
 /**
  * A process with the projection job wired as composition wires it (§3.1, §3.2): every durable
- * append marks its branch dirty. `captures` counts live snapshots per document (the legacy
+ * append marks its draft dirty. `captures` counts live snapshots per document (the legacy
  * pull); `blocked` and `failed` are the job's diagnostics.
  */
 export async function openProjected(
@@ -476,7 +476,7 @@ export async function openProjected(
   };
 }
 
-/** `has_effect` as the projection must judge it: the branch against its stored `live_cut`. */
+/** `has_effect` as the projection must judge it: the draft against its stored `live_cut`. */
 export async function judgedEffect(harness: Harness, draftId: string): Promise<boolean | null> {
   const [row] = await harness.raw<{ live_cut: Uint8Array | null }[]>`
     select live_cut from document_drafts where id = ${draftId}`;

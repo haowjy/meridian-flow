@@ -21,7 +21,7 @@ export interface Work {
   defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Documents this Work's active draft changes (the Works badge), as the server stores it; never derive from visible rows. */
+  /** Documents this Work's active branch changes (the Works badge), as the server stores it; never derive from visible rows. */
   pendingDocumentCount: number;
   createdAt: string;
   updatedAt: string;

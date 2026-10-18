@@ -1,7 +1,7 @@
 /**
  * Final-gate F1: a model Undo is a grant seam. Its first locks are the bound grants' Works, in id
  * order with the captured drafts' Works, and the grants are confirmed before any inverse or
- * document lock. A live-only inverse (a named Work's Scratch) captures no branch, so the grant is
+ * document lock. A live-only inverse (a named Work's Scratch) captures no draft, so the grant is
  * its only route to the Work. Two orders against Archive on an independent connection:
  *
  * - lifecycle first: Archive commits before the inverse's commit scope; the confirmation, read

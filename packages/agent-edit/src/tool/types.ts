@@ -165,11 +165,11 @@ interface InteractionContextBase {
 
 export type InteractionContext =
   | (InteractionContextBase & {
-      /** Live writes have no branch-generation fence by type. */
+      /** Live writes have no draft-generation fence by type. */
       mode: "live";
     })
   | (InteractionContextBase & {
-      /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
+      /** Thread-peer writes must carry the draft-generation fence captured with the baseline. */
       mode: "threadPeer";
       draftGeneration: number;
       /** Host peer identity, for exact retirement independently of generation replay. */
@@ -196,7 +196,7 @@ export interface WriteContext {
   /** Immutable provider authorship and the independently rotated prepared scope. */
   responseIdentity?: ModelResponseIdentity;
   /**
-   * Host-captured interaction identity: baseline, journal floor, branch
+   * Host-captured interaction identity: baseline, journal floor, draft
    * generation, and optional attempt guard travel as one object.
    */
   interactionContext?: InteractionContext;
@@ -226,7 +226,7 @@ export interface WriteContext {
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   /**
-   * The link view the host routed this command to: the Work draft or live
+   * The link view the host routed this command to: the Work branch or live
    * version its destination names. A host that routes between versions sets
    * it on every command; links, sources and the revision spell in it.
    */

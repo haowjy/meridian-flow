@@ -30,7 +30,7 @@ export type JournalMutation = JournalMutationBase &
     | { mode: "live" }
     | {
         mode: "threadPeer";
-        /** Host branch generation captured with the write baseline. */
+        /** Host draft generation captured with the write baseline. */
         draftGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
         peerDraftId?: string;
@@ -51,7 +51,7 @@ export interface JournalBatchAppendEntry {
 
 export interface JournalBatchAppendResult {
   seq: number;
-  /** Whether this append created durable truth, or only queued pending branch state. */
+  /** Whether this append created durable truth, or only queued pending draft state. */
   journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
