@@ -796,7 +796,7 @@ export function pullContextCatalogOnHint(
       if (!advancesDraftRefresh(queryClient, requestedScope, next.appliedRevision)) return;
       void queryClient.invalidateQueries(
         requestedScope.kind === "work"
-          ? { queryKey: projectQueryKeys.workBranches(projectId, requestedScope.workId) }
+          ? { queryKey: projectQueryKeys.workBranchDrafts(projectId, requestedScope.workId) }
           : allWorkBranchesOf(projectId),
       );
       void queryClient.invalidateQueries({

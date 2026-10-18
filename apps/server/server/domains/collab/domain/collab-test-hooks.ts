@@ -13,7 +13,7 @@ const COLLAB_HOOK_POINTS = [
   "discard.beforeCommitScope",
   "discard.beforeRetirement",
   /** A thread core's access, or a peer pull past its ensures, is about to read its drafts. */
-  "branch.beforeAccess",
+  "draft.beforeAccess",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
   /** A created document's retraction read its drafts and holds no branch row yet. */
@@ -26,11 +26,11 @@ const COLLAB_HOOK_POINTS = [
    * An append inserted its rows and receipts and still holds the branch row; nothing has
    * committed. A crash here leaves neither.
    */
-  "branch.append.beforeCommit",
+  "draft.append.beforeCommit",
   /** A writer frame's append committed; the frame is not yet acknowledged. */
-  "branch.append.afterCommit",
+  "draft.append.afterCommit",
   /** A branch rewrite wrote its checkpoint; the transaction has not committed. */
-  "branch.rewrite.beforeCommit",
+  "draft.rewrite.beforeCommit",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
 

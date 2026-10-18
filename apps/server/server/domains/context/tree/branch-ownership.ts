@@ -76,7 +76,7 @@ export async function loadDocumentOwner(
   return row ? ((await loadSourceOwners(db, [row.sourceId])).get(row.sourceId) ?? null) : null;
 }
 
-export async function loadDraftHolder(
+export async function loadBranchHolder(
   db: DrizzleDb,
   branchId: BranchId,
 ): Promise<BranchHolder | null> {

@@ -33,7 +33,7 @@ export const d12PullBeforeArchive: Probe = {
     const paused = gate();
     const resume = gate();
     let first = true;
-    const remove = setCollabHook("branch.rewrite.beforeCommit", async () => {
+    const remove = setCollabHook("draft.rewrite.beforeCommit", async () => {
       if (!first) return;
       first = false;
       paused.open();

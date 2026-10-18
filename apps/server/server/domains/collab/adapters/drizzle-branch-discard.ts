@@ -176,12 +176,12 @@ async function acquireScope(db: Database, branchId: BranchId, request: EndUseReq
   }
 }
 
-export type DrizzleDraftDiscard = BranchDiscardStore & {
+export type DrizzleBranchDiscard = BranchDiscardStore & {
   /** The locked kernel: the caller holds §14's locks and proved the Work's state. */
   kernel(input: DiscardKernelInput): Promise<DiscardKernelResult>;
 };
 
-export function createDrizzleDraftDiscard(
+export function createDrizzleBranchDiscard(
   db: Database,
   deps: KernelDeps & {
     branches: Pick<Branches, "lockActive" | "close">;
@@ -189,7 +189,7 @@ export function createDrizzleDraftDiscard(
     coordinator: Pick<DraftCoordinator, "resetFromDoc">;
     workProjection: Pick<WorkProjectionMutation, "mutate">;
   },
-): DrizzleDraftDiscard {
+): DrizzleBranchDiscard {
   /**
    * Reset the draft's branch on an item from live when it holds reviewable rows, folding away
    * every row appended before the reset locks the branch, and close that branch's thread peers

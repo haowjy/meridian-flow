@@ -902,7 +902,7 @@ The points below are the ones that change how you reason about edits here.
     chosen from the preview: a reset that bumps the generation and records the
     discarded clocks. The client never reconstructs turns. Room closes and peer
     retirement run once, after the root transaction commits.
-    <span class="ref"><code>domain/branch-discard.ts</code>, <code>adapters/drizzle-branch-discard.ts</code>, <code>domain/branch-review-operations.ts</code></span></li>
+    <span class="ref"><code>domain/branch-discard.ts</code>, <code>adapters/drizzle-branch-discard.ts</code>, <code>domain/draft-review-operation-graph.ts</code></span></li>
   <li><strong>Generation is draft identity.</strong> A reset bumps
     <code>document_drafts.generation</code>, closes the old room, and its
     clients are fenced by the 4205 handshake. Thread-peer and Work-draft

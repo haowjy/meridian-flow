@@ -6,11 +6,11 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
 import {
-  handleApplyWorkBranchChangesRequest,
-  handleApplyWorkBranchRequest,
-  handleDiscardWorkBranchRequest,
+  handleApplyWorkDraftChangesRequest,
+  handleApplyWorkDraftRequest,
+  handleDiscardWorkDraftRequest,
   handleDocumentDraftHintsRequest,
-  handleWorkBranchPreviewRequest,
+  handleWorkDraftPreviewRequest,
   selectBranchRouteServices,
 } from "../../lib/branch-review-route.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
@@ -39,7 +39,7 @@ describeBranchTreeDb("review items (postgres)", (start) => {
     const scope = { projectId: s.project.id, workId: work.id, userId: s.project.userId };
     const keptItem = items.find((item) => item.documentId === kept);
     if (!keptItem) throw new Error("no kept item");
-    const perChange = await handleApplyWorkBranchChangesRequest(deps, {
+    const perChange = await handleApplyWorkDraftChangesRequest(deps, {
       ...scope,
       documentId: kept,
       request: {
@@ -80,20 +80,20 @@ describeBranchTreeDb("review items (postgres)", (start) => {
       expect(await review.preview({ workId: work.id, itemKey: wrong })).toMatchObject({
         status: "gone",
       });
-      const preview = await handleWorkBranchPreviewRequest(deps, {
+      const preview = await handleWorkDraftPreviewRequest(deps, {
         ...scope,
         documentId: chapter,
         itemKey: wrong,
       });
       expect(preview.status).toBe("gone");
-      const discard = await handleDiscardWorkBranchRequest(deps, {
+      const discard = await handleDiscardWorkDraftRequest(deps, {
         ...scope,
         documentId: chapter,
         request: { branchId: mine.branchId, itemKey: wrong, commandId: randomUUID() },
       });
       expect(discard.body).toMatchObject({ status: "gone" });
       await expect(
-        handleApplyWorkBranchRequest(deps, {
+        handleApplyWorkDraftRequest(deps, {
           ...scope,
           documentId: chapter,
           request: { branchId: mine.branchId, itemKey: wrong, commandId: randomUUID() },

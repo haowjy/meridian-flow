@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 const mocks = vi.hoisted(() => ({
-  listWorkBranches: vi.fn(),
+  listWorkBranchDrafts: vi.fn(),
   getDraftPreview: vi.fn(),
   applyDraftChanges: vi.fn(),
   discardDraft: vi.fn(),
@@ -146,7 +146,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetBranchCommandRecords();
   review = null;
-  mocks.listWorkBranches.mockResolvedValue({ items: [listed] });
+  mocks.listWorkBranchDrafts.mockResolvedValue({ items: [listed] });
 });
 
 afterEach(() => {
@@ -214,7 +214,7 @@ it.each([
         draftGeneration: 2,
         reviewRoomName: room,
       });
-      mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
+      mocks.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
       await act(async () =>
         read.resolve({ ...previewOf("3"), draftGeneration: 2, reviewRoomName: room }),
       );
@@ -244,7 +244,7 @@ it.each([
 
 it("draft-only has no live fallback, including closed completion and terminal failure", async () => {
   draftOnly = true;
-  mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
+  mocks.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
   await run(async (_client, room) => {
     const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(answer.promise);
@@ -258,7 +258,7 @@ it("draft-only has no live fallback, including closed completion and terminal fa
       draftGeneration: 2,
       reviewRoomName: draftRoomName("review-owner", 2),
     });
-    mocks.listWorkBranches.mockResolvedValue({ items: [] });
+    mocks.listWorkBranchDrafts.mockResolvedValue({ items: [] });
     await act(async () => {
       answer.resolve(applied(true));
       await done;
@@ -304,7 +304,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     // The refused Discard left the change in the draft: the writer's view has it again.
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, draftA.itemKey),
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
         { ...previewOf("2"), reviewRoomName: room },
       ),
     );
@@ -351,9 +351,9 @@ it("a retired rebuild answer cannot replace a later review", async () => {
       reviewRoomName: nextRoom,
     });
     const rows = [{ ...listed, itemKey: "draft-b" }];
-    mocks.listWorkBranches.mockResolvedValue({ items: rows });
+    mocks.listWorkBranchDrafts.mockResolvedValue({ items: rows });
     await act(async () => {
-      client.setQueryData(projectQueryKeys.workBranches("project-a", "work-a"), rows);
+      client.setQueryData(projectQueryKeys.workBranchDrafts("project-a", "work-a"), rows);
       review?.controller.enterInlineReview(documentId, "draft-b");
     });
     await settleReact(() => expect(review?.roomOwner.session?.roomKey).toBe(nextRoom));
@@ -420,10 +420,10 @@ it("an incoming proposal holds the painted chrome across the room observation pr
       draftGeneration: 2,
       reviewRoomName: room,
     });
-    mocks.listWorkBranches.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
+    mocks.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, draftGeneration: 2 }] });
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, draftA.itemKey),
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
         { ...previewOf("3"), draftGeneration: 2, reviewRoomName: room },
       ),
     );
@@ -438,7 +438,7 @@ it("an incoming proposal holds the painted chrome across the room observation pr
     await settleReact(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workBranchPreview("project-a", "work-a", documentId, draftA.itemKey),
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
         { ...previewOf(), draftGeneration: 3, reviewRoomName: room },
       ),
     );

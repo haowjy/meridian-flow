@@ -3,8 +3,8 @@ import type {
   AgentEditAccess,
   BranchPushAccess,
   CollabBranches,
+  CollabBranchResolver,
   CollabDomain,
-  CollabDraftResolver,
   CollabLifecycle,
   CollabTransport,
   DocumentAttribution,
@@ -34,7 +34,7 @@ export type CollabFacadeServices = {
   branchPush: BranchPushAccess;
   draftPeers: DraftPeerShadowAccess;
   branches: CollabBranches;
-  draftResolver: CollabDraftResolver;
+  branchResolver: CollabBranchResolver;
   documentCreation: DocumentCreationAggregate;
 };
 
@@ -54,7 +54,7 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.branchPush,
     ...services.draftPeers,
     ...services.branches,
-    ...services.draftResolver,
+    ...services.branchResolver,
     ...services.documentCreation,
   };
 }

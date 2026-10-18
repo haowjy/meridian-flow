@@ -226,7 +226,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    branchPush: IN_MEMORY_DRAFT_PUSH_STUB,
+    branchPush: IN_MEMORY_BRANCH_PUSH_STUB,
     draftPeers: createInMemoryDraftPeerStub(
       runtime.markdownDocuments,
       coordinator,
@@ -234,8 +234,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.codec,
       links,
     ),
-    branches: createInMemoryDraftStub(),
-    draftResolver: {
+    branches: createInMemoryBranchStub(),
+    branchResolver: {
       branches,
       // No branches in memory: a purged Work has none to dispose of.
       workBranchDisposal: {
@@ -248,7 +248,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 }
 
-const IN_MEMORY_DRAFT_PUSH_STUB: BranchPushAccess = {
+const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async recoverPendingLiveSettlements() {
     return 0;
   },
@@ -301,7 +301,7 @@ function createInMemoryDraftPeerStub(
   };
 }
 
-function createInMemoryDraftStub(): CollabBranches {
+function createInMemoryBranchStub(): CollabBranches {
   const gone = async (input: { branchId: string }): Promise<CommandOutcome> => ({
     kind: "result",
     result: { status: "gone", branchId: input.branchId as BranchId },

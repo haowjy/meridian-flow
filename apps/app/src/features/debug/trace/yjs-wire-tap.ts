@@ -39,7 +39,7 @@ function streamIdentity(documentName: string | null): {
     };
   }
   return {
-    streamId: `yjs:branch:${room.draftId}:gen:${room.generation}`,
+    streamId: `yjs:draft:${room.draftId}:gen:${room.generation}`,
     correlation: { draftId: room.draftId, draftGeneration: room.generation },
   };
 }

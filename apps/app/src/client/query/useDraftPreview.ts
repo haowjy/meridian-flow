@@ -28,7 +28,7 @@ import {
 } from "./branch-command-record";
 import { type DraftProjection, projectDraft } from "./draft-projection";
 import { projectQueryKeys } from "./project-query-keys";
-import { workBranchesQueryOptions } from "./useWorkBranches";
+import { workBranchDraftsQueryOptions } from "./useWorkBranchDrafts";
 
 /**
  * `preview` is what the writer has left to review. `inline` is the same read
@@ -74,7 +74,7 @@ function keepNewerGeneration(prior: unknown, next: unknown): unknown {
 
 /** The one preview query, shared by every reader so each draft's preview is fetched once. */
 export function draftPreviewQueryOptions(draft: DraftRef) {
-  const queryKey = projectQueryKeys.workBranchPreview(
+  const queryKey = projectQueryKeys.workDraftPreview(
     draft.projectId,
     draft.workId,
     draft.documentId,
@@ -85,7 +85,7 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
     queryFn: async ({ signal, client }: QueryFunctionContext): Promise<DraftPreviewRead> => {
       const prior = client.getQueryData<DraftPreviewRead>(queryKey);
       const rows = client.getQueryData<ThreadDraftListItem[]>(
-        projectQueryKeys.workBranches(draft.projectId, draft.workId),
+        projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
       );
       const row = rows?.find(
         (row) => row.documentId === draft.documentId && row.itemKey === draft.itemKey,
@@ -213,7 +213,7 @@ function previewKeyOf(draft: DraftRef): string {
 function useDraftListRows(targets: readonly DraftRef[]): (string | undefined)[] {
   const scopes = [...new Map(targets.map((t) => [`${t.projectId}\u0000${t.workId}`, t])).values()];
   const lists = useQueries({
-    queries: scopes.map(({ projectId, workId }) => workBranchesQueryOptions(projectId, workId)),
+    queries: scopes.map(({ projectId, workId }) => workBranchDraftsQueryOptions(projectId, workId)),
     combine: useCallback(
       (all: { data?: { itemKey: string; updatedAt: string }[] }[]) =>
         all.map(({ data }) =>
@@ -271,7 +271,7 @@ export function useDraftPreviews(
       const isOpen = open?.documentId === target.documentId && open.itemKey === target.itemKey;
       if (prior === undefined || prior === updatedAt || isOpen) return;
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workBranchPreview(
+        queryKey: projectQueryKeys.workDraftPreview(
           target.projectId,
           target.workId,
           target.documentId,

@@ -94,7 +94,7 @@ it("a join seen first by one Work keeps the review another Work has on screen", 
     } as never),
   );
   // Work A's observer is ready first: it must not decide what Work B has on screen.
-  fixture.network.listWorkBranches.mockImplementation(async (_project, workId) => {
+  fixture.network.listWorkBranchDrafts.mockImplementation(async (_project, workId) => {
     if (workId === "work-b") await new Promise((resolve) => setTimeout(resolve, 40));
     return {
       items: [

@@ -2,7 +2,7 @@
  * WorkChanges — the Work page's "Changes to review": every draft file of the
  * Work in the one file order (`sortDraftFiles`), each expandable in place to its
  * changes (`WorkChangeFile`). The group's `…` menu holds Apply all and Discard
- * all, the creation-bound whole-Work batch (`disposeBranches`). They act on every draft of the Work whatever the
+ * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
  * search box filters, new documents and formatting-only branches included, and
  * only a change row uses the per-change selection
  * commands. Discard all asks first, inline, in the menu's place.
@@ -15,7 +15,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,9 +42,9 @@ export function WorkChanges({
 }) {
   const workId = work.id;
   const controller = useWorkBranchCommands({ projectId, work });
-  const branches = useWorkBranches(projectId, workId);
+  const drafts = useWorkBranchDrafts(projectId, workId);
   const touch = usePhoneShell() === true;
-  const files = branches.files ?? [];
+  const files = drafts.files ?? [];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {
@@ -53,12 +53,12 @@ export function WorkChanges({
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextLocation?.path || ""),
   );
-  if (files.length === 0 && branches.status === "error") {
+  if (files.length === 0 && drafts.status === "error") {
     return (
       <WorkFileGroup label={t`Changes to review`}>
         <InlineErrorRow
           message={t`Pending drafts couldn’t load`}
-          onRetry={branches.refetch}
+          onRetry={drafts.refetch}
           actionLabel={t`Retry Pending drafts`}
         />
       </WorkFileGroup>
@@ -70,7 +70,7 @@ export function WorkChanges({
     documentId: file.documentId,
     itemKey: file.draft.itemKey,
   }));
-  const dispose = (mode: "apply" | "discard") => void controller.disposeBranches(mode, everyDraft);
+  const dispose = (mode: "apply" | "discard") => void controller.disposeDrafts(mode, everyDraft);
 
   return (
     <WorkFileGroup

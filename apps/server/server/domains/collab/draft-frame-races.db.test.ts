@@ -139,8 +139,8 @@ describe("writer frames racing rewrites (postgres)", () => {
       const run =
         first === "pull"
           ? // The pull holds the branch row between its checkpoint UPDATE and COMMIT.
-            await interleave(db, pull, "branch.rewrite.beforeCommit", frame.send)
-          : await interleave(db, frame.send, "branch.append.afterCommit", pull);
+            await interleave(db, pull, "draft.rewrite.beforeCommit", frame.send)
+          : await interleave(db, frame.send, "draft.append.afterCommit", pull);
       const sent = (first === "pull" ? run.b : run.a) as Settled<{ admitted: boolean }>;
       expect(sent).toEqual({ ok: true, value: { admitted: true } });
       expect(first === "pull" ? run.a : run.b).toMatchObject({ ok: true });

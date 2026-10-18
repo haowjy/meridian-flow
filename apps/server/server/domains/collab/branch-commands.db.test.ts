@@ -10,12 +10,12 @@ import { eq } from "drizzle-orm";
 import { createError } from "nitro/h3";
 import { expect, it } from "vitest";
 import {
-  handleApplyWorkBranchChangesRequest,
-  handleApplyWorkBranchRequest,
+  handleApplyWorkDraftChangesRequest,
+  handleApplyWorkDraftRequest,
   handleBranchCommandObservation,
   handleDiscardAllWorkBranchRequest,
-  handleDiscardWorkBranchRequest,
-  handleWorkBranchPreviewRequest,
+  handleDiscardWorkDraftRequest,
+  handleWorkDraftPreviewRequest,
   selectBranchRouteServices,
 } from "../../lib/branch-review-route.js";
 import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
@@ -42,7 +42,7 @@ async function twoChanges(start: BranchTreeStart) {
   };
   const preview = async () => {
     const { itemKey } = await item();
-    const body = await handleWorkBranchPreviewRequest(deps, {
+    const body = await handleWorkDraftPreviewRequest(deps, {
       ...scope,
       documentId: chapter,
       itemKey,
@@ -69,7 +69,7 @@ async function twoChanges(start: BranchTreeStart) {
     };
   };
   const applyChange = (request: Awaited<ReturnType<typeof click>>) =>
-    handleApplyWorkBranchChangesRequest(deps, { ...scope, documentId: chapter, request });
+    handleApplyWorkDraftChangesRequest(deps, { ...scope, documentId: chapter, request });
   return { runtime, s, ascension, chapter, deps, scope, item, preview, click, applyChange };
 }
 
@@ -173,7 +173,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
     const different = { ...request, operationIds: [...request.operationIds, "other"] };
     await expect(c.applyChange(different)).rejects.toMatchObject({ statusCode: 409 });
     await expect(
-      handleApplyWorkBranchRequest(c.deps, {
+      handleApplyWorkDraftRequest(c.deps, {
         ...c.scope,
         documentId: c.chapter,
         request: {
@@ -234,8 +234,8 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
       branchId,
       itemKey,
       commandId: randomUUID(),
-    } as Parameters<typeof handleDiscardWorkBranchRequest>[1]["request"];
-    let twin: Awaited<ReturnType<typeof handleDiscardWorkBranchRequest>> | undefined;
+    } as Parameters<typeof handleDiscardWorkDraftRequest>[1]["request"];
+    let twin: Awaited<ReturnType<typeof handleDiscardWorkDraftRequest>> | undefined;
     const authorize = c.deps.fileAccess.authorize.bind(c.deps.fileAccess);
     let first = true;
     const deps = {
@@ -246,7 +246,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
         authorize: async (...args: Parameters<typeof authorize>) => {
           if (first) {
             first = false;
-            twin = await handleDiscardWorkBranchRequest(c.deps, {
+            twin = await handleDiscardWorkDraftRequest(c.deps, {
               ...c.scope,
               documentId: c.chapter,
               request,
@@ -257,7 +257,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
         },
       },
     } as typeof c.deps;
-    const answered = await handleDiscardWorkBranchRequest(deps, {
+    const answered = await handleDiscardWorkDraftRequest(deps, {
       ...c.scope,
       documentId: c.chapter,
       request,

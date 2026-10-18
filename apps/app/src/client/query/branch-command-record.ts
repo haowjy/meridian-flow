@@ -400,7 +400,7 @@ export function wholeDraftDisposition(
   generation: number | undefined,
   observed?: object,
 ): ChangeCommandMode | null {
-  const record = records.branches[branchCommandKey(draft)];
+  const record = records.drafts[branchCommandKey(draft)];
   const addressed = (basis: number | undefined) =>
     basis === undefined
       ? generation === undefined
@@ -539,7 +539,7 @@ export type ChangeCommandState =
 /** Everything that says what is happening to a draft's changes: held outcomes and the draft's own claim. */
 export type ChangeCommandRecords = {
   queued: QueuedSelections;
-  branches: BranchCommandRecords;
+  drafts: BranchCommandRecords;
 };
 
 /** Every queued intent owns its addressed account capability and caller's promise. */
@@ -742,7 +742,7 @@ export function nextQueuedClick(
 /** Only a whole intent on this draft holds its selective controls. */
 export function wholeDraftPending(records: ChangeCommandRecords, draft: DraftRef): boolean {
   return (
-    pendingBranchCommand(records.branches, draft)?.target === "all" ||
+    pendingBranchCommand(records.drafts, draft)?.target === "all" ||
     Object.values(records.queued).some(
       (entry) => entry.prefix === branchCommandKey(draft) && entry.target === "all",
     )
@@ -862,12 +862,12 @@ function dropFailuresWithoutOperations(key: string, preview: ActivePreview, fenc
 export function useChangeCommandRecords(): ChangeCommandRecords {
   const branches = useBranchCommandRecords();
   const queued = useBranchCommandStore((state) => state.queued);
-  return useMemo(() => ({ branches, queued }), [branches, queued]);
+  return useMemo(() => ({ drafts: branches, queued }), [branches, queued]);
 }
 
 export function currentChangeCommandRecords(): ChangeCommandRecords {
   const { records: branches, queued } = useBranchCommandStore.getState();
-  return { branches, queued };
+  return { drafts: branches, queued };
 }
 
 /**
@@ -889,12 +889,12 @@ export function intentKeys(
       if (mode === "discard") restoring.add(k);
     }
   };
-  for (const record of Object.values(records.branches[key]?.outcomes ?? {}))
+  for (const record of Object.values(records.drafts[key]?.outcomes ?? {}))
     if (record.phase !== "failed") add(record, record.mode);
   if (confirmedOnly) return { hidden, restoring };
   for (const queued of Object.values(records.queued))
     if (queued.prefix === key && queued.target === "selection") add(queued, queued.mode);
-  const pending = pendingChangeCommand(records.branches, draft);
+  const pending = pendingChangeCommand(records.drafts, draft);
   if (pending) add(pending, pending.mode);
   return { hidden, restoring };
 }
@@ -909,16 +909,12 @@ export function changeCommandState(
   draft: DraftRef,
   selection: ChangeSelection,
 ): ChangeCommandState | null {
-  const pending = pendingChangeCommand(records.branches, draft);
+  const pending = pendingChangeCommand(records.drafts, draft);
   if (pending && overlaps(pending, selection)) {
     return { phase: "pending", mode: pending.mode };
   }
   // Several can apply after regrouping; the writer's latest action is the one that counts.
-  const latest = failuresOfSelection(
-    records.branches,
-    draft,
-    selection,
-  ).reduce<FailedRecord | null>(
+  const latest = failuresOfSelection(records.drafts, draft, selection).reduce<FailedRecord | null>(
     (newest, { record }) => (newest && newest.at > record.at ? newest : record),
     null,
   );

@@ -166,7 +166,7 @@ function InkDrop() {
 }
 
 /** One entry per document, preferring its committed (`live`) lineage. */
-function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "branch" }>(
+function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft" }>(
   documents: readonly T[],
 ): T[] {
   const byUri = new Map<string, T>();

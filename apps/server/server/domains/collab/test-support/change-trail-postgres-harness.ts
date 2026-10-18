@@ -29,7 +29,7 @@ import { createTestWorkProjectionMutation } from "../../../test-support/work-pro
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { FileGrant } from "../../file-policy/index.js";
-import { createDrizzleDraftDiscard } from "../adapters/drizzle-branch-discard.js";
+import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -352,7 +352,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
   });
-  const workBranches = createBranches({
+  const workBranchDrafts = createBranches({
     store: createDrizzleBranchStore(db),
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
@@ -362,7 +362,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
     },
-    branches: workBranches,
+    branches: workBranchDrafts,
   });
   let journalInsertCount = 0;
   // Which branch journal insert of the next save fails, counting from 1.
@@ -517,7 +517,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       },
       steps: [
         createDrizzleBranchTreeStep(db, {
-          branches: workBranches,
+          branches: workBranchDrafts,
           // The harness keeps no catalog.
           catalog: { refreshSources: async () => "" },
           drafts: draftStore,
@@ -681,7 +681,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const agentEdit = scopeAgentEdit(
     createDraftThreadPeerAgentEditCore({
       documentEdits: modelDocumentEdits,
-      branches: workBranches,
+      branches: workBranchDrafts,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
@@ -770,20 +770,20 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     agentEdit,
   });
   const lookups = createDrizzleCollabLookups(db);
-  const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
+  const identity = createBranchReviewIdentity({ branches: workBranchDrafts, reviewItems });
   const branches = createWorkBranchReviewService({
     diagnostics: createDraftReviewDiagnostics(eventSink),
-    branches: workBranches,
+    branches: workBranchDrafts,
     reviewItems,
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({
-      branches: workBranches,
+      branches: workBranchDrafts,
       liveCoordinator,
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
-      store: createDrizzleDraftDiscard(db, {
-        branches: workBranches,
+      store: createDrizzleBranchDiscard(db, {
+        branches: workBranchDrafts,
         drafts: draftStore,
         coordinator: draftCoordinator,
         workProjection: createTestWorkProjectionMutation(db),
@@ -808,7 +808,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       }),
     ),
     branchApply: createBranchApply({
-      branches: workBranches,
+      branches: workBranchDrafts,
       reviewItems,
       push: realBranchPush,
     }),
@@ -964,11 +964,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     draftBroadcasts.length = 0;
     watermarkCommits.length = 0;
     hocuspocus.broadcasts.length = 0;
-    const workBranches = await db
+    const workBranchDrafts = await db
       .select({ id: schema.documentDrafts.id })
       .from(schema.documentDrafts)
       .where(eq(schema.documentDrafts.kind, "work_draft"));
-    return workBranches.map((documentDraft) => documentDraft.id).sort();
+    return workBranchDrafts.map((documentDraft) => documentDraft.id).sort();
   }
 
   async function seedAndStageDestructive(

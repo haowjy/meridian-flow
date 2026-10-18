@@ -52,7 +52,7 @@ import {
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import { createDrizzleBranchCommands } from "./adapters/drizzle-branch-commands.js";
 import {
-  createDrizzleDraftDiscard,
+  createDrizzleBranchDiscard,
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import {
@@ -195,7 +195,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   // Every bounded branch-store attempt's rollback boundary (decision D13).
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
-  const workBranches = createBranches({
+  const workBranchDrafts = createBranches({
     store: createDrizzleBranchStore(deps.db),
     boundary: createDrizzleBranchWriteBoundary(deps.db, deps.workProjectionMutation),
   });
@@ -205,7 +205,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       lifecycle: persistence.lifecycle,
     },
     workProjection: deps.workProjectionMutation,
-    branches: workBranches,
+    branches: workBranchDrafts,
     ...(deps.eventSink
       ? {
           onRewriteCommitted: createRewriteCommittedEvent(deps.eventSink),
@@ -350,7 +350,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       // Apply's tree work lands with the text it applies (contract §11.2).
       steps: [
         createDrizzleBranchTreeStep(deps.db, {
-          branches: workBranches,
+          branches: workBranchDrafts,
           drafts,
           coordinator: draftCoordinator,
           liveDoc: (documentId) => readLiveDoc(persistence.journal, documentId),
@@ -399,7 +399,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const agentEdit = scopeAgentEdit(
     createDraftThreadPeerAgentEditCore({
       documentEdits: modelDocumentEdits,
-      branches: workBranches,
+      branches: workBranchDrafts,
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       async lockWorks(workIds) {
@@ -454,7 +454,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const draftAheads = createDraftAheadRegistration({
     drafts: draftCoordinator,
-    branches: workBranches,
+    branches: workBranchDrafts,
     registrar: deps.aheadRefs,
     outsideTransaction: runOutsideDrizzleTransaction,
     diagnostics: createDraftAheadDiagnostics(deps.eventSink),
@@ -537,12 +537,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
   });
   const branchApply = createBranchApply({
-    branches: workBranches,
+    branches: workBranchDrafts,
     reviewItems,
     push: branchPush,
   });
-  const discardStore = createDrizzleDraftDiscard(deps.db, {
-    branches: workBranches,
+  const discardStore = createDrizzleBranchDiscard(deps.db, {
+    branches: workBranchDrafts,
     drafts,
     coordinator: draftCoordinator,
     workProjection: deps.workProjectionMutation,
@@ -554,17 +554,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     agentEdit,
   });
   const discard = createBranchDiscard({
-    branches: workBranches,
+    branches: workBranchDrafts,
     liveCoordinator,
     store: discardStore,
     retire: retirePeers,
     releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
     attemptScope,
   });
-  const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
+  const identity = createBranchReviewIdentity({ branches: workBranchDrafts, reviewItems });
   const branches = createWorkBranchReviewService({
     diagnostics: createDraftReviewDiagnostics(deps.eventSink),
-    branches: workBranches,
+    branches: workBranchDrafts,
     reviewItems,
     identity,
     branchApply,
@@ -597,7 +597,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       links: deps.links,
       retirePeers,
       deferUntilCommit: deferUntilDrizzleCommit,
-      branches: workBranches,
+      branches: workBranchDrafts,
     }),
     deps.links,
   );
@@ -691,11 +691,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     draftPeers,
     branches,
-    draftResolver: {
-      branches: workBranches,
+    branchResolver: {
+      branches: workBranchDrafts,
       draftLinks: draftAheads,
       workBranchDisposal: createDrizzleWorkBranchDisposal(deps.db, {
-        branches: workBranches,
+        branches: workBranchDrafts,
         catalog: deps.catalogMutations,
       }),
     },

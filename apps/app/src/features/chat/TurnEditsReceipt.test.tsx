@@ -54,7 +54,7 @@ it("counts and reveals pending files alongside an already settled live trail", a
                 documentId: "pending",
                 uri: "manuscript://pending.md",
                 path: "pending.md",
-                scope: "branch",
+                scope: "draft",
               },
             ]}
             receipt={{ state: "live-active", control: "undo" }}
@@ -127,7 +127,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
             documentId: "doc",
             uri: "manuscript://chapter.md",
             path: "chapter.md",
-            scope: "branch",
+            scope: "draft",
           },
         ]}
         receipt={receipt}
@@ -163,7 +163,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
                 documentId: "doc",
                 path: "chapter.md",
                 uri: "manuscript://chapter.md",
-                scope: "branch",
+                scope: "draft",
               },
             ],
             undefined,

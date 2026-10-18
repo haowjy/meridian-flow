@@ -223,10 +223,10 @@ pauses and eventually while typing. That is the contract, not a bound to
 tighten: the job's write must never bump `revision` (an in-flight Apply staging
 would miss), and the badge must not move back onto the append. Every writer of `has_effect` (the job, a pull or reset's
 rewrite, `refreshDraftEffect`) writes the watermark with it; `-1` is stale
-whatever the revision. A sweep (the `branch-effects` recovery lane, every 30 s)
+whatever the revision. A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
 crash inside the debounce converges without another key. A legacy draft with
-no stored baseline is established once by the draft-scoped `pullWorkBranch`; a
+no stored baseline is established once by the draft-scoped `pullWorkDraft`; a
 document whose settlement is terminally blocked parks it with one
 `projection_baseline_blocked` warning until its next append. Review readers
 (`isEdited`, the Works badge, Apply's item plan) may lag a key by that second;
@@ -246,7 +246,7 @@ then the next free migration adds `CHECK (kind <> 'work_draft' OR status <>
 'active' OR live_cut IS NOT NULL) NOT VALID` and the one after it
 (no-transaction) validates it (0065 is the change-trail cost fix, not this
 step); the contract step also deletes the job's null-baseline arm and
-`pullWorkBranch`, whose only caller that arm is.
+`pullWorkDraft`, whose only caller that arm is.
 
 A writer frame takes no lease, mutex or document lock. It is judged once on the
 committed replica (admissible, its room, the echo exit, authorship as an early

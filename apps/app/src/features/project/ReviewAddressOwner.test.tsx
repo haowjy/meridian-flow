@@ -263,7 +263,7 @@ describe("ReviewAddressOwner", () => {
     });
     const fixture = createReviewScopeFixture();
     const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    fixture.network.listWorkBranches.mockResolvedValue({
+    fixture.network.listWorkBranchDrafts.mockResolvedValue({
       items: [
         {
           ...listed,

@@ -65,13 +65,13 @@ export function useReviewRefresh({
       void Promise.all([
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workBranches(projectId, workId),
+            queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
           },
           { cancelRefetch: false },
         ),
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workBranchPreview(projectId, workId, documentId, itemKey),
+            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
           },
           { cancelRefetch: false },
         ),

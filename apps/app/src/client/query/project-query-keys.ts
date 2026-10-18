@@ -75,14 +75,14 @@ export const projectQueryKeys = {
   /** Client-only, account-cache lifetime: undisplayed/dismissible handoff loss on this document. */
   writerHandoffLoss: (projectId: string, documentId: string) =>
     ["projects", projectId, "documents", documentId, "writer-handoff-loss"] as const,
-  workBranches: (projectId: string, workId: string) =>
+  workBranchDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "branches"] as const,
   /** The branches with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  workBranchPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
+  workDraftPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,

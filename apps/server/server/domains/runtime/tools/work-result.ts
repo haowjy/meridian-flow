@@ -22,11 +22,11 @@ export interface ModelWork {
   pendingDocumentCount: number;
 }
 
-/** `work show`: the Work, its recent chats and its branches. */
+/** `work show`: the Work, its recent chats and its drafts. */
 export interface WorkShowResult {
   work: ModelWork;
   recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
-  branches: {
+  drafts: {
     documentName: string | null;
     contextLocation: ThreadDraftListItem["contextLocation"];
     createdDocument?: boolean;
@@ -84,11 +84,11 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
       ].join("\n"),
     );
   }
-  if (result.branches.length > 0) {
+  if (result.drafts.length > 0) {
     sections.push(
       [
         "Drafts:",
-        ...result.branches.map((draft) => {
+        ...result.drafts.map((draft) => {
           const name = draft.contextLocation
             ? `${draft.contextLocation.scheme}://${draft.contextLocation.path.replace(/^\/+/, "")}`
             : (draft.documentName ?? "Untitled");

@@ -8,7 +8,7 @@
  * gateway (`createYjsGateway`: Hocuspocus, `beforeSync` admission, the persistence service,
  * the coordinator and store) on the scratch database. No port, no dev stack. A "server" is one
  * gateway with its own coordinator; a restart replaces it. The server can be held at
- * `branch.append.beforeCommit` while the socket drops.
+ * `draft.append.beforeCommit` while the socket drops.
  *
  * (f) one tab typing at 50 ms, the socket dropped three times while the server holds that
  *     connection's last frame uncommitted, so every reconnect starts behind a causal gap;
@@ -474,7 +474,7 @@ export const clientResync: Probe = {
             writer.start();
             for (let drop = 0; drop < 3; drop += 1) {
               await sleep(600);
-              const pause = pauseAt("branch.append.beforeCommit");
+              const pause = pauseAt("draft.append.beforeCommit");
               try {
                 await deadline(pause.entered, 10_000, "a held append");
                 const socket = PipeSocket.all.at(-1);
@@ -508,7 +508,7 @@ export const clientResync: Probe = {
             // Hold the fourth of the next five keys' appends: three acknowledged, one held
             // uncommitted, one queued behind it on the connection.
             let appends = 0;
-            const held = pauseAt("branch.append.beforeCommit", () => appends++ === 3);
+            const held = pauseAt("draft.append.beforeCommit", () => appends++ === 3);
             await writer.typeKeys(5, true);
             await deadline(held.entered, 10_000, "the fourth append held");
             const socket = PipeSocket.all.at(-1);

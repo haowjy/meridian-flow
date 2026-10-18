@@ -242,7 +242,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       draftStore: new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]),
       draftCoordinator: {
         commitWriterUpdate: vi.fn(async () => {
-          throw new DraftStaleUpdateError(DRAFT_ID);
+          throw new DraftStaleUpdateError(`Draft ${DRAFT_ID}`);
         }),
       } as never,
       hocuspocus: () => null,

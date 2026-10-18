@@ -157,20 +157,20 @@ export function useWorkBranchCommands({
       discardBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
         batch("discard", items),
       /** Work Files' Apply all and Discard all: one server command over the listed items. */
-      disposeBranches: async (
+      disposeDrafts: async (
         mode: "apply" | "discard",
-        branches: readonly DraftReviewSelection[],
+        drafts: readonly DraftReviewSelection[],
       ): Promise<BranchCommandOutcome[]> => {
-        if (frozen) return branches.map(() => ({ kind: "blocked" }));
-        const before = branches.map((draft) => ({
+        if (frozen) return drafts.map(() => ({ kind: "blocked" }));
+        const before = drafts.map((draft) => ({
           generation: newestKnownProposal(queryClient, refOf(draft)),
           tab: tabOf(draft),
         }));
-        const outcomes = await runWorkWideCommand(queryClient, scope, mode, branches, threadId);
+        const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId);
         outcomes.forEach((outcome, index) => {
-          if (outcome.kind === "discarded") lifecycle.remove(refOf(branches[index]));
+          if (outcome.kind === "discarded") lifecycle.remove(refOf(drafts[index]));
           if (outcome.kind === "applied")
-            promoteIfSettled(refOf(branches[index]), before[index].generation, before[index].tab);
+            promoteIfSettled(refOf(drafts[index]), before[index].generation, before[index].tab);
         });
         return outcomes;
       },

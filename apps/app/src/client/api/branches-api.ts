@@ -36,7 +36,7 @@ import {
 
 import { getJson, httpErrorStatus, postJson } from "./http-client";
 
-export async function listWorkBranches(
+export async function listWorkBranchDrafts(
   projectId: string,
   workId: string,
 ): Promise<ThreadDraftListResponse> {
@@ -152,7 +152,7 @@ export async function discardDraft(
 }
 
 /** Work Files' "Apply all changes": one server command over the listed items. */
-export async function applyAllBranches(
+export async function applyBranchDrafts(
   projectId: string,
   workId: string,
   request: BranchApplyAllRequest,
@@ -165,7 +165,7 @@ export async function applyAllBranches(
 }
 
 /** Work Files' "Discard all changes": one server command that closes the Work's draft. */
-export async function discardAllBranches(
+export async function discardBranch(
   projectId: string,
   workId: string,
   request: BranchDiscardAllRequest,

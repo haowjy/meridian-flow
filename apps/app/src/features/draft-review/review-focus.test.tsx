@@ -46,7 +46,7 @@ const regrouped = {
 const second = { ...listed, itemKey: "draft-b", documentId: "document-b" };
 
 async function reviewOpened(probe: () => ScopeProbe) {
-  await vi.waitFor(() => expect(fixture.network.listWorkBranches).toHaveBeenCalled());
+  await vi.waitFor(() => expect(fixture.network.listWorkBranchDrafts).toHaveBeenCalled());
   await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
   await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
 }
@@ -61,7 +61,7 @@ const target = (id: string) => ({
 beforeEach(() => {
   fixture = createReviewScopeFixture();
   resetBranchCommandRecords();
-  fixture.network.listWorkBranches.mockResolvedValue({ items: [listed, second] });
+  fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [listed, second] });
   fixture.network.getDraftPreview.mockResolvedValue(threeChanges);
 });
 
@@ -72,7 +72,7 @@ describe("a change regrouped more than once", () => {
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
       await act(async () => probe().presented.controller.focusReviewChange(review, target("2")));
-      const previewKey = projectQueryKeys.workBranchPreview(
+      const previewKey = projectQueryKeys.workDraftPreview(
         "project-a",
         "work-a",
         "document-a",

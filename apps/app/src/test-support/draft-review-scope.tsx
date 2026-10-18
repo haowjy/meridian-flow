@@ -6,7 +6,7 @@ import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import * as branchesApi from "@/client/api/branches-api";
 import type { DraftRef } from "@/client/query/branch-command-record";
-import { useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { ThreadStoreProvider } from "@/client/stores";
 import { DocumentSession } from "@/core/editor/document-session";
@@ -258,14 +258,14 @@ export async function renderReviewScopes(
     current.presented = presented;
     const chat = {
       commands: chatCommands,
-      files: useWorkBranches(options.projectId ?? "project-a", chatWork.id).files ?? [],
+      files: useWorkBranchDrafts(options.projectId ?? "project-a", chatWork.id).files ?? [],
     };
     current.chat = chat;
     const third = {
       commands: thirdCommands,
       files:
-        useWorkBranches(options.projectId ?? "project-a", (options.thirdWork ?? workC).id).files ??
-        [],
+        useWorkBranchDrafts(options.projectId ?? "project-a", (options.thirdWork ?? workC).id)
+          .files ?? [],
     };
     current.third = third;
     return (
@@ -321,10 +321,10 @@ export function createReviewScopeFixture(
     act(notify);
   });
   const network = {
-    listWorkBranches: vi.spyOn(branchesApi, "listWorkBranches"),
+    listWorkBranchDrafts: vi.spyOn(branchesApi, "listWorkBranchDrafts"),
     getDraftPreview: vi.spyOn(branchesApi, "getDraftPreview"),
-    applyAllBranches: vi.spyOn(branchesApi, "applyAllBranches"),
-    discardAllBranches: vi.spyOn(branchesApi, "discardAllBranches"),
+    applyBranchDrafts: vi.spyOn(branchesApi, "applyBranchDrafts"),
+    discardBranch: vi.spyOn(branchesApi, "discardBranch"),
     observeBranchCommand: vi.spyOn(branchesApi, "observeBranchCommand"),
     applyDraft: vi.spyOn(branchesApi, "applyDraft"),
     applyDraftChanges: vi.spyOn(branchesApi, "applyDraftChanges"),

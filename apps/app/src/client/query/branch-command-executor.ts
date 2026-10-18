@@ -16,10 +16,10 @@ import type {
 import { MAX_DISCARD_MEMBER_PART_KEYS } from "@meridian/contracts/branches";
 import { onlineManager, type QueryClient } from "@tanstack/react-query";
 import {
-  applyAllBranches,
+  applyBranchDrafts,
   applyDraft,
   applyDraftChanges,
-  discardAllBranches,
+  discardBranch,
   discardDraft,
   observeBranchCommand,
 } from "@/client/api/branches-api";
@@ -117,14 +117,14 @@ export function listedDocumentName(
 ): string | null {
   return (
     queryClient
-      .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranches(projectId, workId))
+      .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranchDrafts(projectId, workId))
       ?.find((item) => item.itemKey === itemKey)?.documentName ?? null
   );
 }
 
 export function newestKnownProposal(queryClient: QueryClient, draft: DraftRef): number | undefined {
   const cached = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workBranchPreview(
+    projectQueryKeys.workDraftPreview(
       draft.projectId,
       draft.workId,
       draft.documentId,
@@ -133,7 +133,7 @@ export function newestKnownProposal(queryClient: QueryClient, draft: DraftRef): 
   );
   const row = queryClient
     .getQueryData<ThreadDraftListItem[]>(
-      projectQueryKeys.workBranches(draft.projectId, draft.workId),
+      projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
     )
     ?.find((item) => item.itemKey === draft.itemKey);
   const known = [
@@ -168,7 +168,7 @@ function refresh(
   const documents = ["projects", scope.projectId, "works", scope.workId, "documents"];
   return Promise.all([
     queryClient.invalidateQueries({
-      queryKey: projectQueryKeys.workBranches(scope.projectId, scope.workId),
+      queryKey: projectQueryKeys.workBranchDrafts(scope.projectId, scope.workId),
     }),
     preview
       ? queryClient.invalidateQueries({
@@ -194,7 +194,7 @@ type DiscardBody = DraftDiscardRequest;
 function listedRow(queryClient: QueryClient, draft: DraftRef): ThreadDraftListItem | undefined {
   return queryClient
     .getQueryData<ThreadDraftListItem[]>(
-      projectQueryKeys.workBranches(draft.projectId, draft.workId),
+      projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
     )
     ?.find((item) => item.itemKey === draft.itemKey);
 }
@@ -206,7 +206,7 @@ function branchIdOf(
   row: ThreadDraftListItem | undefined,
 ): string | null {
   const preview = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workBranchPreview(
+    projectQueryKeys.workDraftPreview(
       draft.projectId,
       draft.workId,
       draft.documentId,
@@ -339,7 +339,7 @@ async function execute(
   try {
     if (command.target === "all" && mode === "apply")
       void queryClient.cancelQueries({
-        queryKey: projectQueryKeys.workBranches(draft.projectId, draft.workId),
+        queryKey: projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
       });
     const row = listedRow(queryClient, draft);
     const branchId = branchIdOf(queryClient, draft, row);
@@ -548,7 +548,7 @@ export function runDraftSelection(
 
 function cachedActivePreview(queryClient: QueryClient, draft: DraftRef) {
   const cached = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workBranchPreview(
+    projectQueryKeys.workDraftPreview(
       draft.projectId,
       draft.workId,
       draft.documentId,
@@ -768,7 +768,7 @@ export function runWorkWideCommand(
 ): Promise<BranchCommandOutcome[]> {
   const blocked: BranchCommandOutcome = { kind: "blocked" };
   const rows = queryClient.getQueryData<ThreadDraftListItem[]>(
-    projectQueryKeys.workBranches(scope.projectId, scope.workId),
+    projectQueryKeys.workBranchDrafts(scope.projectId, scope.workId),
   );
   const targets = branches.flatMap((draft) => {
     const row = rows?.find((item) => item.itemKey === draft.itemKey);
@@ -839,7 +839,7 @@ async function executeWorkWide(
   try {
     if (mode === "apply")
       void queryClient.cancelQueries({
-        queryKey: projectQueryKeys.workBranches(scope.projectId, scope.workId),
+        queryKey: projectQueryKeys.workBranchDrafts(scope.projectId, scope.workId),
       });
     const items = claims.map(({ row }) => ({
       itemKey: row.itemKey,
@@ -867,8 +867,8 @@ async function executeWorkWide(
           settleCommand<BranchApplyAllResponse | BranchDiscardAllResponse>({
             send: () =>
               mode === "apply"
-                ? applyAllBranches(scope.projectId, scope.workId, { branchId, commandId, items })
-                : discardAllBranches(scope.projectId, scope.workId, { branchId, commandId }),
+                ? applyBranchDrafts(scope.projectId, scope.workId, { branchId, commandId, items })
+                : discardBranch(scope.projectId, scope.workId, { branchId, commandId }),
             observe: () => observeBranchCommand(scope.projectId, scope.workId, commandId),
             live,
           }),

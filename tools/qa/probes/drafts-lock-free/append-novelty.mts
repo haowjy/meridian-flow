@@ -151,7 +151,7 @@ export const appendNovelty: Probe = {
         const draft = await seedDraft(harness, "novelty-b");
         const { u1, u2 } = twoKeys(draft);
         const tab = await openRoom(harness, coordinator, draft);
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const first = independently(() => tab.send(u1));
           await pause.entered;
@@ -182,7 +182,7 @@ export const appendNovelty: Probe = {
         const { u1 } = twoKeys(draft);
         const tab = await openRoom(harness, coordinator, draft);
         const before = await durable(harness, draft.draftId);
-        const pause = pauseAt("branch.append.beforeCommit");
+        const pause = pauseAt("draft.append.beforeCommit");
         try {
           const first = independently(() => tab.send(u1));
           await pause.entered;

@@ -65,7 +65,7 @@ export function createWriterFrames(
     if (!write) return { admitted: false };
     const wrote = await runtime.commitOnce(write, {});
     if (!wrote) return { admitted: false };
-    await collabHook("branch.append.afterCommit");
+    await collabHook("draft.append.afterCommit");
     compactIfLong(frame.draftId);
     return { admitted: true };
   }
@@ -90,7 +90,7 @@ export function createWriterFrames(
       targetDocument: replica.doc,
       update: frame.updateData,
       validateTarget() {
-        if (!admissible) throw new DraftStaleUpdateError(frame.draftId);
+        if (!admissible) throw new DraftStaleUpdateError(`Draft ${frame.draftId}`);
       },
       isContained: () => runtime.containment.contains(replica.doc, frame.updateData),
       append: async () =>

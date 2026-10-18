@@ -50,7 +50,7 @@ export type InverseDocument = {
   uri: string;
   live: Y.Doc;
   history: StoredInversePart[];
-  branches: ReadonlyMap<
+  drafts: ReadonlyMap<
     string,
     { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
   >;
@@ -144,7 +144,7 @@ function prepare(
           .flatMap((part) => (part.origin.kind === "pending" ? [part.origin.draftId] : []))
           .find((id) => ownHolders.has(id)) ?? null;
     }
-    const draft = draftId ? document.branches.get(draftId) : undefined;
+    const draft = draftId ? document.drafts.get(draftId) : undefined;
     const skips: TurnInverseSkip[] = [];
     const heldDraftIds: string[] = [];
     const selection: InverseSelection[] = [];
@@ -184,7 +184,7 @@ function prepare(
         heldDraftIds.push(holder);
         skip(
           part,
-          `The draft in ${document.branches.get(holder)?.name ?? holder} holds a restored copy of this text. Apply or discard that draft first.`,
+          `The draft in ${document.drafts.get(holder)?.name ?? holder} holds a restored copy of this text. Apply or discard that draft first.`,
         );
         continue;
       }

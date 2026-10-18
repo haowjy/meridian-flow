@@ -10,7 +10,7 @@ import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import { useWriteModeToolbarControl } from "./WriteModeControl";
 
 vi.mock("@/client/api/branches-api", () => ({
-  listWorkBranches: vi.fn(() => new Promise(() => {})),
+  listWorkBranchDrafts: vi.fn(() => new Promise(() => {})),
 }));
 
 const branchOf = (documentId: string): ThreadDraftListItem => ({
@@ -22,11 +22,11 @@ const branchOf = (documentId: string): ThreadDraftListItem => ({
 describe("write-mode control draft count", () => {
   it("counts the documents waiting in the chosen Work's draft", async () => {
     const queryClient = new QueryClient();
-    queryClient.setQueryData(projectQueryKeys.workBranches("p", "work-a"), [
+    queryClient.setQueryData(projectQueryKeys.workBranchDrafts("p", "work-a"), [
       branchOf("doc-1"),
       branchOf("doc-2"),
     ]);
-    queryClient.setQueryData(projectQueryKeys.workBranches("p", "work-b"), []);
+    queryClient.setQueryData(projectQueryKeys.workBranchDrafts("p", "work-b"), []);
     const seen: Record<string, string> = {};
     function Probe({ workId }: { workId: string }) {
       const control = useWriteModeToolbarControl({

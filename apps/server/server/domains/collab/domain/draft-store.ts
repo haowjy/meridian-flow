@@ -252,8 +252,9 @@ export type DraftStore = {
 };
 
 export class DraftStaleUpdateError extends Error {
-  constructor(readonly draftId: string) {
-    super(`Draft ${draftId} update did not apply to the current generation`);
+  // `subject` names what went stale, "Draft <id>" or "Branch <id>"; no caller reads it.
+  constructor(readonly subject: string) {
+    super(`${subject} update did not apply to the current generation`);
     this.name = "DraftStaleUpdateError";
   }
 }

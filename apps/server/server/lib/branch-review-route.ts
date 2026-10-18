@@ -69,7 +69,7 @@ export function selectBranchRouteServices(app: AppServices): BranchRouteServices
   };
 }
 
-export async function requireDraftWorkAccess(
+export async function requireBranchWorkAccess(
   deps: Pick<BranchRouteServices, "projects" | "works">,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
 ): Promise<Work> {
@@ -243,7 +243,7 @@ export async function handleBranchCommandObservation(
   deps: BranchRouteServices,
   input: CommandScope & { commandId: string },
 ): Promise<BranchCommandObservation> {
-  await requireDraftWorkAccess(deps, input);
+  await requireBranchWorkAccess(deps, input);
   const id = BranchCommandIdSchema.safeParse(input.commandId);
   if (!id.success) throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
   const found = await deps.documentSync.draftReview.lookupCommand({
@@ -277,7 +277,7 @@ async function draftGrants<N extends FileNeed>(
   need: N,
   options: { live?: boolean } = {},
 ): Promise<FileGrant<N>[]> {
-  await requireDraftWorkAccess(deps, input);
+  await requireBranchWorkAccess(deps, input);
   const draft = await requireFileGrant(
     deps.fileAccess,
     input.userId,
@@ -348,7 +348,7 @@ export async function handleWorkBranchListRequest(
   deps: BranchRouteServices,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
-  await requireDraftWorkAccess(deps, input);
+  await requireBranchWorkAccess(deps, input);
   const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
   // Readable in the draft's view, where its created documents are (file-access §6); a
   // document deleted live is no longer readable anywhere, but stays the draft's item.
@@ -401,11 +401,11 @@ export async function handleDocumentDraftHintsRequest(
   };
 }
 
-export async function handleWorkBranchPreviewRequest(
+export async function handleWorkDraftPreviewRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; itemKey: string },
 ): Promise<DraftPreviewResponse> {
-  await requireDraftWorkAccess(deps, input);
+  await requireBranchWorkAccess(deps, input);
   const resolved = await deps.documentSync.draftReview.resolveItem(input);
   if (!resolved || resolved.documentId !== input.documentId) {
     return { status: "gone", itemKey: input.itemKey };
@@ -470,7 +470,7 @@ async function commandIngress(
   options: { itemApply?: boolean },
   prepare: () => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
-  await requireDraftWorkAccess(deps, input);
+  await requireBranchWorkAccess(deps, input);
   const replay = await recorded(deps, envelope, options);
   if (replay) return replay;
   const replayOr = async (cause: unknown): Promise<CommandRouteResult> => {
@@ -506,7 +506,7 @@ async function commandIngress(
  * Item Apply (§4.5): one rendered item through the one Apply path. A held or stale item
  * answers 409, never `applied`; a command id already used answers its stored result.
  */
-export async function handleApplyWorkBranchRequest(
+export async function handleApplyWorkDraftRequest(
   deps: BranchRouteServices,
   input: CommandScope & {
     documentId: DocumentId;
@@ -568,7 +568,7 @@ const goneDraft = (branchId: BranchId) => (): CommandRouteResult => ({
 });
 
 /** Per-change Apply: complete server-vended classes; refusals are 200 body statuses. */
-export async function handleApplyWorkBranchChangesRequest(
+export async function handleApplyWorkDraftChangesRequest(
   deps: BranchRouteServices,
   input: CommandScope & {
     documentId: DocumentId;
@@ -653,7 +653,7 @@ export async function handleApplyAllWorkBranchRequest(
  * Item Discard (the whole item through the one kernel, §12.3) or per-change Discard (the
  * clicked classes, §4.1). A document deleted live authorizes through the draft (§13.3).
  */
-export async function handleDiscardWorkBranchRequest(
+export async function handleDiscardWorkDraftRequest(
   deps: BranchRouteServices,
   input: CommandScope & {
     documentId: DocumentId;

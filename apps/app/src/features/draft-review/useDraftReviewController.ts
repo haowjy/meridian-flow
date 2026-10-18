@@ -129,9 +129,9 @@ export type DraftReviewController = {
   startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
   apply: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
   discard: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
-  disposeBranches: (
+  disposeDrafts: (
     mode: "apply" | "discard",
-    branches: readonly DraftReviewSelection[],
+    drafts: readonly DraftReviewSelection[],
   ) => Promise<BranchCommandOutcome[]>;
 };
 
@@ -198,7 +198,7 @@ export function useDraftReviewController({
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     if (inline) {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workBranchPreview(
+        queryKey: projectQueryKeys.workDraftPreview(
           projectId,
           workId,
           inline.documentId,
@@ -290,7 +290,7 @@ export function useDraftReviewController({
 
   useReviewCommandCompletion({ projectId, workId, activeRef, stateRef, dispatch });
 
-  const { applyChanges, discardChanges, disposeBranches } = commands;
+  const { applyChanges, discardChanges, disposeDrafts } = commands;
   const startDraft = useCallback(
     (mode: "apply" | "discard", draft: DraftReviewSelection) => {
       const generation = newestKnownProposal(queryClient, { projectId, workId, ...draft });
@@ -348,7 +348,7 @@ export function useDraftReviewController({
       startDraft,
       apply,
       discard,
-      disposeBranches,
+      disposeDrafts,
     }),
     [
       commands.commandChange,
@@ -380,7 +380,7 @@ export function useDraftReviewController({
       startDraft,
       apply,
       discard,
-      disposeBranches,
+      disposeDrafts,
     ],
   );
 }

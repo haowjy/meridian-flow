@@ -3,14 +3,14 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
-  handleDiscardWorkBranchRequest,
+  handleDiscardWorkDraftRequest,
   parseDraftDiscardSelection,
   selectBranchRouteServices,
 } from "../../../../../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const result = await handleDiscardWorkBranchRequest(selectBranchRouteServices(app), {
+  const result = await handleDiscardWorkDraftRequest(selectBranchRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,

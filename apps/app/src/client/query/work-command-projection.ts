@@ -16,18 +16,20 @@ import {
 } from "./work-commands";
 
 /** A Work the server has not created yet, as the writer asked for it. */
-export type WorkBranch = Pick<Work, "name" | "goal" | "lastActivityAt"> & { id: ParsedRequestId };
+export type UncreatedWork = Pick<Work, "name" | "goal" | "lastActivityAt"> & {
+  id: ParsedRequestId;
+};
 
 /**
  * A Work the server has not created yet: pending while its create is on its
  * way, failed once it was refused.
  */
-export type WorkCreation = { work: WorkBranch; phase: "pending" | "failed" };
+export type WorkCreation = { work: UncreatedWork; phase: "pending" | "failed" };
 
-function branchWork(
+function uncreatedWork(
   { workId, name, goal }: WorkCommandVariables["create"],
   submittedAt: number,
-): WorkBranch {
+): UncreatedWork {
   return { id: workId, name, goal: goal ?? null, lastActivityAt: isoAt(submittedAt) };
 }
 
@@ -56,7 +58,7 @@ export function projectWorkCommands(
     const before = byId.get(record.workId);
     if (!before && record.operation === "create" && !record.committed) {
       creations.set(record.workId, {
-        work: branchWork(record.variables, record.submittedAt),
+        work: uncreatedWork(record.variables, record.submittedAt),
         phase: refused ? "failed" : "pending",
       });
       continue;

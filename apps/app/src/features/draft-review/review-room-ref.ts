@@ -38,10 +38,10 @@ export function reviewRoomRef(
     async changed() {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workBranches(draft.projectId, draft.workId),
+          queryKey: projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
         }),
         queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workBranchPreview(
+          queryKey: projectQueryKeys.workDraftPreview(
             draft.projectId,
             draft.workId,
             draft.documentId,

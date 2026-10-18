@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { type ThreadBranchesStatus, useWorkBranches } from "@/client/query/useWorkBranches";
+import { useWorkBranchDrafts, type WorkDraftListStatus } from "@/client/query/useWorkBranchDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { PresentedDocument } from "@/features/project/presented-document";
@@ -33,7 +33,7 @@ export type DraftReviewContextValue = {
   controller: DraftReviewController;
   roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
-  branches: ThreadBranchesStatus;
+  drafts: WorkDraftListStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
@@ -112,8 +112,8 @@ export function useDraftReviewScopeValue({
   const effectiveProjectId = projectId ?? "";
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
-  const branches = useWorkBranches(projectId, workId);
-  const files = branches.files ?? [];
+  const drafts = useWorkBranchDrafts(projectId, workId);
+  const files = drafts.files ?? [];
   const localStateOwner = useDraftReviewStateOwner();
   const reviewState = stateOwner ?? localStateOwner;
   const scope = useRef({ projectId: effectiveProjectId, workId: effectiveWorkId, queryClient });
@@ -167,7 +167,7 @@ export function useDraftReviewScopeValue({
     controller.exitReview();
   }, [effectiveProjectId, effectiveWorkId, queryClient, controller.exitReview]);
 
-  const fileForDocument = branches.fileForDocument;
+  const fileForDocument = drafts.fileForDocument;
 
   const reviewRoomNameForDraft = useCallback(
     (documentId: string, itemKey: string) =>
@@ -213,7 +213,7 @@ export function useDraftReviewScopeValue({
       controller,
       roomOwner,
       files,
-      branches,
+      drafts,
       fileForDocument,
       reviewRoomNameForDraft,
       activeEditorDocumentId,
@@ -223,7 +223,7 @@ export function useDraftReviewScopeValue({
       controller,
       roomOwner,
       files,
-      branches,
+      drafts,
       fileForDocument,
       reviewRoomNameForDraft,
       activeEditorDocumentId,

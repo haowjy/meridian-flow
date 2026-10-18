@@ -41,7 +41,7 @@ import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
-import type { DocumentDraftOrigin } from "./domain/ports/work-branch-pending-store.js";
+import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { DerivedReview } from "./domain/review-cut.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -378,7 +378,7 @@ export type DraftReviewApi = {
   branchesChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
-  }): Promise<DocumentDraftOrigin[]>;
+  }): Promise<DocumentBranchOrigin[]>;
   /** The Work's active draft's listed items, live text tokens unread: what Apply authorizes. */
   items(input: {
     workId: WorkId;
@@ -440,7 +440,7 @@ export type CollabBranches = {
 };
 
 /** The one branches resolver (Work → active draft, made only at the write boundary). */
-export type CollabDraftResolver = {
+export type CollabBranchResolver = {
   branches: Branches;
   /** A drain for the debounced registration of writers' review-room edits (§10.7). */
   draftLinks: Pick<DraftAheadRegistration, "flush">;
@@ -544,7 +544,7 @@ export type CollabDomain = CollabTransport &
   BranchPushAccess &
   DraftPeerShadowAccess &
   CollabBranches &
-  CollabDraftResolver &
+  CollabBranchResolver &
   DocumentCreationAggregate;
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";
