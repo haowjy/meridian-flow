@@ -1,5 +1,5 @@
 /**
- * draft-command-rejection — what a failed Apply or Discard request was, from
+ * branch-command-rejection — what a failed Apply or Discard request was, from
  * the error it threw. The one place that decides between the three kinds of
  * failure the writer is told about differently:
  *

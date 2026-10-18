@@ -1,4 +1,4 @@
-/** Review composition over a warm live editor and the scope owner's addressed branch binding. */
+/** Review composition over a warm live editor and the scope owner's addressed draft binding. */
 import { Trans } from "@lingui/react/macro";
 import { operationKey, type ReviewOperation } from "@meridian/contracts/branches";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";

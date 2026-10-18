@@ -185,7 +185,7 @@ describe("document transport server acknowledgement", () => {
     expect(harness.acknowledged).toBe(true);
   });
 
-  // A branch room's server sequences each Update on the bytes it already has,
+  // A draft room's server sequences each Update on the bytes it already has,
   // so the handshake upload (SyncStep2) goes first there; a live room keeps the
   // provider's order, whose SyncStep2 its server marks for collision reconciliation.
   it.each([

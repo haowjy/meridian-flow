@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
 
-/** More refused branches than this are summarised, so the notice never outgrows the header. */
+/** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
 
 export function ReviewFailureNotices({
@@ -18,7 +18,7 @@ export function ReviewFailureNotices({
   className,
 }: {
   commandError: BranchCommandFailure | null;
-  /** Other branches of the Work whose last Apply or Discard was refused or lost. */
+  /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
   failedElsewhere?: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   onOpenNext: (row: ReviewFileTarget) => void;
   touch?: boolean;

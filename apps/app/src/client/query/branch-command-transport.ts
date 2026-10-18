@@ -1,5 +1,5 @@
 /**
- * draft-command-transport — carries one Apply or Discard command to its terminal answer.
+ * branch-command-transport — carries one Apply or Discard command to its terminal answer.
  *
  * A command is one `commandId` with one frozen body. A lost request is resent as is while the claim
  * is live (the server deduplicates); a 202 is observed with backoff and on window focus until the

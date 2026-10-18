@@ -18,7 +18,7 @@ deliver one room's 4406/4407 to every attached provider and reset healthy
 rooms. The session registry remains the per-room deduplication owner; the cost
 is one physical socket per attached room. The soft-cap warning runs when a live
 session is added but compares the registry's total session count, including
-branch sessions; it does not evict sessions or block attachments.
+draft sessions; it does not evict sessions or block attachments.
 
 The client declares its schema as the sole WebSocket subprotocol on each Yjs
 socket. `CollabSchemaWebSocket` formats the current version through
@@ -51,19 +51,19 @@ The ordering is a live transport contract, not a test-double detail. A witness
 for it must exercise `test-support/DocumentSocketHarness`, as the transport
 acknowledgement and remote whole-discard probes do.
 
-## Branch rooms: the handshake upload goes first
+## Draft rooms: the handshake upload goes first
 
-A branch (draft) room's server appends each Update on top of the bytes it
-already holds and closes `4207 branch-prefix-missing` when an Update depends
+A draft room's server appends each Update on top of the bytes it
+already holds and closes `4207 draft-prefix-missing` when an Update depends
 on bytes it lacks. Hocuspocus's own order would produce exactly that on every
 reconnect: the offline queue flushes on the socket's first inbound frame, and
 keys typed during the handshake go out at once, both before the client's
 SyncStep2 (its reply to the server's SyncStep1).
 
-So on `branch:` rooms only, `RoomScopedHocuspocusWebsocket.send` holds every
+So on `draft:` rooms only, `RoomScopedHocuspocusWebsocket.send` holds every
 Sync Update offered on an open socket until that socket's SyncStep2 has been
 written, then releases the held frames in order through the same `send`. Wire
-order on every branch connection is `step1, step2, [released updates],
+order on every draft connection is `step1, step2, [released updates],
 [new updates]`.
 
 - **The SyncStep2 is the causal prefix.** It is the whole Y.Doc diffed against
@@ -119,7 +119,7 @@ while local updates are still unacknowledged: the server refused them, and a
 reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
 resets with reason `access-changed` instead of reconnecting, and
 `DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
-session. A branch (draft review) room rebuilds through
+session. A draft (review) room rebuilds through
 `rebuildDraftRoom`, which starts a fresh session from the server's state. A
 live room (scratch) goes through the registry's `dropRefusedRoom`, which
 revokes each lease's access: the session is torn down and its IndexedDB copy,
@@ -133,7 +133,7 @@ read-only rather than reopening again.
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with
 the contracts parser, ignores unknown message types, and exposes typed,
 per-message subscriptions. Live `DocumentSession`s subscribe to
-`change_event`; branch sessions deliberately do not.
+`change_event`; draft sessions deliberately do not.
 
 ## Dev-only wire observation
 

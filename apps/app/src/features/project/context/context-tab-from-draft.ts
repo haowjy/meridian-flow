@@ -1,7 +1,7 @@
 /**
  * context-tab-from-draft — ContextTab synthesized from a work-draft group.
  *
- * Branch-only NEW documents have no context-tree entry until Apply, so the
+ * Draft-only NEW documents have no context-tree entry until Apply, so the
  * route→tab auto-open (ContextPaneController → findContextFile) has nothing
  * to match and review lands on an empty pane (#153). The document itself is
  * real — its `documents` row and Yjs state exist from write time — only the
@@ -36,7 +36,7 @@ export function contextTabFromDraftGroup(group: {
   const { scheme, path } = location;
   const filetype = filetypeForPath(path);
   const classification = classifyFiletype(filetype);
-  // Branch review only exists for Yjs-tracked editable documents; a path that
+  // Draft review only exists for Yjs-tracked editable documents; a path that
   // doesn't resolve to a schema has no editor surface to synthesize.
   if (classification.kind !== "tracked") return null;
   // Tab names are the path basename, the stored name (tree `nameFromPath`

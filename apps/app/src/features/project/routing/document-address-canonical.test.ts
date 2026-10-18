@@ -1,4 +1,4 @@
-/** Hidden reviews repair canonical locators while retaining their selected Work and branch. */
+/** Hidden reviews repair canonical locators while retaining their selected Work and draft. */
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
 import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
@@ -9,7 +9,7 @@ it("follows a reviewed identity through a rename or cross-source move", () => {
     projectId: "project",
     destination: { kind: "document", scheme: "kb", path: "Withern" },
     work: { kind: "id", id: "00000000-0000-4000-8000-000000000001" },
-    itemKey: "branch",
+    itemKey: "draft",
   } as ProjectAddress;
   const document = {
     kind: "file",

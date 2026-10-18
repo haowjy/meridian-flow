@@ -1,4 +1,4 @@
-/** Real branch sessions and owners, with a wire whose sync and acknowledgements the test controls. */
+/** Real draft sessions and owners, with a wire whose sync and acknowledgements the test controls. */
 import { vi } from "vitest";
 import * as Y from "yjs";
 import {

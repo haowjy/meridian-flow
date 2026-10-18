@@ -1,4 +1,4 @@
-/** useDraftReviewController — shared state machine for reviewing AI document branches. */
+/** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
@@ -68,7 +68,7 @@ export type DraftReviewController = {
   isDisposing: boolean;
   /**
    * Every Apply and Discard control disables on this: a disposition is in
-   * flight, or the Work is archived and its branches are frozen (D30). Review
+   * flight, or the Work is archived and its drafts are frozen (D30). Review
    * stays available on a frozen Work.
    */
   dispositionLocked: boolean;
@@ -142,7 +142,7 @@ export function useDraftReviewController({
   stateOwner,
 }: {
   projectId: string;
-  /** The Work whose branches this surface reviews; null scopes nothing. */
+  /** The Work whose drafts this surface reviews; null scopes nothing. */
   work: Work | null;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;

@@ -51,9 +51,9 @@ export type ReviewHeaderModel = {
   /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
   commandError: BranchCommandFailure | null;
   /**
-   * The Work's other listed branches that hold a refusal or a lost answer: Apply
+   * The Work's other listed drafts that hold a refusal or a lost answer: Apply
    * draft and Apply all move on (or finish) while the command runs, so the
-   * review the writer is in must still say which branches did not apply.
+   * review the writer is in must still say which drafts did not apply.
    */
   failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
@@ -62,10 +62,10 @@ export type ReviewHeaderModel = {
 };
 
 /**
- * What the Work's branches hold as refused or lost, as the review of
+ * What the Work's drafts hold as refused or lost, as the review of
  * (`documentId`, `itemKey`) reads it: its own draft's failure, every listed
  * draft's (a draft the review moved on from still says it was refused), and
- * the other branches' separately. Pure reads of the command records, so the
+ * the other drafts' separately. Pure reads of the command records, so the
  * identity row's notices can read them beside the header model.
  */
 export function useReviewFailures({
@@ -77,7 +77,7 @@ export function useReviewFailures({
 }) {
   const { controller, files } = useDraftReview();
   const commandRecords = useBranchCommandRecords();
-  const branchOf = (row: { documentId: string; draft: { itemKey: string } }) => ({
+  const draftOf = (row: { documentId: string; draft: { itemKey: string } }) => ({
     projectId: controller.projectId,
     workId: controller.workId,
     documentId: row.documentId,
@@ -91,7 +91,7 @@ export function useReviewFailures({
   });
   const failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[] = [];
   for (const row of files) {
-    const failure = branchCommandFailure(commandRecords, branchOf(row));
+    const failure = branchCommandFailure(commandRecords, draftOf(row));
     if (!failure) continue;
     if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
   }

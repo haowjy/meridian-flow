@@ -1,7 +1,7 @@
 /**
  * branches-api — HTTP client for AI document draft review endpoints.
  *
- * Typed wrappers for listing active thread branches, reading live-vs-draft
+ * Typed wrappers for listing the active document drafts in a Work’s branch, reading live-vs-draft
  * markdown previews, and applying/discarding a draft without exposing route
  * strings to query hooks.
  */
@@ -63,10 +63,10 @@ export async function getDraftPreview(
     { signal },
   );
   if (preview.status === "active" && !preview.reviewRoomName) {
-    throw new Error("Branch preview response is missing reviewRoomName");
+    throw new Error("Draft preview response is missing reviewRoomName");
   }
   if (preview.status === "active" && typeof preview.draftGeneration !== "number") {
-    throw new Error("Branch preview response is missing draftGeneration");
+    throw new Error("Draft preview response is missing draftGeneration");
   }
   return preview;
 }
@@ -102,7 +102,7 @@ export async function applyDraft(
     (response.status === "applied" || response.status === "held" || response.status === "stale") &&
     response.itemKey !== request.itemKey
   )
-    throw new Error("Branch Apply response did not identify the requested item");
+    throw new Error("Draft Apply response did not identify the requested item");
   return response;
 }
 
@@ -122,7 +122,7 @@ export async function applyDraftChanges(
     response.itemKey !== request.itemKey ||
     !["applied", "stale", "gone", "whole_item", "incomplete_class"].includes(response.status)
   )
-    throw new Error("Branch change Apply response did not identify the requested item");
+    throw new Error("Draft change Apply response did not identify the requested item");
   if (
     response.status === "applied" &&
     (!Array.isArray(response.operationIds) ||
@@ -131,9 +131,7 @@ export async function applyDraftChanges(
       !Array.isArray(response.closureClassIds) ||
       response.closureClassIds.length === 0)
   )
-    throw new Error(
-      "Branch change Apply response did not prove the requested changes were applied",
-    );
+    throw new Error("Draft change Apply response did not prove the requested changes were applied");
   return response;
 }
 
@@ -164,7 +162,7 @@ export async function applyBranchDrafts(
   );
 }
 
-/** Work Files' "Discard all changes": one server command that closes the Work's draft. */
+/** Work Files' "Discard all changes": one server command that closes the Work's branch. */
 export async function discardBranch(
   projectId: string,
   workId: string,

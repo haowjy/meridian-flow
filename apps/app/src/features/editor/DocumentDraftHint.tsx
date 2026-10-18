@@ -1,8 +1,8 @@
 /**
  * DocumentDraftHint — a line under the identity row saying that branches other than the one
  * this view works in have changes to the open document, with a Review action that opens that
- * draft's review. One draft: its label and Review. Several: a count and a short list.
- * Renders nothing when there are none, so a document no draft touches shows no hint.
+ * branch's document-draft review. One branch: its label and Review. Several: a count and a short list.
+ * Renders nothing when there are none, so a document no branch touches shows no hint.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";

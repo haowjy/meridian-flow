@@ -107,12 +107,12 @@ function WorkSettlement({
         .then((view) => {
           if (attempt.signal.aborted) return;
           queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-          const currentBranches =
+          const currentDrafts =
             queryClient.getQueryData<ThreadDraftListItem[]>(
               projectQueryKeys.workBranchDrafts(projectId, workId),
             ) ?? [];
           for (const draft of lifecycle.presentations(projectId)) {
-            if (!isOrphan(draft, currentBranches) || JSON.stringify(scopeFor(draft)) !== key)
+            if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
               continue;
             if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
             else lifecycle.remove(draft);
@@ -138,10 +138,10 @@ function WorkSettlement({
   const presentedRef = useRef(presented);
   presentedRef.current = presented;
   const openReview = useOptionalOpenEditorReview();
-  // Branch-only means "hidden live". The replica showing the document (by its
+  // Draft-only means "hidden live". The replica showing the document (by its
   // current id or an alias: a join, New file, a link's Create) makes it live at
   // once for every Work. A tab the writer was looking at keeps the review it
-  // showed, opened over the live document: the view the chip's Branch choice gives.
+  // showed, opened over the live document: the view the chip's Draft choice gives.
   useEffect(() => {
     if (drafts.status !== "ready") return;
     const identities = resourceIdentityIndex(projection.records);

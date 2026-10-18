@@ -79,7 +79,7 @@ export function readDockSnapshot(
 }
 
 /**
- * The Editor workspace drops `reviews` because it re-derives them from the Work's branches list. Dock
+ * The Editor workspace drops `reviews` because it re-derives them from the Work's drafts list. Dock
  * restore admission never consults that list (a hidden draft is addressable only by its saved selector), and
  * nothing else says a restored tab is draft-only rather than a live document under review, so the
  * dock's one entry is durable.

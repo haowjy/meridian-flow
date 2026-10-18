@@ -101,7 +101,7 @@ it("focuses this document, then applies and discards its classes without closing
           "document-a",
           {
             commandId: expect.any(String),
-            branchId: "work-draft-a",
+            branchId: "work-branch-a",
             itemKey: "draft-a",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
@@ -122,7 +122,7 @@ it("focuses this document, then applies and discards its classes without closing
           "document-a",
           {
             commandId: expect.any(String),
-            branchId: "work-draft-a",
+            branchId: "work-branch-a",
             itemKey: "draft-a",
             closureClassIds: ["class-2"],
             memberPartKeys: [],

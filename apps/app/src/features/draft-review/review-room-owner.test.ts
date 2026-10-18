@@ -4,7 +4,7 @@ import {
   beginBranchCommand,
   confirmBranchCommand,
   currentChangeCommandRecords,
-  readBranchesAfterCommands,
+  readDraftsAfterCommands,
   readPreviewAfterChangeCommands,
   resetBranchCommandRecords,
 } from "@/client/query/branch-command-record";
@@ -203,7 +203,7 @@ it("retains an applied row's generation evidence without presenting it as a prop
     { type: "generationObserved", ...draftA, draftGeneration: 6, proposal: true },
     { type: "generationObserved", ...draftA, draftGeneration: 6, proposal: true },
   ]);
-  const freshRows = await readBranchesAfterCommands(scope, async () => [
+  const freshRows = await readDraftsAfterCommands(scope, async () => [
     { ...listed, draftGeneration: 5 },
   ]);
   const freshPreview = await readPreviewAfterChangeCommands(draft, async () => proposal(5, "2"));

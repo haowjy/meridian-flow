@@ -20,7 +20,7 @@
  * reconnect would replay them from this Y.Doc, so the transport resets instead
  * and the owner rebuilds the room from the server's state.
  *
- * A branch room's update refusal (`1008`) is bounded. One refusal reconnects
+ * A draft room's update refusal (`1008`) is bounded. One refusal reconnects
  * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
  * with no acknowledgement between them, the room ends `DRAFT_UPDATES_REFUSED`
  * and keeps its outbox for the owner to show. Live rooms never count. A
@@ -28,7 +28,7 @@
  * update before the bytes it depends on, and the reconnect's handshake repairs
  * that, so it reconnects like any drop and never counts.
  *
- * A branch room's handshake upload goes first. The client's SyncStep2 is the
+ * A draft room's handshake upload goes first. The client's SyncStep2 is the
  * whole Y.Doc diffed against the server's state vector, so it carries every
  * byte the server lacks, including edits replayed before this transport
  * existed. Updates offered on an open socket before its SyncStep2 (the offline
@@ -86,7 +86,7 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 // WebSocket.OPEN; the provider's own queue-or-send decision uses the same test.
 const SOCKET_OPEN = 1;
 
-// The server's close for a branch frame it would not admit (policy violation).
+// The server's close for a draft frame it would not admit (policy violation).
 const DRAFT_UPDATE_REFUSED_CODE = 1008;
 const MAX_DRAFT_UPDATE_REFUSALS = 3;
 

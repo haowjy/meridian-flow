@@ -48,7 +48,7 @@ export const workC = {
 } as Work;
 
 export const listed = {
-  branchId: "work-draft-a",
+  branchId: "work-branch-a",
   origin: "edited" as const,
   isNew: false,
   binary: false,

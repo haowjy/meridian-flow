@@ -23,7 +23,7 @@ it.each([
   const transitions: string[] = [];
   function Harness() {
     const [documentDraft, setDraft] = useState<string | null>("unknown");
-    const branches = { status: "empty", files: [] };
+    const draftList = { status: "empty", files: [] };
     const binding = bindDocumentAddressReview(documentDraft ?? undefined, "work");
     const remote = documentDraft
       ? { kind: "unavailable" }
@@ -36,7 +36,7 @@ it.each([
     const gated = gateLiveView(
       reconciled.result,
       { catalog: null, isComplete: true, isFetching: false, isError: false },
-      branches,
+      draftList,
       () => false,
       reconciled.view,
     );
@@ -48,7 +48,7 @@ it.each([
     transitions.push(state);
     const review = {
       controller: { workId: "work", inlineReview: null },
-      branches,
+      drafts: draftList,
       files: [],
     } as unknown as DraftReviewContextValue;
     return (

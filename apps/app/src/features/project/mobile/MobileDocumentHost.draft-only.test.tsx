@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The phone hosts a pending draft by its branch alone (no live room before Apply), and every editable document through the shared host with the phone presentation. */
+/** The phone hosts a pending draft by its draft room alone (no live room before Apply), and every editable document through the shared host with the phone presentation. */
 
 import { act, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -83,7 +83,7 @@ const draftTab: ServerContextTab = {
 };
 
 describe("MobileDocumentHost draft-only review", () => {
-  it("hosts the branch, binds the route to the draft's document, and opens no live room", async () => {
+  it("hosts the draft, binds the route to the draft's document, and opens no live room", async () => {
     await withReactRoot(
       <MobileDocumentHost
         projectId="project-a"

@@ -6,7 +6,7 @@ import type { ContextUri } from "@/lib/context-uri";
 import { parseContextUri } from "@/lib/context-uri";
 import type { CatalogContextView } from "./context-catalog-projection";
 
-/** One document's active draft, as a file in a list of the Work's branches. */
+/** One document's active draft, as a file in the Work's list of drafts. */
 export type ReviewFileTarget = {
   documentId: string;
   documentName: string | null;
@@ -19,11 +19,11 @@ export type ReviewFileTarget = {
 
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
 export function projectWorkBranchFiles(
-  branches: readonly ThreadDraftListItem[],
+  drafts: readonly ThreadDraftListItem[],
   catalog: Pick<CatalogContextView, "findDocument"> | null,
 ): ReviewFileTarget[] {
   return sortDraftFiles(
-    branches.map((draft) => {
+    drafts.map((draft) => {
       const live = catalog?.findDocument(draft.documentId);
       const location = live ? parseContextUri(live.uri) : null;
       return {
@@ -44,7 +44,7 @@ export function projectWorkBranchFiles(
 /**
  * The one order every list of draft files uses (the composer strip, the Work
  * page's Changes to review, and "Next draft"): by the
- * name each file is shown under, then by id. Branches carry no creation time and
+ * name each file is shown under, then by id. Draft list rows carry no creation time and
  * an update time would reshuffle the list as the AI keeps writing, so a file
  * keeps its place until its name changes.
  */

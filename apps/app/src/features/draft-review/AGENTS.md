@@ -13,7 +13,7 @@ joining a room.
   read fences, typed admission, and refresh ordering.
 - Room/editor adapters own eligibility, room acquisition, paint readiness, and
   live presence; they do not own command delivery or review settlement.
-- Branch-only lifecycle owns cross-container settlement/removal. Catalog file
+- Draft-only lifecycle owns cross-container settlement/removal. Catalog file
   projection and change attribution remain separate query concerns.
 
 ## Rules

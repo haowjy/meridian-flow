@@ -1,4 +1,4 @@
-/** A branch room is reopened only for a review that still holds it. */
+/** A draft room is reopened only for a review that still holds it. */
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";

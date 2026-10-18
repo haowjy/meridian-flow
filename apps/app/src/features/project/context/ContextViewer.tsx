@@ -1,7 +1,7 @@
 /**
  * Renders the Editor destination and its active document. A file of an
  * archived Work, and a review of its draft, open read-only under the archived
- * notice. The Editor shows only its own Work's files and branches, so the
+ * notice. The Editor shows only its own Work's files and drafts, so the
  * Editor's Work is that file's Work. Archiving here freezes them at once; the
  * server's own read-only scope follows.
  */
@@ -138,7 +138,7 @@ export function ContextViewer({
     isWorkScopedScheme(activeTab.scheme) &&
     activeTab.rootThreadId === undefined;
 
-  // Branch review state: the review's controls live in the identity bar.
+  // Draft review state: the review's controls live in the identity bar.
   const { controller } = useDraftReview();
   const activeReviewItemKey =
     activeTab &&
@@ -147,7 +147,7 @@ export function ContextViewer({
       ? controller.inlineReview.itemKey
       : null;
   const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
-  // Archiving freezes the Editor Work's own files and its branches (D30). A
+  // Archiving freezes the Editor Work's own files and its drafts (D30). A
   // review edits the draft, so its editor freezes and shows the notice; the
   // reviewed file itself may be project-owned and keeps its identity bar.
   const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);

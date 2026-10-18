@@ -353,12 +353,12 @@ it("routes each link to the local index or the server", async () => {
 });
 
 it("a link to a document that exists only in a draft is followed to that Work's review", async () => {
-  const DRAFT = "00000000-0000-4000-8000-0000000000d1";
+  const BRANCH = "00000000-0000-4000-8000-0000000000d1";
   const ref = AHEAD;
   server.mockReset();
   server.mockResolvedValue({
     answers: [
-      { ...found(KAEL, "Kael"), inBranch: true, branch: { branchId: DRAFT, workId: "w2" } },
+      { ...found(KAEL, "Kael"), inBranch: true, branch: { branchId: BRANCH, workId: "w2" } },
     ],
   });
   const resolution = createLinkAnswerCache();
@@ -384,14 +384,14 @@ it("a link to a document that exists only in a draft is followed to that Work's 
     signal: new AbortController().signal,
   });
   expect(resolution.read({ ref, href })).toMatchObject({
-    branch: { branchId: DRAFT, workId: "w2" },
+    branch: { branchId: BRANCH, workId: "w2" },
   });
   expect(opened).toEqual([
     {
       documentId: KAEL,
       review: {
         workId: "w2",
-        itemKey: `${DRAFT}:${KAEL}`,
+        itemKey: `${BRANCH}:${KAEL}`,
         contextLocation: { scheme: "manuscript", path: "/Kael.md" },
         documentName: "Kael",
       },

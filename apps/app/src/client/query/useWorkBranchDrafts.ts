@@ -9,7 +9,7 @@ import { useCallback, useMemo } from "react";
 
 import { listWorkBranchDrafts } from "@/client/api/branches-api";
 import {
-  readBranchesAfterCommands,
+  readDraftsAfterCommands,
   shareDraftObservation,
   useChangeCommandRecords,
 } from "./branch-command-record";
@@ -31,7 +31,7 @@ export function workBranchDraftsQueryOptions(projectId: string, workId: string) 
   return {
     queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
     queryFn: () =>
-      readBranchesAfterCommands({ projectId, workId }, () =>
+      readDraftsAfterCommands({ projectId, workId }, () =>
         listWorkBranchDrafts(projectId, workId).then((response) => response.items),
       ),
     staleTime: 15_000,

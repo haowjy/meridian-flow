@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The write-mode control's Branch count follows the Work's draft list, one per document. */
+/** The write-mode control's Drafts count follows the Work's drafts list, one per document. */
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -13,18 +13,18 @@ vi.mock("@/client/api/branches-api", () => ({
   listWorkBranchDrafts: vi.fn(() => new Promise(() => {})),
 }));
 
-const branchOf = (documentId: string): ThreadDraftListItem => ({
+const draftOf = (documentId: string): ThreadDraftListItem => ({
   ...listed,
   itemKey: `draft-${documentId}`,
   documentId,
 });
 
 describe("write-mode control draft count", () => {
-  it("counts the documents waiting in the chosen Work's draft", async () => {
+  it("counts the documents waiting in the chosen Work's draftss", async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(projectQueryKeys.workBranchDrafts("p", "work-a"), [
-      branchOf("doc-1"),
-      branchOf("doc-2"),
+      draftOf("doc-1"),
+      draftOf("doc-2"),
     ]);
     queryClient.setQueryData(projectQueryKeys.workBranchDrafts("p", "work-b"), []);
     const seen: Record<string, string> = {};
@@ -38,7 +38,7 @@ describe("write-mode control draft count", () => {
       seen[workId] = String(control.item.value);
       return null;
     }
-    // In Auto-apply the trigger stays "Auto-apply", but the menu's Branch option still counts.
+    // In Auto-apply the trigger stays "Auto-apply", but the menu's Drafts option still counts.
     function DirectMenu() {
       const control = useWriteModeToolbarControl({
         projectId: "p",

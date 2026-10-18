@@ -1,6 +1,6 @@
 /**
  * DraftChip — the version chip of a document with a pending draft, in its
- * states. Pending: "Live" on the live document. Reviewing: "Branch". Both are
+ * states. Pending: "Live" on the live document. Reviewing: "Draft". Both are
  * the trigger of the same version menu (`DraftSwitcher`). Same jade pill, dot,
  * chevron and box in every state, so the control the writer clicked to get in is
  * still where they look to get out.

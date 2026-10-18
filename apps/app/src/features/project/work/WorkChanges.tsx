@@ -3,7 +3,7 @@
  * Work in the one file order (`sortDraftFiles`), each expandable in place to its
  * changes (`WorkChangeFile`). The group's `…` menu holds Apply all and Discard
  * all, the creation-bound whole-Work batch (`disposeDrafts`). They act on every draft of the Work whatever the
- * search box filters, new documents and formatting-only branches included, and
+ * search box filters, new documents and formatting-only drafts included, and
  * only a change row uses the per-change selection
  * commands. Discard all asks first, inline, in the menu's place.
  *

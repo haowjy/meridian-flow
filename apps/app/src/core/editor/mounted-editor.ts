@@ -52,7 +52,7 @@ export type EditorMountIdentity =
     })
   | (EditorMountBase & {
       surface: "review";
-      /** Generation-fenced branch review room from the preview DTO. */
+      /** Generation-fenced draft review room from the preview DTO. */
       roomName: string;
       itemKey: string;
       workId: string;

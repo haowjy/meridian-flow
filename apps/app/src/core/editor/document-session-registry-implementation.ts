@@ -1,6 +1,6 @@
 /**
- * Account-scoped owner of live document sessions and generation-fenced branch rooms.
- * Live acquisition is lease-required; branch rooms remain generation-qualified.
+ * Account-scoped owner of live document sessions and generation-fenced draft rooms.
+ * Live acquisition is lease-required; draft rooms remain generation-qualified.
  */
 import type {
   AccountId,

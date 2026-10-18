@@ -36,12 +36,12 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
   getDraftRoom(roomKey: string): DocumentSession;
-  /** Follows whichever session backs a branch room, across rebuilds; never creates one. */
+  /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(
     roomKey: string,
     observer: (snapshot: DocumentSessionSnapshot) => void,
   ): () => void;
-  /** A fresh session for a branch room whose last one reset, synced from the server alone. */
+  /** A fresh session for a draft room whose last one reset, synced from the server alone. */
   rebuildDraftRoom(roomKey: string): Promise<DocumentSession>;
   retainDraftRooms(ownerId: string, rooms: readonly DraftRoomRef[]): void;
   releaseDraftRooms(ownerId: string): void;

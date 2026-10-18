@@ -97,7 +97,7 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
-  /** Live-session sidecar; omitted for branch/draft rooms. */
+  /** Live-session sidecar; omitted for draft rooms. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;

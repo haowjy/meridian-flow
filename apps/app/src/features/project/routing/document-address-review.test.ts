@@ -1,24 +1,24 @@
-/** Review admission requires both explicit branch intent and a resolved Work. */
+/** Review admission requires both explicit draft intent and a resolved Work. */
 import { expect, it } from "vitest";
 import { bindDocumentAddressReview, reviewAddressRouteBinding } from "./document-address-review";
 
-it("starts review admission with the selected Work and branch, without draft-list identity", () => {
-  expect(bindDocumentAddressReview("branch-a", "work-a")).toEqual({
+it("starts review admission with the selected Work and draft, without draft-list identity", () => {
+  expect(bindDocumentAddressReview("draft-a", "work-a")).toEqual({
     kind: "review",
-    review: { workId: "work-a", itemKey: "branch-a" },
+    review: { workId: "work-a", itemKey: "draft-a" },
   });
   expect(bindDocumentAddressReview("missing", "work-a")).toEqual({
     kind: "review",
     review: { workId: "work-a", itemKey: "missing" },
   });
-  expect(bindDocumentAddressReview("branch-a", null)).toEqual({ kind: "pending" });
+  expect(bindDocumentAddressReview("draft-a", null)).toEqual({ kind: "pending" });
   expect(bindDocumentAddressReview(undefined, "work-a")).toEqual({ kind: "plain" });
 });
 
 it("replaces a cold live path binding only after the selected review identity is admitted", () => {
   const binding = {
     kind: "review" as const,
-    review: { workId: "work", itemKey: "branch" },
+    review: { workId: "work", itemKey: "draft" },
   };
   const selection = {
     status: "bound" as const,
@@ -60,7 +60,7 @@ it("starts a cold copied URL's selector read while the list is unresolved and ro
   const { documentAddressQueryOptions } = await import("./document-address-review");
   const projectId = "550e8400-e29b-41d4-a716-446655440000";
   const workId = "123e4567-e89b-42d3-a456-426614174000";
-  const itemKey = "draft:document";
+  const itemKey = "branch:document";
   const address = parseProjectAddress(
     `/p/${projectId}/editor/kb/Old.md`,
     `?work=${workId}&item=${encodeURIComponent(itemKey)}&change=class%3Apart`,

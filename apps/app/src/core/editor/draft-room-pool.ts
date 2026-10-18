@@ -1,5 +1,5 @@
 /**
- * The session registry's generation-fenced branch (review) rooms: retained per
+ * The session registry's generation-fenced draft (review) rooms: retained per
  * owner, torn down after a grace period once no owner holds them, retired when
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
@@ -54,7 +54,7 @@ export class DraftRoomPool {
     const keys = new Set(refs.map((ref) => ref.roomKey));
     for (const roomKey of keys) {
       if (parseYjsRoomName(roomKey)?.kind !== "draft") {
-        throw new Error(`Draft retention requires a branch room: ${roomKey}`);
+        throw new Error(`Draft retention requires a draft room: ${roomKey}`);
       }
     }
     for (const ref of refs) this.refs.set(ref.roomKey, ref);
@@ -72,7 +72,7 @@ export class DraftRoomPool {
     const refused = this.rooms.get(roomKey);
     if (refused && updatesRefused(refused.getSnapshot().connectionState))
       this.retire(roomKey, refused);
-    // A reset branch session is already retired; wait out its teardown quarantine.
+    // A reset draft session is already retired; wait out its teardown quarantine.
     await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
     // The last owner can leave while the drain waits. Reopening then would start a session
     // nothing owns and nothing would ever tear down.
@@ -82,7 +82,7 @@ export class DraftRoomPool {
 
   get(roomKey: string): DocumentSession {
     const room = parseYjsRoomName(roomKey);
-    if (room?.kind !== "draft") throw new Error(`Draft session requires a branch room: ${roomKey}`);
+    if (room?.kind !== "draft") throw new Error(`Draft session requires a draft room: ${roomKey}`);
     this.cancelTeardown(roomKey);
     this.deps.teardownOwner.assertAvailable({ kind: "draft", roomKey });
     const existing = this.rooms.get(roomKey);

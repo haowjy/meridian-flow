@@ -17,8 +17,8 @@ review reducer, room or focus observer, and there is no per-list review scope.
 Work rows, chat Review, and the live Draft chip.
 
 Draft lifecycle status is not review evidence. The server's
-`work-draft-pending` classifier supplies review membership, content-draft count
-and the mode-switch apply plan; the client never authorizes Branch-to-Auto-apply
+`domain/branch-review-items.ts` classifier supplies review membership, content-draft count
+and the mode-switch apply plan; the client never authorizes Draft-to-Auto-apply
 transitions or counts bookkeeping-only drafts as changes. Files order by name,
 then path basename, then document ID; update time never reorders them.
 
@@ -28,7 +28,7 @@ classes flagged `canApplyOrDiscard: false` show no selective controls; the chat
 strip skips incomplete classes and the whole-draft header commands cover them.
 
 The room owner acquires eligible generations and presence leases. Editor
-adapters own construction, marks, paint readiness, and active binding. Branch
+adapters own construction, marks, paint readiness, and active binding. Draft-only
 lifecycle owns cross-container promotion/removal. Writer delivery is account
 and session lifetime, not review lifetime: outbox or pending carry is
 generation-tagged changes evidence, not permission to adopt an empty reset, and
@@ -121,7 +121,7 @@ ready; a missing class selects the first remaining change. Addressed focus
 cannot target another review. Layout belongs to components; controllers are
 passed as props/callbacks.
 
-## Branch-only lifecycle
+## Draft-only lifecycle
 
 A new document has server document/Yjs state without live catalog membership.
 Its draft-only tab carries the document, Work, draft item, and tab instance
@@ -145,7 +145,7 @@ A live document with branches exposes one document-level hint, while the selecto
 maps that hint to the current review address. New-document Discard also removes
 its Work-manifest entry, and a later Apply lands that manifest as well as
 content. Promotion happens once per document whichever Work's observer saw it.
-Branch-only Editor tabs are never persisted and are skipped by durable route
+Draft-only Editor tabs are never persisted and are skipped by durable route
 continuity (Editor persistence strips `reviews`). The dock persists its review
 address and its one `reviews` entry, the only record that a restored tab is
 draft-only rather than a live document under review; restore admits the address

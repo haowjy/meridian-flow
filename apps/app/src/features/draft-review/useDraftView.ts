@@ -45,14 +45,14 @@ export function useDraftView(
     open?.documentId === draft.documentId &&
     open.itemKey === draft.itemKey;
   const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const branchless = item?.draftGeneration === null;
-  const entry = useDraftPreviews(enabled && !sharing && !branchless ? [draft] : [], {
+  const withoutDocumentDraft = item?.draftGeneration === null;
+  const entry = useDraftPreviews(enabled && !sharing && !withoutDocumentDraft ? [draft] : [], {
     openReview: open,
   })[0];
   const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
   const { items, hiding } = useChangeItems(
     draft,
-    branchless && item && enabled
+    withoutDocumentDraft && item && enabled
       ? wholeDraftDisposition(records, draft, undefined, item) === null
         ? [wholeItemChange(item)]
         : EMPTY
@@ -61,7 +61,7 @@ export function useDraftView(
         : EMPTY,
   );
   const status =
-    branchless && enabled
+    withoutDocumentDraft && enabled
       ? "ready"
       : !entry
         ? "idle"
@@ -86,7 +86,7 @@ export function useDraftView(
         itemKey: draft.itemKey,
         status,
         items: status === "ready" ? items : [],
-        unlisted: !branchless && status === "ready" && items.length === 0 && !hiding,
+        unlisted: !withoutDocumentDraft && status === "ready" && items.length === 0 && !hiding,
         ...(entry?.status === "error" ? { retry: entry.retry } : {}),
       };
   return {

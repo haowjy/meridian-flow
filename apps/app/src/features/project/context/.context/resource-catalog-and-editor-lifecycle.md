@@ -120,10 +120,10 @@ advances. The phone document host (`MobileDocumentHost`) uses the same binding
 but neither offers Retry nor retries on a revision change, so a failed phone
 open has no in-place recovery yet.
 
-A draft-only tab (a new document proposed by a draft) opens no live binding at
+A draft-only tab (a new document proposed in a branch) opens no live binding at
 all: it is absent from the live SQL tree and the server refuses a room for it,
-so review hosts the draft branch room alone (`liveRoom={!draftOnly}`) and a
-failed branch room offers Retry or closing the tab, never a fallback to an empty
+so review hosts the draft room alone (`liveRoom={!draftOnly}`) and a
+failed draft room offers Retry or closing the tab, never a fallback to an empty
 live editor. The phone hosts it through the same `ContextEditorMountHost`
 (`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
 shells find the tab through `route-document-owner.ts`, the bound identity in the

@@ -168,7 +168,7 @@ type RecordWriter = DraftClaim | DraftRef;
 function mayRecord(by: RecordWriter): boolean {
   return !("token" in by) || claimIsLive(by);
 }
-function branchOf(by: RecordWriter): DraftRef {
+function draftOf(by: RecordWriter): DraftRef {
   return "token" in by ? by.draft : by;
 }
 
@@ -267,7 +267,7 @@ export function beginBranchCommand(
  * re-read (`subscribeBranchCommandRecords`).
  */
 export function answerBranchCommandClosed(by: DraftClaim | DraftRef, closed: ClosedDraft): void {
-  const draft = branchOf(by);
+  const draft = draftOf(by);
   const record = recordFor(draft);
   if (
     !mayRecord(by) ||
@@ -289,7 +289,7 @@ export function answerDraftSelection(
   by: DraftClaim | DraftRef,
   outcome: PendingChangeCommand["outcome"],
 ): void {
-  const draft = branchOf(by);
+  const draft = draftOf(by);
   const record = recordFor(draft);
   const command = pendingChangeCommand(currentBranchCommandRecords(), draft);
   if (command && record?.phase === "pending" && mayRecord(by))
@@ -306,12 +306,12 @@ export function answerDraftSelection(
  * the next proposal, so nothing outlives the claim to be mistaken for it.
  */
 export function releaseBranchCommand(by: DraftClaim | DraftRef): void {
-  const draft = branchOf(by);
+  const draft = draftOf(by);
   if (recordFor(draft)?.phase === "pending" && mayRecord(by)) setRecord(draft, () => null);
 }
 
 export function failBranchCommand(by: DraftClaim | DraftRef, failure: BranchCommandFailure): void {
-  if (mayRecord(by)) setRecord(branchOf(by), (at) => ({ phase: "failed", failure, at }), true);
+  if (mayRecord(by)) setRecord(draftOf(by), (at) => ({ phase: "failed", failure, at }), true);
 }
 
 /** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
@@ -337,7 +337,7 @@ export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
 
 export function confirmBranchCommand(by: DraftClaim | DraftRef): void {
   if (!mayRecord(by)) return;
-  const draft = branchOf(by);
+  const draft = draftOf(by);
   const prior = recordFor(draft);
   if (
     prior?.phase !== "pending" ||
@@ -366,7 +366,7 @@ export function confirmBranchCommand(by: DraftClaim | DraftRef): void {
  * Read immutable Work list evidence. Only failures predating this read may
  * retire on omission; settled Apply intents outlive cached/held observations.
  */
-export async function readBranchesAfterCommands<T extends ListedDraft>(
+export async function readDraftsAfterCommands<T extends ListedDraft>(
   scope: BranchScope,
   read: () => Promise<T[]>,
 ): Promise<T[]> {
@@ -451,8 +451,8 @@ export function pendingChangeCommand(
   return command?.target === "selection" ? command : null;
 }
 
-/** The branches of this project's Work whose record differs between two snapshots. */
-export function changedBranches(
+/** The drafts of this project's Work whose record differs between two snapshots. */
+export function changedDrafts(
   records: BranchCommandRecords,
   previous: BranchCommandRecords,
   scope: BranchScope,
@@ -757,7 +757,7 @@ export function failChangeCommand(
   refusal?: ServerRefusal,
 ): void {
   if (!mayRecord(by)) return;
-  setChangeRecord(branchOf(by), selection, (at) => ({
+  setChangeRecord(draftOf(by), selection, (at) => ({
     phase: "failed",
     mode,
     code,
@@ -777,7 +777,7 @@ export function confirmChangeCommand(
   mode: ChangeCommandMode,
 ): void {
   if (!mayRecord(by)) return;
-  setChangeRecord(branchOf(by), selection, (at) => ({
+  setChangeRecord(draftOf(by), selection, (at) => ({
     phase: "confirmed",
     mode,
     at,
@@ -860,14 +860,14 @@ function dropFailuresWithoutOperations(key: string, preview: ActivePreview, fenc
 
 /** Every held record and claim; look changes up with `changeCommandState`. */
 export function useChangeCommandRecords(): ChangeCommandRecords {
-  const branches = useBranchCommandRecords();
+  const drafts = useBranchCommandRecords();
   const queued = useBranchCommandStore((state) => state.queued);
-  return useMemo(() => ({ drafts: branches, queued }), [branches, queued]);
+  return useMemo(() => ({ drafts, queued }), [drafts, queued]);
 }
 
 export function currentChangeCommandRecords(): ChangeCommandRecords {
-  const { records: branches, queued } = useBranchCommandStore.getState();
-  return { drafts: branches, queued };
+  const { records: drafts, queued } = useBranchCommandStore.getState();
+  return { drafts, queued };
 }
 
 /**
