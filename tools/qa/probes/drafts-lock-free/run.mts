@@ -29,6 +29,7 @@ import { effectWatermarkSweep } from "./effect-watermark-sweep.mts";
 import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
+import { liveDuplicateFrame } from "./live-duplicate-frame.mts";
 import { migrationOnline } from "./migration-online.mts";
 import { reviewUnpulledLive } from "./review-unpulled-live.mts";
 import {
@@ -70,6 +71,8 @@ const PROBES: readonly Probe[] = [
   clientResync,
   // A draft's review while live is ahead of its last pull (owner report, live-edit-review).
   reviewUnpulledLive,
+  // A live update relayed onto a second socket of its room is journaled once (#946).
+  liveDuplicateFrame,
 ];
 
 function parseArgs(argv: readonly string[]) {
