@@ -251,20 +251,6 @@ export function createDrizzlePushCommitStore(
       );
     },
 
-    /**
-     * Seam B for a caller about to change several draft branches in one transaction: their
-     * Works (with the bound grants' Works, then the grants' confirmation) before any other
-     * lock; names the branches whose Work is no longer active, a frozen draft's among them.
-     */
-    async lockDraftWorks(branchIds) {
-      const locked = await workProjection.lockWorks({ branches: branchIds }, { seam: true });
-      return new Set(
-        locked.branches
-          .filter((row) => !row.workId || locked.works.get(row.workId)?.state !== "active")
-          .map((row) => row.id),
-      );
-    },
-
     async commitPushBatch(input) {
       assertRootOwnedSettlement("Branch push staging");
       const branchIds = input.pushes.map(({ branch }) => branch.branchId);
@@ -341,8 +327,8 @@ export function createDrizzlePushCommitStore(
 /**
  * The one SQL membership rule for a branch to count as a pending document, twin of
  * `draft-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
- * document hint both filter by it; the Work projection reads its before and after through
- * that count.
+ * document hint both filter by it; the Works boundary reconciles each Work's stored count
+ * through that count (migration 0067's backfill spells it in SQL too).
  */
 const reviewableWorkDraftBranch = and(
   eq(documentBranches.kind, "work_draft"),
@@ -383,14 +369,15 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             eq(draftTreeChanges.nodeKind, "document"),
           ),
         );
-      const documents = new Map<WorkId, Set<string>>();
-      for (const { workId, documentId } of await branched.union(changed)) {
-        if (!workId) continue;
-        const set = documents.get(workId as WorkId) ?? new Set<string>();
-        set.add(documentId);
-        documents.set(workId as WorkId, set);
-      }
-      return new Map([...documents].map(([workId, set]) => [workId, set.size]));
+      // `union` (not `union all`) leaves each Work's document once, so a row is a document.
+      const pending = branched.union(changed).as("pending");
+      const rows = await tx
+        .select({ workId: pending.workId, count: sql<number>`count(*)::int` })
+        .from(pending)
+        .groupBy(pending.workId);
+      return new Map(
+        rows.flatMap(({ workId, count }) => (workId ? [[workId as WorkId, count]] : [])),
+      );
     },
     async listDraftsChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);

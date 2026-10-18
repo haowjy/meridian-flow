@@ -86,9 +86,6 @@ function fixture() {
     async commitDiscard() {
       throw new Error("push only");
     },
-    async lockDraftWorks() {
-      return new Set<string>();
-    },
   };
   const mutex = new KeyedMutex();
   const coordinator = {

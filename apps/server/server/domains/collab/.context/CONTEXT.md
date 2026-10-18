@@ -212,7 +212,8 @@ input); the projection job (`domain/branch-projection.ts`) coalesces marks
 judgements at a time, fingerprints the published replica against the stored
 baseline (`live_cut`, frozen at creation and replaced only under a revision
 bump), and writes `has_effect` with its watermark `has_effect_revision` through
-`writeEffect` at exactly that revision, inside `mutate`, under
+`writeEffect` at exactly that revision, inside `mutate` (which reconciles the
+Work's stored badge count and notifies only if it moved), under
 `SET LOCAL lock_timeout = '100ms'`. That bound applies to each lock
 acquisition (the Work, the branch row, the publication participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision

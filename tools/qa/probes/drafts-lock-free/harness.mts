@@ -95,6 +95,7 @@ export async function openHarness(url: string) {
     db,
     availability: { advance: async () => "0" },
     catalog: { refreshProject: async () => {}, upsertWorkAuthorities: async () => {} },
+    pendingCounts: pending,
   });
   const drafts = createDrizzleDraftStore(db);
   const persistence = createDrizzleCollabPersistence(db);
@@ -123,7 +124,6 @@ export async function openHarness(url: string) {
     db,
     raw,
     ids,
-    pending,
     projection,
     drafts,
     persistence,

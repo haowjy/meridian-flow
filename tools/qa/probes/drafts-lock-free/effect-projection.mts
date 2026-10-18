@@ -2,18 +2,22 @@
  * Phase 4 (design §3.1–3.4, F3/F4): a keystroke's append and the branch's derived state are two
  * events. The append marks its branch dirty; the projection job judges `has_effect` against the
  * stored baseline 250 ms after the last key (at most 1 s after the first unserved one), writes it
- * with its watermark, and touches the Work once per run; a write a key overtook re-judges at once.
- * No keystroke locks or counts a Work. The badge converges within the max wait once typing pauses
- * and eventually while typing (D34).
+ * with its watermark, and reconciles the Work's stored pending count, bumping its revision only
+ * when the count moved (W47, D41); a write a key overtook re-judges at once. No keystroke locks
+ * or counts a Work. The badge converges within the max wait once typing pauses and eventually
+ * while typing (D34).
  *
- * Arms, each on its own draft (the Works badge is `countPendingByWorkIds`, the Work's
- * republication is its `entity_revision`):
- * 1. one key into a fresh draft: pending 1 and the Work republished within 1 s;
- * 2. 3 s of keys at 50 ms: pending within the 1 s max wait after the typing pauses, at most four
- *    touches; the time to the first pending while typing is reported, not asserted;
- *    then deleting everything typed: pending 0 within 1 s;
- * 3. Apply staging (rows `pushed`, `has_effect` still true) then one key: the Work republishes
- *    within 1 s (the review's `row-only-membership-flip`);
+ * Arms, each on its own draft (the Works badge is the Work's stored `pending_document_count`,
+ * its notice is its `entity_revision`):
+ * 1. one key into a fresh draft: pending 1 and the Work's revision moved within 1 s;
+ * 2. 3 s of keys at 50 ms: pending within the 1 s max wait after the typing pauses, and exactly
+ *    one revision for the one count change, however many effect runs; the time to the first
+ *    pending while typing is reported, not asserted; then deleting everything typed: pending 0
+ *    within 1 s;
+ * 3. Apply staging (rows `pushed`, `has_effect` still true, through `mutate` as staging takes
+ *    it) then one key: the count was stored 0 and the append moved it outside `mutate`, so the
+ *    effect run, comparing against the stored value, bumps the revision within 1 s (the review's
+ *    `row-only-membership-flip`; a before/after count would see 1 → 1 and stay silent);
  * 4. two processes typing inside one debounce: the stored value equals the materialized
  *    comparison and `has_effect_revision = revision`.
  *
@@ -21,6 +25,8 @@
  * on the watermark; arm 3 passed there through the inline membership flip.
  */
 import assert from "node:assert/strict";
+import { sql } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import { independently, observe, openHarness, type Probe } from "./harness.mts";
 import {
   branchRow,
@@ -48,7 +54,7 @@ export const effectProjection: Probe = {
   name: "effect-projection",
   decision: "D28 (§3 F3/F4)",
   expected:
-    "badge follows a key within 1 s, continuous typing within 1 s of the pause with at most four touches, delete-all clears within 1 s, a key after staging republishes the Work, two processes converge with a fresh watermark",
+    "badge follows a key within 1 s, continuous typing within 1 s of the pause with one revision for one count change, delete-all clears within 1 s, a key after staging republishes the Work, two processes converge with a fresh watermark",
   async run(harness) {
     const p = await openProjected(harness);
     try {
@@ -137,7 +143,7 @@ export const effectProjection: Probe = {
               erased,
               clearedMs: cleared.elapsedMs,
             });
-            assert.ok(touches <= 4, `at most four Work touches while typing, saw ${touches}`);
+            assert.equal(touches, 1, `one Work revision for one count change, saw ${touches}`);
             assert.equal(erased, "appended");
           } finally {
             typingProcess.dispose();
@@ -157,12 +163,19 @@ export const effectProjection: Probe = {
               (b) => b.pending === 1,
             );
             // Apply staging's effect on the branch: every row pushed under a revision bump,
-            // `has_effect` untouched (an exact rewrite, `drizzle-branch-push.ts`).
-            await harness.raw.begin(async (tx) => {
-              await tx`update branch_write_journal set status = 'pushed', pushed_at = now() where branch_id = ${draft.branchId}`;
-              await tx`update document_branches set revision = revision + 1 where id = ${draft.branchId}`;
+            // `has_effect` untouched (an exact rewrite, `drizzle-branch-push.ts`), inside the
+            // Works boundary as `commitPushBatch` runs it.
+            await harness.projection.mutate({ branches: [draft.branchId] }, async () => {
+              const tx = currentDrizzleDb(harness.db);
+              await tx.execute(
+                sql`update branch_write_journal set status = 'pushed', pushed_at = now() where branch_id = ${draft.branchId}`,
+              );
+              await tx.execute(
+                sql`update document_branches set revision = revision + 1 where id = ${draft.branchId}`,
+              );
             });
             const staged = await workBadge(harness, draft.workId);
+            assert.equal(staged.pending, 0, "staging reconciled the stored count");
             assert.equal(await tab.send(keystroke(tab.room, " after")), "appended");
             const caught = await within(
               1_000,

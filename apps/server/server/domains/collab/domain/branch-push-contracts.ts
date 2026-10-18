@@ -244,12 +244,6 @@ export type PushCommitStore = {
     | { status: "command_exists" }
   >;
   commitDiscard(input: PreparedDiscardCommit): Promise<void>;
-  /**
-   * Seam B for a review that changes several drafts in one transaction: locks
-   * their Works (file-access §5) and names the branches whose Work is no longer
-   * active, so their drafts stay frozen (D30).
-   */
-  lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
 };
 
 export type PushUpdateComputer = (input: {

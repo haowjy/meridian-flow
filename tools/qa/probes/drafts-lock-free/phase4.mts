@@ -4,7 +4,6 @@
  * it, and the pauses that order two writers by a hook or a held call rather than by a sleep.
  */
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import type { WorkId } from "@meridian/contracts/runtime";
 import { createBranchCoordinator } from "../../../../apps/server/server/domains/collab/domain/branch-coordinator.ts";
 import {
   type BranchProjectionDiagnostics,
@@ -400,14 +399,14 @@ export async function within<T>(
   }
 }
 
-/** The Work's badge inputs: its pending-draft count and its `entity_revision`. */
+/** The Work's badge as a Works snapshot serves it: its stored pending count and revision. */
 export async function workBadge(harness: Harness, workId: string) {
-  const pending = (await harness.pending.countPendingByWorkIds([workId as WorkId])).get(
-    workId as WorkId,
-  );
-  const [row] = await harness.raw<{ entity_revision: string }[]>`
-    select entity_revision from works where id = ${workId}`;
-  return { pending: pending ?? 0, entityRevision: Number(row?.entity_revision) };
+  const [row] = await harness.raw<{ pending_document_count: number; entity_revision: string }[]>`
+    select pending_document_count, entity_revision from works where id = ${workId}`;
+  return {
+    pending: Number(row?.pending_document_count),
+    entityRevision: Number(row?.entity_revision),
+  };
 }
 
 /**

@@ -421,6 +421,20 @@
       "when": 1792290000000,
       "tag": "0065_change_trail_owner_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792290010000,
+      "tag": "0066_work_pending_document_count",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792290020000,
+      "tag": "0067_work_pending_document_count_online",
+      "breakpoints": true
     }
   ]
 }
