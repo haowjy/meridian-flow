@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleJournal } from "../collab/adapters/drizzle-journal.js";
 import {
   type AgentChain,
@@ -75,7 +76,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const access = () =>
       createFileAccess({
-        facts: createDrizzleFileFacts(database.current),
+        facts: createDrizzleFileFacts(
+          database.current,
+          createTestWorkProjectionMutation(database.current),
+        ),
         grants: createOwnerFileGrants(),
         readAgentChain: async () => chain,
       });

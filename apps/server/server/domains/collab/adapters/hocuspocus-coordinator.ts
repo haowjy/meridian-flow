@@ -2,8 +2,8 @@
 
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
+  type DocumentAccess,
   type DocumentCoordinator,
-  type DocumentLockOptions,
   DocumentNotFoundError,
   type JournalSnapshot,
   type UpdateJournal,
@@ -62,7 +62,7 @@ export function createDeferredLiveProjectionCoordinator(deps: {
     async withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentLockOptions,
+      options?: DocumentAccess,
     ): Promise<T> {
       if (!deps.transactions.inTransaction()) return deps.live.withDocument(docId, fn, options);
       const loaded = deps.hocuspocus().documents.get(docId);
@@ -153,7 +153,7 @@ function createCoordinator(
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentLockOptions,
+      options?: DocumentAccess,
     ): Promise<T> {
       return mutex.run(
         docId,

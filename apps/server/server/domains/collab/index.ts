@@ -4,9 +4,11 @@ export {
   createLinkScopeObserver,
   type LinkScopeObserver,
 } from "./adapters/agent-edit-observability.js";
+export { installCollabCrashController } from "./adapters/collab-crash-controller.js";
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
+export { BranchPrefixMissingError } from "./domain/branch-store.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export type { Drafts } from "./domain/drafts.js";
 export {

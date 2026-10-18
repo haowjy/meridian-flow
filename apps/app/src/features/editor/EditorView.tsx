@@ -318,6 +318,7 @@ export function EditorView(props: EditorViewProps) {
                 ...surfaceOptions,
                 editable: roomOwner.inputEligible && reviewPainted ? props.editable : false,
               }}
+              onReopen={roomOwner.reopen}
               onConstructed={(editor) => {
                 if (!editor) {
                   setConstructed((current) => (current?.key === reviewKey ? null : current));

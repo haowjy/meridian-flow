@@ -3,7 +3,6 @@
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { harness } from "../../../../../../packages/agent-edit/src/tool/test-support/write-tool-harness.js";
-import { observeLeases } from "../../../test-support/lease-observer.js";
 import type { FileDestination } from "../../file-policy/index.js";
 import {
   createFakeBranchTable,
@@ -26,18 +25,15 @@ function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
   const drafts = createFakeDrafts();
   const branches = createFakeBranchTable({ documentId: "ch12", threadId: THREAD_ID });
   const fileAccess = createFakeFileAccess();
-  const leases = observeLeases();
-  const criticalSections = leases.sections;
   const fences = createReplySaveFences({
     liveUtilityCore,
     branches,
-    criticalSections,
     drafts,
     fileAccess,
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
-  return { drafts, branches, fences, leases, fileAccess };
+  return { drafts, branches, fences, fileAccess };
 }
 
 function createPool() {
@@ -53,6 +49,7 @@ function createPool() {
     pullThreadPeer: pullThreadPeer,
     afterLiveCommit: () => {},
     commitThreadResponseAtomically: (operation) => operation(),
+    attemptScope: (operation) => operation(),
     ...inProcessResponseTransactions,
     fileAccess: createFakeFileAccess(),
     lockWorks: async () => {},
@@ -159,6 +156,7 @@ describe("thread-peer pool", () => {
                 attributionBaseline: new Uint8Array(),
               },
         commitThreadResponseAtomically: (operation) => operation(),
+        attemptScope: (operation) => operation(),
         ...inProcessResponseTransactions,
         fileAccess: createFakeFileAccess(),
         lockWorks: async () => {},
@@ -229,29 +227,6 @@ describe("reasoned refusal and retirement through the pool", () => {
     expect(pool.responseDestination("reply-1", "ch12")).toMatchObject({ kind: "draft" });
   });
 
-  it("rolls a reply back inside its leases without touching a branch (U5)", async () => {
-    const { pool, threadCore, branches, leases } = createPool();
-    await pool.write(insertCh12, context(draftA, "reply-1"));
-    branches.getBranch.mockClear();
-    let heldDuringRollback: string[][] = [];
-    threadCore.rollbackResponse.mockImplementation(async (responseId: string) => {
-      heldDuringRollback = leases.holding();
-      return {
-        status: "rolledBack" as const,
-        responseId,
-        stagedCreates: { committed: [], discarded: [] },
-      };
-    });
-    const before = leases.entered();
-
-    await pool.rollbackResponse("reply-1");
-
-    expect(heldDuringRollback).toEqual([["peer-1", "upstream-1"]]);
-    expect(leases.entered() - before).toBe(1);
-    expect(leases.holding()).toEqual([]);
-    expect(branches.getBranch).not.toHaveBeenCalled();
-  });
-
   it("retires one peer without touching the replacement peer's entry or lastSeen (U6)", async () => {
     const { pool, threadCore } = createPool();
     // Reply 1 stages on peer-1; reply 2, in the same thread, on its replacement peer-2.
@@ -298,6 +273,7 @@ describe("reasoned refusal and retirement through the pool", () => {
       },
       pullThreadPeer,
       commitThreadResponseAtomically: (operation) => operation(),
+      attemptScope: (operation) => operation(),
       ...inProcessResponseTransactions,
       fileAccess: createFakeFileAccess(),
       lockWorks: async () => {},

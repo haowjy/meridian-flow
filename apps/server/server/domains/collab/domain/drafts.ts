@@ -39,9 +39,8 @@ export interface Drafts {
    */
   shareActive(draftId: DraftId): Promise<Draft | null>;
   /**
-   * Caller's transaction, the draft locked by `lockActive`, every branch leased and closed
-   * by the Discard kernel (which returns the exact peers to retire): closes the `drafts`
-   * row only.
+   * Caller's transaction, the draft locked by `lockActive`, every branch closed by the
+   * Discard kernel (which returns the exact peers to retire): closes the `drafts` row only.
    */
   close(draftId: DraftId, at: Date): Promise<void>;
   /** No lock. These drafts, any status. */

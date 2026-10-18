@@ -28,24 +28,14 @@ export type SchemaRepairEvidence = Pick<
   "deletedNodeTypes" | "deletedClockCount" | "removedText"
 >;
 
-type DeleteRange = { clock: number; len: number };
-type DeleteSet = { clients: Map<number, DeleteRange[]> };
-type ItemLike = {
-  id: { client: number; clock: number };
-  length: number;
-  right: ItemLike | null;
-  content?: unknown;
-};
-type YTypeLike = { _start: ItemLike | null; nodeName?: string };
+// Yjs exports DeleteSet's constructor only through internals; its typed shape
+// is reachable from the public Transaction.
+type DeleteSet = Y.Transaction["deleteSet"];
 type ExtractedEvidence = {
   evidence: SchemaRepairEvidence;
   resolvedClockCount: number;
   contentUnavailable: boolean;
 };
-
-function decodedDeleteSet(update: Uint8Array): DeleteSet {
-  return Y.decodeUpdate(update).ds as DeleteSet;
-}
 
 function deletedClockCount(deleteSet: DeleteSet): number {
   let total = 0;
@@ -55,7 +45,7 @@ function deletedClockCount(deleteSet: DeleteSet): number {
   return total;
 }
 
-function deletedSlices(item: ItemLike, deleteSet: DeleteSet): Array<{ from: number; to: number }> {
+function deletedSlices(item: Y.Item, deleteSet: DeleteSet): Array<{ from: number; to: number }> {
   const ranges = deleteSet.clients.get(item.id.client);
   if (!ranges) return [];
   const itemStart = item.id.clock;
@@ -69,11 +59,6 @@ function deletedSlices(item: ItemLike, deleteSet: DeleteSet): Array<{ from: numb
   return slices;
 }
 
-function contentType(content: unknown): YTypeLike | null {
-  if (!content || typeof content !== "object" || !("type" in content)) return null;
-  return (content as { type: YTypeLike }).type;
-}
-
 /**
  * Resolve delete-set clocks against the pre-repair clone's item graph.
  *
@@ -81,14 +66,17 @@ function contentType(content: unknown): YTypeLike | null {
  * sibling positions between before and after documents, which would be
  * ambiguous when repeated or nested siblings have the same shape.
  */
-function extractEvidenceFromType(type: YTypeLike, deleteSet: DeleteSet): ExtractedEvidence {
+function extractEvidenceFromFragment(
+  fragment: Y.XmlFragment,
+  deleteSet: DeleteSet,
+): ExtractedEvidence {
   const deletedNodeTypes: string[] = [];
   let resolvedClockCount = 0;
   let contentUnavailable = false;
   type TextToken = { kind: "text"; text: string } | { kind: "boundary" };
-  const walk = (current: YTypeLike): TextToken[] => {
+  const walk = (start: Y.Item | null): TextToken[] => {
     const tokens: TextToken[] = [];
-    for (let item = current._start; item; item = item.right) {
+    for (let item = start; item; item = item.right) {
       const slices = deletedSlices(item, deleteSet);
       const content = item.content;
       resolvedClockCount += slices.reduce((total, slice) => total + slice.to - slice.from, 0);
@@ -98,21 +86,22 @@ function extractEvidenceFromType(type: YTypeLike, deleteSet: DeleteSet): Extract
       } else if (slices.length > 0 && content instanceof Y.ContentDeleted) {
         contentUnavailable = true;
       }
-      const child = contentType(content);
-      if (!child) continue;
-      if (slices.length > 0 && child.nodeName && !deletedNodeTypes.includes(child.nodeName)) {
-        deletedNodeTypes.push(child.nodeName);
+      if (!(content instanceof Y.ContentType)) continue;
+      const child = content.type;
+      const nodeName = child instanceof Y.XmlElement ? child.nodeName : undefined;
+      if (slices.length > 0 && nodeName && !deletedNodeTypes.includes(nodeName)) {
+        deletedNodeTypes.push(nodeName);
       }
-      if (child.nodeName) tokens.push({ kind: "boundary" });
-      tokens.push(...walk(child));
-      if (child.nodeName) tokens.push({ kind: "boundary" });
+      if (nodeName) tokens.push({ kind: "boundary" });
+      tokens.push(...walk(child._start));
+      if (nodeName) tokens.push({ kind: "boundary" });
     }
     return tokens;
   };
 
   let text = "";
   let boundary = false;
-  for (const token of walk(type)) {
+  for (const token of walk(fragment._start)) {
     if (token.kind === "boundary") {
       if (text) boundary = true;
       continue;
@@ -137,11 +126,11 @@ export function extractSchemaRepairEvidence(
   preRepairSnapshot: Uint8Array,
   repairUpdate: Uint8Array,
 ): SchemaRepairEvidence {
-  const deleteSet = decodedDeleteSet(repairUpdate);
+  const deleteSet = Y.decodeUpdate(repairUpdate).ds;
   const snapshot = new Y.Doc({ gc: false });
   Y.applyUpdate(snapshot, preRepairSnapshot);
-  const { evidence } = extractEvidenceFromType(
-    snapshot.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME) as unknown as YTypeLike,
+  const { evidence } = extractEvidenceFromFragment(
+    snapshot.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
     deleteSet,
   );
   snapshot.destroy();
@@ -407,7 +396,7 @@ export function createSchemaRepairWitness({
     const attempt = attemptsByTransaction.get(transaction);
     if (!attempt) return;
 
-    const deleteSet = transaction.deleteSet as DeleteSet;
+    const { deleteSet } = transaction;
     const count = deletedClockCount(deleteSet);
     let insertedClockCount = 0;
     for (const [client, clock] of transaction.afterState) {
@@ -421,8 +410,8 @@ export function createSchemaRepairWitness({
     // afterTransaction runs before Yjs replaces deleted structs with
     // ContentDeleted under gc:true. Capture now; correlation may resolve later
     // in this same JavaScript flush without retaining the deleted structs.
-    const extracted = extractEvidenceFromType(
-      document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME) as unknown as YTypeLike,
+    const extracted = extractEvidenceFromFragment(
+      document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
       deleteSet,
     );
     // When a writer command runs during remote cleanup, y-prosemirror can fold
@@ -460,7 +449,7 @@ export function createSchemaRepairWitness({
     transaction: Y.Transaction,
   ) => {
     const decoded = Y.decodeUpdate(update);
-    const count = deletedClockCount(decoded.ds as DeleteSet);
+    const count = deletedClockCount(decoded.ds);
     const deleteOnly = decoded.structs.length === 0 && count > 0;
     // During this synchronous bracket the shipped extension assembly has no
     // other init-time local deleter; clean-open coverage pins that soundness

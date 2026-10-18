@@ -126,6 +126,7 @@ it("focuses this document, then applies and discards its classes without closing
             itemKey: "draft-a",
             closureClassIds: ["class-2"],
             memberPartKeys: [],
+            memberPartKeysComplete: true,
             admissionTokens: ["class-2"],
             liveRevisionToken: "live-1",
             draftRevisionToken: "draft-1",

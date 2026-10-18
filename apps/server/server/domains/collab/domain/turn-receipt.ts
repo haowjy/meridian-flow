@@ -23,11 +23,3 @@ export type TurnReceiptChip = {
 export type TurnReceiptStateStore = {
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
-
-export function controlForTurnReceiptState(state: TurnReceiptState): TurnReceiptControl {
-  if (state === "live-reversed" || state === "branch-reversed" || state === "work-reversed")
-    return "redo";
-  if (state === "live-active" || state === "branch-active" || state === "work-active")
-    return "undo";
-  return "view_change";
-}

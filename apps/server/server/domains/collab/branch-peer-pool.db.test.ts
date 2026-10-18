@@ -13,6 +13,7 @@ import {
 } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, expect, it } from "vitest";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import {
   createDrizzleDraftStore,
@@ -31,9 +32,10 @@ it("ensureThreadPeerBranch from more callers than connections completes", async 
   const persistence = createDrizzleCollabPersistence(db);
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const store = createDrizzleBranchStore(db, {
+    workProjection: createTestWorkProjectionMutation(db),
     live: { journal: persistence.journal, lifecycle: persistence.lifecycle },
     drafts,
   });

@@ -63,9 +63,9 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
  */
 const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
-  effect: new Set(["warm_rooms", "publication_step"]),
+  effect: new Set(["warm_rooms", "apply_step"]),
   refusal: new Set(["integration"]),
-  stage: new Set(["claim", "execute", "handoff"]),
+  stage: new Set(["claim", "execute"]),
   trigger: new Set(["create", "read"]),
 };
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -96,6 +96,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
+  rewrite: new Set(["checkpoint", "compact", "pull", "reset"]),
   ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set([
     "agent",
@@ -479,9 +480,4 @@ export function sanitizeEventRecord(event: EventRecord): EventRecord {
 
 export function serializedEventBytes(event: EventRecord): number {
   return Buffer.byteLength(JSON.stringify(event), "utf8");
-}
-
-export function safeSnippet(value: string, maxLength = 160): string {
-  const redacted = redactString(value);
-  return redacted.length <= maxLength ? redacted : `${redacted.slice(0, maxLength)}…`;
 }

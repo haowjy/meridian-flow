@@ -29,6 +29,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
   createDrizzleBranchJournalReadStore,
@@ -78,9 +79,10 @@ describe("branch-push durable projection", () => {
   };
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const branchStore = createDrizzleBranchStore(db, {
+    workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
@@ -187,15 +189,24 @@ describe("branch-push durable projection", () => {
       db,
       stageSettlementBatchWithinTx,
       changeTrails,
+      undefined,
+      createTestWorkProjectionMutation(db),
     );
     const settlementStore = createDrizzlePendingSettlementStore(
       db,
       serializer,
-      createDrizzleDocumentProjectionEffects(db),
+      createDrizzleDocumentProjectionEffects(db, createTestWorkProjectionMutation(db)),
       changeTrails,
       createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
+      undefined,
+      undefined,
+      { steps: [] },
+      createTestWorkProjectionMutation(db),
     );
-    const branchCoordinator = createBranchCoordinator({ store: branchStore });
+    const branchCoordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
+      store: branchStore,
+    });
     const liveDoc = createCollabYDoc({ gc: false });
     const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
@@ -225,7 +236,6 @@ describe("branch-push durable projection", () => {
       journalReadStore,
       commitStore,
       settlementStore,
-      branchCoordinator,
       journal: persistence.journal,
       liveCoordinator,
       model,
@@ -396,8 +406,13 @@ describe("branch-push durable projection", () => {
       db,
       stageSettlementBatchWithinTx,
       changeTrails,
+      undefined,
+      createTestWorkProjectionMutation(db),
     );
-    const branchCoordinator = createBranchCoordinator({ store: branchStore });
+    const branchCoordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
+      store: branchStore,
+    });
     const liveDoc = createCollabYDoc({ gc: false });
     const draft = await drafts.ensureActiveForWrite({
       workId: workId as never,
@@ -429,11 +444,14 @@ describe("branch-push durable projection", () => {
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         engine,
-        createDrizzleDocumentProjectionEffects(db),
+        createDrizzleDocumentProjectionEffects(db, createTestWorkProjectionMutation(db)),
         changeTrails,
         createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
+        undefined,
+        undefined,
+        { steps: [] },
+        createTestWorkProjectionMutation(db),
       ),
-      branchCoordinator,
       journal: persistence.journal,
       liveCoordinator,
       model,

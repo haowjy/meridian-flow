@@ -1,24 +1,23 @@
-/** Thread-peer branch resolution port for agent tool document views. */
+/** Thread-peer branch resolution port: which branch a thread reads, never its content. */
 
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
+import type { BranchSnapshot } from "./branch-store.js";
 
 export interface BranchResolver {
   /**
-   * Returns the active thread-peer branch for this (document, thread).
+   * The active thread-peer branch for this (document, thread), as metadata: its content is read
+   * through the coordinator, in one observation with the row it belongs to.
    *
    * Throws BranchNotFoundError if no active branch exists.
-   * Throws BranchCorruptError if snapshot is missing or undecodable.
-   * Throws DocumentSchemaMajorMismatchError if the persisted branch has another major.
    */
-  resolveThreadBranch(documentId: DocumentId, threadId: ThreadId): Promise<BranchState>;
+  resolveThreadBranch(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedBranch>;
 }
 
-export type BranchState = {
-  branchId: string;
-  doc: Y.Doc;
-  generation: number;
-};
+/** A resolved branch's identity and state as its row was read; no content. */
+export type ResolvedBranch = Pick<
+  BranchSnapshot,
+  "branchId" | "generation" | "status" | "lifecycle"
+>;
 
 export class BranchNotFoundError extends Error {
   readonly documentId: DocumentId;
@@ -30,10 +29,6 @@ export class BranchNotFoundError extends Error {
     this.documentId = documentId;
     this.threadId = threadId;
   }
-}
-
-export function isBranchNotFoundError(cause: unknown): cause is BranchNotFoundError {
-  return cause instanceof BranchNotFoundError;
 }
 
 export class BranchCorruptError extends Error {
@@ -60,8 +55,4 @@ export class BranchCorruptError extends Error {
     this.threadId = input.threadId;
     this.generation = input.generation;
   }
-}
-
-export function isBranchCorruptError(cause: unknown): cause is BranchCorruptError {
-  return cause instanceof BranchCorruptError;
 }

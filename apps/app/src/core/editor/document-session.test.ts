@@ -14,6 +14,7 @@ import { type ChangeEventWsMessage, WS_CLOSE } from "@meridian/contracts/protoco
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "@/test-support/memory-storage";
 import {
+  BRANCH_UPDATES_REFUSED,
   DocumentSession,
   type DocumentSessionConnectionState,
   type DocumentSessionSnapshot,
@@ -297,6 +298,31 @@ describe("DocumentSession status derivation", () => {
       connectionState: { kind: "reset", code: 4205 },
     });
     void session.destroy();
+  });
+
+  // #940: an offline room that ends refused keeps `offline`; its pill must still learn the new state.
+  it("emits a terminal close that arrives while already offline", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "branch:draft-1:gen:1",
+      persistence: { kind: "none" },
+      transportFactory: factory,
+    });
+    await flushMicrotasks();
+    current().emit({ kind: "connected" });
+    current().resolveFirstSync();
+    await session.whenSynced();
+    current().emit({ kind: "disconnected" });
+    const { snapshots, unsubscribe } = track(session);
+
+    current().emit({ kind: "terminal", reason: BRANCH_UPDATES_REFUSED, code: 1008 });
+
+    expect(snapshots.at(-1)).toMatchObject({
+      status: "offline",
+      connectionState: { kind: "terminal", reason: BRANCH_UPDATES_REFUSED },
+    });
+    unsubscribe();
+    await session.destroy();
   });
 
   it("holds field writes off the wire until the last nested suspension resumes, including an emptied field", () => {

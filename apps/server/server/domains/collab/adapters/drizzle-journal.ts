@@ -37,11 +37,13 @@ import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
+import { documentContainsUpdate } from "../domain/document-containment.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../domain/ports/checkpoint-authority.js";
+import type { LiveWriterJournal } from "../domain/ports/live-writer-journal.js";
 import {
   insertionAttributions,
   materializeCandidateProvenance,
@@ -49,6 +51,7 @@ import {
 } from "../domain/provenance.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "../domain/stale-schema.js";
 import { resolveCheckpointCut } from "./checkpoint-capability.js";
+import { storedDocument } from "./document-loader.js";
 import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   allocateDocumentAdmission,
@@ -84,9 +87,10 @@ export type CollabFacadeStore = {
   latestUpdateSeq(docId: string): Promise<number>;
 };
 
-export type CollabJournal = CheckpointJournal & {
-  headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
-};
+export type CollabJournal = CheckpointJournal &
+  LiveWriterJournal & {
+    headSchemaVersion(documentId: string): Promise<CollabSchemaVersion | null>;
+  };
 
 export type DrizzleCollabPersistence = {
   journal: CollabJournal;
@@ -385,19 +389,20 @@ async function validateAppendAuthority(
   }
 }
 
-async function appendUpdate(
+type AppendedUpdate = { seq: number; joinedSettlement: boolean };
+
+/**
+ * One update inserted under the document mutation lock the caller holds. `stored` is the
+ * document before it, present for a human update, whose edit receipts are captured against it.
+ */
+async function insertUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
-  authority?: { authorityId: string; generation: bigint },
-): Promise<{ seq: number; joinedSettlement: boolean }> {
+  stored: Y.Doc | undefined,
+): Promise<AppendedUpdate> {
   const origin = parseOrigin(meta);
-  await validateAppendAuthority(db, documentId, authority);
-  const receiptState =
-    origin.originType === "human"
-      ? encodeJournalSnapshot(await createDrizzleJournal(db).read(documentId))
-      : undefined;
   const authorityHead = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
@@ -415,20 +420,12 @@ async function appendUpdate(
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
-  if (receiptState) {
-    const doc = createCollabYDoc({ gc: false });
-    let receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
-    try {
-      Y.applyUpdate(doc, receiptState);
-      receipts = captureReceiptRows(doc, [{ update, origin: { kind: "live", seq: row.id } }]);
-    } finally {
-      doc.destroy();
-    }
+  if (stored && origin.originType === "human") {
     await recordDocumentEdit(db, {
       documentId: asDocumentId(documentId),
       actor: "human",
       actorUserId: origin.actorUserId,
-      receipts,
+      receipts: captureReceiptRows(stored, [{ update, origin: { kind: "live", seq: row.id } }]),
     });
   }
   // Every admitted content mutation invalidates an unresolved settlement cut.
@@ -610,7 +607,17 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
     async append(docId, update, meta, authority) {
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : []);
-        return (await appendUpdate(txDb, docId, update, meta, authority)).seq;
+        await validateAppendAuthority(txDb, docId, authority);
+        // Agent and system appends carry their own fresh structs and are not judged.
+        const stored =
+          parseOrigin(meta).originType === "human"
+            ? storedDocument(await createDrizzleJournal(txDb).read(docId))
+            : undefined;
+        try {
+          return (await insertUpdate(txDb, docId, update, meta, stored)).seq;
+        } finally {
+          stored?.destroy();
+        }
       });
     },
 
@@ -618,7 +625,19 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       return runInDrizzleTransaction(db as Database, async () => {
         // A live room binds its edit grant around each frame (file-access §7).
         const txDb = await enterJournalSeam(db, [docId], []);
-        return appendUpdate(txDb, docId, update, meta, authority);
+        await validateAppendAuthority(txDb, docId, authority);
+        // Judged against what every earlier admission committed: a copy of an update another
+        // socket already stored appends no row, spends no admission sequence, records no edit.
+        const stored = storedDocument(await createDrizzleJournal(txDb).read(docId));
+        try {
+          if (documentContainsUpdate(stored, update)) return { status: "contained" } as const;
+          return {
+            status: "appended",
+            ...(await insertUpdate(txDb, docId, update, meta, stored)),
+          } as const;
+        } finally {
+          stored.destroy();
+        }
       });
     },
 
@@ -922,7 +941,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         }
 
         if (compactedThroughSeq > 0) {
-          // Publish every retired prefix, even when an ordinary checkpoint
+          // Advance the head past every retired prefix, even when an ordinary checkpoint
           // already covers it and this compaction folds no new rows.
           await txDb
             .update(documentYjsHeads)
@@ -1096,10 +1115,8 @@ export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPers
 }
 
 function encodeJournalSnapshot(snapshot: JournalSnapshot): Uint8Array {
-  const doc = createCollabYDoc({ gc: false });
+  const doc = storedDocument(snapshot);
   try {
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
     return Y.encodeStateAsUpdate(doc);
   } finally {
     doc.destroy();

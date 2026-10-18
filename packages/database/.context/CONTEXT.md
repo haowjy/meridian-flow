@@ -68,6 +68,17 @@ Forward-turn inverses and write provenance live in immutable `document_edits`
 and `document_edit_parts`; the legacy reconstruction tables and the unused
 mutation provenance sink are retired.
 
+The change-trail signal triggers on `branch_write_journal`, `document_edits`
+and `document_edit_parts` fire inside a writer keystroke's branch row lock,
+three per key, so their cost is that writer's save latency and every other
+writer's wait on the draft. `change_trail_owners` is defined only in migrations
+(the current body is `0065_change_trail_owner_cost.sql`, not `src/functions/`):
+a replacement keeps `SET jit = off` (its recursive CTE's unbounded estimate
+otherwise makes PostgreSQL compile LLVM code on every call, 15 ms empty and
+hundreds once the tables grow), its primary-key journal lookup and its early
+returns for inserts that have no owners. Measure an append's `holdMs` before
+and after any change to these triggers.
+
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
 owned rows identify exactly what a restore revives; their FKs are `ON DELETE

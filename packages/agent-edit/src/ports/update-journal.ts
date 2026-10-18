@@ -34,10 +34,6 @@ export type JournalMutation = JournalMutationBase &
         branchGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
         peerBranchId?: string;
-        /** Branch journal head captured while preparing an edit. */
-        branchJournalWatermark?: number;
-        /** Host revision for status-sensitive branch history transitions. */
-        branchJournalRevision?: string;
       }
   );
 
@@ -76,13 +72,6 @@ export interface UpdateJournal {
     meta: UpdateMeta,
     authority?: JournalAuthority,
   ): Promise<number>;
-  /** Journal-first transport admission; hosts may atomically join settlement state. */
-  appendWriterUpdate?(
-    docId: string,
-    update: Uint8Array,
-    meta: UpdateMeta,
-    authority?: JournalAuthority,
-  ): Promise<{ seq: number; joinedSettlement: boolean }>;
   /** Append logical edit envelopes atomically; the storage adapter expands their ordered parts. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
@@ -110,10 +99,4 @@ export interface DestructiveProvenanceRun {
 
 export function writeHandle(wId: number): string {
   return `w${wId}`;
-}
-
-export function parseWriteHandle(handle: string): number | undefined {
-  if (!/^w[1-9]\d*$/.test(handle)) return undefined;
-  const ordinal = Number(handle.slice(1));
-  return Number.isSafeInteger(ordinal) ? ordinal : undefined;
 }

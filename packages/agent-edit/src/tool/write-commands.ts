@@ -662,7 +662,7 @@ export function createWriteCommands(deps: {
 
   /**
    * Ahead refs the write minted are registered before anything is applied or
-   * locked (§6.1); a failure fails the write, and the refs were never published.
+   * locked (§6.1); a failure fails the write, and the refs were never registered.
    * Registration may settle one at once, and the echo spells them all, so the
    * scope loads them next.
    */

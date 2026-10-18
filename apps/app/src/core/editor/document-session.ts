@@ -134,6 +134,17 @@ export type DocumentSessionConnectionState =
     };
 
 /**
+ * Client-side terminal reason: the server refused this branch room's updates on
+ * several reconnects in a row. The session stays open and read-only so its owner
+ * can show the unsent text and reopen the draft; nothing retries it.
+ */
+export const BRANCH_UPDATES_REFUSED = "branch-updates-refused";
+
+export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "terminal" && state.reason === BRANCH_UPDATES_REFUSED;
+}
+
+/**
  * Surface `DocumentSession` consumes from its transport.
  *
  * `synced` / `whenSynced` describe the FIRST server reconciliation. Live
@@ -226,6 +237,9 @@ export class DocumentSession {
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private observedOutboxPresence = false;
+  // Distinct connection states can share a status (`disconnected` and
+  // `terminal` are both `offline`); subscribers still need the new one.
+  private emittedTransportState: DocumentSessionConnectionState | null = null;
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -751,10 +765,12 @@ export class DocumentSession {
     if (
       next === this.status &&
       acknowledged === this.serverHasLocalChanges &&
-      outboxPresent === this.observedOutboxPresence
+      outboxPresent === this.observedOutboxPresence &&
+      this.transportState === this.emittedTransportState
     )
       return;
     this.observedOutboxPresence = outboxPresent;
+    this.emittedTransportState = this.transportState;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;
     this.emit();

@@ -13,6 +13,7 @@ import type {
   DraftPreviewResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
+import { MAX_DISCARD_MEMBER_PART_KEYS } from "@meridian/contracts/drafts";
 import { onlineManager, type QueryClient } from "@tanstack/react-query";
 import {
   applyAllDrafts,
@@ -231,15 +232,29 @@ function requestBody(
     liveRevisionToken: command.basis.liveRevisionToken,
     draftRevisionToken: command.basis.draftRevisionToken,
   };
-  return command.mode === "apply"
-    ? { ...basis, operationIds: [...command.selection.operationIds] }
-    : {
-        ...basis,
-        closureClassIds: [...command.selection.classIds],
-        admissionTokens: [...command.selection.admissionTokens],
-        // Retained clicked operationKey values are part keys, except row-only fallbacks.
-        memberPartKeys: selectionKeys(command.selection).filter((key) => !key.startsWith("row:")),
-      };
+  if (command.mode === "apply")
+    return { ...basis, operationIds: [...command.selection.operationIds] };
+  // Retained clicked operationKey values are part keys, except row-only fallbacks.
+  const members = selectionKeys(command.selection).filter((key) => !key.startsWith("row:"));
+  return {
+    ...basis,
+    closureClassIds: [...command.selection.classIds],
+    admissionTokens: [...command.selection.admissionTokens],
+    memberPartKeys: evenSample(members, MAX_DISCARD_MEMBER_PART_KEYS),
+    memberPartKeysComplete: members.length <= MAX_DISCARD_MEMBER_PART_KEYS,
+  };
+}
+
+/**
+ * At most `limit` of `keys`, evenly spaced and in order, so a resend repeats the same bytes.
+ * A sample can show that a clicked member survives, never that none does.
+ */
+function evenSample(keys: readonly string[], limit: number): string[] {
+  if (keys.length <= limit) return [...keys];
+  return Array.from(
+    { length: limit },
+    (_, index) => keys[Math.floor((index * keys.length) / limit)] as string,
+  );
 }
 
 /** The server code a refused item command carries to the render layer. */
@@ -592,7 +607,7 @@ async function sendClick(
       ...draftPreviewQueryOptions(draft),
       staleTime: 0,
     });
-    // Revoked while the read was out: nothing is sent, nothing is published.
+    // Revoked while the read was out: nothing is sent, nothing is recorded.
     if (!queuedChangeIsLive(click.change)) return blocked;
     preview = fresh.status === "active" ? fresh : null;
   }

@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
 import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-branch-push.js";
-import type { SettlementBatchScope } from "./domain/ports/settlement-publication.js";
+import type { SettlementBatchScope } from "./domain/ports/settlement-apply.js";
 import {
   ALPHA_ID,
   SETTLEMENT_BATCH as BATCH,
@@ -47,6 +47,14 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     );
   }
 
+  /** Each branch's revision, which every review-membership write moves. */
+  async function revisions(branchIds: readonly string[]) {
+    const rows = await db
+      .select({ id: schema.documentBranches.id, revision: schema.documentBranches.revision })
+      .from(schema.documentBranches);
+    return branchIds.map((branchId) => rows.find((row) => row.id === branchId)?.revision ?? -1);
+  }
+
   /** Trail changes and unconsumed notices that still name a push. */
   async function pushTraces() {
     const details = await db.select().from(schema.changeTrailDocumentDetails);
@@ -63,9 +71,9 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
   it("a refusal abandons the staged batch in completion's own transaction, or not at all", async () => {
     const reason = { code: "stale", detail: { itemKeys: ["alpha"] } };
     const deferred: string[] = [];
-    const workPublication = createWorkProjectionMutation({
+    const worksNotice = createWorkProjectionMutation({
       db,
-      pending: createDrizzleWorkDraftPendingStore(db),
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       availability: {
         async advance() {
           deferred.push("availability");
@@ -102,7 +110,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
             runAfterDrizzleCommit(() => {
               deferred.push("commit");
             });
-            await workPublication.publishWorks([WORK_ID]);
+            await worksNotice.notifyWorksChanged([WORK_ID]);
             return { kind: "proceed" as const };
           },
         };
@@ -133,7 +141,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
       },
     };
     // First the lease expires during retirement; then a failure lands between the
-    // rollback of the tentative publication and the abandonment.
+    // rollback of the tentative Apply and the abandonment.
     let withdrawalFault: "expire" | "fail" | null = "expire";
     let expired = false;
     let harness!: ReturnType<typeof createHarness>;
@@ -161,7 +169,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
         }
         if (fault === "fail") throw new Error("injected failure before abandonment");
       },
-      publicationSteps: [proceedingStep, refusingStep],
+      applySteps: [proceedingStep, refusingStep],
     });
     const branchIds = await seedBatch(harness);
     const liveBefore = await liveDurableState(db, BATCH);
@@ -213,10 +221,16 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
 
     // The next owner decides again and abandons it whole; recovery never returns to it.
     await expireAllPendingClaims(db);
-    const recoverer = createHarness(db, { publicationSteps: [proceedingStep, refusingStep] });
+    const recoverer = createHarness(db, { applySteps: [proceedingStep, refusingStep] });
+    const revisionsBeforeWithdrawal = await revisions(branchIds);
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(1);
     expect((await batchStates()).map(({ state }) => state)).toEqual(["abandoned", "abandoned"]);
     expect((await journalStatuses(branchIds)).flat()).toEqual(["active", "active", "active"]);
+    // Withdrawing the members (pushed → active) moved each branch's revision (§2.5).
+    const withdrawn = await revisions(branchIds);
+    expect(withdrawn.map((revision, i) => revision > (revisionsBeforeWithdrawal[i] ?? 0))).toEqual(
+      branchIds.map(() => true),
+    );
     expect(await db.select().from(schema.pushLineage)).toEqual([]);
     await expireAllPendingClaims(db);
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(0);
@@ -261,7 +275,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
       afterDurableCommit: async () => {
         blocked = { gamma: GAMMA_ID };
       },
-      publicationSteps: [
+      applySteps: [
         {
           kind: "test_tree",
           async plan(scope) {
@@ -387,7 +401,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
       },
     };
     const crashing = createHarness(db, {
-      publicationSteps: [coldStep],
+      applySteps: [coldStep],
       async afterDurableCommit() {
         throw new Error("cold text handoff");
       },
@@ -406,7 +420,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
       expect.objectContaining({ itemKey: "beta", documentId: BETA_ID, decidedIn: "check" }),
     );
     await expireAllPendingClaims(db);
-    const cold = createHarness(db, { publicationSteps: [coldStep] });
+    const cold = createHarness(db, { applySteps: [coldStep] });
     const betaWarmBeforeRecovery = await cold.liveMarkdown(BETA_ID);
     const recoveryBroadcastsBefore = cold.liveRoomBroadcasts().length;
     await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
@@ -432,35 +446,16 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     harness.destroyWarmState();
   });
 
-  it("a payload-only batch hands off when its lease set keeps growing past the call's retries; another owner recovers its refined payload and holds", async () => {
+  it("a payload-only batch whose staging call loses its claim is left to recovery, which settles its refined payload and holds", async () => {
     const seeding = createHarness(db);
-    const alphaBranch = await seeding.stagePeerReply(ALPHA_ID, "payload-lease");
-    const betaBranch = await seeding.stagePeerReply(BETA_ID, "payload-lease-grown");
+    const alphaBranch = await seeding.stagePeerReply(ALPHA_ID, "payload-handoff");
     const journalBefore = await db.select().from(schema.branchWriteJournal);
     seeding.destroyWarmState();
     const posterHeld = { itemKey: "poster", reason: { code: "path_taken" } };
-    const payload = { items: ["cover", "poster"], leases: [alphaBranch] };
-    const refined = { items: ["cover"], leases: [alphaBranch] };
-    // The step's lease set grows between staging and completion (lane E: a new branch of D),
-    // and keeps growing on every completion of the warm call, so the call continues its
-    // batch under each grown set (F22) until its retries run out and recovery takes it.
-    let grown = false;
-    let growing = false;
-    let growth = 0;
-    const leased = (harness: ReturnType<typeof createHarness>, branchId: string) =>
-      harness.criticalSections.withBranches([branchId], async () => false).catch(() => true);
-    const imageStep = (seen: unknown[], harness: () => ReturnType<typeof createHarness>) => ({
+    const payload = { items: ["cover", "poster"], branch: alphaBranch };
+    const refined = { items: ["cover"], branch: alphaBranch };
+    const imageStep = (seen: unknown[]) => ({
       kind: "test_image",
-      async prepare(staged: unknown) {
-        if (growing) growth += 1;
-        return {
-          branchIds: [
-            ...(staged as typeof payload).leases,
-            ...(grown ? [betaBranch] : []),
-            ...(growing ? [`grown-${growth}`] : []),
-          ],
-        };
-      },
       async plan(scope: SettlementBatchScope) {
         const staged = scope.payloads.get("test_image") as typeof payload | undefined;
         if (staged === undefined) return null;
@@ -478,34 +473,31 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
               staged,
               held: scope.stage === "completion" ? scope.held : null,
               admitted: [...admitted],
-              leased: [await leased(harness(), alphaBranch), await leased(harness(), betaBranch)],
             });
           },
         };
       },
     });
     const seenWarm: unknown[] = [];
-    let warmLeased: boolean | undefined;
-    let warm!: ReturnType<typeof createHarness>;
-    warm = createHarness(db, {
+    // Staged and durable, the batch's claim passes to another owner before the call settles.
+    const warm = createHarness(db, {
       afterDurableCommit: async () => {
-        warmLeased = await leased(warm, alphaBranch);
-        grown = true;
-        growing = true;
+        await db
+          .update(schema.branchPushSettlementBatches)
+          .set({ claimToken: sql`gen_random_uuid()` });
       },
-      publicationSteps: [imageStep(seenWarm, () => warm)],
+      applySteps: [imageStep(seenWarm)],
     });
     expect(await warm.stagePeerReply(ALPHA_ID, "payload-outstanding")).toBe(alphaBranch);
     const stagedPeerBefore = await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID);
     expect(stagedPeerBefore).toContain("Outstanding peer reply.");
     await expect(warm.pushBranches([], undefined, { test_image: payload })).rejects.toThrow(
-      "needs branch leases its caller doesn't hold",
+      "remains pending after bounded retries",
     );
-    expect({ seenWarm, warmLeased }).toEqual({ seenWarm: [], warmLeased: true });
-    growing = false;
-    // Handed off: pending, unclaimed, with the refined payload and the check's hold staged.
+    expect(seenWarm).toEqual([]);
+    // Pending, with the refined payload and the check's hold staged.
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
-      expect.objectContaining({ state: "pending", claimToken: null, attemptCount: 1 }),
+      expect.objectContaining({ state: "pending" }),
     ]);
     expect(await db.select().from(schema.branchPushSettlementPayloads)).toEqual([
       expect.objectContaining({ stepKind: "test_image", payload: refined }),
@@ -518,12 +510,9 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
 
     await expireAllPendingClaims(db);
     const seen: unknown[] = [];
-    let recoverer!: ReturnType<typeof createHarness>;
-    recoverer = createHarness(db, { publicationSteps: [imageStep(seen, () => recoverer)] });
+    const recoverer = createHarness(db, { applySteps: [imageStep(seen)] });
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(1);
-    expect(seen).toEqual([
-      { staged: refined, held: [posterHeld], admitted: [], leased: [true, true] },
-    ]);
+    expect(seen).toEqual([{ staged: refined, held: [posterHeld], admitted: [] }]);
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "completed" }),
     ]);
@@ -537,7 +526,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     let checks = 0;
     let beforeAdmissionRan = false;
     const harness = createHarness(db, {
-      publicationSteps: [
+      applySteps: [
         {
           kind: "test_check",
           async plan() {

@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { branchContent } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -18,7 +19,6 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { draftBranchId, inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
@@ -185,6 +185,38 @@ it.each([
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nGold.\n");
       return;
     }
+    // The receipt chip is a markBlocking host: reading it marks the holding draft blocking in
+    // a revision move, so a frame judged before the chip cannot commit over it (§2.5).
+    const holdingBranch = async () => {
+      const [row] = await db
+        .select({
+          revision: schema.documentBranches.revision,
+          blocking: schema.documentBranches.blocking,
+        })
+        .from(schema.documentBranches)
+        .innerJoin(schema.drafts, eq(schema.drafts.id, schema.documentBranches.draftId))
+        .where(
+          and(
+            eq(schema.drafts.originWorkId, otherWork as never),
+            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentBranches.status, "active"),
+          ),
+        );
+      if (!row) throw new Error("missing holding draft branch");
+      return row;
+    };
+    let marked: Awaited<ReturnType<typeof holdingBranch>> | undefined;
+    if (origin === "applied") {
+      // Nothing has asked about this turn yet, so nothing marked the holding draft.
+      const unmarked = await holdingBranch();
+      await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID);
+      marked = await holdingBranch();
+      expect(unmarked.blocking).toBe(false);
+      expect({ blocking: marked.blocking, moved: marked.revision > unmarked.revision }).toEqual({
+        blocking: true,
+        moved: true,
+      });
+    }
     const partial = await view.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
@@ -198,6 +230,14 @@ it.each([
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     expect(await holdingReview.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
+    if (marked) {
+      // Placing the held rows clears the hold, in a revision move like setting it.
+      const cleared = await holdingBranch();
+      expect({ blocking: cleared.blocking, moved: cleared.revision > marked.revision }).toEqual({
+        blocking: false,
+        moved: true,
+      });
+    }
     // Both an active Gamma part and the latest action's undone Gold part now qualify.
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "redo",
@@ -429,7 +469,7 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
         .where(eq(schema.documentBranches.id, branchId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
+        Y.applyUpdate(doc, await branchContent(db, branch.id));
         doc.clientID = allocateDocumentClient(doc);
         const updates = captureMutationUpdates(doc, () => {
           const p = new Y.XmlElement("paragraph"),

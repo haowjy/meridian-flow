@@ -1,6 +1,8 @@
 // Deep public facade for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
+// A host's response-attempt surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is
+// exported once, from `integration.ts`.
 export type { ResponseReadLease } from "./tool/response-committer.js";
 
 export type AgentEditCoreOptions = CreateWriteToolOptions;
@@ -10,6 +12,7 @@ export interface AgentEditCore {
   write: ReturnType<typeof createWriteTool>["write"];
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
+  prepareResponse: ReturnType<typeof createWriteTool>["prepareResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
   prepare: ReturnType<typeof createWriteTool>["prepare"];
@@ -27,6 +30,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     write: tool.write,
     recover: tool.recover,
     commitResponse: tool.commitResponse,
+    prepareResponse: tool.prepareResponse,
     rollbackResponse: tool.rollbackResponse,
     hasResponseDocument: tool.hasResponseDocument,
     prepare: tool.prepare,

@@ -47,7 +47,8 @@ external IDs fail closed rather than merging accounts.
 `ProjectWorkAuthorityResolver` is the only projects-domain mint for opaque,
 stable Work URI authority and offers exact same-project ID/slug resolution plus
 transactional locking. `listWorkCatalog` owner-gates the requested collection
-and enriches it with one set-oriented pending-draft count read.
+and serves each Work's stored pending count (`works.pending_document_count`, the
+badge) from the same row as its revision; it counts nothing at read time.
 
 `createWork` creates metadata without binding a thread or enqueueing Work
 context. `updateWorkTransition` is the shared metadata policy for human PATCH
@@ -74,8 +75,41 @@ writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 
 Lifecycle writes lock the Work row and publish `{ workId }` through
 `FileAccessChanges` in the same transaction so Scratch, Uploads, and draft
-rooms reconnect at their new access level. Work context mutations and
-reviewable branch-journal creation use that same lifecycle lock.
+rooms reconnect at their new access level. Work context mutations use that
+same lifecycle lock. Archive, unarchive, delete and restore lock no branch row
+and bump no branch revision. Collab's append keeps the Work predicate in its
+row `UPDATE` and rechecks the lifecycle in a fresh read once it holds the row;
+every other draft write takes the Work through the boundary below and so orders
+itself against the transition. The window that leaves: a writer key whose
+post-lock read ran before the transition committed and whose `COMMIT` came
+after (finalization and inserts, a few milliseconds, however long it waited for
+the row) lands in the archived draft; every later key is refused, and unarchive
+admits the next. The window is accepted rather than a Work lock on every
+keystroke (collab `.context/CONTEXT.md`).
+
+Collab's lifecycle and structural branch and draft writes take Work rows only
+through `adapters/work-projection-mutation.ts`, the Works mutation boundary: the
+one owner of Work-first lock order (Work, draft, document, branch). A
+transaction that locks a Work through the boundary recounts it at commit:
+`lockWorks(set)` locks the set's Works (opening a draft, Apply's batch plan, a
+reply save's grants), `mutate(set, operation)` is `lockWorks` then the write
+(closing a draft through Discard, branch writes, the draft-effect projection).
+At commit each locked Work's pending count is reconciled once (one SQL aggregate
+over collab's membership rule, `WorkDraftPendingCounts`, however many locks the
+transaction took) against the stored value, and only a Work whose count moved
+gets a revision bump and a Works-changed notice. A write that leaves the count
+alone sends nothing: the count is the only thing collab's writes change in a
+Works snapshot. Apply's completion, which places draft rows and clears their
+`blocking` under `lockWorks`, is covered the same way. `touchWorks(set, at)` is
+activity (`lastActivityAt`: a turn, a document edit, Apply completion) and
+always notifies; lifecycle and metadata writes notify directly. A writer
+keystroke is an append and never enters the boundary, even one that moves its
+draft in or out of review: the independent draft-effect projection runs after
+every append (and its sweep after a crash) and reconciles through `mutate`
+then. Because the comparison is
+against the stored value, not a count taken before the transaction, a count an
+append moved outside the boundary is still announced by the next reconcile
+(the `effect-projection` probe's staging arm).
 
 Work deletion soft-deletes primary chats and live Work context rows, marking
 those children with `deletedByWorkId`. Drafts and their branches remain until

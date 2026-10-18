@@ -6,6 +6,11 @@ export const WS_CLOSE = {
   PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
   BRANCH_STALE: { code: 4205, reason: "branch-stale-doc" },
   BRANCH_GENERATION_STALE: { code: 4206, reason: "branch-generation-stale" },
+  /**
+   * A draft update arrived before the update it depends on reached the branch's journal. Not a
+   * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.
+   */
+  BRANCH_PREFIX_MISSING: { code: 4207, reason: "branch-prefix-missing" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**

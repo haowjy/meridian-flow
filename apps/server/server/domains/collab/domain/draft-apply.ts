@@ -1,23 +1,24 @@
 /**
- * Apply as one publication (contract §11): a draft's selected items become one batch on
- * the settlement seam, carrying the `draft_tree` payload the tree step publishes with the
+ * Apply as one settlement (contract §11): a draft's selected items become one batch on
+ * the settlement seam, carrying the `draft_tree` payload the tree step lands with the
  * text. `applyItems` stages through `pushBranchesToLive` and maps per-item results; the
  * step itself (tokens, holds, vacate and install, arrivals, history, row drop, close) is `adapters/drizzle-draft-tree-step.ts`.
  * Every Apply caller goes through here: the per-document route, per-change Apply (its rows
- * chosen under the branch lease, §4.1), and Apply all. Apply never closes the
+ * chosen at the revision staging commits at, §4.1), and Apply all. Apply never closes the
  * draft (§2.4). A writer's command is claimed in the staging transaction and settled by the
  * tree step in completion (§4.6).
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DraftApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/drafts";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchJournalRow } from "./branch-journal.js";
 import type {
-  BranchJournalRow,
   BranchPushService,
+  ChangeApplySelection,
   ReviewRowSelection,
-  SelectedPublication,
 } from "./branch-push-contracts.js";
-import { PublicationLeasesChangedError } from "./branch-push-transition.js";
+import { BranchPushRetryExhaustedError } from "./branch-push-contracts.js";
+import { PendingLiveSettlementError } from "./branch-push-transition.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
@@ -32,7 +33,7 @@ import {
   readDraftTreeRefusal,
 } from "./draft-tree-payload.js";
 import type { Drafts } from "./drafts.js";
-import type { PublicationRefusal } from "./ports/settlement-publication.js";
+import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
 export {
   type ApplyNote,
@@ -45,7 +46,7 @@ export {
 /**
  * What the writer was shown of one item. A token absent (the legacy per-document Apply
  * without tokens) is filled from the read `applyItems` makes, so
- * what publishes is what that read saw; a selection with no tokens of its own that turns
+ * what applies is what that read saw; a selection with no tokens of its own that turns
  * out stale reads again once.
  */
 export type ApplyItemRef = {
@@ -61,13 +62,13 @@ export type ApplySelection = { kind: "rendered"; items: readonly ApplyItemRef[] 
 export type ApplyItemResult = DraftApplyItemResult;
 export type ApplyResult = Exclude<DraftApplyAllResponse, { status: "pending" }>;
 
-/** The writer's command riding on a publication: claimed at staging, answered at completion. */
+/** The writer's command riding on an Apply: claimed at staging, answered at completion. */
 export type ApplyCommand = { envelope: DraftCommandEnvelope; shape: "item" | "all" | "changes" };
 
 /** A command's id already has an effect: the caller answers the stored command. */
 export type ApplyOutcome = ApplyResult | { status: "command_exists" };
 
-/** What per-change Apply selected under the lease: its rows, fence and rendered basis. */
+/** What per-change Apply selected on a staging attempt's read: its rows, fence and rendered basis. */
 export type ChangeSelection = ReviewRowSelection & {
   operationIds: readonly string[];
   closureClassIds: readonly string[];
@@ -88,14 +89,14 @@ export class DuplicateApplyItemError extends Error {
 export class DraftApplyPendingError extends Error {
   constructor(
     readonly draftId: DraftId,
-    cause: PublicationLeasesChangedError,
+    cause: PendingLiveSettlementError,
   ) {
     super("The draft is finishing in the background.", { cause });
     this.name = "DraftApplyPendingError";
   }
 }
 
-export interface DraftPublication {
+export interface DraftApply {
   applyItems(input: {
     workId: WorkId;
     draftId: DraftId;
@@ -104,7 +105,7 @@ export interface DraftPublication {
     command?: ApplyCommand;
     signal?: AbortSignal;
   }): Promise<ApplyOutcome>;
-  /** One item's selected changes, published as exact rows; the selection runs under the lease. */
+  /** One item's selected changes, applied as exact rows; the selection runs on each attempt's read. */
   applyChanges(input: {
     workId: WorkId;
     item: DraftReviewItem;
@@ -115,11 +116,11 @@ export interface DraftPublication {
   }): Promise<ApplyOutcome>;
 }
 
-export function createDraftPublication(deps: {
+export function createDraftApply(deps: {
   drafts: Pick<Drafts, "byIds">;
   reviewItems: Pick<DraftReviewItems, "list" | "withLiveTextTokens">;
   push: Pick<BranchPushService, "pushBranchesToLive">;
-}): DraftPublication {
+}): DraftApply {
   async function activeDraft(draftId: DraftId, workId: WorkId) {
     const [draft] = await deps.drafts.byIds([draftId]);
     return draft?.status === "active" && draft.originWorkId === workId ? draft : null;
@@ -145,26 +146,26 @@ export function createDraftPublication(deps: {
     }));
   }
 
-  /** What one pass publishes: built fresh each pass, so a retry re-reads the draft. */
-  interface PublicationPlan {
+  /** What one pass applies: built fresh each pass, so a retry re-reads the draft. */
+  interface ApplyPlan {
     branchIds: string[];
     itemKeys: string[];
     payload: DraftTreePayload;
-    selected?: SelectedPublication;
+    selected?: ChangeApplySelection;
     /** A stale answer from a tokenless selection was read before a change: read again, once. */
     rereadStale: boolean;
   }
 
   /**
-   * One publication loop: stage, push, settle the answer. A tokenless selection whose
+   * One Apply loop: stage, push, settle the answer. A tokenless selection whose
    * tokens went stale is planned again, once.
    */
-  async function publish(input: {
+  async function applyBatch(input: {
     draftId: DraftId;
     userId?: UserId;
     command?: ApplyCommand;
     signal?: AbortSignal;
-    plan(): Promise<PublicationPlan | ApplyOutcome>;
+    plan(): Promise<ApplyPlan | ApplyOutcome>;
   }): Promise<ApplyOutcome> {
     const { draftId } = input;
     let readAgain = false;
@@ -182,11 +183,16 @@ export function createDraftPublication(deps: {
           ...(plan.selected ? { selected: plan.selected } : {}),
         })
         .catch((cause: unknown) => {
-          if (cause instanceof PublicationLeasesChangedError) {
+          // The batch staged but settlement handed it to recovery: it finishes there.
+          if (cause instanceof PendingLiveSettlementError) {
             throw new DraftApplyPendingError(draftId, cause);
           }
+          // Four staging attempts each found a draft moved under them (a writer typing):
+          // nothing was staged and nothing claimed, so the items answer as stale do.
+          if (cause instanceof BranchPushRetryExhaustedError) return null;
           throw cause;
         });
+      if (!pushed) return { status: "stale", draftId, staleItemKeys: plan.itemKeys };
       if (pushed.commandExists) return { status: "command_exists" };
       if (pushed.refused) {
         const refusal = readDraftTreeRefusal(pushed.refused);
@@ -235,7 +241,7 @@ export function createDraftPublication(deps: {
           ref.liveTextToken === undefined &&
           ref.branchGenerationToken === undefined,
       );
-      return publish({
+      return applyBatch({
         draftId,
         ...(input.userId ? { userId: input.userId } : {}),
         ...(input.command ? { command: input.command } : {}),
@@ -302,7 +308,7 @@ export function createDraftPublication(deps: {
               : entry,
           ],
         }) satisfies DraftTreePayload;
-      return publish({
+      return applyBatch({
         draftId,
         userId: input.userId,
         command: input.command,
@@ -333,7 +339,7 @@ export function createDraftPublication(deps: {
   };
 }
 
-function heldReason(reason: PublicationRefusal): HeldReason {
+function heldReason(reason: ApplyRefusal): HeldReason {
   const held = readDraftTreeHold(reason);
   if (!held) throw new Error(`Apply held an item for a reason it doesn't know: ${reason.code}`);
   return held;

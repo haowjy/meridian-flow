@@ -20,7 +20,7 @@ An unchanged occurrence keeps its old attributes verbatim. A changed title or
 suffix keeps identity while updating written metadata. A copied node keeps its
 stored ref structurally; copies are never reassigned. Ahead refs are registered
 before mutation, and a registration failure fails the write before anything is
-applied, since the minted refs were never published. The command prepares the
+applied, since the minted refs were never made visible. The command prepares the
 minted refs again before echo serialization.
 
 ## Serialization doors

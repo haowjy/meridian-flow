@@ -78,6 +78,11 @@ export const documentBranches = pgTable(
     stateVector: byteaColumn("state_vector").notNull(),
     /** Current visible effect against the durable last-pulled live cut. */
     hasEffect: boolean("has_effect").notNull().default(true),
+    /**
+     * The `revision` `has_effect` was judged at: equal is fresh, lower is stale and re-judged by
+     * the projection sweep. `-1` (the default) is stale whatever the revision.
+     */
+    hasEffectRevision: bigint("has_effect_revision", { mode: "number" }).notNull().default(-1),
     blocking: boolean("blocking").notNull().default(false),
     liveCut: byteaColumn("live_cut"),
     discardedStateVector: byteaColumn("discarded_state_vector"),
@@ -85,6 +90,16 @@ export const documentBranches = pgTable(
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
     generation: integer("generation").notNull().default(1),
+    /**
+     * Bumped by every committed write to the branch: appends, checkpoint rewrites, closes, holds
+     * and row status changes. Rewrites are fenced by it; appends bump it without checking it, and
+     * the projection job writes `has_effect` at it without bumping it. Never reaches the client.
+     */
+    revision: bigint("revision", { mode: "number" }).notNull().default(0),
+    /** The `revision` the checkpoint (`state`, `state_vector`) was written at. */
+    checkpointRevision: bigint("checkpoint_revision", { mode: "number" }).notNull().default(0),
+    /** Highest `branch_write_journal.id` folded into the checkpoint; the tail is every later row. */
+    checkpointSeq: bigint("checkpoint_seq", { mode: "number" }).notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -208,7 +223,7 @@ export const branchPushSettlementBatches = pgTable(
     lastError: text("last_error"),
     blockedAt: timestamp("blocked_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
-    /** A publication step refused the staged batch; nothing of it reached live. */
+    /** An Apply step refused the staged batch; nothing of it reached live. */
     abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -252,7 +267,7 @@ export const branchPushSettlementBatches = pgTable(
   ],
 );
 
-/** A publication step's durable input, staged with its batch and read on claim and recovery. */
+/** An Apply step's durable input, staged with its batch and read on claim and recovery. */
 export const branchPushSettlementPayloads = pgTable(
   "branch_push_settlement_payloads",
   {
@@ -266,7 +281,7 @@ export const branchPushSettlementPayloads = pgTable(
 );
 
 /**
- * An item a publication step kept out of a batch, and why: staged with the batch
+ * An item an Apply step kept out of a batch, and why: staged with the batch
  * when the pre-staging check decided it, written in completion otherwise.
  */
 export const branchPushSettlementHolds = pgTable(

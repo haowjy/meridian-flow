@@ -34,6 +34,7 @@ import { createEffectiveDocumentReader } from "./domain/effective-document-reade
 import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
+import { readResolvedBranch } from "./test-support/branch-store-seam.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -94,7 +95,7 @@ async function fixture(
   const links = f.links;
   const drafts = createDrafts({
     store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const effective = scopeBranchPeer(
     createEffectiveDocumentReader({
@@ -336,11 +337,10 @@ describe("document revisions (postgres and collab)", () => {
     const originalRead = f.branchCoordinator.readBranch.bind(f.branchCoordinator);
     const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     const workBranchId = draft.branchId;
-    draft.doc.destroy();
     const contending = deferred();
     let scheduled = false;
     f.branchCoordinator.pullFromDoc = async (...args) => {
-      if (scheduled && args[1] === workBranchId) contending.resolve();
+      if (scheduled && args[0].branchId === workBranchId) contending.resolve();
       return originalPull(...args);
     };
     f.branchCoordinator.readBranch = async (id, callback) => {
@@ -404,7 +404,10 @@ describe("document revisions (postgres and collab)", () => {
       started.push(joined);
       release.resolve();
       await Promise.all(started);
-      const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+      const draft = await readResolvedBranch(
+        f.branchStore,
+        await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID),
+      );
       const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
       draft.doc.destroy();
       await f.branchPulls.flushLivePull(ALPHA_ID);
@@ -431,18 +434,18 @@ describe("document revisions (postgres and collab)", () => {
     );
   });
 
-  it("publishes a root-committed pull even when its caller response aborts", async () => {
+  it("delivers a root-committed pull even when its caller response aborts", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
     const broadcasts: string[] = [];
     const coordinator = createBranchCoordinator({
+      onAppendCommitted: () => {},
       store: f.branchStore,
       onBranchUpdate: ({ branchId }) => broadcasts.push(branchId),
     });
     const pulls = createBranchPullService({
       outsideTransaction: runOutsideDrizzleTransaction,
-      rootTransaction: (operation) => runInRootDrizzleTransaction(db, operation),
       liveCoordinator: f.liveCoordinator,
       branchCoordinator: coordinator,
       branches: f.branchStore,
@@ -462,12 +465,14 @@ describe("document revisions (postgres and collab)", () => {
         },
       ),
     ).rejects.toThrow("response aborted");
-    const peer = await f.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
+    const peer = await readResolvedBranch(
+      f.branchStore,
+      await f.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID),
+    );
     const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(1);
     expect(broadcasts).toEqual(expect.arrayContaining([peer.branchId, draft.branchId]));
     peer.doc.destroy();
-    draft.doc.destroy();
   });
 });
 

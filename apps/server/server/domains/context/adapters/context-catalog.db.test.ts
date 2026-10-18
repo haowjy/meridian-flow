@@ -580,9 +580,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
+          pendingCounts: createDrizzleWorkDraftPendingStore(db),
           availability,
           catalog,
-          pending: createDrizzleWorkDraftPendingStore(db),
         }),
       });
       const workId = "00000000-0000-4000-8000-000000000807" as never;
@@ -615,7 +615,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
-          pending: createDrizzleWorkDraftPendingStore(db),
+          pendingCounts: createDrizzleWorkDraftPendingStore(db),
           availability,
           catalog: {
             async refreshProject(projectId) {

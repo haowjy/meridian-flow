@@ -18,6 +18,7 @@ import type {
 } from "../contracts.js";
 import { type BranchReviewService, DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
+import { type DraftApply, DraftApplyPendingError } from "./draft-apply.js";
 import {
   type CommandLookup,
   type DraftCommandEnvelope,
@@ -25,7 +26,6 @@ import {
   type DraftCommands,
 } from "./draft-commands.js";
 import type { DraftDiscard } from "./draft-discard.js";
-import { DraftApplyPendingError, type DraftPublication } from "./draft-publication.js";
 import type { DraftReviewIdentity } from "./draft-review-identity.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
@@ -42,7 +42,7 @@ export function createWorkDraftReviewService(input: {
   drafts: Pick<Drafts, "activeForWork">;
   reviewItems: DraftReviewItems;
   identity: DraftReviewIdentity;
-  publication: DraftPublication;
+  draftApply: DraftApply;
   discard: DraftDiscard;
   branchReview: BranchReviewService;
   commands: DraftCommands;
@@ -160,7 +160,7 @@ export function createWorkDraftReviewService(input: {
     return { item: resolved.item };
   }
 
-  /** Refusals a selection raises from inside the lease answer as the command's own body. */
+  /** Refusals a selection raises inside its commit scope answer as the command's own body. */
   async function refusal(
     cause: unknown,
     envelope: DraftCommandEnvelope,
@@ -190,7 +190,7 @@ export function createWorkDraftReviewService(input: {
     const { item } = target;
     try {
       return await effect(envelope, async () => {
-        const result = await input.publication.applyChanges({
+        const result = await input.draftApply.applyChanges({
           workId: command.workId,
           item,
           userId: command.userId,
@@ -276,7 +276,7 @@ export function createWorkDraftReviewService(input: {
 
   /** The answer an Apply computes when it stored none: its own wire body (§4.5). */
   function applyBody(
-    result: Awaited<ReturnType<DraftPublication["applyItems"]>>,
+    result: Awaited<ReturnType<DraftApply["applyItems"]>>,
     item: DraftReviewItem | null,
     draftId: DraftId,
   ): DraftCommandResult {
@@ -326,7 +326,7 @@ export function createWorkDraftReviewService(input: {
         if (first) return first;
         return effect(envelope, async () =>
           applyBody(
-            await input.publication.applyItems({
+            await input.draftApply.applyItems({
               workId: command.workId,
               draftId: item.draftId,
               selection: {
@@ -348,7 +348,7 @@ export function createWorkDraftReviewService(input: {
         if (first) return first;
         return effect(envelope, async () =>
           applyBody(
-            await input.publication.applyItems({
+            await input.draftApply.applyItems({
               workId: command.workId,
               draftId,
               selection: { kind: "rendered", items: command.items },

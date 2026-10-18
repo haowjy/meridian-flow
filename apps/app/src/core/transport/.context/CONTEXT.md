@@ -51,6 +51,47 @@ The ordering is a live transport contract, not a test-double detail. A witness
 for it must exercise `test-support/DocumentSocketHarness`, as the transport
 acknowledgement and remote whole-discard probes do.
 
+## Branch rooms: the handshake upload goes first
+
+A branch (draft) room's server appends each Update on top of the bytes it
+already holds and closes `4207 branch-prefix-missing` when an Update depends
+on bytes it lacks. Hocuspocus's own order would produce exactly that on every
+reconnect: the offline queue flushes on the socket's first inbound frame, and
+keys typed during the handshake go out at once, both before the client's
+SyncStep2 (its reply to the server's SyncStep1).
+
+So on `branch:` rooms only, `RoomScopedHocuspocusWebsocket.send` holds every
+Sync Update offered on an open socket until that socket's SyncStep2 has been
+written, then releases the held frames in order through the same `send`. Wire
+order on every branch connection is `step1, step2, [released updates],
+[new updates]`.
+
+- **The SyncStep2 is the causal prefix.** It is the whole Y.Doc diffed against
+  the server's state vector, so it carries everything the server lacks,
+  including bytes replayed into the Y.Doc before the transport existed. The
+  released frames are echoes the server contains.
+- **Counted when written, once.** A held frame reaches `noteFrameSent` only on
+  release; the tracker's handshake flag is set by the real SyncStep2.
+- **A socket that closes first writes nothing it held.** `onOpen` and
+  `onClose` drop the held frames; the next socket's SyncStep2 carries their
+  bytes. Frames offered while the socket is not open keep the base class
+  queue.
+- **No timeout.** A server that never sends SyncStep1 leaves the frames held
+  and the room unacknowledged; nothing releases them unsafely.
+- **Typing never waits.** The Y.Doc, the editor and the outbox have the key
+  at once; only transmission is deferred, by one handshake round trip.
+- **Live rooms are unchanged.** Their server marks the SyncStep2 for offline
+  collision reconciliation, so moving queued bytes into it would change what
+  is reconciled; a live socket writes in the provider's order.
+
+`4207` is not a refusal. It never counts toward the three-`1008` refusal bound
+(`MAX_BRANCH_UPDATE_REFUSALS` in `hocuspocus-document-transport.ts`; see the
+editor's `.context/CONTEXT.md`),
+keeps the outbox, and reconnects after the provider's delay like any drop.
+After handshake-first it means a server that lost committed rows or a peer that
+skips the handshake, and the next connection's SyncStep2 repairs it. Decision:
+[drafts without locks](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/drafts-without-locks.md).
+
 ## Access scope and 4409
 
 The server names a room's scope in Hocuspocus's authenticated message on every

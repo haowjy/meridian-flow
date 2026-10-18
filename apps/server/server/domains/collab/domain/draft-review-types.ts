@@ -25,6 +25,3 @@ export type DraftReviewOperationInternal = Omit<ReviewOperation, "admissionToken
 };
 
 export type DraftReviewDiagnostic = { code: "unattributed_hunk"; hunkId: string };
-
-export type DraftReviewOperationWithEvidence = DraftReviewOperationInternal &
-  Pick<ReviewOperation, "admissionToken">;

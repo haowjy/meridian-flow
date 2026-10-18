@@ -33,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const availability = createDrizzleProjectContextAvailability(db);
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pending: createDrizzleWorkDraftPendingStore(db),
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       availability,
       catalog: createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,

@@ -1,4 +1,4 @@
-/** Owner-gated Work catalog projection, including collab-owned pending-draft counts. */
+/** Owner-gated Work catalog projection; each Work carries its stored pending-document count. */
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type {
   NamedWorkCatalogEntry,
@@ -6,7 +6,6 @@ import type {
   WorksSnapshot,
 } from "@meridian/contracts/works";
 import type { ProjectRepository } from "./ports/project-repository.js";
-import type { WorkDraftPendingCounts } from "./ports/work-draft-pending-counts.js";
 import type { WorkRepository } from "./ports/work-repository.js";
 import { requireProjectOwner } from "./project-access.js";
 
@@ -17,7 +16,6 @@ export async function listWorkCatalog(
       WorkRepository,
       "readSnapshot" | "snapshotIdentity" | "listByProject" | "findNoWork"
     >;
-    pendingDrafts: WorkDraftPendingCounts;
   },
   input: { projectId: ProjectId; userId: UserId },
   requestId = crypto.randomUUID(),
@@ -30,10 +28,6 @@ export async function listWorkCatalog(
       deps.works.findNoWork(input.projectId),
     ]);
     if (!noWork) throw new Error(`Project ${input.projectId} is missing No Work`);
-    const counts = await deps.pendingDrafts.countPendingByWorkIds([
-      ...works.map(({ id }) => id),
-      noWork.id,
-    ]);
     return {
       projectId: input.projectId,
       ...identity,
@@ -42,19 +36,9 @@ export async function listWorkCatalog(
         if (work.isNoWork || work.slug === null) {
           throw new Error(`Named Work catalog included locked Work ${work.id}`);
         }
-        return {
-          ...work,
-          isNoWork: false,
-          slug: work.slug,
-          unpushedChangeCount: counts.get(work.id) ?? 0,
-        };
+        return { ...work, isNoWork: false, slug: work.slug };
       }),
-      noWork: {
-        ...noWork,
-        isNoWork: true,
-        slug: null,
-        unpushedChangeCount: counts.get(noWork.id) ?? 0,
-      } satisfies NoWorkCatalogEntry,
+      noWork: { ...noWork, isNoWork: true, slug: null } satisfies NoWorkCatalogEntry,
     };
   });
 }

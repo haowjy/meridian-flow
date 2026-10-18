@@ -5,14 +5,15 @@
  * nothing registers it. After each admitted writer update the branch is read, debounced,
  * and every `ahead:` key in it is registered, best effort: a target created live and then
  * moved before Apply would otherwise leave the link at the old path. Drafts store nothing
- * about the ref and Apply needs no prerequisite: after publication the derive sweep
+ * about the ref and Apply needs no prerequisite: after the Apply the derive sweep
  * registers anything this missed.
  */
 import { parseLinkRef, resolveDocumentHref } from "@meridian/contracts";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchSnapshot } from "./branch-store.js";
 import type { Drafts } from "./drafts.js";
 import type { AheadRefRegistrar } from "./ports/document-link-scope.js";
 

@@ -61,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pending: createDrizzleWorkDraftPendingStore(db),
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       availability,
       catalog,
     });

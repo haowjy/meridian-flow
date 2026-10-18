@@ -3,16 +3,15 @@
 import type { DocumentRevision } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import type { AppendBranchJournalInput } from "./branch-store.js";
 import {
   type AuthorityGenerationReplacementPort,
-  admitCertifiedMutation,
+  admitSegmentRows,
   DocumentMutationPolicyError,
-  type FrozenReplicationSource,
-  type MutationTarget,
   replaceAuthorityGeneration,
-  replicateFrozenIdentity,
+  replicateFrozenSource,
 } from "./document-mutation-policy.js";
-import { appendProvenanceFacts } from "./provenance.js";
+import { appendProvenanceFacts, validateClientUpdateAdmission } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -34,67 +33,22 @@ function fullReplacementIr() {
 }
 
 describe("document mutation policy operations", () => {
-  it("validates semantic intent before lowering and admission", async () => {
+  it("validates a semantic edit's IR before any of its rows applies", () => {
     const target = new Y.Doc({ gc: false });
-    const lowerCertifiedMutation = vi.fn(async () => updateWith("agent"));
-    const admitImmediate = vi.fn(async () => ({ sequence: 4n, joined: 2 }));
-    const ir = fullReplacementIr();
+    const before = Y.encodeStateAsUpdate(target);
+    const row: AppendBranchJournalInput = {
+      branchId: "branch-1",
+      generation: 1,
+      source: "agent",
+      updateData: updateWith("agent"),
+      semanticEditIr: fullReplacementIr(),
+    };
 
-    await admitCertifiedMutation(
-      {
-        readMutationTarget: async () => ({
-          documentId: "doc-1",
-          generation: 3n,
-          doc: target,
-        }),
-        readCurrentRevision: async () => revision,
-        lowerCertifiedMutation,
-        admitImmediate,
-      },
-      { ir },
-    );
-
-    expect(lowerCertifiedMutation).toHaveBeenCalledWith(ir);
-    expect(admitImmediate).toHaveBeenCalledWith(
-      expect.objectContaining({ attribution: { kind: "agent" } }),
-    );
+    expect(() => admitSegmentRows(target, "doc-2", [row])).toThrow("different document");
+    expect(Y.encodeStateAsUpdate(target)).toEqual(before);
   });
 
-  it("selectively replicates named shared types and carries delete-only state", async () => {
-    const source = new Y.Doc({ gc: false });
-    source.getText("prosemirror").insert(0, "kept");
-    source.getText("companion").insert(0, "excluded");
-    source.getText("deleted").insert(0, "gone");
-    source.getText("deleted").delete(0, 4);
-    const target = new Y.Doc({ gc: false });
-
-    await replicateInto(source, target, { kind: "sharedTypes", names: ["prosemirror"] });
-
-    expect(target.getText("prosemirror").toString()).toBe("kept");
-    expect(target.getText("companion").toString()).toBe("");
-    expect(target.getText("deleted").toString()).toBe("");
-  });
-
-  it("rejects a frozen replication source from another document", async () => {
-    const source = new Y.Doc({ gc: false });
-    source.getText("prosemirror").insert(0, "wrong document");
-    const admit = vi.fn();
-
-    await expect(
-      replicateFrozenIdentity({
-        source: { documentId: "doc-2", doc: source },
-        target: mutationTarget(new Y.Doc({ gc: false })),
-        plan: { kind: "wholeDocument" },
-        admit,
-      }),
-    ).rejects.toMatchObject({
-      code: "invalid_mutation",
-      message: expect.stringContaining("different document"),
-    });
-    expect(admit).not.toHaveBeenCalled();
-  });
-
-  it("rejects non-injective identity replication before admission or target apply", async () => {
+  it("rejects non-injective identity replication before the target applies it", () => {
     const base = proseDoc("a");
     const root = textRange(base);
     const target = cloneDoc(base);
@@ -102,18 +56,30 @@ describe("document mutation policy operations", () => {
     carryToRoot(target, root, "t");
     carryToRoot(source, root, "s");
     const beforeTarget = Y.encodeStateAsUpdate(target);
-    const admit = vi.fn();
 
-    await expect(
-      replicateFrozenIdentity({
-        source: frozenSource(source, "target"),
-        target: mutationTarget(target, "target"),
-        plan: { kind: "wholeDocument" },
-        admit,
-      }),
-    ).rejects.toThrow("One provenance root unit cannot have two visible targets");
-    expect(admit).not.toHaveBeenCalled();
+    expect(() => replicateFrozenSource(source, target)).toThrow(
+      "One provenance root unit cannot have two visible targets",
+    );
     expect(Y.encodeStateAsUpdate(target)).toEqual(beforeTarget);
+  });
+
+  it("replicates a live state that holds a writer's garbage-collected structs", () => {
+    // A writer's gc-enabled editor collects prose it deleted before syncing, so its update
+    // carries GC structs that the live document keeps verbatim.
+    const writer = new Y.Doc();
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.push([new Y.XmlText("draft")]);
+    writer.getXmlFragment("prosemirror").push([paragraph, new Y.XmlElement("paragraph")]);
+    writer.getXmlFragment("prosemirror").delete(0, 1);
+    const live = new Y.Doc({ gc: false });
+    const writerUpdate = Y.encodeStateAsUpdate(writer);
+    expect(validateClientUpdateAdmission(live, writerUpdate)).toEqual({ reservedClientId: null });
+    Y.applyUpdate(live, writerUpdate);
+    const target = new Y.Doc({ gc: false });
+
+    replicateFrozenSource(live, target);
+
+    expect(Y.encodeStateVector(target)).toEqual(Y.encodeStateVector(live));
   });
 
   it("refuses replacement while old-generation settlement is unresolved", async () => {
@@ -160,30 +126,6 @@ function replacementPort(
     disconnectGeneration: vi.fn(async () => undefined),
     ...overrides,
   };
-}
-
-function frozenSource(doc: Y.Doc, documentId = "doc-1"): FrozenReplicationSource {
-  return { documentId, doc };
-}
-
-function mutationTarget(doc: Y.Doc, documentId = "doc-1"): MutationTarget {
-  return { documentId, generation: 1n, doc };
-}
-
-async function replicateInto(
-  source: Y.Doc,
-  target: Y.Doc,
-  plan: { kind: "wholeDocument" } | { kind: "sharedTypes"; names: readonly string[] },
-): Promise<void> {
-  await replicateFrozenIdentity({
-    source: frozenSource(source, "target"),
-    target: mutationTarget(target, "target"),
-    plan,
-    admit: async ({ update }) => {
-      Y.applyUpdate(target, update);
-      return { sequence: 1n, joined: 0 };
-    },
-  });
 }
 
 function proseDoc(value: string): Y.Doc {

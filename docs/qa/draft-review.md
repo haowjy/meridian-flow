@@ -77,6 +77,35 @@ Capture request/click/input/response times, pre/post selection and block text,
 a screenshot and independent draft/live readbacks. An insertion sent while a
 paint cover still holds the page is not evidence about the successor's caret.
 
+## Archive while typing into a draft
+
+Archive takes no lock on the draft ([the archive window][archive-window]): a
+key whose server check finished before Archive committed may land in the archived
+draft; every later key is refused. Open an owned named Work's draft at 50k words in one
+tab, start native typing at 200 ms a key, and archive the Work from a second tab's
+Works catalog mid-burst. Keep typing for two seconds after the click, then unarchive and
+type five more keys. PASS: the first tab's editor turns read-only in place without a
+reload or a jump in scroll position; each key typed before that is either saved or shown
+as not saved, never silently dropped; the keys after unarchive are acknowledged; and the
+draft read with `./mf` after a reload equals what the editor showed while archived plus
+the post-unarchive keys. A `1008 branch-update-admission-failed` close is expected only
+for a key sent between Archive's commit and the read-only notice, and no `4207` appears.
+Record the archive click time, each close and the notice's arrival. The seam
+behind it is the `archive-in-flight-append` probe in
+[drafts-lock-free-probes.md](drafts-lock-free-probes.md).
+
+[archive-window]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-branches.md
+
+## Per-change Discard of a long writer change
+
+Type more than 500 keystrokes into one paragraph of an owned draft (each frame is one
+member part of the same change), wait until `./mf` shows the branch's revision has
+stopped moving, then open the change list at phone width (390px) and Discard the
+writer's row. PASS: the `/draft/discard` POST answers 200 with at most 500
+`memberPartKeys` and `memberPartKeysComplete: false`, the writer's text leaves the draft, the model's change stays, and no
+"Couldn't discard this change" appears. While the typed frames are still arriving the
+row answers "This change was updated"; that is the typed stale refusal, not a failure.
+
 ## Review across document schemes
 
 In a named draft-mode Work, use the mock model to create `kb://Place`,
@@ -133,12 +162,16 @@ the requested rows. Discard sends the saved `closureClassIds`, `admissionTokens`
 tokens (not operation IDs): an independent paragraph admission must not refuse it,
 while changed evidence for the same class must return `stale`. A grown class
 with surviving immutable members also returns `stale`, including after a re-fork;
-a disappeared class or absent fallback-only class returns `gone`. Refresh
+a disappeared class or absent fallback-only class returns `gone`, but only when the
+request's `memberPartKeysComplete` is true: a sampled list with no listed survivor
+returns `stale`, because a sample cannot prove that no member survives
+(`d18-sampled-discard` in the [seam probes](drafts-lock-free-probes.md) runs this schedule
+with 502 members). Refresh
 the preview after a refused command: the selected closed class alone settles. Repeat after another per-change Discard re-forks the
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's
 rows/token. An unknown or closed draft returns `gone` without provisioning a
-replacement. A corrupt preview never repairs or publishes document content.
+replacement. A corrupt preview never repairs or writes document content.
 
 The DB concurrency contract injects append, re-fork and status commits after
 every awaited snapshot query and at read-port entry/return. Run it with
@@ -340,8 +373,8 @@ and inspect the surfaces.
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
    only Lore pass's changes, including the shared class.
 5. Open Dialogue pass. Once loaded, its new document is one change with Apply,
-   Discard and Review. Apply publishes it; Discard removes it. Review opens it
-   without publishing. Verify whole-command payloads from draft dock, row and bar.
+   Discard and Review. Apply lands it; Discard removes it. Review opens it
+   without applying. Verify whole-command payloads from draft dock, row and bar.
 6. Open Untouched. PASS: no draft dock, although the Work has pending changes. After
    Pacing pass's last change is handled, its draft dock also disappears, even while
    Lore pass's other changes remain.
@@ -770,7 +803,7 @@ and replaying either class alone must leave the other paragraph unchanged.
 Every inverse row must own its metadata client and have no map-entry anchors
 into another inverse row.
 
-### Receipt hold and publication regression checks
+### Receipt hold and Apply regression checks
 
 - Apply turn A's `Beta → Gamma`. In the same draft, turn B replaces
   `Blue → Silver`, then Undo B restores `Blue`. Undo A and Redo A must
@@ -784,7 +817,7 @@ into another inverse row.
 - Connect a live Yjs room before acting on a document with no active draft.
   Keep the connection and its local replica open through Undo and Redo. Drive
   actions with `./mf`; inspect only that replica between actions, never a
-  document read, reopen or reconnect that could repair a missing publication.
+  document read, reopen or reconnect that could repair a missing Apply.
   The replica must receive each committed inverse. The DB room regression
   also injects immediate-live failed-response rollback into that same schedule.
 - Extend the long-history correctness case with a 10,000-character deletion
@@ -802,7 +835,7 @@ then wait for the empty trail to settle while the edit remains unapplied.
 Apply the draft, repeat with another edit and Discard, and read the trail through
 `./mf api GET /api/threads/<thread-id>/change-trails`. Each late disposition
 must reopen the producing trail and settle at a higher version. Unapplied drafts
-must not publish themselves. An empty or failed assistant turn must also settle.
+must not apply themselves. An empty or failed assistant turn must also settle.
 
 For the commit-to-worker crash window, use the PostgreSQL lifecycle suite:
 
@@ -814,8 +847,8 @@ Its restart checks commit before constructing a fresh aggregate adapter on a
 separate connection. Receipt and placement rollback must leave the signal log
 unchanged; committed invalidation must survive destroying warm state. A lower
 sequence committed after consumption must remain discoverable, and failed
-consumption must restore the signals with the shell and outbox. Pending
-live publication must delay settlement. These are DB integration checks, not a
+consumption must restore the signals with the shell and outbox. A pending
+live write must delay settlement. These are DB integration checks, not a
 claim that this manual writer workflow passed.
 
 ## Model Undo and Redo counts
@@ -891,7 +924,9 @@ draft. A reply's staged edits to other documents must still finish.
 The repeatable service-seam check is
 `DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts`.
 It also checks that retirement waits for transaction commit and closes only A's
-peer room. It also gates retirement after commit, evicts the old reply entry as
+peer room. Run inside a caller's root transaction, item and whole Discard retire no
+peer, close no room and revoke no reply helper before the root commits, none after
+it rolls back, and once per document after it commits. It also gates retirement after commit, evicts the old reply entry as
 a refusal would, and stages a fresh peer's write in the same open reply before
 releasing that gate; the fresh write and room must survive. This is DB integration evidence, not a browser or live-runtime probe.
 

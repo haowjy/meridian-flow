@@ -1,4 +1,4 @@
-/** Activity effects of durable writes; document derivation owns projection publication. */
+/** Activity effects of durable writes; document derivation owns projection writes. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 
 export type DocumentProjectionEffects = {

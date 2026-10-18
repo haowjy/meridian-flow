@@ -25,7 +25,6 @@ import {
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
-import { createBranchCriticalSections } from "../../domain/branch-critical-sections.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
@@ -111,13 +110,13 @@ export function createInMemoryCollabDomain(): CollabDomain {
     fences: createReplySaveFences({
       liveUtilityCore: runtime.liveUtilityCore,
       branches: { getBranch: async () => null },
-      criticalSections: createBranchCriticalSections(),
       drafts,
       fileAccess,
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
     }),
     commitThreadResponseAtomically: (operation) => operation(),
+    attemptScope: (operation) => operation(),
     responseTransactionSettlement: {
       deferUntilCommit: () => false,
       deferUntilRollback: () => false,
@@ -177,6 +176,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
       closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
       rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
+      enrollHocuspocusBranchRoom: hocuspocusPersistence.enrollHocuspocusBranchRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads,
@@ -202,6 +202,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
+      branchEffects: { sweep: async () => 0, flush: async () => {} },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });
@@ -236,11 +237,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     drafts: createInMemoryDraftStub(),
     draftResolver: {
       drafts,
-      // No draft branches in memory: a whole draft leases nothing.
-      draftLeases: {
-        withDraftBranches: (_draftId, run) =>
-          createBranchCriticalSections().withBranches([], (lease) => run(lease, [])),
-      },
       // No drafts in memory: a purged Work has none to dispose of.
       workDraftDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
@@ -255,9 +251,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
 const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async recoverPendingLiveSettlements() {
     return 0;
-  },
-  async countPendingByWorkIds() {
-    return new Map();
   },
 };
 

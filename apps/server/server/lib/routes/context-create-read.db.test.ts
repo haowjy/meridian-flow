@@ -105,6 +105,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab,
         hocuspocus,
         contextPorts: createProductionUnifiedContextPortFactory({
+          pendingDraft: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db,
           documentSync: collab,

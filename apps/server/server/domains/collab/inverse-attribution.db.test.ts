@@ -1,4 +1,4 @@
-/** Durable inverse publication to live rooms and review trails. */
+/** Durable inverse delivery to live rooms and review trails. */
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
