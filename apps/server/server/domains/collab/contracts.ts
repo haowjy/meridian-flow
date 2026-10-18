@@ -199,15 +199,6 @@ export type ReverseThreadContextInput = {
   turnId: TurnId;
 };
 
-export class ReverseThreadContextError extends Error {
-  constructor(
-    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
 export type TurnReversalAccess = {
   reverseTurn(input: {
     threadId: ThreadId;

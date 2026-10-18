@@ -74,12 +74,6 @@ export type RootLineageRun = {
   root: LineageRange;
 };
 
-export type ProvenanceMaterialization = {
-  doc: Y.Doc;
-  visible: ProvenanceRun[];
-  attributionManifest: AttributionManifestV1;
-};
-
 /** Freezes first-birth attribution for checkpoint manifests. Later sync updates
  * can repeat integrated structs, but can never reassign their insertion clocks. */
 export function insertionAttributions(
@@ -156,43 +150,6 @@ export function materializeCandidateProvenance(
 
 export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
-}
-
-/**
- * The sole warm/cold provenance materializer. Attribution is installed before
- * Yjs sees each row, so a pending child keeps the actor that originated it.
- */
-export function materializeProvenanceView(input: {
-  authorityId: DocumentAuthorityId;
-  generation: bigint;
-  checkpointUpdate?: Uint8Array;
-  manifest: AttributionManifestV1;
-  rows: readonly AttributedJournalRow[];
-  watermark: JournalReplayKey;
-}): ProvenanceMaterialization {
-  validateManifestIdentity(input);
-  const doc = new Y.Doc({ gc: false });
-  const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
-  for (const attribution of input.manifest.attributions) {
-    attributions.add(attribution.range, attribution, sameAttribution);
-  }
-  if (input.checkpointUpdate) Y.applyUpdate(doc, input.checkpointUpdate);
-
-  const rows = [...input.rows].sort(compareReplayKey);
-  validateReplayRows(rows, input.manifest.floor, input.watermark, input);
-  for (const row of rows) {
-    for (const range of journalInsertionRanges(row.update)) {
-      attributions.addUncovered(range, {
-        range,
-        birthClass: birthClassFromAttribution(row),
-        origin: replayKey(row),
-      });
-    }
-    Y.applyUpdate(doc, row.update);
-  }
-
-  const visible = provenanceRunsForDoc(doc, attributions);
-  return { doc, visible, attributionManifest: input.manifest };
 }
 
 function provenanceRunsForDoc(
@@ -702,57 +659,6 @@ function incomingContains(
       id.clock >= struct.id.clock &&
       id.clock < struct.id.clock + struct.length,
   );
-}
-
-function validateManifestIdentity(input: {
-  authorityId: DocumentAuthorityId;
-  generation: bigint;
-  manifest: AttributionManifestV1;
-}): void {
-  const { manifest } = input;
-  if (
-    manifest.version !== 1 ||
-    manifest.authorityId !== input.authorityId ||
-    manifest.generation !== input.generation ||
-    manifest.checkpointId.length === 0
-  ) {
-    throw blocked("Attribution manifest does not name the requested authority generation");
-  }
-}
-
-function validateReplayRows(
-  rows: readonly AttributedJournalRow[],
-  floor: JournalReplayKey | null,
-  watermark: JournalReplayKey,
-  authority: { authorityId: DocumentAuthorityId; generation: bigint },
-): void {
-  let previous = floor;
-  const rowIds = new Set<bigint>();
-  for (const row of rows) {
-    if (row.authorityId !== authority.authorityId || row.generation !== authority.generation) {
-      throw blocked("Journal row belongs to another authority generation");
-    }
-    if (compareReplayKey(row, watermark) > 0) throw blocked("Journal replay crossed its watermark");
-    if (rowIds.has(row.journalRowId)) throw blocked("Journal row has duplicate sequence ownership");
-    rowIds.add(row.journalRowId);
-    if (previous) {
-      const sameAdmission = row.admissionSequence === previous.admissionSequence;
-      const nextAdmission = row.admissionSequence === previous.admissionSequence + 1n;
-      if (
-        (sameAdmission && row.batchOrdinal !== previous.batchOrdinal + 1) ||
-        (nextAdmission && row.batchOrdinal !== 0) ||
-        (!sameAdmission && !nextAdmission)
-      ) {
-        throw blocked("Journal replay is missing a row or has duplicate sequence ownership");
-      }
-    } else if (row.admissionSequence !== 1n || row.batchOrdinal !== 0) {
-      throw blocked("Journal replay is missing a row before its retained floor");
-    }
-    previous = row;
-  }
-  if (!previous || compareReplayKey(previous, watermark) !== 0) {
-    throw blocked("Journal replay does not reach the requested watermark");
-  }
 }
 
 export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
