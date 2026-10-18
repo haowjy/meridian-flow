@@ -1,4 +1,4 @@
-/** GET /api/projects/:projectId/works/:workId/branches: authenticated reviewable AI branches for one Work. */
+/** GET /api/projects/:projectId/works/:workId/branches: authenticated reviewable drafts for one Work's branch. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../lib/auth-gate.js";

@@ -1,5 +1,5 @@
 /**
- * Repair on touch (contract §12.4): a hidden, live document no active draft uses can only
+ * Repair on touch (contract §12.4): a hidden, live document no active branch uses can only
  * come from a bug (create and use commit together, and so do end of use and tombstone).
  * A read that meets one (`identityStatus` answering `gone`) schedules its repair here,
  * after the read and in its own transaction: the verified end-use scope (namespaces, a

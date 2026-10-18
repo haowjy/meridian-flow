@@ -1,5 +1,5 @@
 /**
- * The draft-tree DB tests' command verbs (contract §16.1): a model's replies, the writer's
+ * The branch-tree DB tests' command verbs (contract §16.1): a model's replies, the writer's
  * route cores, readers' ports, and review commands, all driving the composed production
  * runtime (the real tool executor, route cores and ports) over a `BranchTreeWorld`.
  *
@@ -98,9 +98,9 @@ export interface ScenarioWriter {
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**
-   * The writer types in the Work draft's review room for this document: `edit` changes a
-   * copy of the branch, and its update goes through the room's durable admission.
-   * Returns the branch.
+   * The writer types in this document's draft review room: `edit` changes a
+   * copy of the draft, and its update goes through the room's durable admission.
+   * Returns the draft.
    */
   editDraft(
     work: ScenarioWork,
@@ -128,7 +128,7 @@ export interface BranchTreeCommands {
   writer: ScenarioWriter;
   view(of: ScenarioWork | "live"): ScenarioView;
   /**
-   * Discard through the route cores: `"all"` is Discard all for the Work's active draft
+   * Discard through the route cores: `"all"` is Discard all for the Work's active branch
    * (or `branchId`); a list is the per-document Discard of each, in order.
    */
   discard(
@@ -141,11 +141,11 @@ export interface BranchTreeCommands {
    * the purge sweep runs.
    */
   purge(work: ScenarioWork): Promise<number>;
-  /** The Work's review list through its route core: the legacy `branches` and the `items`. */
+  /** The Work's review list through its route core: the `items`. */
   review(work: ScenarioWork): ReturnType<typeof handleWorkBranchListRequest>;
   /** The review list's `items` only. */
   items(work: ScenarioWork): Promise<ThreadDraftListItem[]>;
-  /** The statuses of every draft whose origin is the Work, oldest first. */
+  /** The statuses of every branch whose origin is the Work, oldest first. */
   branchStatuses(work: ScenarioWork): Promise<string[]>;
   /** Every settlement batch's state (they belong to no user: suites clear them per case). */
   batchStates(): Promise<string[]>;
@@ -186,13 +186,13 @@ export interface BranchTreeCommands {
   ): Promise<CommandRouteResult[]>;
   /**
    * The Apply all route core over the items the review list rendered (or `items`, as a
-   * dock would send what it rendered earlier), for the Work's active draft (or `branchId`).
+   * dock would send what it rendered earlier), for the Work's active branch (or `branchId`).
    */
   applyAll(
     work: ScenarioWork,
     options?: { items?: readonly ThreadDraftListItem[]; branchId?: string },
   ): Promise<BranchCommandResult>;
-  /** The Work draft's branch of this document, as its review room names it. */
+  /** The Work branch's draft of this document, as its review room names it. */
   documentDraft(
     work: ScenarioWork,
     documentId: DocumentId,
@@ -494,7 +494,7 @@ export function branchTreeCommands(
     const preview = await review.preview({ workId: work.id, itemKey: item.itemKey });
     if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
     const room = parseYjsRoomName(preview.reviewRoomName);
-    if (room?.kind !== "draft") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
+    if (room?.kind !== "draft") throw new Error(`Not a draft room: ${preview.reviewRoomName}`);
     return { draftId: room.draftId, generation: room.generation };
   }
 
@@ -577,7 +577,7 @@ export function branchTreeCommands(
     if (items === "all") {
       const branchId =
         options.branchId ?? (await ports().documentSync.branches.activeForWork(work.id))?.id;
-      if (!branchId) throw new Error(`${work.slug} has no draft to discard`);
+      if (!branchId) throw new Error(`${work.slug} has no branch to discard`);
       return (
         await handleDiscardAllWorkBranchRequest(routes(), {
           projectId,
@@ -625,7 +625,7 @@ export function branchTreeCommands(
     review,
     items: async (work) => (await review(work)).items,
     async branchStatuses(work) {
-      return (await world.branches.byOriginWork(work.id)).map((draft) => draft.status);
+      return (await world.branches.byOriginWork(work.id)).map((branch) => branch.status);
     },
     async batchStates() {
       return (
@@ -666,7 +666,7 @@ export function branchTreeCommands(
       const results: CommandRouteResult[] = [];
       for (const documentId of documentIds) {
         const item = items.find((candidate) => candidate.documentId === documentId);
-        if (!item?.draftGeneration) throw new Error(`No draft branch of ${documentId} to apply`);
+        if (!item?.draftGeneration) throw new Error(`No draft of ${documentId} to apply`);
         results.push(
           await handleApplyWorkDraftRequest(routes(), {
             projectId,
@@ -691,7 +691,7 @@ export function branchTreeCommands(
         options.branchId ??
         items[0]?.branchId ??
         (await ports().documentSync.branches.activeForWork(work.id))?.id;
-      if (!branchId) throw new Error(`${work.slug} has no draft to apply`);
+      if (!branchId) throw new Error(`${work.slug} has no branch to apply`);
       return (
         await handleApplyAllWorkBranchRequest(routes(), {
           projectId,

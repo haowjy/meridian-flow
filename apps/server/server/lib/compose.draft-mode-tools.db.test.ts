@@ -53,7 +53,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
         userId: USER_ID,
-        name: "Branch-mode tools",
+        name: "Draft-mode tools",
         slug: "draft-mode-tools",
       });
       await db.insert(schema.works).values({
@@ -83,7 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: THREAD.threadId,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        title: "Branch-mode tools",
+        title: "Draft-mode tools",
         kind: "primary",
         status: "idle",
         aiWriteMode: "draft",
@@ -119,7 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const text = (result: { output: unknown }) =>
       typeof result.output === "string" ? result.output : JSON.stringify(result.output);
 
-    it("branches kb and manuscript, keeps scratch live, and reads the version writes change", async () => {
+    it("drafts kb and manuscript, keeps scratch live, and reads the version writes change", async () => {
       const script = await startWithChapter("Writer live content.\n\nWriter aside.");
       const first = await script.begin();
       let call = first.call;
@@ -346,7 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    // D31: a create or copy would make its file in the archived Work's frozen draft.
+    // D31: a create or copy would make its file in the archived Work's frozen drafts.
     it("refuses a draft-mode chat's create or copy into its archived Work with D31's copy", async () => {
       const script = await startWithChapter("Writer live content.");
       await db
@@ -562,8 +562,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     // D24 with 12b-Q2: a binary copy duplicates the stored object; in a draft-mode Work it
-    // is the draft's own hidden row, never shared and not live.
-    it("copies a binary file into the draft as its own hidden row and stored object", async () => {
+    // is the branch's own hidden row, never shared and not live.
+    it("copies a binary file into the branch as its own hidden row and stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(

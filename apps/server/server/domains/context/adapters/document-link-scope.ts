@@ -6,7 +6,7 @@
  * A prepare loads only keys the snapshot has not seen: an ahead ref's live settlement, documents
  * by id, and every document at an exact or extension-omitted address. Each view reads
  * from the tree view's identity status: where a document is in that view, and, for a
- * hidden one, which draft it reads "in a draft" in and where that draft has it.
+ * hidden one, which branch it reads "in a draft" in and where that branch has it.
  * Readability comes from the file policy's list path.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -81,8 +81,8 @@ type ViewIndex = {
   /** The same URI without its filename's extension: pass 3's extension-omitted key. */
   byStem: Map<string, Row[]>;
   /**
-   * Hidden documents this view doesn't use, by the address of the draft each reads "in a
-   * draft" in, oldest draft first. Only `documentAt` reads it: an ahead ref's address
+   * Hidden documents this view doesn't use, by the address of the branch each reads "in a
+   * draft" in, oldest branch first. Only `documentAt` reads it: an ahead ref's address
    * shows a draft's document, while typed links (`documentFor`) never bind to one.
    */
   hiddenByUri: Map<string, Row[]>;
@@ -279,7 +279,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
 
   /**
    * Rows whose own name matches each address (exact and extension-omitted), plus, in a
-   * draft view, whatever that draft has at the exact address (its location may not be
+   * branch view, whatever that branch has at the exact address (its location may not be
    * its row's).
    */
   async function loadAddresses(
@@ -350,7 +350,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       (row): row is Row => row !== null && !snapshot.readable.has(row.id),
     );
     if (unknown.length === 0) return;
-    // A hidden document's facts come from the draft it reads "in a draft" in.
+    // A hidden document's facts come from the branch it reads "in a draft" in.
     const branchViews = new Map<DocumentId, TreeView>();
     for (const { statuses } of snapshot.views.values()) {
       for (const [id, status] of statuses) {
@@ -591,7 +591,7 @@ function snapshotCatalog(
         : status.kind === "hidden" || status.kind === "visible"
           ? status.address
           : null;
-    // "In a draft": hidden, wherever the reader sees it, named by the draft it reads in.
+    // "In a draft": hidden, wherever the reader sees it, named by the branch it reads in.
     const hidden = status.kind === "hidden" || (status.kind === "visible" && status.hidden);
     const branch =
       status.kind === "hidden" || status.kind === "visible" ? status.branch : undefined;
@@ -648,9 +648,9 @@ function snapshotCatalog(
   };
   return {
     /**
-     * What this draft view created at an address a typed link names: the exact address, else
-     * the one extension-omitted match. Only the view's own draft counts (`documentAt` shows
-     * an ahead ref any draft's creation), and only a document the reader may name and read.
+     * What this branch view created at an address a typed link names: the exact address, else
+     * the one extension-omitted match. Only the view's own branch counts (`documentAt` shows
+     * an ahead ref any branch's creation), and only a document the reader may name and read.
      */
     branchCreatedAt(uri) {
       if (view.kind !== "branch" || !snapshot.addresses.has(uri)) return null;
@@ -684,7 +684,7 @@ function snapshotCatalog(
           document !== null && document.presence !== "deleted",
       );
       if (present) return present;
-      // Nothing visible there: a draft's hidden document reads "in a draft".
+      // Nothing visible there: a branch's hidden document reads "in a draft".
       const hidden = (snapshot.views.get(key)?.hiddenByUri.get(uri) ?? []).map(toDocument);
       if (hidden.includes(UNLOADED)) return undefined;
       return (
@@ -706,7 +706,7 @@ function snapshotCatalog(
       if (!row?.image || row.projectId !== snapshot.projectId) return null;
       const status = statusOf(row);
       if (status === UNLOADED) return undefined;
-      // "gone" is a hidden tombstone, a hidden row no draft uses, or a row with no
+      // "gone" is a hidden tombstone, a hidden row no branch uses, or a row with no
       // spellable address: it names nothing this reader can reach, so it is unspelled like a
       // missing id. A row in a retired source still spells its last address.
       if (status.kind === "gone") return null;

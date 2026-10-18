@@ -4,7 +4,7 @@
  */
 import type { WorkId } from "@meridian/contracts/runtime";
 
-/** Archive, unarchive, delete or restore of a Work: its own files (branches, scratch). */
+/** Archive, unarchive, delete or restore of a Work: its own files (drafts, scratch). */
 export type FileAccessChange = { workId: WorkId };
 
 export interface FileAccessChanges {

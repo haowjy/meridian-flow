@@ -285,8 +285,8 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * What reads see: a draft placement's Work's active draft, unless the thread asked for
-   * the live text; live otherwise. Resolved once per command, never creating a draft.
+   * What reads see: a draft placement's Work's active branch, unless the thread asked for
+   * the live text; live otherwise. Resolved once per command, never creating a branch.
    */
   private readTreeView(): Promise<TreeView> {
     return this.placement.readView(this.readView?.version);
@@ -294,7 +294,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * The document at `path` in `view` under its canonical name, or null. A path two of the
-   * view's files share is the draft clash fault, never one of them.
+   * view's files share is the clash fault, never one of them.
    */
   private async findDocumentAt(
     view: TreeView,
@@ -538,8 +538,8 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * Reverse this adapter's create of `documentId` for a rolled-back reply or a failed
-   * create write (§12.5): a live create is deleted by the router; a draft's create ends
-   * the draft's use unless another contribution makes it stand.
+   * create write (§12.5): a live create is deleted by the router; a branch's create ends
+   * the branch's use unless another contribution makes it stand.
    */
   retractCreate(
     _path: string,

@@ -1,4 +1,4 @@
-/** Postgres proof for the tree view: the live and draft relations, identity status and tree state. */
+/** Postgres proof for the tree view: the live and branch relations, identity status and tree state. */
 import type { DocumentId, FolderId } from "@meridian/contracts";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { branches, branchTreeChanges, documents, folders, users } from "@meridian/database/schema";
@@ -67,7 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("shows hidden rows only in the draft that created them, at their rows' locations (T-1a)", async () => {
+    it("shows hidden rows only in the branch that created them, at their rows' locations (T-1a)", async () => {
       const db = database.current;
       const scenario = await branchTreeScenario(db);
       const tree = createTreeReader(db);
@@ -79,7 +79,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const prologue = await scenario.seedLive("prologue");
       const harbor = await scenario.seedHidden(ascension, "world/places/harbor");
       const atlas = await scenario.seedHidden(rival, "lore/atlas");
-      // Revealed, then renamed live: the draft sees the new name too, a row has one place.
+      // Revealed, then renamed live: the branch sees the new name too, a row has one place.
       const chapter = await scenario.seedHidden(ascension, "chapters/one");
       await reveal(chapter, ["chapters"]);
       await db.update(documents).set({ name: "chapter-one" }).where(eq(documents.id, chapter));
@@ -171,7 +171,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await tree.findById(branch, literal.id)).toMatchObject({ clashesWith: [dotted] });
     });
 
-    it("names identity per view and states a draft's tree with its conflicts (T-1b)", async () => {
+    it("names identity per view and states a branch's tree with its conflicts (T-1b)", async () => {
       const db = database.current;
       const scenario = await branchTreeScenario(db);
       const tree = createTreeReader(db);
@@ -184,7 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await scenario.branchOf(ascension);
       const second = await scenario.branchOf(rival);
       const third = await scenario.branchOf(stray);
-      // Rival joined the harbor too; Ascension is the older draft.
+      // Rival joined the harbor too; Ascension is the older branch.
       await db.insert(branchTreeChanges).values({
         branchId: second.id,
         nodeKind: "document",
@@ -217,9 +217,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "deleted",
         folders: [{ id: await folderId("old"), deleted: true }],
       });
-      const draftLineages = await tree.lineages({ kind: "branch", branchId: first.id }, ids);
-      expect([...draftLineages.keys()].sort()).toEqual([harbor, ledger].sort());
-      expect(draftLineages.get(harbor)).toMatchObject({
+      const branchLineages = await tree.lineages({ kind: "branch", branchId: first.id }, ids);
+      expect([...branchLineages.keys()].sort()).toEqual([harbor, ledger].sort());
+      expect(branchLineages.get(harbor)).toMatchObject({
         status: "visible",
         folders: [{ id: await folderId("world"), deleted: false }],
       });
@@ -330,7 +330,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "manuscript://tale/four",
       });
       expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
-      // A tombstone is no longer the draft's item.
+      // A tombstone is no longer the branch's item.
       expect(state.has(tomb)).toBe(false);
       expect(
         await db

@@ -6,7 +6,7 @@ import type { FileFacts, FileTarget } from "../domain/types.js";
 export interface FileFactsRequest {
   target: FileTarget;
   /**
-   * The Work whose draft this access may go through: an agent's draft-mode
+   * The Work whose branch this access may go through: an agent's draft-mode
    * Work. A `draft` target names its own; facts then include `branchWork`.
    */
   branchWorkId?: WorkId;
@@ -17,7 +17,7 @@ export interface FileFactsPort {
   load(request: FileFactsRequest): Promise<FileFacts | null>;
   /**
    * The list path (file-access §6): many documents' facts in one query, each
-   * through `branchWorkId`'s draft when given. Folders are left out of
+   * through `branchWorkId`'s branch when given. Folders are left out of
    * `ancestors`: a listed row is already visible, and v1 grants
    * sit on the project. Missing documents are absent from the map.
    */

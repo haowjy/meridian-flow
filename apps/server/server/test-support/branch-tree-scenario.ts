@@ -1,7 +1,7 @@
 /**
- * One scenario builder for the draft-tree DB tests (contract §16.1): the world and its
- * seed verbs (`draft-tree-seeds.ts`), plus command verbs over the composed production
- * runtime (`draft-tree-commands.ts`) when one is given. Lock interleavings are
+ * One scenario builder for the branch-tree DB tests (contract §16.1): the world and its
+ * seed verbs (`branch-tree-seeds.ts`), plus command verbs over the composed production
+ * runtime (`branch-tree-commands.ts`) when one is given. Lock interleavings are
  * `lock-interleave.ts`'s.
  */
 import type { UserId } from "@meridian/contracts";

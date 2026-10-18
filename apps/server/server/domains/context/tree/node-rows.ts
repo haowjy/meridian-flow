@@ -125,8 +125,8 @@ export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): 
 
 /**
  * A tombstoned hidden document's storage goes (R8, contract §12.2 step 4): its live Yjs,
- * every branch on it (their journals and trail rows cascade; by the caller's revalidation
- * no draft uses one), its derived rows and its own outgoing link rows. The row itself and
+ * every draft on it (their journals and trail rows cascade; by the caller's revalidation
+ * no branch uses one), its derived rows and its own outgoing link rows. The row itself and
  * every record pointing at it stay: a bound link or ahead ref still resolves it to gone.
  */
 export async function releaseDocumentStorage(
@@ -159,7 +159,7 @@ export async function releaseDocumentStorage(
   }));
 }
 
-/** A branch a tombstone's release deleted: collab retires its room and thread state after commit. */
+/** A draft a tombstone's release deleted: collab retires its room and thread state after commit. */
 export type ReleasedDraft = {
   draftId: string;
   documentId: DocumentId;

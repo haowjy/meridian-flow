@@ -628,16 +628,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ contextSourceId: source.id, name: "outline" })
         .returning();
       if (!document) throw new Error("Expected Work document");
-      const [draft] = await db
+      const [branch] = await db
         .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
         .returning({ id: schema.branches.id });
-      if (!draft) throw new Error("Expected the Work's draft");
+      if (!branch) throw new Error("Expected the Work's branch");
       await db.insert(schema.documentDrafts).values({
         id: "work-delete-draft",
         documentId: document.id,
         kind: "work_draft",
-        branchId: draft.id,
+        branchId: branch.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });
@@ -824,7 +824,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-        "soft delete leaves the Work's draft untouched (§2.6)",
+        "soft delete leaves the Work's branch untouched (§2.6)",
       ).resolves.toMatchObject([{ status: "active" }]);
 
       await works.restore(work.id);
@@ -1248,16 +1248,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning();
       if (!document) throw new Error("Expected uploaded document");
-      const [draft] = await db
+      const [branch] = await db
         .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
         .returning({ id: schema.branches.id });
-      if (!draft) throw new Error("Expected the Work's draft");
+      if (!branch) throw new Error("Expected the Work's branch");
       await db.insert(schema.documentDrafts).values({
         id: "purged-work-draft",
         documentId: document.id,
         kind: "work_draft",
-        branchId: draft.id,
+        branchId: branch.id,
         state: Buffer.from([]),
         stateVector: Buffer.from([]),
       });

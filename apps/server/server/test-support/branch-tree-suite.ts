@@ -1,5 +1,5 @@
 /**
- * One describe block for the draft-tree DB suites that drive the composed runtime and
+ * One describe block for the branch-tree DB suites that drive the composed runtime and
  * commit (settlement owns root transactions; races run on several connections): its own
  * pool, composed runtimes cleaned per case, and users plus settlement batches (which
  * belong to no user) deleted before each case. Skipped without a test database.

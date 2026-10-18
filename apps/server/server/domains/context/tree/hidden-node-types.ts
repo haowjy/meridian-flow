@@ -30,9 +30,9 @@ export type BinaryNode = {
 };
 
 export type BranchCreateResult =
-  /** Something already sits at the path in the draft's view. */
+  /** Something already sits at the path in the branch's view. */
   | { kind: "existing"; documentId: DocumentId; binary: boolean }
-  /** The draft now uses this document: a new hidden row, or (`joined`) another draft's. */
+  /** The branch now uses this document: a new hidden row, or (`joined`) another branch's. */
   | { kind: "created"; documentId: DocumentId; joined: boolean };
 
 /** What a live create at a path would find, holding nothing (§6.3 step 1). */

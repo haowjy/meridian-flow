@@ -11,8 +11,8 @@ import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 export type BranchDraftRef = { id: string; branchId: BranchId; workId: WorkId | null };
 
 /**
- * The mapping as a join, for a select that reads drafts anyway: `branches` on the branch's
- * draft, and the column that is the branch's Work.
+ * The mapping as a join, for a select that reads drafts anyway: `branches` on the draft's
+ * branch, and the column that is the branch's Work.
  */
 export const draftBranchWork = {
   branches,
@@ -21,8 +21,8 @@ export const draftBranchWork = {
 } as const;
 
 /**
- * The named drafts that exist, each with its draft and that draft's origin Work. A
- * draft with no origin Work (a purge set it null) maps to `workId: null`: frozen.
+ * The named drafts that exist, each with its branch and that branch's origin Work. A
+ * branch with no origin Work (a purge set it null) maps to `workId: null`: frozen.
  */
 export async function branchDraftRefs(
   db: DrizzleDb,

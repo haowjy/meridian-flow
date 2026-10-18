@@ -20,10 +20,10 @@ function fixture() {
     work: { id: "work", slug: "review", projectId: "project", deletedAt: null as Date | null },
     // The resolver's explicit answer for the review's item, or null when the draft is inactive.
     resolved: {
-      branchId: "whole-draft",
-      itemKey: "whole-draft:hidden",
+      branchId: "whole-branch",
+      itemKey: "whole-branch:hidden",
       documentId: "hidden",
-      draftId: "branch",
+      draftId: "draft",
       item: {} as DraftReviewItem,
       listed: true,
     } as unknown as Awaited<ReturnType<DraftReviewApi["resolveItem"]>>,
@@ -61,7 +61,7 @@ function fixture() {
     input,
     state,
     deps,
-    review: { workId: "work", itemKey: "whole-draft:hidden" },
+    review: { workId: "work", itemKey: "whole-branch:hidden" },
   };
 }
 
@@ -69,7 +69,7 @@ it.each([
   "another Work",
   "foreign project",
   "deleted Work",
-  "inactive draft",
+  "inactive branch",
   "denied grant",
   "missing identity",
 ])("answers unavailable for %s", async (reason) => {
@@ -77,7 +77,7 @@ it.each([
   if (reason === "another Work") review.workId = "other";
   if (reason === "foreign project") state.work.projectId = "other";
   if (reason === "deleted Work") state.work.deletedAt = new Date();
-  if (reason === "inactive draft") state.resolved = null;
+  if (reason === "inactive branch") state.resolved = null;
   if (reason === "denied grant") state.denied = true;
   if (reason === "missing identity") state.available = false;
   expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({ kind: "unavailable" });

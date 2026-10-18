@@ -1,4 +1,4 @@
-/** Browser address admission validates the review item identity before selecting its draft tree. */
+/** Browser address admission validates the review item identity before selecting its branch tree. */
 import type {
   DocumentAddressResult,
   DocumentAddressReviewSelector,
@@ -35,7 +35,7 @@ export async function handleDocumentAddressRequest(
     const work = await deps.workRepo.findById(review.workId as WorkId);
     if (!work || work.projectId !== input.projectId || work.deletedAt)
       return { kind: "unavailable" };
-    // Addressable, not listed: an unlisted active item opens too (M1). A bare branch id,
+    // Addressable, not listed: an unlisted active item opens too (M1). A bare draft id,
     // another Work's key and a `branches.id` all resolve to nothing here.
     const resolved = await deps.draftReview.resolveItem({
       workId: review.workId as WorkId,

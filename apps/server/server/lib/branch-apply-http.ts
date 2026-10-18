@@ -1,6 +1,6 @@
 /**
- * The HTTP meaning of a draft Apply's failures, shared by every route that applies
- * or discards a Work's draft: per-document Apply, Apply all, Discard and Discard all.
+ * The HTTP meaning of Apply's failures, shared by every route that applies
+ * or discards this Work's drafts: per-document Apply, Apply all, Discard and Discard all.
  * One mapping, so a batch handed to recovery reads the same everywhere.
  */
 import type { DraftApplyPending } from "@meridian/contracts/branches";

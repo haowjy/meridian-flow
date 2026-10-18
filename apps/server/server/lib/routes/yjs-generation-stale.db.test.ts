@@ -48,7 +48,7 @@ it.each([
       });
     const f = harness.crossWorkProbeFixture();
     const snapshot = await f.draftStore.getDraft(draftId);
-    if (!snapshot) throw new Error("missing branch");
+    if (!snapshot) throw new Error("missing draft");
     const roomName = `draft:${draftId}:gen:${snapshot.generation}`;
     const old = createCollabYDoc({ gc: false });
     documents.push(old);

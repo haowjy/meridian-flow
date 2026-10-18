@@ -1,13 +1,13 @@
 /**
  * The tree view's SQL: the only file that reads the hidden predicate (rule 1).
  *
- * Builds the live and draft relations every reader selects from, and the identity rows
+ * Builds the live and branch relations every reader selects from, and the identity rows
  * the tree view decides from. Readers compose these through `tree-view.ts`; nothing else
  * reads `documents.hidden` or `folders.hidden`.
  *
  * Live is the predicate over the table, so Postgres flattens it into the reader's query.
- * A draft is a `UNION ALL`: live rows the draft says nothing about, plus the draft's
- * change rows at the draft's location. Folders have no change rows yet, so a draft's
+ * A branch view is a `UNION ALL`: live rows the branch says nothing about, plus the branch's
+ * change rows at the branch's location. Folders have no change rows yet, so a branch's
  * folders are the live ones plus the hidden ones its documents sit under.
  */
 import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
@@ -98,8 +98,8 @@ const folderColumns = sql.raw(
 
 /** The predicate: a document row in the live tree. */
 const liveDocument = sql.raw("d.deleted_at IS NULL AND NOT d.hidden");
-/** A hidden document the draft created, in the draft's view (PR 3 adds `AND NOT c.deleted`). */
-const draftDocument = sql.raw("d.deleted_at IS NULL AND d.hidden AND c.created");
+/** A hidden document the branch created, in the branch's view (PR 3 adds `AND NOT c.deleted`). */
+const branchCreatedDocument = sql.raw("d.deleted_at IS NULL AND d.hidden AND c.created");
 
 /**
  * Lookup positions joined into each branch, so a path question stays bounded by the path
@@ -127,8 +127,8 @@ function at(
 const rowLocation = { source: "d.context_source_id", parent: "d.folder_id", name: "d.name" };
 
 /**
- * Live rows, and the hidden documents D created. Both sit at their row's location (a draft's
- * create is a real hidden row), as separate drafts so a path predicate reaches an index.
+ * Live rows, and the hidden documents D created. Both sit at their row's location (a branch's
+ * create is a real hidden row), as separate SQL UNION branches so a path predicate reaches an index.
  */
 function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const slots = slotted(match, "key, source_id, parent_id, name, extension");
@@ -142,7 +142,7 @@ function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
     UNION ALL
     ${select}
     FROM ${slots}branch_tree_changes c JOIN documents d ON d.id = c.node_id
-    WHERE c.branch_id = ${view.branchId}::uuid AND c.node_kind = 'document' AND ${draftDocument}${at(match, rowLocation, "d.extension")}`;
+    WHERE c.branch_id = ${view.branchId}::uuid AND c.node_kind = 'document' AND ${branchCreatedDocument}${at(match, rowLocation, "d.extension")}`;
 }
 
 /**
@@ -155,7 +155,7 @@ function usedHiddenFolderIds(branchId: BranchId): SQL {
       SELECT placed.folder_id FROM branch_tree_changes c
       CROSS JOIN LATERAL (
         SELECT d.folder_id AS folder_id FROM documents d
-        WHERE d.id = c.node_id AND ${draftDocument} OFFSET 0
+        WHERE d.id = c.node_id AND ${branchCreatedDocument} OFFSET 0
       ) placed
       WHERE c.branch_id = ${branchId}::uuid AND c.node_kind = 'document'
         AND placed.folder_id IS NOT NULL
@@ -334,7 +334,7 @@ export async function loadDocumentIdentityRows(
   return rows.map(identityRow);
 }
 
-/** One active draft that created a document, oldest draft first per document. */
+/** One active branch that created a document, oldest branch first per document. */
 export type BranchUseRow = {
   documentId: DocumentId;
   branchId: BranchId;
@@ -351,11 +351,11 @@ export async function loadActiveBranchUses(
     document_id: string;
     branch_id: string;
     origin_work_id: string | null;
-    draft_created_ms: number;
+    branch_created_ms: number;
   }>(sql`
     SELECT c.node_id::text AS document_id, r.id::text AS branch_id,
       r.origin_work_id::text AS origin_work_id,
-      (extract(epoch FROM r.created_at) * 1000)::float8 AS draft_created_ms
+      (extract(epoch FROM r.created_at) * 1000)::float8 AS branch_created_ms
     FROM branch_tree_changes c JOIN branches r ON r.id = c.branch_id
     WHERE c.node_kind = 'document' AND c.node_id IN (${uuidList(documentIds)})
       AND c.created AND r.status = 'active'
@@ -364,7 +364,7 @@ export async function loadActiveBranchUses(
     documentId: row.document_id as DocumentId,
     branchId: row.branch_id as BranchId,
     originWorkId: row.origin_work_id as WorkId | null,
-    branchCreatedAt: new Date(Number(row.draft_created_ms)),
+    branchCreatedAt: new Date(Number(row.branch_created_ms)),
   }));
 }
 
@@ -390,7 +390,7 @@ export async function loadBranchCreatedDocuments(
 /**
  * A Work's context rows as its restore would bring them back, rendered for the shared
  * document and folder namespace: what is live now and what the Work's delete took
- * (`arriving`). Hidden rows are a draft's and stay hidden through a restore (F11).
+ * (`arriving`). Hidden rows are a branch's and stay hidden through a restore (F11).
  */
 export async function loadWorkRestoreNamespaceRows(
   db: DrizzleDb,
@@ -441,8 +441,8 @@ function uuidList(ids: readonly string[]): SQL {
 
 /**
  * Diagnostics extend the canonical selection with formerly live lifecycle/malformed
- * identities only. Placement comes from the same drafts as visibleDocuments;
- * hidden tombstones never enter either arm, even with a stale draft change row.
+ * identities only. Placement comes from the same SQL UNION branches as visibleDocuments;
+ * hidden tombstones never enter either arm, even with a stale branch change row.
  */
 export function identityDocuments(view: TreeView) {
   const columns = getTableColumns(documents);
@@ -628,7 +628,7 @@ export async function loadFolderIdentityRows(
 
 /**
  * Whether a hidden, live folder is unused: nothing live under it, hidden or not (no
- * non-deleted document or folder), which includes every draft's created documents (§12.2 step 5).
+ * non-deleted document or folder), which includes every branch's created documents (§12.2 step 5).
  */
 export async function isUnusedHiddenFolder(db: DrizzleDb, folderId: FolderId): Promise<boolean> {
   const [row] = await currentDrizzleDb(db).execute<{ unused: boolean }>(sql`

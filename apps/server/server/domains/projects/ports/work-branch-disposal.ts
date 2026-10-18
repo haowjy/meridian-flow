@@ -9,7 +9,7 @@ export type WorkBranchDisposal = {
   /**
    * `run` with `dispose`, which the purge transaction calls after locking and proving the
    * Work: it locks each of the Work's active branches, their namespaces and hidden documents,
-   * and discards every one whole. It throws (aborting the purge transaction) when a draft's
+   * and discards every one whole. It throws (aborting the purge transaction) when a branch's
    * scope moved under it; `run` then runs again, up to a bound. `dispose` answers the stored
    * objects to delete after commit.
    */

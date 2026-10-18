@@ -59,7 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "runtime-settlement",
         defaultAiWriteMode: "direct",
       });
-      // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+      // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
       await db
         .insert(schema.branches)
         .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
@@ -214,7 +214,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
-      const branches = await db
+      const drafts = await db
         .select({
           documentId: schema.documentDrafts.documentId,
           workId: schema.branches.originWorkId,
@@ -227,7 +227,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             eq(schema.documentDrafts.documentId, DOC_ID),
           ),
         );
-      expect(branches).toEqual([{ documentId: DOC_ID, workId: NO_WORK_ID }]);
+      expect(drafts).toEqual([{ documentId: DOC_ID, workId: NO_WORK_ID }]);
       expect(await db.select().from(schema.threadWorks)).toEqual([
         expect.objectContaining({
           threadId: THREAD_ID,

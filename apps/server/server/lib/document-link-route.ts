@@ -36,7 +36,7 @@ export interface DocumentLinkRouteDeps {
   linkScopes: DocumentLinkScopes;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
-  /** The selected Work's view: its active draft, or live when it has none (F7). */
+  /** The selected Work's view: its active branch, or live when it has none (F7). */
   branches: Pick<Branches, "viewForWork">;
 }
 
@@ -49,18 +49,18 @@ export async function handleDocumentLinkResolveRequest(
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
   // Lineage is Scratch's owner, not a replacement for the chat's No Work
-  // draft view: project-document refs still read in that Work's draft view.
+  // branch view: project-document refs still read in that Work's branch view.
   const workId = request.rootThreadId
     ? ((await deps.workAuthorityResolver.noWork(projectId as ProjectId))?.workId ?? null)
     : (request.workId ?? null);
-  // The selected Work must be this project's; a draft view is never provisioned for any other.
+  // The selected Work must be this project's; a branch view is never provisioned for any other.
   if (
     workId &&
     !(await deps.workAuthorityResolver.byId(projectId as ProjectId, workId as WorkId))
   ) {
     throwContextWorkUnavailableHttpError("work_missing");
   }
-  // A Work's draft view is the live tree plus what that draft created.
+  // A Work's branch view is the live tree plus what that branch created.
   const view: LinkView = workId
     ? await deps.branches.viewForWork(workId as WorkId)
     : { kind: "live" };
@@ -116,7 +116,7 @@ export async function handleDocumentLinkResolveRequest(
   );
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
-  // Address-only links the live tree left unanswered: a Work's draft may have created them.
+  // Address-only links the live tree left unanswered: a Work's branch may have created them.
   const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
@@ -172,18 +172,18 @@ export async function handleDocumentLinkResolveRequest(
     }
   }
   if (unanswered.length > 0) {
-    await answerFromDraftView(deps, { projectId, userId, view, unanswered, answers });
+    await answerFromBranchView(deps, { projectId, userId, view, unanswered, answers });
   }
   return holderUri === undefined ? { answers } : { answers, holderUri };
 }
 
 /**
- * Names the document a Work's draft created at an address the live tree leaves empty (the
+ * Names the document a Work's branch created at an address the live tree leaves empty (the
  * scope's `branchCreatedAt`: exact, then the one extension-omitted match). A live occupant
- * keeps winning, since these never reached one; another draft's creation and what the
+ * keeps winning, since these never reached one; another branch's creation and what the
  * reader may not read stay missing.
  */
-async function answerFromDraftView(
+async function answerFromBranchView(
   deps: DocumentLinkRouteDeps,
   input: {
     projectId: string;

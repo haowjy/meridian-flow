@@ -133,7 +133,7 @@ export function createDrizzleLineageScratchLifecycle(
       (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
     );
     if (arrivals && restored.length) {
-      // Arrivals are live: a draft's hidden documents in a restored source settle nothing.
+      // Arrivals are live: a branch's hidden documents in a restored source settle nothing.
       const liveTree = visibleDocuments(LIVE_TREE);
       const content = await currentDrizzleDb(db)
         .select({ id: liveTree.id })

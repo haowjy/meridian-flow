@@ -1,7 +1,7 @@
 /**
  * Materializes a client-minted document without seeding its Yjs content. Nameless it is
  * `Untitled N` in the route's folder. With a `destination` (the writer's New file and a
- * link's Create) it lands at the typed name: a draft's hidden document there is unhidden
+ * link's Create) it lands at the typed name: a branch's hidden document there is unhidden
  * and the answer is `joined`; a visible node there leaves the create at the free name.
  */
 import {

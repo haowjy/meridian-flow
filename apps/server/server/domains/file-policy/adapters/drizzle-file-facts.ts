@@ -1,8 +1,8 @@
 /**
  * Postgres file facts (file-access §2, §5): follows
  * `documents → folders → context_sources → (project | work → project)` with
- * every lifecycle on the way. The tree view supplies draft locations and
- * lineage (D56); hidden identities outside the caller's draft have no facts.
+ * every lifecycle on the way. The tree view supplies branch locations and
+ * lineage (D56); hidden identities outside the caller's branch have no facts.
  */
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
@@ -39,7 +39,7 @@ const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, 
 type WorkRow = {
   id: WorkId;
   projectId: ProjectId;
-  /** The account that owns the Work's project: its draft's holder (`branchMayHold`). */
+  /** The account that owns the Work's project: its branch's holder (`branchMayHold`). */
   accountId: UserId;
   slug: string | null;
   isNoWork: boolean;
@@ -91,7 +91,8 @@ export function createDrizzleFileFacts(
         if (group) group.ids.push(id);
         else groups.set(key, { view, ids: [id] });
       }
-      const draftRow = branchWorkId === undefined ? undefined : await readWork(db, branchWorkId);
+      const branchWorkRow =
+        branchWorkId === undefined ? undefined : await readWork(db, branchWorkId);
       const tree = createTreeReader(db);
       for (const { view, ids } of groups.values()) {
         const documents = identityDocuments(view);
@@ -115,10 +116,10 @@ export function createDrizzleFileFacts(
             out.set(documentId, base);
             continue;
           }
-          if (draftRow && !branchMayHold(draftRow, ownerOf(base))) continue;
+          if (branchWorkRow && !branchMayHold(branchWorkRow, ownerOf(base))) continue;
           out.set(documentId, {
             ...base,
-            branchWork: draftRow ? workFacts(draftRow) : missingWork(branchWorkId),
+            branchWork: branchWorkRow ? workFacts(branchWorkRow) : missingWork(branchWorkId),
           });
         }
       }

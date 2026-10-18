@@ -19,7 +19,7 @@ function reader(result: unknown) {
   return branchTreeCommands(world, composed).view("live");
 }
 
-describe("draft-tree reader observations", () => {
+describe("branch-tree reader observations", () => {
   it("only not_found means absent, not a broken read or stat", async () => {
     for (const code of ["io_error", "permission_denied", "invalid_operation"]) {
       const view = reader({ ok: false, error: { code, message: "broken observer" } });

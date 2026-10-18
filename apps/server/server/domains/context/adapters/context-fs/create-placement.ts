@@ -22,8 +22,8 @@ import type { LiveCreate } from "./live-create.js";
 
 /**
  * People and auto-apply chats are live. A draft-mode chat on a drafted source is
- * a draft placement: reads see the Work's active draft (live while it has none), and
- * creates make hidden rows in that draft, which the command transaction ensures.
+ * a draft placement: reads see the Work's active branch (live while it has none), and
+ * creates make hidden rows in that branch, which the command transaction ensures.
  */
 export type ContextPlacement =
   | { kind: "live" }
@@ -45,7 +45,7 @@ export type LiveOnlyCommand =
 
 export interface CreatePlacement {
   readonly kind: ContextPlacement["kind"];
-  /** What reads see, resolved once per command; a read never makes a draft. */
+  /** What reads see, resolved once per command; a read never makes a branch. */
   readView(version: "draft" | "live" | undefined): Promise<TreeView>;
   /** The fault a live-only command meets here, or null when it may run. */
   refuse(command: LiveOnlyCommand): AdapterFault | null;
@@ -58,7 +58,7 @@ export interface CreatePlacement {
     path: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<{ documentId: string; placement: ContextPlacement["kind"] }, AdapterFault>>;
-  /** Reverse a create (§12.5): `live` asks the caller to delete; a draft retracts here. */
+  /** Reverse a create (§12.5): `live` asks the caller to delete; a branch create retracts here. */
   retract(
     documentId: string,
   ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
@@ -138,7 +138,7 @@ function draftPlacement(
 ): CreatePlacement {
   const { executor } = deps;
   const work = { workId: placement.workId, threadId: placement.threadId, userId: placement.userId };
-  /** A command in the drafting Work's draft, which the transaction ensures and locks. */
+  /** A command in the drafting Work's branch, which the transaction ensures and locks. */
   const inBranch = <T>(operation: (branch: EnsuredBranch) => Promise<Result<T, AdapterFault>>) =>
     executor.runInBranch({ ...work, mode: "ensure" }, (branch) =>
       operation({ id: branch.id, workId: placement.workId }),
@@ -180,7 +180,7 @@ function draftPlacement(
       });
     },
     writeBinary(path, options) {
-      // A draft's binary is its own hidden row holding the draft's object (12b-Q2).
+      // A branch's binary document is its own hidden row holding the branch's object (12b-Q2).
       return inBranch(async (branch) => {
         const target = resolveBinaryTarget(path, options);
         if (!target.ok) return target;
@@ -208,7 +208,7 @@ function draftPlacement(
     retract(documentId) {
       return executor.run(
         async ({ branch }) => {
-          // No active draft: a whole Discard already ended every use.
+          // No active branch: a whole Discard already ended every use.
           if (branch) {
             await placement.creates.retractCreate({
               branch: { id: branch.id, workId: placement.workId },
@@ -224,7 +224,7 @@ function draftPlacement(
   };
 }
 
-/** What a path two of a draft's files share answers, to a create and to a read alike. */
+/** What a path two of a branch's files share answers, to a create and to a read alike. */
 export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
   code: "invalid_operation",
   reason: "ambiguous_path",

@@ -76,8 +76,8 @@ writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 Lifecycle writes lock the Work row and publish `{ workId }` through
 `FileAccessChanges` in the same transaction so Scratch, Uploads, and draft
 rooms reconnect at their new access level. Work context mutations use that
-same lifecycle lock. Archive, unarchive, delete and restore lock no branch row
-and bump no branch revision. Collab's append keeps the Work predicate in its
+same lifecycle lock. Archive, unarchive, delete and restore lock no draft row
+and bump no draft revision. Collab's append keeps the Work predicate in its
 row `UPDATE` and rechecks the lifecycle in a fresh read once it holds the row;
 every other draft write takes the Work through the boundary below and so orders
 itself against the transition. The window that leaves: a writer key whose
@@ -89,11 +89,11 @@ keystroke (collab `.context/CONTEXT.md`).
 
 Collab's lifecycle and structural branch and draft writes take Work rows only
 through `adapters/work-projection-mutation.ts`, the Works mutation boundary: the
-one owner of Work-first lock order (Work, draft, document, branch). A
+one owner of Work-first lock order (Work, branch, document, draft). A
 transaction that locks a Work through the boundary recounts it at commit:
-`lockWorks(set)` locks the set's Works (opening a draft, Apply's batch plan, a
+`lockWorks(set)` locks the set's Works (opening a branch, Apply's batch plan, a
 reply save's grants), `mutate(set, operation)` is `lockWorks` then the write
-(closing a draft through Discard, branch writes, the draft-effect projection).
+(closing a branch through Discard, draft writes, the draft-effect projection).
 At commit each locked Work's pending count is reconciled once (one SQL aggregate
 over collab's membership rule, `WorkBranchPendingCounts`, however many locks the
 transaction took) against the stored value, and only a Work whose count moved
@@ -112,7 +112,7 @@ append moved outside the boundary is still announced by the next reconcile
 (the `effect-projection` probe's staging arm).
 
 Work deletion soft-deletes primary chats and live Work context rows, marking
-those children with `deletedByWorkId`. Drafts and their branches remain until
+those children with `deletedByWorkId`. Branches and their drafts remain until
 purge, so restore clears exactly the rows marked by that deletion; independently
 trashed children remain trashed. A deleted Work cannot restore a child by a
 separate path. Document and folder cascades advance location versions.
@@ -122,8 +122,8 @@ returns HTTP 410 `work_restore_expired` even if the purge worker has not run;
 references that retain a source Work extend storage retention, never the
 restore deadline. Purge
 processes eligible Works in batches, removes owned rows and blobs best-effort,
-and disposes originated drafts through collab's Work-draft disposal seam.
-It tombstones hidden draft-created nodes before deleting draft rows. Purge also
+and disposes originated branches through collab's Work-branch disposal seam.
+It tombstones hidden branch-created nodes before deleting branch rows. Purge also
 removes lineage Scratch sources rooted in its purge set. Work delete never
 marks lineage Scratch; it hides only through lineage liveness when the delete
 trashes the last live member. A fork or handoff

@@ -1,7 +1,7 @@
 /**
- * Route core for authenticated AI draft review over a Work's draft: the list, the preview,
+ * Route core for authenticated draft review over a Work's branch: the list, the preview,
  * and every Apply and Discard command by `itemKey` (contract §3, §4). A command carries a
- * client `commandId`: the route looks it up before grants (so a resend after the draft
+ * client `commandId`: the route looks it up before grants (so a resend after the branch
  * drained still gets its stored answer), builds the digest envelope, and maps the service's
  * outcome to HTTP. Nothing here decides an effect.
  */
@@ -268,7 +268,7 @@ export async function handleBranchCommandObservation(
 
 /**
  * The writer's grant on one draft (file-access §2, §4): preview reads it; Discard edits it;
- * Apply edits it and the live document, so an archived Work's frozen draft can't be applied
+ * Apply edits it and the live document, so an archived Work's frozen drafts can't be applied
  * (D30).
  */
 async function draftGrants<N extends FileNeed>(
@@ -349,8 +349,8 @@ export async function handleWorkBranchListRequest(
 ): Promise<ThreadDraftListResponse> {
   await requireBranchWorkAccess(deps, input);
   const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
-  // Readable in the draft's view, where its created documents are (file-access §6); a
-  // document deleted live is no longer readable anywhere, but stays the draft's item.
+  // Readable in the branch's view, where its created documents are (file-access §6); a
+  // document deleted live is no longer readable anywhere, but stays the branch's item.
   const readable = listed.branchId
     ? await deps.fileAccess.listAccess(
         { accountId: input.userId },
@@ -391,11 +391,11 @@ export async function handleDocumentDraftHintsRequest(
   if (!readable.has(input.documentId)) return { items: [] };
   const branches = await deps.documentSync.draftReview.branchesChangingDocument(input);
   return {
-    items: branches.map((draft) => ({
-      branchId: draft.branchId,
-      itemKey: draftItemKey(draft.branchId, input.documentId),
-      label: draft.originWorkName,
-      originWorkId: draft.originWorkId,
+    items: branches.map((branch) => ({
+      branchId: branch.branchId,
+      itemKey: draftItemKey(branch.branchId, input.documentId),
+      label: branch.originWorkName,
+      originWorkId: branch.originWorkId,
     })),
   };
 }
@@ -454,7 +454,7 @@ type PreparedCommand =
   | { grants: FileGrant<"edit">[]; effect: () => Promise<CommandOutcome> };
 
 /**
- * The one ingress every draft command goes through. After authenticated project and Work
+ * The one ingress every branch command goes through. After authenticated project and Work
  * access the id is looked up (a resend answers its stored outcome, §4.6); `prepare` then
  * resolves the item and acquires grants, and the grants are confirmed again before the
  * effect. A refusal at either point, a missing item or a grant that has become unavailable,
@@ -554,14 +554,14 @@ export async function handleApplyWorkDraftRequest(
   });
 }
 
-/** An item the draft no longer holds, as a 200 body status. */
+/** An item the branch no longer holds, as a 200 body status. */
 const goneItem = (request: { branchId: string; itemKey: string }) => (): CommandRouteResult => ({
   httpStatus: 200,
   body: { status: "gone", branchId: request.branchId as BranchId, itemKey: request.itemKey },
 });
 
-/** A draft that is not the Work's active one, as a 200 body status. */
-const goneDraft = (branchId: BranchId) => (): CommandRouteResult => ({
+/** A branch that is not the Work's active one, as a 200 body status. */
+const goneBranch = (branchId: BranchId) => (): CommandRouteResult => ({
   httpStatus: 200,
   body: { status: "gone", branchId },
 });
@@ -608,7 +608,7 @@ export async function handleApplyWorkDraftChangesRequest(
 }
 
 /**
- * Apply all (§11.5): the items the dock rendered, one server command. The request's draft
+ * Apply all (§11.5): the items the dock rendered, one server command. The request's branch
  * must be the Work's active one (else `gone`).
  */
 export async function handleApplyAllWorkBranchRequest(
@@ -627,7 +627,7 @@ export async function handleApplyAllWorkBranchRequest(
   const branchId = request.branchId as BranchId;
   return commandIngress(deps, input, envelope, {}, async () => {
     const listed = await deps.documentSync.draftReview.items({ workId: input.workId });
-    if (listed.branchId !== branchId) return { refusal: goneDraft(branchId) };
+    if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
     // The grants of what is still an item; one that isn't answers stale from the service.
     const keys = new Set(request.items.map((ref) => ref.itemKey));
     return {
@@ -704,8 +704,8 @@ export async function handleDiscardWorkDraftRequest(
 }
 
 /**
- * Discard all (§12.3): the whole draft, one server command; it always closes the draft. The
- * request's draft must be the Work's active one (else `gone`).
+ * Discard all (§12.3): the whole branch, one server command; it always closes the branch. The
+ * request's branch must be the Work's active one (else `gone`).
  */
 export async function handleDiscardAllWorkBranchRequest(
   deps: BranchRouteServices,
@@ -723,7 +723,7 @@ export async function handleDiscardAllWorkBranchRequest(
   const branchId = request.branchId as BranchId;
   return commandIngress(deps, input, envelope, {}, async () => {
     const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
-    if (listed.branchId !== branchId) return { refusal: goneDraft(branchId) };
+    if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
     return {
       grants: await applyGrants(deps, { ...input, items: listed.items }, { live: false }),
       effect: () =>

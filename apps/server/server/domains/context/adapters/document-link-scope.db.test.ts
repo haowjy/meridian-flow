@@ -158,7 +158,7 @@ if (!RUN) {
         row(SEAL, "seal", { extension: "png", fileType: "image", deletedAt: new Date() }),
         row(OLD_CREST, "crest", { extension: "png", fileType: "image", deletedAt: new Date() }),
         row(CREST, "crest", { extension: "png", fileType: "image" }),
-        // A discarded draft's picture: a hidden tombstone, never a live or deleted image.
+        // A discarded branch's picture: a hidden tombstone, never a live or deleted image.
         row(WRECK, "wreck", {
           extension: "png",
           fileType: "image",
@@ -405,7 +405,7 @@ if (!RUN) {
       expect.soft(registered).toEqual([PROJECT]);
     });
 
-    it("names the reader's own draft else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
+    it("names the reader's own branch else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
       const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const [atlas, beacon, cove] = [
         await s.work("Atlas", "draft"),
@@ -414,10 +414,10 @@ if (!RUN) {
       ];
       const chapter = await s.seedLive("chapter");
       await s.seedLive("notes");
-      // Atlas's draft made Kael first; Beacon's draft joined it (one row, one place).
+      // Atlas's branch made Kael first; Beacon's branch joined it (one row, one place).
       const kael = await s.seedHidden(atlas, "lore/kael");
       await s.seedHidden(beacon, "lore/kael", { join: kael });
-      const [atlasDraft, beaconDraft] = [await s.branchOf(atlas), await s.branchOf(beacon)];
+      const [atlasBranch, beaconBranch] = [await s.branchOf(atlas), await s.branchOf(beacon)];
       await s.branchOf(cove);
 
       const named = async (view: typeof atlas | "live") => {
@@ -431,16 +431,16 @@ if (!RUN) {
           ? [answer.inBranch, answer.branch?.branchId, answer.document.uri]
           : answer.state;
       };
-      const atAtlas = [true, atlasDraft.id, "manuscript://lore/kael"];
-      expect.soft(await named("live"), "live: the oldest draft, its path").toEqual(atAtlas);
-      expect.soft(await named(cove), "a draft not using it: the oldest").toEqual(atAtlas);
-      expect.soft(await named(atlas), "its own oldest draft").toEqual(atAtlas);
+      const atAtlas = [true, atlasBranch.id, "manuscript://lore/kael"];
+      expect.soft(await named("live"), "live: the oldest branch, its path").toEqual(atAtlas);
+      expect.soft(await named(cove), "a branch not using it: the oldest").toEqual(atAtlas);
+      expect.soft(await named(atlas), "its own oldest branch").toEqual(atAtlas);
       expect
-        .soft(await named(beacon), "the reader's own draft, where it has it")
-        .toEqual([true, beaconDraft.id, "manuscript://lore/kael"]);
+        .soft(await named(beacon), "the reader's own branch, where it has it")
+        .toEqual([true, beaconBranch.id, "manuscript://lore/kael"]);
 
       // An ahead ref reads by address in the reader's view until a live document binds it:
-      // a draft's hidden document there reads "in a draft" from every view.
+      // a branch's hidden document there reads "in a draft" from every view.
       const draftShip = await s.seedHidden(atlas, "ship");
       const unbound = await s.seedAhead("ship");
       const liveAnchor = await s.seedLive("anchor");
@@ -480,7 +480,7 @@ if (!RUN) {
       expect.soft(await read("live", unbound, SHIP, null), "chat: the same").toEqual(inShip);
       await s.seedHidden(beacon, "ship", { join: draftShip });
       expect
-        .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another draft")
+        .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another branch")
         .toEqual(inShip);
 
       // A stale base: the id still pins the holder, and the answer names where it is now.
@@ -506,7 +506,7 @@ if (!RUN) {
         .toEqual({ id: liveAnchor });
     });
 
-    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a draft view", async () => {
+    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a branch view", async () => {
       const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const atlas = await s.work("Atlas", "draft");
       const ship = await s.model(atlas).create("ship2", "A ship.");
