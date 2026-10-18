@@ -72,17 +72,6 @@ export interface UpdateJournal {
     meta: UpdateMeta,
     authority?: JournalAuthority,
   ): Promise<number>;
-  /**
-   * Journal-first transport admission; hosts may atomically join settlement state. The host
-   * judges novelty where appends serialize: `null` when the stored document already holds the
-   * update's structs and deletes, and nothing was appended.
-   */
-  appendWriterUpdate?(
-    docId: string,
-    update: Uint8Array,
-    meta: UpdateMeta,
-    authority?: JournalAuthority,
-  ): Promise<{ seq: number; joinedSettlement: boolean } | null>;
   /** Append logical edit envelopes atomically; the storage adapter expands their ordered parts. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;

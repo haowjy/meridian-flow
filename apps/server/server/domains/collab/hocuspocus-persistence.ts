@@ -27,6 +27,7 @@ import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "./domain/ports/checkpoint-authority.js";
+import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
@@ -48,7 +49,7 @@ type CheckpointSlot = {
 };
 
 type HocuspocusPersistenceDeps = {
-  journal: CheckpointJournal;
+  journal: CheckpointJournal & LiveWriterJournal;
   backgroundTasks?: DetachedWorkTracker;
   branchStore?: BranchStore;
   branchCoordinator?: BranchCoordinator;
@@ -475,21 +476,12 @@ export function createHocuspocusPersistenceService(
             ingressGenerations.set(input.documentId, generation);
             const admitted = admittedByDocument.get(input.documentId) ?? new Map();
             admittedByDocument.set(input.documentId, admitted);
-            const append = deps.journal.appendWriterUpdate
-              ? deps.journal.appendWriterUpdate(
-                  input.documentId,
-                  input.update,
-                  deps.metaForOrigin(input.origin),
-                  authority,
-                )
-              : deps.journal
-                  .append(
-                    input.documentId,
-                    input.update,
-                    deps.metaForOrigin(input.origin),
-                    authority,
-                  )
-                  .then((seq) => ({ seq, joinedSettlement: false }));
+            const append = deps.journal.appendWriterUpdate(
+              input.documentId,
+              input.update,
+              deps.metaForOrigin(input.origin),
+              authority,
+            );
             const tracked = append.catch((cause) => {
               recordDroppedConnectionUpdate(input.documentId);
               emitPersistenceAppendFailure(input.documentId, cause);
@@ -505,7 +497,7 @@ export function createHocuspocusPersistenceService(
           },
         });
         // Refused before the lock, or under it: another copy of this update was stored first.
-        if (!admission.admitted || !admission.value)
+        if (!admission.admitted || admission.value.status === "contained")
           return { admitted: false, joinedSettlement: false };
         deps.onLiveUpdatePersisted?.(input.documentId);
         return {
