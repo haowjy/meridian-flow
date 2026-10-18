@@ -518,8 +518,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       steps: [
         createDrizzleDraftTreeStep(db, {
           drafts: workDrafts,
-          // The real Work-first boundary, with no catalog or availability notice.
-          workProjection: createTestWorkProjectionMutation(db),
           // The harness keeps no catalog.
           catalog: { refreshSources: async () => "" },
           branches: branchStore,

@@ -356,7 +356,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           coordinator: branchCoordinator,
           liveDoc: (documentId) => readLiveDoc(persistence.journal, documentId),
           ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
-          workProjection: deps.workProjectionMutation,
           catalog: deps.catalogMutations,
         }),
       ],

@@ -3,10 +3,10 @@
  * every lifecycle or structural write that holds a Work's draft, branch or document row, which
  * is how those writes order themselves against the Work's lifecycle transitions, and the
  * canonical transaction participant for every mutation visible in a Works snapshot. It owns
- * the Work's stored pending count (the badge): `mutate` reconciles it at commit, and only a
- * moved count bumps the Work's revision and sends a notice. An ordinary branch append (a
- * keystroke) never enters it: the draft-effect projection runs after every append and
- * reconciles the count then, through `mutate`.
+ * the Work's stored pending count (the badge): every Work a transaction locks through it is
+ * recounted at commit, and only a moved count bumps the Work's revision and sends a notice. An
+ * ordinary branch append (a keystroke) never enters it: the draft-effect projection runs after
+ * every append and recounts then, through `mutate`.
  */
 import type { DraftId } from "@meridian/contracts";
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -60,24 +60,21 @@ export type WorkProjectionMutation = {
   /** Activity on the Works (`lastActivityAt`): a revision and a notice, count or not. */
   touchWorks(workIds: readonly WorkId[], activityAt: Date): Promise<void>;
   /**
-   * Work-first order alone: the set's Works locked `FOR NO KEY UPDATE` in id order, in the
-   * caller's transaction, before it takes any draft, branch or document row. Apart from the
-   * Work's own lifecycle writers, nothing else in collab or projects locks a Work for a write.
+   * Work-first order: the set's Works locked `FOR NO KEY UPDATE` in id order, in the caller's
+   * transaction, before it takes any draft, branch or document row. At commit each locked
+   * Work's pending count is reconciled against its stored value, and a Work whose count moved
+   * gets a revision and a notice; one whose count stayed gets neither. Apart from the Work's
+   * own lifecycle writers, nothing else in collab or projects locks a Work for a write.
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
-  /**
-   * The set's Works locked first, then `operation`; at commit, each resolved Work's pending
-   * count is reconciled against its stored value, and a Work whose count moved gets a revision
-   * and a notice. A Work whose count stayed gets neither: a structural write changes nothing
-   * else a Works snapshot shows.
-   */
+  /** `lockWorks`, then `operation`, in one transaction (its own when the caller has none). */
   mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
 };
 
 const WORKS_NOTICE_STATE = {};
 type WorksNoticeState = {
   touchedWorkIds: Set<WorkId>;
-  /** Works a `mutate` locked: their pending count is reconciled once, at commit. */
+  /** Works locked through the boundary: their pending count is reconciled once, at commit. */
   reconcileWorkIds: Set<WorkId>;
   pendingWorkIdsByProject: Map<string, Set<WorkId>>;
 };
@@ -153,7 +150,7 @@ export function createWorkProjectionMutation(input: {
   }
 
   /**
-   * Under the Work locks `mutate` took, which serialize reconciles of one Work: counts once
+   * Under the Work locks `lockWriteSet` took, which serialize reconciles of one Work: counts once
    * per transaction, however many writes it made, and writes only a count that moved. An
    * append that commits after the count is not lost: it schedules the draft-effect
    * projection, whose `mutate` reconciles again; the stored value, not a count taken before
@@ -179,7 +176,7 @@ export function createWorkProjectionMutation(input: {
   async function lockWriteSet(
     set: WorkWriteSet,
     options: WorkWriteOptions = {},
-  ): Promise<LockedWorkWriteSet & { workIds: WorkId[] }> {
+  ): Promise<LockedWorkWriteSet> {
     if (!isInDrizzleTransaction()) {
       throw new Error("Work locks are held by the caller's transaction; none is open");
     }
@@ -219,7 +216,10 @@ export function createWorkProjectionMutation(input: {
         }
       }
     }
-    return { works: locked, branches, workIds };
+    // Whatever the caller changes under these locks, the count follows at commit.
+    const state = worksNoticeState();
+    for (const workId of workIds) state.reconcileWorkIds.add(workId);
+    return { works: locked, branches };
   }
 
   const mutation: WorkProjectionMutation = {
@@ -241,10 +241,7 @@ export function createWorkProjectionMutation(input: {
         enrollRows(state, rows);
       });
     },
-    async lockWorks(set, options) {
-      const { works: locked, branches } = await lockWriteSet(set, options);
-      return { works: locked, branches };
-    },
+    lockWorks: lockWriteSet,
     /**
      * The set's Works locked before `operation` takes any draft or branch row, so every
      * structural branch write enters Work, then draft, then branch, the order Archive takes
@@ -252,11 +249,8 @@ export function createWorkProjectionMutation(input: {
      */
     mutate(set, operation, options) {
       return runInDrizzleTransaction(input.db, async () => {
-        const { workIds } = await lockWriteSet(set, options);
-        const result = await operation();
-        const state = worksNoticeState();
-        for (const workId of workIds) state.reconcileWorkIds.add(workId);
-        return result;
+        await lockWriteSet(set, options);
+        return operation();
       });
     },
   };
