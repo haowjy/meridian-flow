@@ -58,7 +58,6 @@ import {
 import {
   createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkBranchPendingStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchTreeStep } from "./adapters/drizzle-branch-tree-step.js";
 import {
@@ -86,6 +85,7 @@ import {
 import { createDrizzleReviewCut, readLiveDoc } from "./adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
