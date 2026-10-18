@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The draft/branch rename preserves command replay fingerprints and opaque document IDs. Its online backfill commits complete receipt and settlement rows in indexed batches and refreshes shown-link digests without creating duplicate showings (#880).
+
 - Internal review names now match their contents: a branch holds a Work's pending file tree, and a draft is one document's pending version (#880). Tables, IDs, routes, rooms, commands, and references use that vocabulary without aliases. Migrations 0068 and 0069 preserve existing rows and rewrite stored references in place. Writer and model wording continues to say drafts. Composer drafts, catalogue verbs, and Git branch terminology stay unchanged.
 
 - The model's `work` tool reports a Work's pending drafts as "N documents with pending changes" (#941). It printed "N pending changes" from a count of documents, so one document with five changes read "1 pending change"; the count it reads is the Work's stored pending-document count, which is now always present.

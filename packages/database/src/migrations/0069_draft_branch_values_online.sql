@@ -1,6 +1,6 @@
 -- migration: no-transaction
 -- #880 online data half. Each bounded batch commits independently. Re-runnable after interruption.
--- The temporary codec is scoped to collaboration JSON: the keys and opaque ids have one meaning
+-- The temporary codec is scoped to collaboration JSON: the keys have one meaning
 -- there. It never visits document text, chat messages, or model tool input.
 CREATE OR REPLACE FUNCTION rename_draft_branch_json(value jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE result jsonb; k text; v jsonb; new_key text;
@@ -12,12 +12,7 @@ BEGIN
         WHEN 'draftBranchId' THEN 'draftId' WHEN 'branchGeneration' THEN 'draftGeneration'
         WHEN 'branchGenerationToken' THEN 'draftGenerationToken'
         WHEN 'upstreamBranchId' THEN 'upstreamDraftId' ELSE k END;
-      IF k IN ('branchId','draftBranchId','upstreamBranchId') AND jsonb_typeof(v) = 'string'
-        AND v #>> '{}' ~ '^branch_[0-9a-f-]{36}$' THEN
-        v := to_jsonb('draft_' || substr(v #>> '{}', 8));
-      ELSE
-        v := rename_draft_branch_json(v);
-      END IF;
+      v := rename_draft_branch_json(v);
       result := result || jsonb_build_object(new_key, v);
     END LOOP;
     RETURN result;
@@ -30,66 +25,88 @@ BEGIN
 END $$;
 --> statement-breakpoint
 CREATE OR REPLACE PROCEDURE rename_draft_branch_values(batch_size int) LANGUAGE plpgsql AS $$
-DECLARE ids text[]; last_id text; next_id text; row_count int; target record;
+DECLARE
+  part_cursor bigint := 0; part_next bigint; part_ids bigint[];
+  command_cursor uuid := '00000000-0000-0000-0000-000000000000'; command_next uuid; command_ids uuid[];
+  batch_cursor uuid := '00000000-0000-0000-0000-000000000000'; step_cursor text := '';
+  link_thread uuid := '00000000-0000-0000-0000-000000000000';
+  link_document uuid := '00000000-0000-0000-0000-000000000000';
+  link_digest text := ''; link_turn uuid := '00000000-0000-0000-0000-000000000000';
+  item record; visited int; new_view text; new_digest text;
 BEGIN
+  -- Durable IDs are opaque: retaining them avoids unbounded FK fanout and broken JSON references.
+  -- Page over ALL rows in native primary-key order, then test the version marker. Filtering
+  -- before LIMIT could scan an entire retained history to fill one batch of old rows.
   LOOP
     SET LOCAL lock_timeout = '2s';
-    SELECT array_agg(id ORDER BY id) INTO ids FROM (
-      SELECT id FROM document_drafts WHERE id ~ '^branch_[0-9a-f-]{36}$' ORDER BY id LIMIT batch_size FOR UPDATE
-    ) batch;
-    EXIT WHEN ids IS NULL;
-    SET CONSTRAINTS document_drafts_upstream_draft_id_document_drafts_id_fk,
-      draft_write_journal_draft_id_document_drafts_id_fk, push_lineage_draft_id_document_drafts_id_fk DEFERRED;
-    UPDATE document_drafts SET upstream_draft_id = 'draft_' || substr(upstream_draft_id, 8)
-      WHERE upstream_draft_id = ANY(ids);
-    UPDATE draft_write_journal SET draft_id = 'draft_' || substr(draft_id, 8) WHERE draft_id = ANY(ids);
-    UPDATE push_lineage SET draft_id = 'draft_' || substr(draft_id, 8) WHERE draft_id = ANY(ids);
-    UPDATE document_drafts SET id = 'draft_' || substr(id, 8) WHERE id = ANY(ids);
+    SELECT max(id), array_agg(id) INTO part_next, part_ids FROM (
+      SELECT id FROM document_edit_parts WHERE id > part_cursor ORDER BY id LIMIT batch_size FOR UPDATE
+    ) page;
+    EXIT WHEN part_next IS NULL;
+    UPDATE document_edit_parts SET
+      origin = CASE WHEN origin ? 'branchId' THEN rename_draft_branch_json(origin) ELSE origin END,
+      placement = CASE WHEN placement ? 'branchId' THEN rename_draft_branch_json(placement) ELSE placement END
+    WHERE id = ANY(part_ids) AND (origin ? 'branchId' OR placement ? 'branchId');
+    part_cursor := part_next;
     COMMIT;
   END LOOP;
-  -- Keyset iteration transforms each JSON row exactly once, including rows whose keys swap.
-  -- The procedure's CALL is one runner chunk, so interruption rolls back its current chunk;
-  -- its completed batches must be recognizable without applying the key swap twice.
-  FOR target IN SELECT * FROM (VALUES
-    ('document_edit_parts','id','origin', 'origin ? ''branchId'''),
-    ('document_edit_parts','id','placement', 'placement ? ''branchId'''),
-    ('branch_push_settlement_payloads','batch_id','payload', 'payload ? ''draftId'''),
-    ('branch_commands','id','result', 'result ? ''draftId''')
-  ) t(table_name, id_column, json_column, predicate) LOOP
-    last_id := '';
+  LOOP
+    SET LOCAL lock_timeout = '2s';
+    visited := 0;
+    FOR item IN SELECT * FROM branch_push_settlement_payloads
+      WHERE (batch_id, step_kind) > (batch_cursor, step_cursor)
+      ORDER BY batch_id, step_kind LIMIT batch_size FOR UPDATE
     LOOP
-      SET LOCAL lock_timeout = '2s';
-      EXECUTE format('WITH batch AS (
-        SELECT %1$I AS id FROM %2$I WHERE %1$I::text > $1 AND %3$I IS NOT NULL
-          AND (%4$s)
-        ORDER BY %1$I::text LIMIT $2 FOR UPDATE
-      ), done AS (
-        UPDATE %2$I t SET %3$I = rename_draft_branch_json(t.%3$I)%5$s
-        FROM batch b WHERE t.%1$I = b.id RETURNING t.%1$I::text AS id
-      ) SELECT max(id), count(*) FROM done', target.id_column, target.table_name, target.json_column, target.predicate, CASE WHEN target.table_name = 'branch_commands' THEN ', kind = CASE WHEN kind = ''discard_draft'' THEN ''discard_branch'' ELSE kind END' ELSE '' END)
-      INTO next_id, row_count USING last_id, batch_size;
-      EXIT WHEN row_count = 0;
-      last_id := next_id;
-      COMMIT;
+      batch_cursor := item.batch_id; step_cursor := item.step_kind; visited := visited + 1;
+      IF item.step_kind = 'draft_tree' THEN
+        UPDATE branch_push_settlement_payloads SET payload = rename_draft_branch_json(payload), step_kind = 'branch_tree'
+        WHERE batch_id = item.batch_id AND step_kind = item.step_kind;
+      END IF;
     END LOOP;
-  END LOOP;
-  LOOP
-    SET LOCAL lock_timeout = '2s';
-    WITH batch AS (SELECT ctid FROM thread_shown_links WHERE view LIKE 'draft:%' LIMIT batch_size FOR UPDATE)
-    UPDATE thread_shown_links SET view = 'branch:' || substr(view, 7) WHERE ctid IN (SELECT ctid FROM batch);
-    GET DIAGNOSTICS row_count = ROW_COUNT;
-    EXIT WHEN row_count = 0;
+    EXIT WHEN visited = 0;
     COMMIT;
   END LOOP;
   LOOP
     SET LOCAL lock_timeout = '2s';
-    WITH batch AS (SELECT id FROM branch_commands WHERE kind = 'discard_draft' LIMIT batch_size FOR UPDATE)
-    UPDATE branch_commands SET kind = 'discard_branch' WHERE id IN (SELECT id FROM batch);
-    GET DIAGNOSTICS row_count = ROW_COUNT;
-    EXIT WHEN row_count = 0;
+    SELECT array_agg(id ORDER BY id) INTO command_ids FROM (
+      SELECT id FROM branch_commands WHERE id > command_cursor ORDER BY id LIMIT batch_size FOR UPDATE
+    ) page;
+    EXIT WHEN command_ids IS NULL;
+    command_next := command_ids[array_length(command_ids, 1)];
+    UPDATE branch_commands SET
+      result = CASE WHEN result ? 'draftId' THEN rename_draft_branch_json(result) ELSE result END,
+      kind = CASE WHEN kind = 'discard_draft' THEN 'discard_branch' ELSE kind END
+    WHERE id = ANY(command_ids) AND (result ? 'draftId' OR kind = 'discard_draft');
+    command_cursor := command_next;
     COMMIT;
   END LOOP;
-  UPDATE branch_push_settlement_payloads SET step_kind = 'branch_tree' WHERE step_kind = 'draft_tree';
+  LOOP
+    SET LOCAL lock_timeout = '2s';
+    visited := 0;
+    -- A changed digest can move a showing onto a later page; its new view makes that visit a no-op.
+    FOR item IN SELECT * FROM thread_shown_links
+      WHERE (thread_id, document_id, showing_digest, turn_id) > (link_thread, link_document, link_digest, link_turn)
+      ORDER BY thread_id, document_id, showing_digest, turn_id LIMIT batch_size FOR UPDATE
+    LOOP
+      link_thread := item.thread_id; link_document := item.document_id;
+      link_digest := item.showing_digest; link_turn := item.turn_id; visited := visited + 1;
+      IF item.view NOT LIKE 'draft:%' THEN CONTINUE; END IF;
+      new_view := 'branch:' || substr(item.view, 7);
+      -- array_to_json(text[]) has the compact JSON.stringify string-array encoding, unlike jsonb::text.
+      new_digest := encode(sha256(convert_to(array_to_json(ARRAY[item.ref, item.address, item.holder_uri, new_view])::text, 'UTF8')), 'hex');
+      DELETE FROM thread_shown_links WHERE thread_id = item.thread_id AND document_id = item.document_id
+        AND showing_digest = item.showing_digest AND turn_id = item.turn_id;
+      INSERT INTO thread_shown_links (thread_id, document_id, showing_digest, turn_id, ref, address, holder_uri, view, seq)
+      VALUES (item.thread_id, item.document_id, new_digest, item.turn_id, item.ref, item.address, item.holder_uri, new_view, item.seq)
+      ON CONFLICT (thread_id, document_id, showing_digest, turn_id) DO UPDATE
+        SET seq = greatest(thread_shown_links.seq, excluded.seq)
+        WHERE thread_shown_links.ref = excluded.ref AND thread_shown_links.address = excluded.address
+          AND thread_shown_links.holder_uri = excluded.holder_uri AND thread_shown_links.view = excluded.view;
+      IF NOT FOUND THEN RAISE EXCEPTION 'shown-link digest collision'; END IF;
+    END LOOP;
+    EXIT WHEN visited = 0;
+    COMMIT;
+  END LOOP;
 END $$;
 --> statement-breakpoint
 CALL rename_draft_branch_values(500);
@@ -107,17 +124,5 @@ DO $$ BEGIN
     ALTER INDEX document_edit_parts_pending_v2 RENAME TO document_edit_parts_pending_idx;
   END IF;
 END $$;
---> statement-breakpoint
-CREATE OR REPLACE PROCEDURE finish_draft_branch_names() LANGUAGE plpgsql AS $$
-BEGIN
-  SET LOCAL lock_timeout = '2s';
-  ALTER TABLE "document_drafts" ALTER CONSTRAINT "document_drafts_upstream_draft_id_document_drafts_id_fk" NOT DEFERRABLE;
-  ALTER TABLE "draft_write_journal" ALTER CONSTRAINT "draft_write_journal_draft_id_document_drafts_id_fk" NOT DEFERRABLE;
-  ALTER TABLE "push_lineage" ALTER CONSTRAINT "push_lineage_draft_id_document_drafts_id_fk" NOT DEFERRABLE;
-END $$;
---> statement-breakpoint
-CALL finish_draft_branch_names();
---> statement-breakpoint
-DROP PROCEDURE finish_draft_branch_names();
 --> statement-breakpoint
 ALTER TABLE branch_commands VALIDATE CONSTRAINT branch_commands_kind_valid;
