@@ -1,4 +1,4 @@
-/** Captures an explicit coarse historical fixture row; publication still uses the canonical batch seam. */
+/** Captures an explicit coarse historical fixture row; Apply still uses the canonical batch seam. */
 import * as Y from "yjs";
 import type { BranchCoordinator } from "../domain/branch-coordinator.js";
 

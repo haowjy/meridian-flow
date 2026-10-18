@@ -110,7 +110,7 @@ export async function openHarness(url: string) {
   const attemptScope = <T,>(operation: () => Promise<T>) => runInDrizzleSavepoint(db, operation);
   const coordinator = createBranchCoordinator({ onAppendCommitted: () => {}, store, attemptScope });
   // The real Work lifecycle writer. Its file-access and Scratch ports are inert: the probes
-  // observe the Work row, its branch fences and the locks, not access or Scratch publication.
+  // observe the Work row, its branch fences and the locks, not access or Scratch notices.
   const works = createDrizzleWorkRepository({
     db,
     projectionMutation: projection,

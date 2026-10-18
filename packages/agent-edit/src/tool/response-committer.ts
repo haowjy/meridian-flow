@@ -173,7 +173,7 @@ export type CommandDocumentLease = CommandLeaseMethods &
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
-  /** Host transaction hook; keeps lifecycle publication aligned with durable commit. */
+  /** Host transaction hook; keeps lifecycle delivery aligned with durable commit. */
   deferFinalization?(participant: {
     commit(): void | Promise<void>;
     abort(): void | Promise<void>;
@@ -965,7 +965,7 @@ export function createResponseCommitter(deps: {
           throw new ResponseAttemptStaleError(responseId);
         }
         settled = true;
-        // The host publishes each write when the enclosing root transaction commits.
+        // The host installs each write when the enclosing root transaction commits.
         for (const { write } of outcomes.values()) if (write.kind === "write") write.transfer();
         const deferred = deferredPromise<ResponseCommitSuccessResult>();
         const owner: CommittingResponseState = {

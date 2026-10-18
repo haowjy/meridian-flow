@@ -390,7 +390,7 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
     ],
     // Push preparation intentionally stores the after snapshot last when the
     // display hash collides, so both canonical identities must come from
-    // the explicit publication change rather than this combined lookup.
+    // the explicit Apply change rather than this combined lookup.
     blockIdentities: new Map([[collidingHash, { documentId: "document-1", ...afterIdentity }]]),
     afterIds: new Set([collidingHash]),
     afterById: new Map([[collidingHash, afterElement]]),

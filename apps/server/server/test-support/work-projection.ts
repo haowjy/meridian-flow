@@ -1,7 +1,7 @@
 /**
  * The real Work mutation boundary for isolated PostgreSQL adapters whose contract excludes
  * cross-domain effects: the same Work-first order and touches, with no catalog or availability
- * publication.
+ * notice.
  */
 import type { Database } from "@meridian/database";
 import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";

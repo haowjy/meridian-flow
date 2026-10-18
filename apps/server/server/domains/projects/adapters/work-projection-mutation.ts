@@ -56,7 +56,7 @@ export type LockedWorkWriteSet = {
 };
 
 export type WorkProjectionMutation = {
-  publishWorks(workIds: readonly WorkId[]): Promise<void>;
+  notifyWorksChanged(workIds: readonly WorkId[]): Promise<void>;
   /** Activity on the Works (`lastActivityAt`): a revision and a notice, count or not. */
   touchWorks(workIds: readonly WorkId[], activityAt: Date): Promise<void>;
   /**
@@ -74,8 +74,8 @@ export type WorkProjectionMutation = {
   mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
 };
 
-const PUBLICATION_STATE = {};
-type PublicationState = {
+const WORKS_NOTICE_STATE = {};
+type WorksNoticeState = {
   touchedWorkIds: Set<WorkId>;
   /** Works a `mutate` locked: their pending count is reconciled once, at commit. */
   reconcileWorkIds: Set<WorkId>;
@@ -89,8 +89,8 @@ export function createWorkProjectionMutation(input: {
   /** The collab-owned pending membership rule, counted per Work in SQL. */
   pendingCounts: WorkDraftPendingCounts;
 }): WorkProjectionMutation {
-  const publicationParticipant: DrizzleTransactionParticipant<PublicationState> = {
-    key: PUBLICATION_STATE,
+  const worksNoticeParticipant: DrizzleTransactionParticipant<WorksNoticeState> = {
+    key: WORKS_NOTICE_STATE,
     create: () => ({
       touchedWorkIds: new Set(),
       reconcileWorkIds: new Set(),
@@ -128,12 +128,12 @@ export function createWorkProjectionMutation(input: {
     },
   };
 
-  function publicationState(): PublicationState {
-    return enlistDrizzleTransactionParticipant(publicationParticipant);
+  function worksNoticeState(): WorksNoticeState {
+    return enlistDrizzleTransactionParticipant(worksNoticeParticipant);
   }
 
   function enrollRows(
-    state: PublicationState,
+    state: WorksNoticeState,
     rows: readonly { id: string; projectId: string }[],
   ): void {
     for (const { id, projectId } of rows) {
@@ -143,13 +143,13 @@ export function createWorkProjectionMutation(input: {
     }
   }
 
-  async function enrollPublication(workIds: readonly WorkId[]): Promise<void> {
+  async function enrollWorksNotice(workIds: readonly WorkId[]): Promise<void> {
     const unique = [...new Set(workIds)].sort() as WorkId[];
     const rows = await currentDrizzleDb(input.db)
       .select({ id: works.id, projectId: works.projectId })
       .from(works)
       .where(inArray(works.id, unique));
-    enrollRows(publicationState(), rows);
+    enrollRows(worksNoticeState(), rows);
   }
 
   /**
@@ -159,7 +159,7 @@ export function createWorkProjectionMutation(input: {
    * projection, whose `mutate` reconciles again; the stored value, not a count taken before
    * this transaction's own writes, is what that compares against.
    */
-  async function reconcilePendingCounts(state: PublicationState): Promise<void> {
+  async function reconcilePendingCounts(state: WorksNoticeState): Promise<void> {
     if (state.reconcileWorkIds.size === 0) return;
     const workIds = [...state.reconcileWorkIds].sort() as WorkId[];
     state.reconcileWorkIds.clear();
@@ -223,12 +223,12 @@ export function createWorkProjectionMutation(input: {
   }
 
   const mutation: WorkProjectionMutation = {
-    async publishWorks(workIds) {
-      await runInDrizzleTransaction(input.db, () => enrollPublication(workIds));
+    async notifyWorksChanged(workIds) {
+      await runInDrizzleTransaction(input.db, () => enrollWorksNotice(workIds));
     },
     async touchWorks(workIds, activityAt) {
       await runInDrizzleTransaction(input.db, async () => {
-        const state = publicationState();
+        const state = worksNoticeState();
         const unique = [...new Set(workIds)].sort() as WorkId[];
         const untouched = unique.filter((workId) => !state.touchedWorkIds.has(workId));
         if (untouched.length === 0) return;
@@ -254,7 +254,7 @@ export function createWorkProjectionMutation(input: {
       return runInDrizzleTransaction(input.db, async () => {
         const { workIds } = await lockWriteSet(set, options);
         const result = await operation();
-        const state = publicationState();
+        const state = worksNoticeState();
         for (const workId of workIds) state.reconcileWorkIds.add(workId);
         return result;
       });

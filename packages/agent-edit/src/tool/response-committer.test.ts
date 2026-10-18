@@ -39,20 +39,20 @@ describe("response committer", () => {
     expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(true);
   });
 
-  it("publishes deferred lifecycle close only after the host commits", async () => {
+  it("delivers deferred lifecycle close only after the host commits", async () => {
     const transitions: ResponseCommitterTransitionDetail[] = [];
     const ctx = harness(
       { "chapter.md": "Alpha." },
       { onResponseCommitterTransition: (event) => transitions.push(event) },
     );
-    const responseId = "response-publish-close";
+    const responseId = "response-deliver-close";
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
       {
         ...context,
         responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-        turnId: "turn-publish-close",
+        turnId: "turn-deliver-close",
       },
     );
     let commit = async () => {};

@@ -10,7 +10,7 @@ The presented document and review address come from the project review owner.
 The session reducer owns selected review, shown generation, retained completion,
 and focus; the controller owns navigation effects. Draft command records own
 per-draft claims, intent queues, failures, and read fences. The executor owns
-typed admission, answer publication, and refresh ordering. Work commands retain
+typed admission, answer recording, and refresh ordering. Work commands retain
 their creation-bound Work and thread authority. Chat and Work lists own no
 review reducer, room or focus observer, and there is no per-list review scope.
 `useAiDraftLauncher.openReviewFile` is the one listed-file launch adapter for
@@ -143,7 +143,7 @@ its stored occupant. Both adapters are account-epoch fenced.
 
 A live document with drafts exposes one document-level hint, while the selector
 maps that hint to the current review address. New-document Discard also removes
-its Work-manifest entry, and a later Apply publishes that manifest as well as
+its Work-manifest entry, and a later Apply lands that manifest as well as
 content. Promotion happens once per document whichever Work's observer saw it.
 Draft-only Editor tabs are never persisted and are skipped by durable route
 continuity (Editor persistence strips `reviews`). The dock persists its review

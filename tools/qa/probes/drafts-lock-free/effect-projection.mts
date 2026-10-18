@@ -54,7 +54,7 @@ export const effectProjection: Probe = {
   name: "effect-projection",
   decision: "D28 (§3 F3/F4)",
   expected:
-    "badge follows a key within 1 s, continuous typing within 1 s of the pause with one revision for one count change, delete-all clears within 1 s, a key after staging republishes the Work, two processes converge with a fresh watermark",
+    "badge follows a key within 1 s, continuous typing within 1 s of the pause with one revision for one count change, delete-all clears within 1 s, a key after staging moves the Work's revision, two processes converge with a fresh watermark",
   async run(harness) {
     const p = await openProjected(harness);
     try {

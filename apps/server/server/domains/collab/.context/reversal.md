@@ -75,7 +75,7 @@ unwinds the whole attempt and recaptures. After four misses one more capture is
 planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
 the card and `internal_error` ("the draft changed while reversing; try again")
-for model Undo, Redo and Revert, never an invented refusal. Publication runs
+for model Undo, Redo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope. `markBlocking` is its own short write:
 Work rows, then the held branch rows, then the bump.
 

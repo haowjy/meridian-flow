@@ -51,7 +51,7 @@ export interface StagedWriteSaveResult extends StagedWriteReplayResult {
 /**
  * A host's prepared write of a save's kept entries, owned by the caller's attempt: nothing is
  * persisted until `persist` runs inside the caller's commit scope; `transfer` hands the write
- * to the host once that attempt completed, and the host publishes it when the enclosing root
+ * to the host once that attempt completed, and the host installs it when the enclosing root
  * transaction commits (never before); `dispose` drops it on any unwind. `persist` throws when
  * the host's base moved since the replay; the caller then disposes this write and replays.
  */

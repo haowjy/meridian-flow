@@ -263,7 +263,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
 
       // Withdrawal makes the draft pending again: a refused batch, then a batch whose only
-      // member is held, each publish the Work like the push that staged them did.
+      // member is held, each notify the Work like the push that staged them did.
       let decision: "refuse" | "hold" = "refuse";
       const settlement = createDrizzlePendingSettlementStore(
         db,
@@ -321,9 +321,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           afterCommit() {},
         });
       };
-      const expectPublishedAfter = async (
-        previous: Awaited<ReturnType<typeof projectionState>>,
-      ) => {
+      const expectNotifiedAfter = async (previous: Awaited<ReturnType<typeof projectionState>>) => {
         const state = await projectionState();
         expect(state.entityRevision).toBe((previous.entityRevision ?? 0n) + 1n);
         expect(BigInt(state.catalogEntityRevision ?? "0")).toBe(state.entityRevision);
@@ -333,7 +331,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         settle("00000000-0000-4000-8000-000000000948", "00000000-0000-4000-8000-000000000947"),
       ).resolves.toMatchObject({ status: "refused" });
-      const refused = await expectPublishedAfter(pushed);
+      const refused = await expectNotifiedAfter(pushed);
 
       decision = "hold";
       await pushStore.commitPushBatch({
@@ -353,11 +351,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         ],
       });
-      const repushed = await expectPublishedAfter(refused);
+      const repushed = await expectNotifiedAfter(refused);
       await expect(
         settle("00000000-0000-4000-8000-000000000949", "00000000-0000-4000-8000-00000000094a"),
       ).resolves.toMatchObject({ status: "completed", held: [{ itemKey: "chapter" }] });
-      await expectPublishedAfter(repushed);
+      await expectNotifiedAfter(repushed);
     });
   });
 }

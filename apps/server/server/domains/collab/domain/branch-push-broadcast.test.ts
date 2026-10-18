@@ -180,7 +180,7 @@ function stores(
         ),
       };
     },
-    checkPublication: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
+    checkApply: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
     listRecoverableBatchIds: async () => [],
   };
   return { commitStore, settlementStore };

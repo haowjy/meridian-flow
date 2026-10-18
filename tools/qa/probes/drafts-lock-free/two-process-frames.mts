@@ -1,7 +1,7 @@
 /**
  * Two server processes over one draft (the P6 cell without sockets): each process has its own
  * branch coordinator, store and room, and a row one process commits reaches the other only
- * through the database. Every way this process's published replica advances must carry what it
+ * through the database. Every way this process's committed replica advances must carry what it
  * adds into its room (decision D25), or the next frame typed into that room is fenced:
  *
  * - `two-process-frames`: two tabs type at once, one per process.
@@ -33,7 +33,7 @@ function openProcess(harness: Harness, label: string, store: BranchStore = harne
     onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
-    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "publish"),
+    onBranchUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
   });
   return { label, room, coordinator };
 }
@@ -264,7 +264,7 @@ export const twoProcessCompaction: Probe = {
       const foreign = await type(f.b, f.branchId, f.generation, " FOREIGN");
       pause.release.open();
       await pause.done.wait;
-      // The compaction publishes after its own commit returns.
+      // The compaction delivers after its own commit returns.
       await new Promise((resolve) => setTimeout(resolve, 10));
       const durable = await harness.readBranch(f.branchId);
       const room = roomText(f.a);

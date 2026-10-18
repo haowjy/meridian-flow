@@ -389,7 +389,7 @@ describe("per-change Apply (postgres)", () => {
     );
   });
 
-  it("publishes one closed group, removes it from review, then whole Apply publishes the rest once", async () => {
+  it("applies one closed group, removes it from review, then whole Apply applies the rest once", async () => {
     const { harness, fixture, branch, command, review } = await setup(
       "Alpha base.\n\nBeta base.",
       "partial-apply-poc",
@@ -456,7 +456,7 @@ describe("per-change Apply (postgres)", () => {
     "same-paragraph-agent",
     "gone",
     "archived",
-  ] as const)("refuses %s without publishing", async (kind) => {
+  ] as const)("refuses %s without applying", async (kind) => {
     const { harness, fixture, branch, command, review } = await setup(
       "Alpha base.\n\nBeta base.",
       "refusal",

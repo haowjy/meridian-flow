@@ -607,7 +607,7 @@ async function sendClick(
       ...draftPreviewQueryOptions(draft),
       staleTime: 0,
     });
-    // Revoked while the read was out: nothing is sent, nothing is published.
+    // Revoked while the read was out: nothing is sent, nothing is recorded.
     if (!queuedChangeIsLive(click.change)) return blocked;
     preview = fresh.status === "active" ? fresh : null;
   }

@@ -8,7 +8,7 @@ import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { DraftApplyNote, DraftHeldReason } from "@meridian/contracts/drafts";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { z } from "zod";
-import type { PublicationRefusal } from "./ports/settlement-publication.js";
+import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
 /** The tree step's payload kind; recovery finds the step by it. */
 export const DRAFT_TREE_STEP = "draft_tree";
@@ -27,7 +27,7 @@ const PayloadItemSchema = z.object({
   draftBranchId: z.string().nullable(),
   origin: z.enum(["created", "edited"]),
   /**
-   * The tokens the item is published against (§11.3): the writer's render, or the read
+   * The tokens the item is applied against (§11.3): the writer's render, or the read
    * `applyItems` made when the request carried none. Null: the item has no live text
    * (hidden, deleted, binary) or no branch.
    */
@@ -35,7 +35,7 @@ const PayloadItemSchema = z.object({
   liveTextToken: z.string().nullable(),
   branchGenerationToken: z.string().nullable(),
   /**
-   * Per-change Apply: the classes and operations it published, so completion places exactly
+   * Per-change Apply: the classes and operations it applied, so completion places exactly
    * those parts and resets a drained item (§4.1). Null for item Apply, which takes the branch.
    */
   selection: z
@@ -55,7 +55,7 @@ const CommandSchema = z.object({
 
 const PayloadSchema = z.object({
   draftId: z.string(),
-  /** Null for a publication no writer command owns (D40's switch). */
+  /** Null for an Apply no writer command owns (D40's switch). */
   command: CommandSchema.nullable(),
   items: z.array(PayloadItemSchema).readonly(),
 });
@@ -63,7 +63,7 @@ const PayloadSchema = z.object({
 /**
  * The step's durable input, immutable once staged. Apply never closes the draft (§2.4).
  * `items` keeps only the items eligible
- * at the pre-staging check, so completion and recovery publish from this snapshot.
+ * at the pre-staging check, so completion and recovery apply from this snapshot.
  */
 export type DraftTreePayload = z.infer<typeof PayloadSchema>;
 export type DraftTreePayloadItem = DraftTreePayload["items"][number];
@@ -88,15 +88,15 @@ export type DraftTreeRefusal =
 const StaleDetail = z.object({ itemKeys: z.array(z.string()) });
 
 export const draftTreeRefusal = {
-  stale: (itemKeys: readonly DraftItemKey[]): PublicationRefusal => ({
+  stale: (itemKeys: readonly DraftItemKey[]): ApplyRefusal => ({
     code: "stale",
     detail: { itemKeys: [...itemKeys] },
   }),
-  gone: (): PublicationRefusal => ({ code: "gone" }),
+  gone: (): ApplyRefusal => ({ code: "gone" }),
 };
 
 /** The step's refusal, or null for one another step made. */
-export function readDraftTreeRefusal(reason: PublicationRefusal): DraftTreeRefusal | null {
+export function readDraftTreeRefusal(reason: ApplyRefusal): DraftTreeRefusal | null {
   switch (reason.code) {
     case "stale":
       return { kind: "stale", itemKeys: StaleDetail.parse(reason.detail).itemKeys };
@@ -112,18 +112,18 @@ export type HeldReason = DraftHeldReason;
 
 const HoldDetail = z.object({ path: z.string() });
 
-export function draftTreeHold(path: string): PublicationRefusal {
+export function draftTreeHold(path: string): ApplyRefusal {
   return { code: "path_taken", detail: { path } };
 }
 
 /** The step's hold reason, or null for one another step made. */
-export function readDraftTreeHold(reason: PublicationRefusal): HeldReason | null {
+export function readDraftTreeHold(reason: ApplyRefusal): HeldReason | null {
   return reason.code === "path_taken"
     ? { code: "path_taken", path: HoldDetail.parse(reason.detail).path }
     : null;
 }
 
-/** A receipt note: what completion did to an item beyond publishing its text (§11.2). */
+/** A receipt note: what completion did to an item beyond landing its text (§11.2). */
 export type ApplyNote = DraftApplyNote;
 
 const NotesDetail = z.object({

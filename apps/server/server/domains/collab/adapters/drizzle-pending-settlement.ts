@@ -30,11 +30,11 @@ import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
+  type ApplyPayloads,
   FIRST_CLAIM_EPOCH,
   type PendingLiveSettlement,
   type PendingSettlementBatch,
   type PreparedPushCommit,
-  type PublicationPayloads,
   type PushLineageRow,
   type SettlementBatchIdentity,
   type SettlementClaim,
@@ -54,12 +54,19 @@ import type {
   SettlementFailureStage,
 } from "../domain/ports/pending-settlement-store.js";
 import type {
-  PublicationItemHold,
-  PublicationItemOutcome,
-  PublicationRefusal,
-  StagedPublicationMember,
-} from "../domain/ports/settlement-publication.js";
+  ApplyItemHold,
+  ApplyItemOutcome,
+  ApplyRefusal,
+  StagedApplyMember,
+} from "../domain/ports/settlement-apply.js";
 import { joinAdmissionWithinTx } from "./drizzle-settlement-admission.js";
+import {
+  decideAdmission,
+  decideCheck,
+  type PlannedStep,
+  planAndLock,
+  type SettlementApply,
+} from "./drizzle-settlement-apply.js";
 import {
   admitSettlementMemberWithinTx,
   readSettlementCuts,
@@ -68,19 +75,12 @@ import {
   stageSettlementMemberWithinTx,
   withdrawSettlementMembersWithinTx,
 } from "./drizzle-settlement-member.js";
-import {
-  decideAdmission,
-  decideCheck,
-  type PlannedStep,
-  planAndLock,
-  type SettlementPublication,
-} from "./drizzle-settlement-publication.js";
 
 class CompletionRetry extends Error {}
 
 class CompletionRefusal extends Error {
-  constructor(readonly reason: PublicationRefusal) {
-    super(`Publication refused: ${reason.code}`);
+  constructor(readonly reason: ApplyRefusal) {
+    super(`Apply refused: ${reason.code}`);
   }
 }
 
@@ -106,8 +106,8 @@ export async function stageSettlementBatchWithinTx(
   db: DrizzleDb,
   settlement: SettlementBatchIdentity,
   staged: readonly { prepared: PreparedPushCommit; push: PushLineageRow }[],
-  payloads: PublicationPayloads = {},
-  holds: readonly PublicationItemHold[] = [],
+  payloads: ApplyPayloads = {},
+  holds: readonly ApplyItemHold[] = [],
 ): Promise<void> {
   const lease = await databaseLease(db);
   await db.insert(branchPushSettlementBatches).values({
@@ -136,7 +136,7 @@ export async function stageSettlementBatchWithinTx(
 async function writeHolds(
   db: DrizzleDb,
   batchId: string,
-  holds: readonly PublicationItemHold[],
+  holds: readonly ApplyItemHold[],
   decidedIn: "check" | "completion",
 ): Promise<void> {
   if (holds.length === 0) return;
@@ -155,7 +155,7 @@ async function writeHolds(
     .onConflictDoNothing();
 }
 
-async function readHolds(db: DrizzleDb, batchId: string): Promise<PublicationItemHold[]> {
+async function readHolds(db: DrizzleDb, batchId: string): Promise<ApplyItemHold[]> {
   const rows = await db
     .select()
     .from(branchPushSettlementHolds)
@@ -164,7 +164,7 @@ async function readHolds(db: DrizzleDb, batchId: string): Promise<PublicationIte
   return rows.map((row) => ({
     itemKey: row.itemKey,
     ...(row.documentId ? { documentId: row.documentId } : {}),
-    reason: row.reason as PublicationRefusal,
+    reason: row.reason as ApplyRefusal,
   }));
 }
 
@@ -178,16 +178,16 @@ export function createDrizzlePendingSettlementStore(
   derivationStore: DocumentDerivationStore,
   notices: NoticePort | undefined,
   eventSink: EventSink | undefined,
-  publication: SettlementPublication,
-  /** Locks the Works first and publishes those whose drafts a withdrawal makes reviewable. */
+  settlementApply: SettlementApply,
+  /** Locks the Works first and reconciles the pending counts a withdrawal moves. */
   workProjection: WorkProjectionMutation,
 ): PendingSettlementStore {
   const memberDeps = { durableProjectionSerializer, projectionEffects, derivationStore };
 
   /**
    * A step refused the staged batch. Still inside completion's root transaction, with
-   * every lock held and the tentative publication rolled back to its savepoint, every
-   * member goes back to review (journal rows active and published through the Work
+   * every lock held and the tentative Apply rolled back to its savepoint, every
+   * member goes back to review (journal rows active and counted through the Work
    * projection, trail contribution and notices retired, lineage and outbox gone) and the
    * batch ends `abandoned`, a terminal state recovery never lists. If the lease ran out
    * meanwhile the terminal UPDATE matches nothing and the whole transaction rolls back:
@@ -197,7 +197,7 @@ export function createDrizzlePendingSettlementStore(
     txDb: DrizzleDb,
     input: BatchCompletion,
     members: readonly BatchCompletionMember[],
-    reason: PublicationRefusal,
+    reason: ApplyRefusal,
   ): Promise<void> {
     if (members.length > 0) {
       await changeTrails.replacePushContributions(members.map(retiredContribution), {
@@ -375,12 +375,12 @@ export function createDrizzlePendingSettlementStore(
     async completeBatch(input) {
       assertRootOwnedSettlement("Batch settlement completion");
       let plans: PlannedStep[] = [];
-      let held: PublicationItemHold[] = [];
-      let outcomes: readonly PublicationItemOutcome[] = [];
+      let held: ApplyItemHold[] = [];
+      let outcomes: readonly ApplyItemOutcome[] = [];
       let admitted: DocumentId[] = [];
       let outcome:
         | { kind: "completed"; projections: CommittedChangeTrailProjection[] }
-        | { kind: "refused"; reason: PublicationRefusal };
+        | { kind: "refused"; reason: ApplyRefusal };
       try {
         outcome = await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
@@ -391,7 +391,7 @@ export function createDrizzlePendingSettlementStore(
           const checkHolds = await readHolds(txDb, input.batchId);
           plans = await planAndLock(
             txDb,
-            publication,
+            settlementApply,
             {
               stage: "completion",
               batchId: input.batchId,
@@ -428,13 +428,13 @@ export function createDrizzlePendingSettlementStore(
             throw new CompletionRetry();
           }
 
-          // Everything the publication writes is tentative until the steps have decided: a
+          // Everything the Apply writes is tentative until the steps have decided: a
           // refusal rolls it back to this savepoint and abandons the batch in this same
-          // transaction, so no committed state has the publication undone without a durable
+          // transaction, so no committed state has the Apply undone without a durable
           // refusal.
           try {
             const projections = await runInDrizzleSavepoint(db, async () => {
-              const publicationDb = currentDrizzleDb(db);
+              const applyDb = currentDrizzleDb(db);
               const admission = await decideAdmission(plans, (plan) => plan.beforeAdmission?.());
               if (admission.kind === "refuse") throw new CompletionRefusal(admission.reason);
               outcomes = admission.outcomes ?? [];
@@ -446,15 +446,15 @@ export function createDrizzlePendingSettlementStore(
               const admittedMembers = members.filter(
                 ({ push }) => !heldDocuments.has(push.documentId),
               );
-              await writeHolds(publicationDb, input.batchId, completionHolds, "completion");
+              await writeHolds(applyDb, input.batchId, completionHolds, "completion");
               admitted = admittedMembers.map(({ push }) => push.documentId);
               const cuts = await readSettlementCuts(
-                publicationDb,
+                applyDb,
                 locked.filter(({ push }) => !heldDocuments.has(push.documentId as DocumentId)),
               );
 
               // A member classified at its current join version refines the trail version
-              // its commit published; one joined since publishes the next version, once per
+              // its commit installed; one joined since installs the next version, once per
               // batch, together with the retired contributions of held members.
               const firstClassified = admittedMembers.filter(
                 (member) =>
@@ -490,13 +490,13 @@ export function createDrizzlePendingSettlementStore(
                 });
               }
               await withdrawSettlementMembersWithinTx(
-                publicationDb,
+                applyDb,
                 heldMembers.map(({ push }) => push),
                 notices,
                 workProjection,
               );
               for (const member of admittedMembers) {
-                await publicationDb
+                await applyDb
                   .update(branchPushSettlementOutbox)
                   .set({
                     classifiedJoinVersion: member.joinVersion,
@@ -504,7 +504,7 @@ export function createDrizzlePendingSettlementStore(
                   })
                   .where(eq(branchPushSettlementOutbox.pushId, member.push.id));
                 await admitSettlementMemberWithinTx(
-                  publicationDb,
+                  applyDb,
                   lockedByPush.get(member.push.id) as (typeof locked)[number],
                   memberDeps,
                 );
@@ -516,7 +516,7 @@ export function createDrizzlePendingSettlementStore(
                 throw new Error("Batch settlement recheck must return synchronously");
               }
               if (decision === "retry") throw new CompletionRetry();
-              const [completed] = await publicationDb
+              const [completed] = await applyDb
                 .update(branchPushSettlementBatches)
                 .set({
                   state: "completed",
@@ -530,7 +530,7 @@ export function createDrizzlePendingSettlementStore(
                 .where(batchOwnerPredicate(input.batchId, input.claim))
                 .returning({ id: branchPushSettlementBatches.id });
               if (!completed) throw new CompletionRetry();
-              held = await readHolds(publicationDb, input.batchId);
+              held = await readHolds(applyDb, input.batchId);
               return latestProjections(committed).filter((projection) =>
                 admitted.includes(projection.documentId as DocumentId),
               );
@@ -556,7 +556,7 @@ export function createDrizzlePendingSettlementStore(
           { name: "warm_rooms" as const, run: () => input.afterCommit(admittedAfterCommit) },
           ...plans.flatMap(({ plan }) =>
             plan.afterCommit
-              ? [{ name: "publication_step" as const, run: plan.afterCommit.bind(plan) }]
+              ? [{ name: "apply_step" as const, run: plan.afterCommit.bind(plan) }]
               : [],
           ),
         ],
@@ -566,9 +566,9 @@ export function createDrizzlePendingSettlementStore(
       return { status: "completed" as const, projections: outcome.projections, held, outcomes };
     },
 
-    async checkPublication(input) {
-      assertRootOwnedSettlement("Publication check");
-      if (publication.steps.length === 0) {
+    async checkApply(input) {
+      assertRootOwnedSettlement("Apply check");
+      if (settlementApply.steps.length === 0) {
         return { kind: "proceed" as const, hold: [], payloads: input.payloads };
       }
       return runInDrizzleTransaction(db, async () => {
@@ -578,7 +578,7 @@ export function createDrizzlePendingSettlementStore(
         );
         const plans = await planAndLock(
           txDb,
-          publication,
+          settlementApply,
           {
             stage: "check",
             batchId: input.batchId,
@@ -669,11 +669,11 @@ function sortedMembers(members: readonly BatchCompletionMember[]): BatchCompleti
   );
 }
 
-/** Each staged member as a publication step sees it: its push and its branch's Work. */
+/** Each staged member as an Apply step sees it: its push and its branch's Work. */
 async function stagedMembers(
   db: DrizzleDb,
   members: readonly BatchCompletionMember[],
-): Promise<StagedPublicationMember[]> {
+): Promise<StagedApplyMember[]> {
   const branchIds = members.flatMap(({ push }) => (push.branchId ? [push.branchId] : []));
   const works = await draftBranchWorks(db, branchIds);
   const workByBranch = new Map(works.map(({ id, workId }) => [id, workId]));
@@ -746,13 +746,13 @@ async function readSettlementBatch(
 }
 
 /**
- * The batch's after-commit effects, in order: warm rooms, then each publication
+ * The batch's after-commit effects, in order: warm rooms, then each Apply
  * step as declared. Each is awaited before the next starts. The batch is already
  * durable, so a failing effect is logged and the later, independent ones (a wake
  * hint after a failed catalog refresh) still run.
  */
 async function runAfterCommitEffects(
-  effects: readonly { name: "warm_rooms" | "publication_step"; run: () => void | Promise<void> }[],
+  effects: readonly { name: "warm_rooms" | "apply_step"; run: () => void | Promise<void> }[],
   batchId: string,
   eventSink?: EventSink,
 ): Promise<void> {

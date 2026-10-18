@@ -11,7 +11,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import type { BranchJournalRow } from "./branch-journal.js";
-import type { PublicationBlockChange } from "./branch-push-contracts.js";
+import type { ApplyBlockChange } from "./branch-push-contracts.js";
 import { documentDifference } from "./document-difference.js";
 
 export class BranchPushEffectVerificationError extends Error {
@@ -53,12 +53,12 @@ export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc 
   return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
 }
 
-export function publicationBlockChanges(input: {
+export function applyBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
   renderBlock?(doc: Y.Doc, block: BlockRef): string;
-}): PublicationBlockChange[] {
+}): ApplyBlockChange[] {
   return documentDifference(input.beforeDoc, input.afterDoc, input.model)
     .flatMap((entry) => {
       if (entry.kind === "equal") return [];
