@@ -40,7 +40,7 @@ for reading: accepted kept entries, a replacement helper cut and the before
 cut, and nothing written. `prepareSave` returns the same and a required
 `write`: either a `StagedWriteCommit` the caller's attempt owns (`persist`
 inside the commit scope, `transfer` once the attempt completed, `dispose` on
-any unwind; the host publishes at root commit, never at `transfer`), or an
+any unwind; the host installs the write at root commit, never at `transfer`), or an
 explicit `{ kind: "no-effect" }`, which the committer refuses when it kept
 entries. Prepared views are private disposable replicas, never runtime-store
 entries; every content exposure passes through a prepare lease. Whole Discard
@@ -95,7 +95,7 @@ snapshot. It is optional and may fall back to an in-memory map.
 The facade exposes read/write, recovery, response commit/rollback, prepared
 leases, response-document discovery, and thread invalidation. The host chooses
 destination, stack policy, immutable receipt persistence, notices, and
-publish-after-commit. `responseIdentity` separates provider authorship from
+install-after-commit. `responseIdentity` separates provider authorship from
 rotated helper scope. No public method reconstructs an UndoManager from journal
 history.
 
