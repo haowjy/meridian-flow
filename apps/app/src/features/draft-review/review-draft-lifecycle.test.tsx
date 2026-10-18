@@ -35,7 +35,7 @@ const draftTab = contextTabFromDraftGroup({
   contextLocation: { scheme: "manuscript", path: "/chapter.md" },
   isNew: true,
 });
-if (!draftTab) throw new Error("Branch tab fixture must be editable");
+if (!draftTab) throw new Error("Draft tab fixture must be editable");
 
 const addressedTab = contextTabFromFile(
   "manuscript",

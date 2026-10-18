@@ -34,7 +34,7 @@ const { classifyDocumentTransportClose, createHocuspocusDocumentTransport } = aw
 );
 
 describe("Hocuspocus document transport adapter", () => {
-  it("leaves existing terminal and branch close classifications unchanged", () => {
+  it("leaves existing terminal and draft close classifications unchanged", () => {
     expect(
       classifyDocumentTransportClose("document-1", {
         code: 4403,
@@ -171,7 +171,7 @@ describe("Hocuspocus document transport adapter", () => {
 
   // D30, design §2.7: a causal gap never ends a draft refused, and an Update
   // never reaches a socket ahead of that socket's SyncStep2.
-  it("reconnects a branch room through prefix-missing closes without writing held updates", async () => {
+  it("reconnects a draft room through prefix-missing closes without writing held updates", async () => {
     const roomName = "draft:draft-1:gen:1";
     const { code, reason } = WS_CLOSE.DRAFT_PREFIX_MISSING;
     const document = new Y.Doc();

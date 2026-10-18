@@ -163,7 +163,7 @@ function changesOf(preview: ActivePreview): readonly ReviewChange[] {
 /**
  * The one change of a whole-item item (created, binary or deleted live), whatever
  * its operation count: it has no live target for selective commands, so item
- * Apply and Discard settle it. A branchless item (an image, an empty create)
+ * Apply and Discard settle it. An item without a document-draft row (an image, an empty create)
  * has no preview and passes none; it still shows one change, by its file name.
  */
 export function wholeItemChange(
@@ -314,14 +314,14 @@ export type ChangeTarget =
   | { kind: "draft" }
   | { kind: "display" };
 
-export type BranchView = {
+export type DraftView = {
   changes: readonly ReviewChange[];
 };
 
-const views = new WeakMap<ActivePreview, BranchView>();
+const views = new WeakMap<ActivePreview, DraftView>();
 
-/** One normalized change and action index, shared by open and unopened branches. */
-export function branchView(preview: ActivePreview): BranchView {
+/** One normalized change and action index, shared by open and unopened drafts. */
+export function draftView(preview: ActivePreview): DraftView {
   let view = views.get(preview);
   if (!view) {
     const changes = changesOf(preview);
@@ -352,5 +352,5 @@ export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget 
 
 /** Lists read the normalized domain view, never reconstruct targets in a surface. */
 export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewChange[] {
-  return branchView(preview).changes;
+  return draftView(preview).changes;
 }

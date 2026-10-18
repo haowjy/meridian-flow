@@ -4,9 +4,9 @@
  * What it returns is what the writer is looking at: changes with an Apply or
  * Discard in flight or confirmed are already gone from it (optimistic), and a
  * read that started before such a command cannot bring them back
- * (`draft-command-record`). Every consumer, the editor's marks included,
+ * (`branch-command-record`). Every consumer, the editor's marks included,
  * therefore agrees on which changes exist. `useDraftPreviews` reads several
- * branches' previews the same way, and refreshes the ones no review owns.
+ * drafts' previews the same way, and refreshes the ones no review owns.
  */
 import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/branches";
 import {
@@ -232,7 +232,7 @@ function useDraftListRows(targets: readonly DraftRef[]): (string | undefined)[] 
 }
 
 /**
- * The previews of several branches at once: the same fenced read (the shared
+ * The previews of several drafts at once: the same fenced read (the shared
  * query) and the same hidden-operation projection as `useDraftPreview`, so a
  * change the writer has applied or discarded is gone from every count.
  *

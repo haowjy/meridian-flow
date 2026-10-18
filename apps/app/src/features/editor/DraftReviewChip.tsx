@@ -1,7 +1,7 @@
 /**
  * DraftReviewChip — the live document's version chip when it has a pending
  * draft: "Live" with the same version menu the review shows (`DraftSwitcher`),
- * where picking Branch opens the review. On the identity row (desktop) and under
+ * where picking Draft opens the review. On the identity row (desktop) and under
  * the phone's top bar; once the review paints, the caller swaps in the
  * reviewing chip in the same frame.
  *

@@ -79,9 +79,9 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
     projectQueryKeys.workBranchDrafts(input.projectId, input.workId),
     listing(input.itemKey).items,
   );
-  let branches: string[] = [];
+  let draftItemKeys: string[] = [];
   function Capture() {
-    branches = (useWorkBranchDrafts("project-a", "work-a").data ?? []).map(
+    draftItemKeys = (useWorkBranchDrafts("project-a", "work-a").data ?? []).map(
       (draft) => draft.itemKey,
     );
     return null;
@@ -101,7 +101,7 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
             mode: "apply",
             generation: 1,
           }).outcome,
-        listed: () => branches,
+        listed: () => draftItemKeys,
         queryClient,
       }),
   );
@@ -669,8 +669,8 @@ describe("command-record outcome matrix", () => {
       api.applyDraftChanges.mock.calls[1]?.[3],
     );
   });
-  it("applies two branchless items in one Work independently, each by its own itemKey", async () => {
-    const branchless = (itemKey: string) => ({
+  it("applies two items without document-draft rows in one Work independently, each by its own itemKey", async () => {
+    const withoutDocumentDraft = (itemKey: string) => ({
       ...listed,
       itemKey,
       documentId: itemKey,
@@ -679,8 +679,8 @@ describe("command-record outcome matrix", () => {
       wholeItem: true,
     });
     client.setQueryData(projectQueryKeys.workBranchDrafts(input.projectId, input.workId), [
-      branchless("a"),
-      branchless("b"),
+      withoutDocumentDraft("a"),
+      withoutDocumentDraft("b"),
     ]);
     api.applyDraft.mockImplementation(async (_p, _w, _d, body) => ({
       status: "applied",
@@ -711,18 +711,18 @@ describe("command-record outcome matrix", () => {
         input.documentId,
         input.itemKey,
       ),
-      { status: "corrupt", branchId: "draft-id-x", itemKey: input.itemKey, draftGeneration: 1 },
+      { status: "corrupt", branchId: "branch-id-x", itemKey: input.itemKey, draftGeneration: 1 },
     );
     api.discardDraft.mockResolvedValue({
       status: "discarded",
-      branchId: "draft-id-x",
+      branchId: "branch-id-x",
       itemKey: input.itemKey,
     });
     startBranchCommand(client, { target: "all", mode: "discard", generation: 1, draft: input });
     await vi.waitFor(() => expect(api.discardDraft).toHaveBeenCalled());
     expect(api.discardDraft.mock.calls[0][3]).toEqual({
       commandId: expect.any(String),
-      branchId: "draft-id-x",
+      branchId: "branch-id-x",
       itemKey: input.itemKey,
     });
   });

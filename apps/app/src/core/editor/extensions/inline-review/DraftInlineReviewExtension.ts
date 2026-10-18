@@ -1,5 +1,5 @@
 /**
- * Branch-only review projection: model geometry plus a pending writer overlay.
+ * Draft-only review projection: model geometry plus a pending writer overlay.
  * Local insertions paint gold before the Yjs binding writes; view.update then
  * captures their relative anchors. Rebuilds resolve those identities, never
  * mapped decorations. Only explicit writer coverage in a model refresh retires
@@ -34,7 +34,7 @@ import { reviewWriterClient } from "./writer-client";
 export interface DraftInlineReviewOptions {
   /** Optional initial model — usually the plugin starts empty and receives the model via command. */
   initialModel: InlineReviewModel | null;
-  /** Branch document whose content client rotates across independent changes. */
+  /** Draft document whose content client rotates across independent changes. */
   document?: Y.Doc;
   adoptDocumentClient?: () => void;
   /** Whether marks start visible. Toggle later with `setInlineReviewMarksVisible`. */
@@ -164,7 +164,7 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
 
 interface PluginContext {
   initialModel: InlineReviewModel | null;
-  /** Branch document whose content client rotates across independent changes. */
+  /** Draft document whose content client rotates across independent changes. */
   document?: Y.Doc;
   adoptDocumentClient?: () => void;
   marksVisible: boolean;

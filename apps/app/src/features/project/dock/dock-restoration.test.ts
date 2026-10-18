@@ -390,7 +390,7 @@ it.each([
   false,
   true,
 ])("restores a saved review of an unlisted active item, hidden=%s", async (hidden) => {
-  const review = { workId: "work", itemKey: "draft:admitted" };
+  const review = { workId: "work", itemKey: "branch:admitted" };
   const candidate: DockDocument = {
     ...document,
     review,
@@ -437,7 +437,7 @@ it.each([
   expect(restored && isDraftOnly(restored.tab)).toBe(hidden);
 });
 it("keeps failed and unavailable saved selectors without showing a live occupant", async () => {
-  const review = { workId: "work", itemKey: "draft:doc" };
+  const review = { workId: "work", itemKey: "branch:doc" };
   const candidate = { ...document, review };
   const replica = resources();
   replica.admitReview.mockResolvedValue({ kind: "unavailable" });
@@ -453,7 +453,7 @@ it("keeps failed and unavailable saved selectors without showing a live occupant
   expect(replica.resources.readProjection).not.toHaveBeenCalled();
 });
 it("keeps a manuscript review while the selector repairs its renamed identity", async () => {
-  const review = { workId: "work", itemKey: "draft:doc" };
+  const review = { workId: "work", itemKey: "branch:doc" };
   const replica = resources();
   expect(await restoreDockDocument({ ...document, review }, replica)).toMatchObject({
     review,

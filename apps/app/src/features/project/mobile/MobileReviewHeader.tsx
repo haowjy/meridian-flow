@@ -40,7 +40,7 @@ export function MobileReviewHeader({
             disabled={header.locked}
             onShowLive={header.showLive}
             touch
-            branchCommands={
+            draftCommands={
               finished
                 ? undefined
                 : {

@@ -232,7 +232,7 @@ describe("whole-item changes", () => {
     expect(reviewChangesOfPreview(preview({ isNew: true, wholeItem: true }, ops))).toHaveLength(1);
   });
 
-  it("shows a branchless image by its file name, attributed to the chat that created it", () => {
+  it("shows an image without a document-draft row by its file name, attributed to the chat that created it", () => {
     const image = {
       ...listed,
       binary: true,

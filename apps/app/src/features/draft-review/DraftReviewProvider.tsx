@@ -1,4 +1,4 @@
-/** Branch-review scope ownership and the boundary that exposes one scope to consumers. */
+/** Draft-review scope ownership and the boundary that exposes one scope to consumers. */
 
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
@@ -100,7 +100,7 @@ export function useDraftReviewScopeValue({
   presented,
 }: {
   projectId: string | null;
-  /** The Work whose branches this scope reviews; its archived state freezes them (D30). */
+  /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
   work: Work | null;
   stateOwner?: DraftReviewStateOwner;
   presented?: PresentedDocument | null;

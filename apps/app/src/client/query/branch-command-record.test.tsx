@@ -12,7 +12,7 @@ import {
   currentChangeCommandRecords,
   failBranchCommand,
   pendingChangeCommand,
-  readBranchesAfterCommands,
+  readDraftsAfterCommands,
   releaseBranchCommand,
   resetBranchCommandRecords,
   shareDraftObservation,
@@ -48,8 +48,8 @@ describe("draft command records", () => {
       const rows = [{ ...listed[0], draftGeneration: 5 }];
       const earlier = deferred<typeof rows>();
       const later = deferred<typeof rows>();
-      const read = readBranchesAfterCommands(scope, () => earlier.promise);
-      const secondRead = readBranchesAfterCommands(scope, () => later.promise);
+      const read = readDraftsAfterCommands(scope, () => earlier.promise);
+      const secondRead = readDraftsAfterCommands(scope, () => later.promise);
       const visible = (observed: typeof rows) =>
         projectDraftList(observed, scope, currentChangeCommandRecords());
       await act(async () =>
@@ -64,7 +64,7 @@ describe("draft command records", () => {
       expect(await secondRead).toBe(rows);
       expect(visible(rows)).toEqual([]);
       const fresh = rows.map((row) => ({ ...row }));
-      expect(await readBranchesAfterCommands(scope, async () => fresh)).toBe(fresh);
+      expect(await readDraftsAfterCommands(scope, async () => fresh)).toBe(fresh);
       expect(shareDraftObservation(rows, fresh)).toBe(fresh);
       expect(visible(fresh)).toEqual(fresh);
       expect(visible(rows)).toEqual([]);
@@ -76,7 +76,7 @@ describe("draft command records", () => {
         failBranchCommand(draft, { code: "apply-offline" });
       });
       await act(async () => {
-        await readBranchesAfterCommands(scope, async () => []);
+        await readDraftsAfterCommands(scope, async () => []);
       });
       expect(visible(rows)).toEqual([]);
       expect(visible(successor)).toEqual(successor);
@@ -94,7 +94,7 @@ describe("draft command records", () => {
         mode: "discard" as const,
       };
       const earlier = deferred<typeof listed>();
-      const read = readBranchesAfterCommands(scope, () => earlier.promise);
+      const read = readDraftsAfterCommands(scope, () => earlier.promise);
       await act(async () => {
         beginBranchCommand(draft, {
           ...closing,
@@ -119,16 +119,16 @@ describe("draft command records", () => {
   it("drops a failure when a later read no longer lists the draft, never carrying it forward", async () => {
     await run(async () => {
       await act(async () => failBranchCommand(draft, { code: "discard-offline" }));
-      await readBranchesAfterCommands(scope, async () => listed);
+      await readDraftsAfterCommands(scope, async () => listed);
       await act(async () => undefined);
       expect(branchCommandFailure(held, draft)).toEqual({ code: "discard-offline" });
-      await readBranchesAfterCommands(scope, async () => []);
+      await readDraftsAfterCommands(scope, async () => []);
       await act(async () => undefined);
       expect(held).toEqual({});
 
       // A failure newer than the read that omits it belongs to a draft the read never saw.
       const stale = deferred<typeof listed>();
-      const read = readBranchesAfterCommands(scope, () => stale.promise);
+      const read = readDraftsAfterCommands(scope, () => stale.promise);
       await act(async () => failBranchCommand(draft, { code: "apply-unknown" }));
       stale.resolve([]);
       await read;

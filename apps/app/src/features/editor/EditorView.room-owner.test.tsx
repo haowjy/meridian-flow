@@ -292,7 +292,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     await act(async () => vi.advanceTimersByTimeAsync(16));
     const refusalSync = deferredReviewAnswer<void>();
     const documentDraft = review?.roomOwner.session;
-    if (!documentDraft) throw new Error("Missing branch session");
+    if (!documentDraft) throw new Error("Missing draft session");
     vi.spyOn(documentDraft, "whenLocalPersistenceSynced").mockReturnValue(refusalSync.promise);
     await act(async () => {
       discard.reject(new HttpResponseError("refused", 500, null));

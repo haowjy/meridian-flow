@@ -1,5 +1,5 @@
 /**
- * DraftImagePreview — opens a picture that exists only in a Work's draft.
+ * DraftImagePreview — opens a picture that exists only in a Work's branch.
  *
  * A draft-only image has no review room (there is no text to diff) and no
  * live path to read, so the strip and the Work page open it here, in a plain

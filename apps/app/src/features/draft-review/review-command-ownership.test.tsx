@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Branch authority across real presented-review/Chat scopes and immutable Work-bound batches. */
+/** Draft command authority across real presented-review/Chat scopes and immutable Work-bound batches. */
 
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Branch-only entries of several Works on one document: Discard and promotion decide once, by the container's own address. */
+/** Draft-only entries of several Works on one document: Discard and promotion decide once, by the container's own address. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

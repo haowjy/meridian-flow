@@ -1,4 +1,4 @@
-/** Delivers a retired branch's unacknowledged writer updates independently of review UI. */
+/** Delivers a retired draft's unacknowledged writer updates independently of review UI. */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -65,7 +65,7 @@ export class DraftWriterHandoff {
   carry(retirement: Carry): void {
     if (this.disposed || this.deps.epochSignal.aborted) return;
     const room = parseYjsRoomName(retirement.source.roomKey);
-    if (room?.kind !== "draft") throw new Error("Writer carry requires a branch");
+    if (room?.kind !== "draft") throw new Error("Writer carry requires a draft");
     const prior = this.carries.get(room.draftId);
     prior?.attempt.abort();
     const entry: Entry = {

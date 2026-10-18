@@ -119,7 +119,7 @@ describe("DraftReviewProvider remote settlement", () => {
       contextLocation: { scheme: "manuscript", path: "/chapter.md" },
       isNew: true,
     });
-    if (!tab) throw new Error("Branch tab fixture must be editable");
+    if (!tab) throw new Error("Draft tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
     fixture.network.listWorkBranchDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
     // An observation joined from before the Apply would say the document is absent.

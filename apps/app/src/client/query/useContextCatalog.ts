@@ -732,14 +732,14 @@ export function useContextCatalogWake(
 
 /** Every draft read of the project: each Work's list and each document's hints. */
 function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
-  void queryClient.invalidateQueries(allWorkBranchesOf(projectId));
+  void queryClient.invalidateQueries(allWorkDraftListsOf(projectId));
   void queryClient.invalidateQueries({
     queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
   });
 }
 
 /** Every mounted draft list of the project, whatever Work it belongs to. */
-function allWorkBranchesOf(projectId: string) {
+function allWorkDraftListsOf(projectId: string) {
   return {
     predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
       queryKey[0] === "projects" &&
@@ -797,7 +797,7 @@ export function pullContextCatalogOnHint(
       void queryClient.invalidateQueries(
         requestedScope.kind === "work"
           ? { queryKey: projectQueryKeys.workBranchDrafts(projectId, requestedScope.workId) }
-          : allWorkBranchesOf(projectId),
+          : allWorkDraftListsOf(projectId),
       );
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.documentDraftHintsOf(projectId),

@@ -245,7 +245,7 @@ export function mergeLocalResourceState(
  *
  * Absence concludes "unavailable" only on an authoritative read: the catalog is
  * settled (a stored checkpoint stays "complete" while its refresh is in flight)
- * and the branches were read. A read still in flight is `pending`; a read that
+ * and the drafts were read. A read still in flight is `pending`; a read that
  * failed is `failed`, never evidence of absence and never an endless wait. A tab
  * already open live (an Apply promoted it) is never second-guessed by a lagging catalog.
  */
@@ -261,14 +261,14 @@ export function gateLiveView(
     isFetching: boolean;
     isError: boolean;
   },
-  branches: { status: string; files: ReviewFileTarget[] | null },
+  draftList: { status: string; files: ReviewFileTarget[] | null },
   hasLiveTab: (documentId: string) => boolean,
   admittedView: "live" | "review" | "local" = "local",
 ): GatedLiveView {
   if (!result || result.kind === "unavailable") return { outcome: "ready", result };
   const documentId = result.document.documentId;
   if (admittedView === "review") {
-    const file = branches.files?.find((candidate) => candidate.documentId === documentId);
+    const file = draftList.files?.find((candidate) => candidate.documentId === documentId);
     return { outcome: "ready", result, ...(file?.isNew ? { draftOnly: file } : {}) };
   }
   if (
@@ -277,11 +277,11 @@ export function gateLiveView(
     manifest.catalog?.normalized.entries.has(documentId)
   )
     return { outcome: "ready", result };
-  if (manifest.isError || branches.status === "error")
+  if (manifest.isError || draftList.status === "error")
     return { outcome: "failed", result: undefined };
   const settled = manifest.isComplete && !manifest.isFetching;
-  if (!settled || branches.status === "loading") return { outcome: "pending", result: undefined };
-  const group = branches.files?.find((candidate) => candidate.documentId === documentId);
+  if (!settled || draftList.status === "loading") return { outcome: "pending", result: undefined };
+  const group = draftList.files?.find((candidate) => candidate.documentId === documentId);
   if (group?.isNew) return { outcome: "ready", result, draftOnly: group };
   return { outcome: "ready", result: { kind: "unavailable" } };
 }

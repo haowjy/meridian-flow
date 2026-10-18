@@ -55,7 +55,7 @@ describe("review restoration after a rename", () => {
     };
     const review = {
       controller: { workId, inlineReview: null, enterInlineReview, exitInlineReview: vi.fn() },
-      branches: { status: "ready" },
+      drafts: { status: "ready" },
       files: [group],
       fileForDocument: (id: string | null | undefined) => (id === documentId ? group : null),
       activeEditorDocumentId: documentId,

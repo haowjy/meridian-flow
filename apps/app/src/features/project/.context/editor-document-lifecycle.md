@@ -157,9 +157,9 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 
 
 Review-only document admission uses the existing address request. Only a route
-with `itemKey` and a resolved Work sends its Work and per-document branch
+with `itemKey` and a resolved Work sends its Work and per-document draft
 selector, both included in the address query key. The server alone maps that
-branch to the whole draft tree after validating the review item. A plain
+review item to the whole branch tree after validating it. A plain
 manuscript address remains live-only; `gateLiveView` is unchanged, and no
 caller guesses a review selector from a path or a Work's draft list.
 
@@ -170,7 +170,7 @@ caller guesses a review selector from a path or a Work's draft list.
   follower a transcript link uses (`features/links`). A live answer opens where the
   door opens documents (the Editor route, or the dock beside the chat). A hidden
   document answers with its Work and item key (the server resolves an address the
-  live tree leaves empty in the request Work's draft view, as it does a ref) and
+  live tree leaves empty in the request Work's branch view, as it does a ref) and
   goes through the review handoff by identity. A missing answer routes the plain
   address so the route says so in place. The Editor command only navigates explicit destinations and keeps the
   review identity it already holds (caller, addressed tab, current address).

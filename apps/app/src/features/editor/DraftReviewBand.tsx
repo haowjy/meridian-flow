@@ -1,6 +1,6 @@
 /**
  * DraftReviewBand — a document's review controls, as part of the identity row
- * (`DocumentIdentityBar`) rather than a header of their own: the Branch chip with
+ * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
  * its menu right after the breadcrumb, then, on the right, the stepper, Show
  * changes, Discard draft and Apply draft (the per-change bar's Discard and
  * Apply act on one change; these name their scope). They sit at the end of the
@@ -175,7 +175,7 @@ export function DraftReviewBand({
 
 /**
  * This document's change list, under the row: its changes, or the state line
- * that stands in for them, then the way to the Work's other branches. An icon
+ * that stands in for them, then the way to the Work's other drafts. An icon
  * that never gives up its place in a narrow row.
  */
 function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {

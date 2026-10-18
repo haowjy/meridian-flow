@@ -89,9 +89,9 @@ export type DocumentSessionStatus =
   | "destroyed";
 
 export type DocumentSessionSnapshot = {
-  /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
+  /** Live document id for live rooms; draft sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a draft room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -134,7 +134,7 @@ export type DocumentSessionConnectionState =
     };
 
 /**
- * Client-side terminal reason: the server refused this branch room's updates on
+ * Client-side terminal reason: the server refused this draft room's updates on
  * several reconnects in a row. The session stays open and read-only so its owner
  * can show the unsent text and reopen the draft; nothing retries it.
  */
@@ -191,7 +191,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a draft room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };

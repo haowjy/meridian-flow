@@ -84,7 +84,7 @@ function Harness({
           inlineReview: inline,
           exitInlineReview: exitInlineReview ?? vi.fn(),
         },
-        branches: { status: "ready" },
+        drafts: { status: "ready" },
         files: [
           {
             documentId: draft.documentId,
@@ -267,7 +267,7 @@ describe("ReviewAddressOwner", () => {
       items: [
         {
           ...listed,
-          branchId: "whole-draft",
+          branchId: "whole-branch",
           origin: "created",
           binary: false,
           wholeItem: true,

@@ -5,7 +5,7 @@
  *
  * A command's identity, mode, coverage and the draft generation it acted on
  * live in the draft's claim, and the server's answer lands there
- * (`draft-command-record`), so the review needs nothing from the sender. A
+ * (`branch-command-record`), so the review needs nothing from the sender. A
  * review that opens on a claimed draft adopts the claim (`draftClaim`); one
  * already open follows it: pending when it begins, closed on the answer that
  * closed the draft (before any list read can drop the draft), and withdrawn
@@ -26,7 +26,7 @@ import { type Dispatch, useEffect } from "react";
 import { listedDocumentName } from "@/client/query/branch-command-executor";
 import {
   type BranchCommandRecords,
-  changedBranches,
+  changedDrafts,
   currentBranchCommandRecords,
   pendingBranchCommand,
   pendingChangeCommand,
@@ -125,7 +125,7 @@ export function useReviewCommandCompletion({
     () =>
       subscribeBranchCommandRecords((records, previous) => {
         if (!activeRef.current) return;
-        for (const draft of changedBranches(records, previous, { projectId, workId })) {
+        for (const draft of changedDrafts(records, previous, { projectId, workId })) {
           const action = completionAction(records, previous, draft, queryClient);
           if (action) dispatch(action);
           const command = pendingChangeCommand(records, draft);

@@ -199,7 +199,7 @@ function listedRow(queryClient: QueryClient, draft: DraftRef): ThreadDraftListIt
     ?.find((item) => item.itemKey === draft.itemKey);
 }
 
-/** The draft the item belongs to, from the preview the writer is reading, else the list row. */
+/** The branch the item belongs to, from the preview the writer is reading, else the list row. */
 function branchIdOf(
   queryClient: QueryClient,
   draft: DraftRef,
@@ -707,7 +707,7 @@ export type DraftBatchOutcome = { draft: DraftReviewSelection; outcome: BranchCo
 
 /**
  * A batch is aggregate progress, not another scheduler. Each send submits to
- * its own draft's admission/queue; unrelated branches remain actionable. The
+ * its own draft's admission/queue; unrelated drafts remain actionable. The
  * account capability is checked by each queue at actual send.
  */
 export async function runDraftBatch<T extends DraftBatchItem>(
@@ -762,7 +762,7 @@ export function runWorkWideCommand(
   queryClient: QueryClient,
   scope: Scope,
   mode: Mode,
-  branches: readonly DraftReviewSelection[],
+  drafts: readonly DraftReviewSelection[],
   threadId: string | null,
   onSent?: (claimed: readonly DraftReviewSelection[]) => void,
 ): Promise<BranchCommandOutcome[]> {
@@ -770,7 +770,7 @@ export function runWorkWideCommand(
   const rows = queryClient.getQueryData<ThreadDraftListItem[]>(
     projectQueryKeys.workBranchDrafts(scope.projectId, scope.workId),
   );
-  const targets = branches.flatMap((draft) => {
+  const targets = drafts.flatMap((draft) => {
     const row = rows?.find((item) => item.itemKey === draft.itemKey);
     return row ? [{ draft: { ...scope, ...draft }, row }] : [];
   });
@@ -779,11 +779,11 @@ export function runWorkWideCommand(
     !pendingBranchCommand(currentBranchCommandRecords(), draft) &&
     !wholeDraftPending(currentChangeCommandRecords(), draft);
   if (!branchId || !targets.some(({ draft }) => claimable(draft)))
-    return Promise.resolve(branches.map(() => blocked));
+    return Promise.resolve(drafts.map(() => blocked));
   if (!canSendBranchCommand()) {
     const failure: BranchCommandFailure = { code: `${mode}-offline` };
     for (const { draft } of targets) if (claimable(draft)) failBranchCommand(draft, failure);
-    return Promise.resolve(branches.map(() => ({ kind: "failed", failure })));
+    return Promise.resolve(drafts.map(() => ({ kind: "failed", failure })));
   }
   const claims = targets.flatMap(({ draft, row }) => {
     const claim = claimable(draft)
@@ -803,7 +803,7 @@ export function runWorkWideCommand(
     return Promise.reject(error);
   }
   return executeWorkWide(queryClient, scope, mode, branchId, claims, threadId).then((byKey) =>
-    branches.map((draft) => byKey.get(draft.itemKey) ?? blocked),
+    drafts.map((draft) => byKey.get(draft.itemKey) ?? blocked),
   );
 }
 
