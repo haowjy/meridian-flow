@@ -52,7 +52,7 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
-/** A branch row and the content its checkpoint starts with. */
+/** A draft row and the content its checkpoint starts with. */
 type SeededDraft = { documentDraft: DraftSnapshot; state: Uint8Array };
 
 function draftFromDoc(draftId: string, documentId: DocumentId, doc: Y.Doc): SeededDraft {
@@ -283,7 +283,7 @@ async function blindConflictFixture(options: { links?: DocumentLinkScopes } = {}
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
   const contentDraftDoc = cloneDoc(contentLive);
   const doomed = model.getBlocks(toDocHandle(contentDraftDoc))[0];
-  if (!doomed) throw new Error("Missing branch block");
+  if (!doomed) throw new Error("Missing draft block");
   const beforeDelete = Y.encodeStateVector(contentDraftDoc);
   model.deleteBlock(toDocHandle(contentDraftDoc), doomed);
   const contentDraft = draftFromDoc("draft_content", CONTENT_ID, contentDraftDoc);

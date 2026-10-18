@@ -39,7 +39,7 @@ it("returns editKind from the pending part's origin, whatever its placement or t
     const [plain, undone, partless] = rows;
     if (!plain || !undone || !partless) throw new Error("journal rows are missing");
     // The writes above left one `write` edit part per row. Make the second an inverse edit
-    // whose part was moved off its branch, and strip the third of any part.
+    // whose part was moved off its draft, and strip the third of any part.
     const [undoPart] = await db
       .select({ id: documentEditParts.id, editId: documentEditParts.editId })
       .from(documentEditParts)

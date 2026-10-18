@@ -34,7 +34,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
   beforeEach(() => resetSettlementFixture(db));
   afterAll(() => closeDatabase(db));
 
-  /** Every branch's journal rows by status, so "reviewable" is checkable. */
+  /** Every draft's journal rows by status, so "reviewable" is checkable. */
   async function journalStatuses(draftIds: readonly string[]) {
     const rows = await db
       .select({
@@ -47,7 +47,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     );
   }
 
-  /** Each branch's revision, which every review-membership write moves. */
+  /** Each draft's revision, which every review-membership write moves. */
   async function revisions(draftIds: readonly string[]) {
     const rows = await db
       .select({ id: schema.documentDrafts.id, revision: schema.documentDrafts.revision })
@@ -89,11 +89,11 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
         },
       },
     });
-    const [draft] = await db
+    const [branch] = await db
       .insert(schema.branches)
       .values({ projectId: PROJECT_ID, createdBy: USER_ID })
       .returning({ id: schema.branches.id });
-    const branchId = draft?.id as string;
+    const branchId = branch?.id as string;
     const marker = "00000000-0000-4000-8000-000000000f01";
     const proceedingStep = {
       kind: "test_write",
@@ -228,7 +228,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     await expect(recoverer.recoverPendingLiveSettlements()).resolves.toBe(1);
     expect((await batchStates()).map(({ state }) => state)).toEqual(["abandoned", "abandoned"]);
     expect((await journalStatuses(draftIds)).flat()).toEqual(["active", "active", "active"]);
-    // Withdrawing the members (pushed → active) moved each branch's revision (§2.5).
+    // Withdrawing the members (pushed → active) moved each draft's revision (§2.5).
     const withdrawn = await revisions(draftIds);
     expect(withdrawn.map((revision, i) => revision > (revisionsBeforeWithdrawal[i] ?? 0))).toEqual(
       draftIds.map(() => true),
@@ -250,12 +250,12 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     const fingerprintsSeen: number[] = [];
     let betaFingerprintAtCheck: string | undefined;
     const branchLockSeen: boolean[] = [];
-    const [draft] = await db
+    const [branch] = await db
       .insert(schema.branches)
       .values({ projectId: PROJECT_ID, createdBy: USER_ID })
       .returning({ id: schema.branches.id });
-    const branchId = draft?.id as string;
-    // Another connection can't take the draft row while check or completion holds it.
+    const branchId = branch?.id as string;
+    // Another connection can't take the branch row while check or completion holds it.
     const branchLocked = () =>
       runOutsideDrizzleTransaction(() =>
         db.execute(sql`select id from branches where id = ${branchId} for update nowait`),

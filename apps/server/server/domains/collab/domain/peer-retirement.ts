@@ -1,8 +1,8 @@
 /**
- * Retiring exactly the drafts a committed change closed or deleted: their branch rooms
+ * Retiring exactly the drafts a committed change closed or deleted: their draft rooms
  * close, and each retired peer's staged writes are refused with the reason its cause names
  * before the thread state the pooled cores hold for that peer (runtimes, pulled baselines)
- * goes. Durable branch changes are the caller's, in its transaction; this runs after commit
+ * goes. Durable draft changes are the caller's, in its transaction; this runs after commit
  * and touches nothing else. It names the peer it retired, so a delayed retirement never
  * reaches a replacement peer of the same thread, and another Work's peers on a shared
  * document keep their staged replies.
@@ -11,10 +11,10 @@ import type { DiscardedWriteReason } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 
-/** Why a thread peer's draft branch ended: the draft, the created document, or the edited text. */
+/** Why a thread-peer draft ended: its branch closed, its created document was discarded, or its edited text was discarded. */
 export type PeerRetirementCause = "branch_closed" | "document_discarded" | "edit_discarded";
 
-/** A branch a committed change closed or deleted; a thread peer says why. */
+/** A draft a committed change closed or deleted; a thread peer says why. */
 export type RetiredDraft =
   | { draftId: string; documentId: DocumentId; threadId: null }
   | { draftId: string; documentId: DocumentId; threadId: ThreadId; cause: PeerRetirementCause };

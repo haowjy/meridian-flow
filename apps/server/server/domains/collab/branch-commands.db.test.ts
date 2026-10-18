@@ -74,7 +74,7 @@ async function twoChanges(start: BranchTreeStart) {
 }
 
 describeBranchTreeDb("review commands (postgres)", (start, db) => {
-  it("1: per-change Apply is one batch per click; the last click resets the item and the draft stays active", async () => {
+  it("1: per-change Apply is one batch per click; the last click resets the item and the branch stays active", async () => {
     const c = await twoChanges(start);
     const first = await c.applyChange(await c.click("first"));
     expect(first.body).toMatchObject({ status: "applied", itemClosed: false });
@@ -196,7 +196,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
     expect(drained.body).toMatchObject({ status: "applied", itemClosed: true });
     expect(await c.applyChange(last)).toEqual(drained);
 
-    // Discard all closes the draft: its resend finds no draft.
+    // Discard all closes the branch: its resend finds no branch.
     await c.s.model(c.ascension).edit("chapter.md", "Middle.", "Middle, drafted.");
     const branchId = (await c.s.items(c.ascension))[0]?.branchId as string;
     const request = { branchId, commandId: randomUUID() };

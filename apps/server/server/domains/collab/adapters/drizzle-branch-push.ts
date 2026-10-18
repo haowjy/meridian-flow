@@ -190,11 +190,11 @@ export function createDrizzleDraftJournalReadStore(db: Database): BranchPushRead
           and(
             eq(documentDrafts.documentId, options.documentId),
             sql`${draftWriteJournal.id} > ${floor}`,
-            // Same-branch active rows and cross-branch pushed rows are both needed for
+            // Same-draft active rows and cross-draft pushed rows are both needed for
             // attribution. Cold-start scans are deliberately unbounded until we add a
             // push-ordered floor; max(journal.id) is unsound because journal ids can include
             // unpushed sibling rows and do not encode push order. Each row remains bounded
-            // by its owning branch generation so reset/future-generation rows cannot leak
+            // by its owning draft generation so reset/future-generation rows cannot leak
             // backward.
             sql`(
               (${draftWriteJournal.draftId} = ${draftId}
@@ -250,7 +250,7 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitPushBatch(input) {
-      assertRootOwnedSettlement("Draft push staging");
+      assertRootOwnedSettlement("Branch push staging");
       const draftIds = input.pushes.map(({ documentDraft }) => documentDraft.draftId);
       const firstCommitted = async () => {
         for (const prepared of sortPushesByDocumentId(input.pushes)) {
@@ -323,8 +323,8 @@ export function createDrizzlePushCommitStore(
 }
 
 /**
- * The one SQL membership rule for a branch to count as a pending document, twin of
- * `draft-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
+ * The one SQL membership rule for a draft to count as a pending document, twin of
+ * `branch-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
  * document hint both filter by it; the Works boundary reconciles each Work's stored count
  * through that count (migration 0067's backfill spells it in SQL too).
  */
@@ -344,7 +344,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
       const tx = currentDrizzleDb(db);
-      const branched = tx
+      const drafted = tx
         .select({ workId: draftBranchWork.workId, documentId: documentDrafts.documentId })
         .from(documentDrafts)
         .innerJoin(draftBranchWork.branches, draftBranchWork.on)
@@ -355,7 +355,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
             reviewableWorkDraft,
           ),
         );
-      // A created document is pending with no text yet (a branchless image, an empty create).
+      // A created document is pending with no text yet (a draftless image, an empty create).
       const changed = tx
         .select({ workId: branches.originWorkId, documentId: branchTreeChanges.nodeId })
         .from(branchTreeChanges)
@@ -368,7 +368,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           ),
         );
       // `union` (not `union all`) leaves each Work's document once, so a row is a document.
-      const pending = branched.union(changed).as("pending");
+      const pending = drafted.union(changed).as("pending");
       const rows = await tx
         .select({ workId: pending.workId, count: sql<number>`count(*)::int` })
         .from(pending)
@@ -380,7 +380,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     async listBranchesChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
       // The same membership arms as the Work counts, narrowed to one document.
-      const branched = tx
+      const drafted = tx
         .select({ branchId: documentDrafts.branchId })
         .from(documentDrafts)
         .where(and(eq(documentDrafts.documentId, documentId), reviewableWorkDraft));
@@ -406,7 +406,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
             eq(branches.projectId, projectId),
             eq(branches.status, "active"),
             isNull(works.deletedAt),
-            sql`${branches.id} in (${branched.union(changed)})`,
+            sql`${branches.id} in (${drafted.union(changed)})`,
           ),
         )
         .orderBy(asc(branches.createdAt), asc(branches.id));
@@ -460,7 +460,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       return keys;
     },
     async listBranchDraftEvidence(branchId, documentIds) {
-      // One row per branch and writing chat: the journal is aggregated here, not shipped.
+      // One row per draft and writing chat: the journal is aggregated here, not shipped.
       const writer = sql<
         string | null
       >`case when ${draftWriteJournal.source} = 'agent' then ${draftWriteJournal.threadId} end`;

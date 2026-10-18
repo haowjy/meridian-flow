@@ -1,8 +1,8 @@
 /**
  * Apply all and 5a holds (contract §11.2 step 3, §11.4, §11.5, ledger E-5, E-7a, E-7b):
- * one command with per-item results, an item whose path is taken stays held in the draft
+ * one command with per-item results, an item whose path is taken stays held in the branch
  * while the rest apply, a held picture is a payload-only Apply, and Apply never closes the
- * draft (D59, E-7b).
+ * branch (D59, E-7b).
  */
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
@@ -11,7 +11,7 @@ import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
-  it("holds the second draft's picture at a path the first's took, a payload-only Apply (E-5)", async () => {
+  it("holds the second branch's picture at a path the first's took, a payload-only Apply (E-5)", async () => {
     const { runtime, s } = await start();
     const { ports } = runtime;
     const { id: projectId, userId } = s.project;
@@ -38,7 +38,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
     const [first] = await s.items(ascension);
     const [second] = await s.items(beacon);
     expect
-      .soft([first?.binary, first?.draftGeneration], "an image has no branch")
+      .soft([first?.binary, first?.draftGeneration], "an image has no draft")
       .toEqual([true, null]);
     expect.soft(first?.documentId, "two pictures").not.toBe(second?.documentId);
 
@@ -92,16 +92,16 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
       .toEqual({ status: "created", documentId: kael });
     expect.soft(await live.idAt("characters/Kael"), "one canonical row, live").toBe(kael);
 
-    // A visible folder alias holds the document name in the draft's view as it does live.
+    // A visible folder alias holds the document name in the branch's view as it does live.
     await s.writer.mkdir("lore/Lore.md");
     const refused = await (await s.model(ascension).reply()).call("write", {
       command: "create",
       path: "manuscript://lore/Lore",
       content: "Refused.",
     });
-    expect.soft(refused.isError, "a draft can't create under a folder's alias").toBe(true);
+    expect.soft(refused.isError, "a branch can't create under a folder's alias").toBe(true);
 
-    // A hidden document never vetoes the live folder; Apply holds the draft's item instead.
+    // A hidden document never vetoes the live folder; Apply holds the branch's item instead.
     const map = await s.model(ascension).create("atlas/Map", "Map, drafted.");
     await s.writer.mkdir("atlas/Map.md");
     const items = await s.items(ascension);
@@ -168,7 +168,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("b/Inner.md/chapter"), "held: still hidden").toBeNull();
   });
 
-  it("applies all as one command with per-item results, holds a clash and keeps the draft open (E-7a)", async () => {
+  it("applies all as one command with per-item results, holds a clash and keeps the branch open (E-7a)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const chapter = await s.writer.createDocument("chapter", "Opening.");
@@ -217,12 +217,12 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await s.branchStatuses(ascension)).toEqual(["active"]);
   });
 
-  it("finishes an Apply whose draft grows mid-flight in the same request, (E-7b)", async () => {
+  it("finishes an Apply whose branch grows mid-flight in the same request, (E-7b)", async () => {
     const { s } = await start();
     const beacon = await s.work("Beacon", "draft");
     const second = await s.thread(beacon);
     const live = s.view("live");
-    /** At staging, a second chat of the Work adds a document to the draft (F22). */
+    /** At staging, a second chat of the Work adds a document to the branch (F22). */
     const growAtStaging = (path: string) => {
       const remove = setCollabHook("applyItems.afterStaging", async () => {
         remove();

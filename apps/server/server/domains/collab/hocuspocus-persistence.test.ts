@@ -1,4 +1,4 @@
-/** Tests for Hocuspocus room persistence: branch guards and deferred live checkpoints. */
+/** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints. */
 
 import { Hocuspocus } from "@hocuspocus/server";
 import { describe, expect, it, vi } from "vitest";
@@ -18,10 +18,10 @@ import { PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { MemoryDraftStore, memoryDraft, testDraftRow } from "./test-support/memory-draft-store.js";
 
-const DRAFT_ID = "branch-1";
+const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
-describe("createHocuspocusPersistenceService branch room storage", () => {
+describe("createHocuspocusPersistenceService draft room storage", () => {
   it("refuses a room whose load hooks finish after a restore and opens the current generation", async () => {
     let generation = 1n;
     let finishLoad!: () => void;
@@ -76,7 +76,7 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     await current.disconnect();
   });
 
-  it("registers branch admission before validation so store and shutdown drains wait", async () => {
+  it("registers draft admission before validation so store and shutdown drains wait", async () => {
     let releaseAdmission: (() => void) | undefined;
     const admissionBlocked = new Promise<void>((resolve) => {
       releaseAdmission = resolve;
@@ -196,8 +196,8 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
   });
 });
 
-describe("createHocuspocusPersistenceService branch stale gate", () => {
-  it("accepts a first writer update when the branch state carries tombstones already present in the room doc", async () => {
+describe("createHocuspocusPersistenceService draft stale gate", () => {
+  it("accepts a first writer update when the draft state carries tombstones already present in the room doc", async () => {
     const draftDoc = tombstoneBearingDoc();
     const snapshot = draftSnapshot(draftDoc);
     const roomDoc = cloneDoc(draftDoc);
@@ -231,7 +231,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     );
   });
 
-  it("rejects a stale room doc that lacks the branch tombstone delete set", async () => {
+  it("rejects a stale room doc that lacks the draft tombstone delete set", async () => {
     const snapshot = draftSnapshot(tombstoneBearingDoc());
     const staleRoomDoc = docWithText("seed");
     const before = Y.encodeStateVector(staleRoomDoc);
@@ -261,7 +261,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     ).rejects.toThrow(DraftStaleUpdateError);
   });
 
-  it("fences a retained stale client at the branch SyncStep1 handshake", async () => {
+  it("fences a retained stale client at the draft SyncStep1 handshake", async () => {
     const discardedDoc = tombstoneBearingDoc();
     discardedDoc.getText("content").insert(discardedDoc.getText("content").length, " stale");
     const currentDoc = docWithText("current generation");

@@ -75,7 +75,7 @@ export function createBranches(deps: {
           originThreadId: input.threadId,
           createdBy: input.userId,
         });
-        // Every close locks the Work first, so the draft can't close between these.
+        // Every close locks the Work first, so the branch can't close between these.
         const locked = await store.lockActive(ensured.id);
         if (!locked) throw new BranchClosedUnderWorkLockError(ensured.id);
         return locked;

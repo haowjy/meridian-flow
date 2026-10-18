@@ -1,4 +1,4 @@
-/** Work purge's real draft disposal over Postgres, for suites that purge without a composed collab domain. */
+/** Work purge's real branch disposal over Postgres, for suites that purge without a composed collab domain. */
 import type { Database } from "@meridian/database";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleContextCatalog } from "../../context/index.js";

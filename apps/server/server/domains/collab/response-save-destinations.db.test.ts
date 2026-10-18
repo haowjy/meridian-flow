@@ -1,7 +1,7 @@
 /**
  * One reply, several destinations (D9, D19, D29, D40): a reply that writes
  * live scratch and a drafted document reads its own writes, undoes as one turn,
- * leaves out archived Works at save, and merges live writes into kept branches.
+ * leaves out archived Works at save, and merges live writes into kept drafts.
  * Every call carries a real file-access grant, confirmed under lock where the
  * write becomes durable (file-access §5, §5.2).
  */
@@ -86,7 +86,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return chain;
       },
     });
-    /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's draft. */
+    /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's drafts. */
     function agent(threadId: string, workId: string, draftMode: boolean): Principal {
       const chain: AgentChain = [
         {
@@ -801,7 +801,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await liveText(collab, KB_ID)).toContain("Live lore.");
       expect(await liveText(collab, KB_ID)).not.toContain("Pending lore.");
 
-      const [workBranch] = await db
+      const [workDraft] = await db
         .select()
         .from(schema.documentDrafts)
         .where(
@@ -811,9 +811,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             isNull(schema.documentDrafts.threadId),
           ),
         );
-      if (!workBranch) throw new Error("expected a kept Work draft for lore.md");
+      if (!workDraft) throw new Error("expected a kept Work draft for lore.md");
       return async () => {
-        return markdownOf(await draftContent(db, workBranch.id));
+        return markdownOf(await draftContent(db, workDraft.id));
       };
     }
 

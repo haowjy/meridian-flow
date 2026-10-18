@@ -1,22 +1,22 @@
 /**
- * The draft tree step on the settlement seam (contract §11.2, `kind: "branch_tree"`): what
+ * The branch tree step on the settlement seam (contract §11.2, `kind: "branch_tree"`): what
  * Apply lands with a draft's text, in the batch's one lock order (D's Work, D, every
  * current and final source, every item's document).
  *
  * The check (before staging) and `beforeAdmission` (completion) make the same decision,
  * except that the rendered tokens (#420, S2: location version, the live full-state
- * fingerprint, the branch generation) are compared only at the check: staging is the consent
- * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the draft's own view, then the
+ * fingerprint, the draft generation) are compared only at the check: staging is the consent
+ * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the branch's own view, then the
  * live tree, once: an item is blocked by what stands at its row's location now, never by another item.
  * The check refines the payload to the eligible items. `beforeAdmission` then installs: reveals
  * of still-hidden creates and restores of documents deleted live (F9) through placement,
  * each at its row's location, and reports each item's receipt notes.
  * `afterAdmission` settles arrivals once against the final tree (an ahead ref binds there,
  * once, for every holder), reconciles the catalog for every source it
- * touched (F23), drops the draft's applied rows, resets every admitted item whose branch
+ * touched (F23), drops the branch's applied rows, resets every admitted item whose draft
  * has nothing left to review (`settleDrainedItems`, in the completion transaction and keyed
  * to the staged generation) and records the writer's command with its terminal result.
- * Apply never closes the draft (§2.4).
+ * Apply never closes the branch (§2.4).
  */
 import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import type {
@@ -61,7 +61,7 @@ import { settleCommandForBatchWithinTx } from "./drizzle-branch-commands.js";
 
 type Refusal = Extract<ApplyAdmission, { kind: "refuse" }>;
 
-/** One item that applies, with its node and branch read under the locks. */
+/** One item that applies, with its node and draft read under the locks. */
 type Eligible = {
   item: BranchTreePayloadItem;
   node: TreeStateNode;
@@ -75,7 +75,7 @@ export function createDrizzleBranchTreeStep(
   deps: {
     branches: Pick<Branches, "byIds">;
     drafts: Pick<DraftStore, "getDraft" | "readDraftAt">;
-    /** The reset of a drained branch inside the completion transaction. */
+    /** The reset of a drained draft inside the completion transaction. */
     coordinator: Pick<DraftCoordinator, "resetFromDoc">;
     /** The live document as the completion transaction sees it, admissions included. */
     liveDoc(documentId: DocumentId): Promise<Y.Doc>;
@@ -96,7 +96,7 @@ export function createDrizzleBranchTreeStep(
       const editedIds = payload.items
         .filter((item) => item.origin === "edited")
         .map((item) => item.documentId);
-      const [draft] = await deps.branches.byIds([payload.branchId]);
+      const [branch] = await deps.branches.byIds([payload.branchId]);
       // The lock set, read without locks: a set that differs under them is stale.
       const selected = new Set(payload.items.map((item) => item.documentId));
       const sourceIds = new Set<ContextSourceId>();
@@ -136,7 +136,7 @@ export function createDrizzleBranchTreeStep(
 
       /**
        * 5a against the live tree: an item applies only where the live tree is free at its
-       * row's location. Clashes among the draft's own items are already holds in its view,
+       * row's location. Clashes among the branch's own items are already holds in its view,
        * so only live nodes block here; a blocked item is held.
        */
       async function holdUntilPlaceable(decided: {
@@ -255,9 +255,9 @@ export function createDrizzleBranchTreeStep(
 
       /**
        * Drained items reset inside the completion transaction (§4.1, LA-2): each admitted
-       * text item whose branch is still at the staged generation and whose live-vs-branch
+       * text item whose draft is still at the staged generation and whose live-vs-draft
        * effect is empty against the transaction-visible live text is reset to G+1, edit
-       * parts retired, peers kept, draft open. The reset, the terminal batch and the
+       * parts retired, peers kept, branch open. The reset, the terminal batch and the
        * command's result commit together.
        */
       async function settleDrainedItems(
@@ -323,7 +323,7 @@ export function createDrizzleBranchTreeStep(
       } | null = null;
 
       return {
-        workIds: draft?.originWorkId ? [draft.originWorkId] : [],
+        workIds: branch?.originWorkId ? [branch.originWorkId] : [],
         branchIds: [payload.branchId],
         namespaceSourceIds: [...sourceIds],
         documentIds: payload.items.map((item) => item.documentId),
@@ -414,7 +414,7 @@ export function createDrizzleBranchTreeStep(
               installed.catalog.roots,
             );
           }
-          // The draft's Work was locked by `planAndLock` and is recounted at commit.
+          // The branch's Work was locked by `planAndLock` and is recounted at commit.
           await dropDocumentRows(db, {
             branchId: payload.branchId,
             documentIds: apply

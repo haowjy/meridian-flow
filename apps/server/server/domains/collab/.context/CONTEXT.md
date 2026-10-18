@@ -36,7 +36,7 @@ recovery returns `null`, never a later read's token.
 Preview and selective disposition use one `ReadReviewCut`. The first draft
 read fixes a repeatable-read snapshot containing the draft (checkpoint ⊕ tail
 through the read seam, with its revision and generation),
-review rows, history status, live journal/head, thread titles, and live/draft
+review rows, history status, live journal/head, thread titles, and live/branch
 link views. It performs no room reads, pulls, provisioning, or repair. A
 missing draft is `gone`, not an invitation to create one. Returned bytes and
 scopes are detached before rich difference work begins.
@@ -54,7 +54,7 @@ and whole Discard retain their existing document-level semantics. Corrupt
 previews return a typed refusal without resetting state; the whole Discard
 command is the recovery path for a corrupt draft.
 
-Discard closes only peers whose upstream is the addressed Work-draft draft,
+Discard closes only peers whose upstream is the addressed Work draft,
 then retires those peers after commit. A fresh peer in the same thread and
 peers for other Works survive. Thread-core invalidation is a post-discard
 side effect, never a preview side effect.
@@ -77,7 +77,7 @@ never applies a draft. Active unapplied rows do not delay a terminal receipt.
 
 A reply's save resolves exactly the peer each document was pinned to and
 refuses that document stale when the pin no longer holds (closed peer, reset or
-closed draft, closed draft). Peers are created only by pulls in an existing
+closed draft, closed branch). Peers are created only by pulls in an existing
 draft, never by a save.
 
 Save confirms every grant used by the reply once, drops writes whose Work lost
@@ -105,12 +105,12 @@ Live writer SET and agent writes routed to live preserve a pending Work draft:
 pulls merge live edits into it without resetting its generation or settling its
 authored rows. `./mf doc put --overwrite` is not that path: it deletes the
 document and creates a new one at the same URI, and the new identity inherits
-no branches.
+no drafts.
 
 A Work draft is shared by every thread editing the same document in that Work.
 Thread peers fork from it and retain the upstream draft identity and
-peer-draft generation independently of the Work's current generation. Branch
-Apply lands its selected or whole branch through the single push seam;
+peer-draft generation independently of that Work draft's current generation. Draft
+Apply lands its selected changes or whole draft through the single push seam;
 Discard re-forks from live plus surviving rows and creates no restoration copy.
 
 Attribution is based on immutable journal provenance and dependency closure,
@@ -150,7 +150,7 @@ its own savepoint, so either outcome rolls its bump and its commit callbacks
 back inside a reply's transaction too. Nothing judged before the lock is
 written as truth: the frame's pre-lock containment and authorship checks are
 early exits only. `waitMs` and `holdMs` of every append are the
-`collab.branch.append_committed` debug event. The hold (about 6 ms at the
+`collab.draft` `append_committed` debug event. The hold (about 6 ms at the
 median) includes the change-trail triggers that fire on each journal and
 receipt insert, three per keystroke; a slower trigger or `change_trail_owners`
 query there is keystroke latency for every writer on the draft (see
@@ -186,19 +186,19 @@ a Work lock on the append.
 
 Work-first order has one owner: the Works mutation boundary
 (`projects/adapters/work-projection-mutation.ts`), a required dependency of the
-draft store and of every collab store that writes draft or draft rows. It
+draft store and of every collab store that writes branch or draft rows. It
 locks the Works a write names, directly or through its branches and drafts,
-`FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
-inverse, document or draft lock, so every write enters Work, draft, document,
+`FOR NO KEY UPDATE` in id order, in the caller's transaction, before any branch,
+inverse, document or draft lock, so every write enters Work, branch, document,
 draft, the order the transitions take. A caller hands it its whole write set
-once, through `lockWorks` (opening a draft, Apply's batch plan, a reply save's
+once, through `lockWorks` (opening a branch, Apply's batch plan, a reply save's
 grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
 either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
 Work of the set is active. No other collab code locks a Work for a write; the
-live journal's seam locks only the bound grants' Works. Creating a draft draft
+live journal's seam locks only the bound grants' Works. Creating a document draft
 runs inside `mutate`: a draft made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no
 keystroke locks a Work or counts. Tests use the same boundary
@@ -303,7 +303,7 @@ operations. Its `compacting`
 set keeps one fold per draft in a process; the fold
 fence orders it against every other write, so a frame that lands meanwhile is
 folded in and a rewrite that commits first makes it miss until the next frame
-past the bound. A failure is logged as `collab.branch` `compaction.failed`.
+past the bound. A failure is logged as `collab.draft` `compaction.failed`.
 
 Every draft write runs through `runBoundedAttempts`
 (`domain/draft-attempts.ts`), the one owner of a candidate's lifetime: capture
@@ -331,7 +331,7 @@ and never miss on a revision; a peer's catch-up checkpoint (`prepareCatchUp`) is
 an exact rewrite, so a moved peer is the draft miss that makes the save attempt
 again. The confirmation is
 the retained exception: it runs once, outside the save attempt, and holds
-its Work rows and draft and live advisory locks across attempts 2 to 4; only
+its Work rows and branch-row and live advisory locks across attempts 2 to 4; only
 draft rows release on the savepoint rollback. Apply, selective Discard and
 pulls retry a moved draft up to four times, then refuse `stale`.
 
@@ -382,7 +382,7 @@ and Hocuspocus admission never waits for it.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
-before committing the peer in a root transaction (a Work draft draft it needs
+before committing the peer in a root transaction (a Work draft it needs
 commits first, in its own Work-first root), and the root must not re-lock that
 thread. Referenced rows must be committed before a root
 peer can reference them, so manifest identity and its live head commit in a
@@ -394,7 +394,7 @@ share against a caller-held lifecycle lock.
 
 The lock order is one list, and every path takes a prefix-ordered subset of it:
 live `withDocument` mutexes (sorted) before any transaction, then inside the
-database Work rows (only through the Works mutation boundary), the draft row,
+database Work rows (only through the Works mutation boundary), the branch row,
 sorted namespace and advisory keys (`lockDocumentMutation`'s document keys in
 ID order), then draft rows, an
 upstream before its peer, otherwise ID order. No path takes a Work row, a
@@ -494,7 +494,7 @@ Apply or Discard leaves such a draft, its generation resets and the terminal
 `itemDisposition` is `applied` if any current-generation row reached live, else
 `discarded`; pushed history stays pushed. Cleanup failure after a committed
 disposition leaves `itemClosed: false` and cannot reject the command. Staged
-item Apply (the draft tree step) compares its location, live-text, and
+item Apply (the branch tree step) compares its location, live-text, and
 generation tokens only at the staging check: staging is the consent boundary.
 
 A thread peer's segment write applies ordered per-segment journal rows to a
@@ -526,7 +526,7 @@ back unrelated documents in the reply.
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Collab visual explainer](collab-domain.html)
-- [Branch/live visual model](draft-live-model.html)
+- [Draft/live visual model](draft-live-model.html)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
 [kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md

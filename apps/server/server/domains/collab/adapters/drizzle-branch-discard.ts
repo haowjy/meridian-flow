@@ -4,9 +4,9 @@
  * same kernel inside purge's transaction after purge's own lifecycle proof.
  *
  * Lock order (§14), after the live scopes an item Discard holds: the Work (purge: threads,
- * then the Work), the draft, then the one verified end-use scope (`acquireEndUseScope`:
- * namespaces of every created document's source and the draft's location, re-read, then
- * the documents), then branch rows as the kernel writes them. A scope that moved aborts
+ * then the Work), the branch, then the one verified end-use scope (`acquireEndUseScope`:
+ * namespaces of every created document's source and the branch's location, re-read, then
+ * the documents), then draft rows as the kernel writes them. A scope that moved aborts
  * the transaction and runs again under the callers' bounded attempts.
  *
  * The kernel reports the drafts it closed or deleted (`retired`) so the caller retires
@@ -61,7 +61,7 @@ type KernelDeps = {
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 };
 
-/** End the draft's use of `request`'s documents, then reconcile the catalog of every source touched. */
+/** End the branch's use of `request`'s documents, then reconcile the catalog of every source touched. */
 async function endUseReconciled(
   db: Database,
   deps: KernelDeps,
@@ -83,7 +83,7 @@ async function endUseReconciled(
   };
 }
 
-/** A branch the kernel ended, as retirement names it: a thread peer says why. */
+/** A draft the kernel ended, as retirement names it: a thread peer says why. */
 function retired(
   documentDraft: { draftId: string; documentId: DocumentId; threadId: ThreadId | null },
   cause: PeerRetirementCause,
@@ -94,8 +94,8 @@ function retired(
 }
 
 /**
- * Closes the draft's drafts (both kinds) on these documents, or on all of them, and
- * marks each closed text branch's pending edit parts discarded (§4.3), so model `write
+ * Closes the branch's drafts (both kinds) on these documents, or on all of them, and
+ * marks each closed text draft's pending edit parts discarded (§4.3), so model `write
  * undo` refuses `cant_undo_discarded` and the receipt card names the skip.
  */
 async function closeBranchDrafts(
@@ -139,9 +139,9 @@ async function closeBranchDrafts(
 }
 
 /**
- * The kernel's whole-draft arm: every document the draft created ends its use (tombstoned
- * and released when no draft uses it), then the draft row closes after every branch (closed above) and its
- * settlements. The caller holds the draft and its verified scope.
+ * The kernel's whole-branch arm: every document the branch created ends its use (tombstoned
+ * and released when no branch uses it), then the branch row closes after every draft (closed above) and its
+ * settlements. The caller holds the branch and its verified scope.
  */
 async function discardWholeLocked(
   db: Database,
@@ -165,7 +165,7 @@ async function discardWholeLocked(
   };
 }
 
-/** The verified scope, as Discard's callers retry it: a moved scope is a changed draft. */
+/** The verified scope, as Discard's callers retry it: a moved scope is a changed branch. */
 async function acquireScope(db: Database, branchId: BranchId, request: EndUseRequest) {
   try {
     return await acquireEndUseScope(db, request);
@@ -191,8 +191,8 @@ export function createDrizzleBranchDiscard(
   },
 ): DrizzleBranchDiscard {
   /**
-   * Reset the draft's branch on an item from live when it holds reviewable rows, folding away
-   * every row appended before the reset locks the branch, and close that branch's thread peers
+   * Reset the branch's draft on an item from live when it holds reviewable rows, folding away
+   * every row appended before the reset locks the draft, and close that draft's thread peers
    * (rows or not). The caller's attempt owns the reset until it completes.
    */
   async function resetItemText(
@@ -201,7 +201,7 @@ export function createDrizzleBranchDiscard(
   ): Promise<readonly RetiredDraft[]> {
     const read = await deps.drafts.readDraftAt(item.draftId);
     const content = read?.documentDraft;
-    // Gone with its tombstone, or no longer the draft's: nothing of the draft left to reset.
+    // Gone with its tombstone, or no longer the branch's: no draft of this branch remains to reset.
     if (
       !read ||
       content?.kind !== "work_draft" ||
@@ -225,11 +225,11 @@ export function createDrizzleBranchDiscard(
         .limit(1);
       return Boolean(pending);
     };
-    // A healthy rowless branch has no text to reset (unless its state cannot be read: Discard
+    // A healthy rowless draft has no text to reset (unless its state cannot be read: Discard
     // is the recovery for a corrupt item, rows or not), but an open reply may still hold staged
     // writes on it, so its peers close either way.
     if (!(await hasPending()) && isReadable(read)) {
-      // The decision holds only under the branch row: a frame takes no other lock. One that
+      // The decision holds only under the draft row: a frame takes no other lock. One that
       // committed since the read makes this a reset after all, recomputed by the next attempt.
       const [locked] = await currentDrizzleDb(db)
         .select({ revision: documentDrafts.revision })
@@ -263,8 +263,8 @@ export function createDrizzleBranchDiscard(
     const { items } = input.selection;
     // Created or edited is the document's visibility now, read under the locks the caller
     // holds: another Work's Apply may have revealed a create since the item was resolved, and
-    // a revealed create is an edited item (§2.2), reset from live with its branch kept. The
-    // draft's create row goes either way; only a hidden document can be tombstoned by it.
+    // a revealed create is an edited item (§2.2), reset from live with its draft kept. The
+    // branch's create row goes either way; only a hidden document can be tombstoned by it.
     const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
     const hiddenNow = await hiddenDocumentIds(db, withRows);
     const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
@@ -276,7 +276,7 @@ export function createDrizzleBranchDiscard(
       { branches: [{ branchId, documentIds: withRows }] },
       "document_discarded",
     );
-    // A hidden create another draft still uses stays, but this draft's drafts on it end.
+    // A hidden create another branch still uses stays, but this branch's drafts on it end.
     const retiredDrafts: RetiredDraft[] = [
       ...ended.retired,
       ...(await closeBranchDrafts(db, branchId, "document_discarded", created)),
@@ -311,7 +311,7 @@ export function createDrizzleBranchDiscard(
         ) {
           throw new BranchCommandExistsError(command.envelope.commandId);
         }
-        // The Work and the draft enter the Work boundary before the draft row and the scope
+        // The Work and the branch enter the Work boundary before the branch row and the scope
         // locks (decision D17).
         return deps.workProjection.mutate(
           { works: [workId as WorkId], branches: [input.branchId] },
@@ -343,7 +343,7 @@ export function createDrizzleBranchDiscard(
   };
 }
 
-/** Purge transactions run again when a draft's end-use scope moved under them. */
+/** Purge transactions run again when a branch's end-use scope moved under them. */
 const PURGE_ATTEMPTS = 3;
 
 /**
@@ -359,7 +359,7 @@ export function createDrizzleWorkBranchDisposal(
   deps: KernelDeps & { branches: Pick<Branches, "byOriginWork" | "lockActive" | "close"> },
 ): WorkBranchDisposal {
   async function dispose(workId: WorkId): Promise<{ releasedObjects: readonly string[] }> {
-    const branchIds = (await deps.branches.byOriginWork(workId)).map((draft) => draft.id).sort();
+    const branchIds = (await deps.branches.byOriginWork(workId)).map((branch) => branch.id).sort();
     const active: BranchId[] = [];
     for (const branchId of branchIds) {
       if (await deps.branches.lockActive(branchId)) active.push(branchId);

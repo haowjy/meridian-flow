@@ -7,9 +7,9 @@
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections), the model's edit core, a
  * reply's save, the draft-aware reads (Markdown, hashlines and revision), offline
- * reconciliation. Branch preview scopes both sides
- * in `work-draft-review-service.ts`; ContextFS.search scopes its source's
- * chapters together. A push scopes itself before branch locks in
+ * reconciliation. Draft preview scopes both sides
+ * in `work-branch-review-service.ts`; ContextFS.search scopes its source's
+ * chapters together. A push scopes itself before draft locks in
  * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
  */
@@ -116,8 +116,8 @@ export function scopeOfflineReconciliation(
 }
 
 /**
- * Branch-aware reads, in the reader's thread: its manifest peer and reply's
- * staged creates decide what a draft view holds. The revision depends on the
+ * Draft-aware reads, in the reader's thread: its manifest peer and reply's
+ * staged creates decide what a branch view holds. The revision depends on the
  * tree, so it is scoped like the text.
  */
 export function scopeDraftPeer(

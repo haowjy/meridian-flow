@@ -244,8 +244,8 @@ export function createBranchDiscard(deps: {
     async discardItems(input) {
       const { branchId, workId } = input;
       const gone = { status: "gone" as const, branchId };
-      const [draft] = await deps.branches.byIds([branchId]);
-      if (draft?.status !== "active" || draft.originWorkId !== workId) return gone;
+      const [branch] = await deps.branches.byIds([branchId]);
+      if (branch?.status !== "active" || branch.originWorkId !== workId) return gone;
 
       const after = afterRootCommit();
       if (input.selection.kind === "whole") {

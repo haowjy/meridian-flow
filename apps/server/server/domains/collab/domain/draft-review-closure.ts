@@ -75,9 +75,9 @@ export function assignReviewClasses(input: {
 }
 
 /**
- * A selected Yjs update is replayable only with the branch rows that supplied
+ * A selected Yjs update is replayable only with the draft journal rows that supplied
  * the structs it names. Same-client clock ranges are also sequential in Yjs:
- * a later range stays pending when an earlier branch range from that client is
+ * a later range stays pending when an earlier draft range from that client is
  * omitted, even if no Item field points at it directly.
  */
 function unionYjsDependencies(

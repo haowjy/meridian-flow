@@ -1,4 +1,4 @@
-/** Effective branch reads with staged-response overlays . */
+/** Effective draft reads with staged-response overlays . */
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -100,7 +100,7 @@ export function createEffectiveDocumentReader(input: {
     if (command.destination === "live") return fallback();
     if (command.threadId) {
       // A read never ensures a peer or a draft (S1): it pulls a peer the thread already has,
-      // in the Work's active draft.
+      // in the Work's active branch.
       const view = await viewOf(command);
       if (view.kind === "branch") {
         try {
@@ -125,11 +125,11 @@ export function createEffectiveDocumentReader(input: {
       }
       await input.draftPulls.flushLivePull(command.documentId);
       try {
-        const workBranch = await input.drafts.resolveWorkDraftForThread(
+        const workDraft = await input.drafts.resolveWorkDraftForThread(
           command.documentId,
           command.threadId,
         );
-        return Ok(await readEffectiveDraft(workBranch, read));
+        return Ok(await readEffectiveDraft(workDraft, read));
       } catch (cause) {
         if (!(cause instanceof DraftNotFoundError)) throw cause;
       }
@@ -137,7 +137,7 @@ export function createEffectiveDocumentReader(input: {
     return fallback();
   }
 
-  /** Live content, rendered by the same reader as every branch. */
+  /** Live content, rendered by the same reader as every draft. */
   async function readLive<T>(
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,

@@ -287,7 +287,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           // A seam boundary before any other lock (decision D17, file-access §5): the captured
           // drafts' Works and the bound grants' Works in one id order, the grants confirmed,
           // then the documents' mutation locks, then the rows. A live-only inverse (a named
-          // Work's Scratch) captures no branch, so its Work is locked only as a grant Work. Two
+          // Work's Scratch) captures no draft, so its Work is locked only as a grant Work. Two
           // inverses are ordered by what they captured, not by a lock of their own: a draft's
           // exact checkpoint revision and a live head checked under the document lock (D22).
           input.workProjection.mutate(
@@ -389,7 +389,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const handles: string[] = [];
     const origins: EditOrigin[][] = entry.edits.map(() => []);
     if (draft && entry.updates.length) {
-      // Shape (a): the captured branch ⊕ live ⊕ the inverse parts, written whole as the
+      // Shape (a): the captured draft ⊕ live ⊕ the inverse parts, written whole as the
       // checkpoint at the revision it was captured at; the rows are inserted under the row
       // lock, inside the checkpoint they belong to.
       const rewritten = await commitRewriteWithinTx(db(), {

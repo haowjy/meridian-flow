@@ -1,4 +1,4 @@
-/** Proof that a Work's first drafted writes share one draft, and the resolver's lifecycle surface. */
+/** Proof that a Work's first drafted writes share one branch, and the resolver's lifecycle surface. */
 import { createDb, type Database } from "@meridian/database";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { branches, users } from "@meridian/database/schema";
@@ -52,7 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await Promise.all([root.close(), first.close(), second.close()]);
     });
 
-    it("makes one active draft when two first writes in a Work race, and serves its lifecycle (T-2)", async () => {
+    it("makes one active branch when two first writes in a Work race, and serves its lifecycle (T-2)", async () => {
       const scenario = await branchTreeScenario(root);
       const work = await scenario.work("Ascension", "draft");
       const input = {
@@ -67,7 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         runInRootDrizzleTransaction(first, () => resolverOn(first).ensureActiveForWrite(input)),
       ).rejects.toBeInstanceOf(BranchWriteJoinRefusedError);
 
-      // The first write's command transaction ensures the draft and stays open.
+      // The first write's command transaction ensures the branch and stays open.
       let ensured!: () => void;
       const ensuredSignal = new Promise<void>((resolve) => {
         ensured = resolve;
@@ -78,10 +78,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const firstWrite = runInRootDrizzleTransaction(first, async () => {
         approveBranchWriteJoin();
-        const draft = await resolverOn(first).ensureActiveForWrite(input);
+        const branch = await resolverOn(first).ensureActiveForWrite(input);
         ensured();
         await held;
-        return draft;
+        return branch;
       });
       await ensuredSignal;
       const secondWrite = resolverOn(second).ensureActiveForWrite(input);

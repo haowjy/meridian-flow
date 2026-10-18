@@ -166,7 +166,7 @@ describe("draft review class-replay", () => {
         expect(from).toBeGreaterThanOrEqual(0);
       }),
     }));
-    // A fresh peer's transaction delta has no cumulative branch deletes and
+    // A fresh peer's transaction delta has no cumulative draft deletes and
     // stays independently selectable, unlike the shared client's clock prefix.
     const independent = { id: 76, block: 4, find: "flowing", replacement: "flowing north" };
     edits.push(independent);

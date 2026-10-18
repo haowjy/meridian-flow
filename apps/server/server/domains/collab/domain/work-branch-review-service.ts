@@ -54,9 +54,9 @@ export function createWorkBranchReviewService(input: {
   async function workItems(
     workId: WorkId,
   ): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }> {
-    const draft = await input.branches.activeForWork(workId);
-    if (!draft) return { branchId: null, items: [] };
-    return { branchId: draft.id, items: await input.reviewItems.list(draft.id) };
+    const branch = await input.branches.activeForWork(workId);
+    if (!branch) return { branchId: null, items: [] };
+    return { branchId: branch.id, items: await input.reviewItems.list(branch.id) };
   }
 
   function replay(found: CommandLookup): CommandOutcome | null {
@@ -74,7 +74,7 @@ export function createWorkBranchReviewService(input: {
     }
   }
 
-  /** Command lookup, first: an existing id answers whatever the draft's state is now. */
+  /** Command lookup, first: an existing id answers whatever the branch's state is now. */
   async function known(envelope: BranchCommandEnvelope): Promise<CommandOutcome | null> {
     return replay(await input.commands.lookup(envelope));
   }
@@ -119,7 +119,7 @@ export function createWorkBranchReviewService(input: {
         return { status: "gone", itemKey: command.itemKey };
       }
       if (cause instanceof DraftCorruptError) {
-        // The refusal carries the draft so a corrupt item missing from the list can still
+        // The refusal carries the branch ID so a corrupt item missing from the list can still
         // build its whole-item Discard, the recovery path.
         const resolved = await input.identity.resolveReviewItem(command);
         return resolved

@@ -1,4 +1,4 @@
-/** Builds the candidate batches an Apply stages: whole-branch, or the rows a review selected. */
+/** Builds the candidate batches an Apply stages: whole-draft, or the rows a review selected. */
 import { randomUUID } from "node:crypto";
 import type { UserId } from "@meridian/contracts/runtime";
 import {
@@ -32,7 +32,7 @@ export function buildWholeDraftCandidates(input: {
   };
 }
 
-/** One branch's selected rows, fenced by the live revision the selection was made against. */
+/** One draft's selected rows, fenced by the live revision the selection was made against. */
 export function buildSelectedRowCandidates(input: {
   source: CandidateSource;
   journalIds: readonly number[];

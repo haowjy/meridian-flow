@@ -1,4 +1,4 @@
-/** Mutable Hocuspocus instance binding and branch-room delivery and repair. */
+/** Mutable Hocuspocus instance binding and draft-room delivery and repair. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
@@ -10,7 +10,7 @@ const DRAFT_AGENT_BROADCAST_ORIGIN = {
   context: { origin: { type: "system", reason: "draft-agent-append" } },
 } satisfies TransactionOrigin;
 
-/** Content a branch room did not author: Hocuspocus broadcasts it to the room's tabs. */
+/** Content a draft room did not author: Hocuspocus broadcasts it to the room's tabs. */
 function applyToRoom(room: Y.Doc, update: Uint8Array): void {
   Y.applyUpdate(room, update, DRAFT_AGENT_BROADCAST_ORIGIN);
 }

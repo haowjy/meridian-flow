@@ -1,7 +1,7 @@
 /**
- * Writer-frame admission over the branch runtime: a frame judged on a private candidate of the
+ * Writer-frame admission over the draft runtime: a frame judged on a private candidate of the
  * committed replica (admissibility, the room, the cheap echo exit, authorship as an early
- * rejection) and appended once, sequenced by the branch row's lock and finalized there against
+ * rejection) and appended once, sequenced by the draft row's lock and finalized there against
  * what is committed (design §2), and the background tail fold a committed frame can trigger.
  * The runtime (`draft-coordinator.ts`) owns the replicas, candidates and their installation; this
  * module owns only what a frame decides before the lock.
@@ -37,7 +37,7 @@ export type WriterFrameDiagnostics = {
   }): void;
   /**
    * An update reached the row lock before the update it depends on reached the journal: not
-   * sequenced, and its socket resyncs. Repeated on one branch, it is a server defect.
+   * sequenced, and its socket resyncs. Repeated on one draft, it is a server defect.
    */
   appendPrefixMissing(input: {
     draftId: string;
@@ -53,11 +53,11 @@ export function createWriterFrames(
 
   /**
    * A writer frame: judged once on a private candidate of the committed replica, then appended
-   * at whatever revision the branch is at. A concurrent writer costs the frame one row-lock
+   * at whatever revision the draft is at. A concurrent writer costs the frame one row-lock
    * wait, never a second judgement: what landed meanwhile is folded into the committed prefix
    * under the lock. The room is checked against the replica first, and a room that lacks it
    * missed a delivery: it is reconciled and the frame goes on (decision D26). Only a closed
-   * branch, a frozen Work or a generation the branch has left refuses the frame; an update
+   * draft, a frozen Work or a generation the draft has left refuses the frame; an update
    * whose prefix the journal lacks throws `DraftPrefixMissingError` for the gateway's resync.
    */
   async function commitWriterUpdate(frame: WriterFrameInput): Promise<{ admitted: boolean }> {
@@ -109,7 +109,7 @@ export function createWriterFrames(
 
   /**
    * Folds a long tail into a new checkpoint in the background. `compacting` keeps one fold per
-   * branch in this process; anything else is the fold fence's: compaction is content-free, so
+   * draft in this process; anything else is the fold fence's: compaction is content-free, so
    * a frame or inverse that lands meanwhile is folded in, and a rewrite that commits first
    * makes it miss (the next frame past the bound tries again). Called after a writer frame
    * commits, outside every transaction; a failure is reported and leaves the tail for the
@@ -129,7 +129,7 @@ export function createWriterFrames(
         fence: { kind: "none" },
         operation: { kind: "compact" },
       });
-      // A moved or closed branch: the next frame past the bound tries again.
+      // A moved or closed draft: the next frame past the bound tries again.
       await runtime.commitOnce(write, { moved: () => {} });
     })()
       .catch((cause: unknown) => input.diagnostics?.compactionFailed({ draftId, cause }))

@@ -1,7 +1,7 @@
 /**
- * A writer frame acquires nothing (lock-free branches, phase 1b): it judges against its committed
+ * A writer frame acquires nothing (lock-free drafts, phase 1b): it judges against its committed
  * replica and appends under its revision predicate. These races pin the two doors a frame can
- * reach mid-transaction: a pull's rewrite holding the branch row, and a created document's
+ * reach mid-transaction: a pull's rewrite holding the draft row, and a created document's
  * retraction (F3); and an inverse every one of whose attempts a frame moves (F5).
  */
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
@@ -44,7 +44,7 @@ describe("writer frames racing rewrites (postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   /**
-   * A frame from a room holding the branch as it is now: `edit` runs on the room's copy and
+   * A frame from a room holding the draft as it is now: `edit` runs on the room's copy and
    * the frame carries exactly the update it made.
    */
   async function writerFrame(draftId: string, edit: (fragment: Y.XmlFragment) => void) {
@@ -138,7 +138,7 @@ describe("writer frames racing rewrites (postgres)", () => {
     try {
       const run =
         first === "pull"
-          ? // The pull holds the branch row between its checkpoint UPDATE and COMMIT.
+          ? // The pull holds the draft row between its checkpoint UPDATE and COMMIT.
             await interleave(db, pull, "draft.rewrite.beforeCommit", frame.send)
           : await interleave(db, frame.send, "draft.append.afterCommit", pull);
       const sent = (first === "pull" ? run.b : run.a) as Settled<{ admitted: boolean }>;
@@ -156,7 +156,7 @@ describe("writer frames racing rewrites (postgres)", () => {
     expect(rows).toHaveLength(1);
     const read = await readDraftAt(db, draftId);
     const [row] = rows;
-    if (!read || !row) throw new Error("the branch or its frame row is missing");
+    if (!read || !row) throw new Error("the draft or its frame row is missing");
     // Either re-judged after the checkpoint (in the tail) or folded into it, never both.
     if (first === "pull") {
       expect(read.documentDraft.checkpointSeq).toBeLessThan(row.id);
@@ -167,18 +167,18 @@ describe("writer frames racing rewrites (postgres)", () => {
     }
   });
 
-  /** A created document's fresh draft branch, with no contribution yet. */
+  /** A created document's fresh draft, with no contribution yet. */
   async function createdDocumentDraft(): Promise<{ draftId: string; branchId: string }> {
-    const [draft] = await db
+    const [branch] = await db
       .select({ id: schema.branches.id })
       .from(schema.branches)
       .where(eq(schema.branches.originWorkId, WORK_ID));
-    if (!draft) throw new Error("the Work has no draft");
+    if (!branch) throw new Error("the Work has no branch");
     await fixture.view.draftStore.ensureCreatedDocumentDraft({
       documentId: ALPHA_ID,
-      branchId: draft.id as never,
+      branchId: branch.id as never,
     });
-    return { draftId: await readDraftId(db, ALPHA_ID), branchId: draft.id };
+    return { draftId: await readDraftId(db, ALPHA_ID), branchId: branch.id };
   }
 
   /** Novel clocks, no visible effect: a character typed and erased in one frame. */

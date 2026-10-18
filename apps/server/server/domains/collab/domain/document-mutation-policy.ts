@@ -134,8 +134,8 @@ function validateFreshAuthorship(
 
 /**
  * `source` replicated whole into `target` from a frozen copy: the identity replication every
- * branch seed, pull and reset uses. The candidate's provenance is validated before `target`
- * changes; persistence belongs to the branch store.
+ * draft seed, pull and reset uses. The candidate's provenance is validated before `target`
+ * changes; persistence belongs to the draft store.
  */
 export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
   const update = Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
@@ -145,7 +145,7 @@ export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
 }
 
 /**
- * A branch's journal rows applied to `doc`, validated per logical write: the rows of one
+ * A draft's journal rows applied to `doc`, validated per logical write: the rows of one
  * semantic edit against its IR (document and input revision) before any of them applies,
  * each other row on its own.
  */
@@ -201,7 +201,7 @@ export function assertSegmentRowsComplete(source: Y.Doc, admitted: Y.Doc): void 
   }
 }
 
-/** Branch agent rows own fresh structs; deletes may refer to older clients. */
+/** Draft agent rows own fresh structs; deletes may refer to older clients. */
 export function assertFreshAgentUpdate(doc: Y.Doc, update: Uint8Array): void {
   const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
   for (const struct of Y.decodeUpdate(update).structs) {

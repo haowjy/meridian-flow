@@ -1,6 +1,6 @@
 /**
- * The branch runtime and the operations on it. The runtime holds one immutable committed
- * replica per branch, prepares every write on a private candidate (append, rewrite, reset) and
+ * The draft runtime and the operations on it. The runtime holds one immutable committed
+ * replica per draft, prepares every write on a private candidate (append, rewrite, reset) and
  * installs it only once its attempt completes; the operations (pull, reset, a reply's staged
  * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
  * fold they trigger are `draft-writer-frames.ts`, over the same runtime surface.
@@ -49,7 +49,7 @@ import {
 } from "./draft-writer-frames.js";
 
 /**
- * The branch as committed at `revision`: replaced, never mutated. `seq` is the highest journal
+ * The draft as committed at `revision`: replaced, never mutated. `seq` is the highest journal
  * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
  * `encoded` is its update bytes, computed once when first needed.
  */
@@ -85,10 +85,10 @@ function grownTail(tail: TailSize, updates: readonly Uint8Array[]): TailSize {
 
 /**
  * A tail past either bound is folded into a new checkpoint (decision D10): every cold read of
- * the branch replays its whole tail. The fold changes no content, effect or stamp.
+ * the draft replays its whole tail. The fold changes no content, effect or stamp.
  */
 
-/** What a branch operation works from: the row as read and the committed replica at it. */
+/** What a draft operation works from: the row as read and the committed replica at it. */
 export type DraftBase = {
   snapshot: DraftSnapshot;
   replica: CommittedReplica;
@@ -107,7 +107,7 @@ type CommitAttemptOptions<T> = {
  */
 export type DraftRuntime = {
   loadBase(draftId: string): Promise<DraftBase>;
-  /** The replica committed for the branch, if any: read it, never mutate it. */
+  /** The replica committed for the draft, if any: read it, never mutate it. */
   committed(draftId: string): CommittedReplica | undefined;
   cloneReplica(replica: CommittedReplica): Y.Doc;
   containment: ReturnType<typeof createDocumentContainment>;
@@ -145,17 +145,17 @@ export type DraftRuntime = {
 };
 
 /**
- * What found a room behind its branch: a frame, its enrollment once registered, or a tab's
+ * What found a room behind its draft: a frame, its enrollment once registered, or a tab's
  * SyncStep1 handshake.
  */
 export type RoomReconcileTrigger = "frame" | "enrollment" | "handshake";
 
 /**
- * A branch write prepared on a private candidate, an `AttemptCandidate` of the attempt that
+ * A draft write prepared on a private candidate, an `AttemptCandidate` of the attempt that
  * prepared it: nothing is persisted until `persist` runs inside that attempt's commit scope,
  * nothing is visible until `transfer` hands it to installation once the whole attempt
  * completed, and `dispose` drops it on any unwind. A rewrite's `persist` throws
- * `DraftCasConflictError` when the branch moved since the candidate's base; an append's never
+ * `DraftCasConflictError` when the draft moved since the candidate's base; an append's never
  * does (it is sequenced, not fenced) and resolves false when everything it carried was already
  * committed.
  */
@@ -173,7 +173,7 @@ const COMMIT_ATTEMPTS = 4;
 
 /** The pre-replay view a save's staged rows are reconciled against. */
 export type StagedDraftView = DraftSnapshot & {
-  /** The committed branch bytes at `revision`, captured before any replay. */
+  /** The committed draft bytes at `revision`, captured before any replay. */
   readonly encoded: Uint8Array;
 };
 
@@ -185,7 +185,7 @@ export type SegmentRowsInput = {
 };
 
 /**
- * A pull merges `upstream` into the branch. A peer's pull names the upstream epoch it read
+ * A pull merges `upstream` into the draft. A peer's pull names the upstream epoch it read
  * `upstream` at: the commit locks that row `FOR SHARE` and loses to a re-fork of it.
  */
 export type PullInput = {
@@ -199,7 +199,7 @@ export type PullInput = {
  * document (`fenced`: nothing was written, and the caller tries again later); a settlement
  * terminally blocked on it freezes the pull (`blocked`: nothing written, nothing to retry
  * until something new arrives, since no transition lifts a blocked batch); a closed
- * branch has nothing to pull into; a peer whose upstream re-forked since its read is
+ * draft has nothing to pull into; a peer whose upstream re-forked since its read is
  * `upstreamMoved`, its capture abandoned. An archived Work's draft keeps pulling, so it applies
  * cleanly after unarchive.
  */
@@ -235,17 +235,17 @@ type ResetInput = {
 
 export type DraftCoordinator = {
   /**
-   * Merges `upstream` into the branch as a folding rewrite, outside any transaction: each
+   * Merges `upstream` into the draft as a folding rewrite, outside any transaction: each
    * attempt is its own commit scope. Frames that commit while the pull computes are folded
    * into its checkpoint, never a miss; only another rewrite makes it recompute.
    */
   pullFromDoc(input: PullInput): Promise<PullOutcome>;
   /**
    * Re-forks a work draft from `upstream` inside the caller's transaction, holding nothing:
-   * false when the branch is no longer at the generation (or, `exact`, the revision) read.
+   * false when the draft is no longer at the generation (or, `exact`, the revision) read.
    * With `owner`, the caller's attempt owns the reset candidate and the write runs in its
    * already-open commit scope, so a later miss in that attempt disposes it; without one, the
-   * reset is a single attempt in the caller's transaction. A moved branch throws
+   * reset is a single attempt in the caller's transaction. A moved draft throws
    * `DraftCasConflictError` for the caller's attempt to classify.
    */
   resetFromDoc(input: ResetFromDocInput, owner?: Attempt): Promise<boolean>;
@@ -255,13 +255,13 @@ export type DraftCoordinator = {
   ): Promise<T>;
   // A reply's save (contract §2.3) prepares through these and acquires nothing: every write
   // is an attempt fenced by the revision it was prepared at.
-  /** A private copy of the branch for `fn` to change; nothing it does is kept or installed. */
+  /** A private copy of the draft for `fn` to change; nothing it does is kept or installed. */
   withTransient<T>(
     draftId: string,
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
   ): Promise<T>;
   /**
-   * Replays a response's rows on a candidate of the committed branch. With `commit`, the rows
+   * Replays a response's rows on a candidate of the committed draft. With `commit`, the rows
    * come back as a prepared write (null when there are none) for the caller's commit scope.
    */
   prepareStagedRows<T>(
@@ -272,7 +272,7 @@ export type DraftCoordinator = {
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
   ): Promise<{ result: T; write: PreparedDraftWrite | null }>;
-  /** `source` merged into the branch as a checkpoint write; null when it holds `source` already. */
+  /** `source` merged into the draft as a checkpoint write; null when it holds `source` already. */
   prepareCatchUp(draftId: string, source: Y.Doc): Promise<PreparedDraftWrite | null>;
   commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   /** A writer frame (`draft-writer-frames.ts`). */
@@ -284,7 +284,7 @@ export type DraftCoordinator = {
    * Brings a registered room up to what is committed on its generation (decisions D26, D27):
    * at its enrollment, from which on every installed transition reaches it, and at each tab's
    * handshake, so a room that missed a delivery heals on the next exchange whether or not the
-   * tab may write. Returns the base it reconciled against, or null when the branch closed or
+   * tab may write. Returns the base it reconciled against, or null when the draft closed or
    * left the room's generation.
    */
   reconcileRegisteredRoom(input: {
@@ -316,7 +316,7 @@ export function createDraftCoordinator(input: {
   const committed = new Map<string, CommittedReplica>();
 
   /**
-   * An exact-predicate write's attempts: a moved branch recaptures, and the last miss is
+   * An exact-predicate write's attempts: a moved draft recaptures, and the last miss is
    * `moved`'s to answer (by default it throws).
    */
   function commitAttempts<T>(
@@ -391,7 +391,7 @@ export function createDraftCoordinator(input: {
   }
 
   /**
-   * The branch as committed now, from the committed replica when its revision still holds,
+   * The draft as committed now, from the committed replica when its revision still holds,
    * caught up from the tail when only appends landed since, otherwise materialized. What the
    * catch-up adds reaches this process's rooms too: another process's commits arrive nowhere
    * else, and a room missing them would fence every frame typed into it.
@@ -450,7 +450,7 @@ export function createDraftCoordinator(input: {
   }
 
   /**
-   * The one way a replica becomes the branch's committed replica, and so the one way content
+   * The one way a replica becomes the draft's committed replica, and so the one way content
    * reaches this process's registered rooms (decision D25); a room that registers, or misses a
    * delivery, behind it is brought up by `reconcileRoom` (D26). It runs when the transaction the replica was
    * read or written in commits (a savepoint's rows only once its root commits too), installs
@@ -466,7 +466,7 @@ export function createDraftCoordinator(input: {
       committed.set(draftId, transition.next);
       if (!previous) return;
       if (previous.generation !== transition.next.generation) {
-        // Another process re-forked the branch: rooms on an older generation close.
+        // Another process re-forked the draft: rooms on an older generation close.
         input.onDraftReset?.({ draftId, generation: transition.next.generation });
         return;
       }
@@ -610,7 +610,7 @@ export function createDraftCoordinator(input: {
   }
 
   /**
-   * `journals` as an append from `base`, sequenced by the branch row's lock: the store reads
+   * `journals` as an append from `base`, sequenced by the draft row's lock: the store reads
    * the committed prefix under it, `finalizeAppend` trims each row to what is novel there and
    * captures the receipts on the document it commits into, and that document becomes the next
    * replica. Nothing judged before the lock is written as truth.
@@ -728,7 +728,7 @@ export function createDraftCoordinator(input: {
     });
   }
 
-  /** `candidate` as the branch's checkpoint at the base's exact revision: a peer's catch-up. */
+  /** `candidate` as the draft's checkpoint at the base's exact revision: a peer's catch-up. */
   function prepareCheckpoint(base: DraftBase, candidate: Y.Doc): PreparedDraftWrite {
     const { snapshot } = base;
     return prepareRewrite(snapshot.draftId, candidate, {
@@ -771,7 +771,7 @@ export function createDraftCoordinator(input: {
     return { kind: "fold", checkpointRevision: replica.checkpointRevision, seq: replica.seq };
   }
 
-  /** A re-fork of the branch from `upstream` under the caller's revision policy. */
+  /** A re-fork of the draft from `upstream` under the caller's revision policy. */
   function prepareReset(
     snapshot: DraftSnapshot,
     upstream: Y.Doc,

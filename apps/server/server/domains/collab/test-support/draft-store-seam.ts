@@ -1,4 +1,4 @@
-/** Test reads and appends straight through a branch store's read seam and its one append door. */
+/** Test reads and appends straight through a draft store's read seam and its one append door. */
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -68,7 +68,7 @@ export async function appendDraftRows(
 }
 
 /**
- * A resolved branch with its content: generation and document come from one read, so a test
+ * A resolved draft with its content: generation and document come from one read, so a test
  * never pairs one generation's identity with another's content.
  */
 export async function readResolvedDraft(
@@ -84,7 +84,7 @@ export async function readResolvedDraft(
   };
 }
 
-/** The branch's content now (checkpoint ⊕ tail), as update bytes. */
+/** The draft's content now (checkpoint ⊕ tail), as update bytes. */
 export async function readDraftContent(
   store: Pick<DraftStore, "readDraftAt">,
   draftId: string,
@@ -99,7 +99,7 @@ export async function readDraftContent(
   }
 }
 
-/** The branch's content as the database holds it (checkpoint ⊕ tail), read through the seam. */
+/** The draft's content as the database holds it (checkpoint ⊕ tail), read through the seam. */
 export async function draftContent(db: DrizzleDb, draftId: string): Promise<Uint8Array> {
   const read = await readDraftAt(db, draftId);
   if (!read) throw new Error(`Draft ${draftId} does not exist`);

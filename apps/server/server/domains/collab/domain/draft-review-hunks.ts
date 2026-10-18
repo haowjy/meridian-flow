@@ -1,4 +1,4 @@
-/** Computes live-vs-draft review hunks and per-operation attribution for active branches. */
+/** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
 import type { AgentEditModel } from "@meridian/agent-edit/integration";
 import type { ReviewBlockDisplay, ReviewHunk } from "@meridian/contracts/branches";

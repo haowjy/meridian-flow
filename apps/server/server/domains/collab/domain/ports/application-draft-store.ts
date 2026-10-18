@@ -10,21 +10,21 @@ export type ApplicationDraftStore = DraftStore &
   DraftResolver & {
     listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
     /**
-     * The draft's branch on the document, made from `liveDoc` if absent: a write boundary
-     * only. Never makes a draft; refuses a closed one in the insert's transaction.
+     * The branch's draft on the document, made from `liveDoc` if absent: a write boundary
+     * only. Never makes a branch; refuses a closed one in the insert's transaction.
      */
     ensureDocumentDraft(input: {
       documentId: DocumentId;
       branchId: BranchId;
       liveDoc: Y.Doc;
     }): Promise<DraftSnapshot>;
-    /** The draft's branch on its new document, from its durable live state, in the caller's transaction. */
+    /** The branch's draft on its new document, from its durable live state, in the caller's transaction. */
     ensureCreatedDocumentDraft(input: {
       documentId: DocumentId;
       branchId: BranchId;
     }): Promise<void>;
     /**
-     * Delete the draft's branch on a document it created and that branch's thread peers,
+     * Delete the branch's draft on a document it created and that draft's thread peers,
      * unless any of them holds a journal row that isn't discarded (a contribution).
      * `deleted` is exactly the drafts removed, with each peer's thread.
      */
@@ -36,9 +36,9 @@ export type ApplicationDraftStore = DraftStore &
         }
     >;
     /**
-     * The thread's peer of the draft's branch on the document, with its content as it stands
-     * (the checkpoint just written for a new peer). Takes the draft it is given, never ensures
-     * one; a draft that is no longer active is `DraftStaleUpdateError`.
+     * The thread's peer of the branch's draft on the document, with its content as it stands
+     * (the checkpoint just written for a new peer). Takes the branch it is given, never ensures
+     * one; a branch that is no longer active is `DraftStaleUpdateError`.
      */
     ensureThreadPeerDraft(input: {
       documentId: DocumentId;
@@ -55,6 +55,6 @@ export type ApplicationDraftStore = DraftStore &
       upstreamDraftIds: readonly string[],
       cause: PeerRetirementCause,
     ): Promise<RetiredDraft[]>;
-    /** The thread's primary Work's active draft branch on the document, as metadata. */
+    /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
   };

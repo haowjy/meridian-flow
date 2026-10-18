@@ -5,7 +5,7 @@ import { createDraftAgentEditJournal } from "./draft-agent-edit.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 
-describe("branch agent-edit journal appendBatch", () => {
+describe("draft agent-edit journal appendBatch", () => {
   it("reserves independent ordinals for concurrent logical writes", async () => {
     const draftJournal = createDraftAgentEditJournal({
       liveJournal: createInMemoryJournal(),

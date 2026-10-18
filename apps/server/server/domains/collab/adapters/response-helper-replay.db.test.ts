@@ -160,7 +160,7 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the read before it reads any branch, so Discard commits ahead of it.
+    // Pause the read before it reads any draft, so Discard commits ahead of it.
     let once = true;
     const unhook = setCollabHook("draft.beforeAccess", async () => {
       if (once) {
@@ -225,11 +225,11 @@ describe("response helper replay (Postgres)", () => {
     expect(await reviewDriver(fixture.collab.draftReview).discardAll()).toMatchObject({
       status: "discarded",
     });
-    // Closing the draft's drafts is a review-membership input: it moves their revision (§2.5).
+    // Closing the branch's drafts is a review-membership input: it moves their revision (§2.5).
     expect((await fixture.draftStore.getDraft(draftId))?.revision).toBeGreaterThan(
       open?.revision ?? Number.POSITIVE_INFINITY,
     );
-    // Discard all closes the draft: the save refuses the write with its receipt (contract §2.2).
+    // Discard all closes the branch: the save refuses the write with its receipt (contract §2.2).
     const saved = await harness.commit(responseId);
     expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount: 0 }] });
     expect(saved.documents[0]?.receipts).toEqual([
@@ -386,7 +386,7 @@ describe("response helper replay (Postgres)", () => {
         },
         { ...ctx, createdDocument: false },
       );
-    // Beta's draft branch is durable before this reply saves: an earlier reply made it.
+    // Beta's draft is durable before this reply saves: an earlier reply made it.
     const earlier = await createResponse(db, 3);
     expect(await writeBeta("create", "Beta seeded.", responseContext(earlier))).toMatchObject({
       phase: "staged",
@@ -445,7 +445,7 @@ describe("response helper replay (Postgres)", () => {
     );
     const writer = async () => {
       const snapshot = await fixture.draftStore.getDraft(draftId);
-      if (!snapshot) throw new Error("Missing branch");
+      if (!snapshot) throw new Error("Missing draft");
       const content = await readDraftContent(fixture.draftStore, draftId);
       const room = new Y.Doc({ gc: false });
       try {

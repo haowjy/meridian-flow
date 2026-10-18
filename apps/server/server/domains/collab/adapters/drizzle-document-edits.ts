@@ -35,7 +35,7 @@ export interface ReceiptWrite {
   consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
 }
-/** Caller holds the authoritative document/branch mutation lock and its event transaction. */
+/** Caller holds the authoritative document/draft mutation lock and its event transaction. */
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");

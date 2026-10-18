@@ -2,10 +2,10 @@
  * Discard and purge leave nothing live and release storage (contract §12, §2.6, ledger
  * D-1 to D-3): a hidden document branches share stays while any of them uses it, and the
  * last one's Discard tombstones it and its hidden folders, releasing its live Yjs, every
- * branch on it and a picture's bytes, while links written ahead of it read "Doesn't exist yet"
+ * draft on it and a picture's bytes, while links written ahead of it read "Doesn't exist yet"
  * and bind to the next live document; two branches discarding it at once leave one tombstone; a purged Work's branches go
  * through the locked kernel, never the active-Work command. And a read that meets a
- * hidden node no draft uses repairs it (§12.4).
+ * hidden node no branch uses repairs it (§12.4).
  */
 import type { DocumentId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -159,14 +159,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return got.ok ? "stored" : got.error.code;
     }
 
-    it("keeps a shared hidden document for the draft still using it, and the last Discard tombstones it, its folders and its storage (D-1)", async () => {
+    it("keeps a shared hidden document for the branch still using it, and the last Discard tombstones it, its folders and its storage (D-1)", async () => {
       const { runtime, s } = await start();
       const [ascension, beacon] = [
         await s.work("Ascension", "draft"),
         await s.work("Beacon", "draft"),
       ];
       const ORI = "manuscript://lore/deep/ori";
-      // A live ahead ref at the path before any draft creates it: a draft's document binds nothing.
+      // A live ahead ref at the path before any branch creates it: a branch's document binds nothing.
       const one = await s.writer.createDocument("chapter-one", "[Ori](lore/deep/ori) waits.");
       const [registered] = await db
         .select({ aheadId: linkAheadRefs.aheadId })
@@ -230,18 +230,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual(["active"]);
 
       // Beacon discards everything: the last use ends, in one command.
-      const beaconDraft = (await s.review(beacon)).items[0]?.branchId ?? "";
+      const beaconBranchId = (await s.review(beacon)).items[0]?.branchId ?? "";
       expect
         .soft(await s.discard(beacon, "all"), "Discard all")
-        .toEqual({ status: "discarded", branchId: beaconDraft });
+        .toEqual({ status: "discarded", branchId: beaconBranchId });
       expect.soft(await s.branchStatuses(beacon), "closed").toEqual(["closed"]);
       expect
         .soft(await row(ori), "tombstoned once, still hidden")
         .toEqual({ hidden: true, tombstone: true, version: versionBefore + 1n });
       expect
-        .soft(await storageOf(ori), "its live Yjs, every branch on it, its projection: released")
+        .soft(await storageOf(ori), "its live Yjs, every draft on it, its projection: released")
         .toEqual({ yjs: 0, drafts: 0, projection: 0 });
-      expect.soft(await rowsNaming(ori), "no draft names it").toEqual([]);
+      expect.soft(await rowsNaming(ori), "no branch names it").toEqual([]);
       expect.soft(await foldersNamed(s, "deep"), "its hidden folder, bottom-up").toEqual([]);
       expect.soft(await foldersNamed(s, "lore"), "and the one above").toEqual([]);
       expect.soft(await row(map), "Beacon's picture tombstoned").toMatchObject({ tombstone: true });
@@ -325,7 +325,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         s.discard(doomed, "all", { branchId }),
         "the public command refuses",
       ).rejects.toThrow();
-      expect.soft(await s.branchStatuses(doomed), "and left the draft alone").toEqual(["active"]);
+      expect.soft(await s.branchStatuses(doomed), "and left the branch alone").toEqual(["active"]);
       expect.soft(await row(plan), "its create still hidden").toMatchObject({ tombstone: false });
 
       expect.soft(await s.purge(doomed), "purged").toBe(1);
@@ -352,12 +352,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toMatchObject({ ok: true, value: { content: expect.stringContaining("Live words.") } });
     });
 
-    it("repairs a hidden document no draft uses when a read meets it (§12.4)", async () => {
+    it("repairs a hidden document no branch uses when a read meets it (§12.4)", async () => {
       const eventSink = createInMemoryEventSink();
       const { runtime, s } = await start({ eventSink });
       const drafting = await s.work("Drafting", "draft");
       const stray = await s.model(drafting).create("lore/stray", "Stray.");
-      // A bug's leftover: the draft's use is gone, the node is still hidden and live.
+      // A bug's leftover: the branch's use is gone, the node is still hidden and live.
       await db.delete(branchTreeChanges).where(eq(branchTreeChanges.nodeId, stray));
       const holder = await s.writer.createDocument("chapter", "Chapter.");
       const resolved = await handleDocumentLinkResolveRequest(
@@ -435,7 +435,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
     });
 
-    it("refuses a corrupt draft branch's preview, and Discard repairs it without touching another Work's staged reply (corrupt reset)", async () => {
+    it("refuses a corrupt draft's preview, and Discard repairs it without touching another Work's staged reply (corrupt reset)", async () => {
       const { runtime, s } = await start();
       const [ascension, beacon] = [
         await s.work("Ascension", "draft"),
@@ -453,7 +453,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         content: "BEACON STAGED TEXT.",
       });
       expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
-      // The seam: Ascension's draft branch row no longer decodes.
+      // The seam: Ascension's draft row no longer decodes.
       const item = (await s.review(ascension)).items.find((each) => each.documentId === chapter);
       const draftId = (
         await runtime.ports.documentSync.draftReview.resolveItemByDocument({
@@ -461,7 +461,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: chapter,
         })
       )?.draftId;
-      if (!draftId) throw new Error("No draft branch for the chapter");
+      if (!draftId) throw new Error("No draft for the chapter");
       await db
         .update(documentDrafts)
         .set({ state: Buffer.from([255, 255, 255, 255]) })
@@ -575,12 +575,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toEqual([]);
     });
 
-    it("warns once a create's candidate picker repairs a hidden document no draft uses (D-R3)", async () => {
+    it("warns once a create's candidate picker repairs a hidden document no branch uses (D-R3)", async () => {
       const eventSink = createInMemoryEventSink();
       const { s } = await start({ eventSink });
       const [first, second] = [await s.work("First", "draft"), await s.work("Second", "draft")];
       const stray = await s.model(first).create("lore/stray", "Stray.");
-      // A bug's leftover: the draft's use is gone, the node is still hidden and live.
+      // A bug's leftover: the branch's use is gone, the node is still hidden and live.
       await db.delete(branchTreeChanges).where(eq(branchTreeChanges.nodeId, stray));
       const made = await s.model(second).create("lore/stray", "Second's stray.");
       expect.soft(made, "a fresh document, not the stray").not.toBe(stray);

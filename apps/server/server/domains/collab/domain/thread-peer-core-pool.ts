@@ -65,7 +65,7 @@ type ResponseRecord = ReplyRecord;
 /** A reply save's commit attempts (section 2.4): four, then the save fails as today. */
 const SAVE_ATTEMPTS = 4;
 
-/** A miss the next attempt can resolve: a branch moved, or a buffer changed, since preparing. */
+/** A miss the next attempt can resolve: a draft moved, or a buffer changed, since preparing. */
 function isSaveAttemptMiss(cause: unknown): boolean {
   return cause instanceof DraftCasConflictError || cause instanceof ResponseAttemptStaleError;
 }
@@ -99,12 +99,12 @@ export function createThreadPeerCorePool(input: {
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * One save attempt's commit scope inside the response transaction: a savepoint, so a
-   * miss rolls back every document the attempt wrote and releases the branch rows it took.
+   * miss rolls back every document the attempt wrote and releases the draft rows it took.
    */
   attemptScope<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
-  /** Runs after an AI write commits to a live document, e.g. to merge it into Work branches (D40). */
+  /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
   afterLiveCommit?(documentId: DocumentId): void;
   /**
    * Confirms grants under lock: at a seam for a write that commits now, once at
@@ -279,15 +279,15 @@ export function createThreadPeerCorePool(input: {
       : (pinned?.grant.destination ?? requested);
     await evictIdleCores();
     const routedContext = await routedTo(context, destination, pinned?.linkView);
-    // A read never makes a draft (S1): a draft destination whose Work has no active draft
+    // A read never makes a branch (S1): a draft destination whose Work has no active branch
     // reads the live document through the live core and makes no peer.
-    const noDraft =
+    const noBranch =
       !pinned && destination.kind === "draft" && routedContext.linkView.kind !== "branch";
-    const core = noDraft
+    const core = noBranch
       ? input.liveUtilityCore
       : (pinned?.core ?? coreForDestination(destination, context.threadId));
     const callContext =
-      command.format === "edits" || noDraft
+      command.format === "edits" || noBranch
         ? routedContext
         : await threadPeerContext(core, documentId, routedContext);
     const outcome = await core.read(command, callContext);
@@ -319,7 +319,7 @@ export function createThreadPeerCorePool(input: {
       : undefined;
     const pinned = documentId ? record?.documents.get(documentId) : undefined;
     // A document keeps its first destination for the rest of the reply, so a
-    // mid-reply rebind or draft regeneration never splits it across two saves.
+    // mid-reply rebind or branch regeneration never splits it across two saves.
     // The chat's mode can't change mid-reply: it changes only between replies (D62).
     const destination = pinned?.grant.destination ?? grant.destination;
     if (documentId && context.threadId) {
@@ -361,7 +361,7 @@ export function createThreadPeerCorePool(input: {
       if (!immediateInverse) pinStaged(entry, callContext);
       return core.write(command, callContext);
     };
-    // An immediate drafted write that lost its draft to a close (Discard all) between the
+    // An immediate drafted write that lost its branch to a close (Discard all) between the
     // ensure and its commit refuses like a save does, never as a crash.
     const branchClosedUnder = async () =>
       branchView?.kind === "branch" &&
@@ -371,13 +371,13 @@ export function createThreadPeerCorePool(input: {
       try {
         const done = await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
         return done.isError && done.status === "internal_error" && (await branchClosedUnder())
-          ? draftChanged(command)
+          ? branchClosed(command)
           : done;
       } catch (cause) {
         if (!(await branchClosedUnder())) throw cause;
         if (documentId && context.threadId)
           await core.invalidateThreadDocument(documentId, context.threadId);
-        return draftChanged(command);
+        return branchClosed(command);
       }
     };
     // A staged write whose peer pull lost to Discard all or an item Discard: the same named
@@ -390,7 +390,7 @@ export function createThreadPeerCorePool(input: {
         // The reply's earlier staged writes stay: the retirement refuses them with their own receipts.
         if (!reason) throw cause;
         // An entry this attempt installed and never pinned routes the reply to the closed
-        // draft, and retirement matches pins only: drop it so the retry ensures a fresh draft.
+        // branch, and retirement matches pins only: drop it so the retry ensures a fresh branch.
         if (record && documentId && entry && entry !== pinned && !entry.pin) {
           if (record.documents.get(documentId) === entry) record.documents.delete(documentId);
         }
@@ -414,9 +414,9 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * Why a failed peer pull is Discard's doing, in the save fence's precedence: the draft it
+   * Why a failed peer pull is Discard's doing, in the save fence's precedence: the branch it
    * pulled for is closed, else the upstream it captured is closed or gone, else its peer is.
-   * Any other failure, or a pull whose drafts are all still live, is not a Discard.
+   * Any other failure, or a pull whose branch and drafts are all still active, is not a Discard.
    */
   async function discardLossReason(
     cause: unknown,
@@ -503,7 +503,7 @@ export function createThreadPeerCorePool(input: {
     const errors: unknown[] = [];
     for (const { threadId, peerDraftId, reason } of peers) {
       if (!docId || !threadId || !peerDraftId)
-        throw new Error("Retirement names one document, thread and peer branch");
+        throw new Error("Retirement names one document, thread and peer draft");
       const id = threadId as ThreadId;
       const key = seenKey(id, docId as DocumentId);
       if (lastSeen.get(key)?.peerDraftId === peerDraftId) lastSeen.delete(key);
@@ -603,7 +603,7 @@ export function createThreadPeerCorePool(input: {
             const results: ResponseCommitSuccessResult[] = [];
             // The attempt a failed save fails with; none once installing began.
             let failing: Map<AgentEditCore, ResponseCommitAttempt> | undefined;
-            // One scope per attempt, before its first branch-store lock: a miss on any
+            // One scope per attempt, before its first draft-store lock: a miss on any
             // document unwinds every document's rows, receipts and placements, and the
             // attempts' process-local state is dropped with them (decision D7: `confirm`
             // ran once above and is not replayed; a retry recomputes under its locks).
@@ -784,8 +784,8 @@ function readRequired(
   };
 }
 
-/** The Work's draft this write ensured closed before the write landed. */
-function draftChanged(command: WriteCommand): WriteOutcome {
+/** The Work's branch this write ensured closed before the write landed. */
+function branchClosed(command: WriteCommand): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
   const message = `This file's draft changed before your write landed (it was applied or discarded), so this change wasn't kept. Read ${path} again before editing.`;
   return {

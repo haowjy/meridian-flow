@@ -15,7 +15,7 @@ import * as Y from "yjs";
 import { assertNoPendingIntegration, DraftPeerIntegrationError } from "./branch-push-plan.js";
 import { subtractRanges } from "./draft-review-closure.js";
 
-/** Mutates only this disposable candidate; caller persists it under its existing branch lock. */
+/** Mutates only this disposable candidate; caller persists it under its existing draft lock. */
 export function reconcileStagedDraftWrites(
   current: Y.Doc,
   helper: Y.Doc,

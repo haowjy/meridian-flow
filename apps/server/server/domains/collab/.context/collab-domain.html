@@ -663,7 +663,7 @@ cold execution produce the same live document.
     before any transaction. The first thing done inside each live lock is to
     capture the complete Yjs state: the <em>lock cut</em>. Staging then runs as
     one bounded attempt: its transaction locks Works through the Works mutation
-    boundary, then drafts, namespaces, documents and draft rows. A draft that
+    boundary, then branches, namespaces, documents and draft rows. A draft that
     moved since preparation misses its revision and staging recaptures; after
     four attempts Apply answers <code>stale</code>. No draft lease or mutex
     is taken.</li>
@@ -817,7 +817,7 @@ and the next store captures afresh. Unresolved Yjs dependencies refuse the cut.
     <text x="20" y="421" fill="var(--muted)" font-size="10.5">coordinator heal of a warm room</text>
     <text x="20" y="436" fill="var(--muted)" font-size="10.5">(apply the missing diff),</text>
     <text x="20" y="451" fill="var(--muted)" font-size="10.5">push planning</text>
-    <!-- branch lane -->
+    <!-- draft lane -->
     <rect x="228" y="30" width="204" height="64" rx="8" fill="var(--chip)" stroke="var(--rule)"/>
     <text x="240" y="52" fill="var(--ink)" font-size="12" font-weight="700">1. Draft row</text>
     <text x="240" y="70" fill="var(--muted)" font-size="10.5">status, kind, generation,</text>
@@ -872,7 +872,7 @@ never from the current room.
 <h2 id="drafts">7. Drafts: pulls, pushes, Apply, Discard</h2>
 <p>
 Draft mechanics are covered in depth by
-<a href="branch-model-and-records.md">draft model and records</a> and the
+<a href="draft-model-and-records.md">draft model and records</a> and the
 product shape by <a href="draft-live-model.html">the draft / live model</a>.
 The points below are the ones that change how you reason about edits here.
 </p>
@@ -888,14 +888,14 @@ The points below are the ones that change how you reason about edits here.
     archive contract in <a href="CONTEXT.md">CONTEXT.md</a>.
     <span class="ref"><code>domain/draft-coordinator.ts</code> <code>pullFromDoc</code></span></li>
   <li><strong>Apply is a server command over an item, selected changes, or
-    the whole draft.</strong> Whole Apply pushes every reviewable row of the
+    the whole branch.</strong> Whole-document Apply pushes every reviewable row of the
     current generation, including writer edits made after the preview was
     rendered. Item and per-change Apply carry what the writer was shown (live
     revision, class identities, member keys) and answer <code>stale</code> or
     <code>gone</code> when it changed. A new document drafted only in the Work
     is pushed together with its project-manifest entry in one batch.
     <span class="ref"><code>packages/contracts/src/branches/review.ts</code>, <code>domain/branch-apply.ts</code>, <code>domain/work-branch-review-service.ts</code>, <code>domain/branch-push.ts</code></span></li>
-  <li><strong>Discard has two shapes.</strong> Whole Discard closes the draft
+  <li><strong>Discard has two shapes.</strong> Whole Discard closes the branch
     and its drafts (and removes a draft-only document's manifest entry) and
     requires the Work to be active. Selective and item Discard re-fork the
     draft from live plus the surviving rows of server-vended discard classes
@@ -1104,7 +1104,7 @@ same interfaces for tests. Rules for this file are in
   <li><a href="../AGENTS.md">collab AGENTS.md</a>: the rules to know before editing here</li>
   <li><a href="CONTEXT.md">CONTEXT.md</a>: modes, revision identity, pull and provisioning transactions, composition rules</li>
   <li><a href="document-authority-and-schema.md">Document authority, schema, and connection admission</a></li>
-  <li><a href="branch-model-and-records.md">Draft model, provenance, manifests, and durable records</a></li>
+  <li><a href="draft-model-and-records.md">Draft model, provenance, manifests, and durable records</a></li>
   <li><a href="settlement-and-trail.md">Push settlement and change trail</a></li>
   <li><a href="reversal.md">Reversal</a></li>
   <li><a href="websocket-concurrency.md">WebSocket concurrency boundary</a></li>

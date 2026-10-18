@@ -1,10 +1,10 @@
 /**
- * Ahead refs in a draft branch's text, registered globally (contract §10.7).
+ * Ahead refs in a draft's text, registered globally (contract §10.7).
  *
  * A writer's link typed in a draft's review room mints its ahead ref on the client, so
- * nothing registers it. After each admitted writer update the branch is read, debounced,
+ * nothing registers it. After each admitted writer update the draft is read, debounced,
  * and every `ahead:` key in it is registered, best effort: a target created live and then
- * moved before Apply would otherwise leave the link at the old path. Branches store nothing
+ * moved before Apply would otherwise leave the link at the old path. Drafts store nothing
  * about the ref and Apply needs no prerequisite: after the Apply the derive sweep
  * registers anything this missed.
  */
@@ -18,9 +18,9 @@ import type { DraftSnapshot } from "./draft-store.js";
 import type { AheadRefRegistrar } from "./ports/document-link-scope.js";
 
 export interface DraftAheadRegistration {
-  /** After an admitted writer update: registers the branch's refs, debounced per branch. */
+  /** After an admitted writer update: registers the draft's refs, debounced per draft. */
   schedule(draftId: string): void;
-  /** Reads the branch now and registers its refs. */
+  /** Reads the draft now and registers its refs. */
   registerDraftAheads(draftId: string): Promise<void>;
   /** Resolves once every scheduled and running registration has finished. */
   flush(): Promise<void>;
@@ -51,11 +51,11 @@ export function createDraftAheadRegistration(input: {
 
   /** One batch; if it fails, each ref alone, so one ref that can't register never blocks the rest. */
   async function register(
-    draft: { projectId: string },
+    branch: { projectId: string },
     refs: readonly { aheadId: string; address: string }[],
   ): Promise<{ aheadId: string; address: string; reason: string }[]> {
     if (refs.length === 0) return [];
-    const rows = refs.map((ref) => ({ ...ref, holderProjectId: draft.projectId }));
+    const rows = refs.map((ref) => ({ ...ref, holderProjectId: branch.projectId }));
     try {
       await input.outsideTransaction(() => input.registrar.register(rows));
       return [];
@@ -77,10 +77,10 @@ export function createDraftAheadRegistration(input: {
   }
 
   async function branchOfDraft(snapshot: DraftSnapshot) {
-    // An active work_draft branch's own draft; a closed one has no view to register in.
+    // An active work_draft draft's parent branch; a closed draft has no view to register in.
     if (snapshot.kind !== "work_draft" || snapshot.status !== "active") return null;
-    const [draft] = await input.branches.byIds([snapshot.branchId]);
-    return draft?.status === "active" ? draft : null;
+    const [branch] = await input.branches.byIds([snapshot.branchId]);
+    return branch?.status === "active" ? branch : null;
   }
 
   async function registerDraftAheads(draftId: string): Promise<void> {
@@ -88,9 +88,9 @@ export function createDraftAheadRegistration(input: {
       snapshot,
       refs: aheadRefsIn(doc),
     }));
-    const draft = await branchOfDraft(snapshot);
-    if (!draft) return;
-    for (const failure of await register(draft, refs)) {
+    const branch = await branchOfDraft(snapshot);
+    if (!branch) return;
+    for (const failure of await register(branch, refs)) {
       input.diagnostics?.registrationFailed({ draftId, cause: failure });
     }
   }
@@ -103,7 +103,7 @@ export function createDraftAheadRegistration(input: {
     entry.debounce = undefined;
     entry.max = undefined;
     if (entry.running) {
-      // An update admitted while one runs reads the branch again once it finishes.
+      // An update admitted while one runs reads the draft again once it finishes.
       entry.again = true;
       return;
     }

@@ -1,4 +1,4 @@
-/** Debounced parent-to-child branch pulls for shadow-mode branch peers. */
+/** Debounced parent-to-child draft pulls for shadow-mode draft peers. */
 
 import {
   type DocumentCoordinator,
@@ -40,8 +40,8 @@ export type DraftPullService = {
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
   /**
-   * Live merged into one work draft, answered for that branch: the projection job's way to
-   * establish a legacy branch's baseline (design §3.3). Deleted with the null-baseline arm.
+   * Live merged into one work draft, answered for that draft: the projection job's way to
+   * establish a legacy draft's baseline (design §3.3). Deleted with the null-baseline arm.
    */
   pullWorkDraft(input: { documentId: DocumentId; draftId: string }): Promise<PullOutcome>;
   pullThreadPeer(input: {
@@ -59,8 +59,8 @@ export type DraftPullService = {
 };
 
 /**
- * A thread-peer pull whose branch work lost to a Discard (stale, CAS-lost, closed or missing
- * branch, or an upstream re-forked after its read), carrying the peer and upstream it had
+ * A thread-peer pull whose draft operations lost to a Discard (stale, CAS-lost, closed or missing
+ * draft, or an upstream re-forked after its read), carrying the peer and upstream it had
  * captured so a caller can say which one went. Any other failure of the pull is not wrapped.
  */
 export class ThreadPeerPullLost extends Error {
@@ -126,13 +126,13 @@ export function createDraftPullService(input: {
   }
 
   /**
-   * Whether a pending settlement on the document fenced any branch's pull (the one outcome
+   * Whether a pending settlement on the document fenced any draft's pull (the one outcome
    * that re-arms, D20); `blocked` and `closed` drafts are done until something
    * new arrives.
    */
   async function pullLive(documentId: DocumentId): Promise<{ fenced: boolean }> {
     // Most documents have no Work draft; skip the snapshot (a room open and
-    // release) for them. Re-list before pulling: a branch can close in
+    // release) for them. Re-list before pulling: a draft can close in
     // between, and one opened since waits for the next pull.
     if ((await input.drafts.listActiveWorkDraftIds(documentId)).length === 0)
       return { fenced: false };
@@ -142,7 +142,7 @@ export function createDraftPullService(input: {
     const liveDoc = await liveSnapshot(documentId);
     let fenced = false;
     try {
-      // One branch at a time, each attempt its own root transaction (decision D13). A pull
+      // One draft at a time, each attempt its own root transaction (decision D13). A pull
       // folds the frames that commit meanwhile; nothing waits on it.
       for (const draftId of await input.drafts.listActiveWorkDraftIds(documentId)) {
         const outcome = await input.draftCoordinator.pullFromDoc({ draftId, upstream: liveDoc });
@@ -183,7 +183,7 @@ export function createDraftPullService(input: {
           // its debounce, one capture and merge per period, until the settlement completes or
           // is withdrawn and the next run commits. Only `fenced` (a pending settlement)
           // re-arms: a terminally `blocked` one never lifts by itself (D22), and a closed
-          // branch leaves the active list, so neither keeps the timer alive.
+          // draft leaves the active list, so neither keeps the timer alive.
           if (fenced) armDebounce(documentId, entry);
         })
         .finally(() =>
@@ -280,7 +280,7 @@ export function createDraftPullService(input: {
           );
           const upstreamDraftId = peer.upstreamDraftId;
           if (!upstreamDraftId)
-            throw new Error(`Thread peer ${peer.draftId} has no upstream Work draft branch`);
+            throw new Error(`Thread peer ${peer.draftId} has no upstream Work draft`);
           // The upstream is read at its epoch, and the peer's commit holds that epoch: a
           // per-change Discard that re-forked the upstream since the read wins, and the stale
           // capture is abandoned, never merged back. The pull's attempts are root

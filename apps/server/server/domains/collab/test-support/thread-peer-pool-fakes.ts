@@ -1,4 +1,4 @@
-/** In-memory cores and branch history for thread-peer pool unit tests. */
+/** In-memory cores and draft history for thread-peer pool unit tests. */
 import type {
   AgentEditCore,
   ResponseCommitSuccessResult,
@@ -80,7 +80,7 @@ function createFakeAgentEditCore(
   return Object.assign(fake, { asCore: () => fake as unknown as AgentEditCore });
 }
 
-export const FAKE_BRANCH_ID = "draft-1" as BranchId;
+export const FAKE_BRANCH_ID = "branch-1" as BranchId;
 export const FAKE_UPSTREAM_ID = "upstream-1";
 
 /** A pull that names a fresh peer each call, as a reply's replacement peer would be. */
@@ -105,7 +105,7 @@ export function createFakeThreadPeerCores() {
   };
 }
 
-/** The Work draft the pool pins a drafted write to. */
+/** The Work branch the pool pins a drafted write to. */
 export function createFakeBranches() {
   return {
     viewForWork: vi.fn(async (_workId: unknown) => ({
@@ -128,7 +128,7 @@ type FakeDraft = {
 };
 
 /**
- * The branch rows a reply's pins name. Every `peer-N` the fake pull hands out is an active
+ * The draft rows a reply's pins name. Every `peer-N` the fake pull hands out is an active
  * peer of `thread` on `document` under the one fake upstream, until a test closes or deletes it.
  */
 export function createFakeDraftTable(input: { documentId: string; threadId: string }) {

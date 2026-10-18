@@ -52,7 +52,7 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     }
   });
 
-  it("refuses a deleted Work's draft routes without provisioning, then restores its pending item", async () => {
+  it("refuses a deleted Work's branch routes without provisioning, then restores its pending item", async () => {
     const { s, runtime } = await start();
     const work = await s.work("ascension", "draft");
     const documentId = await s.writer.createDocument("chapter.md", "Live words.");
@@ -62,7 +62,7 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     const listed = await handleWorkBranchListRequest(deps, input);
     expect(listed.items).toHaveLength(1);
     const item = listed.items[0];
-    if (!item?.draftGeneration) throw new Error("Expected a pending draft branch");
+    if (!item?.draftGeneration) throw new Error("Expected a pending draft");
     const documentInput = { ...input, documentId, itemKey: item.itemKey };
     const body = { branchId: item.branchId, itemKey: item.itemKey, commandId: randomUUID() };
     await deleteWorkTransition(

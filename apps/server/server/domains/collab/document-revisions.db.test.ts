@@ -313,7 +313,7 @@ describe("document revisions (postgres and collab)", () => {
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
-    // The thread's grants now name Work B, which has no draft yet: the read is live (S1).
+    // The thread's grants now name Work B, which has no branch yet: the read is live (S1).
     const rebound = { kind: "draft", workId: workB, workSlug: "other-draft" } as const;
     expect((await f.read(undefined, rebound)).revision).toBe(await f.current());
   });
@@ -372,9 +372,13 @@ describe("document revisions (postgres and collab)", () => {
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
-      const draft = await f.branches.activeForWork(WORK_ID);
-      if (!draft) throw new Error("the harness seeds the Work's draft");
-      await f.draftStore.ensureDocumentDraft({ documentId: ALPHA_ID, branchId: draft.id, liveDoc });
+      const branch = await f.branches.activeForWork(WORK_ID);
+      if (!branch) throw new Error("the harness seeds the Work's branch");
+      await f.draftStore.ensureDocumentDraft({
+        documentId: ALPHA_ID,
+        branchId: branch.id,
+        liveDoc,
+      });
     });
     const before = await f.current();
     const captured = deferred();
@@ -454,12 +458,12 @@ describe("document revisions (postgres and collab)", () => {
       runResponseTransaction(
         (operation) => runInDrizzleTransaction(db, operation),
         async () => {
-          const draft = await f.branches.activeForWork(WORK_ID);
-          if (!draft) throw new Error("the harness seeds the Work's draft");
+          const branch = await f.branches.activeForWork(WORK_ID);
+          if (!branch) throw new Error("the harness seeds the Work's branch");
           await pulls.pullThreadPeer({
             documentId: ALPHA_ID,
             threadId: THREAD_ID,
-            branchId: draft.id,
+            branchId: branch.id,
           });
           throw new Error("response aborted");
         },

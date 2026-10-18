@@ -107,7 +107,7 @@ export function selectReviewCut(
   command: ReviewSelectionCommand,
 ) {
   // Selection must describe the exact basis the existing durability protocol
-  // will admit, not a newer independently captured branch or row-status view.
+  // will admit, not a newer independently captured draft or row-status view.
   if (
     cut.documentDraft.generation !== snapshot.generation ||
     draftJournalRevision(reviewRows(cut)) !== draftJournalRevision(rows)

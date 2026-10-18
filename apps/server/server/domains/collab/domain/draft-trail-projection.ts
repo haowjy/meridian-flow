@@ -1,4 +1,4 @@
-/** Projects branch journal ownership and push effects into durable change-trail records. */
+/** Projects draft journal ownership and push effects into durable change-trail records. */
 import {
   type AgentEditModel,
   toDocHandle,

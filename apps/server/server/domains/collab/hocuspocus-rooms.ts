@@ -2,7 +2,7 @@
 import type { Document, Hocuspocus } from "@hocuspocus/server";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 
-/** Closes the branch's rooms; with `olderThan`, only those of an earlier generation. */
+/** Closes the draft's rooms; with `olderThan`, only those of an earlier generation. */
 export function closeDraftRooms(
   hocuspocus: Hocuspocus | null,
   draftId: string,
@@ -17,7 +17,7 @@ export function closeDraftRooms(
   }
 }
 
-/** Closes one room on a generation its branch has left, and unloads it. */
+/** Closes one room on a generation its draft has left, and unloads it. */
 export function closeRoom(hocuspocus: Hocuspocus, document: Document): void {
   if (hocuspocus.documents.get(document.name) !== document) return;
   for (const connection of document.getConnections()) {

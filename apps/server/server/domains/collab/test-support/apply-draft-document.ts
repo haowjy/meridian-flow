@@ -1,5 +1,5 @@
 /**
- * Item Apply as its route calls it: look the document's item up in the Work's active draft,
+ * Item Apply as its route calls it: look the document's item up in the Work's active branch,
  * then apply that item under a fresh command. For suites that drive the collab facade
  * without the HTTP route core; answers the command's stored result.
  */

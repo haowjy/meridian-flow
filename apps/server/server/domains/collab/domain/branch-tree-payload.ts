@@ -23,7 +23,7 @@ export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftI
 const PayloadItemSchema = z.object({
   itemKey: z.string(),
   documentId: z.string(),
-  /** The text member's draft; null for a branchless item (a created image). */
+  /** The text member's draft; null for an item without a text draft (a created image). */
   draftId: z.string().nullable(),
   origin: z.enum(["created", "edited"]),
   /**

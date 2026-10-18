@@ -69,8 +69,8 @@ export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiag
 }
 
 /**
- * The branch coordinator's events: a background fold that failed, a room found behind its
- * branch and reconciled, and an update that arrived before its prefix.
+ * The draft coordinator's events: a background fold that failed, a room found behind its
+ * draft and reconciled, and an update that arrived before its prefix.
  */
 export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
   return {
@@ -110,7 +110,7 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
 }
 
 /**
- * An append's sequence point: how long its `UPDATE` waited for the branch row and how long it
+ * An append's sequence point: how long its `UPDATE` waited for the draft row and how long it
  * held the row to `COMMIT`, per keystroke, so at debug level.
  */
 export function createAppendCommittedEvent(
@@ -126,7 +126,7 @@ export function createAppendCommittedEvent(
     });
 }
 
-/** P2's commit bound: how long a committed rewrite held its branch row, and the tail it read. */
+/** P2's commit bound: how long a committed rewrite held its draft row, and the tail it read. */
 export function createRewriteCommittedEvent(
   eventSink: EventSink,
 ): (detail: RewriteCommitted) => void {

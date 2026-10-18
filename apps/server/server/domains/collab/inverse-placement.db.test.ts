@@ -202,7 +202,7 @@ it.each([
             eq(schema.documentDrafts.status, "active"),
           ),
         );
-      if (!row) throw new Error("missing holding draft branch");
+      if (!row) throw new Error("missing holding draft");
       return row;
     };
     let marked: Awaited<ReturnType<typeof holdingDraft>> | undefined;

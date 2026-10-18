@@ -20,7 +20,7 @@ export function createDocumentCreationAggregate(input: {
   ensureDocument(documentId: string): Promise<void>;
   /**
    * Arrival hook (contract §9.3), inside `atomic` once identity and content exist. The
-   * command already holds the document's namespace key. A draft's create is no arrival:
+   * command already holds the document's namespace key. A branch's create is no arrival:
    * it never comes through here.
    */
   onArrival?(documentId: DocumentId): Promise<unknown>;

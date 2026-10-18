@@ -12,7 +12,7 @@ export type ReviewAddress = {
   itemKey: string;
 };
 
-/** The branch row with its content as the cut's snapshot read it through the read seam. */
+/** The draft row with its content as the cut's snapshot read it through the read seam. */
 export type ReviewCutDraft = Readonly<DraftSnapshot> & {
   /** Detached, privately owned bytes of checkpoint ⊕ tail at `revision`. */
   readonly state: Uint8Array;
@@ -22,7 +22,7 @@ export type ReviewCut = Readonly<{
   documentDraft: ReviewCutDraft;
   history: readonly Readonly<DraftJournalRow>[];
   live: Readonly<{ state: Uint8Array; revision: string }>;
-  /** The tree-derived item, never null: an unlisted active branch has one (M1). */
+  /** The tree-derived item, never null: an unlisted active draft has one (M1). */
   item: DraftReviewItem;
   links: Readonly<{ live: HolderLinkScope; draft: HolderLinkScope }>;
   threadTitles: ReadonlyMap<string, string>;

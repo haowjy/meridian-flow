@@ -16,20 +16,20 @@ const COLLAB_HOOK_POINTS = [
   "draft.beforeAccess",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
-  /** A created document's retraction read its drafts and holds no branch row yet. */
+  /** A created document's retraction read its drafts and holds no draft row yet. */
   "retract.beforeLocks",
-  /** A retraction holds its branch rows and found no contribution; nothing is deleted yet. */
+  /** A retraction holds its draft rows and found no contribution; nothing is deleted yet. */
   "retract.afterRecheck",
   /** An inverse attempt planned on its capture and has not entered its commit scope. */
   "inverse.beforeCommitScope",
   /**
-   * An append inserted its rows and receipts and still holds the branch row; nothing has
+   * An append inserted its rows and receipts and still holds the draft row; nothing has
    * committed. A crash here leaves neither.
    */
   "draft.append.beforeCommit",
   /** A writer frame's append committed; the frame is not yet acknowledged. */
   "draft.append.afterCommit",
-  /** A branch rewrite wrote its checkpoint; the transaction has not committed. */
+  /** A draft rewrite wrote its checkpoint; the transaction has not committed. */
   "draft.rewrite.beforeCommit",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];

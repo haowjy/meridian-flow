@@ -1,7 +1,7 @@
 /**
- * The application branch store over Drizzle: branch creation and resolution, and the
+ * The application draft store over Drizzle: draft creation and resolution, and the
  * application half of each write (Work admission, the pending projection, the projection's
- * effect write and edit receipts) around the storage primitives in `drizzle-branch-storage`.
+ * effect write and edit receipts) around the storage primitives in `drizzle-draft-storage`.
  */
 
 import { randomUUID } from "node:crypto";
@@ -80,7 +80,7 @@ export type RewriteCommitted = {
 };
 
 /**
- * An append committed: how long its `UPDATE` waited for the branch row (`waitMs`), how long it
+ * An append committed: how long its `UPDATE` waited for the draft row (`waitMs`), how long it
  * then held the row to `COMMIT` (`holdMs`), the rows it wrote and the rows that landed between
  * its base and its lock.
  */
@@ -105,7 +105,7 @@ export function createDrizzleDraftStore(
     };
     /** The one owner of Work-first order and the Works' projection (decision D17). */
     workProjection: WorkProjectionMutation;
-    /** A peer ensure relies on its draft staying active; a thread finds its Work's draft. */
+    /** A peer ensure relies on its branch staying active; a thread finds its Work's branch. */
     branches: Pick<Branches, "shareActive" | "activeForWork">;
     /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
     onRewriteCommitted?: (detail: RewriteCommitted) => void;
@@ -175,17 +175,17 @@ export function createDrizzleDraftStore(
     const existing = await activeDocumentDraft(input.documentId, input.branchId);
     if (existing) return existing;
     const seed = replicatedSnapshotFrom(input.liveDoc);
-    // Creating a branch is a write the Work's lifecycle orders (decision D12): the draft's
-    // Work is locked first, so an Archive either fences the new branch or committed before it.
+    // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
+    // Work is locked first, so an Archive either fences the new draft or committed before it.
     // A fresh fork has no effect against its seed, its baseline (`live_cut`), and the judgement
     // is fresh at revision 0: the baseline is frozen here and replaced only under a bump.
     return workProjection.mutate({ branches: [input.branchId] }, async () => {
-      // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
+      // The insert's own transaction holds D active (§2.1): a closed branch gains no draft.
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       await assertDraftableInBranch(input.documentId, input.branchId);
-      // A draft create's ensure and a thread peer's racing root ensure get one branch.
+      // A document create's ensure and a thread peer's racing root ensure get one draft.
       const [inserted] = await currentDrizzleDb(db)
         .insert(documentDrafts)
         .values({
@@ -207,7 +207,7 @@ export function createDrizzleDraftStore(
       const documentDraft = await activeDocumentDraft(input.documentId, input.branchId);
       if (!documentDraft) {
         throw new Error(
-          `Branch branch for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
+          `Work draft for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
         );
       }
       return documentDraft;
@@ -215,7 +215,7 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * §12.5, O-11: a contribution is any journal row of the branch's current generation that
+   * §12.5, O-11: a contribution is any journal row of the draft's current generation that
    * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
   async function retractCreatedDocumentDraft(input: {
@@ -259,7 +259,7 @@ export function createDrizzleDraftStore(
             );
     const drafts = [...peers, ...drafted];
     await collabHook("retract.beforeLocks");
-    // A frame takes no lock but its branch row: holding the rows (id order, after the
+    // A frame takes no lock but its draft row: holding the rows (id order, after the
     // caller's Work and namespace order) makes a contribution that committed first visible
     // to the recheck below, and makes one that comes later find its row deleted.
     if (drafts.length > 0)
@@ -311,7 +311,7 @@ export function createDrizzleDraftStore(
     documentId: DocumentId;
     branchId: BranchId;
   }): Promise<void> {
-    if (!live) throw new Error("A draft create's branch needs the collab live journal");
+    if (!live) throw new Error("A created document's draft needs the collab live journal");
     await live.lifecycle.ensureDocument(input.documentId);
     const snapshot = await live.journal.read(input.documentId);
     const liveDoc = createCollabYDoc({ gc: false });
@@ -325,10 +325,10 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * Callers route scratch and uploads live (D9), and pick a draft that may hold the
+   * Callers route scratch and uploads live (D9), and pick a branch that may hold the
    * document (`branchMayHold`); reaching here otherwise is a routing or authorization bug.
-   * Every draft branch is created here, so no entry point can pair a document with a
-   * draft that may not hold it.
+   * Every document draft is created here, so no entry point can pair a document with a
+   * branch that may not hold it.
    */
   async function assertDraftableInBranch(
     documentId: DocumentId,
@@ -346,9 +346,9 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * The thread's peer in the given draft (contract §2.5): never ensures a draft. The draft
+   * The thread's peer in the given branch (contract §2.5): never ensures a branch. The branch
    * is held `FOR SHARE` while the peer is made, so a close either waits for this to commit or
-   * has already closed it (then the peer is stale). Only creating the draft's branch locks
+   * has already closed it (then the peer is stale). Only creating the branch's draft locks
    * the Work. Returns the peer's content as it stands.
    */
   async function ensureThreadPeerDraft(input: {
@@ -402,14 +402,14 @@ export function createDrizzleDraftStore(
           schemaVersion: packCollabSchemaVersion(workDraft.schemaVersion),
         })
         .returning({ id: documentDrafts.id });
-      if (!row) throw new Error("Failed to create document branch");
+      if (!row) throw new Error("Failed to create document draft");
       const documentDraft = await getDraftSnapshot(row.id);
       return { documentDraft, state: seed.state };
     };
     // Each step is one root transaction under the thread lock. Alone, the root takes the
     // thread lock itself: one connection, never a lock-holding connection waiting for a
     // second one from a drained pool. Inside a caller's transaction, that transaction holds
-    // the thread lock (keeping authority stable) and the branch writes commit independently;
+    // the thread lock (keeping authority stable) and the draft writes commit independently;
     // reacquiring the thread row in the root would self-deadlock.
     const underThread = <T>(step: () => Promise<T>): Promise<T> =>
       isInDrizzleTransaction()
@@ -424,7 +424,7 @@ export function createDrizzleDraftStore(
     const current = await underThread(currentPeer);
     if (current) return current;
     // The Work draft first, in its own Work-first transaction when it creates one (decision
-    // D12), so no step holds the draft row or a branch row before the Work; the peer follows.
+    // D12), so no step holds the branch row or a draft row before the Work; the peer follows.
     await runInRootDrizzleTransaction(db, () =>
       ensureDocumentDraft({
         documentId: input.documentId,
@@ -511,7 +511,7 @@ export function createDrizzleDraftStore(
    * Shape A in its own savepoint (design §2.6): inside an ambient transaction a contained,
    * prefix-missing or refused outcome rolls back the bump and everything registered inside it,
    * the caller's earlier writes untouched; the outcome is mapped only after that unwound. Takes
-   * only the branch row: no Work lock, no count, no effect.
+   * only the draft row: no Work lock, no count, no effect.
    */
   async function appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const startedAt = performance.now();
@@ -565,9 +565,9 @@ export function createDrizzleDraftStore(
 
   /**
    * The projection's write (design §3.2) in a root transaction of its own: `has_effect` and its
-   * watermark at exactly `revision`, inside the Work boundary's `mutate` when the branch has a
+   * watermark at exactly `revision`, inside the Work boundary's `mutate` when the draft has a
    * Work (Work first, then touched). `lock_timeout` bounds each lock acquisition (the Work, the
-   * branch row an append holds, the Works-notice participants at commit), not the transaction;
+   * draft row an append holds, the Works-notice participants at commit), not the transaction;
    * a miss aborts with `55P03`, mapped here, outside the transaction, to `contended`.
    */
   async function writeEffect(input: {
@@ -604,7 +604,7 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * One keyset page of the stale set: active work branches whose watermark is behind their
+   * One keyset page of the stale set: active work drafts whose watermark is behind their
    * revision, newest first with `id` as the tie-breaker, after `after` when given.
    */
   async function staleEffectDrafts(input: { after?: StaleEffectCursor; limit: number }) {
@@ -631,9 +631,9 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * Shape B: one transaction, the branch row locked only for the fold and its write. A
+   * Shape B: one transaction, the draft row locked only for the fold and its write. A
    * checkpoint (a thread peer's catch-up) carries the Work-is-active predicate; a pull,
-   * reset or compaction carries none, so an archived Work's branches keep rebasing on live.
+   * reset or compaction carries none, so an archived Work's drafts keep rebasing on live.
    */
   async function commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     const { operation } = input;
@@ -748,8 +748,8 @@ export function createDrizzleDraftStore(
         if (cause instanceof NoPrimaryWorkError) throw new DraftNotFoundError(documentId, threadId);
         throw cause;
       }
-      const draft = await branches.activeForWork(workId);
-      const row = draft ? await activeDocumentDraft(documentId, draft.id) : null;
+      const branch = await branches.activeForWork(workId);
+      const row = branch ? await activeDocumentDraft(documentId, branch.id) : null;
       if (!row) throw new DraftNotFoundError(documentId, threadId);
       return resolved(row);
     },

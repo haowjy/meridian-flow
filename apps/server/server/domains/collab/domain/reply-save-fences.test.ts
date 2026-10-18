@@ -69,7 +69,7 @@ function scenario() {
 }
 
 describe("reply save fence", () => {
-  it("admits a pin whose draft, upstream and peer all stand", async () => {
+  it("admits a pin whose branch, upstream and peer all stand", async () => {
     const { fences, record, threadCore } = scenario();
     await expect(fences.confirm(record)).resolves.toEqual([]);
     expect(threadCore.refuseStaged).not.toHaveBeenCalled();
@@ -87,7 +87,7 @@ describe("reply save fence", () => {
 
   it.each([
     [
-      "draft closed",
+      "branch closed",
       (s: ReturnType<typeof scenario>) => s.branches.shareActive.mockResolvedValue(null as never),
       "discarded_draft",
     ],
@@ -97,7 +97,7 @@ describe("reply save fence", () => {
       "discarded_document",
     ],
     ["peer closed", (s: ReturnType<typeof scenario>) => s.drafts.close("peer-1"), "discarded_edit"],
-  ] as const)("refuses with the reason branch state names: %s", async (_name, arrange, reason) => {
+  ] as const)("refuses with the reason the branch, upstream draft or peer draft state names: %s", async (_name, arrange, reason) => {
     const s = scenario();
     arrange(s);
 
@@ -123,7 +123,7 @@ describe("reply save fence", () => {
     ]);
   });
 
-  it("the draft's closure outranks a closed upstream and a closed peer", async () => {
+  it("the branch's closure outranks a closed upstream and a closed peer", async () => {
     const s = scenario();
     s.branches.shareActive.mockResolvedValue(null as never);
     s.drafts.close(FAKE_UPSTREAM_ID);
@@ -133,11 +133,11 @@ describe("reply save fence", () => {
     ]);
   });
 
-  it("reports an invariant break and refuses as integration for a peer of another draft", async () => {
+  it("reports an invariant break and refuses as integration for a peer in another branch", async () => {
     const s = scenario();
     s.drafts.set("peer-1", {
       ...(await s.drafts.getDraft("peer-1"))!,
-      branchId: "another-draft" as BranchId,
+      branchId: "another-branch" as BranchId,
     } as never);
 
     await expect(s.fences.confirm(s.record)).resolves.toEqual([

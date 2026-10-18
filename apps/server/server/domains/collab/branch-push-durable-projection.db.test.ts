@@ -22,7 +22,7 @@ describe("branch-push durable projection (postgres)", () => {
   beforeEach(() => resetSettlementFixture(db));
   afterAll(() => closeDatabase(db));
 
-  it("replays the canonical whole branch when an active edit depends on a discarded row", async () => {
+  it("replays the canonical whole draft when an active edit depends on a discarded row", async () => {
     const warm = createHarness(db);
     const draftId = await warm.seedDiscardedDependencyPush();
     await expect(warm.push(draftId)).resolves.toMatchObject({ status: "pushed" });

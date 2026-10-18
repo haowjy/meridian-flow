@@ -1,6 +1,6 @@
 /**
  * Apply's tree work (contract §11.2, ledger E-1, E-2, E-4, E-8): a create the writer also
- * made live merges and a live rename stands, a second draft sees only its part of a
+ * made live merges and a live rename stands, a second branch sees only its part of a
  * shared create, a create applies at its path after a live folder rename absorbed its
  * hidden folder, and a document deleted live is restored with its folder unless another
  * document took its path. Driven through the review route cores. The device that deleted the
@@ -71,7 +71,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
       .toContain("Read it, then edit it");
 
     // The writer renames it live: the document's place is its row, so the rename stands
-    // for the draft's view, its links and Apply (S6).
+    // for the branch's view, its links and Apply (S6).
     expect
       .soft(await s.writer.move("characters/kael", "characters/kael-fix"))
       .toMatchObject({ ok: true });
@@ -112,7 +112,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await live.idAt("notes/original")).toBeNull();
   });
 
-  it("shows a second draft only its own part after the first applies their shared create (E-2)", async () => {
+  it("shows a second branch only its own part after the first applies their shared create (E-2)", async () => {
     const { runtime, s } = await start();
     const [ascension, beacon] = [
       await s.work("Ascension", "draft"),
@@ -142,7 +142,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(preview.item.isNew, "the preview's item").toBe(false);
   });
 
-  it("applies at the right path after a live folder rename absorbed the draft's hidden folder, and a recovered reveal replays from the catalog (E-4)", async () => {
+  it("applies at the right path after a live folder rename absorbed the branch's hidden folder, and a recovered reveal replays from the catalog (E-4)", async () => {
     const { runtime, s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const notes = await s.model(ascension).create("ideas/kael/notes", "Notes.");
@@ -207,7 +207,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     const newMap = await s.writer.createDocument("atlas/map", "A new map.");
 
     const items = await s.items(ascension);
-    expect.soft(itemFor(items, harbor), "deleted live, still the draft's").toMatchObject({
+    expect.soft(itemFor(items, harbor), "deleted live, still the branch's").toMatchObject({
       contextLocation: { scheme: "manuscript", path: "/lore/harbor" },
       conflict: { code: "deleted_live" },
     });

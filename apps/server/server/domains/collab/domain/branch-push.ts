@@ -18,7 +18,7 @@ import {
   assertNoPendingIntegration,
   assertRowsIntegrated,
   stablePushIdempotencyKey,
-  wholeBranchPushUpdate,
+  wholeDraftPushUpdate,
 } from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { type ApplyOutcome, createBranchPushTransition } from "./branch-push-transition.js";
@@ -45,7 +45,7 @@ type BatchPipelineResult =
       pushes: readonly PushLineageRow[];
       /** Candidates an Apply step kept out of live, and why. */
       held: ReadonlyMap<DocumentId, ApplyRefusal>;
-      /** Every held item, branchless ones included. */
+      /** Every held item, items without text drafts included. */
       heldItems: readonly ApplyItemHold[];
       /** What the steps did per applied item, decided in completion. */
       outcomes: readonly ApplyItemOutcome[];
@@ -53,7 +53,7 @@ type BatchPipelineResult =
     };
 
 export function createBranchPushService(input: BranchPushServiceInput): BranchPushService {
-  const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
+  const computePushUpdate = input.pushUpdateComputer ?? wholeDraftPushUpdate;
   const transition = createBranchPushTransition({
     commitStore: input.commitStore,
     settlementStore: input.settlementStore,
@@ -153,7 +153,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     const phases = await Promise.all(
       batch.candidates.map((candidate) => {
         const documentDraft = drafts.get(candidate.draftId);
-        if (!documentDraft) throw new Error(`Candidate branch ${candidate.draftId} was not locked`);
+        if (!documentDraft) throw new Error(`Candidate draft ${candidate.draftId} was not locked`);
         return computeCandidate(candidate, documentDraft);
       }),
     );
@@ -234,10 +234,10 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   }
 
   /**
-   * Revalidates the branches being pushed and runs the batch, inside the documents' link scope,
-   * as bounded attempts: an attempt whose branch moved before or at staging (a writer typing)
-   * rolls its staging back and runs again from a fresh read. A branchless Apply
-   * (payloads only) opens no document scope and stages once.
+   * Revalidates the drafts being pushed and runs the batch, inside the documents' link scope,
+   * as bounded attempts: an attempt whose draft moved before or at staging (a writer typing)
+   * rolls its staging back and runs again from a fresh read. An Apply
+   * with no text drafts (payloads only) opens no document scope and stages once.
    */
   async function withActiveWorkDrafts<T>(
     draftIds: readonly string[],
@@ -253,7 +253,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         ),
       );
     const documentIds = (await readDrafts()).map((documentDraft) => documentDraft.documentId);
-    // The tree is independent of branch state: the scope opens before the first attempt.
+    // The tree is independent of draft state: the scope opens before the first attempt.
     return input.links.within({ documentId: documentIds[0] as string, documentIds }, () =>
       runBoundedAttempts({
         bound: STAGING_ATTEMPTS,
@@ -284,8 +284,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   }
 
   /**
-   * The branch's content at the revision the attempt read. A newer revision is a moved
-   * branch: the attempt recaptures, as a failed staging compare would make it.
+   * The draft's content at the revision the attempt read. A newer revision is a moved
+   * draft: the attempt recaptures, as a failed staging compare would make it.
    */
   async function materializeDraft(documentDraft: DraftSnapshot): Promise<Y.Doc> {
     const read = await input.draftStore.readDraftAt(documentDraft.draftId);
@@ -294,7 +294,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     return materializeDraftRead(read);
   }
 
-  /** One item per pushed candidate, keyed by its branch. */
+  /** One item per pushed candidate, keyed by its draft. */
   function mapCommitted(
     result: Extract<BatchPipelineResult, { kind: "committed" }>,
   ): ReadonlyMap<string, PushToLiveResult> {
@@ -342,7 +342,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   type PushDraftsInput = Parameters<BranchPushService["pushDraftsToLive"]>[0];
   type PushDraftsResult = Awaited<ReturnType<BranchPushService["pushDraftsToLive"]>>;
 
-  /** The per-branch answer in request order, from a batch's result and the drafts it left out. */
+  /** The per-draft answer in request order, from a batch's result and the drafts it left out. */
   function itemsOf(
     order: readonly string[],
     unbatched: ReadonlyMap<string, PushToLiveResult>,
@@ -414,14 +414,14 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       attempt,
       pushInput.signal,
     );
-    // The retry rereads every branch; the pushed one then reports already_pushed.
+    // The retry rereads every draft; the pushed one then reports already_pushed.
     if (result.kind === "conflict" && !pushInput.selected) {
       throw new BranchPushCommitConflictError(result.push.draftId ?? "");
     }
     return itemsOf(order, unbatched, result);
   }
 
-  /** Applies several branches as one batch. */
+  /** Applies several drafts as one batch. */
   const pushDraftsToLive: BranchPushService["pushDraftsToLive"] = (pushInput) =>
     withActiveWorkDrafts(
       pushInput.draftIds,
@@ -488,5 +488,5 @@ function assertActiveWorkDraft(
   return documentDraft;
 }
 
-/** A writer typing moves the branch; this many stagings each finding it moved answer stale. */
+/** A writer typing moves the draft; this many stagings each finding it moved answer stale. */
 const STAGING_ATTEMPTS = 4;

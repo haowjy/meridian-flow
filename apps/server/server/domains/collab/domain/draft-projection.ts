@@ -1,9 +1,9 @@
 /**
  * The projection job (design §3.2): a work draft's `has_effect`, its watermark and its Work's
  * touch, derived from the committed replica after an append commits, never on the keystroke.
- * Marked dirty by every committed append, coalesced per branch, run at most `maxRuns` at a time,
+ * Marked dirty by every committed append, coalesced per draft, run at most `maxRuns` at a time,
  * retried on backoff, and repaired by a finite sweep over the persisted stale set. Process-local:
- * two processes judging one branch at one revision write the same value twice.
+ * two processes judging one draft at one revision write the same value twice.
  *
  * The stored value converges within the max wait once typing pauses, and eventually while typing
  * (D34): a write guarded by the revision it judged misses whenever a key commits during the run,
@@ -31,7 +31,7 @@ const MAX_RUNS = 4;
 const SWEEP_PAGE = 50;
 
 export type DraftProjection = {
-  /** A committed append made the branch's derived state stale. */
+  /** A committed append made the draft's derived state stale. */
   markDirty(draftId: string): void;
   /** One finite pass over the stale set; returns how many drafts it newly tracked. */
   sweep(): Promise<number>;
@@ -46,11 +46,11 @@ export type DraftProjection = {
 };
 
 export type DraftProjectionDiagnostics = {
-  /** A projection run failed; the branch is retried on its backoff and never dropped. */
+  /** A projection run failed; the draft is retried on its backoff and never dropped. */
   projectionFailed(input: { draftId: string; cause: unknown }): void;
   /**
-   * A legacy branch's baseline cannot be established: its document has a terminally blocked
-   * settlement. Once per process; the branch waits for its next append or a restart.
+   * A legacy draft's baseline cannot be established: its document has a terminally blocked
+   * settlement. Once per process; the draft waits for its next append or a restart.
    */
   projectionBaselineBlocked(input: { draftId: string; documentId: string }): void;
 };
@@ -193,7 +193,7 @@ export function createDraftProjection(input: {
     arm(draftId, entry, Math.min(BACKOFF_MS * 2 ** (entry.failures - 1), MAX_BACKOFF_MS));
   }
 
-  /** One judgement of the branch at its committed revision, and its write. */
+  /** One judgement of the draft at its committed revision, and its write. */
   async function judge(draftId: string): Promise<Outcome> {
     let judged:
       | { kind: "done" }
@@ -207,7 +207,7 @@ export function createDraftProjection(input: {
         };
     try {
       judged = await input.coordinator.readDraft(draftId, async (doc, snapshot) => {
-        // A thread peer carries no effect; a closed branch is not a review member.
+        // A thread peer carries no effect; a closed draft is not a review member.
         if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
           return { kind: "done" as const };
         const draft = effectFingerprint(doc);
@@ -233,7 +233,7 @@ export function createDraftProjection(input: {
     }
     if (judged.kind === "done") return "done";
     if (judged.kind === "legacy") {
-      // A legacy row's baseline is live's current state, established by the branch-scoped
+      // A legacy row's baseline is live's current state, established by the draft-scoped
       // exact pull, which writes `live_cut`, `has_effect` and the watermark itself.
       const pulled = await input.pulls.pullWorkDraft({ documentId: judged.documentId, draftId });
       if (pulled === "pulled" || pulled === "upstreamMoved") return "done";
@@ -307,7 +307,7 @@ export function createDraftProjection(input: {
         if (!pending || disposed) return;
         await new Promise((done) => setTimeout(done, 2));
       }
-      throw new Error("The branch effect projection did not settle");
+      throw new Error("The draft effect projection did not settle");
     },
 
     dispose() {

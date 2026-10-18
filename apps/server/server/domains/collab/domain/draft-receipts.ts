@@ -1,5 +1,5 @@
 /**
- * An append's finalization under the branch row lock (design §2.2): every fact that depends on
+ * An append's finalization under the draft row lock (design §2.2): every fact that depends on
  * the committed prefix is decided here, against what is committed, and nowhere before the lock.
  * The store calls it with its post-lock read; it returns the rows to insert (their novel bytes)
  * and their receipts, or why nothing is written.
@@ -37,7 +37,7 @@ export type FinalizeAppendInput = {
 export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }> & {
   /** The committed prefix with every kept row applied. */
   doc: Y.Doc;
-  /** The checkpoint the base held is still the branch's: `prefixRows` are the rows between. */
+  /** The checkpoint the base held is still the draft's: `prefixRows` are the rows between. */
   prefixHeld: boolean;
   prefixRows: readonly DraftTailRow[];
   checkpointSeq: number;

@@ -1,7 +1,7 @@
 /**
- * Read-only repeatable-read review capture (contract §3.2): the branch, the live journal, the
+ * Read-only repeatable-read review capture (contract §3.2): the draft, the live journal, the
  * item as the identity module resolves it, and both link views, all from one snapshot. A
- * document the draft only edited and whose branch has no effect still has a cut (G+1).
+ * document the branch only edited and whose draft has no effect still has a cut (G+1).
  */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { Database } from "@meridian/database";

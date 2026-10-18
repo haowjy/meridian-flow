@@ -47,7 +47,7 @@ export type WorkBranchPendingStore = {
   /**
    * Distinct pending documents per Work, by the canonical draft → branch → Work mapping:
    * its active branch's drafts with reviewable rows and (`hasEffect` or `blocking`), plus
-   * that branch's change rows. The one membership predicate of `draft-review-items.ts`.
+   * that branch's change rows. The one membership predicate of `branch-review-items.ts`.
    */
   listBranchesChangingDocument(input: {
     projectId: ProjectId;

@@ -59,7 +59,7 @@ async function setup(
 }
 
 describe("per-change Apply (postgres)", () => {
-  it("whole Discard recovers only the addressed corrupt draft, including a rowless branch", async () => {
+  it("whole Discard recovers only the addressed corrupt draft, including a rowless draft", async () => {
     const { fixture, documentDraft, command, review } = await setup(
       "Alpha live.",
       "corrupt-recovery",
@@ -659,7 +659,7 @@ describe("per-change Apply (postgres)", () => {
     expect(after.operations).toEqual([]);
   });
 
-  it("selective and whole-draft Discard never revert a partially applied group on live", async () => {
+  it("selective and whole-branch Discard never revert a partially applied group on live", async () => {
     const { harness, fixture, documentDraft, command, review } = await setup(
       "Alpha base.\n\nBeta base.",
       "partial-discard-poc",
@@ -865,7 +865,7 @@ describe("ReviewCut metadata-only move (postgres)", () => {
   it.each([
     "apply",
     "discard",
-  ] as const)("%s recaptures a revision moved by a hold between its branch read and its cut", async (action) => {
+  ] as const)("%s recaptures a revision moved by a hold between its draft read and its cut", async (action) => {
     let bumpOnce = false;
     let bumpDraftId = "";
     const harness = createHarness(db, {
@@ -952,7 +952,7 @@ async function journalStatuses(draftId: string) {
 }
 
 /**
- * The branch's revision. A write that changes review membership (a row's status, a close) must
+ * The draft's revision. A write that changes review membership (a row's status, a close) must
  * move it, so an exact rewrite computed at the old revision misses.
  */
 async function draftRevision(draftId: string): Promise<number> {
@@ -960,7 +960,7 @@ async function draftRevision(draftId: string): Promise<number> {
     .select({ revision: schema.documentDrafts.revision })
     .from(schema.documentDrafts)
     .where(eq(schema.documentDrafts.id, draftId));
-  if (!row) throw new Error(`missing branch ${draftId}`);
+  if (!row) throw new Error(`missing draft ${draftId}`);
   return row.revision;
 }
 

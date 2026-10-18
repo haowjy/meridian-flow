@@ -1,4 +1,4 @@
-/** Draft-push (Apply and settlement) contracts shared across collab domain services and adapters. */
+/** Branch-push (Apply and settlement) contracts shared across collab domain services and adapters. */
 
 import type {
   AgentEditCodecFactory,
@@ -198,14 +198,14 @@ export type PreparedDiscardCommit = {
 export type PushCandidate = {
   draftId: string;
   documentId: DocumentId;
-  /** The reviewable rows the whole-branch state applies. */
+  /** The reviewable rows the whole-draft state applies. */
   rows: DraftJournalRow[];
-  /** A selected-rows candidate replays only its rows onto live instead of the whole branch. */
+  /** A selected-rows candidate replays only its rows onto live instead of the whole draft. */
   materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
-  /** May be empty when `payloads` carries the whole Apply (a branchless one). */
+  /** May be empty when `payloads` carries the whole Apply (one with no text drafts). */
   candidates: PushCandidate[];
   payloads?: ApplyPayloads;
   receiptId: string;
@@ -255,13 +255,13 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
-  /** Applies several branches as one batch; one item per requested branch, in request order. */
+  /** Applies several drafts as one batch; one item per requested draft, in request order. */
   pushDraftsToLive(input: {
-    /** May be empty when `payloads` carries the whole Apply (a branchless one). */
+    /** May be empty when `payloads` carries the whole Apply (one with no text drafts). */
     draftIds: readonly string[];
     payloads?: ApplyPayloads;
     /**
-     * Per-change Apply: apply only the rows this selects from the one branch, chosen again on
+     * Per-change Apply: apply only the rows this selects from the one draft, chosen again on
      * every staging attempt (B3), with the payloads rebuilt from the same selection.
      */
     selected?: ChangeApplySelection;
@@ -273,7 +273,7 @@ export type BranchPushService = {
     items: PushToLiveResult[];
     /** Set when an Apply step refused the batch; every drafted item is `refused`. */
     refused?: ApplyRefusal;
-    /** Every item an Apply step held, branchless ones included. */
+    /** Every item an Apply step held, items without text drafts included. */
     heldItems: readonly ApplyItemHold[];
     /** What the Apply steps did per applied item, decided in completion. */
     outcomes: readonly ApplyItemOutcome[];
