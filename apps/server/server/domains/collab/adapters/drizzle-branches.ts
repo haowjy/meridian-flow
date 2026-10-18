@@ -150,13 +150,10 @@ export function createDrizzleBranchStore(
     };
   }
 
-  async function replicatedSnapshotFrom(source: Y.Doc): Promise<{
-    state: Buffer;
-    stateVector: Buffer;
-  }> {
+  function replicatedSnapshotFrom(source: Y.Doc): { state: Buffer; stateVector: Buffer } {
     const target = createCollabYDoc({ gc: false });
     try {
-      await replicateFrozenSource(source, target);
+      replicateFrozenSource(source, target);
       return snapshotFromDoc(target);
     } finally {
       target.destroy();
@@ -179,7 +176,7 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeDraftBranch(input.documentId, input.draftId);
     if (existing) return existing;
-    const seed = await replicatedSnapshotFrom(input.liveDoc);
+    const seed = replicatedSnapshotFrom(input.liveDoc);
     // Creating a branch is a write the Work's lifecycle orders (decision D12): the draft's
     // Work is locked first, so an Archive either fences the new branch or committed before it.
     // A fresh fork has no effect against its seed, its baseline (`live_cut`), and the judgement
@@ -383,7 +380,7 @@ export function createDrizzleBranchStore(
       const upstreamDoc = materializeBranchRead(upstream);
       let seed: { state: Buffer; stateVector: Buffer };
       try {
-        seed = await replicatedSnapshotFrom(upstreamDoc);
+        seed = replicatedSnapshotFrom(upstreamDoc);
       } finally {
         upstreamDoc.destroy();
       }

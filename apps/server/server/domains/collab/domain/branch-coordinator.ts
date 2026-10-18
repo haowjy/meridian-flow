@@ -385,7 +385,7 @@ export function createBranchCoordinator(input: {
             checkpointRevision: snapshot.checkpointRevision,
             seq: snapshot.checkpointSeq,
           };
-    const write = await prepareReset(snapshot, resetInput.upstream, { ...resetInput, policy });
+    const write = prepareReset(snapshot, resetInput.upstream, { ...resetInput, policy });
     if (owner) await owner.own(write).persist();
     else await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
     return true;
@@ -779,16 +779,16 @@ export function createBranchCoordinator(input: {
   }
 
   /** A re-fork of the branch from `upstream` under the caller's revision policy. */
-  async function prepareReset(
+  function prepareReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
     reset: Pick<ResetInput, "schemaVersion" | "editDisposition" | "fence"> & {
       policy: RewritePolicy;
       upstreamEpoch?: PullInput["upstreamEpoch"];
     },
-  ): Promise<PreparedBranchWrite> {
+  ): PreparedBranchWrite {
     const candidate = createCollabYDoc({ gc: false });
-    await replicatedInto(upstream, candidate);
+    replicatedInto(upstream, candidate);
     return prepareRewrite(snapshot.branchId, candidate, {
       policy: reset.policy,
       fence: reset.fence ?? { kind: "none" },
@@ -827,7 +827,7 @@ export function createBranchCoordinator(input: {
       snapshot.kind === "thread_peer" &&
       !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const write = await prepareReset(snapshot, pull.upstream, {
+      const write = prepareReset(snapshot, pull.upstream, {
         policy: foldPolicy(base.replica),
         ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
       });
@@ -836,16 +836,16 @@ export function createBranchCoordinator(input: {
       return "pulled";
     }
     const candidate = cloneReplica(base.replica);
-    await replicatedInto(pull.upstream, candidate);
+    replicatedInto(pull.upstream, candidate);
     const write = attempt.own(preparePull(base, candidate, pull));
     await attempt.commit(() => write.persist());
     return "pulled";
   }
 
   /** `source` replicated into `target`, which is destroyed when replication fails. */
-  async function replicatedInto(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
+  function replicatedInto(source: Y.Doc, target: Y.Doc): void {
     try {
-      return await replicateFrozenSource(source, target);
+      replicateFrozenSource(source, target);
     } catch (cause) {
       target.destroy();
       throw cause;
@@ -881,13 +881,13 @@ export function createBranchCoordinator(input: {
    * write's candidate) and prepared as an append: the one way a save's replay and a segment
    * batch prepare rows.
    */
-  async function prepareRows(
+  function prepareRows(
     base: BranchBase,
     journals: readonly AppendBranchJournalInput[],
-  ): Promise<PreparedBranchWrite> {
+  ): PreparedBranchWrite {
     const admitted = cloneReplica(base.replica);
     try {
-      await admitSegmentRows(admitted, base.snapshot, journals);
+      admitSegmentRows(admitted, base.snapshot.documentId, journals);
     } catch (cause) {
       admitted.destroy();
       throw cause;
@@ -910,7 +910,7 @@ export function createBranchCoordinator(input: {
     try {
       const { result, rows } = await run(replay, { ...snapshot, encoded: encodedOf(base.replica) });
       if (!commit || !rows.length) return { result, write: null };
-      const write = await prepareRows(
+      const write = prepareRows(
         base,
         rows.map((row) => ({ ...row, generation: snapshot.generation })),
       );
@@ -944,7 +944,7 @@ export function createBranchCoordinator(input: {
     if (snapshot.generation !== batch.expectedGeneration)
       throw new BranchStaleUpdateError(batch.branchId);
     const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
-    const write = journals.length ? attempt.own(await prepareRows(base, journals)) : null;
+    const write = journals.length ? attempt.own(prepareRows(base, journals)) : null;
     assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
     if (!write) return false;
     await attempt.commit(() => write.persist());

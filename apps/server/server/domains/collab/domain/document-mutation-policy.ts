@@ -1,27 +1,14 @@
 /** The sole policy boundary for admitting content-bearing document mutations. */
 
-import {
-  type RestorationCertificatePort,
-  type SemanticEditIRV1,
-  validateSemanticEditIRV1,
-} from "@meridian/agent-edit/integration";
-import type { DocumentRevision } from "@meridian/contracts";
+import { validateSemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { AppendBranchJournalInput } from "./branch-store.js";
-import {
-  PROVENANCE_RESERVED_TYPES,
-  validateClientUpdateAdmission,
-  validateProvenanceGraph,
-} from "./provenance.js";
+import { validateClientUpdateAdmission, validateProvenanceGraph } from "./provenance.js";
 
 export type AuthorshipSource =
   | { kind: "writer" }
   | { kind: "import" | "seed"; policy: "writer_protected" | "agent" };
-
-export type IdentityReplicationPlan =
-  | { kind: "wholeDocument" }
-  | { kind: "sharedTypes"; names: readonly string[] };
 
 export type AuthorityHeadCheckpoint = {
   checkpointId: string;
@@ -29,9 +16,7 @@ export type AuthorityHeadCheckpoint = {
   attributionManifest: unknown;
 };
 
-export type RestorationCertificate = RestorationCertificatePort;
-
-export type ImmediateAdmission = {
+type ImmediateAdmission = {
   update: Uint8Array;
   attribution: AuthorshipSource | { kind: "agent" };
 };
@@ -43,31 +28,17 @@ export class ReservedWriterClientIdError extends Error {
   }
 }
 
-export type FrozenReplicationSource = {
-  documentId: string;
-  doc: Y.Doc;
-};
-
 export type MutationTarget = {
   documentId: string;
   generation: bigint;
   doc: Y.Doc;
 };
 
-type ImmediateAdmissionPort = {
+export type FreshAuthorshipPort = {
+  readMutationTarget(): MutationTarget | Promise<MutationTarget>;
   /** Runs under lockDocumentMutation and atomically journals, joins every unresolved
    * same-generation settlement (incrementing join_version), and records the new head. */
   admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint; joined: number }>;
-};
-
-export type FreshAuthorshipPort = ImmediateAdmissionPort & {
-  readMutationTarget(): MutationTarget | Promise<MutationTarget>;
-};
-
-export type CertifiedMutationPort = ImmediateAdmissionPort & {
-  readMutationTarget(): MutationTarget | Promise<MutationTarget>;
-  readCurrentRevision(): Promise<DocumentRevision>;
-  lowerCertifiedMutation(ir: SemanticEditIRV1): Promise<Uint8Array>;
 };
 
 export type AuthorityGenerationReplacementPort = {
@@ -161,77 +132,28 @@ function validateFreshAuthorship(
   return admission;
 }
 
-/** Validates semantic intent before lowering and admitting the certified agent update. */
-export async function admitCertifiedMutation(
-  port: CertifiedMutationPort,
-  mutation: { ir: SemanticEditIRV1; reversal?: RestorationCertificate },
-): Promise<{ sequence: bigint; joined: number }> {
-  const target = await port.readMutationTarget();
-  const revision = await port.readCurrentRevision();
-  validateSemanticEditIRV1(mutation.ir, {
-    expectedDocumentId: target.documentId,
-    expectedInputRevision: revision,
-    restorationCertificates: mutation.reversal,
-  });
-  const update = await port.lowerCertifiedMutation(mutation.ir);
+/**
+ * `source` replicated whole into `target` from a frozen copy: the identity replication every
+ * branch seed, pull and reset uses. The candidate's provenance is validated before `target`
+ * changes; persistence belongs to the branch store.
+ */
+export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
+  const update = Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
   assertNonEmptyUpdate(update);
-  const admitted = await port.admitImmediate({ update, attribution: { kind: "agent" } });
-  return { sequence: admitted.sequence, joined: admitted.joined };
-}
-
-/** Replicates canonical Yjs identities from a caller-frozen source into a target. */
-export async function replicateFrozenIdentity(input: {
-  source: FrozenReplicationSource;
-  target: MutationTarget;
-  plan: IdentityReplicationPlan;
-  admit: ImmediateAdmissionPort["admitImmediate"];
-}): Promise<{ sequence: bigint; joined: number }> {
-  validateReplicationPlan(input.plan);
-  if (input.source.documentId !== input.target.documentId) {
-    invalid("Frozen replication source belongs to a different document");
-  }
-  const update = replicationUpdate(input.source.doc, input.target.doc, input.plan);
-  assertNonEmptyUpdate(update);
-  validatePostUpdateProvenance(input.target.doc, update);
-  const admitted = await input.admit({ update, attribution: { kind: "agent" } });
-  return { sequence: admitted.sequence, joined: admitted.joined };
+  validatePostUpdateProvenance(target, update);
+  Y.applyUpdate(target, update);
 }
 
 /**
- * `source` replicated whole into `target` from a frozen copy, the admitted update applied to
- * `target`: the identity replication every branch seed, pull and reset uses.
+ * A branch's journal rows applied to `doc`, validated per logical write: the rows of one
+ * semantic edit against its IR (document and input revision) before any of them applies,
+ * each other row on its own.
  */
-export async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
-  let admittedUpdate: Uint8Array | undefined;
-  const frozenSource = createCollabYDoc({ gc: false });
-  Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
-  try {
-    await replicateFrozenIdentity({
-      source: { documentId: "branch", doc: frozenSource },
-      target: { documentId: "branch", generation: 0n, doc: target },
-      plan: { kind: "wholeDocument" },
-      admit: async ({ update }) => {
-        admittedUpdate = update;
-        Y.applyUpdate(target, update);
-        return { sequence: 0n, joined: 0 };
-      },
-    });
-    if (!admittedUpdate) throw new Error("Identity replication produced no branch update");
-    return admittedUpdate;
-  } finally {
-    frozenSource.destroy();
-  }
-}
-
-/**
- * A branch's journal rows applied to `doc`, admitted per logical write: the rows of one
- * semantic edit as a certified mutation, each other row on its own.
- */
-export async function admitSegmentRows(
+export function admitSegmentRows(
   doc: Y.Doc,
-  target: { documentId: string; generation: number },
+  documentId: string,
   journals: readonly AppendBranchJournalInput[],
-): Promise<void> {
+): void {
   for (let index = 0; index < journals.length; ) {
     const first = journals[index];
     const writeRows = [first];
@@ -242,33 +164,17 @@ export async function admitSegmentRows(
       journals[index].semanticEditIr === first.semanticEditIr
     )
       writeRows.push(journals[index++]);
-    const apply = () => {
-      for (const row of writeRows) {
-        if (row.source === "agent") assertFreshAgentUpdate(doc, row.updateData);
-        Y.applyUpdate(doc, row.updateData);
-      }
-    };
-    if (!first.semanticEditIr) {
-      apply();
-      continue;
+    if (first.semanticEditIr) {
+      validateSemanticEditIRV1(first.semanticEditIr, {
+        expectedDocumentId: documentId,
+        expectedInputRevision: first.semanticEditIr.inputRevision,
+      });
+      for (const row of writeRows) assertNonEmptyUpdate(row.updateData);
     }
-    const ir = first.semanticEditIr;
-    await admitCertifiedMutation(
-      {
-        readMutationTarget: () => ({
-          documentId: target.documentId,
-          generation: BigInt(target.generation),
-          doc,
-        }),
-        readCurrentRevision: async () => ir.inputRevision,
-        lowerCertifiedMutation: async () => Y.mergeUpdates(writeRows.map((row) => row.updateData)),
-        admitImmediate: async () => {
-          apply();
-          return { sequence: 0n, joined: 0 };
-        },
-      },
-      { ir },
-    );
+    for (const row of writeRows) {
+      if (row.source === "agent") assertFreshAgentUpdate(doc, row.updateData);
+      Y.applyUpdate(doc, row.updateData);
+    }
   }
 }
 
@@ -341,60 +247,6 @@ export async function replaceAuthorityGeneration(
   const generation = await port.replaceGeneration(checkpoint, current.generation);
   await port.disconnectGeneration(current.generation);
   return { generation };
-}
-
-function replicationUpdate(
-  source: Y.Doc,
-  target: Y.Doc,
-  plan: IdentityReplicationPlan,
-): Uint8Array {
-  if (plan.kind === "wholeDocument") {
-    return Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
-  }
-  // Yjs updates cannot be safely filtered after encoding. Build the planned document from
-  // named top-level types, then diff it against the target; canonical item identities remain
-  // those from the frozen source because the source update is applied, not re-authored.
-  const planned = new Y.Doc({ gc: false });
-  for (const [name, type] of source.share) instantiateSharedType(planned, name, type);
-  const full = Y.encodeStateAsUpdate(source);
-  Y.applyUpdate(planned, full);
-  const allowed = new Set([...plan.names, ...PROVENANCE_RESERVED_TYPES]);
-  planned.transact(() => {
-    for (const [name, type] of planned.share) {
-      if (allowed.has(name)) continue;
-      clearSharedType(type);
-    }
-  }, "meridian-identity-replication-plan");
-  return Y.encodeStateAsUpdate(planned, Y.encodeStateVector(target));
-}
-
-function instantiateSharedType(doc: Y.Doc, name: string, type: unknown): void {
-  if (name === "__meridian_provenance_targets_v1") doc.getArray(name);
-  else if (name === "__meridian_provenance_targets_v2" || type instanceof Y.Map) doc.getMap(name);
-  else if (type instanceof Y.Text) doc.getText(name);
-  else if (type instanceof Y.Array) doc.getArray(name);
-  else if (type instanceof Y.XmlFragment) doc.getXmlFragment(name);
-  else invalid("Replication encountered an unsupported shared type");
-}
-
-function clearSharedType(type: unknown): void {
-  if (type instanceof Y.Map) {
-    type.clear();
-    return;
-  }
-  if (type instanceof Y.Text || type instanceof Y.Array || type instanceof Y.XmlFragment) {
-    if (type.length > 0) type.delete(0, type.length);
-    return;
-  }
-  invalid("Replication encountered an unsupported shared type");
-}
-
-function validateReplicationPlan(plan: IdentityReplicationPlan): void {
-  if (plan.kind === "wholeDocument") return;
-  if (plan.kind !== "sharedTypes" || plan.names.length === 0) invalid("Replication plan is empty");
-  if (new Set(plan.names).size !== plan.names.length || plan.names.some((name) => !name)) {
-    invalid("Replication shared type names must be unique and non-empty");
-  }
 }
 
 function assertFreshSource(source: AuthorshipSource): void {
