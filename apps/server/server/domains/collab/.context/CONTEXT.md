@@ -105,6 +105,39 @@ rejects it, including a raw zero-length checkpoint. It is never an empty documen
 A `deleted` removal retains all bytes. Restoring the document does not reopen
 its old drafts.
 
+## Historical draft disposition
+
+`domain/draft-disposition.ts` is the read-only receipt view for PR B's two-fragment
+review. `createDraftDispositionReader` consumes `DraftDispositionStore.capture`;
+`adapters/drizzle-draft-disposition.ts` captures bytes, revision, project owner
+and AI receipts in one root repeatable-read transaction, with no room reads,
+live merge, provisioning or write admission. Consumers are not switched yet.
+Do not reuse active-only `ReadReviewCut` for historical disposition.
+
+Receipt selection is `document_edit_parts.origin->>'draftId' = $draftId`,
+joined to `document_edits.actor = 'agent'`, latest first. The migrations lane
+must index that origin expression (not placement). No generation filter applies.
+The part array keeps numeric receipt IDs and `editId`/`ordinal`; classification
+members index that same array. Conversation identity and reveal links roll
+subagents up to their nearest primary ancestor. Receipts survive deletion of their
+thread or turn; unavailable identity yields no byline, not missing membership.
+`provenance.parts[].status` is Apply evidence only; final status is
+`parts[].disposition` (non-applied parts can be discarded).
+
+Apply-record overlap wins, including birth recovered through validated Undo
+links. A receipt may have both applied and pending portions: any applied
+footprint makes its coarse disposition applied, while classifications still
+expose pending membership independently. Without Apply evidence an active part
+is pending only if some change includes it, otherwise discarded. A retained
+closed draft checks Apply evidence first; its other parts are discarded.
+Released closed bytes yield null provenance/projection and all discarded, never
+an empty document. Removed-document precedence remains the caller's concern.
+
+`writerRanges` is the optional clock-range request. All projects currently have
+one `projects.user_id`, so this adapter never queries human receipt history and
+omits `writers` even when requested. A multi-user project model must supply
+bounded writer evidence and its kernel naming before enabling that mode.
+
 ## Save, replay, and grants
 
 The thread-peer pool is the only model document entry point. Each call carries

@@ -276,6 +276,7 @@
     "apps/server/server/domains/collab/domain/trail-read-kernel.test.ts": 2,
     "apps/server/server/domains/collab/domain/write-update-granularity.test.ts": 6,
     "apps/server/server/domains/collab/domain/writer-restoration.test.ts": 20,
+    "apps/server/server/domains/collab/draft-disposition.db.test.ts": 3,
     "apps/server/server/domains/collab/draft-frame-races.db.test.ts": 7,
     "apps/server/server/domains/collab/draft-journal-edit-kind.db.test.ts": 1,
     "apps/server/server/domains/collab/draft-peer-pool.db.test.ts": 1,

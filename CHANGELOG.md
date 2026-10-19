@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft receipt readers derive pending, applied and discarded status from one captured text review, including retained closed drafts.
+
 - Draft Apply evidence recognizes Undo-restored AI items and preserves unnamed receipt membership after a conversation or turn is deleted.
 
 - Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
