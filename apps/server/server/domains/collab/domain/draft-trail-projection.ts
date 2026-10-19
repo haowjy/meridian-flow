@@ -16,7 +16,6 @@ import {
   liveBlockTarget,
   normalizeTrailPushes,
   type RawTrailChange,
-  type ReplacementOperation,
 } from "./trail-read-kernel.js";
 
 type TrailProjectionLocation = {
@@ -31,7 +30,6 @@ export function preparedTrailChanges(input: {
   changedBlocks: readonly ApplyBlockChange[];
   receiptId: string;
   ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
-  operations: readonly ReplacementOperation[];
   before: readonly {
     hash: string;
     serialized: string;
@@ -43,20 +41,6 @@ export function preparedTrailChanges(input: {
   afterById: ReadonlyMap<string, Y.XmlElement>;
   afterDoc: Y.Doc;
 }): RawTrailChange[] {
-  const provenReplacements = new Map<string, string>();
-  for (const operation of input.operations) {
-    if (
-      !operation.ambiguous &&
-      operation.removedBlockHashes.length === 1 &&
-      operation.insertedBlocks.length === 1
-    ) {
-      provenReplacements.set(
-        operation.removedBlockHashes[0] as string,
-        operation.insertedBlocks[0]?.blockId as string,
-      );
-    }
-  }
-  const replacementIds = new Set(provenReplacements.values());
   const candidateContentRelocations = new Map<string, string>();
   for (const target of input.changedBlocks) {
     if (
@@ -68,9 +52,7 @@ export function preparedTrailChanges(input: {
     }
     const sources = input.changedBlocks.filter(
       (candidate) =>
-        candidate.blockId !== target.blockId &&
-        !provenReplacements.has(candidate.blockId) &&
-        candidate.beforeText === target.afterText,
+        candidate.blockId !== target.blockId && candidate.beforeText === target.afterText,
     );
     if (sources.length === 1) {
       candidateContentRelocations.set(target.blockId, sources[0]?.blockId as string);
@@ -110,7 +92,6 @@ export function preparedTrailChanges(input: {
   }
   return input.changedBlocks.flatMap((block, sequence) => {
     if (relocatedSourceIds.has(block.blockId)) return [];
-    if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIdentity = block.beforeBlockIdentity
       ? { documentId: input.documentId, ...block.beforeBlockIdentity }
       : null;
@@ -141,12 +122,6 @@ export function preparedTrailChanges(input: {
           )
         : undefined;
     const contentRelocated = contentRelocations.has(block.blockId);
-    const replacementId = canonicalAfter?.blockId ?? provenReplacements.get(block.blockId);
-    const replacement = replacementId
-      ? input.changedBlocks.find((candidate) => candidate.blockId === replacementId)
-      : undefined;
-    const replacementBlock =
-      canonicalAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
     const beforeBody = bodyFromHashline(block.beforeText);
     const afterBody = bodyFromHashline(block.afterText);
     // A textblock can retain its Yjs identity while its entire body is removed.
@@ -165,7 +140,7 @@ export function preparedTrailChanges(input: {
       afterBody.status === "available" &&
       afterBody.markdown.length === 0;
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
-    const afterBlockIdentity = replacement?.afterBlockIdentity ?? block.afterBlockIdentity;
+    const afterBlockIdentity = block.afterBlockIdentity;
     const afterIdentity =
       emptiedSurvivingBlock || contentRelocated || !afterBlockIdentity
         ? null
@@ -174,13 +149,11 @@ export function preparedTrailChanges(input: {
       kind:
         emptiedSurvivingBlock || contentRelocated
           ? "delete"
-          : replacementId !== undefined
-            ? "modify"
-            : block.beforeText === null
-              ? "insert"
-              : block.afterText === null
-                ? "delete"
-                : "modify",
+          : block.beforeText === null
+            ? "insert"
+            : block.afterText === null
+              ? "delete"
+              : "modify",
       beforeIdentity,
       afterIdentity,
       navigation:
@@ -191,9 +164,7 @@ export function preparedTrailChanges(input: {
             })
           : canonicalAfter
             ? liveBlockTarget(input.afterDoc, canonicalAfter.block)
-            : replacementBlock
-              ? liveBlockTarget(input.afterDoc, replacementBlock)
-              : ordinaryNavigation,
+            : ordinaryNavigation,
     };
     const stableIdentity = location.beforeIdentity ?? location.afterIdentity;
     if (!stableIdentity) return [];
@@ -206,11 +177,7 @@ export function preparedTrailChanges(input: {
       beforeBlockIdentity: location.beforeIdentity,
       afterBlockIdentity: location.afterIdentity,
       beforeText: block.beforeText,
-      afterTextAtReceipt: contentRelocated
-        ? null
-        : canonicalAfter
-          ? block.afterText
-          : (replacement?.afterText ?? block.afterText),
+      afterTextAtReceipt: contentRelocated ? null : block.afterText,
       navigation: location.navigation,
       owner,
       sequence: sequence * 1000 + ownerIndex,

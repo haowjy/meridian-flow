@@ -26,8 +26,9 @@ ID. A document with no draft can still be an item and can still be applied.
 
 Work admission and reply writes still require the shared Work lifecycle boundary.
 The old server review, staged Apply, selective Discard and draft reset are gone.
-Lane A builds atomic Apply; lane B2 builds room-derived review and local undoable
-text Discard. Per-document server Discard only ends a still-hidden creation's
+Atomic Apply commits frozen clicked content into live and the review base
+together; see [Apply](apply.md). Lane B2 builds room-derived review and local
+undoable text Discard. Per-document server Discard only ends a still-hidden creation's
 branch use. A revealed creation answers `stale`; Work Discard all and purge close
 drafts and run end-use removal without re-forking text.
 
@@ -47,7 +48,8 @@ without checking it. The projection job's `has_effect` write is the one
 exception: it writes at the judged revision and never bumps it, so it never
 makes an exact rewrite miss. Draft room identity is `draft:<draftId>` for life; journal rows and receipt origins carry no epoch.
 The legacy draft column uses its default; the NOT NULL journal column has no default, so inserts
-write `1` until the migrations lane drops it. No production push-lineage writer remains.
+write `1` until the migrations lane drops it. Apply writes literal `1` to the legacy NOT NULL push-lineage generation column;
+it never reads or fences on that value.
 
 The contract (row, read and write types, the `DraftStore` port, the
 materialization of one read) is `domain/draft-store.ts`. Its Drizzle storage
@@ -97,11 +99,11 @@ private copy, so a failed commit never changes what a reader holds.
 ## Durable records and checkpoints
 
 The live journal is the durable content source. A draft is stored as a
-checkpoint plus its tail; draft write rows carry review status. `push_lineage`
-provides Apply identity and idempotency. The change trail is the durable
-Apply record storage remains for lane A and the migration lane; no staged
-settlement writer or contribution-refinement path remains. Committed trail
-persistence, read/navigation, dirty signals and delivery survive.
+checkpoint plus its tail. `push_lineage` records each committed Apply, while
+`branch_commands` claims its command id and stores the terminal outcome.
+The server-owned Apply record retains applied draft identity ranges; the change
+trail retains the committed live effect and canonical navigation. No staged
+settlement writer or contribution-refinement path remains.
 
 Pending counts (the Works badge) are distinct pending documents per Work (the active
 branch's drafts with reviewable rows plus its change rows, so a created

@@ -4,7 +4,7 @@ import type { StoredBranchCommandResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { branchCommands } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
-import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type {
   BranchCommandEnvelope,
   BranchCommands,
@@ -15,7 +15,7 @@ import type {
 export function createDrizzleBranchCommands(db: Database): BranchCommands {
   return {
     async lookup(envelope) {
-      return lookupCommand(db as unknown as DrizzleDb, envelope);
+      return lookupCommand(currentDrizzleDb(db), envelope);
     },
   };
 }

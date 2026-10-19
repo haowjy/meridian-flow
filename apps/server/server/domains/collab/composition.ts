@@ -48,6 +48,7 @@ import {
   SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
+import { createDrizzleApplyClick, measureApplyAppend } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import { createDrizzleBranchCommands } from "./adapters/drizzle-branch-commands.js";
 import {
@@ -58,6 +59,7 @@ import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
+import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
@@ -66,6 +68,7 @@ import {
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import type { DraftClose } from "./adapters/drizzle-draft-close.js";
+import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleFrontierRooms } from "./adapters/drizzle-frontier-rooms.js";
@@ -83,6 +86,7 @@ import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
+import { createApplyClickService } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranchReviewIdentity } from "./domain/branch-review-identity.js";
 import { createBranchReviewItems } from "./domain/branch-review-items.js";
@@ -195,7 +199,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.eventSink
       ? {
           onRewriteCommitted: createRewriteCommittedEvent(deps.eventSink),
-          onAppendSequenced: createAppendCommittedEvent(deps.eventSink),
+          onAppendSequenced: (detail) => {
+            if (deps.eventSink) createAppendCommittedEvent(deps.eventSink)(detail);
+            measureApplyAppend(detail);
+          },
         }
       : {}),
   });
@@ -480,12 +487,42 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     attemptScope,
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
+  const commands = createDrizzleBranchCommands(deps.db);
+  const applyClick = createApplyClickService({
+    identity,
+    commands,
+    evidence: createDrizzleDraftDispositionStore(deps.db),
+    store: createDrizzleApplyClick(deps.db, {
+      workProjection: deps.workProjectionMutation,
+      coordinator: draftCoordinator,
+      live: persistence.journal,
+      liveCoordinator,
+      model: runtime.model,
+      codec: runtime.codec,
+      links: deps.links,
+      trail: createDrizzleChangeTrailAggregateWriter(deps.db),
+      arrivals: deps.arrivals,
+      catalog: deps.catalogMutations,
+      onCommitted: (documentId) => runDocumentWriteHook({ documentId }, "collab.apply"),
+      measured: (measurement) => {
+        if (deps.eventSink)
+          emitEvent(deps.eventSink, {
+            level: "debug",
+            source: "collab.draft_review",
+            name: "apply.measured",
+
+            payload: measurement,
+          });
+      },
+    }),
+  });
   const branches = createWorkBranchReviewService({
+    applyClick,
     branches: workBranches,
     reviewItems,
     identity,
     discard,
-    commands: createDrizzleBranchCommands(deps.db),
+    commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
     pending: workBranchPendingStore,
   });
