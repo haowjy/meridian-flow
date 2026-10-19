@@ -76,7 +76,7 @@ agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/
   (`observation_frontier.record_failed`) and the result commits with no
   frontier, never the stale one.
 - **Saves.** The save records on each committed document's last settled
-  result a frontier at the post-commit cut, chained like any result from the
+  result a frontier at the save's after-state, chained like any result from the
   `recording` lookup, crediting what the settled receipts show in full (nothing
   when they are degraded or textless) and what the last one lists. The latest row may be a sibling read's
   from the same step: its snapshot holds the step's staged structs, so it

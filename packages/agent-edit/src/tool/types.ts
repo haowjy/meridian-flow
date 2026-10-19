@@ -242,7 +242,7 @@ export interface ResponseCommitDocumentResult {
   lateSweep?: import("./commit-detection.js").DestructiveSweepReport;
   /**
    * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
-   * the frontier at the post-commit cut, crediting every accepted receipt and what the last
+   * the frontier at the save's after-state, crediting every accepted receipt and what the last
    * one lists.
    */
   frontier?: ObservationFrontier;
