@@ -132,13 +132,14 @@ read-only rather than reopening again.
 
 A `4208 document-deleted` close is terminal for live and draft rooms alike:
 the transport freezes the room (`read`), resets with disposition `removed`
-and never reconnects. Nothing rebuilds, replays or drops it: `restartTransport`
-and `restartUnavailableRoom` refuse a `removed` session, a draft review keeps
-the terminal session painted, and `SyncStatus` says nothing for it. The close
-only makes the tab ask availability at once (`ContextTabSession`, and
-`useReviewRoomOwner` for a draft room, which also refreshes the Work's drafts);
-the availability removal closes the tab and says who removed the document
-(`features/project/context/.context/resource-catalog-and-editor-lifecycle.md`).
+and never reconnects on its own. Nothing rebuilds, replays or drops it, and a
+draft review keeps the terminal session painted. The registry reports each
+live room's close once (`observeRemovedRooms`) and the account lifetime asks
+availability at once; the availability removal closes the tab and says who
+removed the document. Only an exact lookup that proves the document present
+restarts the room: the lifetime's `restartRemovedRoom`, or an explicit open's
+bind (`restartUnavailableRoom`). See
+`features/project/context/.context/resource-catalog-and-editor-lifecycle.md`.
 
 ## Stateless document messages
 

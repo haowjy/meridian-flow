@@ -35,20 +35,7 @@ export class AccountFeatureLifetime {
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
     this.registry = this.runtime.registry;
-    this.removal = new ContextRemovalCoordinator(accountId, {
-      sessions: this.registry,
-      // Constructed below; a removal is only noted once availability has applied it.
-      lookupRemoval: (projectId, documentId) =>
-        this.availability
-          .resolveForOpen(projectId, documentId)
-          .then((resolution) =>
-            resolution.kind === "deleted"
-              ? { removal: resolution.removal ?? null }
-              : resolution.kind === "authority-unavailable" || resolution.kind === "not-visible"
-                ? null
-                : undefined,
-          ),
-    });
+    this.removal = new ContextRemovalCoordinator(accountId, { sessions: this.registry });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {
@@ -56,6 +43,22 @@ export class AccountFeatureLifetime {
         await this.removal.reconcileDocumentAvailability(commands).localSettlement;
       },
       repairProjectCatalog,
+    });
+    // The one reaction to a live room's 4208, held by an editor or not: ask
+    // availability now. `deleted` closes its tabs with the record (an editor
+    // still holding the room reads the same shared answer); `available` means
+    // a restore won the race, so the room reconnects in place, once per
+    // session so a server that keeps closing it can't make it loop.
+    const restarted = new WeakSet<object>();
+    this.registry.observeRemovedRooms((session, room) => {
+      void this.availability
+        .resolveForOpen(room.projectId, room.documentId)
+        .then((resolution) => {
+          if (resolution.kind !== "available" || restarted.has(session)) return;
+          restarted.add(session);
+          return this.registry.restartRemovedRoom(session);
+        })
+        .catch(() => undefined);
     });
     this.resources =
       typeof window === "undefined"

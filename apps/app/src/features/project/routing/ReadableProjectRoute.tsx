@@ -1,5 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
+import { parseDraftItemKey } from "@meridian/contracts";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -463,12 +464,13 @@ function ReadableProjectDestination({
         : documentResult.kind === "unavailable"
           ? "unavailable"
           : undefined));
-  // A review address names its document (`branchId:documentId`): when it is
-  // unavailable because the document was removed, it says so instead.
+  // A review address names its document: when it is unavailable because the
+  // document was removed, it says so instead. A plain path names no document
+  // once nothing lives there, so it stays "unavailable".
   const removedDestination = useRemovedDestination(
     projectId,
     documentIssue === "unavailable" && address.itemKey
-      ? address.itemKey.slice(address.itemKey.lastIndexOf(":") + 1)
+      ? (parseDraftItemKey(address.itemKey)?.documentId ?? null)
       : null,
     documentDestination?.path.split("/").filter(Boolean).at(-1) ?? "",
   );

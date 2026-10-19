@@ -10,7 +10,8 @@ const EMPTY_SNAPSHOT: ContextRemovalProjectSnapshot = {
   removalFence: null,
   transitionRevision: 0,
   live: false,
-  notices: [],
+  notice: null,
+  awaitingRecordIds: [],
 };
 
 export function useContextRemovalProject(projectId: string): ContextRemovalProjectSnapshot {
