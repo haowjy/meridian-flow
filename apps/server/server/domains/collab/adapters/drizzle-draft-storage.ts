@@ -6,10 +6,8 @@
  * takes no lock but the draft rows'; Work admission, receipts and effect policy belong to the
  * callers.
  */
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { WorkId } from "@meridian/contracts/runtime";
 import {
-  branchPushSettlementBatches,
-  branchPushSettlementOutbox,
   documentDrafts,
   documentYjsUpdates,
   draftWriteJournal,
@@ -21,26 +19,24 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
 import { assertFreshAgentUpdate } from "../domain/document-mutation-policy.js";
-import {
-  type AppendDraftJournalInput,
-  type AppendRowsInput,
-  type AppendRowsOutcome,
-  type DraftRead,
-  type DraftReadSince,
-  type DraftSnapshot,
-  type DraftTailRow,
-  type DraftWorkLifecycle,
-  type EffectBaseline,
-  mergeStateVectors,
-  type PullEffect,
-  type RewriteFence,
-  type RewriteOutcome,
-  type RewritePolicy,
+import type {
+  AppendDraftJournalInput,
+  AppendRowsInput,
+  AppendRowsOutcome,
+  DraftRead,
+  DraftReadSince,
+  DraftSnapshot,
+  DraftTailRow,
+  DraftWorkLifecycle,
+  EffectBaseline,
+  PullEffect,
+  RewriteOutcome,
+  RewritePolicy,
 } from "../domain/draft-store.js";
 
 /**
@@ -230,7 +226,7 @@ export async function readDraftAt(
 
 /**
  * A work draft's effect baseline: its stored `live_cut`, null for a legacy row no creator,
- * pull or reset has cut yet (the projection job establishes it with a pull).
+ * pull has cut yet (the projection job establishes it with a pull).
  */
 export async function readEffectBaselineWithin(
   db: DrizzleDb,
@@ -312,10 +308,9 @@ export async function appendRowsWithinTx(
 export type RewriteCommit = {
   draftId: string;
   policy: RewritePolicy;
-  fence: RewriteFence;
   /**
    * `active`: the checkpoint `UPDATE` carries the draft's Work-is-active predicate (a content
-   * write the Work admits); zero rows is `moved`. `any`: a pull, reset or compaction, which no
+   * write the Work admits); zero rows is `moved`. `any`: a pull or compaction, which no
    * Work lifecycle gates: an archived Work's drafts keep rebasing on live.
    */
   work: "active" | "any";
@@ -323,12 +318,6 @@ export type RewriteCommit = {
   upstream?: { draftId: string; generation: number };
   /** The new checkpoint. Under `fold`, a pull applies the tail into it. */
   doc: Y.Doc;
-  /**
-   * A re-fork to the next generation; the discarded vector gains the checkpoint's clocks and
-   * every tail row's insertion clocks. `discard` also discards the generation's pending rows;
-   * `refork` leaves them to the caller. Their edit parts are the caller's either way.
-   */
-  reset?: { kind: "discard" } | { kind: "refork" };
   schemaVersion?: CollabSchemaVersion;
   /** A content-free fold: the reader-visible modification stamp (`updated_at`) stays. */
   keepUpdatedAt?: boolean;
@@ -380,13 +369,11 @@ export async function commitRewriteWithinTx(
       ? Number(locked.revision) !== input.policy.revision
       : Number(locked.checkpointRevision) !== input.policy.checkpointRevision;
   if (moved) return { status: "moved" };
-  const settlement = await fencingSettlement(db, input.fence, locked.documentId);
-  if (settlement) return { status: settlement === "pending" ? "fenced" : "blocked" };
 
   // Every row past the checkpoint; under `exact` these are exactly the rows the caller read.
-  // Only a fold applies them and only a reset fences their clocks.
+  // Only a fold applies rows beyond the captured cursor.
   const tail =
-    !input.reset && input.policy.kind === "exact"
+    input.policy.kind === "exact"
       ? []
       : await db
           .select({
@@ -405,7 +392,7 @@ export async function commitRewriteWithinTx(
           .orderBy(asc(draftWriteJournal.id));
   input.onLocked?.({ lockedAt, tailRows: tail.length });
   let folded = 0;
-  if (input.policy.kind === "fold" && !input.reset) {
+  if (input.policy.kind === "fold") {
     const after = input.policy.seq;
     for (const row of tail) {
       if (row.id <= after) continue;
@@ -423,24 +410,6 @@ export async function commitRewriteWithinTx(
   const stateVector = Buffer.from(Y.encodeStateVector(input.doc));
   await input.withinLock?.();
 
-  const reset = input.reset
-    ? {
-        generation: sql`${documentDrafts.generation} + 1`,
-        hasEffect: false,
-        hasEffectRevision: sql`${documentDrafts.revision} + 1`,
-        blocking: false,
-        liveCut: state,
-        discardedStateVector: Buffer.from(
-          tail.reduce(
-            (vector, row) => {
-              const to = Y.parseUpdateMeta(row.update).to;
-              return to.size ? mergeStateVectors(vector, Y.encodeStateVector(to)) : vector;
-            },
-            mergeStateVectors(locked.discardedStateVector, locked.stateVector),
-          ),
-        ),
-      }
-    : {};
   const [written] = await db
     .update(documentDrafts)
     .set({
@@ -458,7 +427,6 @@ export async function commitRewriteWithinTx(
             liveCut: Buffer.from(effect.liveCut),
           }
         : {}),
-      ...reset,
     })
     .where(
       and(
@@ -476,18 +444,6 @@ export async function commitRewriteWithinTx(
     if (input.work === "active") return { status: "moved" };
     throw new Error(`Draft ${input.draftId} vanished under its row lock`);
   }
-  if (input.reset?.kind === "discard") {
-    await db
-      .update(draftWriteJournal)
-      .set({ status: "discarded" })
-      .where(
-        and(
-          eq(draftWriteJournal.draftId, input.draftId),
-          eq(draftWriteJournal.generation, locked.generation),
-          inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
-        ),
-      );
-  }
   return {
     status: "committed",
     revision: Number(written.revision),
@@ -495,31 +451,4 @@ export async function commitRewriteWithinTx(
     seq: Number(written.checkpointSeq),
     generation: written.generation,
   };
-}
-
-/**
- * The settlement state fencing a pull on `documentId`: `pending` while one can still complete,
- * `blocked` when the only fence is a terminally blocked batch (nothing will lift it on its own).
- */
-async function fencingSettlement(
-  db: DrizzleDb,
-  fence: RewriteFence,
-  documentId: string,
-): Promise<"pending" | "blocked" | null> {
-  if (fence.kind !== "pending-settlement") return null;
-  const states = await db
-    .selectDistinct({ state: branchPushSettlementBatches.state })
-    .from(branchPushSettlementOutbox)
-    .innerJoin(
-      branchPushSettlementBatches,
-      eq(branchPushSettlementBatches.id, branchPushSettlementOutbox.batchId),
-    )
-    .where(
-      and(
-        eq(branchPushSettlementOutbox.documentId, documentId as DocumentId),
-        inArray(branchPushSettlementBatches.state, ["pending", "blocked"]),
-      ),
-    );
-  if (states.some(({ state }) => state === "pending")) return "pending";
-  return states.length ? "blocked" : null;
 }

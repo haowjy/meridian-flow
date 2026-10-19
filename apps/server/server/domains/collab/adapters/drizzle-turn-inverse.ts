@@ -401,7 +401,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const rewritten = await commitRewriteWithinTx(db(), {
         draftId: draft.draftId,
         policy: { kind: "exact", revision: draft.revision },
-        fence: { kind: "none" },
         work: "active",
         doc: draft.view,
         ...(draft.effect ? { effect: draft.effect } : {}),

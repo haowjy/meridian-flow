@@ -1,5 +1,6 @@
 /** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply, Discard and the rebase. */
 
+export { appliedParts } from "./applied-parts.js";
 export {
   APPLY_RECORD_ROOT,
   type ApplyEntry,

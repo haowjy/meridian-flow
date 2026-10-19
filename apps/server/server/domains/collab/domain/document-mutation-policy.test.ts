@@ -108,15 +108,6 @@ describe("document mutation policy operations", () => {
     expect(Y.encodeStateVector(target)).toEqual(Y.encodeStateVector(live));
   });
 
-  it("refuses replacement while old-generation settlement is unresolved", async () => {
-    const port = replacementPort({ unresolvedSettlements: vi.fn(async () => 1) });
-
-    await expect(replaceAuthorityGeneration(port, "checkpoint-1")).rejects.toEqual(
-      expect.objectContaining({ code: "authority_head_busy" }),
-    );
-    expect(port.replaceGeneration).not.toHaveBeenCalled();
-  });
-
   it("rejects Y.Doc-only checkpoints rather than re-minting provenance", async () => {
     const port = replacementPort({
       loadCheckpoint: vi.fn(async () => ({
@@ -147,7 +138,6 @@ function replacementPort(
       doc: new Y.Doc({ gc: false }),
     })),
     loadCheckpoint: vi.fn(async () => checkpoint),
-    unresolvedSettlements: vi.fn(async () => 0),
     replaceGeneration: vi.fn(async () => 4n),
     disconnectGeneration: vi.fn(async () => undefined),
     ...overrides,

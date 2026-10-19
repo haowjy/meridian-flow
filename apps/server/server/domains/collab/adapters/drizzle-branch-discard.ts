@@ -16,8 +16,6 @@
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentDrafts, draftWriteJournal } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -36,6 +34,7 @@ import {
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import {
+  BranchDiscardApplicableStateChangedError,
   BranchDiscardScopeChangedError,
   type BranchDiscardStore,
   type DiscardItem,
@@ -44,14 +43,7 @@ import {
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
 import { NO_ATTEMPT_SCOPE, runBoundedAttempts } from "../domain/draft-attempts.js";
-import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
-import {
-  DraftCasConflictError,
-  type DraftRead,
-  materializeDraftRead,
-} from "../domain/draft-store.js";
-import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { claimCommandWithinTx } from "./drizzle-branch-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
@@ -143,89 +135,20 @@ export function createDrizzleBranchDiscard(
   db: Database,
   deps: KernelDeps & {
     branches: Pick<Branches, "lockActive" | "close">;
-    drafts: Pick<ApplicationDraftStore, "readDraftAt" | "closeThreadPeersOf">;
-    coordinator: Pick<DraftCoordinator, "resetFromDoc">;
     workProjection: Pick<WorkProjectionMutation, "mutate">;
   },
 ): DrizzleBranchDiscard {
-  /**
-   * Reset the branch's draft on an item from live when it holds reviewable rows, folding away
-   * every row appended before the reset locks the draft, and close that draft's thread peers
-   * (rows or not). The caller's attempt owns the reset until it completes.
-   */
-  async function resetItemText(
-    input: Extract<DiscardKernelInput, { selection: { kind: "items" } }>,
-    item: { documentId: DocumentId; draftId: string },
-  ): Promise<void> {
-    const read = await deps.drafts.readDraftAt(item.draftId);
-    const content = read?.documentDraft;
-    // Gone with its tombstone, or no longer the branch's: no draft of this branch remains to reset.
-    if (
-      !read ||
-      content?.kind !== "work_draft" ||
-      content.status !== "active" ||
-      content.branchId !== input.branchId ||
-      content.documentId !== item.documentId
-    ) {
-      return;
-    }
-    const hasPending = async () => {
-      const [pending] = await currentDrizzleDb(db)
-        .select({ id: draftWriteJournal.id })
-        .from(draftWriteJournal)
-        .where(
-          and(
-            eq(draftWriteJournal.draftId, content.draftId),
-            eq(draftWriteJournal.generation, content.generation),
-            inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        )
-        .limit(1);
-      return Boolean(pending);
-    };
-    // A healthy rowless draft has no text to reset (unless its state cannot be read: Discard
-    // is the recovery for a corrupt item, rows or not), but an open reply may still hold staged
-    // writes on it, so its peers close either way.
-    if (!(await hasPending()) && isReadable(read)) {
-      // The decision holds only under the draft row: a frame takes no other lock. One that
-      // committed since the read makes this a reset after all, recomputed by the next attempt.
-      const [locked] = await currentDrizzleDb(db)
-        .select({ revision: documentDrafts.revision })
-        .from(documentDrafts)
-        .where(eq(documentDrafts.id, content.draftId))
-        .for("update");
-      if (Number(locked?.revision) !== content.revision || (await hasPending()))
-        throw new DraftCasConflictError(content.draftId);
-      await deps.drafts.closeThreadPeersOf([content.draftId], "edit_discarded");
-      return;
-    }
-    const liveDoc = input.liveDocs.get(item.documentId);
-    if (!liveDoc) throw new Error(`Discard of ${item.documentId} holds no live document`);
-    const reset = await deps.coordinator.resetFromDoc(
-      {
-        draftId: content.draftId,
-        upstream: liveDoc,
-        expectedGeneration: content.generation,
-        policy: "fold",
-        schemaVersion: content.schemaVersion,
-      },
-      input.attempt,
-    );
-    if (!reset) throw new DraftCasConflictError(content.draftId);
-    await deps.drafts.closeThreadPeersOf([content.draftId], "edit_discarded");
-  }
-
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { branchId } = input;
-    // Only the items arm carries live documents.
-    if (!("liveDocs" in input)) return discardWholeLocked(db, deps, branchId, input.userId);
+    if (input.selection.kind === "whole")
+      return discardWholeLocked(db, deps, branchId, input.userId);
     const { items } = input.selection;
-    // Created or edited is the document's visibility now, read under the locks the caller
-    // holds: another Work's Apply may have revealed a create since the item was resolved, and
-    // a revealed create is an edited item (§2.2), reset from live with its draft kept. The
-    // branch's create row goes either way; only a hidden document can be tombstoned by it.
+    // Visibility is checked under the end-use locks: another Work may have revealed
+    // the creation after resolution. That is a changed action, never permission to reset text.
     const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
     const hiddenNow = await hiddenDocumentIds(db, withRows);
+    if (items.some((item) => item.origin !== "created" || !hiddenNow.has(item.documentId)))
+      throw new BranchDiscardApplicableStateChangedError();
     const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
     const created = items.filter(isCreated).map((item) => item.documentId);
     // A hidden create another branch still uses stays, but this branch's drafts on it end.
@@ -237,10 +160,6 @@ export function createDrizzleBranchDiscard(
       { branches: [{ branchId, documentIds: withRows }] },
       input.userId,
     );
-    for (const item of items) {
-      if (item.draftId && !isCreated(item))
-        await resetItemText(input, { documentId: item.documentId, draftId: item.draftId });
-    }
     return { releasedObjects: ended.releasedObjects };
   }
 
@@ -335,13 +254,4 @@ export function createDrizzleWorkBranchDisposal(
       });
     },
   };
-}
-
-function isReadable(read: DraftRead): boolean {
-  try {
-    materializeDraftRead(read).destroy();
-    return true;
-  } catch {
-    return false;
-  }
 }

@@ -11,13 +11,11 @@ export function createChangeTrailWorker(input: {
   db: Database;
   journalWriter: EventJournalWriter;
   eventHub: Pick<ThreadEventHub, "invalidateCommittedJournal">;
-  recoverPendingLiveSettlements?: () => Promise<number>;
 }): ChangeTrailWorker {
   const aggregate = createDrizzleChangeTrailAggregateWriter(input.db);
   const dispatcher = createDrizzleChangeTrailDispatcher(input);
   return {
     async drain() {
-      await input.recoverPendingLiveSettlements?.();
       await aggregate.reconcileTerminalOwners();
       return dispatcher.drain();
     },

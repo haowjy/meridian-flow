@@ -45,8 +45,6 @@ export type DraftReviewItem = {
   deletedLive: boolean;
   /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
-  /** A staged batch holds the item: progress only, never a settlement signal (§4.5). */
-  settling: boolean;
   /** Chats with pending writes on the draft, latest first, then the creating chat. */
   actorThreadIds: string[];
   updatedAt: Date;
@@ -86,8 +84,6 @@ export function createBranchReviewItems(deps: {
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, string>>;
-  /** The item keys a staged, unfinished batch of the branch holds. */
-  settling(branchId: BranchId): Promise<ReadonlySet<string>>;
   /** The live document's full-state fingerprint, read under its coordinator lease. */
   liveFingerprint(documentId: DocumentId): Promise<string>;
 }): BranchReviewItems {
@@ -105,11 +101,10 @@ export function createBranchReviewItems(deps: {
       documentIds,
     );
     const creators = await deps.creators(branchId, documentIds);
-    const settling = await deps.settling(branchId);
     return nodes
       .map((node) => {
         const evidence = draftOf.get(node.nodeId);
-        const item = toItem(branchId, node, evidence, creators.get(node.nodeId), settling);
+        const item = toItem(branchId, node, evidence, creators.get(node.nodeId));
         return { item, listed: node.origin === "created" || isEdited(evidence) };
       })
       .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
@@ -152,7 +147,6 @@ function toItem(
   node: TreeStateNode,
   evidence: WorkBranchPendingEvidence | undefined,
   creatorThreadId: string | undefined,
-  settling: ReadonlySet<string>,
 ): DraftReviewItem {
   const deletedLive = !node.hidden && node.deleted;
   const isNew = node.origin === "created" && node.hidden;
@@ -167,7 +161,6 @@ function toItem(
     isNew,
     binary: node.binary,
     wholeItem: isNew || node.binary || deletedLive,
-    settling: settling.has(draftItemKey(branchId, node.nodeId)),
     draftGeneration: evidence?.documentDraft.generation ?? null,
     documentName: documentTitleFromUri(path),
     path,

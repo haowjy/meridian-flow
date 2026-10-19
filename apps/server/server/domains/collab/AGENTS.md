@@ -1,7 +1,7 @@
 # domains/collab — server-side draft collaboration
 
 This domain owns durable live and Work-draft Yjs coordination, persistence,
-review settlement, and Hocuspocus admission. It composes
+change-trail persistence, and Hocuspocus admission. It composes
 `@meridian/agent-edit`; it does not own editor UI or transport-shell policy.
 
 ## Mental model
@@ -12,10 +12,10 @@ review settlement, and Hocuspocus admission. It composes
 - Live documents, document drafts, and thread peers are real Y.Docs. Journals and
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
-  Review classes and writer attribution are server-derived, dependency-closed,
-  and never reconstructed by a client.
+  Review is computed in the browser from the draft room (lane B2). The old server
+  review, settlement and reset services are deleted; lane A builds atomic Apply.
 - Authority identity and generation fence every live connection and mutation.
-  The domain owns authorization, persistence, coordination, settlement, and
+  The domain owns authorization, persistence, coordination and
   trail projection around the agent-edit core.
 
 ## Rules that change behavior
@@ -59,10 +59,7 @@ Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.contex
 The focused references are [draft records](.context/draft-model-and-records.md),
 [document authority](.context/document-authority-and-schema.md),
 [reversal](.context/reversal.md),
-[settlement](.context/settlement-and-trail.md), and
+[committed trail](.context/settlement-and-trail.md), and
 [WebSocket concurrency](.context/websocket-concurrency.md).
-The visual references are [collab-domain.html](.context/collab-domain.html)
-and [draft-live-model.html](.context/draft-live-model.html).
-Deferred work is in [FUTURE.md](.context/FUTURE.md), [TODO.md](.context/TODO.md),
-and [TODO](.context/TODO). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
+Deferred work is in [FUTURE.md](.context/FUTURE.md) and [TODO.md](.context/TODO.md). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
 and [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).

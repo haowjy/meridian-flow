@@ -1,9 +1,9 @@
 /** Canonical rich document content and visible effect clocks, independent of Yjs history. */
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ReviewFormattingChange } from "@meridian/contracts/branches";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { ClockRange } from "./draft-review-attribution.js";
 
 /** Complete settlement effect: rich prose and managed manifest membership. */
 export function documentEffectsEqual(live: Y.Doc, draft: Y.Doc): boolean {
@@ -254,4 +254,10 @@ function plainText(node: Y.XmlText): string {
     .toDelta()
     .map((run: { insert: unknown }) => (typeof run.insert === "string" ? run.insert : ""))
     .join("");
+}
+
+export type ClockRange = { client: number; clock: number; length: number };
+
+export function fullStateFingerprint(doc: Y.Doc): string {
+  return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("base64");
 }

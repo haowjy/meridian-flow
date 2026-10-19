@@ -46,7 +46,7 @@ Everything else requires an existing head and creates nothing. Draft creation
 lock. A miss answers `DocumentNotFoundError`, carrying the removal record
 (`removal`) when the document was removed.
 
-`allocateAdmission` is the one live-write boundary (journal and settlement): a
+`allocateAdmission` is the one live-write boundary (journal): a
 removal that won the mutation lock refuses every later frame, staged save
 install and Apply member there.
 
@@ -99,9 +99,8 @@ agent-edit, so unchanged items retain identity and concurrent admissions merge
 as peers. Do not lower it with a whole-fragment state-vector diff: that loses
 provenance and can reattribute kept prose. Durable projection and trail actions
 serialize a private scratch document from the committed update, never a warm
-live room that a WebSocket may mutate during serialization. Push completion
-derives its projection from the durable journal at completion time; a prepared
-push commit never carries a Markdown projection or live snapshot.
+live room that a WebSocket may mutate during serialization. Lane A owns the
+replacement atomic Apply projection in its transaction.
 
 ## Checkpoints and ingress
 

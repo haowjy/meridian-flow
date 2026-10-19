@@ -9,11 +9,7 @@ import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import type { DraftJournalRow } from "./draft-journal.js";
-import {
-  journalAttributionByChangedBlock,
-  preparedTrailChanges,
-} from "./draft-trail-projection.js";
+import { preparedTrailChanges } from "./draft-trail-projection.js";
 
 it("traces multi-block identity shifts back to the displaced passage", () => {
   const schema = buildDocumentSchema();
@@ -407,105 +403,4 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
       navigation: { kind: "live_block_range" },
     },
   ]);
-});
-
-it("keeps an unrelated deletion and insertion in one push as separate events", () => {
-  const schema = buildDocumentSchema();
-  const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
-  const model = yProsemirrorModel(schema);
-  const beforeDoc = createCollabYDoc({ gc: false });
-  const afterDoc = createCollabYDoc({ gc: false });
-  model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Deleted.\n\nSurvivor."));
-  Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(beforeDoc));
-  const beforeDelete = Y.encodeStateVector(afterDoc);
-  afterDoc.getXmlFragment("prosemirror").delete(0, 1);
-  const deleteUpdate = Y.encodeStateAsUpdate(afterDoc, beforeDelete);
-  const survivorAfter = model.getBlocks(toDocHandle(afterDoc))[0];
-  if (!survivorAfter) throw new Error("missing survivor");
-  const beforeInsert = Y.encodeStateVector(afterDoc);
-  model.insertBlocks(toDocHandle(afterDoc), survivorAfter, codec.parse("Unrelated."));
-  const insertUpdate = Y.encodeStateAsUpdate(afterDoc, beforeInsert);
-  const [deleted, survivorBefore] = model.getBlocks(toDocHandle(beforeDoc));
-  const [, inserted] = model.getBlocks(toDocHandle(afterDoc));
-  if (!deleted || !survivorBefore || !inserted) {
-    throw new Error("missing fixture blocks");
-  }
-  const deletedId = model.getBlockId(deleted);
-  const insertedId = model.getBlockId(inserted);
-  const survivorId = model.getBlockId(survivorBefore);
-  const survivorAfterId = model.getBlockId(survivorAfter);
-  const insertedElement = afterDoc.getXmlFragment("prosemirror").get(1);
-  const survivorElement = afterDoc.getXmlFragment("prosemirror").get(0);
-  if (!(insertedElement instanceof Y.XmlElement) || !(survivorElement instanceof Y.XmlElement)) {
-    throw new Error("missing after elements");
-  }
-  const row = (id: number, updateData: Uint8Array): DraftJournalRow => ({
-    id,
-    draftId: "draft-1",
-    generation: 1,
-    wId: null,
-    source: "agent",
-    threadId: null,
-    turnId: null,
-    actorUserId: null,
-    updateData,
-    draftBaseUpdateSeq: 0,
-    status: "active",
-  });
-  const attribution = journalAttributionByChangedBlock({
-    liveDoc: beforeDoc,
-    rows: [row(1, deleteUpdate), row(2, insertUpdate)],
-    model,
-  });
-
-  const changes = preparedTrailChanges({
-    documentId: "document-1" as never,
-    changedBlocks: [
-      {
-        blockId: deletedId,
-        beforeBlockIdentity: getBlockItemId(deleted),
-        afterBlockIdentity: null,
-        beforeText: "Deleted.",
-        afterText: null,
-      },
-      {
-        blockId: insertedId,
-        beforeBlockIdentity: null,
-        afterBlockIdentity: getBlockItemId(inserted),
-        beforeText: null,
-        afterText: "Unrelated.",
-      },
-    ],
-    receiptId: "receipt-unrelated",
-    ownersByBlock: new Map([
-      [deletedId, [null]],
-      [insertedId, [null]],
-    ]),
-    operations: attribution.operations.map((operation) => ({
-      ...operation,
-      insertedBlocks: operation.insertedBlockIds.map((blockId) => ({
-        blockId,
-        block: insertedElement,
-      })),
-    })),
-    before: [
-      { hash: deletedId, serialized: "Deleted.", ...getBlockItemId(deleted) },
-      { hash: survivorId, serialized: "Survivor." },
-    ],
-    blockIdentities: new Map([
-      [deletedId, { documentId: "document-1", ...getBlockItemId(deleted) }],
-      [insertedId, { documentId: "document-1", ...getBlockItemId(inserted) }],
-    ]),
-    afterIds: new Set([survivorAfterId, insertedId]),
-    afterById: new Map([
-      [survivorAfterId, survivorElement],
-      [insertedId, insertedElement],
-    ]),
-    afterDoc,
-  });
-
-  expect(changes).toHaveLength(2);
-  expect(changes.map((change) => change.kind)).toEqual(["delete", "insert"]);
-  expect(changes[0]?.navigation.kind).toBe("deletion_boundary");
-  expect(changes[1]?.navigation.kind).toBe("live_block_range");
 });

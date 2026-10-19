@@ -5,7 +5,6 @@ import { createError } from "nitro/h3";
 import { expect, it } from "vitest";
 import {
   handleDiscardWorkDraftRequest,
-  handleWorkDraftPreviewRequest,
   selectBranchRouteServices,
 } from "../../lib/branch-review-route.js";
 import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
@@ -18,7 +17,7 @@ import {
 async function twoChanges(start: BranchTreeStart) {
   const { runtime, s } = await start();
   const ascension = await s.work("Ascension", "draft");
-  const chapter = await s.writer.createDocument("chapter.md", "Opening.\n\nMiddle.\n\nEnd.");
+  const chapter = await s.model(ascension).create("chapter.md", "Opening.\n\nMiddle.\n\nEnd.");
   await s.model(ascension).edit("chapter.md", "Opening.", "Opening, drafted.");
   await s.model(ascension).edit("chapter.md", "End.", "End, drafted.");
   const deps = selectBranchRouteServices(runtime.app);
@@ -28,17 +27,7 @@ async function twoChanges(start: BranchTreeStart) {
     if (!found) throw new Error("no chapter item");
     return found;
   };
-  const preview = async () => {
-    const { itemKey } = await item();
-    const body = await handleWorkDraftPreviewRequest(deps, {
-      ...scope,
-      documentId: chapter,
-      itemKey,
-    });
-    if (body.status !== "active") throw new Error(`no active preview: ${body.status}`);
-    return body;
-  };
-  return { runtime, s, ascension, chapter, deps, scope, item, preview };
+  return { runtime, s, ascension, chapter, deps, scope, item };
 }
 
 describeBranchTreeDb("review commands (postgres)", (start) => {

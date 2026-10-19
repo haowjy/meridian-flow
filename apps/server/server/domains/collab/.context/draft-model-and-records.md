@@ -9,7 +9,7 @@ draft ID, item key, or presented address interchangeably.
 | Term | Meaning | Wire identity |
 |---|---|---|
 | **branch** | One active Work branch; Apply leaves it open, whole Discard and purge close it. | `branchId` |
-| **draft** | One document's pending version: either a Work draft (`work_draft`) or a thread peer (`thread_peer`). Each is its own Y.Doc; generation advances on reset. | opaque draft room plus generation |
+| **draft** | One document's pending version: either a Work draft (`work_draft`) or a thread peer (`thread_peer`). Each is its own Y.Doc; generation fields remain until lane G. | opaque draft room plus generation |
 | **revision** | The draft row's counter: every append, rewrite and status or hold change moves it; rewrites are fenced by it, appends never check it; never reaches a client. | none |
 | **checkpoint** | The draft's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
 | **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
@@ -24,60 +24,18 @@ ID. A document with no draft can still be an item and can still be applied.
 
 ## Lifecycle and Apply
 
-Branch capture, Apply, Discard, and redo require an active Work under the shared
-lifecycle row lock and grant confirmation. Discard runs as one attempt: it locks the Work, branch, namespaces, and documents, then resets
-selected text from live (a fold over every row appended since its read) or
-closes the whole branch, then ends the branch's use of created
-nodes. Peer rooms retire after commit, only for drafts actually reset or
-closed. Work purge reuses this kernel after proving its lifecycle set.
+Work admission and reply writes still require the shared Work lifecycle boundary.
+The old server review, staged Apply, selective Discard and draft reset are gone.
+Lane A builds atomic Apply; lane B2 builds room-derived review and local undoable
+text Discard. Per-document server Discard only ends a still-hidden creation's
+branch use. A revealed creation answers `stale`; Work Discard all and purge close
+drafts and run end-use removal without re-forking text.
 
-Branch HTTP routes share one Work-access check: a deleted Work is 404 before any
-draft read or mutation, while an archived Work still permits review reads. An
-archived Work's drafts are frozen to their writer: no frame, Apply or writer
-Discard writes them until unarchive. Live→draft pulls keep rebasing them, so
-their base stays current and they apply cleanly after unarchive; see
-[CONTEXT.md](CONTEXT.md). Replaying an already committed push
-returns its durable receipt without reauthorizing a new write.
-
-Apply sends one frozen click to the per-document route; Work Apply all is a
-client loop of clicks, not a server command. See the admission and Apply-click
-contract in [CONTEXT.md](CONTEXT.md#draft-review-admission-and-apply-clicks).
-HTTP Discard accepts only an item; Work Discard all closes the branch. The old
-settlement services remain internal until the Apply execution replacement.
-
-A durable thread peer has no uncommitted authored state after reply finalization:
-its writes enter the shared Work draft atomically. Before a new call, pull tests
-whether the parent contains the peer's complete update, including deletes. A
-retired peer is reset rather than merged back. A rebind closes the old peer and
-creates a peer in the new Work's draft under the conversation lock.
-
-## Provenance and review identity
-
-Attribution comes from persisted draft rows and live journal metadata, never
-from warm runtime maps, text similarity, or block proximity. Review closure
-joins visible hunks with physical rows, Yjs origin/parent references,
-delete-set overlaps, and same-client clock prefixes. Independent writer edits
-remain independent when no dependency connects them. Agent writes journal their
-own transaction deltas; state-vector diffs must not recreate cumulative
-`tombstones` as authored rows.
-
-Source row IDs identify logical attribution. Physical row IDs identify every
-row needed to replay a class, including invisible suppliers and inverse rows.
-They are distinct internal identities and neither is wire data. Writer review
-clients rotate across independent closure classes, not merely on pauses or
-selection movement.
-
-A certified whole-block carry validates output length and one adjacent visible
-replacement; partial or ambiguous matches fail closed. Restoration aliases
-come from certified retained identities and exact anchors. Equal text or equal
-length is not authorship evidence. Browser Undo/Redo allocates fresh writer clocks. The review restoration root
-records their range links without a server certificate. The old claims map and
-metadata reader remain only for the legacy client and stored inverse evidence;
-new writer rows no longer carry certified aliases.
-A removed live block is named by its Yjs item, which a draft re-forked from live
-keeps when the deletion is discarded, so a held review can find the restored
-block. Incomplete ownership remains unclassified
-and cannot become invented AI credit.
+Thread peers keep seed replication, pull and exact checkpoints until Track M.
+A parent that no longer contains its peer refuses `ThreadPeerPullLost`, never
+creates a new generation. Archived Works admit reads but no new writer edits.
+`DraftReplayJournalReads` lives in `drizzle-draft-journal-reads.ts`; both reads
+use the ambient transaction, including the reply's uncommitted receipts.
 
 ## Draft store
 
@@ -88,8 +46,8 @@ statement, and nothing else reads `state`. Every committed write moves
 a row's status. Rewrites and metadata changes are fenced by it; appends bump it
 without checking it. The projection job's `has_effect` write is the one
 exception: it writes at the judged revision and never bumps it, so it never
-makes an exact rewrite miss. `generation` stays the re-fork epoch that names
-rooms and groups rows and placements.
+makes an exact rewrite miss. `generation` still names rooms and groups rows and placements; lane G removes
+that legacy state. No operation bumps it through reset.
 
 The contract (row, read and write types, the `DraftStore` port, the
 materialization of one read) is `domain/draft-store.ts`. Its Drizzle storage
@@ -105,10 +63,7 @@ half (Work admission and the Works mutation boundary for every write except an
 append, the live advisory lock, the projection job's effect write, edit
 receipts). An append takes only its draft row. These draft writes stand outside the doors,
 by name: creation and its seeds insert the row (`ensureDocumentDraft`,
-`ensureThreadPeerDraft`), retraction and tree deletion delete it, and two
-paths write directly, both owned by the selective-review server path that the
-re-landing diff-based review ([#862]) deletes: `refreshDraftEffect`'s conditional
-`has_effect` bump and selective Discard's survivor re-journal.
+`ensureThreadPeerDraft`); retraction and tree deletion delete it.
 Thread-peer and Work-draft resolution return metadata only (id, generation,
 status, lifecycle); content is read through the coordinator.
 
@@ -119,13 +74,11 @@ finalizes the update against the committed prefix there (see the append
 contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). `commitRewrite` writes
 a new checkpoint covering every row of the draft, under an `exact` policy (the
 revision it was computed at) or a `fold` policy (any appends since its cursor are
-applied, or discarded by a reset). Pulls, resets, selective Discard, the
-inverse's merged draft, a peer's checkpoint, and compaction are rewrites. A reset
-also discards the generation's pending rows and adds the checkpoint's and the
-tail's clocks to `discarded_state_vector`. Compaction folds the tail into a new
-checkpoint with unchanged content and leaves `updated_at`. The coordinator
-schedules it in the background when a committed writer frame leaves more than
-512 tail rows or 2 MiB of tail.
+applied). Pulls, inverses, peer checkpoints and compaction are rewrites.
+No rewrite resets generations, accumulates discarded clocks or marks journal
+rows discarded through reset. Compaction folds the tail with unchanged content
+and leaves `updated_at`; the writer-frame path schedules it past 512 rows or
+2 MiB. Lane R owns the surviving Work pull and `live_cut` effect projection.
 
 A draft's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its branch's origin Work with the row; anything but `active` is frozen. The
@@ -144,9 +97,9 @@ private copy, so a failed commit never changes what a reader holds.
 The live journal is the durable content source. A draft is stored as a
 checkpoint plus its tail; draft write rows carry review status. `push_lineage`
 provides Apply identity and idempotency. The change trail is the durable
-Apply record; a `system:reconcile` row carries causal replay coverage
-without becoming a semantic author or inverse target. Immutable edit parts keep
-authored identity through settlement.
+Apply record storage remains for lane A and the migration lane; no staged
+settlement writer or contribution-refinement path remains. Committed trail
+persistence, read/navigation, dirty signals and delivery survive.
 
 Pending counts (the Works badge) are distinct pending documents per Work (the active
 branch's drafts with reviewable rows plus its change rows, so a created

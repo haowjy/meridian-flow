@@ -126,7 +126,6 @@ export function createWriterFrames(
       if (!long(current)) return;
       const write = runtime.prepareRewrite(draftId, runtime.cloneReplica(current), {
         policy: runtime.foldPolicy(current),
-        fence: { kind: "none" },
         operation: { kind: "compact" },
       });
       // A moved or closed draft: the next frame past the bound tries again.

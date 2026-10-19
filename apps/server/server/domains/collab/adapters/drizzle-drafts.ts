@@ -8,7 +8,6 @@ import { randomUUID } from "node:crypto";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
-import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts, draftWriteJournal, threadWorks } from "@meridian/database/schema";
@@ -57,7 +56,7 @@ import {
 } from "../domain/draft-store.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
-import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { type DraftClose, lockActiveDrafts } from "./drizzle-draft-close.js";
 import {
   appendRowsWithinTx,
@@ -547,7 +546,7 @@ export function createDrizzleDraftStore(
   /**
    * Shape B: one transaction, the draft row locked only for the fold and its write. A
    * checkpoint (a thread peer's catch-up) carries the Work-is-active predicate; a pull,
-   * reset or compaction carries none, so an archived Work's drafts keep rebasing on live.
+   * compaction carries none, so an archived Work's drafts keep rebasing on live.
    */
   async function commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     const { operation } = input;
@@ -556,7 +555,6 @@ export function createDrizzleDraftStore(
       const outcome = await commitRewriteWithinTx(tx, {
         draftId: input.draftId,
         policy: input.policy,
-        fence: input.fence,
         work: operation.kind === "checkpoint" ? "active" : "any",
         keepUpdatedAt: operation.kind === "compact",
         // Only a pull moves a work draft's content against its baseline, and its caller
@@ -579,21 +577,8 @@ export function createDrizzleDraftStore(
               },
             }
           : {}),
-        ...(operation.kind === "reset"
-          ? {
-              reset: { kind: "discard" as const },
-              schemaVersion: operation.schemaVersion,
-            }
-          : {}),
       });
       if (outcome.status !== "committed") throw new DraftWriteRollback(outcome);
-      if (operation.kind === "reset")
-        await settleDraftGeneration(
-          tx,
-          input.draftId,
-          outcome.generation - 1,
-          operation.editDisposition,
-        );
       await testHook("draft.rewrite.beforeCommit");
       return {
         status: "committed",
@@ -604,7 +589,7 @@ export function createDrizzleDraftStore(
       };
     };
     const run =
-      operation.kind === "pull" || operation.kind === "reset"
+      operation.kind === "pull"
         ? () =>
             runInDrizzleTransaction(db, () =>
               workProjection.mutate({ drafts: [input.draftId] }, rewrite),

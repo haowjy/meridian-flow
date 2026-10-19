@@ -1,7 +1,6 @@
 /** Wiring-only assembly of collab application services into the public domain. */
 import type {
   AgentEditAccess,
-  BranchPushAccess,
   CollabBranches,
   CollabBranchResolver,
   CollabDomain,
@@ -29,7 +28,6 @@ export type CollabFacadeServices = {
   responses: ResponseWriteFinalizer;
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
-  branchPush: BranchPushAccess;
   draftPeers: DraftPeerShadowAccess;
   branches: CollabBranches;
   branchResolver: CollabBranchResolver;
@@ -48,7 +46,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.responses,
     ...services.checkpoints,
     ...services.attribution,
-    ...services.branchPush,
     ...services.draftPeers,
     ...services.branches,
     ...services.branchResolver,

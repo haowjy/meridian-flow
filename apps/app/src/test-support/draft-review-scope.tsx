@@ -61,7 +61,6 @@ export const listed = {
     liveTextToken: "live-1",
     draftGenerationToken: "generation-1",
   },
-  settling: false,
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
