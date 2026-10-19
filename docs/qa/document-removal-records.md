@@ -5,14 +5,14 @@ Run it on a disposable stack. Use `./mf` for server setup/readback and finish
 by deleting a document in the browser. The record lookup is owner-gated through
 `POST /api/projects/:projectId/context/availability`.
 
-## Populated upgrade (0069 to 0072)
+## Populated upgrade (0071 to 0074)
 
-1. Dump a populated 0069 database into a **new scratch database**, never another
+1. Dump a populated 0071 database into a **new scratch database**, never another
    checkout's database. It needs a user, project, manuscript source and Work.
 2. Run `tools/qa/probes/document-removal-upgrade.sql` with `psql -w -v
    ON_ERROR_STOP=1` against the scratch copy.
-3. Run 0070 transactionally, 0071 **without a transaction**, then 0072
-   transactionally. Re-run 0071.
+3. Run 0072 transactionally, 0073 **without a transaction**, then 0074
+   transactionally. Re-run 0073.
 4. Read the four `a1-` documents: tree and both cascade rows must be `deleted`;
    the hidden end-use row must be `discarded`. Cascade takes precedence over
    hidden. Read `a1-active`: closed, `document_removed`, revision 18 (was 17).
@@ -24,16 +24,16 @@ by deleting a document in the browser. The record lookup is owner-gated through
    500 uses. Hidden cascade-marked uses remain; revealed and independent tombstones lose theirs.
 6. Give the removed cascade creation 501 active Work drafts on distinct branches
    (so they span two closure pages) and an earlier-sorting peer of the first.
-   Pause 0071's first parent-close UPDATE with a scratch-only trigger waiting on
+   Pause 0073's first parent-close UPDATE with a scratch-only trigger waiting on
    an advisory lock. While paused, commit production Work Restore
    (`restoreWorkDocuments`) from another connection, then create a new active
    draft of the restored document. Release the barrier. Every old parent (the
    last page's included) and the peer close with `document_removed`; only
-   current-generation parts settle; the new draft stays active. 0071 closes a
+   current-generation parts settle; the new draft stays active. 0073 closes a
    queue it fills once at its start, never re-reading tombstones, and drops it.
 7. Seed a stale stored Work count, including one that should become zero.
    Check the exact pending-document rule after upgrade: stored counts agree
-   and each changed Work's `entity_revision` advances once. Re-run 0071:
+   and each changed Work's `entity_revision` advances once. Re-run 0073:
    no revision, closure, placement or count changes.
 8. Legacy schemas permit a hidden creation in a Work-owned source although
    production routes Scratch/uploads live and rejects their draft creation.

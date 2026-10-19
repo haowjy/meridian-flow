@@ -2,6 +2,7 @@
 
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Block } from "../codec-types.js";
+import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
 import { removedFileMessage } from "./removal-copy.js";
@@ -19,6 +20,8 @@ interface InternalWriteResultBase {
   revision?: string | null;
   /** Host-only: what the rendered result showed the model. */
   showing?: LinkShowing;
+  /** Host-only: the frontier of what the rendered result showed, when the caller asked. */
+  frontier?: ObservationFrontier;
   /** The blocks a read selected, for a host copying them. */
   nodes?: readonly Block[];
   model?: AgentEditModelPayload;

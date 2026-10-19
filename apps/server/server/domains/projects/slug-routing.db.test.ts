@@ -6,7 +6,7 @@
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
-import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "./test-support/project-repository.js";

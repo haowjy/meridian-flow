@@ -48,11 +48,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
-    const {
-      createDrizzleDraftJournalReadStore,
-      createDrizzlePushCommitStore,
-      createDrizzleWorkBranchPendingStore,
-    } = await import("../drizzle-branch-push.js");
+    const { createDrizzleDraftJournalReadStore, createDrizzlePushCommitStore } = await import(
+      "../drizzle-branch-push.js"
+    );
+    const { createDrizzleWorkBranchPendingStore } = await import(
+      "../drizzle-work-branch-pending.js"
+    );
     const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
       "../drizzle-pending-settlement.js"
     );

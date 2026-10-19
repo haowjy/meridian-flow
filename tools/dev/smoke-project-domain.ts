@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
-import { createDrizzleWorkBranchPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
+import { createDrizzleWorkBranchPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
 import { createDrizzleLineageScratchLifecycle } from "../../apps/server/server/domains/context/adapters/lineage-scratch-lifecycle.ts";
 import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";

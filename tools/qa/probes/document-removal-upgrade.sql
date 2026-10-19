@@ -1,4 +1,4 @@
--- Populated pre-0070 upgrade fixture. Run only on a disposable 0069 database copy.
+-- Populated pre-0072 upgrade fixture. Run only on a disposable 0071 database copy.
 -- Requires one existing user, project, manuscript source and Work; retains wrong-generation pending evidence.
 DO $$
 DECLARE source uuid; owner_id uuid; project uuid; work uuid; branch uuid; doc uuid; edit uuid;

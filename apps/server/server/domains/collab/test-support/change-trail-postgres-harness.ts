@@ -74,11 +74,12 @@ export const {
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
-const {
-  createDrizzleDraftJournalReadStore,
-  createDrizzleWorkBranchPendingStore,
-  createDrizzlePushCommitStore,
-} = await import("../adapters/drizzle-branch-push.js");
+const { createDrizzleDraftJournalReadStore, createDrizzlePushCommitStore } = await import(
+  "../adapters/drizzle-branch-push.js"
+);
+const { createDrizzleWorkBranchPendingStore } = await import(
+  "../adapters/drizzle-work-branch-pending.js"
+);
 const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
@@ -690,6 +691,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       removals: { lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds) },
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
+      frontierRooms: { liveGeneration: async () => null },
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
       drafts: draftStore,

@@ -24,6 +24,7 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
+import { withObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
@@ -54,7 +55,13 @@ function stagedWriteDescription(command: WriteCommand): string {
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    "model" | "codec" | "coordinator" | "semanticProvenance" | "links" | "onLinkSpliceFallback"
+    | "model"
+    | "codec"
+    | "coordinator"
+    | "semanticProvenance"
+    | "links"
+    | "onLinkSpliceFallback"
+    | "onObservationFailed"
   >;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
@@ -142,7 +149,7 @@ export function createWriteCommands(deps: {
         address.filePath,
         selection.documentBlocks,
       );
-    return withShown(links, {
+    return withEvidence(links, runtime.doc, address.documentId, context, {
       ...readSuccess(
         renderer.renderRead(
           toDocHandle(runtime.doc),
@@ -562,8 +569,11 @@ export function createWriteCommands(deps: {
       awarenessDegraded,
     };
     try {
-      return withShown(
+      return withEvidence(
         links,
+        runtime.doc,
+        docId,
+        context,
         renderReceipt(
           {
             commandName: command.command,
@@ -579,7 +589,13 @@ export function createWriteCommands(deps: {
         ),
       );
     } catch {
-      return formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true });
+      return withEvidence(
+        links,
+        runtime.doc,
+        docId,
+        context,
+        formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
+      );
     }
   }
 
@@ -612,9 +628,25 @@ export function createWriteCommands(deps: {
     return { ...result, awarenessDegraded: true };
   }
 
-  /** Attach the links the result's rendered blocks showed, spelled with the command's links. */
-  function withShown(links: CommandLinks, result: InternalWriteResult) {
-    return { ...result, ...shownEvidence(renderedItems(result.model), links) };
+  /**
+   * Attach what the rendered result showed: its links, spelled with the
+   * command's links, and, when the host asked, its observation frontier on the
+   * doc it was rendered from.
+   */
+  function withEvidence(
+    links: CommandLinks,
+    doc: Y.Doc,
+    documentId: string,
+    context: WriteContext,
+    result: InternalWriteResult,
+  ): InternalWriteResult {
+    return withObservation(
+      { ...result, ...shownEvidence(renderedItems(result.model), links) },
+      doc,
+      context.observe,
+      documentId,
+      options.onObservationFailed,
+    );
   }
 
   /** Host-only showing evidence for this document; none for utility, seed and import writes. */

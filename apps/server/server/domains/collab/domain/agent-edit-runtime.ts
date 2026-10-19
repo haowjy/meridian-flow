@@ -33,6 +33,7 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onLinkSpliceFallback"
+  | "onObservationFailed"
 >;
 
 export function createAgentEditRuntime(input: {

@@ -22,6 +22,12 @@ export interface LinkSpliceFallbackDetail {
   reason: SpliceFallback;
 }
 
+/** An observation frontier could not be computed; the result goes out without it. */
+export interface ObservationFailedDetail {
+  documentId: string;
+  cause: unknown;
+}
+
 export interface CreateWriteToolOptions {
   journal: UpdateJournal;
   documentEdits?: import("../ports/document-edits.js").DocumentEdits;
@@ -46,6 +52,7 @@ export interface CreateWriteToolOptions {
    * correspondence, but unchanged links there may churn their formatting.
    */
   onLinkSpliceFallback?: (event: LinkSpliceFallbackDetail) => void;
+  onObservationFailed?: (event: ObservationFailedDetail) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;

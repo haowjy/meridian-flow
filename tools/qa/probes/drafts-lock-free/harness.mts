@@ -12,7 +12,6 @@ import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import * as Y from "yjs";
-import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
 import { createDrizzleBranchStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
 import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.js";
 import {
@@ -20,6 +19,7 @@ import {
   createDrizzleDraftStore,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-drafts.ts";
 import { createDrizzleCollabPersistence } from "../../../../apps/server/server/domains/collab/adapters/drizzle-journal.ts";
+import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { createWorkProjectionMutation } from "../../../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";

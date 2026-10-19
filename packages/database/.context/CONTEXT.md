@@ -50,7 +50,7 @@ actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
 remains its restore marker. Restore clears all removal fields. A closed draft
 has its own `closed_cause`, independent of the document's current removal
 (`discarded` or `document_removed`), so Work restore does not erase why a
-draft closed. Migrations 0070–0072 add the record, backfill in bounded,
+draft closed. Migrations 0072–0074 add the record, backfill in bounded,
 re-runnable no-transaction pages, retire existing tombstones' active drafts
 and tree uses, then validate. The pending-part pass is independently paged;
 an interrupted cutover must finish before serving traffic.
@@ -126,6 +126,13 @@ a `COLLAB_SCHEMA_VERSION` bump still needs an additive migration advancing both
 Postgres column defaults. The checkpoint range capture function stays one SQL
 statement: a client-managed savepoint spanning awaits can roll back sibling
 operations queued on the same connection.
+
+`observation_frontiers` rows belong to the transcript block that showed the
+model a document (`source_block_id`, cascading with the block, so a fork finds
+inherited rows by block id with nothing copied). The model's frontier for a room
+is the row with the greatest `recorded_seq` among a conversation's blocks, read
+through the `(room_key, recorded_seq DESC NULLS LAST)` index; the runtime owns when rows are
+written and replaced ([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
 
 Billing stores Stripe customer identity on `users.stripe_customer_id`; credit
 lots represent grants and purchases. The partial free-tier uniqueness guard

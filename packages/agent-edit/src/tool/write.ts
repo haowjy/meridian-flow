@@ -98,6 +98,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     onTransition: options.onResponseCommitterTransition,
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
     afterPreflight: options.afterResponsePreflight,
+    onObservationFailed: options.onObservationFailed,
   });
   const commands = createWriteCommands({
     options: {
@@ -107,6 +108,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       links: options.links,
       semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
+      onObservationFailed: options.onObservationFailed,
     },
     autoTurnCounter,
     autoTurnIdNonce,
