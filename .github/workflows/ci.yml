@@ -188,15 +188,30 @@ jobs:
         with:
           path: ${{ env.PG_IMAGE_TAR }}
           key: ${{ steps.pg-key.outputs.key }}
+          # A new week's first runs restore last week's image, so a refused pull
+          # (the mirror also limits anonymous data per shared runner IP) fails a
+          # run only when no cached image exists at all.
+          restore-keys: postgres-16-
       - name: Load cached Postgres image
-        if: steps.pg-cache.outputs.cache-hit == 'true'
+        if: steps.pg-cache.outputs.cache-matched-key != ''
         run: docker load -i "$PG_IMAGE_TAR"
       - name: Pull Postgres image
+        id: pg-pull
         if: steps.pg-cache.outputs.cache-hit != 'true'
-        run: docker pull "$PG_IMAGE" && docker save "$PG_IMAGE" -o "$PG_IMAGE_TAR"
+        env:
+          FALLBACK_KEY: ${{ steps.pg-cache.outputs.cache-matched-key }}
+        run: |
+          if docker pull "$PG_IMAGE"; then
+            docker save "$PG_IMAGE" -o "$PG_IMAGE_TAR"
+            echo "pulled=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FALLBACK_KEY" ]; then
+            echo "::warning::Postgres pull refused; using cached image $FALLBACK_KEY"
+          else
+            exit 1
+          fi
       # Saved right after the pull so a failing test run still fills the cache.
       - name: Save Postgres image
-        if: steps.pg-cache.outputs.cache-hit != 'true'
+        if: steps.pg-pull.outputs.pulled == 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.PG_IMAGE_TAR }}
