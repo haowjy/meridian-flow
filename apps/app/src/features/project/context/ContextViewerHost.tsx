@@ -17,6 +17,7 @@ import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { previewKind } from "./preview-kind";
+import { useTabLocation } from "./use-tab-location";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
 import { PdfViewer } from "./viewers/PdfViewer";
@@ -30,8 +31,12 @@ export type ContextViewerHostProps = {
 };
 
 export function ContextViewerHost(props: ContextViewerHostProps) {
+  const location = useTabLocation(props.projectId, props.tab);
   return (
-    <ContextViewerContent {...props} header={{ name: props.tab.name, path: props.tab.path }} />
+    <ContextViewerContent
+      {...props}
+      header={{ name: location.leaf, path: [...location.folders, location.leaf].join("/") }}
+    />
   );
 }
 

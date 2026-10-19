@@ -68,11 +68,7 @@ export function movedDestinationName(
       parent.join("/")
   )
     return null;
-  return (
-    parentLabels?.at(-1) ||
-    parent.filter((part) => !/^@[cp][1-9][0-9]*$/.test(part)).at(-1) ||
-    schemeLabel(destination.value.scheme)
-  );
+  return parentLabels?.at(-1) || schemeLabel(destination.value.scheme);
 }
 
 // Operations already announced; entries leave once their deadline has passed.

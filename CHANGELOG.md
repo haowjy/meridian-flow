@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Read-only file viewers also derive their visible path from catalog labels. While labels load, visible ancestry never falls back to storage basenames.
+
 - Remove the unused server `toCanonical` serializer alias; source locations use the shared codec.
 
 - Separate authoritative catalog reading and label projection from transactional publication, retaining one locking, versioning and commit path.

@@ -13,9 +13,12 @@ it("names the receipt's destination without mistaking a rename or refusal for pl
         ? { ok: true, value: { destinationPath: "" } }
         : { ok: false, error: { code: "not_found", uri: sourceUri } },
     }) as ContextOperationReceipt;
-  expect(movedDestinationName(receipt("manuscript://old.md", "manuscript://Book/Act/ch.md"))).toBe(
-    "Act",
-  );
+  expect(
+    movedDestinationName(receipt("manuscript://old.md", "manuscript://Book/Act/ch.md"), [
+      "Book",
+      "Act",
+    ]),
+  ).toBe("Act");
   expect(movedDestinationName(receipt("manuscript://Book/ch.md", "kb://note.md"))).toBe(
     "Knowledge Base",
   );

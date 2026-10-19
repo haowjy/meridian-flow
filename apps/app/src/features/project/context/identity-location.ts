@@ -101,14 +101,10 @@ export function tabLocation(tab: ContextTab, parentLabels?: readonly string[]): 
       path: null,
     };
   }
-  const segments = tab.path.split("/").filter(Boolean);
   return {
     scheme: tab.scheme,
     parentPath: parentFolderPath(tab.path),
-    folders: [
-      ...(parentLabels ??
-        segments.slice(0, -1).filter((segment) => !/^@[cp][1-9][0-9]*$/.test(segment))),
-    ],
+    folders: [...(parentLabels ?? [])],
     leaf: tab.name,
     provisional:
       tab.scheme === "unfiled" || (tab.kind === "tracked" && Boolean(tab.provisionalName)),

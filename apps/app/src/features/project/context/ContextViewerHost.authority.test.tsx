@@ -14,6 +14,11 @@ vi.mock("@/client/api/projects-api", async (original) => ({
   getProjectContextRead: vi.fn(),
 }));
 
+vi.mock("@/client/query/useContextCatalog", async (original) => ({
+  ...(await original<typeof import("@/client/query/useContextCatalog")>()),
+  useContextCatalogView: () => ({ catalog: null }),
+}));
+
 it("reads a chat's image with the chat, not the selected Work", async () => {
   expect(contextCatalogScope("project", "uploads", { chatId: "chat-1" })).toEqual({
     kind: "chat",
