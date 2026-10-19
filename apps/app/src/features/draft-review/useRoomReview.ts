@@ -139,6 +139,7 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
 
 export function useRoomReviews(drafts: readonly DraftRef[]) {
   const bindings = useRoomBindings(drafts);
+  const owner = useDraftCommandOwner();
   const store = useMemo(() => {
     const runtimes = bindings.map((binding) => binding.runtime);
     let states = runtimes.map((runtime) => runtime?.state() ?? EMPTY_REVIEW_STATE);
@@ -159,9 +160,17 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
   const states = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   return bindings.map((binding, index) => {
     const state = states[index];
+    const discarding = owner.state(drafts[index].itemKey).discarding;
     return {
       ...binding,
       ...state,
+      listedChanges: discarding
+        ? state.changes.filter(
+            (change) =>
+              change.frame?.diff !== discarding.frame.diff ||
+              !discarding.groupIds.includes(change.id),
+          )
+        : state.changes,
       status: binding.status === "ready" && !state.ready ? ("loading" as const) : binding.status,
     };
   });
@@ -170,6 +179,7 @@ export function useRoomReview(draft: DraftRef | null) {
   return (
     useRoomReviews(draft ? [draft] : [])[0] ?? {
       ...EMPTY_REVIEW_STATE,
+      listedChanges: [],
       status: "idle" as const,
       runtime: null,
       roomName: null,

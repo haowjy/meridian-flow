@@ -115,10 +115,10 @@ export function useWorkBranchCommands({
       if (!discarded) return blocked();
       if (surface === "dock")
         show({
-          ...discarded,
-          undo: discarded.undo
+          ...discarded.notice,
+          undo: discarded.notice.undo
             ? () => {
-                discarded.undo?.();
+                discarded.notice.undo?.();
                 if (item)
                   queryClient.setQueryData<ThreadDraftListItem[]>(
                     projectQueryKeys.workBranchDrafts(projectId, workId),
@@ -131,8 +131,8 @@ export function useWorkBranchCommands({
               }
             : undefined,
         });
-      refresh();
-      return { sent: true, outcome: Promise.resolve({ kind: "done" }) };
+      void discarded.outcome.then(refresh);
+      return { sent: true, outcome: discarded.outcome };
     };
     const commandChange = (
       mode: "apply" | "discard",

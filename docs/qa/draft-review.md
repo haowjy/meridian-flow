@@ -31,14 +31,21 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
    draft paragraph holding a red removal must not also paint “Start writing…”.
    Hide changes: the genuine empty paragraph may show its placeholder again;
    show changes: only the removal occupies the line.
-2. Type inside and beside a change, then Ctrl+Z. Paint follows the actual text
+2. On a long draft, put changes far apart (middle and document end). From
+   the top, Next change must scroll the focused passage into the editor pane;
+   Previous must bring the earlier passage back. Repeat past both ends to
+   wrap, then select either change from the list. Check the passage is visible,
+   not just the stepper, `change=` URL and emphasis. Repeat with Show changes
+   off and reduced motion enabled, then after switching review documents and
+   returning: only the currently presented editor scrolls.
+3. Type inside and beside a change, then Ctrl+Z. Paint follows the actual text
    while the 120 ms projection waits. Cut/paste the paragraph and Undo; repeat
    with block drag. Removal widgets never enter pasted manuscript text.
-3. Bold a word and change a heading beside a prose edit. Both remain red/green
+4. Bold a word and change a heading beside a prose edit. Both remain red/green
    changes. A one-character substitution narrows to that character.
-4. Edit live in another tab. The draft receives base and prose together. No
+5. Edit live in another tab. The draft receives base and prose together. No
    flash, lost focus or stale mark. A scheduled list refresh survives a rebind.
-5. Type offline, reconnect, then reload with a held upload. Local text returns
+6. Type offline, reconnect, then reload with a held upload. Local text returns
    and eventually reaches server readback. An unopened, never-synced row offers
    no Discard. A previously synced held room can Discard while offline.
 
@@ -54,7 +61,11 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
 | Next dock action, navigation away, reload | Notice and its history end; discarded text persists. No durable dock Revert. |
 | AI A's removal discarded, then AI B removes the written-back words | No byline names A. |
 | A reply writes through Discard | It keeps writing into the same draft. Later edits are new changes, never a stale-generation refusal. |
-| 50k words all changed, then Discard | One transaction/frame, instant notice and count drop, no editor navigation. Record timing and update bytes. |
+| 50k words all changed, then Discard | Row and count leave at the click; Discarded and Undo paint before write-back starts. Write-back is one transaction/frame with no editor navigation. Record click→notice DOM, paint opportunity, transaction duration and update bytes separately. |
+| Multiple all-changed files in the dock, then Discard | Every selected row leaves and the final notice paints before any file's write-back. Ending the previous notice must not synchronously flush its pending write. |
+| Notice Undo before the deferred transaction starts | The write is cancelled, the row returns and no Yjs update is emitted. |
+| Navigate away immediately after Discard | Notice ends, but the retained operation still writes once. Retiring the binding or replacing the account before it starts instead prevents stale writes and releases its lease. |
+| Type or receive a peer write before the deferred transaction | Changed prose/base refuses the stale Discard with its item failure; intervening text survives and the row returns. |
 
 After Apply, type an extra word outside a replacement, then Discard that
 insertion and Undo. Repeat with the document's Discard draft while only
@@ -205,3 +216,16 @@ browser command owner with two independent 10-key/s room clients.
    the toolbar. Center-to-right alignment and Undo/Redo still update its real state.
 
 [burst-harness]: https://github.com/haowjy/meridian-flow-docs/tree/main/work/diff-based-review/b/burst/harness
+
+## Quiet native typing at 50k words
+
+Open a 50,000-word draft with Show changes on and a focused change (so the
+controller holds its frame). At the document end, dispatch 40 native `x` keys
+at 200 ms intervals. Record CDP frame-sent → applied `SyncStatus` p50/p95;
+require 40 applied acks, zero refusals/unacked frames/page errors and +40
+characters. Interleave at least three pairs against main with the same
+corpus/configuration; record host load and each run, not just a pooled average.
+Profile a separate run if the tail regresses: room metadata identity must never
+serialize `focus.frame` or any other caller-supplied presentation fields.
+Undo the typing, navigate changes, toggle Show changes and Discard a change,
+then Ctrl+Z: all must preserve exact prose and restore the review from text.

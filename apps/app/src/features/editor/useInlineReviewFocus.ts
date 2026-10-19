@@ -29,10 +29,28 @@ export function useInlineReviewFocus({
 }): void {
   const { controller } = useDraftReview();
   const view = useReviewChanges(controller);
-  const { reportFocusedChange, marksVisible } = controller;
+  const {
+    reportFocusedChange,
+    marksVisible,
+    registerInlineReviewRuntime,
+    releaseInlineReviewRuntime,
+  } = controller;
 
   const live = editor && !editor.isDestroyed ? editor : null;
   const reviewing = live !== null && getInlineReviewPluginState(live.state) !== null;
+
+  useEffect(() => {
+    if (!live || !reviewing) return;
+    registerInlineReviewRuntime({ editor: live, documentId, itemKey });
+    return () => releaseInlineReviewRuntime(live);
+  }, [
+    live,
+    reviewing,
+    documentId,
+    itemKey,
+    registerInlineReviewRuntime,
+    releaseInlineReviewRuntime,
+  ]);
 
   // Show changes.
   useEffect(() => {

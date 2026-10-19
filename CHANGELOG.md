@@ -6,6 +6,11 @@
 
 - Subscribe the document toolbar to its control state so unchanged review metadata does not rerender its ten controls.
 - Keep undoable draft Discard out of schema-repair notices while preserving genuine repair reports.
+- Paint dock and Work Discard notices and remove selected rows before large draft write-backs, preserving one-transaction Undo.
+
+- Scroll draft-review Next, Previous and list selection to the focused passage.
+
+- Keep draft-review room identity checks independent of the focused document, removing whole-draft serialization while typing.
 
 - Share equal blocks' immutable merge tokens without replacing editor nodes or arrays.
 
