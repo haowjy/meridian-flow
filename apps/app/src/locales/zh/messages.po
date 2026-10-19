@@ -4220,6 +4220,10 @@ msgstr ""
 msgid "That change is no longer in the draft."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "That change wasn't reverted because its text changed or is already gone."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "That chapter is no longer available, so this change can't be reversed."
 msgstr ""
@@ -4382,8 +4386,8 @@ msgid "There isn't enough left to undo."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "There was nothing to revert."
-msgstr ""
+#~ msgid "There was nothing to revert."
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "These preferences follow your account wherever you sign in."
