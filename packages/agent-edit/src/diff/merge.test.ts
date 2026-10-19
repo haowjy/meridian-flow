@@ -63,6 +63,21 @@ const isSafety = (f: string) =>
   !/^(order|blocks|block type|em on|strong on|conflict on blocks)/.test(f);
 
 describe("rebase", () => {
+  it("coalesces a shared insertion beside a replacement, then preserves a dependent deletion", () => {
+    const base = parseDoc(schema, "p:The cat sat on the mat.");
+    const live = parseDoc(schema, "p:A big black cat sat on the mat.");
+    const patched = parseDoc(schema, "p:The big black cat sat on the mat.");
+    const merged = rebase(schema, base, live, patched).blocks;
+    expect(blocksEqual(merged, live)).toBe(true);
+    const deleted = parseDoc(schema, "p:The big cat sat on the mat.");
+    expect(
+      blocksEqual(
+        rebase(schema, patched, merged, deleted).blocks,
+        parseDoc(schema, "p:A big cat sat on the mat."),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps an untouched first move match when a later equal source was edited", () => {
     const [base, live, draft] = ["p:a b z a", "p:b a z", "p:a b z X"].map((text) =>
       parseDoc(schema, text),
