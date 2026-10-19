@@ -195,7 +195,7 @@ export async function readDraftAt(
       ...draftColumns,
       state: sql<Buffer | null>`case when ${held} then null else ${documentDrafts.state} end`,
       stateVector: sql<Buffer | null>`case when ${held} then null else ${documentDrafts.stateVector} end`,
-      tail: sql<{ id: number; update: string; source: "agent" | "writer" }[]>`(
+      tail: sql<{ id: number; update: string; source: "agent" | "writer" | "server" }[]>`(
         select coalesce(json_agg(json_build_object(
           'id', j.id, 'update', encode(j.update_data, 'base64'), 'source', j.source
         ) order by j.id), '[]'::json)

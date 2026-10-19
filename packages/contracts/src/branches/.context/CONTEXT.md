@@ -39,38 +39,20 @@ The client never reads `branchId` as a document draft id. The server alone maps 
 
 ## Commands
 
-Every command carries a `commandId`. A resend reuses it and the server
-deduplicates; a different command under a used id answers 409
-`command_conflict`. `GET …/branches/commands/:commandId` observes a command:
-`pending`, `done` (with exactly the 200 body), `blocked` (terminal; show the
-failure on the item), or 404 `unknown_command` (nothing committed, resend).
+`ApplyClick` carries a UUID command id, a base64 `Y.encodeSnapshotV2` snapshot,
+one block-range `baseViewDelta` and unique nonempty projection group ids. Patch
+blocks are ProseMirror node JSON; the server constructs and validates the nodes.
+The reply is for that id only: `applied`, `closed` (including a removal record
+when removed), or `refused` with a closed reason enum. Same-id lookups may also
+answer `pending`, `conflict`, or `none`. A refusal has no `stale` variant.
+The authenticated scope and whole body are part of the request digest.
 
-- **Item Apply and Discard** address `{ branchId, itemKey, commandId }`. Item
-  Apply is unfenced by operation ids. It answers `applied`, 409
-  `held` (5a, such as `path_taken`) or 409 `stale`, or 202 `pending` while
-  recovery finishes. Apply never closes the branch.
-- **Per-change Apply** sends every operation id of the selected
-  `closureClassId`s plus the preview's opaque `liveRevisionToken` and
-  `draftRevisionToken`. It answers `applied` with the applied `operationIds`
-  and `closureClassIds`, or `stale`, `gone`, `whole_item` (a new document, which
-  is applied whole) or `incomplete_class`, all as HTTP 200.
-- **Per-change Discard** sends `closureClassIds`, server-vended
-  `admissionTokens` over the clicked classes' closed rows and rich effect, and
-  both revision tokens. `memberPartKeys` only classify a class that is gone.
-  `operationIds` are not part of the request. Missing or changed evidence
-  returns `stale`; unrelated typing does not. Stable class identity alone is
-  never admission evidence.
-- **Apply all** sends `{ branchId, commandId, items: [{ itemKey, locationToken,
-  liveTextToken?, draftGenerationToken? }] }`, each item once. `completed`
-  means the command settled, including a selection whose items were all held;
-  `stale` names `staleItemKeys`; `gone` is not the Work's active branch.
-- **Discard all** sends `{ branchId, commandId }` and is the only command whose
-  `discarded` closes the branch. Its `branchId` is a `branches` row, never a draft
-  id.
-- Successful item and per-change responses add `itemClosed`; when true,
-  `itemDisposition` names the settled review (`applied` if any content reached
-  live, otherwise `discarded`). The client never infers closure from operation
-  counts or from the list.
+There is one per-document Apply route, no separate per-change or Work Apply-all
+route. Item-form Discard takes `{ branchId, itemKey, commandId }`; Discard all
+takes `{ branchId, commandId }`. Legacy request types remain for the client
+command-layer deletion only, not as accepted request forms. Legacy results
+remain persisted until the settlement services are retired; observation of
+those results retains their original body.
 
 ## Reading a preview
 

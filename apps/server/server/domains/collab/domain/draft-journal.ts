@@ -13,7 +13,7 @@ export type DraftJournalRow = {
   wId: number | null;
   /** The model's tool call that made this write; null for writer rows and legacy rows. */
   toolCallId?: string | null;
-  source: "agent" | "writer";
+  source: "agent" | "writer" | "server";
   threadId: ThreadId | null;
   turnId: TurnId | null;
   actorUserId: UserId | null;

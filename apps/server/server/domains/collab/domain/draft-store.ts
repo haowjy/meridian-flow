@@ -52,7 +52,11 @@ export type DraftSnapshot = {
 };
 
 /** A journal row past the checkpoint, applied on read. */
-export type DraftTailRow = { id: number; update: Uint8Array; source: "agent" | "writer" };
+export type DraftTailRow = {
+  id: number;
+  update: Uint8Array;
+  source: "agent" | "writer" | "server";
+};
 
 /**
  * One point-in-time read of a draft: its row, its checkpoint and its tail, from one statement.
@@ -88,7 +92,7 @@ export type AppendDraftJournalInput = {
   draftId: string;
   generation: number;
   updateData: Uint8Array;
-  source: "agent" | "writer";
+  source: "agent" | "writer" | "server";
   wId?: number | null;
   toolCallId?: string | null;
   threadId?: ThreadId | null;

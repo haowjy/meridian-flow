@@ -14,9 +14,9 @@ editor runtime behavior stay outside this package.
 - `PROSEMIRROR_FRAGMENT_NAME` is the shared Y.XmlFragment name. Import it from
   the protocol subpath when a consumer only needs the name.
 - Random authoring docs use `createCollabYDoc()` so they avoid the reserved
-  server-authored client-ID band. Restoration claims are untrusted input;
-  server collab certifies them and no consumer treats the claims map as
-  authorship authority.
+  server-authored client-ID band. The legacy restoration claims map remains for the
+  old editor and retained inverse metadata only. New draft writer rows do not
+  certify its content; review restoration uses the diff kernel's id-range root.
 - A schema version change follows the append-only history and compatibility
   rules in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 

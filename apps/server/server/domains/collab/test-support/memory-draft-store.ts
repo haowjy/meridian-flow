@@ -40,7 +40,12 @@ export function testDraftRow(
   };
 }
 
-type MemoryRow = { id: number; generation: number; update: Uint8Array; source: "agent" | "writer" };
+type MemoryRow = {
+  id: number;
+  generation: number;
+  update: Uint8Array;
+  source: "agent" | "writer" | "server";
+};
 
 /** A draft as the store keeps it: the row, its checkpoint and every journal row it has. */
 export type MemoryDraft = DraftSnapshot & {

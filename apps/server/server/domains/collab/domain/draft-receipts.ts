@@ -16,7 +16,7 @@ import {
   type DraftTailRow,
   materializeDraftRead,
 } from "./draft-store.js";
-import { certifyWriterRestorations } from "./writer-restoration.js";
+import { validateClientUpdateAdmission, validateRestorationRanges } from "./provenance.js";
 
 export type FinalizeAppendInput = {
   /**
@@ -27,8 +27,8 @@ export type FinalizeAppendInput = {
   rows: readonly AppendDraftJournalInput[];
   containment: ReturnType<typeof createDocumentContainment>;
   /**
-   * A writer row's authorship on the committed prefix. Called only when the prefix moved past
-   * the base the pre-lock check judged; throws the authorship errors.
+   * A writer row's authorship on the committed prefix, even when preflight judged the same
+   * base. Every incoming writer row crosses this boundary under the row hold.
    */
   validateWriter(prefix: Y.Doc, update: Uint8Array): void;
 };
@@ -45,7 +45,7 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
 
 /**
  * Builds the committed prefix from `read`, judges each row on its before-view (containment,
- * the novel trim, held deletes, the restoration certificate, authorship when the prefix moved),
+ * the novel trim, held deletes, restoration ranges, and client admission on the committed prefix),
  * applies them requiring complete integration, and captures one receipt per logical write on
  * the final document. Any outcome but `appended` leaves `doc` unusable: the caller destroys it.
  */
@@ -66,7 +66,6 @@ export function finalizeAppend(
   }
   const done = (finalization: AppendFinalization) => ({ finalization, doc });
   if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
-  const moved = !prefixHeld || read.tail.length > 0;
 
   const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
   for (const row of input.rows) {
@@ -75,19 +74,17 @@ export function finalizeAppend(
     const novel = Y.diffUpdate(row.updateData, stateVector);
     const frontier = Y.decodeStateVector(stateVector);
     const held = heldDeletes(doc, novel, frontier);
-    let updateMeta = row.updateMeta;
-    if (row.source === "writer") {
-      if (moved) input.validateWriter(doc, novel);
-      updateMeta = {
-        ...(isRecord(row.updateMeta) ? row.updateMeta : {}),
-        restorationAliases: certifyWriterRestorations(doc, novel),
-      };
+    if (row.source === "writer") input.validateWriter(doc, novel);
+    if (row.source === "agent") {
+      assertFreshAgentUpdate(doc, novel);
+      validateClientUpdateAdmission(doc, novel);
     }
     Y.applyUpdate(doc, novel);
     const missing = pendingClocks(doc);
     if (missing.length) return done({ status: "prefixMissing", clocks: missing });
+    if (row.source !== "server") validateRestorationRanges(doc, novel);
     kept.push({
-      row: { ...row, updateData: novel, updateMeta },
+      row: { ...row, updateData: novel },
       frontier: Object.fromEntries(frontier),
       held,
     });
@@ -187,8 +184,4 @@ function withoutClocks<R extends { client: number; clock: number; len: number }>
     }
   }
   return out;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

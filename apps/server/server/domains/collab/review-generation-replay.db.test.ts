@@ -1,10 +1,6 @@
-/** Successor-generation admission preserves surviving writer edits and certifies Undo aliases. */
+/** Successor-generation admission preserves surviving writer edits. */
 import { toDocHandle } from "@meridian/agent-edit/integration";
-import {
-  captureUndoRestorationClaims,
-  createCollabYDoc,
-  PROSEMIRROR_FRAGMENT_NAME,
-} from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -28,14 +24,10 @@ beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
 it.each([
-  { command: "apply", restoration: false },
-  { command: "discard-change", restoration: false },
-  { command: "discard-draft", restoration: false },
-  { command: "apply", restoration: true },
-] as const)("admits surviving typing after $command (Undo: $restoration)", async ({
-  command,
-  restoration,
-}) => {
+  "apply",
+  "discard-change",
+  "discard-draft",
+] as const)("admits surviving typing after %s", async (command) => {
   const harness = createHarness(db);
   const docs: Y.Doc[] = [];
   const clone = (doc: Y.Doc) => {
@@ -86,15 +78,7 @@ it.each([
     writer.clientID = 731001;
     const updates: Uint8Array[] = [];
     writer.on("update", (update) => updates.push(update));
-    if (restoration) {
-      captureUndoRestorationClaims(writer);
-      const undo = new Y.UndoManager(writer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), {
-        trackedOrigins: new Set(["writer"]),
-      });
-      writer.transact(() => edit(writer, 0, 12, 16, ""), "writer");
-      undo.undo();
-      undo.destroy();
-    } else if (command === "apply") {
+    if (command === "apply") {
       edit(writer, 0, 20, 20, " MINE");
     } else {
       edit(writer, 1, 10, 10, " MINE");
@@ -130,15 +114,12 @@ it.each([
         actorUserId: USER_ID,
       }),
     ).toMatchObject({ admitted: true });
-    expect(await review.list()).toHaveLength(restoration ? 0 : 1);
+    expect(await review.list()).toHaveLength(1);
     const reopened = await review.activePreview(ALPHA_ID);
-    // Undo restores already-applied AI text: its certified alias creates no visible diff.
-    expect(reopened.operations).toHaveLength(restoration ? 0 : 1);
-    if (!restoration) expect(reopened.operations[0]).toMatchObject({ kind: "writer" });
+    expect(reopened.operations).toHaveLength(1);
+    expect(reopened.operations[0]).toMatchObject({ kind: "writer" });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(liveBeforeReplay);
-    expect(await f.draftMarkdown(documentDraft.draftId)).toContain(
-      restoration ? "Proposed" : "MINE",
-    );
+    expect(await f.draftMarkdown(documentDraft.draftId)).toContain("MINE");
     const rows = await db
       .select()
       .from(schema.draftWriteJournal)
@@ -147,12 +128,6 @@ it.each([
       (row) => row.generation === next.generation && row.source === "writer",
     );
     expect(replay).toMatchObject({ actorUserId: USER_ID, status: "active" });
-    if (restoration)
-      expect(replay?.updateMeta).toMatchObject({
-        restorationAliases: [
-          { source: { client: 731000, length: 4 }, target: { client: 731001, length: 4 } },
-        ],
-      });
     await f.draftCoordinator.readDraft(documentDraft.draftId, async (doc) => {
       expect(doc.store.pendingStructs).toBeNull();
       expect(doc.store.pendingDs).toBeNull();
