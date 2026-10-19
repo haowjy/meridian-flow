@@ -127,7 +127,7 @@ export function useWorkBranchCommands({
                         ? rows
                         : [...(rows ?? []), item],
                   );
-                void owner.acknowledged(draft.itemKey).then(refresh);
+                void owner.acknowledged(draft.itemKey).then(refresh, refresh);
               }
             : undefined,
         });

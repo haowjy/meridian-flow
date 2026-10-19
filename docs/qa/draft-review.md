@@ -74,6 +74,8 @@ Work-wide Apply request.
 | Drop the answer after the request | Same body/id retries after 1, 2 and 4 seconds; then stalled Retry on the item. No successor sends. Retry keeps the same id/body. |
 | Slow ten clicks | Every group leaves at once. Applying appears only past 500 ms, in reserved space, for queued clicks as well as the head. Completion order is FIFO. |
 | Navigate to Work Files during the head | Owner retains the room, receives answer/record and settles without a mounted editor. |
+| Hold the final draft Update on the socket, click Apply, then archive its Work from another tab | Unsent click refuses on the item, leaves no Applying/Retry limbo, and the refused session rebuilds without an owner-binding exception. Reopen the same draft after unarchiving and verify fresh Apply works. |
+| Refuse/rebuild the session after a sent Apply loses its answer | Same sent command id stays pending until retry/lookup or the replacement room record settles it; unsent successors tied to the retired session refuse. |
 | Reload with two clicks behind a sent head | Sent head may finish; unsent clicks disappear with page memory, their prose returns as draft work. |
 | Applied answer, disconnect before record, close from another tab, reconnect | Head settles from its durable answer without waiting for a closed room; queued clicks cancel. No stalled Retry. |
 | Live rebase before landing | Both edits survive as the merge specifies; no content-stale refusal or re-cut. |
