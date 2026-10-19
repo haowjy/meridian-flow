@@ -12,7 +12,7 @@ import {
   type ObservationFrontier,
   renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
-import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
+import type { ReadReferenceOccurrence, ReferenceReadSelector } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
 import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
@@ -34,6 +34,7 @@ export interface ReferenceReader {
       threadId: string;
       turnId: string;
       signal?: AbortSignal;
+      selector?: ReferenceReadSelector;
       /** The read records its frontier, chained from this lookup. */
       recordingFrontier?: FrontierLookup;
     },

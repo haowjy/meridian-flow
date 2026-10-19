@@ -127,9 +127,32 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
+/** The read tool's supported keep-open selection, independent of document identity. */
+export type ReferenceReadSelector =
+  | { fragment: string }
+  | { in: string | number | [string | number, string | number] };
+
+const selectorEndpoint = z.union([
+  z.string().regex(/^[0-9a-f]{4,}$/iu),
+  z.number().int().positive().safe(),
+]);
+const referenceReadSelectorSchema = z.union([
+  z
+    .object({
+      fragment: z
+        .string()
+        .min(1)
+        .regex(/^[^#\s]+$/u),
+    })
+    .strict(),
+  z
+    .object({ in: z.union([selectorEndpoint, z.tuple([selectorEndpoint, selectorEndpoint])]) })
+    .strict(),
+]);
+
 /** Server-generated snapshot; never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue; revision: string | null };
+  read?: { result: JsonValue; revision: string | null; selector?: ReferenceReadSelector };
 };
 
 export function referenceOccurrenceContent(block: {
@@ -166,7 +189,8 @@ export function referenceOccurrenceContent(block: {
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).length !== 2 ||
+      Object.keys(read).filter((key) => key !== "selector").length !== 2 ||
+      ("selector" in read && !referenceReadSelectorSchema.safeParse(read.selector).success) ||
       !("result" in read) ||
       read.result === undefined ||
       !("revision" in read) ||

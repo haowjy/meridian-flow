@@ -128,7 +128,12 @@ Forks inherit elisions only when their cutoff includes C. Never write elisions
 onto source block rows or derive stubs at render time, or a later source
 compaction/deploy would rewrite a fork's frozen prefix.
 
-A document the compaction re-shows after its summary
+Reference snapshots can carry a host-only `selector` (fragment or `in` target),
+separate from the canonical URI and document identity. The reference reader forwards
+it to the ordinary read path, including its scope, grant, effective version and
+frontier logic; submitted references remain selector-free.
+
+A document the compaction re-shows in full after its summary
 ([important files](compaction.md#important-files)) elides every tail copy of it
 as `reshown`, stale or not, with a stub pointing at the text after the summary;
 a block that also holds some other stale document keeps the `stale` stub.

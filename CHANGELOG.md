@@ -58,6 +58,8 @@
 - Chat notes folders display chat titles (subagents use their spawning parent’s title), independently of their stable paths. Title changes publish only affected folder labels, not entire source trees.
 
 - Preserve typed eligibility failures during initial request preparation, including terminal diagnostics and child reports.
+### Added
+- Host reference reads can preserve a read selector alongside their document identity.
 
 - Chat address inputs accept `$THREAD` for their own notes and `$PARENT` for their originating chat’s notes. Tool results, AI-written links and returned artifacts keep canonical addresses; variables outside chat scope fail instead of becoming filenames.
 
