@@ -657,7 +657,6 @@ export function toWireItem(
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
     conflict: item.conflict,
-    tokens: item.tokens,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,

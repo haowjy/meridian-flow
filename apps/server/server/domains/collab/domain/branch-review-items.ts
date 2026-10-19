@@ -6,8 +6,7 @@
  * undo net to no item. That one predicate feeds the list, the
  * Work counts and the D40 confirmation. A draft with no effect is still addressable
  * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${branchId}:${documentId}` (F12) and carries the
- * tokens Apply checks (§11.3): its location version from the same tree read that spells
- * its path, the live document's full-state fingerprint, and whether it has a text draft.
+ * tree-derived address and whether it has a text draft.
  */
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
@@ -33,10 +32,6 @@ export type DraftReviewItem = {
   /** Canonical URI in the branch's view (the last address for one deleted live). */
   path: string | null;
   conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
-  tokens: {
-    locationToken: string;
-    liveTextToken: string | null;
-  };
   /**
    * Deleted live (an edited document, or a revealed create): no view shows it, so it
    * authorizes through the branch's draft on it and its final location (F9, §13.3).
@@ -53,19 +48,13 @@ export type DraftReviewItem = {
 export type ResolvedDraftItem = { item: DraftReviewItem; listed: boolean };
 
 export interface BranchReviewItems {
-  /** The branch's listed items, live text tokens unread (null). */
+  /** The branch's listed items. */
   list(branchId: BranchId): Promise<DraftReviewItem[]>;
   /**
    * One document's item and whether it is listed, for every document the branch has a view
    * of (an active draft, or a change row); null only when it is not addressable.
    */
   resolve(branchId: BranchId, documentId: DocumentId): Promise<ResolvedDraftItem | null>;
-  /**
-   * The review list's enrichment: each live document's full-state fingerprint read under
-   * its lease, for an item with text that live readers see. Apply compares the tokens a
-   * request carries; it never needs these.
-   */
-  withLiveTextTokens(items: readonly DraftReviewItem[]): Promise<DraftReviewItem[]>;
 }
 
 export function createBranchReviewItems(deps: {
@@ -83,8 +72,6 @@ export function createBranchReviewItems(deps: {
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, string>>;
-  /** The live document's full-state fingerprint, read under its coordinator lease. */
-  liveFingerprint(documentId: DocumentId): Promise<string>;
 }): BranchReviewItems {
   async function items(
     branchId: BranchId,
@@ -116,21 +103,6 @@ export function createBranchReviewItems(deps: {
     async resolve(branchId, documentId) {
       return (await items(branchId, [documentId]))[0] ?? null;
     },
-    withLiveTextTokens: (listed) =>
-      Promise.all(
-        listed.map(async (item) =>
-          // Live text exists only for a document live readers see.
-          item.draftId && !item.isNew && !item.deletedLive && !item.binary
-            ? {
-                ...item,
-                tokens: {
-                  ...item.tokens,
-                  liveTextToken: await deps.liveFingerprint(item.documentId),
-                },
-              }
-            : item,
-        ),
-      ),
   };
 }
 
@@ -163,10 +135,6 @@ function toItem(
     path,
     conflict: conflictOf(node),
     deletedLive,
-    tokens: {
-      locationToken: node.locationVersion.toString(),
-      liveTextToken: null,
-    },
     actorThreadIds:
       creatorThreadId && !writers.includes(creatorThreadId)
         ? [...writers, creatorThreadId]

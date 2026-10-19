@@ -1,5 +1,4 @@
 /** Canonical rich document content and visible effect clocks, independent of Yjs history. */
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ReviewFormattingChange } from "@meridian/contracts/branches";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -227,7 +226,3 @@ function plainText(node: Y.XmlText): string {
 }
 
 export type ClockRange = { client: number; clock: number; length: number };
-
-export function fullStateFingerprint(doc: Y.Doc): string {
-  return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("base64");
-}

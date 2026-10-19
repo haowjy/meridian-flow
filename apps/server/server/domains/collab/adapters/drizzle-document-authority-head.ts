@@ -149,26 +149,6 @@ export async function findHeadSchemaVersion(
   return row ? unpackCollabSchemaVersion(row.schemaVersion) : null;
 }
 
-/**
- * The live text's revision: every admission moves the next sequence and every replacement the
- * generation, so it is equal exactly while no admission landed. A document gains its first
- * head only by materialization, which changes the revision too.
- */
-export async function readHeadRevision(
-  db: Pick<Database, "select">,
-  documentId: string,
-): Promise<string> {
-  const [head] = await db
-    .select({
-      authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
-      next: documentYjsHeads.nextAdmissionSequence,
-    })
-    .from(documentYjsHeads)
-    .where(eq(documentYjsHeads.documentId, documentId as DocumentId));
-  return head ? `${head.authorityId}:${head.generation}:${head.next}` : "uninitialized";
-}
-
 /** Why a document has no head to write or read: its removal, its absence, else no head. */
 export async function refusedAuthority(
   db: AuthorityHeadDb,
