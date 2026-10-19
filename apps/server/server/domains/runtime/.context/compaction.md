@@ -45,10 +45,14 @@ owner rulings C10 and C12). The summarizer ends its output with
 `## Documents to keep open`, one context URI per line, most important first
 (at most 10). `compaction/important-files.ts` owns the instruction and parser.
 `prepareCompactionSuccessor` strips that section and any model-emitted
-`## Documents not re-shown` section from the stored summary. It cleans list markers, backticks and angle brackets,
-then matches each line to the longest shown URI it starts with at an end,
-whitespace or punctuation boundary. Shown URIs preserve spaces, for example
-`manuscript://Chapter 1.md`. Matching uses `documentRevisions` evidence from the
+`## Documents not re-shown` section from the stored summary. Both reserved
+headings accept any Markdown heading level, case differences, a trailing colon
+and closing hashes. An empty narrative after stripping fails with `empty_text`
+through the summary-failure path; documents and the note cannot replace it.
+Cleaning removes list markers, wrapping backticks, angle brackets or quotes,
+a trailing parenthetical annotation and trailing `.,;:`. The whole cleaned
+line must exactly match a shown URI; spaces in names survive, but unknown
+suffixes are dropped. Matching uses `documentRevisions` evidence from the
 **whole pre-compaction history**, not only the retained tail. Unknown URIs are
 dropped with `important_file.unknown_uris` (count). Candidates are the first 10
 matched entries, then the 3 most recently shown documents, deduplicated by
@@ -56,11 +60,14 @@ document id. Missing or malformed lists naturally leave only the 3 recent.
 
 The full text is selected greedily in that order, within
 min(20,000 tokens, 10% of the usable window, the headroom the successor has
-under the auto-compaction trigger once its base is measured, less a margin) of
+under the auto-compaction trigger once its base is measured, less estimator slack) of
 rendered text using the successor model's tokenizer and shared part estimator,
-including the exact projected heading plus read. The headroom term keeps admitted
-text under the trigger by construction; the 1,000-token margin covers the short
-not-re-shown note and request-envelope overhead. A document whose full text
+including the exact projected heading plus read. Before admitting documents,
+the picker reserves the worst-case omission note (every candidate omitted),
+priced with that same estimator and tokenizer. Each admitted document only
+shrinks the note. The 1,000-token margin is estimator slack only. When the base
+and mandatory note already exhaust trigger headroom, no document is admitted,
+but the note still names every omission; this base can remain over the trigger. A document whose full text
 exceeds what is left is skipped, never truncated (a truncated copy would be a partial read with its
 own listing). There is no kept-document count cap; reads are bounded by the
 candidate list (at most 13). Candidates that do not fit or cannot be read are

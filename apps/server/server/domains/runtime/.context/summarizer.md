@@ -43,8 +43,14 @@ plus the 3 recent within budget, and names unreadable or over-budget candidates
 in the final summary with a read-again instruction. The instruction forbids
 carrying forward an earlier `## Documents not re-shown` note; successor preparation
 strips model-emitted copies and regenerates the note from this attempt only.
-Listed lines may contain spaces and list decoration; selection matches the longest
-shown URI prefix at a boundary, without encoding spaces. Rolling still sees only
+Reserved headings tolerate Markdown level, case, trailing colon and closing
+hashes. Listed lines retain spaces; selection uses exact shown-URI membership
+after removing only list markers, wrapping backticks/angle brackets/quotes,
+a trailing parenthetical annotation and trailing `.,;:`. Unknown suffixes are
+not coerced into shorter shown URIs. Empty narrative after stripping fails C
+with `empty_text` through the summary-failure path, preserving paid-row settlement.
+The worst-case omission note is reserved in the re-show budget with the same
+model estimator and tokenizer before admitting documents. Rolling still sees only
 the cut and running summary, not an inventory of retained-tail documents; the
 3 recent candidates are selected by the server on either path. For sizing and
 the note lifecycle, see [compaction](compaction.md#important-files).

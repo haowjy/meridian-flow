@@ -42,6 +42,7 @@
 - A draft editor whose keystrokes the server keeps refusing stops resending after three tries and says "Couldn't save your latest changes (copy them before you reopen)" with Reopen draft, instead of reconnecting forever behind the offline label (#940). The editor stays on screen, read-only, with the unsent text, so it can be copied before reopening the draft at its current version. Live documents are unchanged.
 - Every chat failure is a card drawn from one place (`chatCards`), announced once when you watched it appear and cleared from the screen reader's live region when the card ends. A failed compaction's card now has Try again (it sends `/compact` again), a hidden "Couldn't stop the reply." no longer lingers in the page after its card goes, and a Retry whose request was lost is a "Couldn't start the retry." card with Try again on the failed reply instead of a fake failed reply. `./mf thread view` prints the same cards (`cards` in its JSON).
 ### Fixed
+- Compaction rejects summaries containing only document sections, matches listed document URIs exactly after removing decoration, and reserves the full omission note before re-showing documents.
 - Production contracts imports no longer load golden test fixtures; tests use a separate test-support entry point.
 - Snapshot reads in the app and `./mf` validate the whole declared chat and turn shape, rejecting malformed reply errors before rendering.
 - Every `./mf` HTTP request now chooses one response decoder; contradictory options can no longer bypass validation while promising a validated result.

@@ -26,17 +26,31 @@ export function parseImportantFiles(text: string): { summary: string; listedLine
   let section: "keep" | "omit" | null = null;
   for (const line of text.split(/\r?\n/u)) {
     const trimmed = line.trim();
-    if (trimmed === KEEP_OPEN_HEADING || trimmed === NOT_RESHOWN_HEADING) {
-      section = trimmed === KEEP_OPEN_HEADING ? "keep" : "omit";
+    const heading = trimmed
+      .match(/^#{1,6}\s+(.+?)\s*$/u)?.[1]
+      ?.replace(/[\s:#]+$/u, "")
+      .trim()
+      .toLowerCase();
+    if (heading === "documents to keep open" || heading === "documents not re-shown") {
+      section = heading === "documents to keep open" ? "keep" : "omit";
       continue;
     }
-    if (/^##\s/u.test(trimmed)) section = null;
+    if (/^#{1,6}\s/u.test(trimmed)) section = null;
     if (section === null) summary.push(line);
     if (section !== "keep") continue;
-    const cleaned = trimmed
-      .replace(/^(?:[-*]|\d+\.)\s+/u, "")
-      .replace(/^[`<]+|[`>]+(?=\s|$)/gu, "")
-      .trim();
+    let cleaned = trimmed.replace(/^(?:[-*+]|\d+[.)])\s+/u, "").trim();
+    // Strip only surrounding decoration, never a suffix that could be part of a URI.
+    const wrappers: Record<string, string> = { "`": "`", "<": ">", '"': '"', "'": "'" };
+    let previous: string;
+    do {
+      previous = cleaned;
+      cleaned = cleaned
+        .replace(/[.,;:]+$/u, "")
+        .replace(/\s+\([^()]*\)$/u, "")
+        .trim();
+      const closing = wrappers[cleaned[0] ?? ""];
+      if (closing && cleaned.endsWith(closing)) cleaned = cleaned.slice(1, -1).trim();
+    } while (cleaned !== previous);
     if (cleaned) listedLines.push(cleaned);
   }
   return { summary: summary.join("\n").trim(), listedLines };
@@ -49,13 +63,13 @@ export function importantFileText(uri: string, text: string): string {
 
 const IMPORTANT_FILES_MAX_TOKENS = 20_000;
 const IMPORTANT_FILES_WINDOW_FRACTION = 0.1;
-/** Reserve for the not-re-shown note and request-envelope estimation slack. */
+/** Estimator slack only; the omission note is priced and reserved separately. */
 const TRIGGER_MARGIN_TOKENS = 1_000;
 
 /**
- * Tokens the re-shown documents may add: a fraction of the window, capped, and never more than
- * the headroom the successor has under the auto-compaction trigger. The successor then cannot
- * land over the trigger, which would compact again at the next boundary.
+ * Budget for re-shown text and its omission note: a fraction of the window, capped by
+ * headroom under the auto-compaction trigger. The picker reserves the note first; if the
+ * mandatory note alone exceeds headroom, it is still written but no documents are admitted.
  */
 export function reshowBudgetTokens(input: {
   usableWindowTokens: number;
@@ -94,14 +108,8 @@ export function importantFileCandidates(
     recentIds.add(ref.documentId);
     if (recent.length < RECENT_DOCUMENTS_COUNT) recent.push(ref);
   }
-  const shownUris = [...byUri.keys()].sort((a, b) => b.length - a.length);
   const listed = listedLines.flatMap((line) => {
-    const uri = shownUris.find(
-      (shown) =>
-        line.startsWith(shown) &&
-        (line.length === shown.length || /^[\s\p{P}<>]/u.test(line.slice(shown.length))),
-    );
-    const ref = uri === undefined ? undefined : byUri.get(uri);
+    const ref = byUri.get(line);
     return ref ? [ref] : [];
   });
   const seen = new Set<string>();
@@ -111,6 +119,16 @@ export function importantFileCandidates(
     return true;
   });
   return { candidates, unknownUriCount: listedLines.length - listed.length };
+}
+
+/** Current-attempt omission receipt, shared by projection and worst-case budget reservation. */
+export function notReshownNote(uris: readonly string[]): string {
+  if (!uris.length) return "";
+  return [
+    NOT_RESHOWN_HEADING,
+    "These documents were not re-shown after the summary. Read them again before writing in them.",
+    ...new Set(uris.map((uri) => `- ${uri}`)),
+  ].join("\n");
 }
 
 /**
@@ -125,7 +143,12 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
   tokenizer: TokenizerFamily;
   read: (reference: ReferenceOccurrence) => Promise<T | null>;
 }): Promise<{ reference: ReferenceOccurrence; read: T }[]> {
-  let remaining = input.budgetTokens;
+  const note = notReshownNote(input.candidates.map((candidate) => candidate.uri as string));
+  // Every kept document only shortens this note, so reserving all omissions is conservative.
+  const noteTokens = note
+    ? estimateModelPartTokens({ type: "text", text: `\n\n${note}` }, input.tokenizer)
+    : 0;
+  let remaining = Math.max(0, input.budgetTokens - noteTokens);
   const kept: { reference: ReferenceOccurrence; read: T }[] = [];
   for (const candidate of input.candidates) {
     const uri = candidate.uri as string;
