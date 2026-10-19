@@ -6,15 +6,19 @@ and writes are separate entry points; every write command changes a document.
 
 ## Mental model
 
-Agent-edit owns a memory-only runtime Y.Doc. The host supplies durable journal,
-coordinator, lifecycle, link, and model ports; this package owns no Postgres,
-routes, auth, or Meridian Project/Work concepts. Runtime state is rebuilt from
-host-retained updates and checkpoints.
+Agent-edit holds no document between calls. Every model call reads the room
+fresh through `DocumentCoordinator.readRoom` (a disposable copy of what the
+host holds, plus the edit scope's kept staged writes) and renders from it. A
+write plans on the model's view (the frontier its request showed, plus the
+reply's own updates), echoes on the room copy, and stages or commits its
+captured update. The host supplies durable journal, coordinator, lifecycle,
+link, and model ports; this package owns no Postgres, routes, auth, or
+Meridian Project/Work concepts.
 
 `ResponseCommitter` is the explicit response durability lifecycle: it stages
-writes, accepts or rolls them back according to host settlement, and owns
-private draft helpers. A prepared read is a disposable lease. Reporting is
-best-effort and never mutates recovery state.
+writes, accepts or rolls them back according to host settlement, and owns the
+reply's settled own updates for its later views. Reporting is best-effort and
+never mutates recovery state.
 
 ## Rules
 

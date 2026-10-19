@@ -4,7 +4,7 @@ import * as Y from "yjs";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { createMutationCommit } from "./mutation-commit.js";
-import { hashAt, humanText } from "./test-support/assertions.js";
+import { humanText } from "./test-support/assertions.js";
 import { MemoryJournal } from "./test-support/recording-journal.js";
 import {
   cloneDoc,
@@ -45,8 +45,6 @@ describe("mutation commit", () => {
       links: { codec, scope: links.scopeFor("chapter.md", undefined) },
       updates: [journalEntry(Y.encodeStateAsUpdate(runtimeDoc, beforeVector))],
       liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
-      touchedHashes: new Set([hashAt(runtimeDoc, 0)]),
-      deletedHashes: new Set(),
       preOwnSnapshot,
       turnId: "turn-lock",
       actor: {
@@ -73,7 +71,6 @@ function journalEntry(update: Uint8Array): JournalBatchAppendEntry {
       mode: "threadPeer",
       threadId: THREAD_ID,
       turnId: "turn-lock",
-      draftGeneration: 1,
     },
   };
 }

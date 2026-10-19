@@ -307,7 +307,7 @@ export type BranchPushServiceInput = {
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
   journal: UpdateJournal;
-  liveCoordinator: DocumentCoordinator;
+  liveCoordinator: Pick<DocumentCoordinator, "withDocument" | "recover">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Push and settlement scope themselves; the trail text spells through it. */

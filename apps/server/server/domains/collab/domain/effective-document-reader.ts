@@ -1,8 +1,7 @@
-/** Effective draft reads with staged-response overlays . */
+/** Effective document reads for non-tool callers: the same room copy a model call would read. */
 import {
   type AgentEditCodecFactory,
   type DocHandle,
-  type DocumentCoordinator,
   isDocumentNotFoundError,
   toDocHandle,
   unwrapDoc,
@@ -22,9 +21,7 @@ import type {
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { documentRevision, versioned } from "./document-revision.js";
-import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftPullService } from "./draft-pulls.js";
-import { DraftNotFoundError } from "./draft-resolver.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { PeerRetirement } from "./peer-retirement.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
@@ -38,9 +35,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
-  draftCoordinator: DraftCoordinator;
-  draftPulls: DraftPullService;
-  liveCoordinator: DocumentCoordinator;
+  draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
@@ -77,91 +72,33 @@ export function createEffectiveDocumentReader(input: {
   }
 
   /**
-   * Reads the document's effective Y.Doc for this command: the reply's staged
-   * create, its thread peer, its Work draft, or else live content. Choosing
-   * the content source never chooses the view: every source renders through
+   * Reads the document's effective Y.Doc for this command: the room copy a model call would
+   * read (the reply's pinned destination with its staged writes, the thread's Work draft, or
+   * live). Choosing the content source never chooses the view: every source renders through
    * the same `read`, which spells in the command's own view.
    */
   async function readEffective<T>(
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, SyncError>> {
-    const lease = stagedInVersion(command)
-      ? await input.agentEdit.prepare(command.responseId, command.documentId)
-      : null;
-    if (lease) {
-      try {
-        return Ok(await read(lease.doc));
-      } finally {
-        lease.dispose();
-      }
-    }
-    const fallback = () => readLive(command, read);
-    if (command.destination === "live") return fallback();
-    if (command.threadId) {
-      // A read never ensures a peer or a draft (S1): it pulls a peer the thread already has,
-      // in the Work's active branch.
-      const view = await viewOf(command);
-      if (view.kind === "branch") {
-        try {
-          await input.drafts.resolveThreadDraft(command.documentId, command.threadId);
-          await input.draftPulls.pullThreadPeer({
-            documentId: command.documentId,
-            threadId: command.threadId,
-            branchId: view.branchId,
-          });
-        } catch (cause) {
-          if (!(cause instanceof DraftNotFoundError)) throw cause;
-        }
-      }
-      try {
-        const documentDraft = await input.drafts.resolveThreadDraft(
-          command.documentId,
-          command.threadId,
-        );
-        return Ok(await readEffectiveDraft(documentDraft, read));
-      } catch (cause) {
-        if (!(cause instanceof DraftNotFoundError)) throw cause;
-      }
-      await input.draftPulls.flushLivePull(command.documentId);
-      try {
-        const workDraft = await input.drafts.resolveWorkDraftForThread(
-          command.documentId,
-          command.threadId,
-        );
-        return Ok(await readEffectiveDraft(workDraft, read));
-      } catch (cause) {
-        if (!(cause instanceof DraftNotFoundError)) throw cause;
-      }
-    }
-    return fallback();
-  }
-
-  /** Live content, rendered by the same reader as every draft. */
-  async function readLive<T>(
-    command: EffectiveReadInput,
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<Result<T, SyncError>> {
+    let room: Awaited<ReturnType<ThreadPeerAgentEditCore["readRoom"]>>;
     try {
-      return Ok(
-        await input.liveCoordinator.withDocument(command.documentId, (doc) =>
-          read(toDocHandle(doc)),
-        ),
-      );
+      room = await input.agentEdit.readRoom({
+        documentId: command.documentId,
+        threadId: command.threadId,
+        responseId: stagedInVersion(command) ? command.responseId : null,
+        live: command.destination === "live",
+      });
     } catch (cause) {
       if (isDocumentNotFoundError(cause))
         return Err({ code: "not_found", documentId: command.documentId });
       throw cause;
     }
-  }
-
-  function readEffectiveDraft<T>(
-    documentDraft: { draftId: string },
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<T> {
-    return input.draftCoordinator.readDraft(documentDraft.draftId, async (doc) =>
-      read(toDocHandle(doc)),
-    );
+    try {
+      return Ok(await read(toDocHandle(room.doc)));
+    } finally {
+      room.dispose();
+    }
   }
 
   return {

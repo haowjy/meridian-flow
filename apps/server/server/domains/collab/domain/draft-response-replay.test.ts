@@ -33,7 +33,6 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
         meta: { origin: "agent:thread", seq: 0 },
         mutation: {
           mode: "threadPeer",
-          draftGeneration: 1,
           threadId: "thread",
           turnId: null,
           actorKind: "agent",
@@ -52,13 +51,7 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
   ];
   const current = cloneYDoc(live);
   try {
-    const kept = reconcileStagedDraftWrites(
-      current,
-      helper,
-      rows,
-      [retired],
-      Y.encodeStateAsUpdate(draft),
-    );
+    const kept = reconcileStagedDraftWrites(current, rows, [retired], Y.snapshot(draft));
     expect(kept.keptEntries.map((row) => row.mutation?.writeId)).toEqual(["independent"]);
     expect(kept.rejectedWrites).toEqual([
       { writeId: "lost", reason: "discard" },
@@ -78,32 +71,14 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
       expect(
         reconcileStagedDraftWrites(
           logical,
-          helper,
           envelopes,
           [retired],
-          Y.encodeStateAsUpdate(draft),
+          Y.snapshot(draft),
         ).keptEntries.map((entry) => entry.mutation?.writeId),
       ).toEqual(["independent"]);
       expect(logical.getText("chapter").toString()).toBe("red Zblue green");
     } finally {
       logical.destroy();
-    }
-    const forged = cloneYDoc(helper);
-    const untouched = cloneYDoc(live);
-    try {
-      forged.getText("unrecorded").insert(0, "unexplained");
-      expect(() =>
-        reconcileStagedDraftWrites(
-          untouched,
-          forged,
-          rows,
-          [retired],
-          Y.encodeStateAsUpdate(draft),
-        ),
-      ).toThrow("unexplained generation residual");
-    } finally {
-      forged.destroy();
-      untouched.destroy();
     }
   } finally {
     current.destroy();
@@ -141,7 +116,6 @@ it.each([
     meta: { origin: "agent:thread", seq: 0 },
     mutation: {
       mode: "threadPeer",
-      draftGeneration: 1,
       threadId: "thread",
       turnId: null,
       actorKind: "agent",
@@ -152,10 +126,9 @@ it.each([
     expect(
       reconcileStagedDraftWrites(
         current,
-        helper,
         [entry],
         concurrent === "writer deletion after refork" ? [Y.encodeStateAsUpdate(base)] : [],
-        Y.encodeStateAsUpdate(base),
+        Y.snapshot(base),
       ).keptEntries,
     ).toEqual([entry]);
     expect(current.getText("chapter").toString()).toBe(expected.getText("chapter").toString());
@@ -176,7 +149,7 @@ it("protects planning-visible identities removed by an explicit inverse", () => 
   const undo = new Y.UndoManager(text);
   text.delete(6, 4);
   text.insert(6, "Gamma");
-  const planningState = Y.encodeStateAsUpdate(base);
+  const cut = Y.snapshot(base);
   const helper = cloneYDoc(base);
   const updates: Uint8Array[] = [];
   helper.on("update", (update: Uint8Array) => updates.push(update));
@@ -194,7 +167,6 @@ it("protects planning-visible identities removed by an explicit inverse", () => 
     meta: { origin: "agent:thread", seq: 0 },
     mutation: {
       mode: "threadPeer",
-      draftGeneration: 1,
       threadId: "thread",
       turnId: null,
       actorKind: "agent",
@@ -202,7 +174,7 @@ it("protects planning-visible identities removed by an explicit inverse", () => 
     },
   };
   try {
-    const replay = reconcileStagedDraftWrites(current, helper, [entry], [], planningState, inverse);
+    const replay = reconcileStagedDraftWrites(current, [entry], [], cut, inverse);
     expect(replay.keptEntries).toEqual([]);
     expect(replay.rejectedWrites).toEqual([{ writeId: "replacement", reason: "inverse" }]);
     expect(current.getText("chapter").toString()).toBe("Alpha Beta.");

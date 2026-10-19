@@ -1,5 +1,4 @@
 // Shared dependencies bag for the write-tool command pipeline modules.
-import type * as Y from "yjs";
 
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { SpliceFallback } from "../links/find-splice.js";
@@ -47,7 +46,6 @@ export interface CreateWriteToolOptions {
   };
   defaultSessionId?: string;
   defaultThreadId?: string;
-  createRuntimeDoc?: () => Y.Doc;
   /**
    * A formatted find could not tell the links outside its splice apart and
    * assigned the whole block group instead: identity still follows

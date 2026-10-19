@@ -1,16 +1,17 @@
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import { DocumentNotFoundError } from "../ports/document-coordinator.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import { isInternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { settledReceipt } from "./receipt.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
-import { createRuntimeStore } from "./runtime-store.js";
 import type {
   DocumentCommandName,
   ReadFunction,
@@ -47,7 +48,14 @@ export interface WriteTool {
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
-  prepare: ResponseCommitter["prepare"];
+  /**
+   * A host's read of the document a call would see: the room copy with the reply's
+   * surviving staged entries. The caller disposes it.
+   */
+  readRoom(
+    docId: string,
+    scope: { threadId: string; responseId?: string },
+  ): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
   responseDocuments: ResponseCommitter["responseDocuments"];
   /** Move one response document's staged writes (one peer's, when named) to rejected receipts. */
   refuseStaged(
@@ -61,11 +69,9 @@ export interface WriteTool {
     threadId: string;
     peerDraftId: string;
     reason: import("../ports/document-coordinator.js").DiscardedWriteReason;
-  }): Promise<void>;
-  /** Drop one thread/document pair's runtimes and staged writes, for the request that owns them. */
-  invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
-  /** Evict one thread's runtimes without revoking its response buffers. */
-  evictThread(threadId: string): Promise<void>;
+  }): void;
+  /** Drop one thread's staged writes to a document: a save fence denied them. */
+  dropStaged(docId: string, threadId: string): void;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -81,13 +87,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
   });
-  const runtimeStore = createRuntimeStore({
-    coordinator: options.coordinator,
-    createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
-  });
   const lifecyclePort = options.lifecycle;
   const responseCommitter = createResponseCommitter({
-    runtimeStore,
     mutationCommit,
     coordinator: options.coordinator,
     model: options.model,
@@ -107,7 +108,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       codec: options.codec,
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
-      createRuntimeDoc: options.createRuntimeDoc,
       links: options.links,
       semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
@@ -118,14 +118,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     renderer,
     journal,
     mutationCommit,
-    runtimeStore,
     responseCommitter,
   });
-  const documentEdits = createDocumentEditCommands({
-    options,
-    committer: responseCommitter,
-    runtimeStore,
-  });
+  const documentEdits = createDocumentEditCommands({ options, committer: responseCommitter });
   const dispatch = createWriteDispatch({ commands, documentEdits });
 
   const read: ReadFunction = async (command, context = {}) => {
@@ -254,27 +249,26 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     prepareResponse: responseCommitter.prepareResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
     hasResponseDocument: responseCommitter.hasResponseDocument,
-    prepare: responseCommitter.prepare,
+    async readRoom(docId, { threadId, responseId }) {
+      const room = await responseCommitter.openRoom({
+        docId,
+        threadId,
+        commandName: "read",
+        ...(responseId ? { responseId } : {}),
+      });
+      if (isInternalWriteResult(room)) throw new DocumentNotFoundError(docId);
+      return room;
+    },
     responseDocuments: responseCommitter.responseDocuments,
     refuseStaged: responseCommitter.refuseStaged,
-    async retirePeer(input) {
+    retirePeer(input) {
       if (!input.documentId || !input.threadId || !input.peerDraftId)
         throw new Error("Retirement requires a document, thread and peer");
       responseCommitter.retirePeer(input);
-      await runtimeStore.evictThreadRuntimes(input.documentId, input.threadId, {
-        markLiveDocStale: true,
-        peerDraftId: input.peerDraftId,
-      });
     },
-    async invalidateThreadDocument(docId, threadId) {
-      if (!docId || !threadId)
-        throw new Error("invalidateThreadDocument names one document and one thread");
-      responseCommitter.dropForThread(docId, threadId);
-      await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
-    },
-    async evictThread(threadId) {
-      if (!threadId) throw new Error("evictThread names one thread");
-      await runtimeStore.evictThreadRuntimes(null, threadId);
+    dropStaged(docId, threadId) {
+      if (!docId || !threadId) throw new Error("dropStaged names one document and one thread");
+      responseCommitter.dropStaged(docId, threadId);
     },
   };
 }

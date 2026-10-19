@@ -150,7 +150,7 @@ describe("DraftPullService", () => {
     }
   });
 });
-function coordinatorFor(doc: Y.Doc): DocumentCoordinator {
+function coordinatorFor(doc: Y.Doc): Pick<DocumentCoordinator, "withDocument" | "recover"> {
   return {
     withDocument: async (_documentId, fn) => fn(doc),
     recover: async () => {},

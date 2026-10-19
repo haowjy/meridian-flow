@@ -44,13 +44,15 @@ An observation frontier records what document state a block showed the model:
 `room_key`), on the source block: a `tool_result`, or a writer turn's reference
 block whose materialized read the model is sent. A block records at most one
 (`source_block_id` is the primary key).
-The room is `draft:<workDraftId>` (the thread peer's upstream, never the peer)
-or `live:<documentId>:<authorityGeneration>`; collab names it. `snapshot` is
-`Y.encodeSnapshotV2` of the doc the result was rendered from; `unshown` lists
-blocks changed since the model's previous frontier and not shown in full
-(`@meridian/agent-edit/integration` computes both). Nothing plans on them yet:
-today's concurrent-edit reporting still runs on in-memory watermarks until
-writes plan on the frontier ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)).
+The room is `draft:<workDraftId>` (the Work draft the call read, never a peer)
+or `live:<documentId>:<authorityGeneration>`; collab names it from what the
+call read. `snapshot` is `Y.encodeSnapshotV2` of the doc the result was
+rendered from; `unshown` lists blocks changed since the model's previous
+frontier and not shown in full (`@meridian/agent-edit/integration` computes
+both). Every write plans on the `planning` frontier of its room plus the
+reply's own writes ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md));
+concurrent-edit reporting still also runs on the journal watermarks until
+the one listing replaces them (M2 W2).
 
 - **What records.** Only results the model receives: reads, immediate write
   echoes, undo, redo and revert echoes, settled save receipts, and reference
@@ -84,8 +86,7 @@ writes plan on the frontier ([decision](https://github.com/haowjy/meridian-flow-
   block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
   reads the run's current blocks, so a sibling call's result counts as seen,
   and `planning` reads the blocks the authoring request was built from (calls
-  in one response share the view from before it; nothing calls it until writes
-  plan on the frontier). The block set is the effective conversation (fork
+  in one response share the view from before it; every write plans on it). The block set is the effective conversation (fork
   lineage through the cutoff, forgotten turns removed), not the compaction
   projection: credit survives a summarized or elided result. A failed lookup is
   logged and answers null, the empty frontier; it runs in a savepoint inside a

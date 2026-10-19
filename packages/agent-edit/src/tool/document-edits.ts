@@ -1,4 +1,4 @@
-// Model inverse entry points expose only prepared leases and accepted host-owned cuts.
+// Model inverse entry points: accepted host-owned cuts, rendered and recorded in the room they ran in.
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
@@ -7,11 +7,10 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ModelInverseCommand } from "../ports/document-edits.js";
 import { openCommandLinks } from "./command-links.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { withObservation } from "./observation.js";
+import { recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { status } from "./response-format.js";
-import type { RuntimeStore } from "./runtime-store.js";
 import type { ReadCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import { parseFileAddress } from "./write-helpers.js";
@@ -19,7 +18,6 @@ import { parseFileAddress } from "./write-helpers.js";
 export function createDocumentEditCommands(deps: {
   options: CreateWriteToolOptions;
   committer: ResponseCommitter;
-  runtimeStore: RuntimeStore;
 }) {
   return async (
     command: ReadCommand | ModelInverseCommand,
@@ -35,12 +33,7 @@ export function createDocumentEditCommands(deps: {
       throw new Error("Immutable edit commands require the reply save boundary");
     const port = deps.options.documentEdits;
     if (!port) return status("invalid_write", "This host has no immutable edit history.");
-    // The same prepare gate owns every response-content exposure. The inverse
-    // plans against locked authority, never against the helper or a fake journal.
-    const lease = context.responseIdentity?.editScopeId
-      ? await deps.committer.prepare(context.responseIdentity?.editScopeId, address.documentId)
-      : null;
-    lease?.dispose();
+    // The inverse plans against the host's locked authority, never against a call's room copy.
     const request = { documentId: address.documentId, threadId: session.threadId, context };
     const result =
       "command" in command
@@ -54,23 +47,20 @@ export function createDocumentEditCommands(deps: {
         model: { message: result.message, read: { format: "edits" } },
       };
 
-    // `after` is the cut the inverse committed on top of, in the version it ran on: the echo
+    // `after` is the cut the inverse committed on top of, in the room it ran in: the echo
     // records there, crediting nothing when it degraded.
-    const observe = result.after ? await context.observeInverse?.(result.draftId) : undefined;
     const before = new Y.Doc({ gc: false }),
       after = new Y.Doc({ gc: false });
     const observed = (rendered: InternalWriteResult) =>
-      withObservation(
+      recordObservation(
         rendered,
         after,
-        observe,
+        result.after ? result.room : null,
+        context.frontiers?.recording,
         address.documentId,
         deps.options.onObservationFailed,
       );
     try {
-      await deps.runtimeStore.evictThreadRuntimes(address.documentId, session.threadId, {
-        markLiveDocStale: true,
-      });
       if (!result.before || !result.after)
         throw new Error("Accepted inverse is missing its content cuts");
       Y.applyUpdate(before, result.before);
@@ -100,7 +90,7 @@ export function createDocumentEditCommands(deps: {
         afterBlocks,
         { phase: "committed", ...(result.writeId ? { writeId: result.writeId } : {}) },
       );
-      return observed({
+      return await observed({
         ...receipt,
         ...shownEvidence(renderedItems(receipt.model), links),
         revision: deps.options.links.revision(after, links.scope),
@@ -108,7 +98,7 @@ export function createDocumentEditCommands(deps: {
       });
     } catch {
       // Admission has already succeeded; an echo failure cannot turn it into a refusal.
-      return observed({
+      return await observed({
         status: "success",
         phase: "committed",
         ...(result.writeId ? { writeId: result.writeId } : {}),

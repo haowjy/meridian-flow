@@ -77,22 +77,25 @@ undecodable or uncontained previous frontier is the empty snapshot.
 `planningSnapshot` validates the room and snapshot containment. `createPlanningView`
 constructs an explicit gc-off snapshot target and replays only supplied reply updates
 contained in the room copy. Either pending store, or a final view whose structs or
-deletions are not contained in that copy, invalidates the view. These primitives
-are not yet connected to the write door. `changedSince` and `changedWords` share the
+deletions are not contained in that copy, invalidates the view. Every write
+plans on that view (`write-commands.ts` `planningView`). `changedSince` and `changedWords` share the
 same flipped-range walk; word counts clip each string item to the flipped clock range.
 
-The host names rooms; agent-edit carries the label. When the host passes
-`WriteContext.observe = { room, prev }`, read results and write receipts carry
-a host-only `frontier` (`{ room, snapshot, unshown }`) from the doc they
-rendered. An undo, redo or revert renders from the version the host's inverse
-ran on, which only its result names (`DocumentEditResult.draftId`), so the host
-passes `observeInverse(draftId)` and the echo records from the inverse's
-`after` cut. With `ResponseCommitOptions.observe(documentId)` each saved
-document's result carries one at the post-commit cut (`saveObservation`),
-crediting what its accepted receipts show; journal-replay recovery leaves the
-cut unknown and records none. Shown in full: a read's rendered blocks (an
-outline read credits none) and `extent: full` changed blocks (never prefix context, copy
-edges or swept bodies). A result reported with `awarenessDegraded` still
+The host names rooms; agent-edit carries the label. `readRoom` returns the
+room it read (`draft:<workDraftId>`, `live:<documentId>:<generation>`; `null`
+when the host has none) and nothing is resolved before the call. When the
+host passes `WriteContext.frontiers = { recording, planning }`, read results
+and write receipts carry a host-only `frontier` (`{ room, snapshot, unshown }`)
+from the doc they rendered, chained from `recording(room)`; `planning(room)` is
+the view a write plans on. An undo, redo or revert names the room its inverse
+committed into (`DocumentEditResult.room`) and the echo records there from the
+inverse's `after` cut. With `ResponseCommitOptions.recordingFrontier` each
+saved document's result carries one at the post-commit cut, in the room the
+save committed into, crediting what its accepted receipts show; journal-replay
+recovery leaves the cut unknown and records none. A staged result records
+nothing: its save does. Shown in full: a read's rendered blocks (an outline
+read credits none) and `extent: full` changed blocks (never prefix context,
+copy edges or swept bodies). A result reported with `awarenessDegraded` still
 records, crediting nothing. A failure is reported through
 `onObservationFailed` and the result goes out without one; `frontier` never
 reaches `AgentEditResultV1`.

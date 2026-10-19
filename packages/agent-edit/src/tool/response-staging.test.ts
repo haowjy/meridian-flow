@@ -269,7 +269,7 @@ describe("response staging", () => {
       },
     );
 
-    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
+    ctx.core.dropStaged("chapter.md", THREAD_ID);
     await expect(ctx.core.commitResponse("response-stale-buffer")).rejects.toThrow(
       "already rolled back",
     );

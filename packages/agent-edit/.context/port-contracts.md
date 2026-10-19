@@ -16,34 +16,40 @@ even when no rows remain above it. The host, not this package, mints captured
 checkpoint cuts. Compaction never expires immutable receipts or lineage.
 
 Undo/redo state is not transport state. `DocumentEdits` reads immutable parts
-and delegates stack policy to the host's inverse policy, behind the
-prepared-lease gate and never through the draft journal facade or staged-write
+and delegates stack policy to the host's inverse policy, after the reply's
+save boundary and never through the draft journal facade or staged-write
 queue. There is no reconstruction-based reversal endpoint or reserved undo
 client.
 
 ### `DocumentCoordinator` (`src/ports/document-coordinator.ts`)
 
-`withDocument` runs a callback on the host's document; its mutations commit
-atomically or refuse. Callers must not rely on mutual exclusion: a live host
-serializes callers for one document, a draft host runs them on private
-candidates. On a draft an ordinary CRDT write commits as an unfenced append;
-an exact peer catch-up or rewrite commits only at the revision it captured, so
-a `StagedWriteCommit` whose save includes one can still throw a revision miss.
-Neither fences a separate WebSocket
-transport; the host supplies that authority check. `DocumentAccess.timeoutMs`
-bounds only a live host's wait. `recover` replays persisted-but-unapplied
-updates and reports a missing coordinator document as `DocumentNotFoundError`.
+`readRoom(docId, staged, access)` is every model call's read: a disposable
+copy of the room the host holds (`doc`, the `room` label it read, its
+`generation`), with the edit scope's staged entries reconciled against the
+scope's first-stage snapshot cut. The host answers which entries it `kept`
+(applied to the copy) and which it `rejected`, with reasons; a rejected entry
+leaves the scope and never reappears. A live host reads without taking the
+document's mutex (the deferred projection pattern); a draft host rebases live
+into the Work draft first, then copies the Work draft replica. A bound call
+whose draft a Discard took throws `DocumentAccessLostError(reason)`. `roomFor`
+names the room a live save committed into.
+
+`withDocument` runs a callback on the host's document for a live save; its
+mutations commit atomically or refuse. Callers must not rely on mutual
+exclusion. A drafted host commits only through `stagedWrites`. Neither fences a
+separate WebSocket transport; the host supplies that authority check.
+`DocumentAccess.timeoutMs` bounds only a live host's wait. `recover` replays
+persisted-but-unapplied updates and reports a missing coordinator document as
+`DocumentNotFoundError`.
 
 A host that stages response writes on private candidates provides
-`stagedWrites`, two operations over an explicit helper base cut. `replay` is
-for reading: accepted kept entries, a replacement helper cut and the before
-cut, and nothing written. `prepareSave` returns the same and a required
+`stagedWrites.prepareSave`: the same reconcile as `readRoom` against the scope's
+cut, the `room` it saves into, the before and after cuts, and a required
 `write`: either a `StagedWriteCommit` the caller's attempt owns (`persist`
 inside the commit scope, `transfer` once the attempt completed, `dispose` on
 any unwind; the host installs the write at root commit, never at `transfer`), or an
 explicit `{ kind: "no-effect" }`, which the committer refuses when it kept
-entries. Prepared views are private disposable replicas, never runtime-store
-entries; every content exposure passes through a prepare lease. Whole Discard
+entries. An ordinary CRDT write commits as an unfenced append. Whole Discard
 retires only the addressed peer/document epoch. A host's response-attempt
 surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
 once, from `integration.ts`.
@@ -92,11 +98,12 @@ snapshot. It is optional and may fall back to an in-memory map.
 
 ### `AgentEditCore` (`src/index.ts`)
 
-The facade exposes read/write, recovery, response commit/rollback, prepared
-leases, response-document discovery, and thread invalidation. The host chooses
+The facade exposes read/write, `readRoom` (the effective reader's door),
+recovery, response commit/rollback, response-document discovery, peer
+retirement and `dropStaged`. The host chooses
 destination, stack policy, immutable receipt persistence, notices, and
 install-after-commit. `responseIdentity` separates provider authorship from
-rotated helper scope. No public method reconstructs an UndoManager from journal
+rotated edit scope. No public method reconstructs an UndoManager from journal
 history.
 
 ## Performance boundary

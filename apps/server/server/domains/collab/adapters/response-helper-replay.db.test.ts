@@ -32,9 +32,7 @@ async function expectScopedReplay(
   const { createEffectiveDocumentReader } = await import("../domain/effective-document-reader.js");
   const reader = createEffectiveDocumentReader({
     drafts: fixture.draftStore,
-    draftCoordinator: fixture.draftCoordinator,
     draftPulls: fixture.draftPulls,
-    liveCoordinator: fixture.liveCoordinator,
     agentEdit: fixture.collab.agentEdit(),
     documents: fixture.runtime.markdownDocuments,
     model: fixture.runtime.model,
@@ -331,43 +329,6 @@ describe("response helper replay (Postgres)", () => {
     expect(await read()).toMatchObject({ status: "success" });
     await expectDroppedCommit(draft, dropped, updateCount, markdown, generation);
   });
-  it("a save that misses all four attempts leaves an accepted fresh replay for retry", async () => {
-    const draft = await setupResponseDraft(db, harness);
-    const { fixture, draftId, responseId, write, review } = draft;
-    const dropped = [await write("gold", "gild"), await write("gild", "bronze")];
-    expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
-    await review("gold");
-    // An append is sequenced, never fenced; the save's one remaining miss is its thread
-    // peer's exact catch-up checkpoint (design §4).
-    const original = fixture.draftStore.commitRewrite.bind(fixture.draftStore);
-    let misses = 0;
-    fixture.draftStore.commitRewrite = async (request) => {
-      if (request.operation.kind === "checkpoint") {
-        misses += 1;
-        return { status: "moved" };
-      }
-      return original(request);
-    };
-    try {
-      await expect(harness.commit(responseId)).rejects.toThrow();
-    } finally {
-      fixture.draftStore.commitRewrite = original;
-    }
-    // Four commit attempts, each recaptured; the fifth never runs.
-    expect(misses).toBe(4);
-    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nazure\n\ngreen\n");
-    const lease = await fixture.collab.agentEdit().prepare(responseId, ALPHA_ID);
-    if (!lease) throw new Error("Missing prepared lease");
-    try {
-      // A post-failure exposure is itself an accepted fresh replay, not a raw buffer peek.
-      expect(
-        fixture.model.getBlocks(lease.doc).map((block) => fixture.model.getText(block)),
-      ).toEqual(["red", "azure", "lime"]);
-    } finally {
-      lease.dispose();
-    }
-    await expectDroppedCommit(draft, dropped, 1, "red\n\nazure\n\nlime\n");
-  });
   it("a save whose second document moves between capture and commit folds the move and commits once", async () => {
     const { fixture, draftId, responseId, context, write } = await setupResponseDraft(db, harness);
     const core = fixture.collab.agentEdit();
@@ -508,7 +469,7 @@ describe("response helper replay (Postgres)", () => {
     // An aborted rollback must not replace the helper with this ambient peer.
     await writer();
     const { branchId } = await fixture.collab.draftReview.items({ workId: WORK_ID });
-    await fixture.draftPulls.pullThreadPeer({
+    await fixture.draftPulls.ensureThreadPeer({
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
       branchId: branchId ?? undefined,

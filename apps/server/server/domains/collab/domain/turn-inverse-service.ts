@@ -49,6 +49,8 @@ export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
   live: Y.Doc;
+  /** The live room `live` was captured from, by its authority; null when it has none yet. */
+  liveRoom: string | null;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,

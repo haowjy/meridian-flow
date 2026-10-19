@@ -18,9 +18,10 @@ later response reusing a provider ID is a new attempt.
 
 ## Response commit lifecycle
 
-With `responseId`, create/insert/replace/remove mutate the session runtime and
-buffer exact updates and metadata in the committer. Without it, the command
-appends and projects immediately. Undo and redo are save boundaries: the host
+With `responseId`, create/insert/replace/remove plan on the view, echo on the
+call's room copy and buffer the exact captured update and metadata in the
+committer. Without it, the command appends and projects immediately (a drafted
+host runs such a write as a one-entry reply). Undo and redo are save boundaries: the host
 settles buffered writes before executing an inverse.
 
 Lifecycle ownership is exclusive:
@@ -33,16 +34,19 @@ Lifecycle ownership is exclusive:
   response so a late handler cannot reopen it.
 
 The attempt records journal acceptance before reporting or projection. Before
-acceptance, rollback can restore/evict speculative runtime state. After
+acceptance, rollback drops the buffer; nothing else holds the speculative
+state. After
 acceptance, failures recover from the journal; rollback is not allowed to claim
 that durable work vanished. A projection/report failure after durable acceptance
 returns degraded awareness rather than ordinary unqualified success.
 
 Phase-C apply snapshots around awaited concurrent detection and rechecks
 immediately before synchronous `Y.applyUpdate`. Peer retirement revokes the
-matching document epoch, including leases issued before the first staged write;
-it never revokes a replacement peer. `dropForThread` may mutate only Buffered
-state. Create cleanup is eligible only for pre-commit discard.
+matching document epoch, including a room read bound before the first staged
+write, and the revoked call is refused with the retirement's reason; it never
+revokes a replacement peer. A host's room read that finds its bound draft taken
+by a Discard throws `DocumentAccessLostError(reason)`, refused the same way.
+`dropStaged` may mutate only Buffered state. Create cleanup is eligible only for pre-commit discard.
 
 ## Mutation and selector contracts
 

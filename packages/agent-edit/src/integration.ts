@@ -31,7 +31,12 @@ export {
 } from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
-export type { FrontierLookup, ObservationFrontier, ObservationRequest } from "./frontier.js";
+export type {
+  FrontierLookup,
+  FrontierLookups,
+  ObservationFrontier,
+  ObservationRequest,
+} from "./frontier.js";
 export {
   changedSince,
   changedWords,
@@ -66,15 +71,17 @@ export type {
   DiscardedWriteReason,
   DocumentAccess,
   DocumentCoordinator,
-  StagedHelperCut,
+  RoomRead,
+  StagedCut,
+  StagedReconcile,
+  StagedRoomEntries,
   StagedWriteCommit,
   StagedWriteHost,
   StagedWriteRejectionReason,
-  StagedWriteReplayInput,
-  StagedWriteReplayResult,
   StagedWriteSaveResult,
 } from "./ports/document-coordinator.js";
 export {
+  DocumentAccessLostError,
   DocumentNotFoundError,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";

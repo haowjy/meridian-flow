@@ -222,7 +222,7 @@ async function writeUnderGrant(
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
-        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
