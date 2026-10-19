@@ -694,6 +694,128 @@ restart smoke check.
   cannot script partial text followed by an error, or `max_tokens`, so the `max_tokens` and
   partial-text cases are covered by the `thread_history` contract test and the classifier test.
 
+## RP-19: Observation frontiers survive a restart and a fork finds them
+
+- **Protects:** observation frontiers ([runtime document text](../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)). Each read or write result
+  the model is shown records one row per room, keyed by that result block; `room_key` is
+  `draft:<workDraftId>` (the `document_drafts` row of kind `work_draft`, never the thread
+  peer) or `live:<documentId>:<authorityGeneration>`; `unshown` lists block ids that changed
+  since the previous frontier and were not shown in full. Lookup is the latest `recorded_seq`
+  among the conversation's blocks. A fork finds inherited rows with no copy. Staging-time
+  rows are replaced by the step's save. Host-only: the model request carries no frontier text.
+- **Stack:** mock, owned fresh database. A gate run uses a detached checkout pinned to the
+  commit under test (`docs/qa/README.md`), not another lane's stack.
+- **SQL:** `tools/qa/probes/observation-frontiers.sh` dumps `observation_frontiers` joined to
+  `turn_blocks` and `turns`. Optional argument: a thread UUID, or a `live:` / `draft:` prefix.
+  `recorded_seq` is an identity: a deleted staging row leaves a gap.
+- **Seed:** write the chapter to a file and pass `--text @file`. A shell `$'\n'` is dash-literal
+  and becomes one heading whose text contains `\n`. Partial reads use 1-based `in` (heading is 1).
+
+  ```bash
+  printf '%s\n' '# M1 Probe Chapter' '' 'The mountain stood above the mist.' '' \
+    'The river cut through the valley.' '' 'The sky held a single hawk.' > "$E/chapter.md"
+  ./mf doc put 'manuscript://M1 Chapter' --text @"$E/chapter.md" --json > "$E/doc.json"
+  ./mf thread create --work @/ --title 'M1 frontier auto-apply' --json > "$E/thread.json"
+  T=$(jq -r .threadId "$E/thread.json")
+  eval "$(pnpm exec tsx tools/dev/print-worktree-env.ts)"
+  ```
+
+- **Steps:**
+
+  1. Auto-apply full read:
+
+     ```bash
+     ./mf thread send "$T" 'Read the whole chapter.' \
+       --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter"}}]},{"text":"I have the whole chapter."}]' \
+       --json > "$E/cell1-send.ndjson"
+     # Capture the step-after-read request before any restart (in-memory ring).
+     ./mf thread context "$T" --all --view raw --json > "$E/cell6-context-raw.json"
+     tools/qa/probes/observation-frontiers.sh "$T"
+     ```
+
+  2. Restart, then partial-read paragraph 3 on `$T`. Control: the same partial read in a fresh thread.
+
+     ```bash
+     MODEL_PROVIDER=mock pnpm dev:restart --no-tailscale
+     PARTIAL='[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter","in":3}}]},{"text":"The river paragraph."}]'
+     ./mf thread send "$T" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell2-same-send.ndjson"
+     ./mf thread create --work @/ --title 'M1 frontier control' --json > "$E/cell2-control-thread.json"
+     CT=$(jq -r .threadId "$E/cell2-control-thread.json")
+     ./mf thread send "$CT" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell2-control-send.ndjson"
+     tools/qa/probes/observation-frontiers.sh live:
+     ```
+
+  3. Fork `$T` at the settled partial-read reply. Count rows by `source_block_id` before and after
+     the fork (before the fork's own read). Then partial-read paragraph 3 on the fork.
+
+     ```bash
+     CUT=$(jq -r 'select(.type=="result").turnId' "$E/cell2-same-send.ndjson")
+     tools/qa/probes/observation-frontiers.sh > "$E/cell3-before.txt"
+     FORK=$(node -p 'crypto.randomUUID()')
+     ./mf api POST "/api/threads/$T/fork" --data "{\"id\":\"$FORK\",\"originTurnId\":\"$CUT\"}" --json > "$E/cell3-fork.json"
+     tools/qa/probes/observation-frontiers.sh > "$E/cell3-after-fork.txt"
+     ./mf thread send "$FORK" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell3-fork-send.ndjson"
+     tools/qa/probes/observation-frontiers.sh "$FORK"
+     ```
+
+  4. Draft mode: a Work, a draft-mode thread (`./mf thread create` has no write-mode flag), a write
+     to create the `work_draft`, then a read.
+
+     ```bash
+     P=$(jq -r .projectId "$E/thread.json")
+     ./mf api POST "/api/projects/$P/works" --data '{"name":"M1 Draft Work"}' --json > "$E/work.json"
+     W=$(jq -r .id "$E/work.json")
+     ./mf api GET "/api/agents?projectId=$P&limit=100" --json | jq '.agents[] | select(.slug=="general").selection' > "$E/agent-selection.json"
+     jq -n --arg p "$P" --arg w "$W" --arg id "$(node -p 'crypto.randomUUID()')" \
+       --argjson sel "$(cat "$E/agent-selection.json")" \
+       '{id:$id,projectId:$p,title:"M1 frontier draft mode",agentSelection:$sel,workId:$w,aiWriteMode:"draft"}' \
+       > "$E/cell4-create-body.json"
+     ./mf api POST /api/threads --data @"$E/cell4-create-body.json" --json > "$E/cell4-thread.json"
+     DT=$(jq -r .id "$E/cell4-thread.json")
+     ./mf thread send "$DT" 'Change the last paragraph in the draft.' \
+       --mock '[{"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://M1 Chapter","in":4,"content":"The sky held a single hawk over the draft."}}]},{"text":"Drafted a sky change."}]' \
+       --json > "$E/cell4-write-send.ndjson"
+     ./mf thread send "$DT" 'Read the chapter.' \
+       --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter"}}]},{"text":"Read the draft chapter."}]' \
+       --json > "$E/cell4-read-send.ndjson"
+     tools/qa/probes/observation-frontiers.sh "$DT"
+     # Compare room_key to document_drafts.id for kind work_draft vs thread_peer on this document.
+     ```
+
+  5. Staged write: a fresh auto-apply thread, one model step that reads then replaces. After the
+     step settles, the write's block has one frontier row whose `recorded_seq` is higher than the
+     read's; the identity sequence has a gap for the deleted staging insert.
+
+     ```bash
+     printf '%s\n' '# Write Probe' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-chapter.md"
+     ./mf doc put 'manuscript://M1 Write' --text @"$E/write-chapter.md" --json > "$E/cell5-doc.json"
+     ./mf thread create --work @/ --title 'M1 frontier staged write' --json > "$E/cell5-thread.json"
+     WT=$(jq -r .threadId "$E/cell5-thread.json")
+     ./mf thread send "$WT" 'Read the chapter then rewrite the last paragraph.' \
+       --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Write"}},{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write","in":4,"content":"Gamma paragraph, rewritten."}}]},{"text":"Rewrote gamma."}]' \
+       --json > "$E/cell5-send.ndjson"
+     tools/qa/probes/observation-frontiers.sh "$WT"
+     ```
+
+  6. No model-visible change: inspect `$E/cell6-context-raw.json` (captured in step 1). The second
+     request is the step after the read.
+
+- **Expect:**
+  1. One `live:<documentId>:1` row, `unshown: []`, `blocks: 4` in the read result.
+  2. Same-thread partial read after restart: `unshown: []`, `blocks: 1 of 4`. Control thread:
+     `unshown` lists the other three block ids (`client:clock`).
+  3. Fork copies no rows (same count and `source_block_id` set before vs after). Fork partial read:
+     `unshown: []`.
+  4. Read's `room_key` is `draft:<work_draft.id>`, not `draft:<thread_peer.id>`. Result `version: draft`.
+  5. Write block: one row, `recorded_seq` greater than the same-step read. `tool.completed` then
+     `tool.settled`. A gap in `recorded_seq` is the replaced staging insert, not a missing save.
+  6. Raw request text contains none of `frontier`, `snapshot`, `unshown`.
+- **Evidence:** each send NDJSON, the SQL dumps, the fork body, `document_drafts` ids next to
+  `room_key`, seq occupancy 1..last_value, and the captured model requests.
+- **Last run:** 2026-10-19 on `404c09761b` (`feat/m1-frontier`), mock, detached checkout
+  `p13624-m1-probe`, all six cells passed. Evidence:
+  `work/concurrent-edit-design/m1/probe/` in the docs repository. Browser: none (no writer-visible change).
+
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments
