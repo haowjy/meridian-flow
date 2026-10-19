@@ -6,6 +6,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentRemovals } from "../../context/ports/document-removals.js";
 import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
 import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
@@ -51,6 +52,7 @@ export function createReplySaveFences(deps: {
   branches: Pick<Branches, "shareActive">;
   diagnostics?: Pick<DraftAgentEditDiagnostics, "replyPinMismatch">;
   fileAccess: Pick<FileAccess, "confirmEdit">;
+  removals: DocumentRemovals;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ReplySaveFences {
@@ -72,9 +74,17 @@ export function createReplySaveFences(deps: {
       );
       await collabHook("save.afterDocumentLock");
       const refusals = new Map<DocumentId, RefusedResponseDocument>();
-      for (const denial of await deps.fileAccess.confirmEdit(grants)) {
+      const denials = await deps.fileAccess.confirmEdit(grants);
+      // A deleted document answers `not_found`; the record says who deleted it.
+      const removals = await deps.removals.lookup(
+        denials
+          .filter((denial) => denial.reason === "not_found")
+          .map((d) => targetDocumentId(d.target)),
+      );
+      for (const denial of denials) {
         const documentId = targetDocumentId(denial.target);
-        refusals.set(documentId, { documentId, denial });
+        const removal = removals.get(documentId);
+        refusals.set(documentId, { documentId, denial, ...(removal ? { removal } : {}) });
       }
       const active = new Map<BranchId, boolean>();
       for (const [documentId, { pin }] of entries.sort(([, a], [, b]) =>
@@ -101,6 +111,19 @@ export function createReplySaveFences(deps: {
         ) {
           reason = "integration";
           deps.diagnostics?.replyPinMismatch({ documentId, threadId: record.threadId, pin });
+        }
+        if (reason === "discarded_document" || reason === "discarded_edit") {
+          // A closed draft over a removed document is the removal's, not a writer's discard;
+          // a draft closed with `document_removed` keeps that cause once the document stands again.
+          const removal = (await deps.removals.lookup([documentId])).get(documentId);
+          if (
+            removal ||
+            upstream?.closedCause === "document_removed" ||
+            peer?.closedCause === "document_removed"
+          ) {
+            refusals.set(documentId, { documentId, removed: removal ?? null });
+            continue;
+          }
         }
         if (reason) refusals.set(documentId, { documentId, reason });
       }

@@ -14,6 +14,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { DocumentRemovals } from "../context/ports/document-removals.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
@@ -76,6 +77,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  removals: DocumentRemovals;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
@@ -89,6 +91,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
       branches: input.branches,
       diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,
+      removals: input.removals,
       lockWorks: input.lockWorks,
       lockLiveDocuments: input.lockLiveDocuments,
     }),

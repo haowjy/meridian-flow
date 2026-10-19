@@ -45,6 +45,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentRemovals,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -62,6 +63,7 @@ import {
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
+  type DocumentRemovals,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -406,6 +408,8 @@ export type ProductionAppPorts = {
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
   shownLinks: ShownLinkStore;
+  /** The removal record behind a missing file (e2 D9). */
+  documentRemovals: DocumentRemovals;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -733,6 +737,7 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
+    documentRemovals: createDrizzleDocumentRemovals(db),
   };
 }
 
@@ -844,6 +849,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
     shownLinks: ports.shownLinks,
+    documentRemovals: ports.documentRemovals,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);

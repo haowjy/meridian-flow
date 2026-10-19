@@ -1,4 +1,5 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
+
 import { randomUUID } from "node:crypto";
 import {
   type ComputedInverse,
@@ -10,6 +11,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { removalPhrase } from "../../context/document-removal-copy.js";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
@@ -205,6 +207,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       return {
         status: "document_not_found",
         message: "File not found. Read the project to find the right path.",
+      };
+    if (document.removal)
+      return {
+        status: "document_not_found",
+        message: `File not found. This file was ${removalPhrase(document.removal)}.`,
       };
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,

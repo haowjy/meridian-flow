@@ -30,6 +30,7 @@ import {
   runInDrizzleSavepoint,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
+import type { DocumentRemovals } from "../../context/ports/document-removals.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
@@ -56,6 +57,7 @@ type Dependencies = {
   drafts: DraftStore;
   coordinator: DocumentCoordinator;
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
+  removals: DocumentRemovals;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
@@ -137,9 +139,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const draftIds = inverseDraftIds(query, parts);
       const documents: InverseDocument[] = [];
       const heads = new Map<DocumentId, number>();
+      const removals = await input.removals.lookup(ids);
       try {
         for (const documentId of ids) {
-          const live = await materialize(documentId);
+          // A removed document has no live content to plan against: its parts are skipped
+          // with the record, and a released one has no head to materialize.
+          const removal = removals.get(documentId) ?? null;
+          const live = removal ? new Y.Doc({ gc: false }) : await materialize(documentId);
           const [head] = await db()
             .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
             .from(documentYjsUpdates)
@@ -149,6 +155,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             documentId,
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             live,
+            removal,
             history: parts.filter((part) => part.documentId === documentId),
             drafts: new Map(),
           };
@@ -157,7 +164,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             string,
             InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
           >();
-          for (const draftId of draftIds) {
+          for (const draftId of removal ? [] : draftIds) {
             const read = await input.drafts.readDraftAt(draftId);
             const documentDraft = read?.documentDraft;
             if (

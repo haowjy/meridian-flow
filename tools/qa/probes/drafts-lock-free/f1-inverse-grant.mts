@@ -18,6 +18,7 @@ import {
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { setCollabHook } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
+import { createDrizzleDocumentRemovals } from "../../../../apps/server/server/domains/context/tree/document-removals.ts";
 import {
   currentDrizzleDb,
   runInRootDrizzleTransaction,
@@ -66,6 +67,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     }
   });
   const inverse = createDrizzleTurnInverseService({
+    removals: createDrizzleDocumentRemovals(harness.db),
     db: harness.db,
     journal: harness.persistence.journal,
     drafts: harness.store,

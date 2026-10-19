@@ -47,6 +47,7 @@ import {
   firstRefusal,
   inContainer,
   keptDraftReader,
+  removalBehind,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
@@ -226,7 +227,13 @@ async function writeUnderGrant(
       });
   } catch (cause) {
     if (!(cause instanceof FileEditRefusedError)) throw cause;
-    return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
+    const refusal = firstRefusal(cause);
+    return fileAccessDeniedError(
+      parsed.command,
+      refusal,
+      address.filePath,
+      await removalBehind(deps, principal, refusal),
+    );
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
   // was a partial failure's echo. An error without echo text carries no facts.
