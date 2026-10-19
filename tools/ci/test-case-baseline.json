@@ -439,7 +439,7 @@
     "packages/agent-edit/src/apply/destructive-effect.test.ts": 3,
     "packages/agent-edit/src/diff/attribution.test.ts": 37,
     "packages/agent-edit/src/diff/diff.test.ts": 8,
-    "packages/agent-edit/src/diff/merge.test.ts": 45,
+    "packages/agent-edit/src/diff/merge.test.ts": 46,
     "packages/agent-edit/src/diff/review.test.ts": 11,
     "packages/agent-edit/src/diff/writer.test.ts": 3,
     "packages/agent-edit/src/lineage/range-set.test.ts": 3,

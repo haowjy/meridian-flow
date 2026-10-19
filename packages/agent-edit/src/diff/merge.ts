@@ -31,7 +31,7 @@ import {
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, unionInsertions } from "./merge-settle.js";
-import { buildBlocks, buildSide, type Tok, tokenizeBlock } from "./tokens.js";
+import { buildBlocks, buildSide, isWordTok, type Tok, tokenizeBlock } from "./tokens.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move";
@@ -41,7 +41,21 @@ export interface Conflict {
   draft: Tok[];
 }
 
+export interface BlockSource {
+  side: "base" | "live" | "draft";
+  index: number;
+}
+
+export interface BlockCorrespondence {
+  /** Null denotes input blocks removed from the result. */
+  output: number | null;
+  sources: BlockSource[];
+}
+
 export interface RebaseResult {
+  correspondence: BlockCorrespondence[];
+  overrode: number; // live words replaced by the draft in contested text
+
   blocks: PMNode[]; // the new draft
   conflicts: Conflict[]; // where both sides changed the same text; the draft's version is in `blocks`
   orderConflict: boolean; // the two sides' paragraph moves admit no single order; the draft's order won
@@ -150,6 +164,18 @@ export function rebase(
   };
   const toks = (v: MergedTok[]) => v.map((o) => o.tok);
 
+  let overrode = 0;
+  const replacedWords = (live: MergedTok[], kept: MergedTok[]) => {
+    const remaining = new Map<string, number>();
+    for (const { tok } of kept)
+      if (isWordTok(tok)) remaining.set(tok.key, (remaining.get(tok.key) ?? 0) + 1);
+    for (const { tok } of live)
+      if (isWordTok(tok)) {
+        const n = remaining.get(tok.key) ?? 0;
+        if (n) remaining.set(tok.key, n - 1);
+        else overrode++;
+      }
+  };
   const conflicts: Conflict[] = order.contested.map((i) => ({
     kind: "move" as const,
     baseIds: [i],
@@ -224,7 +250,8 @@ export function rebase(
     }
     if (lo === hi) {
       const union = unionInsertions(liveVersion, draftVersion);
-      if (union.chose)
+      if (union.chose) {
+        replacedWords(liveVersion, union.out);
         conflicts.push({
           kind: "overlap",
           baseIds: idsIn(Math.max(0, lo - 1), lo),
@@ -232,6 +259,7 @@ export function rebase(
           live: toks(liveVersion),
           draft: toks(draftVersion),
         });
+      }
       merged.push(...union.out);
       continue;
     }
@@ -240,6 +268,7 @@ export function rebase(
     const absorbed = draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
     if (absorbed) merged.push(...absorbed);
     else {
+      replacedWords(liveVersion, draftVersion);
       conflicts.push({
         kind: "overlap",
         baseIds: idsIn(lo, hi),
@@ -258,5 +287,86 @@ export function rebase(
     liveAlignment.pos,
     draftAlignment.pos,
   );
-  return { blocks: buildBlocks(schema, settled).blocks, conflicts, orderConflict: order.cyclic };
+  const correspondence: BlockCorrespondence[] = [];
+  const represented = new Set<string>();
+  const liveBase = new Map<number, number>();
+  const draftBase = new Map<number, number>();
+  order.inLive.forEach((j, i) => {
+    if (j >= 0) liveBase.set(j, i);
+  });
+  order.inDraft.forEach((j, i) => {
+    if (j >= 0) draftBase.set(j, i);
+  });
+  const blocks = buildBlocks(schema, settled, {
+    onBlock(output, tokens) {
+      const sources = new Map<string, BlockSource>();
+      const add = (side: BlockSource["side"], index: number) => {
+        if (index < 0) return;
+        const key = `${side}:${index}`;
+        sources.set(key, { side, index });
+        represented.add(key);
+      };
+      for (const token of tokens) {
+        const current = merged[token];
+        for (const origin of [current, ...(current.sources ?? [])]) {
+          let b = -1;
+          if (origin.origin === BASE) {
+            b = baseIds[baseSide.blockOf[origin.index]];
+            const l = liveAlignment.pos[origin.index];
+            const d = draftAlignment.pos[origin.index];
+            if (l >= 0) {
+              const j = liveSide.blockOf[l];
+              add("live", order.reordered ? order.liveOrder[j] : j);
+            }
+            if (d >= 0) {
+              const j = draftSide.blockOf[d];
+              add("draft", order.reordered ? order.draftOrder[j] : j);
+            }
+          } else if (origin.origin === LIVE) {
+            const j = liveSide.blockOf[origin.index];
+            const original = order.reordered ? order.liveOrder[j] : j;
+            add("live", original);
+            b = liveBase.get(original) ?? -1;
+          } else {
+            const j = draftSide.blockOf[origin.index];
+            const original = order.reordered ? order.draftOrder[j] : j;
+            add("draft", original);
+            b = draftBase.get(original) ?? -1;
+          }
+          if (b >= 0) {
+            add("base", b);
+            add("live", order.inLive[b]);
+            add("draft", order.inDraft[b]);
+          }
+        }
+      }
+      correspondence.push({ output, sources: [...sources.values()] });
+    },
+  }).blocks;
+  base.forEach((_, index) => {
+    if (represented.has(`base:${index}`)) return;
+    const sources: BlockSource[] = [{ side: "base", index }];
+    for (const [side, partner] of [
+      ["live", order.inLive],
+      ["draft", order.inDraft],
+    ] as const) {
+      const j = partner[index];
+      if (j >= 0 && !represented.has(`${side}:${j}`)) {
+        sources.push({ side, index: j });
+        represented.add(`${side}:${j}`);
+      }
+    }
+    represented.add(`base:${index}`);
+    correspondence.push({ output: null, sources });
+  });
+  for (const [side, input] of [
+    ["base", base],
+    ["live", live],
+    ["draft", draft],
+  ] as const)
+    input.forEach((_, index) => {
+      if (!represented.has(`${side}:${index}`))
+        correspondence.push({ output: null, sources: [{ side, index }] });
+    });
+  return { blocks, correspondence, overrode, conflicts, orderConflict: order.cyclic };
 }
