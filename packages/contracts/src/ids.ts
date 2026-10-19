@@ -8,7 +8,7 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
-/** A `branches` row: one Work branch, the unit Apply all and Discard act on (D68). */
+/** A `branches` row: one Work branch, the unit Discard all closes (D68). */
 export type BranchId = string;
 /** One document's pending `work_draft` version inside a branch (D68). */
 export type DraftId = string;
