@@ -40,7 +40,14 @@ their content into the summary. The appended instruction changes, never the
 cached request prefix (messages, tools, system and cache key). Handoff is
 unchanged. Successor preparation strips the list, re-shows matched documents
 plus the 3 recent within budget, and names unreadable or over-budget candidates
-in the final summary with a read-again instruction; see [compaction](compaction.md#important-files).
+in the final summary with a read-again instruction. The instruction forbids
+carrying forward an earlier `## Documents not re-shown` note; successor preparation
+strips model-emitted copies and regenerates the note from this attempt only.
+Listed lines may contain spaces and list decoration; selection matches the longest
+shown URI prefix at a boundary, without encoding spaces. Rolling still sees only
+the cut and running summary, not an inventory of retained-tail documents; the
+3 recent candidates are selected by the server on either path. For sizing and
+the note lifecycle, see [compaction](compaction.md#important-files).
 
 Before either path, one settled-authority revision query over the source
 projection supplies changed document URIs. Summary rows do not supply prefix
