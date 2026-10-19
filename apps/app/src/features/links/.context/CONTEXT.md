@@ -268,3 +268,8 @@ Work membership, including the derivation source for `$PARENT`, before expansion
 A remote parent rebind needs no child subscription or snapshot invalidation.
 Editor holders have no variable scope. Typed tool results keep their canonical
 path even when a later rebind changes the same variable's destination.
+
+Chat folder labels read existing catalog checkpoints by canonical URI, using the
+folder's `displayName` (ordinary folders use `name`). A completed listing uses
+its typed canonical result URI; an unproved notes root names the Scratch area.
+This presentation lookup carries no variable locations or thread-scope cache.

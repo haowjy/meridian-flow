@@ -95,3 +95,7 @@ Keep phone-only chrome in `mobile/` and shared bodies/models outside it. Do not
 add phone branches to `ProjectShell` or desktop slot layout. Preserve source
 comments for browser-specific behavior such as solid top bars, safe-area
 keyboard clearance, and visualViewport sizing.
+
+Scratch breadcrumbs read folder names from the same owner-scoped catalog as the
+route. Source paths select nodes; they never supply associated-root labels.
+Unknown catalog ancestors are omitted until the catalog arrives.

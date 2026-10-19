@@ -630,6 +630,7 @@ export function ChatView({
       <TranscriptLinkNavigationContext.Provider value={links.navigation}>
         <ReferenceAvailabilityContext.Provider value={links.references}>
           <ChatContextNavigationProvider
+            projectId={projectId}
             onOpenContextUri={links.doors?.open}
             canOpenContextUri={links.doors?.canOpen}
           >

@@ -78,7 +78,7 @@ function OpenMovePicker({
   const failedFolder = repairMove
     ? repairMove.parent.kind === "root"
       ? schemeLabel(repairMove.parent.scheme)
-      : (source.folderFor(repairMove.parent.folderId)?.path.split("/").at(-1) ?? t`that folder`)
+      : (source.folderFor(repairMove.parent.folderId)?.name ?? t`that folder`)
     : null;
   const refusal = failedFolder
     ? t`Couldn't move to ${failedFolder}. Try again or pick another folder.`

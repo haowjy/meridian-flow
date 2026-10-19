@@ -6,7 +6,11 @@
  */
 import { t } from "@lingui/core/macro";
 import { splitDocumentHrefSuffix } from "@meridian/contracts";
-import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import {
+  documentTitleFromUri,
+  hasContextUriVariable,
+  parseUnifiedContextUri,
+} from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
 import { schemeLabel } from "@/features/project/context/context-schemes";
@@ -47,7 +51,13 @@ function skillFileDisplayName(uriOrPath: string): string | null {
   return t`${name} (${skill})`;
 }
 
-export function folderDisplayName(uriOrPath: string): string {
+export function folderDisplayName(uriOrPath: string, catalogName?: string): string {
+  if (catalogName) return catalogName;
+  if (hasContextUriVariable(uriOrPath)) return schemeLabel("scratch");
+  const parsed = parseUnifiedContextUri(uriOrPath);
+  // A qualified notes root has no writer-named path. Without its catalog, name the area.
+  if (parsed.ok && parsed.value.scheme === "scratch" && !parsed.value.path)
+    return schemeLabel("scratch");
   const { scheme, path } = parseContextLocation(uriOrPath);
   const segments = path.split("/").filter(Boolean);
   return segments.at(-1) ?? (scheme ? schemeLabel(scheme) : t`Untitled document`);

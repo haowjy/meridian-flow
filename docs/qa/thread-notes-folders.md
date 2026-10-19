@@ -99,6 +99,17 @@ arguments or use JSON files).
   folder. The move must settle without an availability-location error.
   Read back under the canonical qualified URI; content and document id stay
   unchanged. Opening the moved note and reloading retains its route.
+- **Move-refusal name.** Start moving an owner-root file into a title-labelled
+  chat folder. Hold the outgoing real move request, create a same-named file at
+  that destination from another client, then release. The real server must
+  refuse the collision and leave the source unchanged. Reopen Move: both the
+  destination heading and "Couldn't move to …" name the catalog folder title,
+  never its reserved `@cN` basename.
+- **Other folder-name surfaces.** Check the move-success note, move-picker trail,
+  Files subtitles, Editor/dock ancestry, mobile Scratch breadcrumb and chat `ls`
+  title/listing against the catalog display name. A masked Scratch destination
+  omits unproved ancestry until its catalog-backed surface mounts. A listing
+  root with no loaded catalog label names the Scratch area, never its handle.
 - **Variable continuity after path reuse.** Show an AI a link to A at
   `scratch://@notes/@/c12/plan`; move A and create B at that path. Rewriting
   the link with either that canonical spelling or

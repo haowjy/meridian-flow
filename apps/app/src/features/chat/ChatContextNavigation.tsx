@@ -2,9 +2,11 @@
  * ChatContextNavigation — optional chat-local bridge from written-document URIs
  * to whichever shell owns context-file routing.
  */
-import { createContext, type ReactNode, useContext } from "react";
+import type { ResourceCatalogCheckpoint } from "@meridian/resource-replica";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import type { LinkTarget } from "@/core/editor/links";
 import type { FollowPolicy } from "@/features/links";
+import { useAccountResourceProjection } from "@/features/project/context/account-feature-context";
 
 /**
  * Where inside a document a door means to land. Both halves are required
@@ -17,24 +19,45 @@ export type ContextPassageAnchor = { blockHash: string; term: string };
 export type OpenContextUri = (uri: string, passage?: ContextPassageAnchor) => void;
 export type CanOpenContextUri = (uri: string) => boolean;
 
+const ChatCatalogs = createContext<readonly ResourceCatalogCheckpoint[]>([]);
+
+export function useChatFolderName(uri: string): string | undefined {
+  const normalized = uri.replace(/\/$/, "");
+  const catalogs = useContext(ChatCatalogs);
+  return useMemo(() => {
+    for (const checkpoint of catalogs) {
+      const folder = checkpoint.entries.find(
+        (entry) => entry.kind === "folder" && entry.uri.replace(/\/$/, "") === normalized,
+      );
+      if (folder?.kind === "folder") return folder.displayName ?? folder.name;
+    }
+    return undefined;
+  }, [catalogs, normalized]);
+}
+
 const ChatContextNavigationContext = createContext<OpenContextUri | null>(null);
 const ChatContextRoutabilityContext = createContext<CanOpenContextUri | null>(null);
 
 export function ChatContextNavigationProvider({
+  projectId,
   onOpenContextUri,
   canOpenContextUri,
   children,
 }: {
+  projectId: string;
   onOpenContextUri?: OpenContextUri | null;
   canOpenContextUri?: CanOpenContextUri | null;
   children: ReactNode;
 }) {
+  const { snapshot } = useAccountResourceProjection(projectId);
   return (
-    <ChatContextNavigationContext.Provider value={onOpenContextUri ?? null}>
-      <ChatContextRoutabilityContext.Provider value={canOpenContextUri ?? null}>
-        {children}
-      </ChatContextRoutabilityContext.Provider>
-    </ChatContextNavigationContext.Provider>
+    <ChatCatalogs.Provider value={snapshot?.catalogs ?? []}>
+      <ChatContextNavigationContext.Provider value={onOpenContextUri ?? null}>
+        <ChatContextRoutabilityContext.Provider value={canOpenContextUri ?? null}>
+          {children}
+        </ChatContextRoutabilityContext.Provider>
+      </ChatContextNavigationContext.Provider>
+    </ChatCatalogs.Provider>
   );
 }
 

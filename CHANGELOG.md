@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Move refusals name the destination’s catalog title, not its reserved notes-folder basename. Chat folder listings and mobile Scratch ancestry also use catalog labels; masked Scratch addresses no longer guess folder names.
+
 - Resolve chat `$THREAD` and `$PARENT` links only on the server at click time, including `./mf` reads. Remove browser notes-scope snapshots, readiness and dependent rebind invalidation so remote parent rebinds cannot open an old Work’s notes (#978). Tool names use canonical result paths when available.
 
 - Extend the thread-notes probe recipe with root-as-file refusal, client moves into notes, identity continuity and delayed scope refresh.

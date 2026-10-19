@@ -146,6 +146,7 @@ export type ProjectMenuSource = {
     scheme: ProjectContextTreeScheme;
     owner: ContextOwner;
     path: string;
+    name: string;
     catalog: CatalogContextView;
     entryId: string;
   } | null;
@@ -265,6 +266,7 @@ export function useProjectMenuSource({
             scheme: area.scheme,
             owner: area.owner,
             path: "/",
+            name: area.name,
             catalog,
             entryId: catalog.root.entryId,
           };
@@ -274,6 +276,7 @@ export function useProjectMenuSource({
             scheme: area.scheme,
             owner: area.owner,
             path: folder.path,
+            name: folder.name,
             catalog,
             entryId: rowId,
           };

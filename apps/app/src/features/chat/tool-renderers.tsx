@@ -15,6 +15,7 @@ import { ChevronRight, FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { useChatFolderName } from "./ChatContextNavigation";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
 import { CommandTitle } from "./CommandTitle";
 import {
@@ -64,6 +65,22 @@ function inputObject(tool: ToolView): Record<string, JsonValue> {
 
 function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function FolderName({ uri }: { uri: string }) {
+  const name = useChatFolderName(uri);
+  return folderDisplayName(uri, name);
+}
+
+function ListingTitle({ tool }: { tool: ToolView }) {
+  const result = tool.result;
+  const path =
+    (result && typeof result === "object" && !Array.isArray(result)
+      ? asString(result.uri)
+      : undefined) ?? asString(inputObject(tool).path);
+  if (tool.isError || !path) return phraseTitle(tool);
+  const phrase = toolActivityPhrase(tool);
+  return <CommandTitle verb={phrase.verb} parameter={<FolderName uri={path} />} />;
 }
 
 /** A parameter the timeline shows as text rather than as a destination. */
@@ -187,7 +204,7 @@ function ListingRows({ results }: { results: ToolResultRows }) {
               <>
                 <Folder className="size-3 shrink-0 self-center text-ink-subtle" aria-hidden />
                 <span className="min-w-0 truncate text-prose-foreground">
-                  {folderDisplayName(row.uri)}
+                  <FolderName uri={row.uri} />
                 </span>
               </>
             ) : (
@@ -597,7 +614,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
   read: DOCUMENT_TOOL_RENDERER,
   write: DOCUMENT_TOOL_RENDERER,
   ls: {
-    title: phraseTitle,
+    title: (tool) => <ListingTitle tool={tool} />,
     expand: listingOrNothing,
   },
   search: {

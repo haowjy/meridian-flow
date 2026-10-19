@@ -3,6 +3,8 @@
 import { t } from "@lingui/core/macro";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -69,7 +71,16 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  const crumbs = contextBreadcrumbSegments(props);
+  const { catalog: scratchCatalog } = useContextCatalogView(props.projectId, "scratch", {
+    ...(props.mobileDocumentRoute?.rootThreadId
+      ? { rootThreadId: props.mobileDocumentRoute.rootThreadId }
+      : { workId: props.editorScope.status === "ready" ? props.editorScope.workId : null }),
+    enabled:
+      props.activeScreen === "context" &&
+      props.activeContextScheme === "scratch" &&
+      props.editorScope.status === "ready",
+  });
+  const crumbs = contextBreadcrumbSegments(props, scratchCatalog);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
   const work = useWorkChrome(
     props.projectId,
@@ -294,7 +305,10 @@ function renderActiveView(
   }
 }
 
-function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(
+  props: ReviewScopedProjectProps,
+  scratchCatalog: CatalogContextView | null,
+): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
@@ -322,8 +336,10 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
   // Route invariant: `folder === dirname(path)` whenever a file is open, so
   // the folder ancestry doubles as the document screen's ancestor trail.
   for (const folder of folderAncestry(props.activeContextFolder)) {
+    const name = browsable ? folder.name : scratchCatalog?.findPath(folder.path)?.name;
+    if (!name) continue;
     segments.push({
-      label: folder.name,
+      label: name,
       ...(browsable ? { onSelect: () => props.onSelectContextFolder(folder.path) } : {}),
     });
   }

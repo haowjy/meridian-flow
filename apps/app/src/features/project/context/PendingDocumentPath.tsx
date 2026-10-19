@@ -24,7 +24,8 @@ export function PendingDocumentPath({
     },
   ];
   if (path) {
-    for (const folder of folderAncestry(path.slice(0, path.lastIndexOf("/"))))
+    // Scratch ancestry needs catalog labels, which this masked address does not own yet.
+    for (const folder of browsable ? folderAncestry(path.slice(0, path.lastIndexOf("/"))) : [])
       segments.push({
         label: folder.name,
         ...(browsable ? { onSelect: () => onSelectContextPath(folder.path, scheme) } : {}),

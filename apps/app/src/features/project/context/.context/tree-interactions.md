@@ -162,3 +162,9 @@ The chat's Scratch renders actual entries through `ContextTreeEntry` and its
 operation selection. Creation is absent. One surface-owned deletion coordinator
 and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
 "Earlier notes" group is navigation only, not a mutable folder.
+
+Move destinations carry the catalog node's presentation `name` beside its
+placement `path`. Refusal copy reads that name; neither retry copy nor move
+success feedback derives a folder label from a source path. Masked Scratch
+addresses have no proved catalog owner yet, so their temporary header shows the
+area and filename without guessed ancestry.
