@@ -29,6 +29,8 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "deletedNodeTypes",
   "documentId",
   "documentIds",
+  "sourceThreadId",
+  "destinationThreadId",
   "errorCode",
   "executionId",
   "field",

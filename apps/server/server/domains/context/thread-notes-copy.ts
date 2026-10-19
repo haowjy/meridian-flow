@@ -1,7 +1,13 @@
 /** Live notes preparation and create-only atomic subtree installation for a derived chat. */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import { type ContextNotesLocation, formatParsedContextUri } from "@meridian/contracts/context-uri";
-import { type DocumentFileType, type Filetype, renderFilename } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  type DocumentFileType,
+  type Filetype,
+  filetypeSchema,
+  renderFilename,
+} from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { threads, works } from "@meridian/database/schema";
 import type { PMNode } from "@meridian/markup";
@@ -90,18 +96,24 @@ export function createThreadNotesCopy(deps: {
         if (existing.kind !== "not_found") return;
       }
       const objects: string[] = [];
-      const prepared: {
-        id: DocumentId;
-        source: (typeof cut.documents)[number];
-        nodes?: readonly PMNode[];
-        revision: string | null;
-        binary?: { key: string; storageUrl: string; mimeType: string; sizeBytes: number };
-      }[] = [];
+      const prepared: ({ id: DocumentId; source: (typeof cut.documents)[number] } & (
+        | { kind: "tracked"; filetype: Filetype; nodes: readonly PMNode[]; revision: string }
+        | {
+            kind: "binary";
+            fileType: DocumentFileType;
+            binary: { key: string; storageUrl: string; mimeType: string; sizeBytes: number };
+            revision: null;
+          }
+      ))[] = [];
       let installed = false;
       try {
         // Read live content before holding namespace locks: collab pulls on its own connection.
         for (const document of cut.documents) {
-          if (document.storageUrl) {
+          const filetype = filetypeSchema.parse(document.fileType);
+          const classification = classifyFiletype(filetype);
+          if (classification.kind === "binary" || classification.kind === "custom") {
+            if (!document.storageUrl)
+              throw new Error(`Binary note ${document.id} has no stored object`);
             const copy = await prepareBinaryCopy(deps.objectStore, {
               storageUrl: document.storageUrl,
               mimeType: document.mimeType ?? undefined,
@@ -113,6 +125,8 @@ export function createThreadNotesCopy(deps: {
             prepared.push({
               id: crypto.randomUUID() as DocumentId,
               source: document,
+              kind: "binary",
+              fileType: classification.fileType,
               binary: copy.value,
               revision: null,
             });
@@ -123,6 +137,8 @@ export function createThreadNotesCopy(deps: {
             prepared.push({
               id: crypto.randomUUID() as DocumentId,
               source: document,
+              kind: "tracked",
+              filetype,
               nodes: copy.value.nodes,
               revision: copy.value.revision,
             });
@@ -191,22 +207,22 @@ export function createThreadNotesCopy(deps: {
                 name: document.name,
                 extension: document.extension,
               },
-              copy.binary
+              copy.kind === "binary"
                 ? {
                     kind: "binary",
-                    fileType: document.fileType as DocumentFileType,
+                    fileType: copy.fileType,
                     ...copy.binary,
                     metadata: { copiedFrom },
                   }
                 : {
                     kind: "tracked",
-                    filetype: document.fileType as Filetype,
+                    filetype: copy.filetype,
                     metadata: { copiedFrom },
                   },
               { hidden: false, id: copy.id },
             );
             if (!id) throw new Error("Copied document location is occupied");
-            if (copy.nodes) await deps.documents.seedFromNodes(id, copy.nodes);
+            if (copy.kind === "tracked") await deps.documents.seedFromNodes(id, copy.nodes);
             created.push(id);
           }
           await deps.arrivals.settle(created);

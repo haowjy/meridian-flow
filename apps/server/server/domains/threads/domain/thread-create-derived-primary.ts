@@ -30,7 +30,7 @@ export interface CreateDerivedPrimaryThreadInput {
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
-  derivationSourceThreadId?: ThreadId | null;
+  derivationSourceThreadId: ThreadId;
   title?: string | null;
   initialPromptBakeId?: PromptBakeId | null;
 }
@@ -56,7 +56,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     parentThreadId: input.source.parentThreadId,
     originType: input.originType,
     originTurnId: input.originTurnId ?? null,
-    derivationSourceThreadId: input.derivationSourceThreadId ?? null,
+    derivationSourceThreadId: input.derivationSourceThreadId,
     rootThreadId: input.originType === "handoff" ? input.id : input.source.rootThreadId,
     spawnDepth: input.source.spawnDepth,
     spawnStatus: null,

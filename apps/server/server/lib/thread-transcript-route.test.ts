@@ -37,6 +37,7 @@ describe("handleReadThreadTranscript", () => {
       content: { text: "hidden provider detail", providerOptions: { private: true } },
     });
     const local = await repos.threads.createDerivedPrimary({
+      derivationSourceThreadId: source.id,
       aiWriteMode: "direct",
       id: "00000000-0000-4000-8000-0000000006c2" as ThreadId,
       userId: USER_ID,

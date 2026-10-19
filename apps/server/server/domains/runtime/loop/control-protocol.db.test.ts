@@ -398,6 +398,7 @@ else
       });
       const forkAtRequest = (
         await rig.repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: source.id,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
@@ -423,6 +424,7 @@ else
 
       const firstFork = (
         await rig.repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: source.id,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
@@ -442,6 +444,7 @@ else
       });
       const secondFork = (
         await rig.repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: firstFork.id,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: firstFork,
@@ -471,6 +474,7 @@ else
       );
       if (!source || !answer) throw new Error("Expected source thread and completed reply");
       const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
+        derivationSourceThreadId: source.id,
         aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,

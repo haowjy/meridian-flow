@@ -641,7 +641,7 @@ export async function createProductionAppPorts(input: {
         payload: {
           sourceThreadId: sourceId,
           destinationThreadId: destinationId,
-          error: error instanceof Error ? error.message : String(error),
+          ...unknownToEventPayload(error),
         },
       });
     }

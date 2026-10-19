@@ -37,6 +37,7 @@ export function defineThreadLsContract(
     async function fork(source = root, originType: "fork" | "handoff" = "fork") {
       return (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: source.id,
           aiWriteMode: "direct",
           ...identity,
           id: crypto.randomUUID() as never,

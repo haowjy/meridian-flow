@@ -820,6 +820,7 @@ else
       await handBack(rig, r1, [m2]);
       const fork = (
         await rig.repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: main.id,
           aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: main,

@@ -202,6 +202,7 @@ export function defineThreadHistoryContract(
 
       // A handoff starts its own lineage but may still read its direct source.
       const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
+        derivationSourceThreadId: f.thread.id,
         aiWriteMode: "direct",
         id: randomUUID() as ThreadId,
         userId: f.thread.userId,

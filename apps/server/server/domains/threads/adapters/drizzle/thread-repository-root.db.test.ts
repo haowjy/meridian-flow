@@ -69,6 +69,7 @@ else
         status: "complete",
       });
       const { thread: fork } = await repos.threads.createDerivedPrimary({
+        derivationSourceThreadId: subagent.id,
         aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
@@ -93,6 +94,7 @@ else
 
       // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
       const { thread: handoff } = await repos.threads.createDerivedPrimary({
+        derivationSourceThreadId: subagent.id,
         aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,

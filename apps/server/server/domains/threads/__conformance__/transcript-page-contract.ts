@@ -142,6 +142,7 @@ export function defineTranscriptPageContract(
       await block(r3.id as TurnId, "r3.0", 0);
       const fork1 = (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: root.id,
           aiWriteMode: "direct",
           id: id("fork1") as ThreadId,
           userId: root.userId,
@@ -163,6 +164,7 @@ export function defineTranscriptPageContract(
       await block(f1.id as TurnId, "f1.0", 0);
       const fork2 = (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: fork1.id,
           aiWriteMode: "direct",
           id: id("fork2") as ThreadId,
           userId: root.userId,
@@ -252,6 +254,7 @@ export function defineTranscriptPageContract(
     ) {
       return (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: source.id,
           aiWriteMode: "direct",
           id: id(label) as ThreadId,
           userId: source.userId,
@@ -343,6 +346,7 @@ export function defineTranscriptPageContract(
       const rootTwo = await turn(root.id as ThreadId, "three-span-root-2");
       const middle = (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: root.id,
           aiWriteMode: "direct",
           id: id("three-span-middle") as ThreadId,
           userId: root.userId,
@@ -364,6 +368,7 @@ export function defineTranscriptPageContract(
       await block(middleLocal.id as TurnId, "three-span-middle-local.0", 0);
       const child = (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: middle.id,
           aiWriteMode: "direct",
           id: id("three-span-child") as ThreadId,
           userId: root.userId,
@@ -715,6 +720,7 @@ export function defineTranscriptPageContract(
       const after = await turn(root.id as ThreadId, "fork-after");
       const beforeFork = (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: root.id,
           aiWriteMode: "direct",
           id: id("fork-cut-before") as ThreadId,
           userId: root.userId,
@@ -727,6 +733,7 @@ export function defineTranscriptPageContract(
       ).thread;
       const afterFork = (
         await repos.threads.createDerivedPrimary({
+          derivationSourceThreadId: root.id,
           aiWriteMode: "direct",
           id: id("fork-cut-after") as ThreadId,
           userId: root.userId,

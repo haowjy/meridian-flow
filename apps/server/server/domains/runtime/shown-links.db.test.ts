@@ -151,6 +151,7 @@ if (!RUN_DB_TESTS || !url) {
       const derive = async (originType: "fork" | "handoff", origin: Turn, from = source) =>
         (
           await repos.threads.createDerivedPrimary({
+            derivationSourceThreadId: from.id,
             aiWriteMode: "direct",
             id: crypto.randomUUID(),
             source: from,
