@@ -181,4 +181,9 @@ export interface DocumentAccess {
    * reads and saves exactly its Work draft and never provisions another.
    */
   pinnedDraftId?: string;
+  /**
+   * The Work draft a draft read bound to no peer reads, as the caller already resolved it; a
+   * host resolves the thread's Work draft itself when this is absent.
+   */
+  workDraftId?: string;
 }

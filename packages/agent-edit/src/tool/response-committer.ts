@@ -151,6 +151,8 @@ export interface RoomCallInput {
   threadId: string;
   commandName: DocumentCommandName;
   interactionContext?: InteractionContext;
+  /** The Work draft a draft read bound to no peer reads, as the host routed it. */
+  workDraftId?: string;
   /** A staged create of a new document reads an empty copy when the room doesn't exist yet. */
   missing?: "empty";
 }
@@ -499,7 +501,8 @@ export function createResponseCommitter(deps: {
           docBuffer && sent.length
             ? { cut: docBuffer.cut, entries: journalEntries(docId, sent) }
             : null,
-          accessFor(input.interactionContext ?? docBuffer?.interactionContext),
+          accessFor(input.interactionContext ?? docBuffer?.interactionContext) ??
+            (input.workDraftId ? { workDraftId: input.workDraftId } : undefined),
         );
       } catch (cause) {
         if (token && !ownsLifetime(token)) return revokedWrite(token);

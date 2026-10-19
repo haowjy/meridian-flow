@@ -53,7 +53,7 @@ export interface WriteTool {
    */
   readRoom(
     docId: string,
-    scope: { threadId: string; responseId?: string },
+    scope: { threadId: string; responseId?: string; workDraftId?: string },
   ): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
   responseDocuments: ResponseCommitter["responseDocuments"];
   /** Move one response document's staged writes (one peer's, when named) to rejected receipts. */
@@ -245,12 +245,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     prepareResponse: responseCommitter.prepareResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
     hasResponseDocument: responseCommitter.hasResponseDocument,
-    async readRoom(docId, { threadId, responseId }) {
+    async readRoom(docId, { threadId, responseId, workDraftId }) {
       const room = await responseCommitter.openRoom({
         docId,
         threadId,
         commandName: "read",
         ...(responseId ? { responseId } : {}),
+        ...(workDraftId ? { workDraftId } : {}),
       });
       if (isInternalWriteResult(room)) throw new DocumentNotFoundError(docId);
       return room;
