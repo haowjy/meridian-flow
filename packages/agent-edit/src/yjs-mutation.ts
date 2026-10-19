@@ -249,10 +249,9 @@ export function textInRanges(
 }
 
 /**
- * Plain text of the visible top-level blocks that hold these items now, one line per block in
- * document order. A removed block reads as the nearest visible block to its left (else right):
- * Yjs inserts after the last visible item, before trailing tombstones, so a block rebuilt in
- * place (a paragraph turned into a heading) lands there.
+ * Plain text of the visible top-level blocks that still hold these items (inserted or
+ * tombstoned), one line per block in document order. A block that was itself removed or rebuilt
+ * contributes nothing: no surviving identity says which current block replaced it.
  */
 export function blockTextAt(
   fragment: Y.XmlFragment,
@@ -269,20 +268,23 @@ export function blockTextAt(
       let top: Y.Item | null = item;
       while (top && top.parent !== fragment)
         top = top.parent instanceof Y.AbstractType ? top.parent._item : null;
-      let block = top;
-      while (block?.deleted) block = block.left;
-      if (!block) for (block = top?.right ?? null; block?.deleted; block = block.right);
-      if (block) blocks.add(block);
+      if (top && !top.deleted) blocks.add(top);
     }
-  const text = (type: unknown): string =>
-    type instanceof Y.XmlText
-      ? type
-          .toDelta()
-          .map((op: { insert: unknown }) => (typeof op.insert === "string" ? op.insert : ""))
-          .join("")
-      : type instanceof Y.XmlElement
-        ? type.toArray().map(text).join("")
-        : "";
+  // Nested blocks (list items, cells) take a line each; inline runs within a block join.
+  const text = (type: unknown): string => {
+    if (type instanceof Y.XmlText)
+      return type
+        .toDelta()
+        .map((op: { insert: unknown }) => (typeof op.insert === "string" ? op.insert : ""))
+        .join("");
+    if (!(type instanceof Y.XmlElement)) return "";
+    const children = type.toArray();
+    const inline = children.some((child) => child instanceof Y.XmlText);
+    return children
+      .map(text)
+      .filter((part) => inline || part)
+      .join(inline ? "" : "\n");
+  };
   const lines: string[] = [];
   for (let item = fragment._start; item; item = item.right)
     if (blocks.has(item)) lines.push(text(item.content.getContent()[0]));

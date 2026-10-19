@@ -20,7 +20,9 @@ impact, and repeated rollback does not append another inverse.
 
 The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
-(destination) view; `read(format: "edits")` reads immutable parts through the
+(destination) view, by Yjs identity only: a part edited since is skipped and
+listed with the current text of the blocks still holding its items, or as
+replaced or removed when those blocks are gone (never guessed by content); `read(format: "edits")` reads immutable parts through the
 host port. Model actions cannot use a reconstruction endpoint, reversal table,
 or reserved client. A multi-edit Undo is all-or-nothing and Redo restores the
 last undone edit first; a count beyond what is available refuses with the

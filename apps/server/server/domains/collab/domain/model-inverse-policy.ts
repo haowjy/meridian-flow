@@ -175,6 +175,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const held = holder(part),
           state = states[i];
         if (held) blocking.add(held);
+        const changed =
+          state.state !== "active" && state.state !== "undone" && !inspection.rolledBack(part);
+        // Located by identity only: blocks still holding the part's items, never by content.
+        const now =
+          eligible(part) && !held && changed
+            ? blockTextAt(fragmentOf(view), [...part.effect.inserted, ...part.effect.deleted])
+            : "";
         const reason = !eligible(part)
           ? "already removed"
           : held
@@ -183,20 +190,15 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? "rolled back"
               : state.state === "undone"
                 ? "already removed"
-                : state.reasons.includes("inaccessible ancestor")
-                  ? "its paragraph was removed"
-                  : state.state !== "active"
-                    ? "edited since"
-                    : null;
+                : !changed
+                  ? null
+                  : now
+                    ? `edited since; now ${JSON.stringify(now)}`
+                    : "its paragraph was replaced or removed";
         if (reason) {
           const excerpt = store.describePart(document, part);
-          // Located by identity: the blocks holding the part's items now, never by content.
-          const now =
-            reason === "edited since"
-              ? `; now ${JSON.stringify(blockTextAt(fragmentOf(view), [...part.effect.inserted, ...part.effect.deleted]))}`
-              : "";
           skipped.push(
-            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}${now}`,
+            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}`,
           );
         } else selection.push({ part, direction: "invert" });
       }
