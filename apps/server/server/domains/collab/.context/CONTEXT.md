@@ -89,13 +89,17 @@ the immutable edit policy, not a legacy journal selection.
 A call whose caller passes `recordingFrontier` (the read and write tools, and
 reference reads) records an observation frontier keyed by its room: the pulled
 peer's upstream Work draft (`draft:<upstreamDraftId>`, never the peer id or the
-draft generation) or `live:<documentId>:<authorityGeneration>`, the generation
-read before the call so a restore in between leaves the frontier on the old
-epoch. The pool passes agent-edit the previous frontier and returns
-`frontiers` beside the outcome; a save reads each pinned document's room and
-previous frontier before its transaction opens and returns each saved
-document's post-commit frontier. Undo, redo, revert and `format: "edits"`
-reads record none. See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+draft generation); for undo, redo and revert, which plan on the branch's Work
+draft itself, that draft; or `live:<documentId>:<authorityGeneration>`.
+`FrontierRooms` (`adapters/drizzle-frontier-rooms.ts`) reads the generation and
+Work draft before the call, isolated from any ambient transaction, so a restore
+in between leaves the frontier on the old epoch and a failed read records none.
+The pool passes agent-edit the previous frontier and returns `frontiers` beside
+the outcome. A reply's save takes `planningFrontier`: before its transaction
+opens it looks up, in the room each document's staged writes recorded under,
+the frontier the step was planned on, and returns each saved document's
+`room` with its post-commit frontier, null when none could be computed.
+`format: "edits"` reads record none. See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
 Yjs peers. A planning-visible item disappearing is not by itself rollback

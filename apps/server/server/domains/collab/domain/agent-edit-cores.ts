@@ -10,6 +10,7 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
@@ -19,6 +20,17 @@ import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-po
  * Never throws: an unavailable frontier is `null`, the empty one.
  */
 export type FrontierLookup = (roomKey: string) => Promise<ObservationFrontier | null>;
+
+/**
+ * The reads that name a frontier's room. Each answers null when there is no
+ * such room yet or it can't be read: the call then records no frontier.
+ */
+export type FrontierRooms = {
+  /** A live document's authority generation (the version-restore epoch). */
+  liveGeneration(documentId: DocumentId): Promise<bigint | null>;
+  /** The branch's active Work draft on the document; never makes one. */
+  workDraftId(documentId: DocumentId, branchId: BranchId): Promise<string | null>;
+};
 
 /** A frontier the pool observed, keyed by the room it was rendered from. */
 export type RoomObservation = ObservationFrontier & { roomKey: string };
@@ -73,9 +85,16 @@ export type RoutedWriteOutcome = RoutedOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
 
-/** A saved document; `frontiers` replaces agent-edit's room-less `observation`, never forwarded. */
-export type ResponseSaveDocument = ResponseCommitSuccessResult["documents"][number] & {
-  frontiers?: RoomObservation[];
+/**
+ * A saved document. When the save recorded frontiers, `room` names the room it
+ * committed to and its frontier at the post-commit cut, null when that could
+ * not be computed; it replaces agent-edit's room-less `observation`.
+ */
+export type ResponseSaveDocument = Omit<
+  ResponseCommitSuccessResult["documents"][number],
+  "observation"
+> & {
+  room?: { roomKey: string; frontier: ObservationFrontier | null };
 };
 
 /** One reply's save across every destination it wrote (D42). */
@@ -89,8 +108,11 @@ type ResponseTransactionOptions = Omit<
   "observe"
 > & {
   beforeTransactionCommit?(result: ResponseSaveResult): void | Promise<void>;
-  /** Record each saved document's frontier at the post-commit cut, chained from this lookup. */
-  recordingFrontier?: FrontierLookup;
+  /**
+   * Record each saved document's frontier at the post-commit cut, chained from
+   * the frontier the reply's step was planned on (this lookup).
+   */
+  planningFrontier?: FrontierLookup;
 };
 
 declare const liveAgentEditCoreBrand: unique symbol;

@@ -16,12 +16,19 @@ export interface RoomFrontier extends ObservationFrontier {
 
 export interface ObservationFrontiers {
   /**
-   * Replace the block's rows with `frontiers` (none: delete only). The delete
-   * runs in the caller's transaction; the insert in a savepoint, so a failed
-   * insert throws without aborting the caller and leaves the block with no rows.
+   * Delete the rows these blocks hold: for `roomKey` only, or every room. Part
+   * of the caller's block write, in its transaction: a failure propagates.
    */
-  replace(sourceBlockId: string, frontiers: readonly RoomFrontier[]): Promise<void>;
-  /** The latest-recorded row for `roomKey` among `sourceBlockIds`, or null. */
+  remove(sourceBlockIds: readonly string[], roomKey?: string): Promise<void>;
+  /**
+   * Insert a block's rows in a savepoint: a failure throws without aborting
+   * the caller's transaction, and the block keeps no rows.
+   */
+  insert(sourceBlockId: string, frontiers: readonly RoomFrontier[]): Promise<void>;
+  /**
+   * The latest-recorded row for `roomKey` among `sourceBlockIds`, or null. In a
+   * savepoint inside a transaction, so a failure leaves the caller's usable.
+   */
   latest(roomKey: string, sourceBlockIds: readonly string[]): Promise<ObservationFrontier | null>;
 }
 
