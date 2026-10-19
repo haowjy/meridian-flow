@@ -48,6 +48,21 @@ projection supplies changed document URIs. Summary rows do not supply prefix
 warmth or a token baseline. Late arrivals are fit-checked by the successor and
 fail the ordinary reply when they exceed the usable window; they do not fail C.
 
+## Stray tool calls
+
+Both paths keep nonempty summary text even when the response also contains tool
+calls; no tools execute. Output-limit and provider errors still reject the response.
+A warm-branch response containing calls but no text gets one retry on the same
+request, followed by the returned assistant content (including reasoning) and
+one tool message answering every call with an error: "Tools are unavailable
+during compaction. Write the summary now, as text." A second response without
+text fails `tool_use`. Both attempts remain in `modelResponses` for settlement,
+including on failure or cancellation. The retry preserves the source tool
+definitions and all other request fields.
+
+The rolling path declares no tools and never retries tool-only output; it fails
+`tool_use`. Empty output without calls fails `empty_text` on an initial call.
+
 ## Paid rows and settlement
 
 Every attempted call returns its response row, cache prediction, and message

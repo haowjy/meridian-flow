@@ -35,6 +35,8 @@
 - Scratch addresses can name a chat notes folder with an explicit owner and `@/c15/` (or `@/p7/`) qualifier. Associated roots are allocated lazily by create, mkdir and move destinations. Roots stay fixed; their contents remain editable, and deleting a root allows the next write to recreate it.
 
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
+- A compaction summary keeps text returned alongside tool calls. A warm summary that returns only calls gets one text-only reminder retry; both attempts settle, and no tools execute (C14).
+
 - Compaction asks for working-notes files first in its list of documents to re-show in full (C14).
 
 - Before compaction, a hidden system reminder asks the model to record its working notes once the request reaches 85% of the compaction trigger (C14).

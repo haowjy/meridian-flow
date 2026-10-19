@@ -116,20 +116,27 @@ function rejectionReason(error: unknown): SummaryRejectionReason {
     : "provider_error";
 }
 
-function summaryText(result: GenerateResult): string {
+function summaryText(
+  result: GenerateResult,
+  missingTextReason: SummaryRejectionReason = "empty_text",
+): string {
   if (result.finishReason === "max_tokens")
     throw new SummaryRejection("max_tokens", "Summary exhausted its output limit");
   if (result.finishReason === "error")
     throw new SummaryRejection("provider_error", "Summary provider failed");
-  if (result.toolCalls.length || result.content.some((part) => part.type === "tool_use")) {
-    throw new SummaryRejection("tool_use", "Summary returned tool use");
-  }
   const text = result.content
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n")
     .trim();
-  if (!text) throw new SummaryRejection("empty_text", "Summary returned no text");
+  if (!text) {
+    const hasTools =
+      result.toolCalls.length || result.content.some((part) => part.type === "tool_use");
+    throw new SummaryRejection(
+      hasTools ? "tool_use" : missingTextReason,
+      "Summary returned no text",
+    );
+  }
   return text;
 }
 
@@ -329,26 +336,57 @@ export function createConversationSummarizer(
             input.instruction === "compaction" ? retainedPassages : [],
           );
           const branchInstruction = `<system_update>\n${branchPrompt}\n</system_update>`;
-          const result = await call(
-            {
-              ...branchRequest,
-              messages: [
-                ...branchRequest.messages,
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text: branchInstruction,
-                    },
-                  ],
-                },
-              ],
-            },
-            threadModel,
-            prediction,
-          );
-          return { ...outcome, kind: "complete", text: summaryText(result), model: result.model };
+          const request: GenerateRequest = {
+            ...branchRequest,
+            messages: [
+              ...branchRequest.messages,
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: branchInstruction,
+                  },
+                ],
+              },
+            ],
+          };
+          let result = await call(request, threadModel, prediction);
+          let text: string;
+          try {
+            text = summaryText(result);
+          } catch (error) {
+            if (!(error instanceof SummaryRejection) || error.reason !== "tool_use") throw error;
+            const callIds = new Set([
+              ...result.toolCalls.map((call) => call.id),
+              ...result.content.flatMap((part) =>
+                part.type === "tool_use" ? [part.toolCallId] : [],
+              ),
+            ]);
+            result = await call(
+              {
+                ...request,
+                messages: [
+                  ...request.messages,
+                  { role: "assistant", content: result.content },
+                  {
+                    role: "tool",
+                    content: [...callIds].map((toolCallId) => ({
+                      type: "tool_result",
+                      toolCallId,
+                      output:
+                        "Tools are unavailable during compaction. Write the summary now, as text.",
+                      isError: true,
+                    })),
+                  },
+                ],
+              },
+              threadModel,
+              prediction,
+            );
+            text = summaryText(result, "tool_use");
+          }
+          return { ...outcome, kind: "complete", text, model: result.model };
         }
 
         summarizer.path = "rolling";

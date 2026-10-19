@@ -969,3 +969,48 @@ restart smoke check.
   matched their stored summaries. Evidence: docs repository
   `work/concurrent-edit-design/m2c/probe/c13/` (report and screenshots); raw
   request captures remain at `/tmp/m2c-c13-probe/`.
+
+## C14: Working notes across compaction
+
+- **Protects:** one durable heads-up per compaction cycle, byte-stable request
+  rendering, working-notes priority, and bounded recovery from stray summary calls.
+- **Stack:** mock provider with request capture and a small explicit Agent
+  compaction trigger. Discover the stack URL with `pnpm portless:list`.
+- **Steps:** grow a conversation to below 85% of the trigger, then between
+  85% and the trigger, both at run start and through tool output mid-reply.
+  Continue below the trigger for another request. Inspect the raw turn chain
+  and requests: exactly one complete system turn with
+  `{ kind: "system_update", section: "compaction_near" }` appears after the
+  existing leaf, before the reserved assistant, and its text is present in
+  the request that first crossed the mark. Compare its rendered message to
+  the next request (allowing only normal cache-mark movement). Repeat with
+  image-removal events at the same boundary: the image turn precedes the
+  reminder and both commit with the reservation.
+- **Cycle checks:** compact, retaining the old reminder in the tail, then grow
+  past the mark again. Expect a new reminder despite the replayed old one.
+  A jump straight past the trigger compacts without a reminder. No resolved
+  trigger means no reminder. A failed or incomplete compaction does not reset
+  deduplication. Forks inherit the reminder and complete compaction at their
+  cutoff. Manual and overflow compaction do not emit a reminder for their
+  summary request.
+- **Notes:** after the heads-up, script a scratch-note write and list that URI
+  before a manuscript URI under `## Documents to keep open`. Cross the
+  trigger while still writing notes. Expect compaction without deferral,
+  the scratch note re-shown first in full, and the same task continuing after
+  the summary. Check the successor's actual request, not just the summary list.
+- **Summary recovery:** return text plus calls on warm and rolling paths;
+  expect text kept and no tool execution. On the warm path return only two
+  calls with reasoning, then text. Expect the retry to preserve its original
+  request, append the exact assistant content, and one tool message with an
+  error result for each call saying "Tools are unavailable during compaction.
+  Write the summary now, as text." Both paid response rows settle on C.
+  Repeat with a second call-only response: expect `tool_use` and both rows
+  settled. Rolling call-only output fails `tool_use` with one row. Stop
+  during the retry settles both attempted rows on cancelled C.
+- **Browser:** the reminder never draws a chat row. A mid-reply reminder
+  still reads as one reply, with the compaction divider and continued text
+  intact. Capture screenshots before and after compaction.
+- **Evidence:** raw turns and positions, complete request messages and tool
+  definitions, re-shown file blocks, response rows and debits, and screenshots.
+- **Last run:** not run here; implementation verification used existing tests
+  and in-process checks, not a live stack.

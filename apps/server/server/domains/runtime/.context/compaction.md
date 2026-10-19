@@ -1,7 +1,7 @@
 # Runtime compaction
 
 Compaction reserves a placeholder C at a run boundary, performs one unlocked
-summary call, then commits a successor that opens a prompt epoch. The summary
+summary step, then commits a successor that opens a prompt epoch. The summary
 call is the shared [summarizer](summarizer.md); orphan C is repaired by
 [recovery](recovery.md). Manual `/compact` is selected at run start under the
 [control queue](controls.md), and stale document text is [elided](document-text.md).
@@ -11,7 +11,7 @@ Rationale: the [run preparation protocol][kb-run-prep] and
 ## Protocol
 
 Reservation, summary preparation, and successor completion are separate
-transitions around the unlocked provider call:
+transitions around the unlocked summary step:
 
 1. The boundary's preparation commit reserves C with its trigger and consumes
    the selected compact command. If the pinned requests plus minimal suffix
