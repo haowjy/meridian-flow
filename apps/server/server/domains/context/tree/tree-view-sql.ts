@@ -441,13 +441,15 @@ function uuidList(ids: readonly string[]): SQL {
 
 /**
  * Diagnostics extend the canonical selection with formerly live lifecycle/malformed
- * identities only. Placement comes from the same SQL UNION branches as visibleDocuments;
- * hidden tombstones never enter either arm, even with a stale branch change row.
+ * identities, plus discarded creations so their removal can answer. Placement comes from
+ * the same SQL UNION branches as visibleDocuments; no other hidden tombstone enters
+ * either arm, even with a stale branch change row.
  */
 export function identityDocuments(view: TreeView) {
   const columns = getTableColumns(documents);
   const query = sql`SELECT d.* FROM (${documentsQuery(view)}) shown JOIN documents d ON d.id = shown.id
-    UNION ALL SELECT d.* FROM documents d WHERE NOT d.hidden AND d.deleted_at IS NOT NULL`;
+    UNION ALL SELECT d.* FROM documents d WHERE d.deleted_at IS NOT NULL
+      AND (NOT d.hidden OR d.deletion_reason = 'discarded')`;
   return subquery(query, columns, "document_identities");
 }
 

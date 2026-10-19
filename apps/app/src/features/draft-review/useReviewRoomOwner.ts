@@ -15,7 +15,10 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import {
+  useLiveDocumentSessionRegistry,
+  useOptionalProjectContextAvailabilityCoordinator,
+} from "@/features/project/context/account-feature-context";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { reviewChangesOfPreview } from "./review-changes";
@@ -42,6 +45,9 @@ export function useReviewRoomOwner({
   const draftOnly = presented?.draftOnly ?? false;
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
+  const availability = useOptionalProjectContextAvailabilityCoordinator();
+  const availabilityRef = useRef(availability);
+  availabilityRef.current = availability;
   const owner = useRef(`review-room:${++ownerSequence}`);
   const documentId = review?.documentId ?? "";
   const itemKey = review?.itemKey ?? "";
@@ -238,6 +244,17 @@ export function useReviewRoomOwner({
       observeAbsence(true);
     };
     let rebuilding = false;
+    let removalReported = false;
+    // The server closed the room because the document is gone: ask now rather
+    // than wait for the next catalog or draft-list refresh to notice.
+    const onRemoved = () => {
+      if (!current() || removalReported) return;
+      removalReported = true;
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+      });
+      void availabilityRef.current?.recheck(projectId, [documentId]).catch(() => undefined);
+    };
     let unsubscribe: (() => void) | undefined;
     // Reopen the room from the server's state; a re-forked draft answers that
     // reconnect as superseded and the review moves to its new generation.
@@ -291,6 +308,11 @@ export function useReviewRoomOwner({
           switch (connection.disposition) {
             case "schema":
               // Keep the terminal session so its schema notice can paint.
+              return;
+            case "removed":
+              // The document is gone: keep the terminal session, read-only, until
+              // availability closes the tab or the writer does.
+              onRemoved();
               return;
             case "superseded":
               rebuilding = true;

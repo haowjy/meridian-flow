@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A tab whose document someone else deleted or discarded now says so where it closed: "Chapter 3 was deleted by Ana Ruiz.", "… was deleted." when no person is recorded, or "… was discarded from the draft." (#854). Reopening such a document from a Work's file list or a review link says the same instead of "This destination is unavailable". Deleting or discarding from the tab itself says nothing. A server close `4208 document-deleted` ends live and draft rooms without reconnecting, makes the editor read-only, and asks availability at once. Availability now answers a discarded creation's hidden tombstone as removed, with its record.
+
 - Removed documents record whether they were deleted or discarded, who acted (a writer, Work, or system cleanup), and when. Existing tombstones are classified on upgrade; their active drafts close with a removal cause and obsolete pending tree uses retire (#854).
 
 - The draft/branch rename upgrade now includes all-zero command IDs and nonpositive receipt IDs. Renaming receipt placement keys no longer generates recursive change-trail work; real placement changes still signal normally (#880).
