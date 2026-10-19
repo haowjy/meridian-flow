@@ -1222,14 +1222,10 @@ export function createResponseCommitter(deps: {
                 () => null,
               )
             : settledWriteReceipts(docBuffer, applied.revision, lateSweep);
-          const observation = applied.awarenessDegraded
-            ? undefined
-            : observeReceipts(docBuffer, receipts, options);
           return {
             documentId: docBuffer.docId,
             updateCount: docBuffer.updates.length,
             receipts,
-            ...(observation ? { observation } : {}),
             ...(applied.concurrent.detection.info
               ? {
                   concurrentEdits: withRunShownLinks(
@@ -1251,7 +1247,7 @@ export function createResponseCommitter(deps: {
           signal: options.signal,
           timeoutMs: options.lockTimeoutMs ?? 30_000,
         });
-        documents.push(document);
+        documents.push(withObservation(docBuffer, document, options));
         assertOwner(responseId, owner);
         emit("live_projected", responseId, responsePhaseForAcceptance(journalCommitKind), {
           journalCommitKind,
@@ -1312,7 +1308,7 @@ export function createResponseCommitter(deps: {
       try {
         for (const docBuffer of docBuffers.slice(documents.length)) {
           if (!retryApplyDocument) throw new Error("Phase-C retry was not initialized.");
-          documents.push(await retryApplyDocument(docBuffer));
+          documents.push(withObservation(docBuffer, await retryApplyDocument(docBuffer), options));
         }
         emit("recovery_succeeded", responseId, "journalCommitted", {
           journalCommitKind,
@@ -1364,7 +1360,8 @@ export function createResponseCommitter(deps: {
           responseId,
           buffer,
           docBuffers,
-          recheckedDocuments ?? documents,
+          // Journal replay leaves no cut the receipts were rendered from: no document records one.
+          (recheckedDocuments ?? documents).map(({ observation: _, ...document }) => document),
           liveResponseState(responseId),
           (docBuffer) => settledWriteReceipts(docBuffer, null),
           awarenessDegraded ? { awarenessDegraded: true } : {},
@@ -1441,29 +1438,29 @@ export function createResponseCommitter(deps: {
   }
 
   /**
-   * The frontier at the cut every accepted receipt was rendered from,
-   * crediting all of them. Degraded (textless) receipts record none; a failure
-   * is reported and the receipts go out without it.
+   * The document's frontier at the post-commit cut, when the host asked: every
+   * saved document records one, crediting what its accepted receipts show in
+   * full (none when they are degraded or textless). A failure is reported and
+   * the document goes out without one.
    */
-  function observeReceipts(
+  function withObservation(
     docBuffer: ResponseDocumentBuffer,
-    receipts: ResponseCommitDocumentResult["receipts"],
+    document: ResponseCommitDocumentResult,
     options: ResponseCommitOptions,
-  ): ObservationFrontier | undefined {
-    const accepted = receipts.slice(0, docBuffer.updates.length);
-    if (accepted.length === 0 || accepted.some((receipt) => receipt.result.awarenessDegraded))
-      return undefined;
+  ): ResponseCommitDocumentResult {
     const observe = options.observe?.(docBuffer.docId);
-    if (!observe) return undefined;
+    if (!observe) return document;
     try {
-      return observeRendered(
+      const accepted = document.receipts.slice(0, docBuffer.updates.length);
+      const observation = observeRendered(
         documentDoc(docBuffer),
         observe.prev,
         accepted.map((receipt) => receipt.result),
       );
+      return { ...document, observation };
     } catch (cause) {
       deps.onObservationFailed?.({ documentId: docBuffer.docId, cause });
-      return undefined;
+      return document;
     }
   }
 

@@ -24,7 +24,7 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
-import { observeRendered } from "./observation.js";
+import { withObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
@@ -604,7 +604,13 @@ export function createWriteCommands(deps: {
         ),
       );
     } catch {
-      return formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true });
+      return withEvidence(
+        links,
+        runtime.doc,
+        docId,
+        context,
+        formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
+      );
     }
   }
 
@@ -640,7 +646,7 @@ export function createWriteCommands(deps: {
   /**
    * Attach what the rendered result showed: its links, spelled with the
    * command's links, and, when the host asked, its observation frontier on the
-   * doc it was rendered from. A failed frontier is reported and left off.
+   * doc it was rendered from.
    */
   function withEvidence(
     links: CommandLinks,
@@ -649,14 +655,13 @@ export function createWriteCommands(deps: {
     context: WriteContext,
     result: InternalWriteResult,
   ): InternalWriteResult {
-    const shown = { ...result, ...shownEvidence(renderedItems(result.model), links) };
-    if (!context.observe) return shown;
-    try {
-      return { ...shown, observation: observeRendered(doc, context.observe.prev, [result.model]) };
-    } catch (cause) {
-      options.onObservationFailed?.({ documentId, cause });
-      return shown;
-    }
+    return withObservation(
+      { ...result, ...shownEvidence(renderedItems(result.model), links) },
+      doc,
+      context,
+      documentId,
+      options.onObservationFailed,
+    );
   }
 
   /** Host-only showing evidence for this document; none for utility, seed and import writes. */

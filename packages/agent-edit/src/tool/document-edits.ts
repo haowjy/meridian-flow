@@ -7,6 +7,7 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ModelInverseCommand } from "../ports/document-edits.js";
 import { openCommandLinks } from "./command-links.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import { withObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { status } from "./response-format.js";
@@ -55,6 +56,18 @@ export function createDocumentEditCommands(deps: {
 
     const before = new Y.Doc({ gc: false }),
       after = new Y.Doc({ gc: false });
+    // `after` is the cut the inverse committed on top of: the room's, so it is what the echo
+    // records, crediting nothing when the echo degraded.
+    const observed = (rendered: InternalWriteResult) =>
+      result.after
+        ? withObservation(
+            rendered,
+            after,
+            context,
+            address.documentId,
+            deps.options.onObservationFailed,
+          )
+        : rendered;
     try {
       await deps.runtimeStore.evictThreadRuntimes(address.documentId, session.threadId, {
         markLiveDocStale: true,
@@ -90,20 +103,20 @@ export function createDocumentEditCommands(deps: {
         afterBlocks,
         { phase: "committed", ...(result.writeId ? { writeId: result.writeId } : {}) },
       );
-      return {
+      return observed({
         ...receipt,
         ...shownEvidence(renderedItems(receipt.model), links),
         revision: deps.options.links.revision(after, links.scope),
         model: { ...receipt.model, message: result.message },
-      };
+      });
     } catch {
       // Admission has already succeeded; an echo failure cannot turn it into a refusal.
-      return {
+      return observed({
         status: "success",
         phase: "committed",
         ...(result.writeId ? { writeId: result.writeId } : {}),
         model: { message: result.message, awarenessDegraded: true },
-      };
+      });
     } finally {
       before.destroy();
       after.destroy();
