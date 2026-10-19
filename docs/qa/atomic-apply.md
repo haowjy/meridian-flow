@@ -48,6 +48,15 @@ kernel; they do not certify the replacement rebase scheduler.
 - An AI receipt's membership supplies committed live before/after trail text,
   navigation and explicit owner dirty signals.
 
+## Late closure at the append door
+
+When changing admission or hold timing, also probe a closure after compilation:
+pause `apply.beforeBoundary`, close the addressed draft through the production
+close kernel inside its Work boundary, then resume. Apply may stage its live
+half, but must answer `closed` with unchanged durable live text, no command
+claim or lineage, and no room delivery. A previously landed command still wins
+on retry. This checks the rollback boundary rather than an early status read.
+
 ## Writer confirmation
 
 After integrating the browser command owner and fresh seed/rebase, use
