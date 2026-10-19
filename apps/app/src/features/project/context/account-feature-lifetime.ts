@@ -82,9 +82,10 @@ export class AccountFeatureLifetime {
    * The one reaction to a live room's 4208, held by an editor or not: the
    * record cache asks again. `removed` closes its tabs (an editor still holding
    * the room reads the same answer); `available` means a restore won the race,
-   * so the room reconnects in place. Each close restarts at most once, on an
-   * answer learned after it, so a server that keeps closing the room costs one
-   * lookup per close and never loops on its own. The follow ends on `removed`,
+   * so the room reconnects in place. Each close costs one lookup and at most one
+   * restart, on an answer learned after it; nothing caps restarts across closes,
+   * which is safe while the server's 4208 and availability read the same record.
+   * The follow ends on `removed`,
    * `lost`, a restart or the session's end.
    */
   private followRemovedRoom(session: DocumentSession, room: RetainedLiveDocumentReference): void {

@@ -45,7 +45,9 @@ export function whenRoomRegistered(hocuspocus: Hocuspocus, document: Document): 
  * After commit only: retire the whole removal batch, including rooms still loading. Draft rooms
  * close by exact draft id (a closed draft stays closed). A live room closes only if `stillRemoved`,
  * read once after every matching load settled, still holds its document's record: a Work Restore
- * that committed since makes that room's new connections valid. Outside database locks.
+ * that committed since makes that room's new connections valid. A failed read counts as still
+ * removed: closing a restored room costs one reconnect (the client recovers a stale 4208), while
+ * closing nothing would leave every room of the batch open. Outside database locks.
  */
 export async function closeRemovedDocumentRooms(
   hocuspocus: Hocuspocus | null,
@@ -65,7 +67,11 @@ export async function closeRemovedDocumentRooms(
     matching.map((name) => hocuspocus.loadingDocuments.get(name)?.catch(() => undefined)),
   );
   const liveNames = matching.filter((name) => live.has(name) && hocuspocus.documents.has(name));
-  const standing = liveNames.length ? await stillRemoved(liveNames as DocumentId[]) : new Map();
+  const standing: ReadonlyMap<DocumentId, unknown> = liveNames.length
+    ? await stillRemoved(liveNames as DocumentId[]).catch(
+        () => new Map(liveNames.map((name) => [name as DocumentId, null])),
+      )
+    : new Map();
   const closing = matching.flatMap((name) => {
     const document = hocuspocus.documents.get(name);
     if (!document || (live.has(name) && !standing.has(name as DocumentId))) return [];

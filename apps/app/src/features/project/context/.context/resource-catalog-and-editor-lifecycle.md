@@ -265,9 +265,10 @@ document's answer in the record cache. The close outdates any answer but
 `removed` (`roomRemoved` forgets it and asks again), so whatever answers next
 was learned after the close. `removed` closes its tabs. `available` (a restore
 won the race, or a stale close) reconnects the same session in place
-(`restartRemovedRoom`). Each close restarts at most once, so a server that
-keeps closing the room costs one lookup per close and a real restore cycle
-never leaves the tab dead. The follow ends on `removed`, `lost`, the restart
+(`restartRemovedRoom`). Each close costs one lookup and at most one restart;
+nothing caps restarts across closes, which holds because the server's 4208 and
+availability read the same removal record. A real restore cycle never leaves
+the tab dead. The follow ends on `removed`, `lost`, the restart
 or the session's end; a failed lookup leaves it `unresolved` and the
 availability watch keeps asking. Rebinding the tab instead would not help:
 its cached resource handle hands back the same removed session. A tab still
