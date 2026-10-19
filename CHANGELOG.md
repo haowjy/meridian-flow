@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Changed
+- Review bylines now classify the room's item identities, name writer edits as “You”, and link AI changes to their conversation (subagent changes reveal the spawn card). Evidence reads are shared per room and refreshed by unresolved ranges and provenance roots, not keystrokes.
 - Draft review reads snapshot-bounded receipt provenance through an authenticated endpoint, with indexed AI receipt reads independent of writer history. Model attribution exposes current-item birth and deleter readers.
 
 - Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.
