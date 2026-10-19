@@ -1,10 +1,5 @@
 /** Projects persisted turns and blocks into the canonical gateway message context. */
 
-import {
-  type AgentEditResultV1,
-  isAgentEditResultEnvelope,
-  renderAgentEditResult,
-} from "@meridian/agent-edit/integration";
 import { type ComponentBlockContent, parseInvocationCard } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
@@ -13,12 +8,14 @@ import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
   ChildCompletionMetadataCodec,
   ChildCompletionMetadataTagCodec,
+  isCompactionSummaryTurn,
 } from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { componentModelText } from "./component-model-text.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
+import { referenceReadText } from "./reference-context.js";
 
 export interface BuildContextInput {
   thread: Thread;
@@ -77,7 +74,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
   const messages: Message[] = [];
   const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
   if (turn.role === "user") {
-    const parts = userTurnContentParts(turnBlocks);
+    const parts = userTurnContentParts(turnBlocks, isCompactionSummaryTurn(turn));
     if (parts.length > 0) {
       messages.push({ role: "user", content: parts });
     }
@@ -245,9 +242,16 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
   return parts;
 }
 
-/** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
-function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
-  const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
+/**
+ * Projects a user turn's allowed blocks and reference results; images arrive pre-projected.
+ * On a compaction's summary turn the reference blocks are the documents it re-shows: their
+ * reads follow the summary and no mention text precedes them.
+ */
+function userTurnContentParts(blocks: readonly Block[], reshown: boolean): ContentPart[] {
+  const parts = turnBlocksToContentParts(
+    blocks.filter((block) => !(reshown && referenceOccurrenceContent(block))),
+    ["text", "image", "file"],
+  );
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -262,11 +266,10 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
     const key = `${reference.documentId}\0${reference.uri}`;
     if (included.has(key)) continue;
     included.add(key);
-    parts.push(
-      text(
-        `\n\nReference read result for ${reference.uri}:\n${referenceReadText(reference.read.result)}`,
-      ),
-    );
+    const heading = reshown
+      ? `Current text of ${reference.uri}, re-shown after the summary:`
+      : `Reference read result for ${reference.uri}:`;
+    parts.push(text(`\n\n${heading}\n${referenceReadText(reference.read.result)}`));
   }
   return parts;
 }
@@ -425,12 +428,4 @@ function filenameFromUri(uri: string): string {
     return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
   }
   return uri;
-}
-
-/** A reference read reaches the model as the same text a `read` call returns (D43). */
-function referenceReadText(result: JsonValue): string {
-  if (typeof result === "string") return result;
-  return isAgentEditResultEnvelope(result)
-    ? renderAgentEditResult(result as AgentEditResultV1)
-    : JSON.stringify(result);
 }

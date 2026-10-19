@@ -1,5 +1,6 @@
 /** Projects the latest complete compaction over the effective transcript. */
 
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, PromptBake, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
@@ -191,8 +192,16 @@ function projectActiveHistory(
   );
   const tailByTurn = new Map(tail.map((slice) => [slice.turn.id, slice]));
   const elisions = new Map(metadata.elisions?.map((elision) => [elision.blockId, elision.content]));
+  // The documents the compaction re-showed ride its summary turn, after the summary.
+  const reshown = (blocksByTurn.get(compaction.id) ?? [])
+    .filter((block) => referenceOccurrenceContent(block)?.read)
+    .sort((a, b) => a.sequence - b.sequence);
   const projectedBlocks = projectedTurns.flatMap((turn) => {
-    if (turn.id === synthetic.turn.id) return [synthetic.block];
+    if (turn.id === synthetic.turn.id)
+      return [
+        synthetic.block,
+        ...reshown.map((block) => ({ ...block, turnId: synthetic.turn.id })),
+      ];
     const retained = tailByTurn.get(turn.id);
     return retained
       ? retained.blocks.map((block) =>
@@ -203,9 +212,12 @@ function projectActiveHistory(
       : (blocksByTurn.get(turn.id) ?? []);
   });
 
-  const creditedBlockIds = new Set(
-    afterCompaction.flatMap((turn) => (blocksByTurn.get(turn.id) ?? []).map((block) => block.id)),
-  );
+  const creditedBlockIds = new Set([
+    ...reshown.map((block) => block.id),
+    ...afterCompaction.flatMap((turn) =>
+      (blocksByTurn.get(turn.id) ?? []).map((block) => block.id),
+    ),
+  ]);
   return { turns: projectedTurns, blocks: projectedBlocks, creditedBlockIds };
 }
 
