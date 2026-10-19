@@ -1,5 +1,7 @@
 /**
- * The durable document authority head (`document_yjs_heads`), and its one writer. Only
+ * The durable document authority head (`document_yjs_heads`), and its one writer; the one
+ * deleter besides is the context purge (`releaseDocumentStorage`), which drops a discarded
+ * document's storage with its removal. Only
  * materialization (a create's transaction, or explicit repair of a living document) makes a
  * head; every later write moves it under the caller's document mutation lock and requires a
  * living document in the same statement, so a removal that won the lock refuses here at no
@@ -19,7 +21,6 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { DocumentRemovedError } from "../../context/ports/document-removal.js";
 import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
@@ -124,7 +125,7 @@ export async function findDocumentAuthorityHead(
   return row ?? null;
 }
 
-/** The head a caller requires, else why it has none (`DocumentRemovedError` when `living`). */
+/** The head a caller requires, else why it has none (with its removal record when `living`). */
 export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
@@ -172,7 +173,7 @@ export async function readHeadRevision(
 export async function refusedAuthority(
   db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentRemovedError | DocumentNotFoundError> {
+): Promise<DocumentNotFoundError> {
   return (
     (await livingDocumentRefusal(db, documentId as DocumentId)) ??
     new DocumentNotFoundError(documentId, `Document ${documentId} has no authority head`)

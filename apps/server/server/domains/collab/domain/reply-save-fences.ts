@@ -1,9 +1,5 @@
 /** Identity admission for a reply's one save transaction: grants, pins and live locks. */
-import type {
-  AgentEditCore,
-  StagedWriteRejectionReason,
-  WriteContext,
-} from "@meridian/agent-edit/integration";
+import type { AgentEditCore, WriteContext } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -13,6 +9,7 @@ import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
+import { type ClosedPin, closedPinReason } from "./closed-pin-reason.js";
 import type { DraftAgentEditDiagnostics } from "./draft-agent-edit.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 
@@ -76,13 +73,8 @@ export function createReplySaveFences(deps: {
       const refusals = new Map<DocumentId, RefusedResponseDocument>();
       const denials = await deps.fileAccess.confirmEdit(grants);
       const active = new Map<BranchId, boolean>();
-      // A closed pin whose draft may have closed with its document's removal: judged below,
-      // against one batched record lookup.
-      const closedPins: {
-        documentId: DocumentId;
-        reason: StagedWriteRejectionReason;
-        byRemoval: boolean;
-      }[] = [];
+      // A closed pin is judged once its document's record is in hand: one batched lookup below.
+      const closedPins: { documentId: DocumentId; pin: Omit<ClosedPin, "removal"> }[] = [];
       for (const [documentId, { pin }] of entries.sort(([, a], [, b]) =>
         (a.pin?.branchId ?? "").localeCompare(b.pin?.branchId ?? ""),
       )) {
@@ -92,13 +84,14 @@ export function createReplySaveFences(deps: {
           active.set(pin.branchId, Boolean(await deps.branches.shareActive(pin.branchId)));
         const upstream = await deps.drafts.getDraft(pin.upstreamDraftId);
         const peer = await deps.drafts.getDraft(pin.peerDraftId);
-        let reason: StagedWriteRejectionReason | undefined;
-        if (!active.get(pin.branchId)) reason = "discarded_draft";
-        else if (!upstream || upstream.status === "closed") reason = "discarded_document";
-        else if (!peer || peer.status === "closed") reason = "discarded_edit";
-        else if (
-          peer.branchId !== pin.branchId ||
-          upstream.branchId !== pin.branchId ||
+        const judged = { branchActive: Boolean(active.get(pin.branchId)), upstream, peer };
+        if (closedPinReason({ ...judged, removal: undefined })) {
+          closedPins.push({ documentId, pin: judged });
+          continue;
+        }
+        if (
+          peer?.branchId !== pin.branchId ||
+          upstream?.branchId !== pin.branchId ||
           peer.upstreamDraftId !== pin.upstreamDraftId ||
           peer.documentId !== documentId ||
           upstream.documentId !== documentId ||
@@ -106,22 +99,11 @@ export function createReplySaveFences(deps: {
           peer.kind !== "thread_peer" ||
           upstream.kind !== "work_draft"
         ) {
-          reason = "integration";
+          refusals.set(documentId, { documentId, reason: "integration" });
           deps.diagnostics?.replyPinMismatch({ documentId, threadId: record.threadId, pin });
         }
-        if (reason === "discarded_document" || reason === "discarded_edit")
-          closedPins.push({
-            documentId,
-            reason,
-            // A draft closed with `document_removed` keeps that cause once the document stands again.
-            byRemoval:
-              upstream?.closedCause === "document_removed" ||
-              peer?.closedCause === "document_removed",
-          });
-        else if (reason) refusals.set(documentId, { documentId, reason });
       }
-      // A deleted document answers `not_found`; the record says who deleted it. A closed draft
-      // over a removed document is the removal's, not a writer's discard.
+      // A deleted document answers `not_found`; the record says who deleted it.
       const removals = await deps.removals.lookup([
         ...denials
           .filter((denial) => denial.reason === "not_found")
@@ -137,11 +119,14 @@ export function createReplySaveFences(deps: {
             : { documentId, denial },
         );
       }
-      for (const { documentId, reason, byRemoval } of closedPins) {
-        const removal = removals.get(documentId);
+      for (const { documentId, pin } of closedPins) {
+        const reason = closedPinReason({ ...pin, removal: removals.get(documentId) });
+        if (!reason) continue;
         refusals.set(
           documentId,
-          removal || byRemoval ? { documentId, removed: removal ?? null } : { documentId, reason },
+          typeof reason === "object"
+            ? { documentId, removed: reason.removed }
+            : { documentId, reason },
         );
       }
       const denied = new Set<AgentEditCore>();

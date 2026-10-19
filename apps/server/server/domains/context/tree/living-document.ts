@@ -8,7 +8,6 @@ import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import { type AnyColumn, eq, type SQL, sql } from "drizzle-orm";
-import { DocumentRemovedError } from "../ports/document-removal.js";
 import { readRemovalRecords } from "./removal.js";
 
 type LivingDocumentDb = Pick<Database, "select">;
@@ -21,11 +20,11 @@ export function livingDocumentSql(documentId: SQL | AnyColumn): SQL {
   return sql`exists (select 1 from documents d where d.id = ${documentId} and d.deleted_at is null)`;
 }
 
-/** Why the document is not living: its removal with the record, or no row at all. */
+/** Why the document is not living: not found with its removal record, or no row at all. */
 export async function livingDocumentRefusal(
   db: LivingDocumentDb,
   documentId: DocumentId,
-): Promise<DocumentRemovedError | DocumentNotFoundError | null> {
+): Promise<DocumentNotFoundError | null> {
   const [row] = await db
     .select({ deletedAt: documents.deletedAt })
     .from(documents)
@@ -35,7 +34,11 @@ export async function livingDocumentRefusal(
   if (row.deletedAt === null) return null;
   const removal = (await readRemovalRecords(db, [documentId])).get(documentId);
   // No record means a Restore committed between the two reads: the document lives again.
-  return removal ? new DocumentRemovedError(documentId, removal) : null;
+  return removal
+    ? new DocumentNotFoundError(documentId, `Document ${documentId} was ${removal.reason}`, {
+        removal,
+      })
+    : null;
 }
 
 /** Called under the document's mutation lock; throws the refusal when it is not living. */

@@ -1,9 +1,9 @@
 /**
- * Document removal: the tree-owned kernel, the collab half it calls, the record reader domain
- * code depends on, and the refusal a removed document raises. Callers of `remove` hold
+ * Document removal: the tree-owned kernel, the collab half it calls, and the record reader domain
+ * code depends on. A removed document refuses as agent-edit's `DocumentNotFoundError` carrying
+ * its record (`removal`); every model path words it from that record. Callers of `remove` hold
  * Work/namespace and sorted document mutation locks before entering it.
  */
-import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentRemovalCause, DocumentRemovalRecord } from "@meridian/contracts/protocol";
 
@@ -38,19 +38,4 @@ export interface DocumentRemovals {
   lookup(
     documentIds: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, DocumentRemovalRecord>>;
-}
-
-/**
- * A write or read refused because the document was removed under it. Every model path treats
- * it as not-found and words it from the record; only a principal that already reached the
- * document sees it.
- */
-export class DocumentRemovedError extends DocumentNotFoundError {
-  constructor(
-    readonly documentId: DocumentId,
-    readonly removal: DocumentRemovalRecord,
-  ) {
-    super(documentId, `Document ${documentId} was ${removal.reason}`, { removal });
-    this.name = "DocumentRemovedError";
-  }
 }

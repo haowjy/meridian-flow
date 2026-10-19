@@ -20,22 +20,24 @@ export function removalPhrase(removal: DocumentRemovalRecord | null | undefined)
   return name ? `${verb} by ${name}` : verb;
 }
 
-/** A call that named a removed file: "File not found. This file was deleted by Ana." */
-export function removedFileMessage(removal: DocumentRemovalRecord | null | undefined): string {
-  return `File not found. This file was ${removalPhrase(removal)}.`;
+/** A call that named a removed file: `document_not_found`, "File not found. This file was deleted by Ana." */
+export function removedFile(removal: DocumentRemovalRecord | null | undefined): {
+  status: "document_not_found";
+  message: string;
+} {
+  return {
+    status: "document_not_found",
+    message: `File not found. This file was ${removalPhrase(removal)}.`,
+  };
 }
 
 /**
- * A write the removal stopped: staged and refused before the reply saved (`save`), or reached by
- * an undo or redo (`reversal`). A system removal is the reply's own, so it never says "before
- * this reply was saved".
+ * A write the removal stopped before the reply saved it. A system removal is the reply's own, so
+ * it never says "before this reply was saved".
  */
-export function removedWriteMessage(
-  removal: DocumentRemovalRecord | null | undefined,
-  when: "save" | "reversal",
-): string {
+export function removedWriteMessage(removal: DocumentRemovalRecord | null | undefined): string {
   const removed = `This file was ${removalPhrase(removal)}`;
-  return when === "save" && removal?.actor?.kind !== "system"
+  return removal?.actor?.kind !== "system"
     ? `${removed} before this reply was saved, so this change wasn't made.`
     : `${removed}, so this change wasn't made.`;
 }

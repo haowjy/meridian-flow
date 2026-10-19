@@ -2,6 +2,7 @@
 import {
   type AgentEditCore,
   type FrontierLookup,
+  isDocumentNotFoundError,
   modelResult,
   type ObservationRequest,
   parseDocumentAddress,
@@ -19,10 +20,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import {
-  type DocumentRemovals,
-  DocumentRemovedError,
-} from "../../context/ports/document-removal.js";
+import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
@@ -52,6 +50,7 @@ export type ResponseTransactionHooks = {
 };
 
 import type { Branches } from "./branches.js";
+import { closedPinReason } from "./closed-pin-reason.js";
 import { ThreadPeerPullLost } from "./draft-pulls.js";
 import { DraftCasConflictError, DraftStaleUpdateError } from "./draft-store.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
@@ -483,41 +482,36 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * Why a failed peer pull lost its draft: the document was removed, else (in the save fence's
-   * precedence) the branch it pulled for is closed, else the upstream it captured is closed or
-   * gone, else its peer is. Any other failure, or a pull whose branch and drafts are all still
-   * active, retired nothing.
+   * Why a failed peer pull lost its draft: the document was removed, else the save fence's
+   * `closedPinReason`. A stale or conflicting update loses only to a closed branch. Any other
+   * failure, or a pull whose branch and drafts all still stand, retired nothing.
    */
   async function retirementLossReason(
     cause: unknown,
     view: LinkView,
     documentId: string | null,
   ): Promise<RetiredWriteReason | undefined> {
-    if (cause instanceof DocumentRemovedError) return { removed: cause.removal };
+    if (isDocumentNotFoundError(cause) && cause.removal) return { removed: cause.removal };
     const lost = cause instanceof ThreadPeerPullLost;
     if (
       !lost &&
       !(cause instanceof DraftStaleUpdateError || cause instanceof DraftCasConflictError)
     )
       return undefined;
-    if (view.kind === "branch" && !(await input.branches.shareActive(view.branchId)))
-      return "discarded_draft";
-    if (!lost) return undefined;
-    const gone = async (draftId: string) => {
-      const documentDraft = await input.drafts.getDraft(draftId);
-      return !documentDraft || documentDraft.status === "closed";
-    };
-    const reason = (await gone(cause.upstreamDraftId))
-      ? "discarded_document"
-      : (await gone(cause.peerDraftId))
-        ? "discarded_edit"
-        : undefined;
-    if (!reason || !documentId) return reason;
-    // A closed draft over a removed document is the removal's, as the save fence judges it.
-    const removal = (await input.removals.lookup([documentId as DocumentId])).get(
-      documentId as DocumentId,
-    );
-    return removal ? { removed: removal } : reason;
+    const branchActive =
+      view.kind !== "branch" || Boolean(await input.branches.shareActive(view.branchId));
+    if (!lost) return branchActive ? undefined : "discarded_draft";
+    const [upstream, peer, removals] = await Promise.all([
+      input.drafts.getDraft(cause.upstreamDraftId),
+      input.drafts.getDraft(cause.peerDraftId),
+      documentId ? input.removals.lookup([documentId as DocumentId]) : undefined,
+    ]);
+    return closedPinReason({
+      branchActive,
+      upstream,
+      peer,
+      removal: removals?.get(documentId as DocumentId),
+    });
   }
 
   /**

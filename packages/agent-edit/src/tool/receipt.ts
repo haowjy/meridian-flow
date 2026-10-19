@@ -160,7 +160,7 @@ export function removedWriteRefusal(removal: DocumentRemovalRecord | null): {
   removal?: DocumentRemovalRecord;
 } {
   return {
-    message: removedWriteMessage(removal, "save"),
+    message: removedWriteMessage(removal),
     rejected: "removed",
     ...(removal ? { removal } : {}),
   };

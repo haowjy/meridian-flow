@@ -118,8 +118,7 @@ export function createDrizzleBranchTreeStep(
         const holds: ApplyItemHold[] = [];
         const apply: Eligible[] = [];
         // Every payload document, before tree membership: a removal retires the document's
-        // tree rows, so a removed creation has no node left to say it was removed. Every
-        // tombstone has its record, so a node never reaches `deleted_live` below.
+        // tree rows, so a removed creation has no node left to say it was removed.
         const removed = await readRemovalRecords(
           currentDrizzleDb(db),
           payload.items.map((item) => item.documentId as DocumentId),

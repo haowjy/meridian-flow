@@ -6,7 +6,11 @@ import type {
   PersistedUpdate,
   UpdateMeta,
 } from "@meridian/agent-edit/integration";
-import { captureEditParts, unwrapDoc } from "@meridian/agent-edit/integration";
+import {
+  captureEditParts,
+  isDocumentNotFoundError,
+  unwrapDoc,
+} from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -33,7 +37,6 @@ import {
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import { DocumentRemovedError } from "../../context/ports/document-removal.js";
 import { requireLivingDocument } from "../../context/tree/living-document.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { documentContainsUpdate } from "../domain/document-containment.js";
@@ -847,7 +850,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           living: true,
         }).catch((cause: unknown) => {
           // A removed document keeps its history as the removal left it.
-          if (cause instanceof DocumentRemovedError) return null;
+          if (isDocumentNotFoundError(cause) && cause.removal) return null;
           throw cause;
         });
         if (!authorityHead) return { updatesFolded: 0 };

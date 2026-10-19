@@ -62,6 +62,7 @@ import {
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
+  createRemovalRecords,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
@@ -72,7 +73,6 @@ import {
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type PromotionService,
-  readRemovalRecords,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -761,9 +761,7 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
-    documentRemovals: {
-      lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds),
-    },
+    documentRemovals: createRemovalRecords(db),
     observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }

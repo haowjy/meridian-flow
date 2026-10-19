@@ -68,8 +68,8 @@ writer data. No additional unit case is needed for these recipe-covered risks.
 
 Read removal records through `readRemovalRecords` (`tree/removal.ts`): only tombstones
 appear, actor names are current, unknown historical actors remain null.
-Instantiate `DocumentRemovedError` with one result and check it retains the
-same document ID and record. The optional availability `removal` is filled
+Check `livingDocumentRefusal` on a tombstone returns a `DocumentNotFoundError`
+with the same document ID and its record in `removal`. The optional availability `removal` is filled
 on every tombstone availability answers `deleted`: visible tombstones, and a
 discarded creation that still places (a hidden one in a discarded draft folder,
 any other hidden tombstone, and a living hidden document stay not visible).
@@ -97,7 +97,7 @@ known-id denial can include its record without allowing content access.
    removal. Pause creation at `draft.ensure.afterDocumentLock` or
    `draft.peer.afterDocumentLock` for creation-first. For removal-first pause
    at `removal.afterClose`. Removal either closes the inserted row or creation
-   refuses with `DocumentRemovedError`. No active peer may remain.
+   refuses with `DocumentNotFoundError` carrying `removal`. No active peer may remain.
 4. Pull a peer whose ID sorts before its upstream while removing the document.
    The pull holds the upstream shared row lock before its peer update lock;
    removal must wait on parents before locking any peer, without a deadlock.
@@ -126,6 +126,11 @@ known-id denial can include its record without allowing content access.
    was saved, so this change wasn't made." with no retry, and its chat card
    reads "You deleted <title> before this reply saved its change.", never
    "You discarded this new document".
+10. A Work Restore that commits before a Work delete's retirement runs keeps
+   the restored live room. Restart with `HOOK_PAUSE_AT=draft.beforeRetirement
+   HOOK_PAUSE_FILE=<file>`, touch the file, delete a Work whose scratch holds an
+   open document, restore the Work, reopen the document in a tab, then delete
+   the file. The tab stays connected (no `4208`) and typing saves.
 8. Time the document-lock hold separately from fixture setup with ten drafts
    and many pending parts. Assert no room close before commit and check every
    part actually settled; do not treat skipped work or a busy-host sample as a

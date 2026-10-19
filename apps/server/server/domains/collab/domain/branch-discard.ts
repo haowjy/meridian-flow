@@ -16,7 +16,6 @@ import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import { testHook } from "../../../shared/test-hooks.js";
-import type { NodeRef } from "../../context/tree/tree-view.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type { Branches } from "./branches.js";
 import {
@@ -69,8 +68,6 @@ export type DiscardKernelInput = { userId?: UserId } /**
 );
 
 export type DiscardKernelResult = {
-  branchClosed: boolean;
-  tombstoned: readonly NodeRef[];
   /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
   releasedObjects: readonly string[];
 };
