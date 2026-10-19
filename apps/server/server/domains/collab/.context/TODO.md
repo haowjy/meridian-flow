@@ -3,16 +3,6 @@
 Open follow-ups must preserve immutable edit identity, durable authority fences,
 and the close/end-use kernel.
 
-## Draft-review migration handoff
-
-The migration lane must remove the final legacy insert assignments atomically
-with dropping their NOT NULL columns: `placement: p.origin` in
-`adapters/drizzle-document-edits.ts` and `draftBaseUpdateSeq: 0` in
-`adapters/drizzle-draft-storage.ts`. Neither column has a database default;
-omission before migration fails `23502`. They have no disposition authority.
-Remove the unused replay DTO's `draftBaseUpdateSeq` field and its adapter mapping
-with that column drop. No receipt placement mutators or readers remain.
-
 ## Per-change Apply Undo
 
 Expose per-change Apply Undo through the existing immutable edit-part and
@@ -44,7 +34,7 @@ is a commit-bound attribution cursor, not a global maximum. Profile retained
 state materialization, encodes, persistence, and thread-peer pulls before
 choosing an incremental checkpoint or captured-state design. Keep delete-only
 changes, the revision fence on draft rewrites (appends are sequenced and
-unfenced), the generation fence on rooms,
+unfenced), live authority fencing and stable draft room identity,
 and the final concurrency fence intact. [#932] tracks the provenance side:
 sequence it after the diff-based review re-lands ([#862]), so nothing that
 change deletes is optimized first.
