@@ -35,7 +35,7 @@ inverse target and drops out of Undo as it does from lineage. Final address
 liveness stays with the lineage reader.
 
 Card authorization and change-viewer discovery share immutable edit and
-placement targets with inverse admission; mutation and draft transport
+origin targets with inverse admission; mutation and draft transport
 journals are never authorization lineage. Card inverse rows are writer rows
 with no turn, and restoration correspondence comes from certified aliases on
 immutable parts, never equal text. Save and rollback take a
@@ -43,24 +43,28 @@ immutable parts, never equal text. Save and rollback take a
 helper scope: `response_id` keeps provider authorship and `edit_scope_id`
 selects the rotated scope.
 
-Apply moves a part's placement to its authored live row, never the reconcile
-row; Discard and empty-draft reset make discarded and retired placements
-terminal. Runtime context reports a card action by turn and document, not by
-model handle.
+Part disposition comes from `createDraftDispositionReader`: Apply-record evidence
+wins; otherwise classification membership in an active draft is pending and the
+rest discarded. Inverse capture reads each origin draft once, including closed
+drafts, and matches receipts by edit id and ordinal. Active draft write admission
+is separate; a revision mismatch between the evidence and planning captures
+retries the bounded attempt. A removed document's record takes precedence.
 
-## Holds, effects, and failures
+Model Undo/Redo keep `cant_*_applied`; discarded parts use discarded copy.
+Revert eligibility remains the inverse kernel's classification, with disposition
+choosing the skipped copy. Applied draft parts revert only in their active
+origin draft, leaving live untouched and making a pending change against base.
+Closed drafts are never writable. Runtime context reports a card action by turn
+and document, not model handle. There are no inverse holds or blocking flags.
 
-A pending inverse holds the roots whose draft identity differs from live. Holds
-and destinations are draft-scoped and prepared from the inverse's one
-captured view. Only intersecting holds can select a holding draft. A skipped hold keeps
-the draft blocking so Apply/Discard remains reachable even when visible prose
-equals live.
+## Effects and failures
 
-`hasEffect` compares prose and managed manifest membership with the draft's
-last pulled live cut; pending lists, counts, and Work notifications read that
-effect or `blocking`, never raw journal-row count. Pull snapshot, effect, and projection updates commit in
-their own root transaction. Root pulls must not be awaited while holding Work
-locks.
+Pending lists and counts include active drafts with `hasEffect`, plus created
+nodes (including empty creates). Membership never depends on journal count,
+generation, or inverse state. Receipt/chat membership comes from the shared
+captured classification, not replayed journal ownership. Pull snapshot, effect,
+and projection updates commit in their own root transaction. Root pulls must
+not be awaited while holding Work locks.
 
 An inverse is an attempt. It captures its documents in one read snapshot with
 no lock or lease (live state, live heads, drafts merged over live) and plans
@@ -76,8 +80,7 @@ planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
 the card and `internal_error` ("the document changed while reversing; try again")
 for model Undo, Redo and Revert, never an invented refusal. Delivery runs
-after the commit, outside the scope. `markBlocking` is its own short write:
-Work rows, then the held draft rows, then the bump.
+after the commit, outside the scope.
 
 A card outcome reports committed destination per document. Draft Undo says that
 Apply is needed to change the manuscript. The reverse endpoint may return
