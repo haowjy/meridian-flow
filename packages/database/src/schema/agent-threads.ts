@@ -38,7 +38,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { byteaColumn, createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { documents, projects, works } from "./content";
 import { pendingPlaceholderPredicate } from "./pending-placeholder";
 import { users } from "./users";
@@ -769,6 +769,39 @@ export const threadShownLinks = pgTable(
       columns: [table.threadId, table.documentId, table.showingDigest, table.turnId],
     }),
     check("thread_shown_links_digest_valid", sql`${table.showingDigest} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+/**
+ * Observation frontiers: the document state the model was shown by one
+ * transcript block (a tool result, or a writer turn's reference block whose
+ * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
+ * (`encodeSnapshotV2`); `unshown` lists the block ids (`client:clock`) that
+ * changed since the model's previous frontier and were not shown in full.
+ * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`.
+ *
+ * Keyed by the block's own id, so a fork that renders the inherited block
+ * finds its rows with nothing copied, and deleting the block deletes them.
+ * `recorded_seq` is global recording order: the latest row among a
+ * conversation's blocks is the model's frontier for a room.
+ */
+export const observationFrontiers = pgTable(
+  "observation_frontiers",
+  {
+    sourceBlockId: uuid("source_block_id")
+      .$type<TurnBlockId>()
+      .notNull()
+      .references(() => turnBlocks.id, { onDelete: "cascade" }),
+    roomKey: text("room_key").notNull(),
+    snapshot: byteaColumn("snapshot").notNull(),
+    unshown: jsonb("unshown").$type<string[]>().notNull(),
+    recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+  },
+  (table) => [
+    primaryKey({
+      name: "observation_frontiers_pk",
+      columns: [table.sourceBlockId, table.roomKey],
+    }),
   ],
 );
 
