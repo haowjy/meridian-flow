@@ -367,12 +367,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     liveCoordinator,
     draftCoordinator,
     drafts: draftStore,
+    liveJournal: persistence.journal,
     concurrentJournalWatermarks: watermarks,
   });
   const draftEffects = createDraftProjection({
     coordinator: draftCoordinator,
     store: draftStore,
-    pulls: draftPulls,
     outsideTransaction: runOutsideWrite,
   });
   const notices = createDrizzleNoticePort(db);
@@ -517,6 +517,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     links,
   );
   const turnInverse = createDrizzleTurnInverseService({
+    onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db,
     journal: persistence.journal,
     drafts: draftStore,

@@ -16,9 +16,7 @@ import { appendTailOrder } from "./append-tail-order.mts";
 import { archiveInFlightAppend } from "./archive-in-flight-append.mts";
 import { clientResync } from "./client-resync.mts";
 import { d12CreateDuringArchive } from "./d12-create-during-archive.mts";
-import { d12PullBeforeArchive } from "./d12-pull-before-archive.mts";
 import { d13CandidateDisposal } from "./d13-candidate-disposal.mts";
-import { d13RecaptureReleasesRow } from "./d13-recapture-releases-row.mts";
 import { d22ConcurrentUndo } from "./d22-concurrent-undo.mts";
 import { d22RetractedPeerPull } from "./d22-retracted-peer-pull.mts";
 import { d23ArchivedDraftRebases } from "./d23-archived-draft-rebases.mts";
@@ -33,9 +31,7 @@ import { coldLoadCommit, droppedDelivery, readOnlyHandshake } from "./room-enrol
 import { twoProcessCompaction, twoProcessFold, twoProcessFrames } from "./two-process-frames.mts";
 
 const PROBES: readonly Probe[] = [
-  d12PullBeforeArchive,
   d12CreateDuringArchive,
-  d13RecaptureReleasesRow,
   d13CandidateDisposal,
   d22RetractedPeerPull,
   f1InverseGrant,

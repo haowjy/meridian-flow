@@ -59,15 +59,17 @@ and document, not model handle. There are no inverse holds or blocking flags.
 
 ## Effects and failures
 
+`hasEffect` compares the committed draft's `review_base` and `prosemirror` blocks.
 Pending lists and counts include active drafts with `hasEffect`, plus created
 nodes (including empty creates). Membership never depends on journal count,
 generation, or inverse state. Receipt/chat membership comes from the shared
-captured classification, not replayed journal ownership. Pull snapshot, effect,
-and projection updates commit in their own root transaction. Root pulls must
-not be awaited while holding Work locks.
+captured classification, not replayed journal ownership. The projection job is
+dirtied after inverse commit; the inverse writes neither effect nor baseline.
+Pull snapshot, effect, and projection updates commit in their own root
+transaction. Root pulls must not be awaited while holding Work locks.
 
 An inverse is an attempt. It captures its documents in one read snapshot with
-no lock or lease (live state, live heads, drafts merged over live) and plans
+no lock or lease (live state, live heads, committed drafts alone) and plans
 off every lock. Its commit scope takes the live mutexes, then one savepoint
 whose first locks are the Work rows (the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed: a seam boundary), then its
@@ -92,3 +94,7 @@ Failed-response rollback selects immutable parts by `editScopeId`, records
 accepted parts as terminal rollback edits, and keeps only uninvertible pending
 targets in `rollback_pending`. A failed checkpoint or report cannot reject a
 durable save.
+
+A released closed draft has no bytes from which to describe a receipt's prose.
+Live has unrelated Yjs identity, so skipped inverse parts can retain their reason
+without before/after snippets; never merge live to manufacture them.

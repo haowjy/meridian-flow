@@ -9,6 +9,10 @@ change-trail persistence, and Hocuspocus admission. It composes
 - A branch is one Work's pending file tree (`branches`); its document versions
   are drafts (`document_drafts`). Apply leaves the branch open; Discard all closes it.
 
+- Work drafts are content-only fresh seeds: client 1 writes live's blocks into
+  `prosemirror` and `review_base`; never merge live's Yjs identity into them.
+  Background rebases use one server append under the draft row hold, reading
+  committed live without its lock. Thread peers still replicate their Work draft.
 - Live documents, document drafts, and thread peers are real Y.Docs. Journals and
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
@@ -47,7 +51,7 @@ change-trail persistence, and Hocuspocus admission. It composes
 - `draft-runtime.ts` owns the committed replica cache, prefix materialization, prepared
   append/rewrite lifetime, after-root-commit installation/delivery and tail compaction.
   Operation policy stays in `draft-coordinator.ts` and `draft-writer-frames.ts`.
-  Server operations use `prepareAppend`'s synchronous `authorServerRows` callback:
+  Server operations use `prepareAppend`'s async-capable `authorServerRows` callback:
   it receives a private post-incoming-row prefix with client 1 set, under the row hold.
   Return captured transaction updates in order; never author client-1 rows before the hold.
 - A reply saves every document it wrote in one transaction. Live delivery

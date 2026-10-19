@@ -51,6 +51,7 @@ try {
     async flushLivePull() {},
     notices: { async record() {} },
     workProjection: h.projection,
+    onDraftCommitted: () => {},
   });
 
   async function fixture(label: string, deletion = false) {

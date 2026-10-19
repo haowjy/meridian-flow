@@ -9,16 +9,9 @@
  * (D34): a write guarded by the revision it judged misses whenever a key commits during the run,
  * so a `moved` write re-judges at once rather than on the debounce. Only errors back off.
  */
-import { bytesEqual } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
-import {
-  type EffectFingerprint,
-  effectFingerprint,
-  effectFingerprintsEqual,
-} from "./document-content.js";
+import { blocksEqual, REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { DraftCoordinator } from "./draft-coordinator.js";
-import type { DraftPullService } from "./draft-pulls.js";
 import { DraftMissingError, type DraftStore, type StaleEffectCursor } from "./draft-store.js";
 
 /** A pause runs the job this long after the last key... */
@@ -37,7 +30,7 @@ export type DraftProjection = {
   sweep(): Promise<number>;
   /**
    * Runs every pending judgement now, skipping its debounce or backoff, and resolves once
-   * none is pending or running (a parked one excepted): the convergence point for a reader
+   * none is pending or running: the convergence point for a reader
    * that must see the projection caught up, such as a test asserting review membership.
    */
   flush(): Promise<void>;
@@ -48,14 +41,9 @@ export type DraftProjection = {
 export type DraftProjectionDiagnostics = {
   /** A projection run failed; the draft is retried on its backoff and never dropped. */
   projectionFailed(input: { draftId: string; cause: unknown }): void;
-  /**
-   * A legacy draft's baseline cannot be established: its document has a terminally blocked
-   * settlement. Once per process; the draft waits for its next append or a restart.
-   */
-  projectionBaselineBlocked(input: { draftId: string; documentId: string }): void;
 };
 
-type Outcome = "done" | "drop" | "moved" | "contended" | "fenced" | "parked";
+type Outcome = "done" | "drop" | "moved" | "contended";
 
 type Entry = {
   firstDirtyAt?: number;
@@ -66,14 +54,11 @@ type Entry = {
   again: boolean;
   /** Consecutive unwritten attempts, for the backoff. */
   failures: number;
-  /** A terminally blocked legacy baseline: no timer until the next append or a restart. */
-  parked: boolean;
 };
 
 export function createDraftProjection(input: {
   coordinator: Pick<DraftCoordinator, "readDraft">;
-  store: Pick<DraftStore, "readEffectBaseline" | "writeEffect" | "staleEffectDrafts">;
-  pulls: Pick<DraftPullService, "pullWorkDraft">;
+  store: Pick<DraftStore, "writeEffect" | "staleEffectDrafts">;
   diagnostics?: DraftProjectionDiagnostics;
   /** Runs a body outside every ambient transaction and write grant. */
   outsideTransaction<T>(operation: () => T): T;
@@ -82,8 +67,7 @@ export function createDraftProjection(input: {
   const maxRuns = input.maxRuns ?? MAX_RUNS;
   const entries = new Map<string, Entry>();
   const queue: string[] = [];
-  const baselines = new Map<string, { state: Uint8Array; fingerprint: EffectFingerprint }>();
-  const diagnosedBlocked = new Set<string>();
+  const schema = buildDocumentSchema();
   let running = 0;
   let sweeping = false;
   let disposed = false;
@@ -91,7 +75,7 @@ export function createDraftProjection(input: {
   function entryOf(draftId: string): Entry {
     let entry = entries.get(draftId);
     if (!entry) {
-      entry = { running: false, queued: false, again: false, failures: 0, parked: false };
+      entry = { running: false, queued: false, again: false, failures: 0 };
       entries.set(draftId, entry);
     }
     return entry;
@@ -113,7 +97,6 @@ export function createDraftProjection(input: {
   function markDirty(draftId: string): void {
     if (disposed) return;
     const entry = entryOf(draftId);
-    entry.parked = false;
     if (entry.running) {
       entry.again = true;
       return;
@@ -165,23 +148,19 @@ export function createDraftProjection(input: {
     entry.running = false;
     if (outcome === "drop") {
       entries.delete(draftId);
-      baselines.delete(draftId);
       return;
     }
     if (outcome === "done" || outcome === "moved") entry.failures = 0;
-    else if (outcome !== "parked") entry.failures += 1;
-    if (outcome === "parked") entry.parked = true;
+    else entry.failures += 1;
     // A key committed between the judgement and its guarded write: judge the new revision now.
     if (outcome === "moved") {
       entry.again = false;
-      entry.parked = false;
       enqueue(draftId, entry);
       return;
     }
     // A mark that landed during the run is served whatever the run decided.
     if (entry.again) {
       entry.again = false;
-      entry.parked = false;
       markDirty(draftId);
       return;
     }
@@ -189,7 +168,6 @@ export function createDraftProjection(input: {
       entries.delete(draftId);
       return;
     }
-    if (outcome === "parked") return;
     arm(draftId, entry, Math.min(BACKOFF_MS * 2 ** (entry.failures - 1), MAX_BACKOFF_MS));
   }
 
@@ -197,31 +175,20 @@ export function createDraftProjection(input: {
   async function judge(draftId: string): Promise<Outcome> {
     let judged:
       | { kind: "done" }
-      | {
-          kind: "legacy";
-          documentId: Parameters<DraftPullService["pullWorkDraft"]>[0]["documentId"];
-        }
-      | {
-          kind: "judged";
-          write: Parameters<DraftStore["writeEffect"]>[0];
-        };
+      | { kind: "judged"; write: Parameters<DraftStore["writeEffect"]>[0] };
     try {
       judged = await input.coordinator.readDraft(draftId, async (doc, snapshot) => {
         // A thread peer carries no effect; a closed draft is not a review member.
         if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
           return { kind: "done" as const };
-        const draft = effectFingerprint(doc);
-        const baseline = await input.store.readEffectBaseline(draftId);
-        if (!baseline) return { kind: "done" as const };
-        if (!baseline.state) return { kind: "legacy" as const, documentId: snapshot.documentId };
         return {
           kind: "judged" as const,
           write: {
             draftId,
             revision: snapshot.revision,
-            hasEffect: !effectFingerprintsEqual(
-              baselineFingerprint(draftId, baseline.state),
-              draft,
+            hasEffect: !blocksEqual(
+              readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+              readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
             ),
             workId: snapshot.workId,
           },
@@ -232,35 +199,8 @@ export function createDraftProjection(input: {
       throw cause;
     }
     if (judged.kind === "done") return "done";
-    if (judged.kind === "legacy") {
-      // A legacy row's baseline is live's current state, established by the draft-scoped
-      // exact pull, which writes `live_cut`, `has_effect` and the watermark itself.
-      const pulled = await input.pulls.pullWorkDraft({ documentId: judged.documentId, draftId });
-      if (pulled === "pulled" || pulled === "upstreamMoved") return "done";
-      if (pulled === "closed") return "drop";
-      if (pulled === "fenced") return "fenced";
-      if (!diagnosedBlocked.has(draftId)) {
-        diagnosedBlocked.add(draftId);
-        input.diagnostics?.projectionBaselineBlocked({ draftId, documentId: judged.documentId });
-      }
-      return "parked";
-    }
     const written = await input.store.writeEffect(judged.write);
     return written === "written" ? "done" : written;
-  }
-
-  function baselineFingerprint(draftId: string, state: Uint8Array): EffectFingerprint {
-    const cached = baselines.get(draftId);
-    if (cached && bytesEqual(cached.state, state)) return cached.fingerprint;
-    const doc = createCollabYDoc({ gc: false });
-    try {
-      Y.applyUpdate(doc, state);
-      const fingerprint = effectFingerprint(doc);
-      baselines.set(draftId, { state, fingerprint });
-      return fingerprint;
-    } finally {
-      doc.destroy();
-    }
   }
 
   return {
@@ -278,7 +218,7 @@ export function createDraftProjection(input: {
             limit: SWEEP_PAGE,
           });
           for (const { draftId } of page) {
-            // Already dirty, running, backing off, queued or parked: left to its own entry.
+            // Already dirty, running, backing off or queued: left to its own entry.
             if (entries.has(draftId)) continue;
             markDirty(draftId);
             tracked += 1;
@@ -296,7 +236,6 @@ export function createDraftProjection(input: {
       for (let round = 0; round < 1_000; round += 1) {
         let pending = running > 0 || queue.length > 0;
         for (const [draftId, entry] of entries) {
-          if (entry.parked) continue;
           pending = true;
           if (entry.timer) {
             clearTimeout(entry.timer);

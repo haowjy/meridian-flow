@@ -202,6 +202,10 @@ client blocks retain first-match lookup rather than changing admission.
 The caller filters lost typing to top-level blocks deleted by server rows; typing
 under another writer's deleted block is not recovered.
 
+`retainLateTypingDeletions` preserves separator-deletion observations when a
+host's append awaited receipt I/O. It keeps the append's new spans, drops stale
+backspaces against remembered typing and enforces the same memory bound.
+
 The caller's contract: `LateTyping` is opaque in-process memory the host keeps
 per draft, so a reconnect that sends one keystroke per frame extends one
 paragraph. A later *stale* frame never deletes recovered typing. Ownership ends
