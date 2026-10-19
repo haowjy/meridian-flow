@@ -41,10 +41,18 @@ pre-lock check against the room is only a fast refusal for reconnect replays;
 the room lags admissions still in their transaction.
 
 A removed document answers `4208 document-deleted` (terminal) wherever the
-gateway refuses: a failed grant at `beforeSync`, `DocumentRemovedError` from
-live admission, a draft frame's refusal, and a draft room whose draft closed
-because its document was removed. The lookup (`roomRemoval`) runs only on
-those refusal paths; other refusals keep their codes (`4409` for access).
+gateway refuses. Every refusing room hook (`onConnect`, `beforeSync`,
+`onLoadDocument`) runs inside `withRemovalRefusal`, the one place that decides
+it, with authorization: the refusal's cause is a `DocumentRemovedError` (raised
+only past admission, under the document's mutation lock, so nothing was
+journaled), or the room's document has a removal record (`roomRemoval`: a draft
+room's by its retained draft, never reopened) and the principal may read the
+document's history (`historyAccess` answers `deleted`). Otherwise the refusal
+keeps its own close (`4409` for access, `1013`, `1008`, the draft prefix
+close); an account that can't read the document learns nothing of its
+removal. Inner code throws a `RoomRefusal` carrying its close and never sends
+one itself, so `4208` is never preceded by another code. The lookup runs only
+on refusal paths.
 
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
