@@ -1,4 +1,5 @@
-// One document's save through its host: prepare on the port, then detection, receipts and frontier.
+// One document's save through its host: prepare, persist (the durable append and its cut), then
+// the accepted save's report (detection, receipts, frontier), which never fails the save.
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
@@ -10,6 +11,7 @@ import type {
   DiscardedWriteReason,
   DocumentAccess,
   DocumentCoordinator,
+  SaveCut,
   StagedCut,
   StagedWriteRejectionReason,
   StagedWriteSaveResult,
@@ -67,13 +69,14 @@ export interface SavedDocument {
   rejectedUpdates?: StagedResponseUpdate[];
 }
 
-/** A document's prepared save, held by its attempt until `install`. */
-export interface SaveOutcome {
+/**
+ * A document's prepared save, held by its attempt until `install`. Its cut is the prepared
+ * candidate's until `persist` replaces it with the append's.
+ */
+export interface SaveOutcome extends SaveCut {
   updates: StagedResponseUpdate[];
   rejected: StagedResponseUpdate[];
   room: string | null;
-  beforeState: Uint8Array;
-  afterState: Uint8Array;
   write: StagedWriteSaveResult["write"];
 }
 
@@ -104,9 +107,15 @@ export interface DocumentSave {
    */
   prepare(doc: SavedDocument): Promise<SaveOutcome>;
   /**
+   * The durable phase, inside the caller's commit scope: the host appends the kept rows and
+   * `save` takes the cut the append actually followed; a created document is ensured.
+   */
+  persist(doc: SavedDocument, save: SaveOutcome): Promise<void>;
+  /**
    * The saved document's receipts, after its save handed its write to the host: the save's
    * verdict on `doc` (the commit's snapshot), then detection on what the save read and wrote,
-   * then the frontier it records. A failure past the save degrades the receipts, never the save.
+   * then the frontier it records. Never throws: past persistence any failure degrades the
+   * receipts, never the save.
    */
   report(
     editScopeId: string,
@@ -116,7 +125,9 @@ export interface DocumentSave {
   ): Promise<ResponseCommitDocumentResult>;
   /**
    * A write outside a reply, saved at once through the same host port: its one entry kept or
-   * refused, persisted, handed over, and detected on what the save read.
+   * refused, persisted, handed over, and detected on the append's cut. Once persisted it is
+   * accepted: a reporting failure degrades it, so a retry of the same call finds it cached
+   * instead of writing it twice.
    */
   saveNow(input: SaveNowInput): Promise<SavedNow | InternalWriteResult>;
 }
@@ -162,35 +173,33 @@ export function createDocumentSave(deps: {
       return outcome;
     },
 
+    async persist(doc, save) {
+      if (save.write.kind === "write") {
+        const cut = await save.write.persist();
+        save.beforeState = cut.beforeState;
+        save.afterState = cut.afterState;
+      }
+      if (save.updates.length && doc.ensureDocumentBeforeCommit)
+        await deps.ensureDocument?.(doc.docId);
+    },
+
     async report(editScopeId, doc, save, recordingFrontier) {
       // The snapshot takes the save's verdict; the staged buffer keeps its own until close.
       doc.updates = save.updates;
       doc.rejectedUpdates = [...(doc.rejectedUpdates ?? []), ...save.rejected];
       if (!doc.updates.length) return degradedReceipts(doc, null, 0);
-      const before = docFromState(save.beforeState);
-      const after = docFromState(save.afterState);
-      try {
-        if (doc.ensureDocumentBeforeCommit) await deps.ensureDocument?.(doc.docId);
-        let links: CommandLinks;
-        let applied: AcceptedMutationReport;
-        try {
-          links = await saveLinks(editScopeId, doc, after);
-          applied = await detection.reportAcceptedMutation(before, after, {
-            ...detectionInput(doc, links),
-            reportingCut: save.beforeState,
-            access: accessFor(doc.interactionContext),
-          });
-        } catch {
-          return degradedReceipts(doc, null);
-        }
+      return reportAccepted(save, degradedReceipts(doc, null), async (before, after) => {
+        const links = await saveLinks(editScopeId, doc, after);
+        const applied = await detection.reportAcceptedMutation(before, after, {
+          ...detectionInput(doc, links),
+          reportingCut: save.beforeState,
+          access: accessFor(doc.interactionContext),
+        });
         const document = renderedReceipts(doc, links, applied, after);
         return save.room && recordingFrontier
           ? await observeSave(doc, links, document, after, save.room, recordingFrontier)
           : document;
-      } finally {
-        before.destroy();
-        after.destroy();
-      }
+      });
     },
 
     async saveNow(input) {
@@ -203,36 +212,48 @@ export function createDocumentSave(deps: {
       });
       const { write } = saved;
       let persisted = false;
-      const before = docFromState(saved.beforeState);
-      const after = docFromState(saved.afterState);
       try {
         const refused = saved.rejected[0];
         if (refused) return refusedWrite(refused.reason);
         if (write.kind === "no-effect")
           throw new Error(`Host reported no effect for a kept write on ${input.docId}`);
-        if (input.refuseUnlessEmpty && deps.model.getBlocks(toDocHandle(before)).length > 0)
+        if (input.refuseUnlessEmpty && !preparedEmpty(saved.beforeState))
           return input.refuseUnlessEmpty;
-        await write.persist();
+        const cut = await write.persist();
         persisted = true;
         write.transfer();
-        const report = await detection.reportAcceptedMutation(before, after, {
-          docId: input.docId,
-          links: input.links,
-          preOwnSnapshot: input.preOwnSnapshot,
-          reportingCut: saved.beforeState,
-          access,
-          actor: input.actor,
-          interactionContext: input.interactionContext,
-          ownWrites: [{ preOwnSnapshot: input.preOwnSnapshot, update: input.entry.update }],
-        });
-        return { ...report, afterState: saved.afterState };
+        return reportAccepted(
+          cut,
+          { revision: null, awarenessDegraded: true, afterState: cut.afterState },
+          async (before, after) => ({
+            ...(await detection.reportAcceptedMutation(before, after, {
+              docId: input.docId,
+              links: input.links,
+              preOwnSnapshot: input.preOwnSnapshot,
+              reportingCut: cut.beforeState,
+              access,
+              actor: input.actor,
+              interactionContext: input.interactionContext,
+              ownWrites: [{ preOwnSnapshot: input.preOwnSnapshot, update: input.entry.update }],
+            })),
+            afterState: cut.afterState,
+          }),
+        );
       } finally {
         if (!persisted && write.kind === "write") write.dispose();
-        before.destroy();
-        after.destroy();
       }
     },
   };
+
+  /** Whether the prepared candidate's document held no blocks. */
+  function preparedEmpty(state: Uint8Array): boolean {
+    const doc = docFromState(state);
+    try {
+      return deps.model.getBlocks(toDocHandle(doc)).length === 0;
+    } finally {
+      doc.destroy();
+    }
+  }
 
   /** The save's links: they spell the saved room and every write's view before it ran. */
   async function saveLinks(
@@ -352,6 +373,30 @@ export function createDocumentSave(deps: {
       deps.onObservationFailed?.({ documentId: doc.docId, cause });
       return document;
     }
+  }
+}
+
+/**
+ * The one reporting boundary of an accepted save, immediate or a reply's: `run` reads the
+ * append's cut, and any failure in it answers `degraded`, never an error. The write is
+ * already persisted, so an error here would invite a retry that writes it twice.
+ */
+async function reportAccepted<T>(
+  cut: SaveCut,
+  degraded: T,
+  run: (before: Y.Doc, after: Y.Doc) => Promise<T>,
+): Promise<T> {
+  const docs: Y.Doc[] = [];
+  try {
+    const before = docFromState(cut.beforeState);
+    docs.push(before);
+    const after = docFromState(cut.afterState);
+    docs.push(after);
+    return await run(before, after);
+  } catch {
+    return degraded;
+  } finally {
+    for (const doc of docs) doc.destroy();
   }
 }
 

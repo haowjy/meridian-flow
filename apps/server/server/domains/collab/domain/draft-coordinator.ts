@@ -6,7 +6,7 @@
  * fold they trigger are `draft-writer-frames.ts`, over the same runtime surface.
  */
 
-import { bytesEqual } from "@meridian/agent-edit/integration";
+import { bytesEqual, type SaveCut } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { type CollabSchemaVersion, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -163,6 +163,11 @@ export type PreparedDraftWrite = {
   /** The content the write was prepared as, before any lock; read it, never mutate it. */
   readonly candidate: Y.Doc;
   persist(): Promise<boolean>;
+  /**
+   * Once an append persisted rows, the draft as it found it under the draft row lock and with
+   * them; null before that, for a contained append, and for a rewrite.
+   */
+  appendCut(): SaveCut | null;
   transfer(): void;
   dispose(): void;
 };
@@ -548,6 +553,7 @@ export function createDraftCoordinator(input: {
     owned?(): readonly Y.Doc[];
     /** The append's rows committed: told once its attempt completed. */
     appended?(): void;
+    appendCut?(): SaveCut | null;
   }): PreparedDraftWrite {
     let state: "prepared" | "persisted" | "transferred" | "disposed" = "prepared";
     let committed: Transition | { resetTo: number } | { contained: true } | undefined;
@@ -558,6 +564,7 @@ export function createDraftCoordinator(input: {
     return {
       draftId: write.draftId,
       candidate: write.candidate,
+      appendCut: () => write.appendCut?.() ?? null,
       async persist() {
         if (state !== "prepared") throw new Error(`Draft ${write.draftId} write is ${state}`);
         committed = await write.persist();
@@ -611,10 +618,12 @@ export function createDraftCoordinator(input: {
     }
     let finalized: FinalizedAppend | undefined;
     let committedDoc: Y.Doc | undefined;
+    let cut: SaveCut | null = null;
     return preparedWrite({
       draftId: snapshot.draftId,
       candidate: admitted ?? prefix,
       owned: () => [prefix, ...(committedDoc ? [committedDoc] : [])],
+      appendCut: () => cut,
       appended: () => {
         if (snapshot.kind !== "work_draft") return;
         const mark = () => input.onAppendCommitted(snapshot.draftId);
@@ -650,6 +659,7 @@ export function createDraftCoordinator(input: {
         }
         if (!finalized) throw new Error(`Draft ${snapshot.draftId} append was not finalized`);
         const { doc, prefixHeld, prefixRows, checkpointSeq } = finalized;
+        cut = { beforeState: finalized.before, afterState: Y.encodeStateAsUpdate(doc) };
         const rows = [
           ...prefixRows.map((row) => row.update),
           ...finalized.rows.map((row) => row.updateData),

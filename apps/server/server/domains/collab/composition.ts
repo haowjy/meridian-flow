@@ -41,6 +41,7 @@ import {
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
   createRewriteCommittedEvent,
+  createRoomDeliveryDiagnostics,
   createSweepProjectionDiagnostics,
   createWriterFrameDiagnostics,
 } from "./adapters/agent-edit-observability.js";
@@ -193,6 +194,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: hocuspocusBinding.require,
     journal: persistence.journal,
+    transactions: { inTransaction: isInDrizzleTransaction, afterCommit: deferUntilDrizzleCommit },
+    diagnostics: createRoomDeliveryDiagnostics(deps.eventSink),
   });
   // Every bounded draft-store attempt's rollback boundary (decision D13).
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);

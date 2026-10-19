@@ -37,6 +37,8 @@ export type FinalizeAppendInput = {
 export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }> & {
   /** The committed prefix with every kept row applied. */
   doc: Y.Doc;
+  /** The committed prefix as the append found it under the draft row lock, before its rows. */
+  before: Uint8Array;
   /** The checkpoint the base held is still the draft's: `prefixRows` are the rows between. */
   prefixHeld: boolean;
   prefixRows: readonly DraftTailRow[];
@@ -66,6 +68,7 @@ export function finalizeAppend(
   }
   const done = (finalization: AppendFinalization) => ({ finalization, doc });
   if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
+  const before = Y.encodeStateAsUpdate(doc);
   const moved = !prefixHeld || read.tail.length > 0;
 
   const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
@@ -126,6 +129,7 @@ export function finalizeAppend(
       rows,
       receipts,
       doc,
+      before,
       prefixHeld,
       prefixRows: read.tail,
       checkpointSeq: read.documentDraft.checkpointSeq,

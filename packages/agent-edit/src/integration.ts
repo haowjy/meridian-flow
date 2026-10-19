@@ -48,6 +48,7 @@ export type {
   DocumentAccess,
   DocumentCoordinator,
   RoomRead,
+  SaveCut,
   StagedCut,
   StagedReconcile,
   StagedRoomEntries,

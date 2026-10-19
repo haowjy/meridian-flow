@@ -110,9 +110,9 @@ editor beside the chat dock.
 
 ## Last run
 
-2026-10-19, M2 fix round 2 at `a56e9841f9` (one save port for both hosts), API level only (an
-in-process probe on the real collab domain, writer edits applied as Yjs updates to the live room
-and as writer frames to the Work draft): all eight cells as expected above. Before-state and W1's
-browser run: `work/concurrent-edit-design/m2/probe/before/` and `probe/after/` in the docs
-repository; raw results: `probe/fix-r2/results-fixround-rerun.md` (W2's:
-`probe/w2-inprocess/results-raw.md`). A browser run is still owed.
+2026-10-19, M2 fix round 3 (a save's three phases: the append's cut, transaction-local live
+door and owned delivery, the accepted-save report), API level only (an in-process probe on the
+real collab domain, writer edits applied as Yjs updates to the live room and as writer frames to
+the Work draft): all eight cells as expected above. Before-state and W1's browser run:
+`work/concurrent-edit-design/m2/probe/before/` and `probe/after/` in the docs repository; raw
+results: `probe/fix-r3/cells-871.md`. A browser run is still owed.

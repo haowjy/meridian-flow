@@ -113,7 +113,7 @@ describe("response committer", () => {
           ...write,
           persist: async () => {
             saves.persisted += 1;
-            await write.persist();
+            return write.persist();
           },
           transfer: () => {
             saves.transferred += 1;

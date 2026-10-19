@@ -44,11 +44,18 @@ either a `StagedWriteCommit` the caller owns (`persist` inside the commit
 scope, `transfer` once that scope completed, `dispose` on any unwind; the host
 installs the write at root commit, never at `transfer`, or at once outside a
 transaction), or an explicit `{ kind: "no-effect" }`, which the committer
-refuses when it kept entries. A live host's `persist` appends the kept entries
-as one journal batch; its install is delivery to open editors, whenever entries
-were kept. A draft host's `persist` throws when the draft moved since preparing,
-and the caller prepares again. Commit-time detection reads the save's before
-and after states for both hosts. Neither host fences a WebSocket transport from
+refuses when it kept entries. The result's before and after states are the
+prepared candidate's, read before any lock; only a check that must refuse
+before anything persists reads them (a create that lands only in an empty
+document). `persist` resolves the append's actual cut (`SaveCut`), read where
+the host serializes the append: someone else's rows that landed after
+preparing are in its before state. Receipts, commit-time detection, revision
+and frontier read that cut, for both hosts; the rows are Yjs updates and land
+the same either way, so a moved base refreshes the report rather than the
+write. A live host's `persist` appends the kept entries as one journal batch
+and reads the journal below it; its install is delivery to open editors,
+whenever entries were kept. A draft host's append is finalized under the draft
+row lock against the committed prefix, which is its cut. Neither host fences a WebSocket transport from
 this port: nothing applies to a live room inside a transaction (LOCK-WS, collab
 `websocket-concurrency.md`). An ordinary CRDT write commits as an unfenced
 append. Whole Discard
