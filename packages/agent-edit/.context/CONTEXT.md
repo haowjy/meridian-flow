@@ -23,6 +23,8 @@ Read the page that owns the seam you are changing:
 Deferred work remains in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
 alternatives live in [ALTERNATIVES.md](ALTERNATIVES.md).
 
+- [Diff review](diff-review.md) — pure text review, composition, rebase and local Discard.
+
 ## Host revision identity
 
 The required `DocumentLinksPort.revision(doc, scope)` identifies the exact

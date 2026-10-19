@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Ported the browser-safe draft review text kernel for shared review, Apply, Discard and rebase.
+
 - Removed document stays removed (W52, #854). Live keystroke, reply save, Apply, checkpoint, compaction or version restore that reaches it after removal changes nothing. Only a create makes a document. Apply holds a removed file with its record and applies the rest.
 - Model hears who removed the file, no retry: "This file was deleted by Ana Ruiz before this reply was saved, so this change wasn't made." and "File not found. This file was deleted by Ana Ruiz." (status `document_not_found`). Peer path and save path read the same. Draft closed by a removal stays the removal's after Work Restore, never "the user discarded". Chat card: "You deleted Chapter 3 before this reply saved its change."
 - Editor on a removed document closes `4208 document-deleted`, no reconnect, only for someone who may read it; others get plain denial or unknown draft. A stale `4208` on a document that still exists reconnects in place; while availability can't answer, the tab says "Access lost (not saving to the server)". The space a closed tab or dock slot leaves says "You deleted Chapter 3 elsewhere.", "You deleted 3 documents elsewhere (Chapter 1, Chapter 2, and Chapter 3).", "You discarded Note from the draft elsewhere."; never over text; silent in the tab that removed it. A reopened review link says the same.
