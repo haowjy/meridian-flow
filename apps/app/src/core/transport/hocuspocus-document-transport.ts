@@ -251,7 +251,7 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
   [WS_CLOSE.DRAFT_GENERATION_STALE.reason]: "superseded",
-  [WS_CLOSE.DRAFT_STALE.reason]: "rebuild",
+  [WS_CLOSE.DRAFT_STALE.reason]: "closed",
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
@@ -266,7 +266,7 @@ export function classifyDocumentTransportClose(
   const reason = event.reason as DocumentSessionResetReason;
   const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
   if (disposition) {
-    if ((disposition === "superseded" || disposition === "rebuild") && !isDraftRoom(roomName))
+    if ((disposition === "superseded" || disposition === "closed") && !isDraftRoom(roomName))
       return null;
     if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
     return { kind: "reset", reason, disposition, code: event.code };
@@ -456,6 +456,7 @@ export function createHocuspocusDocumentTransport({
   if (provider.synced) resolveSynced();
 
   return {
+    whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     unacknowledgedUpdates: () => outbox,
     get synced() {
       return provider.synced;

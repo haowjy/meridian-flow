@@ -43,6 +43,8 @@ export type ServerAcknowledgementTracker = {
    */
   noteFrameQueued(frame: Uint8Array): void;
   noteFrameReceived(frame: Uint8Array): void;
+  /** Freeze the current prefix, without waiting for frames sent after this call. */
+  whenCurrentChangesAcknowledged(): Promise<void>;
   readonly acknowledged: boolean;
 };
 
@@ -78,9 +80,17 @@ export function createServerAcknowledgementTracker(
   let sent = 0;
   let acknowledgedCount = 0;
   let published = false;
+  const barriers = new Set<{ target: number | null; resolve(): void }>();
 
   const compute = () => open && handshakeSent && !rejected && acknowledgedCount >= sent;
   const publish = () => {
+    if (open && !rejected)
+      for (const barrier of barriers) {
+        if (barrier.target !== null && acknowledgedCount >= barrier.target) {
+          barriers.delete(barrier);
+          barrier.resolve();
+        }
+      }
     const next = compute();
     if (next === published) return;
     published = next;
@@ -89,6 +99,7 @@ export function createServerAcknowledgementTracker(
 
   return {
     beginConnection() {
+      for (const barrier of barriers) barrier.target = null;
       open = true;
       handshakeSent = false;
       rejected = false;
@@ -106,6 +117,8 @@ export function createServerAcknowledgementTracker(
       if (syncType === null) return;
       if (syncType === messageYjsSyncStep2) handshakeSent = true;
       sent += 1;
+      if (syncType === messageYjsSyncStep2)
+        for (const barrier of barriers) if (barrier.target === null) barrier.target = sent;
       publish();
     },
     noteFrameQueued(frame) {
@@ -132,6 +145,12 @@ export function createServerAcknowledgementTracker(
       if (applied) acknowledgedCount = Math.min(acknowledgedCount + 1, sent);
       else rejected = true;
       publish();
+    },
+    whenCurrentChangesAcknowledged() {
+      if (published) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        barriers.add({ target: open && handshakeSent ? sent : null, resolve });
+      });
     },
     get acknowledged() {
       return published;

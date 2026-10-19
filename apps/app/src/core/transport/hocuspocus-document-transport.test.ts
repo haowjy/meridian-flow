@@ -46,7 +46,7 @@ describe("Hocuspocus document transport adapter", () => {
         code: 4205,
         reason: "draft-stale-doc",
       }),
-    ).toEqual({ kind: "reset", reason: "draft-stale-doc", disposition: "rebuild", code: 4205 });
+    ).toEqual({ kind: "reset", reason: "draft-stale-doc", disposition: "closed", code: 4205 });
     expect(
       classifyDocumentTransportClose("document-1", {
         code: 1006,
@@ -68,7 +68,7 @@ describe("Hocuspocus document transport adapter", () => {
       pending: true,
       disposition: "superseded",
     },
-    { signal: "close", contract: WS_CLOSE.DRAFT_STALE, pending: true, disposition: "rebuild" },
+    { signal: "close", contract: WS_CLOSE.DRAFT_STALE, pending: true, disposition: "closed" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: "refused" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
   ] as const)("classifies $signal $contract.reason with pending=$pending", async ({
