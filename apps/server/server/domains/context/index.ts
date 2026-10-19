@@ -28,7 +28,6 @@ export { createContextPortRouter } from "./context/router.js";
 export {
   parseContextUri,
   parseUnifiedContextUri,
-  toCanonical,
   UNIFIED_CONTEXT_SCHEMES,
 } from "./context/uri.js";
 export {

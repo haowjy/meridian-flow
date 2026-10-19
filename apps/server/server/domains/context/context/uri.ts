@@ -3,7 +3,6 @@
  * context-port error vocabulary while contracts owns normalization semantics.
  */
 import {
-  canonicalContextUri,
   type ParseContextUriOptions,
   type ParsedContextUri,
   parseContextUri as parseSharedContextUri,
@@ -13,7 +12,7 @@ import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextError } from "../ports/context-port.js";
 
 export type { ParseContextUriOptions, ParsedContextUri };
-export { canonicalContextUri as toCanonical, UNIFIED_CONTEXT_SCHEMES };
+export { UNIFIED_CONTEXT_SCHEMES };
 
 export function parseContextUri(
   raw: string,

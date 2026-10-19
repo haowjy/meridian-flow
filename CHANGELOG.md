@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Remove the unused server `toCanonical` serializer alias; source locations use the shared codec.
+
 - Separate authoritative catalog reading and label projection from transactional publication, retaining one locking, versioning and commit path.
 
 - Chat links wait for refreshed notes scope after own or parent Work rebind, then resume without a second click.
