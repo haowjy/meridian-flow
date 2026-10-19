@@ -25,7 +25,9 @@ A no-transaction SQL file may declare a colocated TypeScript companion with
 bytes against the SQL's frozen digest, and the runner awaits its `migrate(session)`
 before SQL assertions and the ledger write. The companion owns bounded transactions
 on the same reserved session. Every deploy path uses this runner, not Drizzle's
-SQL-only migrator. Runtime kernel imports remain outside `tools/dev`.
+SQL-only migrator. Runtime kernel imports remain outside `tools/dev`. Conversion-only kernel helpers
+and the Apply-record encoding used by 0078 are part of its frozen contract; keep
+those semantics stable until a new baseline retires that migration.
 
 The runner holds one session advisory lock for the run. Ordinary migrations
 commit their history row with the file; no-transaction files record history
@@ -45,7 +47,12 @@ target's highest ordinal from its journal. A lane database that applied the
 replaced identity needs an owner-authorized reset of that checkout only.
 
 Schema workflow is `db:generate`, review SQL/journal/snapshots, `drizzle-kit
-check`, migration lint, then `db:migrate`. Function files are synchronized after
+check`, migration lint, then `db:migrate`. The frozen journal's idx values and
+numeric filename prefixes differ. Generate with `--prefix=timestamp` to avoid
+Drizzle's default index prefix overwriting an older snapshot, then name only the
+new, never-applied SQL/snapshot at the next free numeric ordinal and update that
+new journal tag. Keep generated snapshot UUIDs/prevId unchanged; a second
+generation must report no changes. Function files are synchronized after
 migrations. A row-transform migration needs a populated upgrade fixture; the
 fixture can be retired only after a later frozen migration supersedes it.
 
