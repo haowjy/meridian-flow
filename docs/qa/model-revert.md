@@ -33,9 +33,10 @@ Seed `The cat sat on the mat.` unless the row says otherwise. N is `w1`.
 | Plain | nothing | `reverted: w1 (1 of 1 parts)`, a new handle `w2`; the document is the seed again |
 | Typing elsewhere | another paragraph added after N | N removed, the other paragraph kept |
 | Edited inside N | N's `black` changed to `brown` | `nothing_to_revert`; the line `not reverted: "…" → "…": edited since; now "<the edited sentence>"`; text unchanged |
-| Repeated text, original edited | seed `The night was dark.` / `Lin Feng walked on.`; N inserts another `The night was dark.` after the first; the first changed to `cold` | N's copy goes: `The night was cold.` / `Lin Feng walked on.` / `The night was dark.` |
+| Repeated text, original edited | seed `The night was dark.` / `Lin Feng walked on.`; N inserts another `The night was dark.` after the first; the first changed to `cold` | N's copy goes: `The night was cold.` / `Lin Feng walked on.` |
 | Repeated text, N's copy edited | the same, but N's inserted copy changed | skipped and listed; `now` shows N's copy's current text |
 | Paragraph rebuilt | N adds `The dog ran across the yard.` as its own paragraph; the writer turns it into a heading | skipped: `its paragraph was replaced or removed`, no `now`; the heading stays |
+| Emptied paragraph | the writer deletes all of N's inserted paragraph's text, leaving it empty | skipped: `edited since; now ""`; the empty paragraph stays |
 | Existing paragraph rebuilt | N appends ` The dog ran.` to the seed paragraph; the writer turns that paragraph into a heading | the same |
 | N deleted a sentence | N removed `BBB stood still.`; the neighbouring sentences then changed | the sentence comes back between the changed neighbours |
 | Revert of a revert | revert `w1`, then revert that revert's handle | N's text is back |
