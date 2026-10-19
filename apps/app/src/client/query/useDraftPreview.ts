@@ -18,15 +18,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { getDraftPreview } from "@/client/api/branches-api";
-import {
-  type ChangeCommandRecords,
-  intentKeys,
-  readPreviewAfterChangeCommands,
-  shareDraftObservation,
-  useChangeCommandRecords,
-  wholeDraftDisposition,
-} from "./branch-command-record";
-import { type DraftProjection, projectDraft } from "./draft-projection";
 import { projectQueryKeys } from "./project-query-keys";
 import { workBranchDraftsQueryOptions } from "./useWorkBranchDrafts";
 
@@ -38,7 +29,7 @@ import { workBranchDraftsQueryOptions } from "./useWorkBranchDrafts";
  */
 export type DraftPreviewState = {
   preview: DraftPreviewResponse | null;
-  inline: DraftProjection["inline"] | null;
+  inline: null;
   /** The read itself, before any intent: what a held view re-projects as the intents change. */
   observed: DraftPreviewResponse | null;
 };
@@ -51,28 +42,18 @@ type DraftRef = {
   draftGeneration?: number;
 };
 
-/** Gone has no server generation; the cache retains the horizon addressed at request start. */
+/** The cache never goes back a generation. */
 export type DraftPreviewRead = DraftPreviewResponse & { draftGeneration?: number };
-
-/**
- * The cache never goes back a generation: a read that began before a close can
- * land after the next proposal's, and the draft's generation only rises
- * (`ThreadDraftListItem.draftGeneration`). Anything else is the default
- * structural sharing, which keeps the reference when a refetch changed nothing.
- */
 function keepNewerGeneration(prior: unknown, next: unknown): unknown {
   const before = prior as DraftPreviewRead | undefined;
   const after = next as DraftPreviewRead;
-  if (
-    before?.draftGeneration !== undefined &&
+  return before?.draftGeneration !== undefined &&
     after.draftGeneration !== undefined &&
     after.draftGeneration < before.draftGeneration
-  )
-    return before;
-  return shareDraftObservation(prior, next);
+    ? before
+    : after;
 }
 
-/** The one preview query, shared by every reader so each draft's preview is fetched once. */
 export function draftPreviewQueryOptions(draft: DraftRef) {
   const queryKey = projectQueryKeys.workDraftPreview(
     draft.projectId,
@@ -82,60 +63,17 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
   );
   return {
     queryKey,
-    queryFn: async ({ signal, client }: QueryFunctionContext): Promise<DraftPreviewRead> => {
-      const prior = client.getQueryData<DraftPreviewRead>(queryKey);
-      const rows = client.getQueryData<ThreadDraftListItem[]>(
-        projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
-      );
-      const row = rows?.find(
-        (row) => row.documentId === draft.documentId && row.itemKey === draft.itemKey,
-      );
-      const generation = Math.max(
-        draft.draftGeneration ?? 0,
-        prior?.draftGeneration ?? 0,
-        row?.draftGeneration ?? 0,
-      );
-      const answer = await readPreviewAfterChangeCommands(draft, () =>
-        getDraftPreview(
-          draft.projectId,
-          draft.workId,
-          draft.documentId,
-          draft.itemKey,
-          signal,
-        ).catch((error: unknown) => {
-          // HTTP absence is the same durable observation as a JSON gone answer.
+    queryFn: async ({ signal }: QueryFunctionContext): Promise<DraftPreviewRead> =>
+      getDraftPreview(draft.projectId, draft.workId, draft.documentId, draft.itemKey, signal).catch(
+        (error: unknown) => {
           if (error && typeof error === "object" && "status" in error && error.status === 404)
             return { status: "gone" as const, itemKey: draft.itemKey };
           throw error;
-        }),
-      );
-      return answer.status === "gone" ? { ...answer, draftGeneration: generation } : answer;
-    },
+        },
+      ),
     staleTime: 15_000,
     structuralSharing: keepNewerGeneration,
   };
-}
-
-/** The projection of a read under the intents on its draft; one object per (read, intents) for every reader of it. */
-type Projected = DraftProjection & { key: string };
-const projections = new WeakMap<DraftPreviewResponse, Projected>();
-
-function projectionOf(
-  data: DraftPreviewResponse,
-  records: ChangeCommandRecords,
-  draft: DraftRef,
-): Projected {
-  const whole =
-    data.status === "active" &&
-    wholeDraftDisposition(records, draft, data.draftGeneration, data) !== null;
-  const intents = intentKeys(records, draft);
-  const sorted = (keys: ReadonlySet<string>) => [...keys].sort().join(",");
-  const key = whole ? "all" : `${sorted(intents.hidden)}|${sorted(intents.restoring)}`;
-  const held = projections.get(data);
-  if (held?.key === key) return held;
-  const projected = { ...projectDraft(data, intents, whole), key };
-  projections.set(data, projected);
-  return projected;
 }
 
 export function useDraftPreview(
@@ -145,33 +83,18 @@ export function useDraftPreview(
   itemKey: string | null,
   options?: { enabled?: boolean },
 ): DraftPreviewState {
-  const callerEnabled = options?.enabled ?? true;
   const enabled =
-    callerEnabled &&
-    Boolean(projectId) &&
-    Boolean(workId) &&
-    Boolean(documentId) &&
-    Boolean(itemKey);
-  const draft = {
-    projectId: projectId ?? "",
-    workId: workId ?? "",
-    documentId: documentId ?? "",
-    itemKey: itemKey ?? "",
-  };
+    (options?.enabled ?? true) && Boolean(projectId && workId && documentId && itemKey);
   const { data } = useQuery({
-    ...draftPreviewQueryOptions(draft),
+    ...draftPreviewQueryOptions({
+      projectId: projectId ?? "",
+      workId: workId ?? "",
+      documentId: documentId ?? "",
+      itemKey: itemKey ?? "",
+    }),
     enabled,
   });
-
-  // Reprojected from the read whenever the intents move, but the same object
-  // while they do not, so consumers never see a new preview for unrelated records.
-  const records = useChangeCommandRecords();
-  const projection = data ? projectionOf(data, records, draft) : null;
-  return {
-    preview: projection?.preview ?? null,
-    inline: projection?.inline ?? null,
-    observed: data ?? null,
-  };
+  return { preview: data ?? null, inline: null, observed: data ?? null };
 }
 
 /**
@@ -248,7 +171,6 @@ export function useDraftPreviews(
   options?: { openReview?: { documentId: string; itemKey: string } | null },
 ): readonly DraftPreviewEntry[] {
   const queryClient = useQueryClient();
-  const records = useChangeCommandRecords();
   const reads = useQueries({
     queries: targets.map((target) => draftPreviewQueryOptions(target)),
     combine: combinePreviewReads,
@@ -282,20 +204,12 @@ export function useDraftPreviews(
     for (const key of seen.current.keys()) if (!held.has(key)) seen.current.delete(key);
   }, [targetsKey, listedKey, open?.documentId, open?.itemKey, queryClient]);
 
-  const projectedKeys = targets
-    .map((target, index) => {
-      const data = reads[index]?.data;
-      return data ? projectionOf(data, records, target).key : "";
-    })
-    .join("|");
   return useMemo(() => {
     if (targets.length === 0) return NO_ENTRIES;
-    return reads.map(({ data, failed, retry }, index): DraftPreviewEntry => {
+    return reads.map(({ data, failed, retry }): DraftPreviewEntry => {
       if (data?.status === "corrupt") return { status: "error", retry };
-      if (data) {
-        return { status: "ready", preview: projectionOf(data, records, targets[index]).preview };
-      }
+      if (data) return { status: "ready", preview: data };
       return failed ? { status: "error", retry } : { status: "loading" };
     });
-  }, [reads, projectedKeys, targetsKey]);
+  }, [reads, targetsKey]);
 }

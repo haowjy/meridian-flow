@@ -7,11 +7,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type {
-  ChangeCommandMode,
-  ChangeFailureCode,
-  ServerRefusal,
-} from "@/client/query/branch-command-record";
+import type { ChangeCommandMode, ChangeFailureCode, ServerRefusal } from "./review-command-types";
 import {
   DropdownMenu,
   DropdownMenuContent,

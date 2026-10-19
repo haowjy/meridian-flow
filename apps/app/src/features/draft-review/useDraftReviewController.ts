@@ -4,17 +4,6 @@ import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import {
-  type BranchCommandOutcome,
-  type CommandStart,
-  newestKnownProposal,
-  type SelectionCommand,
-} from "@/client/query/branch-command-executor";
-import {
-  clearDraftReviewLaunchFailure,
-  pendingBranchCommand,
-  useBranchCommandRecords,
-} from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { noteReviewNavigation } from "@/core/editor/review-place";
 import {
@@ -26,8 +15,13 @@ import {
   type ReviewToast,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
-import { draftClaim, useReviewCommandCompletion } from "./useReviewCommandCompletion";
-import { useWorkBranchCommands, type WorkBranchCommands } from "./useWorkBranchCommands";
+import {
+  useWorkBranchCommands,
+  type BranchCommandOutcome,
+  type CommandStart,
+  type WorkBranchCommands,
+} from "./useWorkBranchCommands";
+type SelectionCommand = WorkBranchCommands["applyChanges"];
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
@@ -165,21 +159,16 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
 
-  const commandRecords = useBranchCommandRecords();
-  const activeCommand = inlineReview
-    ? pendingBranchCommand(commandRecords, { projectId, workId, ...inlineReview })
-    : null;
-  const isApplying = activeCommand?.target === "all" && activeCommand.mode === "apply";
-  const isDisposing = activeCommand !== null;
-  const dispositionLocked = commands.dispositionLocked || isDisposing;
-  const changesLocked = commands.changesLocked || activeCommand?.target === "all";
+  const isApplying = false;
+  const isDisposing = false;
+  const dispositionLocked = commands.dispositionLocked;
+  const changesLocked = commands.changesLocked;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
       const draft = { projectId, workId, documentId, itemKey };
-      clearDraftReviewLaunchFailure(draft);
       // The review opens on the newest proposal the caches know of, and a command
       // already in flight on this draft (sent from the strip or the Work page)
       // is its to show: it adopts the claim if it acted on that generation.
@@ -187,8 +176,7 @@ export function useDraftReviewController({
         type: "enterInline",
         documentId,
         itemKey,
-        draftGeneration: newestKnownProposal(queryClient, draft),
-        claim: draftClaim(queryClient, draft),
+        draftGeneration: undefined,
       });
     },
     [projectId, queryClient, workId],
@@ -288,23 +276,13 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  useReviewCommandCompletion({ projectId, workId, activeRef, stateRef, dispatch });
-
   const { applyChanges, discardChanges, disposeDrafts } = commands;
   const startDraft = useCallback(
     (mode: "apply" | "discard", draft: DraftReviewSelection) => {
-      const generation = newestKnownProposal(queryClient, { projectId, workId, ...draft });
-      const start = commands.startDraft(mode, draft);
-      return {
-        ...start,
-        outcome: start.outcome.then((outcome) => {
-          if (outcome.kind === "applied" || outcome.kind === "discarded")
-            dispatch({ type: "reviewDisposed", ...draft, draftGeneration: generation });
-          return outcome;
-        }),
-      };
+      // B2: command owner
+      return commands.startDraft(mode, draft);
     },
-    [commands.startDraft, queryClient, projectId, workId, dispatch],
+    [commands],
   );
   const apply = useCallback(
     (documentId: string, itemKey: string) => startDraft("apply", { documentId, itemKey }).outcome,

@@ -2,10 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 
-import type {
-  BranchCommandFailure,
-  ChangeCommandState,
-} from "@/client/query/branch-command-record";
+import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";

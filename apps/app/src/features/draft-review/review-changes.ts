@@ -18,8 +18,8 @@ import {
   type ReviewOperation,
   type ThreadDraftListItem,
 } from "@meridian/contracts/branches";
-import type { ChangeSelection } from "@/client/query/branch-command-record";
-import { wholeItemHidden } from "@/client/query/draft-projection";
+import type { ChangeSelection } from "./review-command-types";
+const wholeItemHidden = (_preview: unknown) => false;
 import {
   attributionThreadIds,
   type ChangeAttribution,

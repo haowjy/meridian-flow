@@ -3,7 +3,7 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { BranchCommandFailure, ServerRefusal } from "@/client/query/branch-command-record";
+import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 import { RemovedDocumentApplyRefusal } from "@/features/project/context/RemovedDocumentNotice";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
@@ -50,7 +50,7 @@ export function RefusalReason({ serverCode, serverReason, removal }: Partial<Ser
     return (
       <>
         {" "}
-        <RemovedDocumentApplyRefusal record={removal ?? null} />
+        <RemovedDocumentApplyRefusal record={null} />
       </>
     );
   const known = serverCode ? knownRefusal(serverCode) : undefined;
@@ -72,7 +72,7 @@ export function ReviewMessageText({
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={removal} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={null} />
         </>
       );
     case "apply-server-error":

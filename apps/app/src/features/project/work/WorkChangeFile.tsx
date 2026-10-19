@@ -3,20 +3,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import {
-  branchCommandFailure,
-  clearBranchCommandFailure,
-  useBranchCommandRecords,
-} from "@/client/query/branch-command-record";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
 import {
   type DraftChangesView,
   isWholeDocumentChange,
 } from "@/features/draft-review/draft-changes";
-import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
@@ -40,9 +33,7 @@ export function WorkChangeFile({
   const [expanded, setExpanded] = useState(false);
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
-  const records = useBranchCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-  const refused = branchCommandFailure(records, draft);
   const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
   if (
     expanded &&
@@ -105,12 +96,6 @@ export function WorkChangeFile({
         target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
       />
-      {refused && !view.items.some((item) => item.draftFailure) ? (
-        <InlineErrorRow
-          message={<ReviewMessageText failure={refused} />}
-          onDismiss={() => clearBranchCommandFailure(draft)}
-        />
-      ) : null}
       {expanded && !wholeDocument ? (
         <div className={cn("pb-1.5", touch ? "pl-11" : "pl-8")}>
           <FileChanges view={view} touch={touch} onSelect={review} />

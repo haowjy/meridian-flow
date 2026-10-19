@@ -9,10 +9,6 @@
  * context, so a host just mounts it with the documentId. Renders nothing when
  * the document has no pending draft.
  */
-import {
-  branchCommandFailure,
-  useBranchCommandRecords,
-} from "@/client/query/branch-command-record";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -26,19 +22,12 @@ export type DraftReviewChipProps = {
 export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipProps) {
   const { controller, fileForDocument } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
-  const commandRecords = useBranchCommandRecords();
 
   const group = fileForDocument(documentId);
   if (!group) return null;
   const draft = group.draft;
   // A launch that failed shows on the chip itself; clicking it again retries.
-  const failed =
-    branchCommandFailure(commandRecords, {
-      projectId: controller.projectId,
-      workId: controller.workId,
-      documentId,
-      itemKey: draft.itemKey,
-    })?.code === "review-failed";
+  const failed = false;
 
   return (
     <DraftSwitcher

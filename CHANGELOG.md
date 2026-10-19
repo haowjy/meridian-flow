@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removed the settlement-era draft-review command client in preparation for the per-draft command owner.
+
 - Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
 
 - Shared frozen Apply merging and optimistic base deltas now use the draft review kernel; low-similarity flat rewrites retain their paragraph identity.
