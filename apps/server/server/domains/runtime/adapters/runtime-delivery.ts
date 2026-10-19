@@ -1,7 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { isPendingPlaceholder } from "@meridian/contracts/threads";
+import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -503,19 +503,23 @@ export function createDeliveryAdapter(
       (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
     );
     let terminal = false;
+    let completedBlocks: Block[] = [];
     if (split) {
-      completed =
-        input.current.kind === "placeholder"
-          ? await input.current.complete(
-              adoption.preparedCurrent,
-              prepared.successorFailure === undefined ? preparationFailure : undefined,
-            )
-          : {
-              ...currentTurn,
-              status: "complete" as const,
-              finishReason: "end_turn" as const,
-              completedAt: new Date().toISOString(),
-            };
+      if (input.current.kind === "placeholder") {
+        const placeholder = await input.current.complete(
+          adoption.preparedCurrent,
+          prepared.successorFailure === undefined ? preparationFailure : undefined,
+        );
+        completed = placeholder.turn;
+        completedBlocks = placeholder.blocks;
+      } else {
+        completed = {
+          ...currentTurn,
+          status: "complete" as const,
+          finishReason: "end_turn" as const,
+          completedAt: new Date().toISOString(),
+        };
+      }
       terminal =
         input.current.kind === "placeholder" &&
         !input.continueTask &&
@@ -640,6 +644,7 @@ export function createDeliveryAdapter(
       split,
       terminal,
       completed,
+      completedBlocks,
       compaction,
       ...(preparationFailure === undefined ? {} : { preparationFailure }),
     };
@@ -678,7 +683,7 @@ export function createDeliveryAdapter(
     const drain = { turns: [], blocks: [], events: [], ackIds: [] };
     if (input.current.kind === "assistant")
       return { drain, next: input.currentTurn, split: false, yielded: true };
-    const completed = await input.current.complete(
+    const { turn: completed, blocks: completedBlocks } = await input.current.complete(
       prepared.preparedCurrent,
       prepared.currentFailure,
     );
@@ -687,6 +692,7 @@ export function createDeliveryAdapter(
       drain,
       next: completed,
       completed,
+      completedBlocks,
       split: true,
       terminal: true,
       yielded: true,

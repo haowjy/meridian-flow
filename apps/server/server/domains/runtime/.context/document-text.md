@@ -84,16 +84,25 @@ the one listing replaces them (M2 W2).
   `recorded_seq` among a block set (rooms only grow, so recording order is cut
   order). `frontierLookup` (`loop/frontier-recording.ts`) builds one lookup per
   block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
-  reads the run's current blocks, so a sibling call's result counts as seen,
-  and `planning` reads the blocks the authoring request was built from (calls
-  in one response share the view from before it; every write plans on it). The block set is the effective conversation (fork
-  lineage through the cutoff, forgotten turns removed), not the compaction
-  projection: credit survives a summarized or elided result. A failed lookup is
-  logged and answers null, the empty frontier; it runs in a savepoint inside a
-  transaction, so the caller's stays usable. Its `ORDER BY recorded_seq DESC
-  NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS LAST)` index, so
-  the scan walks the room newest first and stops at the first row among the
-  blocks.
+  reads the run's credited ids live, so a sibling call's result counts as seen,
+  and `planning` reads the ids as they stood when the authoring request was
+  built (calls in one response share the view from before it; every write plans on it). **Credit follows
+  what the request carries** (C10): the block set is the projector's
+  `creditedBlockIds` (`compaction/project.ts`), the blocks after the latest
+  complete compaction plus that compaction's re-shown documents, or every
+  effective block (fork lineage through the cutoff, forgotten turns removed)
+  when there is no compaction. The retained tail before the compaction credits
+  nothing: its rows may fold credit from rows the summary replaced, and no row
+  records what it folded. The chain therefore restarts at each compaction for
+  every document, and a fork whose cutoff precedes the compaction counts the
+  earlier rows again. The run's `CreditedBlocks` is reseeded from each request's
+  projection and takes the tool results and adopted writer blocks that persist
+  after it; run-start reference reads project the request's blocks for theirs.
+  A failed lookup is logged and answers null, the empty frontier; it runs in a
+  savepoint inside a transaction, so the caller's stays usable. Its `ORDER BY
+  recorded_seq DESC NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS
+  LAST)` index, so the scan walks the room newest first and stops at the first
+  row among the blocks.
 - **Lifecycle.** Rows cascade with their block. A fork renders inherited block
   ids and finds their rows with nothing copied; a retry has new blocks.
 
@@ -110,6 +119,11 @@ and pinned requests; failed, pending, and superseded owners do not apply them.
 Forks inherit elisions only when their cutoff includes C. Never write elisions
 onto source block rows or derive stubs at render time, or a later source
 compaction/deploy would rewrite a fork's frozen prefix.
+
+A document the compaction re-shows after its summary
+([important files](compaction.md#important-files)) elides every tail copy of it
+as `reshown`, stale or not, with a stub pointing at the text after the summary;
+a block that also holds some other stale document keeps the `stale` stub.
 
 Successor preparation queries current revisions from raw retained blocks once
 per attempt. Stale text in pinned unanswered messages is replaced while writer
