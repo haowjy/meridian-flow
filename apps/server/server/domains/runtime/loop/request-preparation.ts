@@ -231,10 +231,6 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     }
     compaction = { kind: "generate" };
   }
-  const updates = {
-    turns: [...assembled.preparationUpdates.turns],
-    blocks: [...assembled.preparationUpdates.blocks],
-  };
   let continuation: NotesContinuation = { kind: "ordinary" };
   const current = input.continuation ?? continuation;
   const tokenizer = assembled.resolvedModel?.tokenizer;
@@ -310,8 +306,6 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
         ) {
           assembled = candidate;
           events.push(...marker.events);
-          updates.turns.push(...marker.turns);
-          updates.blocks.push(...marker.blocks);
           continuation = {
             kind: "notes",
             remaining: Math.min(MAX_NOTES_ITERATIONS, remaining - 1),
@@ -324,7 +318,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     }
   }
   return {
-    ...updates,
+    ...assembled.preparationUpdates,
     assembled,
     continuation,
     events,

@@ -37,6 +37,8 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Keep notes markers and staged request updates under one preparation owner.
+
 - Show held `return_result` calls as neutral notes-step rows on the live stream as well as after reload; reports use the same paired tool data as other tool rows.
 
 - Guard automatic notes and compaction reservations at run start, reply closure, tool continuation and overflow with the same non-spending budget check. A completed reply without pending input still succeeds in debt.

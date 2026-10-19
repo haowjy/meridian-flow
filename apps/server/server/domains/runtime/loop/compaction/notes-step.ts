@@ -1,11 +1,7 @@
-/** Durable notes-step marker, once per raw-history compaction cycle. */
+/** Constructs the durable notes marker after request preparation admits the cycle. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
-import {
-  activeCompaction,
-  compactionNotesMetadata,
-  isCompactionNotesTurn,
-} from "../../../threads/index.js";
+import { compactionNotesMetadata } from "../../../threads/index.js";
 import { nextTurnPosition } from "../../../threads/order-turns.js";
 import { contentForBlockInput, localBlockFromEvent } from "../block-helpers.js";
 import { createLocalTurn } from "../local-turn.js";
@@ -20,15 +16,6 @@ export function prepareCompactionNotes(input: { threadId: ThreadId; turns: Turn[
   blocks: Block[];
   events: OrchestratorEvent[];
 } {
-  const latest = activeCompaction(input.turns);
-  // A retained-tail reminder can be replayed after the summary in projected history.
-  if (
-    input.turns.some(
-      (turn) => (!latest || turn.position > latest.position) && isCompactionNotesTurn(turn),
-    )
-  ) {
-    return { turns: [], blocks: [], events: [] };
-  }
   const leaf = input.turns.at(-1);
   if (!leaf) throw new Error("Compaction notes step requires a prior turn");
   const turn = createLocalTurn({
