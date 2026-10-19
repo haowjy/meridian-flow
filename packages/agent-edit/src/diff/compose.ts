@@ -37,6 +37,8 @@ export function composeHunks(
   diff: BlockDiff,
   selected: Iterable<Hunk>,
   mode: ComposeMode,
+  // Selected hunk support in the final composed side; empty for whole-block deletions.
+  onEffect?: (hunk: Hunk, blocks: number[]) => void,
 ): SpanPatch[] {
   const { base: B, draft: D, hunks } = diff;
   const chosen = new Set(selected);
@@ -94,8 +96,10 @@ export function composeHunks(
   }
 
   const patches: SpanPatch[] = [];
+  let blockDelta = 0;
   for (const { l, r } of regions) {
     const out: Tok[] = [];
+    const effects = new Map<Hunk, number[]>();
     let at = l.b;
     let adopt = -1; // base token right after an applied hunk: it takes its leading space from the draft
     const copy = (to: number) => {
@@ -112,16 +116,45 @@ export function composeHunks(
       const h = hunks[k];
       copy(h.from);
       if (take.has(h) === (mode === "apply")) {
+        if (onEffect) {
+          effects.set(
+            h,
+            Array.from({ length: h.ins.length }, (_, i) => out.length + i),
+          );
+          if (!h.ins.length && (h.from === B.toks.length || !isBlockTok(B.toks[h.from])))
+            effects.set(h, [Math.max(0, out.length - 1)]);
+        }
         out.push(...h.ins);
         adopt = h.to;
         at = h.to;
       }
     }
     copy(r.b);
+    const effectBlocks = new Map<Hunk, number[]>();
+    const effectsAt = new Map<number, Hunk[]>();
+    for (const [h, positions] of effects)
+      for (const position of positions) {
+        const at = effectsAt.get(position) ?? [];
+        at.push(h);
+        effectsAt.set(position, at);
+      }
+    const blocks = buildBlocks(schema, out, {
+      allowEmpty: true,
+      onBlock(index, tokens) {
+        const touched = new Set(tokens.flatMap((position) => effectsAt.get(position) ?? []));
+        for (const h of touched) {
+          const indices = effectBlocks.get(h) ?? [];
+          indices.push(blockIndex(B, l.b) + blockDelta + index);
+          effectBlocks.set(h, indices);
+        }
+      },
+    }).blocks;
+    for (const h of effects.keys()) onEffect?.(h, effectBlocks.get(h) ?? []);
+    blockDelta += blocks.length - (blockIndex(B, r.b) - blockIndex(B, l.b));
     patches.push({
       base: { from: blockIndex(B, l.b), to: blockIndex(B, r.b) },
       draft: { from: blockIndex(D, l.d), to: blockIndex(D, r.d) },
-      blocks: buildBlocks(schema, out, { allowEmpty: true }).blocks,
+      blocks,
     });
   }
   return patches;

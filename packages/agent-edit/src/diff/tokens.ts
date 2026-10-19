@@ -143,48 +143,67 @@ function flatten(blocks: readonly PMNode[]): Side {
 export function buildBlocks(
   schema: Schema,
   toks: readonly Tok[],
-  opts: { allowEmpty?: boolean } = {},
+  opts: { allowEmpty?: boolean; onBlock?: (index: number, tokens: number[]) => void } = {},
 ): { blocks: PMNode[]; normalized: number } {
   const blocks: PMNode[] = [];
   let normalized = 0;
-  let cur: { shell: PMNode; inline: PMNode[] } | null = null;
+  let cur: { shell: PMNode; inline: PMNode[]; sources: number[]; start?: number } | null = null;
   const flush = () => {
     if (!cur) return;
-    const { shell, inline } = cur;
+    const { shell, inline, sources, start } = cur;
     cur = null;
     const type = shell.type;
     const fixed = inline.map((n) => (n.isText ? n.mark(type.allowedMarks(n.marks)) : n));
     if (fixed.some((n, i) => n !== inline[i])) normalized++;
     const allowed = fixed.filter((n) => type.contentMatch.matchType(n.type));
     const rejected = fixed.filter((n) => !type.contentMatch.matchType(n.type));
+    opts.onBlock?.(blocks.length, [
+      ...(start === undefined ? [] : [start]),
+      ...sources.filter((_, i) => type.contentMatch.matchType(fixed[i].type)),
+    ]);
     blocks.push(type.create(shell.attrs, joinText(allowed), shell.marks));
     if (rejected.length) {
       normalized++;
+      opts.onBlock?.(
+        blocks.length,
+        sources.filter((_, i) => !type.contentMatch.matchType(fixed[i].type)),
+      );
       blocks.push(schema.nodes.paragraph.create(null, joinText(rejected)));
     }
   };
-  for (const t of toks) {
+  for (const [index, t] of toks.entries()) {
     if (t.kind === "block") {
       flush();
-      cur = { shell: t.node, inline: [] };
+      cur = { shell: t.node, inline: [], sources: [], start: index };
     } else if (t.kind === "atom") {
       flush();
+      opts.onBlock?.(blocks.length, [index]);
       blocks.push(t.node);
     } else {
       if (!cur) {
         // Inline content with no textblock to hold it (after a whole block, or at the start).
-        cur = { shell: schema.nodes.paragraph.create(), inline: [] };
+        cur = { shell: schema.nodes.paragraph.create(), inline: [], sources: [] };
         normalized++;
       }
       if (t.kind === "text") {
-        if (t.wsMarks && t.ws)
+        if (t.wsMarks && t.ws) {
           cur.inline.push(schema.text(t.ws, t.wsMarks), schema.text(t.core, t.marks));
-        else cur.inline.push(schema.text(t.ws + t.core, t.marks));
-      } else cur.inline.push(t.node);
+          cur.sources.push(index, index);
+        } else {
+          cur.inline.push(schema.text(t.ws + t.core, t.marks));
+          cur.sources.push(index);
+        }
+      } else {
+        cur.inline.push(t.node);
+        cur.sources.push(index);
+      }
     }
   }
   flush();
-  if (!blocks.length && !opts.allowEmpty) blocks.push(schema.nodes.paragraph.create());
+  if (!blocks.length && !opts.allowEmpty) {
+    opts.onBlock?.(0, []);
+    blocks.push(schema.nodes.paragraph.create());
+  }
   return { blocks, normalized };
 }
 

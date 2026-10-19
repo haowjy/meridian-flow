@@ -21,6 +21,7 @@ export {
   applyBase,
   applySpanPatches,
   baseViewDelta,
+  composeHunks,
   type SpanPatch,
   type SpanPatchError,
   validateSpanPatches,
@@ -40,7 +41,13 @@ export {
   NO_LATE_TYPING,
   recoverLatePeerEdits,
 } from "./late-peer-recovery.js";
-export { type Conflict, type RebaseResult, rebase } from "./merge.js";
+export {
+  type BlockCorrespondence,
+  type BlockSource,
+  type Conflict,
+  type RebaseResult,
+  rebase,
+} from "./merge.js";
 export {
   RESTORED_ROOT,
   type RestorationLink,

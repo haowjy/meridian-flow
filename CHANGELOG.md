@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The text merge reports original block correspondence through moves and deletions, plus the live words replaced by contested draft edits.
+
 - Preserve removal records when a document closes during Apply admission; retries keep their recorded result.
 
 - Apply freezes the clicked draft text, commits live and review-base changes atomically, and records exactly-once command outcomes and committed change trails.

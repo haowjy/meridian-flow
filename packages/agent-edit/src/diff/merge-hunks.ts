@@ -20,6 +20,7 @@ export interface MergedTok {
   tok: Tok;
   origin: Origin;
   index: number;
+  sources?: { origin: Origin; index: number }[];
 }
 
 type TextTok = Extract<Tok, { kind: "text" }>;
@@ -324,7 +325,7 @@ export function mergeMarks(
     word: base.word,
     marks: sorted,
   };
-  return { tok, origin: DRAFT, index: draft.sfrom };
+  return { tok, origin: DRAFT, index: draft.sfrom, sources: [{ origin: LIVE, index: live.sfrom }] };
 }
 
 export interface MovedText {
