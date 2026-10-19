@@ -1,13 +1,16 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
+import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   compactionFailureMetadata,
   promptEpochMetadata,
   turnFailedCopy,
 } from "../../threads/index.js";
+import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
+import type { DocumentTextPolicy } from "../tools/document-text.js";
 import { beginPromptEpoch } from "./begin-prompt-epoch.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
@@ -20,11 +23,22 @@ import {
   summaryCompactionFailure,
 } from "./compaction/decision.js";
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
+import {
+  chooseImportantFiles,
+  importantFileCandidates,
+  reshowBudgetTokens,
+} from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
 import type { InboxDrain } from "./inbox-context.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
+import {
+  NO_REFERENCE_EVIDENCE,
+  type ReferenceEvidence,
+  recordReferenceEvidence,
+  referenceReadText,
+} from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { type RunLoopInput, UnsettledPlaceholderError } from "./run-turn-port.js";
 import { type AssembledNextTurnContext, composeLivePromptBake } from "./turn-context-assembly.js";
@@ -38,6 +52,8 @@ export type PreparedCompaction =
       provisionalBakeId: string;
       composition: Awaited<ReturnType<typeof composeLivePromptBake>>;
       summaryBlock: ReturnType<typeof contentForBlockInput>;
+      /** The documents the compaction re-shows after its summary, persisted on its turn. */
+      reshown: ReshownDocuments;
       tokensAfter: number;
       model: string;
       decision: Decision;
@@ -47,6 +63,19 @@ export type PreparedCompaction =
         selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
       ) => ReturnType<typeof prepareRequestContext>;
     };
+
+interface ReshownDocuments {
+  blocks: ReturnType<typeof contentForBlockInput>[];
+  /** Recorded with the blocks: a fresh frontier chain, like an @-mentioned document's. */
+  evidence: ReferenceEvidence;
+  documentIds: ReadonlySet<string>;
+}
+
+const NO_RESHOWN: ReshownDocuments = {
+  blocks: [],
+  evidence: NO_REFERENCE_EVIDENCE,
+  documentIds: new Set(),
+};
 
 function fittingTokens(context: AssembledNextTurnContext) {
   const tokenizer = context.resolvedModel?.tokenizer;
@@ -68,6 +97,85 @@ function fittingTokens(context: AssembledNextTurnContext) {
       fitLimitTokens,
     });
   return tokens;
+}
+
+/**
+ * Reads the pre-compaction history's most recently shown documents in full, through the
+ * reference reader (the server's one read door), each as a block on the compaction turn with
+ * evidence recorded like an @-mentioned document's: a frontier chained from nothing.
+ */
+async function reshowImportantFiles(args: {
+  deps: OrchestratorDeps;
+  assertNoResponseScope: () => void;
+  input: RunLoopInput;
+  placeholder: Turn;
+  allTurns: Turn[];
+  allBlocks: Block[];
+  policies: (name: string) => DocumentTextPolicy | undefined;
+  budgetTokens: number;
+}): Promise<ReshownDocuments> {
+  const { deps, input, placeholder, allBlocks } = args;
+  const blocksByTurn = new Map<string, Block[]>();
+  for (const block of allBlocks) {
+    const blocks = blocksByTurn.get(block.turnId) ?? [];
+    blocks.push(block);
+    blocksByTurn.set(block.turnId, blocks);
+  }
+  const history = orderTurnsByPosition(args.allTurns).map((turn) => ({
+    turn,
+    blocks: blocksByTurn.get(turn.id) ?? [],
+  }));
+  const newestFirst = await chooseImportantFiles({
+    candidates: importantFileCandidates(collectRecordedDocuments(history, args.policies)),
+    budgetTokens: args.budgetTokens,
+    read: async (reference) => {
+      args.assertNoResponseScope();
+      input.signal?.throwIfAborted();
+      try {
+        const read = await deps.referenceReader.read(reference, {
+          threadId: input.threadId,
+          turnId: placeholder.id,
+          ...(input.signal ? { signal: input.signal } : {}),
+          recordingFrontier: async () => null,
+        });
+        return read.evidence ? { ...read, text: referenceReadText(read.result) } : null;
+      } catch (error) {
+        // A document that cannot be re-shown costs the compaction nothing but that document.
+        if (input.signal?.aborted) throw error;
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.compaction",
+          name: "important_file.read_failed",
+          correlation: { threadId: input.threadId, turnId: placeholder.id },
+          payload: unknownToEventPayload(error),
+        });
+        return null;
+      }
+    },
+  });
+  // Oldest first: history order is recency order, so a later compaction ranks these correctly.
+  const kept = newestFirst.reverse();
+  const blocks = kept.map(({ reference, read }, index) =>
+    contentForBlockInput({
+      turnId: placeholder.id,
+      blockType: "text",
+      sequence: index + 1,
+      status: "complete",
+      content: { ...reference, read: { result: read.result, revision: read.revision } },
+    }),
+  );
+  return {
+    blocks,
+    evidence: {
+      shown: kept.flatMap(({ read }) => read.evidence?.shown ?? []),
+      frontiers: kept.flatMap(({ read }, index) =>
+        read.evidence?.frontier
+          ? [{ sourceBlockId: blocks[index]?.id as string, frontier: read.evidence.frontier }]
+          : [],
+      ),
+    },
+    documentIds: new Set(kept.map(({ reference }) => reference.documentId)),
+  };
 }
 
 export async function prepareCompactionSuccessor(args: {
@@ -115,13 +223,6 @@ export async function prepareCompactionSuccessor(args: {
       revisions: deps.documentRevisions,
       assertNoResponseScope: args.assertNoResponseScope,
     });
-    const elisions = planModelElisions({
-      retainedSuffix: decision.plan.retainedSuffix,
-      recorded,
-      current,
-      policies,
-    });
-    const metadata = { ...(placeholder.metadata as JsonObject), elisions };
     const contextInput = {
       thread,
       turns: allTurns,
@@ -136,12 +237,6 @@ export async function prepareCompactionSuccessor(args: {
     const agentContext = await resolveAgentThreadTurnContext(contextInput);
     const composition = await composeLivePromptBake(contextInput, agentContext);
     const provisionalBakeId = crypto.randomUUID();
-    const provisional = {
-      ...placeholder,
-      status: "complete" as const,
-      promptBakeId: provisionalBakeId,
-      metadata: promptEpochMetadata(metadata),
-    };
     const blockInput = {
       turnId: placeholder.id,
       blockType: "custom" as const,
@@ -166,65 +261,106 @@ export async function prepareCompactionSuccessor(args: {
         content: { kind: "compaction", props: { ...props, tokensAfter: 0 } },
       }),
     );
-    const assemble = (
-      lateTurns: Turn[],
-      lateBlocks: Block[],
-      selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
-    ) =>
-      prepareRequestContext({
-        deps,
-        thread,
-        threadId: input.threadId,
-        referenceTurnId: placeholder.id,
-        currentTurnId: placeholder.id,
-        turns: [
-          ...allTurns.map((turn) => (turn.id === placeholder.id ? provisional : turn)),
-          ...lateTurns,
-        ],
-        blocks: [...allBlocks, projectedSummary, ...lateBlocks],
-        baseTools: contextInput.baseTools,
-        readReferences: false,
-        imageProjectionMode: {
-          kind: "compaction",
-          candidates: new Set(
-            decision.plan.retainedSuffix.flatMap(({ blocks }) =>
-              blocks.filter((block) => block.blockType === "image").map((block) => block.id),
-            ),
-          ),
-          decidingTurnId: placeholder.id as TurnId,
-        },
-        assertNoResponseScope: args.assertNoResponseScope,
-        pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
-        signal: input.signal,
-        promptBakes: {
-          ...deps.repos.promptBakes,
-          findById: async (id) =>
-            id === provisionalBakeId
-              ? {
-                  id,
-                  ownerThreadId: thread.id,
-                  ...composition.bakeContent,
-                  createdAt: new Date().toISOString(),
-                }
-              : deps.repos.promptBakes.findById(id),
-        },
+    // The request this compaction would hand the successor, given what it re-shows: the tail's
+    // copies of those documents are elided, so the request carries each once.
+    const stage = (reshown: ReshownDocuments) => {
+      const elisions = planModelElisions({
+        retainedSuffix: decision.plan.retainedSuffix,
+        recorded,
+        current,
+        reshown: reshown.documentIds,
+        policies,
       });
-    const base = await assemble([], []);
-    const tokensAfter = fittingTokens(base.assembled);
+      const metadata = { ...(placeholder.metadata as JsonObject), elisions };
+      const provisional = {
+        ...placeholder,
+        status: "complete" as const,
+        promptBakeId: provisionalBakeId,
+        metadata: promptEpochMetadata(metadata),
+      };
+      const assemble = (
+        lateTurns: Turn[],
+        lateBlocks: Block[],
+        selection?: import("./runtime-delivery.js").DeliveryBoundarySelection,
+      ) =>
+        prepareRequestContext({
+          deps,
+          thread,
+          threadId: input.threadId,
+          referenceTurnId: placeholder.id,
+          currentTurnId: placeholder.id,
+          turns: [
+            ...allTurns.map((turn) => (turn.id === placeholder.id ? provisional : turn)),
+            ...lateTurns,
+          ],
+          blocks: [
+            ...allBlocks,
+            projectedSummary,
+            ...reshown.blocks.map(localBlockFromEvent),
+            ...lateBlocks,
+          ],
+          baseTools: contextInput.baseTools,
+          readReferences: false,
+          imageProjectionMode: {
+            kind: "compaction",
+            candidates: new Set(
+              decision.plan.retainedSuffix.flatMap(({ blocks }) =>
+                blocks.filter((block) => block.blockType === "image").map((block) => block.id),
+              ),
+            ),
+            decidingTurnId: placeholder.id as TurnId,
+          },
+          assertNoResponseScope: args.assertNoResponseScope,
+          pinnedRequestTurnIds: new Set(selection?.outstanding.map((row) => row.id)),
+          signal: input.signal,
+          promptBakes: {
+            ...deps.repos.promptBakes,
+            findById: async (id) =>
+              id === provisionalBakeId
+                ? {
+                    id,
+                    ownerThreadId: thread.id,
+                    ...composition.bakeContent,
+                    createdAt: new Date().toISOString(),
+                  }
+                : deps.repos.promptBakes.findById(id),
+          },
+        });
+      return { metadata, reshown, assemble };
+    };
+    let staged = stage(NO_RESHOWN);
+    const base = await staged.assemble([], []);
+    let tokensAfter = fittingTokens(base.assembled);
+    // Sized from the headroom under the trigger, so the documents cannot push the successor over it.
+    const reshown = await reshowImportantFiles({
+      ...args,
+      policies,
+      budgetTokens: reshowBudgetTokens({
+        usableWindowTokens: base.assembled.compactionUsableWindowTokens ?? 0,
+        triggerTokens: base.assembled.compactionTriggerTokens,
+        baseTokens: tokensAfter,
+      }),
+    });
+    if (reshown.blocks.length > 0) {
+      staged = stage(reshown);
+      // Measurement: the recorded `tokensAfter` is what the successor really carries.
+      tokensAfter = fittingTokens((await staged.assemble([], [])).assembled);
+    }
     const summaryBlock = contentForBlockInput({
       ...blockInput,
       content: { kind: "compaction", props: { ...props, tokensAfter } },
     });
     return {
       kind: "usable",
-      metadata,
+      metadata: staged.metadata,
       provisionalBakeId,
       composition,
       summaryBlock,
+      reshown: staged.reshown,
       tokensAfter,
       model: outcome.model,
       decision,
-      assemble,
+      assemble: staged.assemble,
     };
   } catch (error) {
     if (input.signal?.aborted) throw error;
@@ -257,7 +393,7 @@ export async function completeCompactionCurrent(input: {
   prepared: PreparedCompaction | undefined;
   failure: unknown;
   settleResponses: () => Promise<void>;
-}): Promise<Turn> {
+}): Promise<{ turn: Turn; blocks: Block[] }> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
   const settled = await deps.repos.turns.findById(placeholder.id);
@@ -270,15 +406,20 @@ export async function completeCompactionCurrent(input: {
       : prepared?.kind === "usable" && deliveryFailure?.phase === "delivery"
         ? undefined
         : deliveryFailure;
+  let blocks: Block[] = [];
   if (prepared?.kind === "usable" && failure === undefined) {
+    const persisted = [prepared.summaryBlock, ...prepared.reshown.blocks];
+    blocks = persisted.map(localBlockFromEvent);
     await beginPromptEpoch(deps, {
       threadId,
       boundaryTurnId: placeholder.id,
       bake: { compose: prepared.composition.bakeContent },
       completion: {
-        blocks: [prepared.summaryBlock],
+        blocks: persisted,
         compactionModel: prepared.model,
         metadata: { ...(settled.metadata as JsonObject), ...prepared.metadata },
+        afterEvents: () =>
+          recordReferenceEvidence(deps, threadId, placeholder.id, prepared.reshown.evidence),
         events: (bakeId) => [
           {
             type: "context.compacted",
@@ -319,7 +460,7 @@ export async function completeCompactionCurrent(input: {
   }
   const turn = await deps.repos.turns.findById(placeholder.id);
   if (!turn) throw new Error("Compaction placeholder disappeared");
-  return turn;
+  return { turn, blocks };
 }
 
 /** One live failure landing; caller can reuse it without running a summary phase. */

@@ -140,7 +140,7 @@ import {
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
-import { frontierLookup, recordFrontier } from "./frontier-recording.js";
+import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -172,6 +172,7 @@ import {
   loadReferenceReads,
   type ReferenceEvidence,
   type ReferenceReader,
+  recordReferenceEvidence,
 } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
@@ -1309,23 +1310,6 @@ async function persistCommittedWriteResult(input: {
 }
 
 /**
- * Records accepted reference reads' evidence: shown links under the turn whose
- * request shows them, frontiers on each reference block. Callers run it inside
- * the commit persisting those blocks, after they are projected.
- */
-async function recordReferenceEvidence(
-  deps: Pick<OrchestratorDeps, "shownLinks" | "observationFrontiers" | "eventSink">,
-  threadId: string,
-  turnId: string,
-  evidence: ReferenceEvidence,
-): Promise<void> {
-  for (const showing of evidence.shown)
-    await deps.shownLinks.record({ ...showing, threadId, turnId });
-  for (const { sourceBlockId, frontier } of evidence.frontiers)
-    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
-}
-
-/**
  * Loads text-reference reads for one user turn, returning prepared events and
  * blocks with read results applied. Used both
  * at iteration 1 (the run's triggering turn) and when a mid-run drain adopts a
@@ -1337,8 +1321,8 @@ async function prepareReferenceReads(input: {
   userTurnId: string;
   assistantTurnId: string;
   blocks: readonly Block[];
-  /** The run's blocks the reads are shown beside: their frontiers chain from these. */
-  runBlocks: readonly Block[];
+  /** What the reads are shown beside: their frontiers chain from these and the turn's own blocks. */
+  credited: CreditedBlocks;
   signal?: AbortSignal;
 }): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; evidence: ReferenceEvidence }> {
   const { blocks: loaded, evidence } = await loadReferenceReads({
@@ -1350,7 +1334,7 @@ async function prepareReferenceReads(input: {
     signal: input.signal,
     recordingFrontier: frontierLookup(
       input.deps,
-      () => [...input.runBlocks, ...input.blocks].map((block) => block.id),
+      () => [...input.credited.ids(), ...input.blocks.map((block) => block.id)],
       { threadId: input.threadId, turnId: input.assistantTurnId },
     ),
   });
@@ -1538,8 +1522,9 @@ function createResponseScope(input: {
   turnId: TurnId;
   responseId: string;
   allBlocks: Block[];
+  credited: CreditedBlocks;
 }) {
-  const { deps, threadId, turnId, allBlocks } = input;
+  const { deps, threadId, turnId, allBlocks, credited } = input;
   const writes = new Map<
     string,
     Array<{
@@ -1623,10 +1608,7 @@ function createResponseScope(input: {
           turnId,
           // The settled receipts are a result like any other: their frontier chains from the
           // model's latest row, which may be a sibling read's in this step.
-          recordingFrontier: frontierLookup(deps, () => allBlocks.map((block) => block.id), {
-            threadId,
-            turnId,
-          }),
+          recordingFrontier: frontierLookup(deps, () => credited.ids(), { threadId, turnId }),
         },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
@@ -1818,6 +1800,7 @@ async function executeLoop({
   }
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
+  const credited = new CreditedBlocks(initialContext?.creditedBlockIds);
   // Only the blocks of the turns the request holds: a forgotten turn's blocks stay in the table.
   const requestTurnIds = new Set(allTurns.map((turn) => turn.id));
   const allBlocks: Block[] = [
@@ -1878,7 +1861,7 @@ async function executeLoop({
           userTurnId: turn.id,
           assistantTurnId: currentTurn.id,
           blocks,
-          runBlocks: allBlocks,
+          credited,
           signal: input.signal,
         });
         const skillBody = await prepareSkillBodies({
@@ -1984,7 +1967,8 @@ async function executeLoop({
       retriedContextOverflow = false;
     skillBodies.committed(result.drain.turns);
     allTurns.push(...result.drain.turns);
-    for (const block of result.drain.blocks) {
+    for (const block of [...(result.completedBlocks ?? []), ...result.drain.blocks]) {
+      credited.add(block.id);
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
       else allBlocks[index] = block;
@@ -2051,7 +2035,6 @@ async function executeLoop({
     pendingSummaryResponses = [];
     pendingSummary = undefined;
     preparedContext = result.preparedContext;
-    if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
     return acceptBoundary(result.successor);
   }
 
@@ -2209,9 +2192,12 @@ async function executeLoop({
           gatewaySignal: gatewayAbort.signal,
         });
         const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
+        const requestCreditedIds = preparedContext.creditedBlockIds;
         preparedContext = undefined;
-        // The effective conversation this request was built from: every call it produces plans on it (C4).
-        const planningBlockIds = allBlocks.map((block) => block.id);
+        // What credits is what this request carries (C10), so a compaction restarts the chain here.
+        // Every call it produces plans on that set as of now (C4); results persisting later join `credited`.
+        credited.reset(requestCreditedIds);
+        const planningBlockIds = credited.ids();
         thread = built.thread;
         const request = built.request;
         const gatewayCallId = crypto.randomUUID();
@@ -2468,6 +2454,7 @@ async function executeLoop({
             turnId: currentTurn.id,
             responseId,
             allBlocks,
+            credited,
           });
           responseScope = scope;
           if (isCancelled()) {
@@ -2552,6 +2539,7 @@ async function executeLoop({
                 blockSeqRef: interruptState.blockSeqRef,
                 allTurns,
                 planningBlockIds,
+                credited,
               },
             );
             currentTurn = interruptState.currentTurn;

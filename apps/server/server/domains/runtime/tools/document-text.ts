@@ -9,6 +9,12 @@ import {
   type SearchHit,
 } from "./search-result.js";
 
+/**
+ * `stale`: the document changed since this copy. `reshown`: compaction shows its
+ * current text after the summary, so this copy is a duplicate. `history`: a
+ * `thread_history` stub.
+ */
+export type DocumentTextTreatment = "stale" | "reshown" | "history";
 export type DocumentRef = Pick<DocumentRevisionEvidence, "documentId" | "uri">;
 export interface DocumentTextPolicy {
   /** Whether the tool's results hold document text it read or text it wrote. */
@@ -17,8 +23,12 @@ export interface DocumentTextPolicy {
   elide(
     block: { input?: JsonObject; output?: JsonValue; result?: JsonValue },
     changed: readonly DocumentRef[],
-    treatment: "stale" | "history",
+    treatment: DocumentTextTreatment,
   ): { input?: JsonObject; output?: JsonValue };
+}
+
+export function reshownReadStub(documents: string): string {
+  return `[Cleared at compaction: the current text of ${documents} is shown after the summary.]`;
 }
 
 export function staleReadStub(documents: string): string {
@@ -32,12 +42,20 @@ function documentsLabel(changed: readonly DocumentRef[], input: JsonObject): str
   );
 }
 
+function readStub(documents: string, treatment: DocumentTextTreatment): string {
+  return treatment === "history"
+    ? historyReadStub(documents)
+    : treatment === "reshown"
+      ? reshownReadStub(documents)
+      : staleReadStub(documents);
+}
+
 export const readDocumentText: DocumentTextPolicy = {
   kind: "read",
   elide({ input = {} }, changed, treatment) {
     const documents = documentsLabel(changed, input);
     return {
-      output: treatment === "history" ? historyReadStub(documents) : staleReadStub(documents),
+      output: readStub(documents, treatment),
     };
   },
 };
@@ -54,7 +72,10 @@ export const writeDocumentText: DocumentTextPolicy = {
       ...(["create", "insert", "replace"].includes(String(input.command)) ? { input: kept } : {}),
       ...(output !== undefined
         ? {
-            output: `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since. Read it before relying on this edit.]`,
+            output:
+              treatment === "reshown"
+                ? `[Cleared at compaction: you edited ${documents} here (${input.command}); its current text is shown after the summary.]`
+                : `[Cleared at compaction: you edited ${documents} here (${input.command}); it has changed since. Read it before relying on this edit.]`,
           }
         : {}),
     };
