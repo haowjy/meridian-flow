@@ -8,6 +8,7 @@ import {
   unwrapBlock,
   unwrapDoc,
 } from "@meridian/agent-edit/integration";
+import { indexDecodedStructs } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -565,8 +566,11 @@ function assertDecodedUpdateOutsideReservedNamespace(
     reserved = reservedStructRanges(referenceDocument);
     cacheReservedNamespaceIndex(referenceDocument, reserved);
   }
-  if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved, referenceDocument)) return;
-  const incomingByClient = groupStructs(incoming);
+  // Bulk Discard/Undo frames have tens of thousands of linked structs; ancestry must not
+  // scan that array again for every parent and origin, blocking the socket heartbeat.
+  const incomingAt = indexDecodedStructs(incoming);
+  if (isPlainProseFastPath(incoming, incomingAt, decoded.ds.clients, reserved, referenceDocument))
+    return;
   const ancestryMemo = new Map<DecodedStruct, boolean>();
 
   const hasReservedAncestor = (
@@ -581,7 +585,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
     const parent = decodedParent(struct);
     let result = typeof parent === "string" && isReservedName(parent);
     if (!result && isId(parent)) {
-      const incomingParent = findStruct(incomingByClient, parent);
+      const incomingParent = incomingAt(parent);
       result = incomingParent
         ? hasReservedAncestor(incomingParent, visiting)
         : reserved.contains(parent);
@@ -589,7 +593,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
     if (!result) {
       for (const anchor of [struct.origin, struct.rightOrigin]) {
         if (!isId(anchor)) continue;
-        const incomingAnchor = findStruct(incomingByClient, anchor);
+        const incomingAnchor = incomingAt(anchor);
         if (
           (incomingAnchor && hasReservedAncestor(incomingAnchor, visiting)) ||
           reserved.contains(anchor)
@@ -626,6 +630,7 @@ function assertDecodedUpdateOutsideReservedNamespace(
 
 function isPlainProseFastPath(
   incoming: readonly DecodedStruct[],
+  incomingAt: (id: Y.ID) => DecodedStruct | undefined,
   deletes: ReadonlyMap<number, readonly { clock: number; len: number }[]>,
   reserved: ReservedRangeIndex,
   referenceDocument: Y.Doc,
@@ -647,30 +652,18 @@ function isPlainProseFastPath(
     const parent = decodedParent(struct);
     if (typeof parent === "string") {
       if (parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
-    } else if (!isId(parent) || incomingContains(incoming, parent)) {
+    } else if (!isId(parent) || incomingAt(parent)) {
       return false;
     } else if (reserved.contains(parent)) {
       return false;
     }
     for (const anchor of [struct.origin, struct.rightOrigin]) {
-      if (isId(anchor) && (incomingContains(incoming, anchor) || reserved.contains(anchor))) {
+      if (isId(anchor) && (incomingAt(anchor) || reserved.contains(anchor))) {
         return false;
       }
     }
   }
   return true;
-}
-
-function incomingContains(
-  incoming: readonly DecodedStruct[],
-  id: { client: number; clock: number },
-): boolean {
-  return incoming.some(
-    (struct) =>
-      struct.id.client === id.client &&
-      id.clock >= struct.id.clock &&
-      id.clock < struct.id.clock + struct.length,
-  );
 }
 
 /**
@@ -983,25 +976,6 @@ function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun)
     target: { ...unitRun.target },
     root: { ...unitRun.root },
   });
-}
-
-function groupStructs(structs: readonly DecodedStruct[]): Map<number, DecodedStruct[]> {
-  const result = new Map<number, DecodedStruct[]>();
-  for (const struct of structs) {
-    const values = result.get(struct.id.client) ?? [];
-    values.push(struct);
-    result.set(struct.id.client, values);
-  }
-  return result;
-}
-
-function findStruct(
-  structs: ReadonlyMap<number, readonly DecodedStruct[]>,
-  id: { client: number; clock: number },
-): DecodedStruct | undefined {
-  return structs
-    .get(id.client)
-    ?.find((struct) => id.clock >= struct.id.clock && id.clock < struct.id.clock + struct.length);
 }
 
 function decodeAdmittedUpdate(update: Uint8Array): DecodedUpdate {

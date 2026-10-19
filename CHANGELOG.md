@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Keep draft typing independent of unchanged sibling drafts, paint Discard feedback without rebuilding the project, and classify attribution by item intervals rather than individual characters.
+- Keep repeated large draft Discard and Undo saved without socket timeouts.
 
 - Keep draft-review bursts proportional to current text and queued clicks: retain base nodes and clean frames, subscribe controls to their own state, and map peer edits without inflating review paint.
 
