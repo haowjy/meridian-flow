@@ -8,6 +8,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
@@ -281,6 +282,11 @@ export const documents = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletionReason: text("deletion_reason").$type<"deleted" | "discarded">(),
+    deletedByUserId: uuid("deleted_by_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    deletionCause: text("deletion_cause").$type<DocumentRemovalCause>(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
@@ -288,6 +294,18 @@ export const documents = pgTable(
     hidden: boolean("hidden").notNull().default(false),
   },
   (table) => [
+    check(
+      "documents_removal_presence",
+      sql`(${table.deletedAt} IS NOT NULL) = (${table.deletionReason} IS NOT NULL)`,
+    ),
+    check(
+      "documents_deletion_reason_valid",
+      sql`${table.deletionReason} IN ('deleted', 'discarded')`,
+    ),
+    check(
+      "documents_deletion_cause_valid",
+      sql`${table.deletionCause} IN ('reply_rolled_back', 'create_failed', 'repair')`,
+    ),
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),

@@ -19,6 +19,7 @@ import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { renderFilename } from "../context/paths.js";
 import { branchReachKept, loadSourceOwners, type SourceOwner } from "./branch-ownership.js";
 import {
@@ -31,7 +32,6 @@ import {
 } from "./folder-normalization.js";
 import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
 import { ensureLiveFolderPath } from "./placement.js";
-import { treeHook } from "./test-hooks.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, type NodeRef } from "./tree-view.js";
 import {
@@ -223,7 +223,7 @@ async function installMove(
   move: NodeMove,
   prepared: PreparedMove,
 ): Promise<Result<void, MoveFault>> {
-  await treeHook("moves.beforeInstall");
+  await testHook("moves.beforeInstall");
   const tx = currentDrizzleDb(db);
   const { node, to } = move;
   if (prepared.split.boundaries.length > 0) await applySplit(db, prepared.split);

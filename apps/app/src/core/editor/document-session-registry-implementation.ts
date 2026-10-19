@@ -102,6 +102,11 @@ export class DocumentSessionRegistry
   private localResources: LocalResourceLifetimePort | null = null;
   /** Each refused live session's drop: running, or settled whether or not it removed the room. */
   private readonly refusedRoomDrops = new WeakMap<DocumentSession, Promise<void> | "settled">();
+  private readonly removedRoomObservers = new Set<
+    (session: DocumentSession, room: RetainedLiveDocumentReference) => void
+  >();
+  /** Live rooms whose current 4208 was reported; a restart that leaves `removed` clears it. */
+  private readonly reportedRemovedRooms = new WeakSet<DocumentSession>();
 
   constructor(
     private readonly createCoordination: (
@@ -228,10 +233,13 @@ export class DocumentSessionRegistry
       session.resetDisposition === "refused"
     )
       return false;
+    // A removed room (4208) restarts here only because an exact open has just
+    // proved its document present: the removal was undone, or never applied.
     if (
       snapshot.status !== "access-lost" &&
       snapshot.connectionState?.kind !== "unauthorized" &&
-      snapshot.connectionState?.kind !== "terminal"
+      snapshot.connectionState?.kind !== "terminal" &&
+      session.resetDisposition !== "removed"
     ) {
       return false;
     }
@@ -268,6 +276,22 @@ export class DocumentSessionRegistry
     this.retainedObservers.add(observer);
     this.notifyRetainedObserver(observer, this.retainedSnapshot());
     return () => this.retainedObservers.delete(observer);
+  }
+
+  async restartRemovedRoom(session: DocumentSession): Promise<boolean> {
+    if (session.resetDisposition !== "removed") return false;
+    const state = this.liveRooms.get(session.documentId as DocumentId);
+    if (state?.session !== session) return false;
+    this.cancelPendingTeardown(session.documentId as DocumentId);
+    await session.restartTransport(this.transportFactory);
+    return true;
+  }
+
+  observeRemovedRooms(
+    observer: (session: DocumentSession, room: RetainedLiveDocumentReference) => void,
+  ): () => void {
+    this.removedRoomObservers.add(observer);
+    return () => this.removedRoomObservers.delete(observer);
   }
 
   retainDraftRooms(ownerId: string, refs: readonly DraftRoomRef[]): void {
@@ -597,7 +621,11 @@ export class DocumentSessionRegistry
     if (quarantine) session.raiseSchemaFence(quarantine);
     // Subscribed before any host can be, so a refusal's drop is already
     // running when a host hears of it (`whenRefusedRoomDropped`).
-    if (session.room.kind === "live") session.subscribe(() => this.dropRefusedRoom(session));
+    if (session.room.kind === "live")
+      session.subscribe(() => {
+        this.dropRefusedRoom(session);
+        this.reportRemovedRoom(session);
+      });
     return session;
   }
 
@@ -648,6 +676,26 @@ export class DocumentSessionRegistry
         ),
       ).then(settle, settle),
     );
+  }
+
+  private reportRemovedRoom(session: DocumentSession): void {
+    if (session.resetDisposition !== "removed") {
+      this.reportedRemovedRooms.delete(session);
+      return;
+    }
+    if (this.reportedRemovedRooms.has(session)) return;
+    const state = this.liveRooms.get(session.documentId as DocumentId);
+    const lease = state?.session === session ? state.leases.values().next().value : undefined;
+    if (!lease) return;
+    this.reportedRemovedRooms.add(session);
+    const room = Object.freeze({ projectId: lease.projectId, documentId: lease.documentId });
+    for (const observer of this.removedRoomObservers) {
+      try {
+        observer(session, room);
+      } catch {
+        // An observer cannot interrupt the session's own status delivery.
+      }
+    }
   }
 
   private removeRetainedProjectLease(projectId: ProjectId, documentId: DocumentId): boolean {

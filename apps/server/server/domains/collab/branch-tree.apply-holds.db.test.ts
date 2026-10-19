@@ -6,9 +6,9 @@
  */
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
   it("holds the second branch's picture at a path the first's took, a payload-only Apply (E-5)", async () => {
@@ -44,7 +44,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
 
     expect.soft(await s.applyAll(ascension), "payload-only").toMatchObject({
       status: "completed",
-      items: [{ itemKey: first?.itemKey, status: "applied", notes: [] }],
+      items: [{ itemKey: first?.itemKey, status: "applied" }],
     });
     expect
       .soft(await s.view("live").idAt("art/map.png"), "the first is live")
@@ -160,7 +160,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
         held(lore, "Lore"),
         held(inner, "b/Inner"),
         held(chapter, "b/Inner.md"),
-        { itemKey: itemFor(items, other).itemKey, status: "applied", notes: [] },
+        { itemKey: itemFor(items, other).itemKey, status: "applied" },
       ]),
     });
     expect.soft(await live.idAt("other"), "the unrelated item applied").toBe(other);
@@ -184,8 +184,8 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
       status: "completed",
       branchId: items[0]?.branchId,
       items: expect.arrayContaining([
-        { itemKey: keyOf(chapter), status: "applied", notes: [] },
-        { itemKey: keyOf(kael), status: "applied", notes: [] },
+        { itemKey: keyOf(chapter), status: "applied" },
+        { itemKey: keyOf(kael), status: "applied" },
         {
           itemKey: keyOf(notes),
           status: "held",
@@ -224,7 +224,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
     const live = s.view("live");
     /** At staging, a second chat of the Work adds a document to the branch (F22). */
     const growAtStaging = (path: string) => {
-      const remove = setCollabHook("applyItems.afterStaging", async () => {
+      const remove = setTestHook("applyItems.afterStaging", async () => {
         remove();
         await s.model(second).create(path, "Late, drafted.");
       });
@@ -238,7 +238,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(grown, "the staged batch finishes with real results").toEqual({
       status: "completed",
       branchId: rendered?.branchId,
-      items: [{ itemKey: rendered?.itemKey, status: "applied", notes: [] }],
+      items: [{ itemKey: rendered?.itemKey, status: "applied" }],
     });
     expect.soft(await live.idAt("growth/original"), "applied").toBe(original);
     expect.soft(await live.idAt("growth/late"), "the late item stays in D").toBeNull();

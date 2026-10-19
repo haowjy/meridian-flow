@@ -6,18 +6,18 @@
  * documents, and the kernel. The kernel resets each item's text from live, folding away
  * every frame that landed before it (a writer's frame then misses its revision), or closes
  * every draft with the branch, and ends the branch's use of what it created: what no branch
- * uses any more is tombstoned and its storage released. Rooms, thread peers and objects
- * are retired once the transaction's root commits. Purge runs the kernel in its own
- * transaction after its own lifecycle proof (§2.6).
+ * uses any more is tombstoned and its storage released. Every draft it closes retires once
+ * the transaction's root commits, and never inside the Discard's own live scopes; objects
+ * are released after commit. Purge runs the kernel in its own transaction after its own
+ * lifecycle proof (§2.6).
  */
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
-import type { NodeRef } from "../../context/tree/tree-view.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type { Branches } from "./branches.js";
-import { collabHook } from "./collab-test-hooks.js";
 import {
   type Attempt,
   type AttemptScope,
@@ -25,7 +25,6 @@ import {
   runBoundedAttempts,
 } from "./draft-attempts.js";
 import { DraftCasConflictError } from "./draft-store.js";
-import type { PeerRetirement, RetiredDraft } from "./peer-retirement.js";
 
 export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
 
@@ -54,11 +53,10 @@ export type DiscardItem = {
   origin: "created" | "edited";
 };
 
-export type DiscardKernelInput =
-  /**
-   * Item text resets need the live documents they reset from, and the attempt that owns
-   * each reset until it completes.
-   */
+export type DiscardKernelInput = { userId?: UserId } /**
+ * Item text resets need the live documents they reset from, and the attempt that owns
+ * each reset until it completes.
+ */ & (
   | {
       branchId: BranchId;
       selection: { kind: "items"; items: readonly DiscardItem[] };
@@ -66,15 +64,12 @@ export type DiscardKernelInput =
       attempt: Attempt;
     }
   /** A whole Discard closes every draft and resets no text (purge passes this). */
-  | { branchId: BranchId; selection: { kind: "whole" } };
+  | { branchId: BranchId; selection: { kind: "whole" } }
+);
 
 export type DiscardKernelResult = {
-  branchClosed: boolean;
-  tombstoned: readonly NodeRef[];
   /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
   releasedObjects: readonly string[];
-  /** Exactly the drafts the transaction closed or deleted: retired after commit. */
-  retired: readonly RetiredDraft[];
 };
 
 export interface BranchDiscardStore {
@@ -113,8 +108,12 @@ export function createBranchDiscard(deps: {
     withDocument<T>(documentId: string, run: (doc: Y.Doc) => Promise<T>): Promise<T>;
   };
   store: BranchDiscardStore;
-  /** After commit: the rooms and thread state of exactly the drafts the kernel retired. */
-  retire: PeerRetirement;
+  /**
+   * Runs the Discard, holding back the retirement of the drafts its commit closed until it
+   * leaves its live scopes: a root the Discard opened commits while they are held, and a save
+   * racing the retirement may need them.
+   */
+  holdRetirement<T>(run: () => Promise<T>): Promise<T>;
   /** After commit: delete tombstoned binaries' objects, best effort. */
   releaseObjects(storageUrls: readonly string[]): Promise<void>;
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
@@ -159,82 +158,53 @@ export function createBranchDiscard(deps: {
     });
   }
 
-  /**
-   * The retirement of what a committed Discard ended: rooms, thread peers and objects. It
-   * runs once the attempt's root transaction commits and never after a rollback (a missed
-   * attempt's registration rolls back with its savepoint), and never inside the Discard's
-   * own live scopes: a root the Discard opened commits while they are held, so its commit
-   * only marks the effects ready and they run when the Discard returns; an ambient root
-   * still open then runs them at its own commit.
-   */
-  function afterRootCommit() {
-    let returned = false;
-    let ready: (() => Promise<void>) | null = null;
-    return {
-      register(ended: DiscardKernelResult) {
-        const effects = async () => {
-          await collabHook("discard.beforeRetirement");
-          await deps.retire(ended.retired);
-          await deps.releaseObjects(ended.releasedObjects);
-        };
-        const deferred = deps.store.deferUntilCommit(async () => {
-          if (returned) await effects();
-          else ready = effects;
-        });
-        if (!deferred) throw new Error("Discard must run inside its attempt's transaction");
-      },
-      async returned() {
-        returned = true;
-        const effects = ready;
-        ready = null;
-        await effects?.();
-      },
-    };
-  }
-
-  type AfterRootCommit = ReturnType<typeof afterRootCommit>;
-
-  /** `discardLocked` in the attempt's scope, its retirement registered on that transaction. */
+  /** `discardLocked` in the attempt's scope, its objects released once that transaction commits. */
   async function commitDiscard(
     attempt: Attempt,
-    after: AfterRootCommit,
     input: Parameters<BranchDiscardStore["discardLocked"]>[0],
   ): Promise<DiscardKernelResult | null> {
-    await collabHook("discard.beforeCommitScope");
+    await testHook("discard.beforeCommitScope");
     return attempt.commit(async () => {
       const ended = await deps.store.discardLocked(input);
-      if (ended) after.register(ended);
+      if (ended && !deps.store.deferUntilCommit(() => deps.releaseObjects(ended.releasedObjects)))
+        throw new Error("Discard must run inside its attempt's transaction");
       return ended;
     });
   }
 
   function whole(
     attempt: Attempt,
-    after: AfterRootCommit,
     workId: WorkId,
     branchId: BranchId,
     command: CommandClaim | undefined,
+    userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
-    return commitDiscard(attempt, after, {
+    return commitDiscard(attempt, {
       workId,
-      kernel: { branchId, selection: { kind: "whole" } },
+      kernel: { userId, branchId, selection: { kind: "whole" } },
       ...(command ? { command } : {}),
     });
   }
 
   function items(
     attempt: Attempt,
-    after: AfterRootCommit,
     workId: WorkId,
     branchId: BranchId,
     selected: readonly DiscardItem[],
     command: CommandClaim | undefined,
+    userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
     const textDocuments = selected.flatMap((item) => (item.draftId ? [item.documentId] : []));
     return withLiveDocuments(textDocuments, (liveDocs) =>
-      commitDiscard(attempt, after, {
+      commitDiscard(attempt, {
         workId,
-        kernel: { branchId, selection: { kind: "items", items: selected }, liveDocs, attempt },
+        kernel: {
+          userId,
+          branchId,
+          selection: { kind: "items", items: selected },
+          liveDocs,
+          attempt,
+        },
         ...(command ? { command } : {}),
       }),
     );
@@ -247,21 +217,20 @@ export function createBranchDiscard(deps: {
       const [branch] = await deps.branches.byIds([branchId]);
       if (branch?.status !== "active" || branch.originWorkId !== workId) return gone;
 
-      const after = afterRootCommit();
       if (input.selection.kind === "whole") {
-        const ended = await attempts((attempt) =>
-          whole(attempt, after, workId, branchId, input.command),
+        const ended = await deps.holdRetirement(() =>
+          attempts((attempt) => whole(attempt, workId, branchId, input.command, input.userId)),
         );
-        await after.returned();
         return ended ? { status: "discarded", branchId, branchClosed: true } : gone;
       }
 
       const selected = input.selection.items;
       if (selected.length === 0) return { status: "discarded", branchId, branchClosed: false };
-      const ended = await attempts((attempt) =>
-        items(attempt, after, workId, branchId, selected, input.command),
+      const ended = await deps.holdRetirement(() =>
+        attempts((attempt) =>
+          items(attempt, workId, branchId, selected, input.command, input.userId),
+        ),
       );
-      await after.returned();
       return ended ? { status: "discarded", branchId, branchClosed: false } : gone;
     },
   };

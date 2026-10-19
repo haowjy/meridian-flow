@@ -61,7 +61,6 @@ describe("runtime store", () => {
     const freshCore = createAgentEditCore({
       journal: ctx.journal,
       coordinator: ctx.coordinator,
-      lifecycle: ctx.lifecycle,
       codec: codecFactory,
       links: createStaticDocumentLinks(),
       model,

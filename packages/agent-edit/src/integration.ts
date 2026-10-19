@@ -56,9 +56,9 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type {
-  DiscardedWriteReason,
   DocumentAccess,
   DocumentCoordinator,
+  RetiredWriteReason,
   StagedHelperCut,
   StagedWriteCommit,
   StagedWriteHost,
@@ -77,7 +77,6 @@ export type {
   DocumentEdits,
   ModelInverseCommand,
 } from "./ports/document-edits.js";
-export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   AheadMint,
   DocumentLinksPort,
@@ -131,7 +130,7 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
-export { rejectedWriteExplanation } from "./tool/receipt.js";
+export { rejectedWriteResult, removedWriteRefusal } from "./tool/receipt.js";
 export {
   isResponseLifecycleError,
   ResponseAttemptStaleError,

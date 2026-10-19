@@ -3,9 +3,15 @@
  * A refusal that suggests a call writes it exactly, and only when the agent
  * may make it; otherwise it says to ask the user.
  */
-import type { FileAccessDenial } from "@meridian/contracts/protocol";
+import {
+  type DocumentCommandName,
+  modelResult,
+  removedFile,
+} from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord, FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
 import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
+import type { WriteToolErrorOutput } from "./model-tools/tool-context.js";
 
 /** A file-policy refusal the model sees as `permission_denied`. */
 export type PermissionDenial = FileAccessDenied & {
@@ -26,13 +32,19 @@ const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
 
 /**
- * A write whose file was deleted under it: at the reply's save (D29, D42), or
- * when an undo or redo reached it.
+ * A call on a file that was removed, saying who removed it and how. Status and words are
+ * agent-edit's (`removedFile`), which its own receipts and refusals share.
  */
-export function deletedFileMessage(when: "save" | "reversal"): string {
-  return when === "save"
-    ? "This file was deleted before this reply was saved, so this change wasn't made."
-    : "This file was deleted, so this change wasn't made.";
+export function removedFileResult(
+  command: DocumentCommandName,
+  removal: DocumentRemovalRecord,
+  path?: string,
+): WriteToolErrorOutput {
+  const { status, message } = removedFile(removal);
+  return {
+    isError: true,
+    output: modelResult({ command, status, payload: { ...(path ? { path } : {}), message } }),
+  };
 }
 
 /** What the model reads when the policy refused a write. */

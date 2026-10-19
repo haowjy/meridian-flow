@@ -5,7 +5,9 @@
  * `retractCreate`, and the refusals a draft placement makes (a draft never seeds live
  * Yjs, and an empty hidden folder would have no use).
  */
-import type { ThreadId, UserId, WorkId } from "@meridian/contracts";
+
+import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { RetractionCause } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
@@ -61,13 +63,14 @@ export interface CreatePlacement {
   /** Reverse a create (§12.5): `live` asks the caller to delete; a branch create retracts here. */
   retract(
     documentId: string,
+    cause: RetractionCause,
   ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
 }
 
 export interface CreatePlacementDeps {
   store: ContextDocumentStore;
   executor: ResultAwareCommandExecutor<AdapterFault>;
-  documentSync: Pick<MarkdownDocumentStore, "ensureDocument">;
+  documentSync: Pick<MarkdownDocumentStore, "repairDocumentAuthority">;
   liveCreate: LiveCreate;
 }
 
@@ -96,7 +99,7 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
         );
         if (existing?.fileType != null) return Err(binaryTrackedWriteFault(path));
         if (existing) {
-          await deps.documentSync.ensureDocument(existing.id);
+          await deps.documentSync.repairDocumentAuthority(existing.id as DocumentId);
           return Ok({ documentId: existing.id, created: false as boolean });
         }
         // Empty: a hidden document at the path is revealed with no lease (§6.3 step 3).
@@ -175,7 +178,7 @@ function draftPlacement(
           return Ok({ documentId: created.value.documentId, created: true as boolean });
         }
         if (created.value.binary) return Err(binaryTrackedWriteFault(path));
-        await deps.documentSync.ensureDocument(created.value.documentId);
+        await deps.documentSync.repairDocumentAuthority(created.value.documentId);
         return Ok({ documentId: created.value.documentId, created: false });
       });
     },
@@ -205,7 +208,7 @@ function draftPlacement(
         return Ok({ documentId: created.value.documentId, placement: "draft" as const });
       });
     },
-    retract(documentId) {
+    retract(documentId, cause) {
       return executor.run(
         async ({ branch }) => {
           // No active branch: a whole Discard already ended every use.
@@ -213,6 +216,7 @@ function draftPlacement(
             await placement.creates.retractCreate({
               branch: { id: branch.id, workId: placement.workId },
               documentId,
+              cause,
             });
           }
           return Ok({ placement: "draft" as const });

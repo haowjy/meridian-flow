@@ -9,6 +9,7 @@ import {
   resetDraftFromDoc,
 } from "../../test-support/draft-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
+import { createDraftClose } from "../drizzle-draft-close.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -154,11 +155,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     let livePersistence = createDrizzleCollabPersistence(db);
     function createDraftStore() {
       return createDrizzleDraftStore(db, {
+        close: createDraftClose(),
         workProjection: createTestWorkProjectionMutation(db),
-        live: {
-          journal: livePersistence.journal,
-          lifecycle: livePersistence.lifecycle,
-        },
+        live: { journal: livePersistence.journal },
         branches: createDrizzleBranchStore(db),
       });
     }
@@ -316,7 +315,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog,
       });
       const measuredStore = createDrizzleDraftStore(db, {
-        live: { journal: livePersistence.journal, lifecycle: livePersistence.lifecycle },
+        close: createDraftClose(),
+        live: { journal: livePersistence.journal },
         workProjection: projection,
         branches: createDrizzleBranchStore(db),
       });
@@ -714,7 +714,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // The Discard kernel closes the drafts first; the store closes only the row.
         await db
           .update(documentDrafts)
-          .set({ status: "closed" })
+          .set({ closedCause: "discarded", status: "closed" })
           .where(eq(documentDrafts.branchId, BRANCH_ID as never));
         await branchStore.close(BRANCH_ID as never, new Date());
       });
@@ -828,6 +828,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     it("captures an immutable live journal draftBase for each new draft row", async () => {
       const live = docWithText("base");
+      await livePersistence.seeds.seedInitialDocument(DOC_ID, Y.encodeStateAsUpdate(new Y.Doc()));
       const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
         origin: `human:${USER_ID}`,
         seq: 0,

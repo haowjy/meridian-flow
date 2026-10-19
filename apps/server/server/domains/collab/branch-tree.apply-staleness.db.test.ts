@@ -8,13 +8,13 @@
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import {
   type BranchTreeStart,
   describeBranchTreeDb,
 } from "../../test-support/branch-tree-suite.js";
 import { interleave } from "../../test-support/lock-interleave.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 /** A live chapter with a drafted change in Ascension's draft. */
 async function draftedChapter(start: BranchTreeStart) {
@@ -67,7 +67,7 @@ describeBranchTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
 
   it("an item Apply refused as stale names its own item, the shape the client accepts", async () => {
     const { s, ascension, chapter } = await draftedChapter(start);
-    const remove = setCollabHook("applyItems.beforeStaging", async () => {
+    const remove = setTestHook("applyItems.beforeStaging", async () => {
       remove();
       await s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
     });
@@ -99,7 +99,7 @@ describeBranchTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
     // A delete-only change while a new staged batch waits for recovery.
     await s.model(ascension).edit("chapter-2.md", "End.", "End, drafted.");
     const rendered = await s.items(ascension);
-    const remove = setCollabHook("applyItems.afterStaging", async () => {
+    const remove = setTestHook("applyItems.afterStaging", async () => {
       remove();
       throw new Error("injected process death after staging");
     });

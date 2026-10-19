@@ -24,6 +24,7 @@ import {
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
+import { createDraftClose } from "../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
 import {
   createDrizzlePendingSettlementStore,
@@ -145,6 +146,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("drives real discard, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
       const drafts = createDrizzleDraftStore(db, {
+        close: createDraftClose(),
         workProjection: projection,
         branches: createDrizzleBranchStore(db),
       });

@@ -33,6 +33,8 @@ export type DraftSnapshot = {
   workId: WorkId | null;
   threadId: ThreadId | null;
   status: DraftStatus;
+  /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
+  closedCause: "discarded" | "document_removed" | null;
   /** The re-fork epoch: room name, journal grouping, edit placement. A reset bumps it. */
   generation: number;
   /** Bumped by every committed write to the draft; the fence of exact rewrites. */
@@ -307,6 +309,8 @@ export function materializeDraftRead(
 ): Y.Doc {
   if (!read.checkpoint) throw new Error("A draft read since a checkpoint cannot materialize alone");
   try {
+    if (read.checkpoint.state.length === 0)
+      throw new Error("Draft content was released after removal");
     Y.applyUpdate(doc, read.checkpoint.state);
     for (const row of read.tail) Y.applyUpdate(doc, row.update);
     return doc;

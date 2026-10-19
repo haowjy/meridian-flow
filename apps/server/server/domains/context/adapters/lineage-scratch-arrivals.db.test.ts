@@ -15,6 +15,7 @@ import {
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
@@ -104,6 +105,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         availabilityMutations: availability,
       });
       const workRepo = createDrizzleProjectWorkRepository({
+        removal: createTestDocumentRemoval(db),
         db,
         lineageScratch: lifecycle,
         arrivals,
@@ -129,6 +131,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           contextSourceId: source,
           name: "deleted",
           extension: "toml",
+          deletionReason: "deleted",
           deletedAt: new Date(),
         },
         { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },

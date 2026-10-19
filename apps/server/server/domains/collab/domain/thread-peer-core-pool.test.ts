@@ -30,6 +30,7 @@ function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
     drafts,
     branches,
     fileAccess,
+    removals: { lookup: async () => new Map() },
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
@@ -43,6 +44,7 @@ function createPool() {
   const pool = createThreadPeerCorePool({
     branches: ports.branches,
     drafts: { getDraft: async () => null },
+    removals: { lookup: async () => new Map() },
     fences: ports.fences,
     liveUtilityCore,
     createThreadCore: () => threadCore.asCore(),
@@ -128,6 +130,7 @@ describe("thread-peer pool", () => {
       const closingPool = createThreadPeerCorePool({
         branches: closingPorts.branches,
         drafts: { getDraft: async () => null },
+        removals: { lookup: async () => new Map() },
         fences: closingPorts.fences,
         liveUtilityCore: asLiveAgentEditCore(liveHarness.core),
         createThreadCore: () => {
@@ -266,6 +269,7 @@ describe("reasoned refusal and retirement through the pool", () => {
     const pool = createThreadPeerCorePool({
       branches: ports.branches,
       drafts: { getDraft: async () => null },
+      removals: { lookup: async () => new Map() },
       fences: ports.fences,
       liveUtilityCore: live,
       createThreadCore: (threadId) => {

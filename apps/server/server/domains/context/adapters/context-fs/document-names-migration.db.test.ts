@@ -1,4 +1,5 @@
 /** Seeded upgrade contract: normalize historical content and every mutable address. */
+
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ import {
 } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import { useRollbackTestDatabase } from "../../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
@@ -104,6 +106,7 @@ else
         extension,
         fileType,
         deletedAt: name === "gone" ? new Date() : null,
+        deletionReason: name === "gone" ? ("deleted" as const) : null,
       }));
       await db.insert(documents).values(rows);
       const chapter = rows[0];
@@ -159,6 +162,7 @@ else
         name: "Lore",
         extension: "md",
         fileType: "markdown",
+        deletionReason: "deleted",
         deletedAt,
         deletedByWorkId: workId,
       });
@@ -233,6 +237,7 @@ else
           name: "hidden-twin",
           extension: index === 0 ? "md" : "txt",
           fileType: "markdown",
+          deletionReason: "deleted" as const,
           deletedAt,
           deletedByWorkId: workId,
         })),
@@ -267,7 +272,7 @@ else
       // Unhide the arriving set just as Work restore does: the DB unique indexes must accept it.
       await db
         .update(documents)
-        .set({ deletedAt: null, deletedByWorkId: null })
+        .set({ deletionReason: null, deletedAt: null, deletedByWorkId: null })
         .where(eq(documents.deletedByWorkId, workId));
       await db
         .update(folders)
@@ -431,6 +436,7 @@ else
       const contextPorts = createProductionUnifiedContextPortFactory({
         pendingBranch: createTestWorkProjectionMutation(db),
         db,
+        removal: createTestDocumentRemoval(db),
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
         branches: collab.branches,

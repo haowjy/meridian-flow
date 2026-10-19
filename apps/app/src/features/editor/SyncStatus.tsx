@@ -7,7 +7,10 @@
  * and its handshake is done, not that the server has the latest edits, so the
  * pill says nothing in healthy use:
  *   - `destroyed`   → "Closed" (session torn down); always wins
- *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial); always wins
+ *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial); always wins,
+ *     except for a removed document (4208): nothing while availability is
+ *     asked, the removal's sentence once it proves one, and "Access lost"
+ *     for any other answer
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
  *     A draft room has no local cache, so its edits live only in this
  *     tab's memory; it says "Not saved yet (keep this tab open until you're
@@ -36,6 +39,8 @@ import {
   type DocumentSessionSnapshot,
   updatesRefused,
 } from "@/core/editor/document-session";
+import type { RemovalAnswer } from "@/features/project/context/project-context-availability-coordinator";
+import { RemovedDocumentSentence } from "@/features/project/context/RemovedDocumentNotice";
 
 /** Matches ConnectionBanner's RECONNECTED_VISIBLE_MS. */
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
@@ -79,9 +84,15 @@ export type SyncStatusProps = {
   session: DocumentSession;
   /** Reopens a room whose updates were refused; only a draft review offers it. */
   onReopen?: () => void;
+  /**
+   * A removed room's (4208) availability answer while its tab is still open;
+   * undefined while asked. Once the tab closes, the notice beside the strip
+   * says it instead.
+   */
+  removal?: RemovalAnswer;
 };
 
-export function SyncStatus({ session, onReopen }: SyncStatusProps) {
+export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   const [stored, setStored] = useState<Tracked>(() => trackSession(session));
 
   // A new session starts from its own snapshot with no outage history. Reset
@@ -138,21 +149,31 @@ export function SyncStatus({ session, onReopen }: SyncStatusProps) {
 
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered
-  // as a quiet floating pill by EditorView.
-  const label =
-    snapshot.status === "destroyed" ? (
-      <Trans>Closed</Trans>
-    ) : snapshot.status === "access-lost" ? (
+  // as a quiet floating pill by EditorView. A removed room says nothing while
+  // availability is asked or has said it is still there (a restart follows);
+  // a tab that stays open says why in place.
+  const removed =
+    snapshot.connectionState?.kind === "reset" &&
+    snapshot.connectionState.disposition === "removed";
+  const label = removed ? (
+    removal === undefined || removal.kind === "available" ? null : removal.kind === "removed" ? (
+      <RemovedDocumentSentence documents={[{ title: null, record: removal.record }]} />
+    ) : (
       <Trans>Access lost (not saving to the server)</Trans>
-    ) : phase === "awaiting" ? (
-      snapshot.room.kind === "draft" ? (
-        <Trans>Not saved yet (keep this tab open until you're back online)</Trans>
-      ) : (
-        <Trans>Saved locally (offline)</Trans>
-      )
-    ) : phase === "confirmed" ? (
-      <Trans>Back online (all changes saved)</Trans>
-    ) : null;
+    )
+  ) : snapshot.status === "destroyed" ? (
+    <Trans>Closed</Trans>
+  ) : snapshot.status === "access-lost" ? (
+    <Trans>Access lost (not saving to the server)</Trans>
+  ) : phase === "awaiting" ? (
+    snapshot.room.kind === "draft" ? (
+      <Trans>Not saved yet (keep this tab open until you're back online)</Trans>
+    ) : (
+      <Trans>Saved locally (offline)</Trans>
+    )
+  ) : phase === "confirmed" ? (
+    <Trans>Back online (all changes saved)</Trans>
+  ) : null;
   if (!label) return null;
 
   return (

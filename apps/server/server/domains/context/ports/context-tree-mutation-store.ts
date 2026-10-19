@@ -4,7 +4,7 @@
  * may change document activity timestamps without invalidating a prepared tree
  * mutation.
  */
-import type { Filetype } from "@meridian/contracts/protocol";
+import type { Filetype, RetractionCause } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
 export const CONTEXT_ROOT_DIRECTORY_ID = "__context_root__";
@@ -36,6 +36,7 @@ export type ContextTargetExpectation =
   | { state: "occupied"; token: ContextLocationToken };
 
 interface PreparedContextMoveBase {
+  actorUserId?: string;
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
   /** Project whose holders the move note counts (contract §10); absent, the move counts nothing. */
@@ -100,6 +101,8 @@ export interface ContextTreeDeleteResult {
 }
 
 export type ContextTreeDeleteCommand = {
+  actorUserId?: string;
+  removal?: { reason: "discarded"; cause: RetractionCause };
   root: ContextLocationToken;
   mode: "recursive";
 };

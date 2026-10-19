@@ -6,6 +6,7 @@
 import type { Database } from "@meridian/database";
 import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
 import type { BranchCreatePort } from "../../ports/branch-create.js";
+import type { DocumentRemoval } from "../../ports/document-removal.js";
 import { createInBranch } from "../../tree/creates.js";
 import { retractCreate } from "../../tree/end-use.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
@@ -13,12 +14,13 @@ import { lockDocumentNamespaces } from "./document-locations.js";
 
 export function createDrizzleBranchCreates(deps: {
   db: Database;
+  removal: DocumentRemoval;
   /** The source, provisioned when the first create needs it. */
   sourceId(): Promise<string>;
-  documents: Pick<MarkdownDocumentStore, "ensureDocument">;
+  documents: Pick<MarkdownDocumentStore, "initializeEmptyDocument" | "repairDocumentAuthority">;
   drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   /** Repair on touch: the candidate picker reports what it repaired (§12.4). */
-  repair?: Pick<HiddenNodeRepair, "report">;
+  repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
 }): BranchCreatePort {
   /**
    * The source, with its namespace held (§14: after the command's Work and branch, before
@@ -41,17 +43,20 @@ export function createDrizzleBranchCreates(deps: {
         extension,
         node,
         ...(createdBy ? { createdBy } : {}),
-        ensureEmptyContent: (documentId) => deps.documents.ensureDocument(documentId),
+        initializeEmptyContent: (documentId) => deps.documents.initializeEmptyDocument(documentId),
+        repairContent: (documentId) => deps.documents.repairDocumentAuthority(documentId),
         ensureDocumentDraft: (documentId) =>
           deps.drafts.ensureCreatedDocumentDraft({ documentId, branchId: branch.id }),
         ...(deps.repair ? { repair: deps.repair } : {}),
       });
     },
-    async retractCreate({ branch, documentId }) {
+    async retractCreate({ branch, documentId, cause }) {
       await lockedSource();
       const retracted = await retractCreate(deps.db, {
         branchId: branch.id,
         documentId,
+        cause,
+        removal: deps.removal,
         retractDraft: () =>
           deps.drafts.retractCreatedDocumentDraft({ documentId, branchId: branch.id }),
       });

@@ -1,6 +1,7 @@
 import {
   folderDocumentName,
   parseDocumentFilename,
+  type RetractionCause,
   renderFilename as renderDocumentFilename,
 } from "@meridian/contracts/protocol";
 /**
@@ -42,6 +43,10 @@ type FolderRow = ContextFolder & {
   updatedAt: string;
 };
 type DocumentRow = ContextDocument & {
+  deletionReason?: "deleted" | "discarded";
+  deletedByUserId?: string | null;
+  deletionCause?: RetractionCause | null;
+
   contextSourceId: string;
   deletedAt: string | null;
 };
@@ -875,6 +880,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         const now = this.nextTimestamp();
         if (targetRow) {
           targetRow.deletedAt = now;
+          targetRow.deletionReason = "deleted";
+          targetRow.deletedByUserId = input.actorUserId ?? null;
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
@@ -997,6 +1004,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           return Err({ code: "stale_source" });
         }
         doc.deletedAt = now;
+        doc.deletionReason = command.removal?.reason ?? "deleted";
+        doc.deletedByUserId = command.actorUserId ?? null;
+        doc.deletionCause = command.removal?.cause ?? null;
         doc.updatedAt = now;
         this.markMutatorWrite();
         this.backing.availabilityGeneration.value += 1n;
@@ -1020,6 +1030,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
           subtree.has(document.folderId)
         ) {
           document.deletedAt = now;
+          document.deletionReason = command.removal?.reason ?? "deleted";
+          document.deletedByUserId = command.actorUserId ?? null;
+          document.deletionCause = command.removal?.cause ?? null;
           document.updatedAt = now;
         }
       }

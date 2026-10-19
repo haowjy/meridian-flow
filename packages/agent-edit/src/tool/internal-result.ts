@@ -1,9 +1,11 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
 
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Block } from "../codec-types.js";
 import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
+import { removedFile } from "./removal-copy.js";
 import type {
   DocumentCommandName,
   WriteErrorDetail,
@@ -28,11 +30,17 @@ interface InternalWriteResultBase {
   error?: WriteErrorDetail;
 }
 
-export function documentNotFound(commandName: DocumentCommandName): InternalWriteResult {
-  return status("document_not_found", documentNotFoundMessage(commandName));
+/** A missing document; a removed one says who removed it and how. */
+export function documentNotFound(
+  commandName: DocumentCommandName,
+  cause?: { removal?: DocumentRemovalRecord },
+): InternalWriteResult {
+  if (!cause?.removal) return status("document_not_found", documentNotFoundMessage(commandName));
+  const removed = removedFile(cause.removal);
+  return status(removed.status, removed.message);
 }
 
-/** The one sentence every missing-document result gives the model. */
+/** The one sentence every missing-document result gives the model; a removed file has its own. */
 export function documentNotFoundMessage(commandName: DocumentCommandName): string {
   return commandName === "read"
     ? "File not found. Check the path with `ls`."

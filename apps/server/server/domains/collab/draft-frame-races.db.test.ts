@@ -10,9 +10,9 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { interleave, type Settled } from "../../test-support/lock-interleave.js";
 import { readDraftAt } from "./adapters/drizzle-draft-storage.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 import { ReversalConflictError } from "./domain/reversal-conflict.js";
 import {
   ALPHA_ID,
@@ -206,15 +206,15 @@ describe("writer frames racing rewrites (postgres)", () => {
         // Paused after its unlocked read found no contribution; the frame commits meanwhile.
         const run = await interleave(db, retract, "retract.beforeLocks", frame.send);
         expect(run.b).toEqual({ ok: true, value: { admitted: true } });
-        expect(run.a).toEqual({ ok: true, value: { outcome: "stands" } });
+        expect(run.a).toEqual({ ok: true, value: "stands" });
         expect(await writerRows(draftId)).toHaveLength(1);
       } else {
         // The retraction holds the rows and found nothing; the frame's append waits on them.
         const run = await interleave(db, retract, "retract.afterRecheck", frame.send);
         expect(run.bWaited).toBe(true);
-        expect(run.a).toMatchObject({ ok: true, value: { outcome: "retracted" } });
+        expect(run.a).toEqual({ ok: true, value: "retracted" });
         expect(run.b.ok && run.b.value.admitted).toBe(false);
-        expect(await readDraftAt(db, draftId)).toBeNull();
+        expect((await readDraftAt(db, draftId))?.documentDraft.status).toBe("closed");
       }
     } finally {
       frame.destroy();
@@ -237,7 +237,7 @@ describe("writer frames racing rewrites (postgres)", () => {
     last: (fragment: Y.XmlFragment) => void,
   ): Promise<{ commits: () => number; remove: () => void }> {
     let commits = 0;
-    const remove = setCollabHook("inverse.beforeCommitScope", async () => {
+    const remove = setTestHook("inverse.beforeCommitScope", async () => {
       commits += 1;
       const frame = await writerFrame(draftId, commits === 4 ? last : typedAndErased);
       try {

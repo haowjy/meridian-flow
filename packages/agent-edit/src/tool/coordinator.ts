@@ -54,7 +54,7 @@ export async function withLiveDocument<T>(
     );
     return await Promise.race([operation, cancellation]);
   } catch (cause) {
-    if (isDocumentNotFoundError(cause)) return documentNotFound(commandName);
+    if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, cause);
     throw cause;
   } finally {
     if (timeout) clearTimeout(timeout);

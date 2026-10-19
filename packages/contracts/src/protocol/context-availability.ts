@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DocumentId, ProjectId, UserId, WorkId } from "../ids.js";
 import type { WorkSlug } from "../works/work-slug.js";
 import type { CatalogFileEntry } from "./context-catalog.js";
+import type { DocumentRemovalRecord } from "./document-removal.js";
 
 export type AvailabilityGeneration = string;
 
@@ -91,6 +92,7 @@ export type ProjectContextIdentityResolution =
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       lastAuthority: ProjectContextAuthority;
+      removal?: DocumentRemovalRecord;
     }
   | {
       kind: "authority-unavailable";

@@ -461,12 +461,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(
           await db
-            .select({ id: schema.documentDrafts.id })
+            .select({
+              status: schema.documentDrafts.status,
+              cause: schema.documentDrafts.closedCause,
+              state: schema.documentDrafts.state,
+            })
             .from(schema.documentDrafts)
             .where(eq(schema.documentDrafts.documentId, aloneId)),
-          "retracted: its empty drafts gone",
+          "retracted: its drafts retained closed with bytes released",
         )
-        .toEqual([]);
+        .toEqual([
+          expect.objectContaining({ status: "closed", cause: "discarded", state: Buffer.alloc(0) }),
+          expect.objectContaining({ status: "closed", cause: "discarded", state: Buffer.alloc(0) }),
+        ]);
 
       const other = await scenario.thread(work);
       const first = await scenario.model(work).reply();

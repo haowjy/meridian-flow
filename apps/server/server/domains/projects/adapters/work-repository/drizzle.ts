@@ -24,6 +24,7 @@ import {
   type LineageScratchLifecycle,
 } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
+import type { DocumentRemoval } from "../../../context/ports/document-removal.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
@@ -81,6 +82,7 @@ function mapWork(row: WorkRow): Work {
 }
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
+  removal: DocumentRemoval;
   projectionMutation: WorkProjectionMutation;
   /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
@@ -331,6 +333,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
         const deletedAt = now();
         const deletedThreadIds = await cascadeDelete(db, {
+          projectId: before.projectId,
+          removal: deps.removal,
+          projection: projectionMutation,
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -377,6 +382,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
           await cascadeRestore(db, {
+            projectId: existing.projectId,
+            removal: deps.removal,
+            projection: projectionMutation,
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,

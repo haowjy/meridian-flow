@@ -17,6 +17,7 @@ const resourceReplica = vi.hoisted(() => ({
 }));
 
 vi.mock("./account-feature-context", () => ({
+  useOptionalProjectContextAvailabilityCoordinator: () => null,
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
   useLiveDocumentSessionRegistry: () => ({

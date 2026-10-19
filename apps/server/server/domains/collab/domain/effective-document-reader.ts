@@ -26,7 +26,6 @@ import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftPullService } from "./draft-pulls.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { PeerRetirement } from "./peer-retirement.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -47,8 +46,6 @@ export function createEffectiveDocumentReader(input: {
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   branches: Pick<Branches, "viewForWork">;
-  retirePeers: PeerRetirement;
-  deferUntilCommit(callback: () => Promise<void>): boolean;
 }): DraftPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
@@ -205,29 +202,8 @@ export function createEffectiveDocumentReader(input: {
     ensureCreatedDocumentDraft(command) {
       return input.drafts.ensureCreatedDocumentDraft(command);
     },
-    async retractCreatedDocumentDraft(command) {
-      const retracted = await input.drafts.retractCreatedDocumentDraft(command);
-      if (retracted.outcome === "retracted" && retracted.deleted.length > 0) {
-        // Rooms and pooled cores hold the deleted drafts' state; exactly those go, once
-        // the deletion is durable (an abort keeps the drafts). Another Work's peers on
-        // the same document are not this retraction's.
-        const { deleted } = retracted;
-        const retire = () =>
-          input.retirePeers(
-            deleted.map(({ draftId, threadId }) =>
-              threadId
-                ? {
-                    draftId,
-                    documentId: command.documentId,
-                    threadId,
-                    cause: "document_discarded" as const,
-                  }
-                : { draftId, documentId: command.documentId, threadId: null },
-            ),
-          );
-        if (!input.deferUntilCommit(retire)) await retire();
-      }
-      return retracted.outcome;
+    retractCreatedDocumentDraft(command) {
+      return input.drafts.retractCreatedDocumentDraft(command);
     },
   };
 }

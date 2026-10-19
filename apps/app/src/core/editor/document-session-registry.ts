@@ -35,6 +35,20 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
+  /**
+   * Each live room the server closed because its document was removed (4208),
+   * once per close, whether or not an editor holds it. Draft rooms name no document here;
+   * their review owner reports them.
+   */
+  observeRemovedRooms(
+    observer: (session: DocumentSession, room: RetainedLiveDocumentReference) => void,
+  ): () => void;
+  /**
+   * Reconnects a live room closed as removed once an exact lookup proved its
+   * document present (a restore won the race); false when it is no longer the
+   * room's current session or no longer removed.
+   */
+  restartRemovedRoom(session: DocumentSession): Promise<boolean>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(

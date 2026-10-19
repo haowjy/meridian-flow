@@ -1,8 +1,3 @@
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "./adapters/drizzle-branches.js";
-import { createBranches } from "./domain/branches.js";
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
@@ -14,9 +9,9 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
-  runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
@@ -27,11 +22,15 @@ import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
+import {
+  createDrizzleBranchStore,
+  createDrizzleBranchWriteBoundary,
+} from "./adapters/drizzle-branches.js";
+import { createBranches } from "./domain/branches.js";
 import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
-import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
@@ -78,7 +77,7 @@ async function fixture(
     .update(schema.threads)
     .set({ aiWriteMode: mode })
     .where(eq(schema.threads.id, THREAD_ID));
-  await f.persistence.lifecycle.ensureDocument(ALPHA_ID);
+  await f.persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
   await f.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
     const before = Y.encodeStateVector(doc);
     f.model.insertBlocks(
@@ -108,11 +107,6 @@ async function fixture(
       model: f.runtime.model,
       codec: f.runtime.codec,
       links,
-      retirePeers: createPeerRetirement({
-        closeDraftRoom: () => {},
-        agentEdit: f.collab.agentEdit(),
-      }),
-      deferUntilCommit: () => false,
       branches,
     }),
     links,
@@ -126,6 +120,7 @@ async function fixture(
     documents: effective,
     branches,
     works: createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
@@ -323,7 +318,7 @@ describe("document revisions (postgres and collab)", () => {
     expect((await f.read()).revision).toMatch(/^y2:/);
     await db
       .update(schema.documents)
-      .set({ deletedAt: new Date() })
+      .set({ deletionReason: "deleted", deletedAt: new Date() })
       .where(eq(schema.documents.id, ALPHA_ID));
     expect(f.hocuspocus.documents.has(ALPHA_ID)).toBe(true);
     expect(await f.current()).toBeNull();

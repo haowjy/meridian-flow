@@ -4,21 +4,15 @@
  * reads what a crashed process staged), and one codec for the step's refusals and holds,
  * so neither side probes untyped JSON.
  */
-import type { BranchId, DocumentId } from "@meridian/contracts";
-import type { DraftApplyNote, DraftHeldReason } from "@meridian/contracts/branches";
+import type { DraftItemKey } from "@meridian/contracts";
+import type { DraftHeldReason } from "@meridian/contracts/branches";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { z } from "zod";
 import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
 /** The tree step's payload kind; recovery finds the step by it. */
 export const BRANCH_TREE_STEP = "branch_tree";
-
-/** `${BranchId}:${DocumentId}`: one key for every item, text or binary (F12). */
-export type DraftItemKey = string;
-
-export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftItemKey {
-  return `${branchId}:${documentId}`;
-}
 
 const PayloadItemSchema = z.object({
   itemKey: z.string(),
@@ -107,7 +101,7 @@ export function readBranchTreeRefusal(reason: ApplyRefusal): BranchTreeRefusal |
   }
 }
 
-/** Why an item stays in the branch: 5a, the live path it needs is taken (the wire's type). */
+/** Why Apply lands nothing for an item: 5a's taken path, or its removed live document. */
 export type HeldReason = DraftHeldReason;
 
 const HoldDetail = z.object({ path: z.string() });
@@ -116,27 +110,25 @@ export function branchTreeHold(path: string): ApplyRefusal {
   return { code: "path_taken", detail: { path } };
 }
 
+/** The item's live document was removed: a document exists only by being created, so Apply revives nothing. */
+export function branchTreeRemovedHold(removal: DocumentRemovalRecord): ApplyRefusal {
+  return { code: "deleted_live", detail: { removal } as unknown as JsonValue };
+}
+
 /** The step's hold reason, or null for one another step made. */
 export function readBranchTreeHold(reason: ApplyRefusal): HeldReason | null {
-  return reason.code === "path_taken"
-    ? { code: "path_taken", path: HoldDetail.parse(reason.detail).path }
-    : null;
-}
-
-/** A receipt note: what completion did to an item beyond landing its text (§11.2). */
-export type ApplyNote = DraftApplyNote;
-
-const NotesDetail = z.object({
-  notes: z.array(
-    z.discriminatedUnion("code", [z.object({ code: z.literal("restored"), path: z.string() })]),
-  ),
-});
-
-/** An item's notes as the step reports them out of completion. */
-export function branchTreeNotes(notes: readonly ApplyNote[]): JsonValue {
-  return { notes: notes.map((note) => ({ ...note })) };
-}
-
-export function readBranchTreeNotes(detail: JsonValue): ApplyNote[] {
-  return NotesDetail.parse(detail).notes;
+  switch (reason.code) {
+    case "path_taken":
+      return { code: "path_taken", path: HoldDetail.parse(reason.detail).path };
+    case "deleted_live":
+      // Written by this step in the same transaction family; the record is passed through.
+      return {
+        code: "deleted_live",
+        removal:
+          (reason.detail as { removal?: DocumentRemovalRecord | null } | undefined)?.removal ??
+          null,
+      };
+    default:
+      return null;
+  }
 }

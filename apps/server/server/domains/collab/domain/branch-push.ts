@@ -26,7 +26,7 @@ import { type Attempt, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-atte
 import type { DraftJournalRow } from "./draft-journal.js";
 import { type DraftSnapshot, materializeDraftRead } from "./draft-store.js";
 import { buildDurablePushTrail } from "./draft-trail-projection.js";
-import type { ApplyItemHold, ApplyItemOutcome, ApplyRefusal } from "./ports/settlement-apply.js";
+import type { ApplyItemHold, ApplyRefusal } from "./ports/settlement-apply.js";
 
 type ComputedCandidate = {
   candidate: PushCandidate;
@@ -47,8 +47,6 @@ type BatchPipelineResult =
       held: ReadonlyMap<DocumentId, ApplyRefusal>;
       /** Every held item, items without text drafts included. */
       heldItems: readonly ApplyItemHold[];
-      /** What the steps did per applied item, decided in completion. */
-      outcomes: readonly ApplyItemOutcome[];
       phases: readonly ComputedCandidate[];
     };
 
@@ -228,7 +226,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         ),
       ),
       heldItems: outcome.held,
-      outcomes: outcome.outcomes,
       phases,
     };
   }
@@ -357,12 +354,11 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       for (const [draftId, item] of mapCommitted(result)) items.set(draftId, item);
     }
     if (result?.kind === "command_exists") {
-      return { items: [], heldItems: [], outcomes: [], commandExists: true };
+      return { items: [], heldItems: [], commandExists: true };
     }
     return {
       items: order.map((draftId) => items.get(draftId) as PushToLiveResult),
       heldItems: result?.kind === "committed" ? result.heldItems : [],
-      outcomes: result?.kind === "committed" ? result.outcomes : [],
       ...(refused ? { refused } : {}),
     };
   }

@@ -5,6 +5,7 @@ import {
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
+import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -65,7 +66,7 @@ export type YjsGatewayConnection = {
 
 export type YjsGatewayServices = {
   liveDocuments: Pick<TreeReader, "findById">;
-  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit">;
+  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit" | "historyAccess">;
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
@@ -147,14 +148,83 @@ function permissionDenied(
   return error;
 }
 
-function refuseConnection(context: YjsConnectionContext, close: SchemaAdmissionRefusal): never {
-  context.closeTransport(close);
-  throw permissionDenied(close.reason, close.code);
+type RoomClose = { code: number; reason: string };
+
+/**
+ * A refusal that closes the transport with its own code. Thrown, never sent here:
+ * `withRemovalRefusal` sends it, or `4208` in its place when the room's document was removed.
+ */
+class RoomRefusal extends Error {
+  readonly code: number;
+  readonly reason: string;
+  constructor(
+    readonly close: RoomClose,
+    cause?: unknown,
+  ) {
+    super(close.reason, { cause });
+    this.code = close.code;
+    this.reason = close.reason;
+  }
+}
+
+function refuse(close: RoomClose, cause?: unknown): never {
+  throw new RoomRefusal(close, cause);
+}
+
+/**
+ * Every room hook that refuses passes here, so whether a refusal is a removal is decided in
+ * one place, with authorization. A refusal caused by a removal, or any refusal of a room whose
+ * document was removed when the principal may read that document's history, closes
+ * `4208 document-deleted`, terminal; any other refusal sends its own close, if it has one. A
+ * principal who can't read the document learns nothing of its removal.
+ */
+async function withRemovalRefusal<T>(
+  services: Pick<YjsGatewayServices, "documentSync" | "fileAccess">,
+  room: ParsedYjsRoom,
+  userId: UserId,
+  context: { closeTransport?(close: RoomClose): void },
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (cause) {
+    const removed = await removedForReader(services, room, userId, cause).catch(
+      // A failed probe never hides the refusal it was asked about.
+      () => false,
+    );
+    const close = removed
+      ? WS_CLOSE.DOCUMENT_DELETED
+      : cause instanceof RoomRefusal
+        ? cause.close
+        : null;
+    if (!close) throw cause;
+    context.closeTransport?.(close);
+    throw permissionDenied(close.reason, close.code);
+  }
+}
+
+async function removedForReader(
+  services: Pick<YjsGatewayServices, "documentSync" | "fileAccess">,
+  room: ParsedYjsRoom,
+  userId: UserId,
+  cause: unknown,
+): Promise<boolean> {
+  // Raised only past the room's admission: the principal already reached the document, and
+  // the write was refused under its mutation lock, so nothing was journaled.
+  const refused = cause instanceof RoomRefusal ? cause.cause : cause;
+  if (isDocumentNotFoundError(refused) && refused.removal) return true;
+  const removed = await services.documentSync.roomRemoval(
+    room.kind === "live" ? { documentId: room.documentId } : { draftId: room.draftId },
+  );
+  return (
+    removed !== null &&
+    (await services.fileAccess.historyAccess({ accountId: userId }, removed.documentId)) ===
+      "deleted"
+  );
 }
 
 function refuseSchemaAdmission(input: {
   services: Pick<YjsGatewayServices, "eventSink">;
-  context: YjsConnectionContext;
   roomKey: string;
   documentId: DocumentId;
   close: SchemaAdmissionRefusal;
@@ -164,7 +234,6 @@ function refuseSchemaAdmission(input: {
 }): never {
   const {
     services,
-    context,
     roomKey,
     documentId,
     close,
@@ -188,7 +257,7 @@ function refuseSchemaAdmission(input: {
       },
     });
   } finally {
-    refuseConnection(context, close);
+    refuse(close);
   }
 }
 
@@ -263,10 +332,14 @@ async function classifyYjsConnectionAdmission(input: {
   if (room.kind === "live") {
     documentId = room.documentId;
     fileTarget = { kind: "document", documentId };
+    // The file policy denies a removed document; `withRemovalRefusal` answers it.
     admitted = await roomAccess(services, userId, fileTarget);
     if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
       throw permissionDenied("permission-denied");
     }
+    // The room's explicit touch: a living document missing its authority is repaired from
+    // its projection before the first generation read, which never creates one.
+    await services.documentSync.repairDocumentAuthority(documentId);
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
     const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(
@@ -368,7 +441,6 @@ export async function admitWriterSync(input: {
   syncType: number;
   payload: Uint8Array;
   userId: UserId;
-  closeTransport?(input: { code: number; reason: string }): void;
   expectedGeneration?: bigint;
   context?: {
     draftSyncState?: Map<string, DraftHandshakeState>;
@@ -417,13 +489,8 @@ async function admitDraftSync(
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
     // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
-    if (cause instanceof DraftPrefixMissingError) {
-      const { code, reason } = WS_CLOSE.DRAFT_PREFIX_MISSING;
-      input.closeTransport?.({ code, reason });
-      throw permissionDenied(reason, code);
-    }
-    input.closeTransport?.({ code: 1008, reason: "draft-update-admission-failed" });
-    throw permissionDenied("draft-update-admission-failed", 1008);
+    if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
+    refuse({ code: 1008, reason: "draft-update-admission-failed" }, cause);
   }
 }
 
@@ -450,8 +517,7 @@ async function admitLiveSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
-    input.closeTransport?.({ code: 1013, reason: "writer-journal-admission-failed" });
-    throw permissionDenied("writer-journal-admission-failed", 1013);
+    refuse({ code: 1013, reason: "writer-journal-admission-failed" }, cause);
   }
 }
 
@@ -478,12 +544,6 @@ function admittedTargetForSync(
   return target;
 }
 
-function refuseAccessChanged(context: YjsConnectionContext): never {
-  const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
-  context.closeTransport({ code, reason });
-  throw permissionDenied(reason, code);
-}
-
 export function createHocuspocus(
   services: YjsGatewayServices,
   rooms: YjsRoomAccessIndex,
@@ -499,47 +559,48 @@ export function createHocuspocus(
         if (!userId) throw permissionDenied("permission-denied");
 
         const room = parseRoomOrDeny(documentName);
-        const admission = await classifyYjsConnectionAdmission({
-          services,
-          room,
-          userId,
-          clientSchemaVersion: context.clientSchemaVersion,
-        });
-        if (admission.kind === "refused") {
-          refuseSchemaAdmission({
+        await withRemovalRefusal(services, room, userId, context, async () => {
+          const admission = await classifyYjsConnectionAdmission({
             services,
-            context,
-            roomKey: documentName,
-            ...admission,
+            room,
+            userId,
+            clientSchemaVersion: context.clientSchemaVersion,
           });
-        }
-        context.admissionTarget = admission.target;
-        context.access = admission.access;
-        // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
-        connectionConfig.readOnly = admission.access.level === "read";
-        rooms.register(context.registration, admission.accessWorkIds);
-        // A Work change between admission and registration reached no room.
-        // Registered now, the room hears every later change; ask once more.
-        const settled = await findRoomAccess(services, userId, admission.fileTarget);
-        if (settled?.access.level !== admission.access.level) refuseAccessChanged(context);
-
-        if (admission.target.kind === "draft") {
-          const target = admission.target;
-          // Do not delay room admission: a cold room may briefly render its persisted
-          // state before this pull arrives. A pull that commits while the room loads is
-          // brought in by the room's enrollment once Hocuspocus registers it.
-          void services.documentSync
-            .flushDraftLivePull(target.documentId)
-            .catch((cause: unknown) => {
-              emitEvent(services.eventSink, {
-                level: "warn",
-                source: "collab.hocuspocus",
-                name: "draft_review.live_pull_failed",
-                correlation: { documentId: target.documentId, draftId: target.draftId },
-                payload: unknownToEventPayload(cause),
-              });
+          if (admission.kind === "refused") {
+            refuseSchemaAdmission({
+              services,
+              roomKey: documentName,
+              ...admission,
             });
-        }
+          }
+          context.admissionTarget = admission.target;
+          context.access = admission.access;
+          // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
+          connectionConfig.readOnly = admission.access.level === "read";
+          rooms.register(context.registration, admission.accessWorkIds);
+          // A Work change between admission and registration reached no room.
+          // Registered now, the room hears every later change; ask once more.
+          const settled = await findRoomAccess(services, userId, admission.fileTarget);
+          if (settled?.access.level !== admission.access.level) refuse(WS_CLOSE.ACCESS_CHANGED);
+
+          if (admission.target.kind === "draft") {
+            const target = admission.target;
+            // Do not delay room admission: a cold room may briefly render its persisted
+            // state before this pull arrives. A pull that commits while the room loads is
+            // brought in by the room's enrollment once Hocuspocus registers it.
+            void services.documentSync
+              .flushDraftLivePull(target.documentId)
+              .catch((cause: unknown) => {
+                emitEvent(services.eventSink, {
+                  level: "warn",
+                  source: "collab.hocuspocus",
+                  name: "draft_review.live_pull_failed",
+                  correlation: { documentId: target.documentId, draftId: target.draftId },
+                  payload: unknownToEventPayload(cause),
+                });
+              });
+          }
+        });
       });
     },
     async beforeHandleMessage({ context }) {
@@ -552,69 +613,72 @@ export function createHocuspocus(
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const userId = context.userId;
         if (!userId) throw permissionDenied("permission-denied");
-        const target = admittedTargetForSync(context, documentName);
-        const access = context.access;
-        if (!access) throw permissionDenied("permission-denied");
-        // Runs before Hocuspocus's own read-only check: a read connection's
-        // update must not reach the journal. Hocuspocus then drops it and
-        // answers SyncStatus(false).
-        if (
-          access.level === "read" &&
-          (type === messageYjsSyncStep2 || type === messageYjsUpdate)
-        ) {
-          return;
-        }
-        const admit = () =>
-          admitWriterSync({
-            services,
-            documentName,
-            document,
-            syncType: type,
-            payload,
-            userId,
-            closeTransport: context.closeTransport,
-            expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
-            context,
-          });
-        if (access.level === "read") {
-          await admit();
-          return;
-        }
-        const admitted = await runWithEditGrants(services.fileAccess, [access.grant], admit);
-        if (!admitted.ok) refuseAccessChanged(context);
+        const room = parseRoomOrDeny(documentName);
+        await withRemovalRefusal(services, room, userId, context, async () => {
+          const target = admittedTargetForSync(context, documentName);
+          const access = context.access;
+          if (!access) throw permissionDenied("permission-denied");
+          // Runs before Hocuspocus's own read-only check: a read connection's
+          // update must not reach the journal. Hocuspocus then drops it and
+          // answers SyncStatus(false).
+          if (
+            access.level === "read" &&
+            (type === messageYjsSyncStep2 || type === messageYjsUpdate)
+          ) {
+            return;
+          }
+          const admit = () =>
+            admitWriterSync({
+              services,
+              documentName,
+              document,
+              syncType: type,
+              payload,
+              userId,
+              expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
+              context,
+            });
+          if (access.level === "read") {
+            await admit();
+            return;
+          }
+          const admitted = await runWithEditGrants(services.fileAccess, [access.grant], admit);
+          if (!admitted.ok) refuse(WS_CLOSE.ACCESS_CHANGED);
+        });
       });
     },
     async onLoadDocument({ documentName, document, context }) {
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const room = parseRoomOrDeny(documentName);
-        let state: Uint8Array | undefined;
-        try {
-          state =
-            room.kind === "live"
-              ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
-              : (
-                  await services.documentSync.loadHocuspocusDraftState(
-                    room.draftId,
-                    room.generation,
-                  )
-                )?.state;
-        } catch (cause) {
-          if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
-          refuseSchemaAdmission({
-            services,
-            context,
-            roomKey: documentName,
-            documentId: cause.docId as DocumentId,
-            close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
-            clientSchemaVersion: context.clientSchemaVersion,
-            headSchemaVersion: cause.storedVersion,
-            serverSchemaVersion: cause.expectedVersion,
-          });
-        }
-        if (!state && room.kind === "draft")
-          throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
-        if (state) Y.applyUpdate(document, state);
-        if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+        await withRemovalRefusal(services, room, context.userId, context, async () => {
+          let state: Uint8Array | undefined;
+          try {
+            state =
+              room.kind === "live"
+                ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
+                : (
+                    await services.documentSync.loadHocuspocusDraftState(
+                      room.draftId,
+                      room.generation,
+                    )
+                  )?.state;
+          } catch (cause) {
+            if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
+            refuseSchemaAdmission({
+              services,
+              roomKey: documentName,
+              documentId: cause.docId as DocumentId,
+              close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
+              clientSchemaVersion: context.clientSchemaVersion,
+              headSchemaVersion: cause.storedVersion,
+              serverSchemaVersion: cause.expectedVersion,
+            });
+          }
+          if (!state && room.kind === "draft")
+            throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+          if (state) Y.applyUpdate(document, state);
+          if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+        });
       });
     },
     async afterLoadDocument({ documentName, document }) {
@@ -632,28 +696,34 @@ export function createHocuspocus(
     },
     async connected({ documentName, connection, context }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind === "draft") {
-        // As for a live room: a reset can commit between this connection's admission and
-        // its room's registration, and the old generation's room must not take the tab.
-        if (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId, room.generation))
+      // This hook's refusal also closes the connection Hocuspocus has already made.
+      const closing = {
+        closeTransport(close: RoomClose) {
+          context.closeTransport?.(close);
+          connection.close(close);
+        },
+      };
+      await withRemovalRefusal(services, room, context.userId, closing, async () => {
+        if (room.kind === "draft") {
+          // As for a live room: a reset can commit between this connection's admission and
+          // its room's registration, and the old generation's room must not take the tab.
+          if (
+            !(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId, room.generation))
+          )
+            refuse(WS_CLOSE.DRAFT_GENERATION_STALE);
           return;
-        const { code, reason } = WS_CLOSE.DRAFT_GENERATION_STALE;
-        connection.close({ code, reason });
-        context.closeTransport?.({ code, reason });
-        throw permissionDenied(reason, code);
-      }
-      try {
-        // The room can finish loading after restore's disconnection. Validate
-        // after connection creation too, so the late join is closed and retries.
-        await services.documentSync.validateHocuspocusDocument(
-          room.documentId,
-          connection.document,
-        );
-      } catch {
-        connection.close({ code: 1013, reason: "retired-durable-authority-generation" });
-        context.closeTransport?.({ code: 1013, reason: "retired-durable-authority-generation" });
-        throw permissionDenied("retired-durable-authority-generation", 1013);
-      }
+        }
+        try {
+          // The room can finish loading after restore's disconnection. Validate
+          // after connection creation too, so the late join is closed and retries.
+          await services.documentSync.validateHocuspocusDocument(
+            room.documentId,
+            connection.document,
+          );
+        } catch (cause) {
+          refuse({ code: 1013, reason: "retired-durable-authority-generation" }, cause);
+        }
+      });
     },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const operation = () => {
