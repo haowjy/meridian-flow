@@ -34,6 +34,7 @@ stack.
 - [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
 - [#871 cells](871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is swept, and the region refusal.
+- [Model revert](model-revert.md): ordinary-write reverts, later overlapping edits, duplicate identity, partial refusal receipts, same-reply saves and browser confirmation.
 - [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the branch store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
 - [Drain Apply settlement](drain-apply-settlement.md): the `DRAIN_APPLY_SETTLEMENT=1` cutover switch refuses a new Apply with 503, replays a known command id and recovers.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.

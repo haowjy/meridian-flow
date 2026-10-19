@@ -22,9 +22,10 @@ export function createWriteDispatch(input: {
       case "replace":
       case "remove":
         return input.commands.mutate(command, session, context);
+      case "revert":
+        return input.commands.revert(command, session, context);
       case "undo":
       case "redo":
-      case "revert":
         return input.documentEdits(command, session, context);
     }
   };

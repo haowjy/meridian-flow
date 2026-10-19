@@ -189,7 +189,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (
       commandName === "undo" ||
       commandName === "redo" ||
-      commandName === "revert" ||
       ("format" in validCommand && validCommand.format === "edits")
     ) {
       const receipt = settledReceipt(

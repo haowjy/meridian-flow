@@ -158,7 +158,7 @@ thread has a Work draft of the document, else live.
 A call whose caller passes `frontiers` (the read and write tools, and
 reference reads, which pass `recording` only) records an observation frontier
 in the room its result rendered from; a write plans on the `planning` lookup.
-An undo, redo or revert records in the room its inverse committed into
+An undo or redo records in the room its inverse committed into
 (`DocumentEditResult.room`). A staged write records nothing. The reply's save,
 given `recordingFrontier`, records each saved document in the room the save
 committed into (the draft adapter's `prepareSave` room, or the live room under
@@ -418,7 +418,7 @@ its Work rows and branch-row and live advisory locks across attempts 2 to 4; onl
 draft rows release on the savepoint rollback. Apply, selective Discard and
 pulls retry a moved draft up to four times, then refuse `stale`.
 
-An inverse (Undo, Redo, revert, rollback, and the model's `undo`/`redo`)
+An inverse (Undo, Redo, rollback, and the model's `undo`/`redo`)
 captures without any lock: one read-only snapshot of each document's live
 head, each affected draft at its revision merged with that live state, the
 history and each draft's lifecycle. It plans on that capture, then commits in
@@ -590,7 +590,10 @@ Forward inverses append ordinary immutable journal parts with restoration
 aliases. They do not rewrite target rows, mark them reversed, or use a reserved
 undo client. Card actions and model undo/redo share immutable edit and
 placement targets but retain their own authorization and stack policy. Model
-revert is a new edit in the current destination.
+revert is an ordinary forward write in the current destination, planned on the
+model view from exact source cuts, grouped through the normal region checks,
+and staged/saved as `kind: "write"`. It does not use inverse admission or holds;
+see [reversal](reversal.md#forward-model-revert).
 
 Nothing response-scoped stays resident: every tool and scoped read reads a
 fresh room copy; reporting uses disposable replicas. Rollback keeps the staged

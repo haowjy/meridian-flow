@@ -34,7 +34,7 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
       part.threadId !== threadId ||
       part.actor !== "agent" ||
       part.wId === null ||
-      (part.kind !== "write" && part.kind !== "revert") ||
+      part.kind !== "write" ||
       (!part.effect.inserted.length && !part.effect.deleted.length)
     )
       continue;
@@ -165,37 +165,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       }
       return null;
     }
-    function revertSelection(entry: Entry, inspection = inspect()) {
-      const skipped: string[] = [],
-        selection: InverseSelection[] = [];
-      const states = inspection.states(entry.parts);
-      for (const [i, part] of entry.parts.entries()) {
-        const held = holder(part),
-          state = states[i];
-        if (held) blocking.add(held);
-        const reason = !eligible(part)
-          ? "already removed"
-          : held
-            ? `held by the draft in ${document.drafts.get(held)?.name ?? "unavailable"}`
-            : inspection.rolledBack(part)
-              ? "rolled back"
-              : state.state === "undone"
-                ? "already removed"
-                : state.reasons.includes("inaccessible ancestor")
-                  ? "its paragraph was removed"
-                  : state.state !== "active"
-                    ? "edited since"
-                    : null;
-        if (reason) {
-          const excerpt = store.describePart(document, part);
-          skipped.push(
-            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}`,
-          );
-        } else selection.push({ part, direction: "invert" });
-      }
-      return { selection, skipped };
-    }
-    return { view, draft, own, inspect, refusal, revertSelection, version, blocking };
+    return { view, draft, own, inspect, refusal, version, blocking };
   }
   async function plan(
     document: InverseDocument | undefined,
@@ -227,8 +197,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       history = [...document.history],
       computed: ComputedInverse = { actionId, edits: [], skipped: [] },
       consumes: string[] = [],
-      handles: string[] = [],
-      skipped: string[] = [];
+      handles: string[] = [];
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(policy.view));
     // Until its first advance, scratch is identical to the locked view.
     let inspection: Inspection | undefined = policy.inspect();
@@ -241,11 +210,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       return inspection;
     };
     try {
-      const apply = (
-        selection: InverseSelection[],
-        kind: "undo" | "redo" | "revert",
-        consumed: string[],
-      ) => {
+      const apply = (selection: InverseSelection[], kind: "undo" | "redo", consumed: string[]) => {
         const stepActionId = kind === "undo" && computed.edits.length ? randomUUID() : actionId;
         const result = currentInspection().index.compute(selection, {
           actionId: stepActionId,
@@ -295,124 +260,101 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         // Neither lineage visibility nor action state survives a scratch advance.
         inspection = undefined;
       };
-      if (command.command === "revert") {
-        const entry = own.find((entry) => entry.handle === command.edit);
-        if (!entry)
-          return {
-            status: "invalid_write",
-            message: `Unknown edit ${command.edit} in ${document.uri}. Read with format: "edits" for a valid handle.`,
-          };
-        const selection = policy.revertSelection(entry);
-        skipped.push(...selection.skipped);
-        handles.push(entry.handle);
-        if (!selection.selection.length)
-          return {
-            status: "nothing_to_revert",
-            message: `Nothing of ${entry.handle} is left as you wrote it. ${skipped.join("\n")} Read ${document.uri} and make a new replace.`,
-          };
-        apply(selection.selection, "revert", []);
-      } else
-        for (let n = 0; n < (command.count ?? 1); n++) {
-          if (command.command === "undo") {
-            const entry = currentInspection().top;
-            if (!entry && n > 0)
-              return {
-                status: "insufficient_undo",
-                message: `Only ${n} ${n === 1 ? "edit" : "edits"} to undo in ${document.uri}; requested ${command.count}. Nothing was changed.`,
-              };
-            if (!entry)
-              return {
-                status: "nothing_to_undo",
-                message: `You have no edits to undo in ${document.uri}. Read it and make a new replace if needed.`,
-              };
+      for (let n = 0; n < (command.count ?? 1); n++) {
+        if (command.command === "undo") {
+          const entry = currentInspection().top;
+          if (!entry && n > 0)
+            return {
+              status: "insufficient_undo",
+              message: `Only ${n} ${n === 1 ? "edit" : "edits"} to undo in ${document.uri}; requested ${command.count}. Nothing was changed.`,
+            };
+          if (!entry)
+            return {
+              status: "nothing_to_undo",
+              message: `You have no edits to undo in ${document.uri}. Read it and make a new replace if needed.`,
+            };
+          const current = currentInspection();
+          current.states(entry.parts);
+          for (const part of entry.parts) {
+            const refused = policy.refusal(part, entry.handle, "undo", current);
+            if (refused) return refused;
+          }
+          handles.push(entry.handle);
+          apply(
+            [...entry.parts]
+              .sort((a, b) => b.id - a.id)
+              .map((part) => ({ part, direction: "invert" })),
+            "undo",
+            [],
+          );
+        } else {
+          const action = currentInspection().candidate;
+          if (!action && n > 0)
+            return {
+              status: "insufficient_redo",
+              message: `Only ${n} ${n === 1 ? "edit" : "edits"} to redo in ${document.uri}; requested ${command.count}. Nothing was changed.`,
+            };
+          if (!action)
+            return {
+              status: "nothing_to_redo",
+              message: `Nothing of yours to redo in ${document.uri}. A new edit clears redo here. Read it and make a new replace if needed.`,
+            };
+          const targets = own.flatMap((entry) =>
+            entry.parts
+              .filter((part) => action.targets.has(key(part)))
+              .map((part) => ({ part, handle: entry.handle })),
+          );
+          if (
+            action.parts.some((part) => part.actor !== "agent" || part.threadId !== query.threadId)
+          )
+            return {
+              status: "cant_redo_users_undo",
+              message: `The user undid ${[...new Set(targets.map((target) => target.handle))].join(", ")}. Only they can redo it. Read ${document.uri} and make a new replace if needed.`,
+            };
+          // Card actions may span edits; model undo actions each target one edit.
+          // Restore overlapping originals oldest first within an action.
+          const restoring = own
+            .map((entry) => ({
+              ...entry,
+              parts: entry.parts.filter((part) => action.targets.has(key(part))),
+            }))
+            .filter((entry) => entry.parts.length)
+            .sort(
+              (a, b) =>
+                Math.min(...a.parts.map((part) => part.id)) -
+                Math.min(...b.parts.map((part) => part.id)),
+            );
+          for (const entry of restoring) {
             const current = currentInspection();
             current.states(entry.parts);
-            for (const part of entry.parts) {
-              const refused = policy.refusal(part, entry.handle, "undo", current);
+            for (const original of entry.parts) {
+              const inverse = action.parts.find((part) =>
+                part.targets.some((t) => key(t) === key(original)),
+              );
+              if (!inverse) throw new Error("Undo action has no inverse for its target");
+              const refused = policy.refusal(
+                { ...original, origin: inverse.origin, placement: inverse.placement },
+                entry.handle,
+                "redo",
+                current,
+              );
               if (refused) return refused;
             }
-            handles.push(entry.handle);
             apply(
-              [...entry.parts]
-                .sort((a, b) => b.id - a.id)
-                .map((part) => ({ part, direction: "invert" })),
-              "undo",
-              [],
+              entry.parts.map((part) => ({ part, direction: "reapply" })),
+              "redo",
+              [action.id],
             );
-          } else {
-            const action = currentInspection().candidate;
-            if (!action && n > 0)
-              return {
-                status: "insufficient_redo",
-                message: `Only ${n} ${n === 1 ? "edit" : "edits"} to redo in ${document.uri}; requested ${command.count}. Nothing was changed.`,
-              };
-            if (!action)
-              return {
-                status: "nothing_to_redo",
-                message: `Nothing of yours to redo in ${document.uri}. A new edit clears redo here. Read it and make a new replace if needed.`,
-              };
-            const targets = own.flatMap((entry) =>
-              entry.parts
-                .filter((part) => action.targets.has(key(part)))
-                .map((part) => ({ part, handle: entry.handle })),
-            );
-            if (
-              action.parts.some(
-                (part) => part.actor !== "agent" || part.threadId !== query.threadId,
-              )
-            )
-              return {
-                status: "cant_redo_users_undo",
-                message: `The user undid ${[...new Set(targets.map((target) => target.handle))].join(", ")}. Only they can redo it. Read ${document.uri} and make a new replace if needed.`,
-              };
-            // Card actions may span edits; model undo actions each target one edit.
-            // Restore overlapping originals oldest first within an action.
-            const restoring = own
-              .map((entry) => ({
-                ...entry,
-                parts: entry.parts.filter((part) => action.targets.has(key(part))),
-              }))
-              .filter((entry) => entry.parts.length)
-              .sort(
-                (a, b) =>
-                  Math.min(...a.parts.map((part) => part.id)) -
-                  Math.min(...b.parts.map((part) => part.id)),
-              );
-            for (const entry of restoring) {
-              const current = currentInspection();
-              current.states(entry.parts);
-              for (const original of entry.parts) {
-                const inverse = action.parts.find((part) =>
-                  part.targets.some((t) => key(t) === key(original)),
-                );
-                if (!inverse) throw new Error("Undo action has no inverse for its target");
-                const refused = policy.refusal(
-                  { ...original, origin: inverse.origin, placement: inverse.placement },
-                  entry.handle,
-                  "redo",
-                  current,
-                );
-                if (refused) return refused;
-              }
-              apply(
-                entry.parts.map((part) => ({ part, direction: "reapply" })),
-                "redo",
-                [action.id],
-              );
-            }
-            handles.push(...[...new Set(targets.map((target) => target.handle))]);
-            consumes.push(action.id);
           }
+          handles.push(...[...new Set(targets.map((target) => target.handle))]);
+          consumes.push(action.id);
         }
-      if (!computed.edits.length)
-        return {
-          status: "nothing_to_revert",
-          message: `Nothing is left to reverse in ${document.uri}. Read it and make a new replace.`,
-        };
+      }
+      if (!computed.edits.length) throw new Error("Accepted inverse produced no edits");
       const before = Y.encodeStateAsUpdate(policy.view),
         after = Y.encodeStateAsUpdate(scratch);
       const committed = preview
-        ? { handles: [], updates: [] }
+        ? { updates: [] }
         : await store.commit({
             query,
             kind: command.command,
@@ -427,7 +369,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               },
             ],
           });
-      const parts = computed.edits.reduce((n, edit) => n + edit.parts.length, 0);
       return {
         status: "success",
         actionId,
@@ -435,11 +376,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         before,
         after,
         updates: committed.updates,
-        ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
-        message:
-          command.command === "revert"
-            ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
-            : `${command.command === "undo" ? "undone" : "redone"}: ${handles.join(", ")}`,
+        message: `${command.command === "undo" ? "undone" : "redone"}: ${handles.join(", ")}`,
       };
     } finally {
       try {
@@ -508,7 +445,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             displayParts.set(context, parts);
           }
         for (const [context, parts] of displayParts) context.states(parts);
-        // Revert and Undo are evaluated in the current destination, not the displayed placement.
+        // Undo is evaluated in the current destination, not the displayed placement.
         inspection.states(page.flatMap((entry) => entry.parts));
         const index = inspection.actions;
         const lines = page.map((entry) => {
@@ -545,26 +482,23 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                       : entry.parts.some((part) => part.placement.kind === "pending")
                         ? "pending"
                         : "live";
-          let command = "none";
-          const revert = policy.revertSelection(entry).selection.length;
-          if (revert)
-            command =
-              revert === entry.parts.length
-                ? "revert"
-                : `revert ${revert} of ${entry.parts.length}`;
+          const revert = entry.parts.every((part) => part.hasRevertCuts);
+          let command = revert
+            ? "revert"
+            : "can't be reverted (written before reverts could be merged)";
           if (entry.id === topEntry?.id) {
             const blocked = entry.parts
               .map((part) => policy.refusal(part, entry.handle, "undo", inspection))
               .find(Boolean);
             command = blocked
-              ? `undo: no (${blocked.status.replace("cant_undo_", "")})${revert ? `; ${command}` : ""}`
-              : "undo";
+              ? `undo: no (${blocked.status.replace("cant_undo_", "")}); ${command}`
+              : `undo; ${command}`;
           } else if (
             action &&
             entry.parts.some((part) => action.targets.has(key(part))) &&
             action.parts.every((part) => part.actor === "agent" && part.threadId === query.threadId)
           ) {
-            if (redo?.status === "success") command = "redo";
+            if (redo?.status === "success") command = `redo; ${command}`;
           }
           const excerpt = store.describePart(document, entry.parts[0]);
           const summary =

@@ -31,7 +31,7 @@ it.each([
   "live",
   "redo",
 ] as const)("another draft holds %s text, then release leaves Redo first with an active part", async (origin) => {
-  const { harness, view, responseId, context, target } = await fixture();
+  const { harness, view, responseId, context } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     if (origin !== "applied")
@@ -163,11 +163,6 @@ it.each([
           .write({ ...address, command: "undo", count: 2 }, modelContext),
       ).toMatchObject({ status: "cant_undo_held" });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nGold.\n");
-      expect(
-        await view.collab
-          .agentEdit()
-          .write({ ...address, command: "revert", edit: "w1" }, modelContext),
-      ).toMatchObject({ status: "nothing_to_revert" });
     }
     if (origin === "redo") {
       expect(
@@ -354,7 +349,7 @@ it("card Undo during an open response drops writes into undone text and keeps an
 });
 
 it("overlapping applied and pending parts undo together in the draft", async () => {
-  const { harness, view, responseId, context, target } = await fixture();
+  const { harness, view, responseId, context } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     await view.collab.agentEdit().write(
@@ -417,7 +412,7 @@ it("overlapping applied and pending parts undo together in the draft", async () 
 });
 
 it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", async (placement) => {
-  const { harness, view, responseId, context, target } = await fixture();
+  const { harness, view, responseId, context } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     const second = randomUUID();
@@ -516,7 +511,7 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
 });
 
 it("an unrelated restoration hold leaves applied Undo and Redo in live through Apply", async () => {
-  const { harness, view, responseId, context, target } = await fixture();
+  const { harness, view, responseId, context } = await fixture();
   const review = reviewDriver(view.collab.draftReview);
   try {
     await view.collab.agentEdit().write(

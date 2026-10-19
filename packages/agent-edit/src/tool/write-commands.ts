@@ -18,23 +18,12 @@ import { isInternalWriteResult } from "./internal-result.js";
 import type { ResponseCommitter, RoomCallInput, RoomCopy } from "./response-committer.js";
 import { formatUnchangedSuccess, status } from "./response-format.js";
 import { readCall } from "./result-text.js";
+import { planRevert } from "./revert-plan.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import { createWriteAcceptance, type Planned } from "./write-acceptance.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import { errorResponse, parseFileAddress, readSuccess } from "./write-helpers.js";
 import { scopedToolUseId } from "./write-idempotency.js";
-
-/** Name the rejected logical write, not its model-facing ordinal. */
-function _stagedWriteDescription(command: WriteCommand): string {
-  const before = "find" in command ? JSON.stringify(command.find) : command.command;
-  const after =
-    "content" in command
-      ? JSON.stringify(command.content)
-      : command.command === "remove"
-        ? '""'
-        : undefined;
-  return [before, after].filter(Boolean).join(" → ");
-}
 
 export function createWriteCommands(deps: {
   options: Pick<
@@ -65,6 +54,11 @@ export function createWriteCommands(deps: {
       session: ActorSession,
       context: WriteContext,
     ) => run(command, session, context, create),
+    revert: (
+      command: Extract<WriteCommand, { command: "revert" }>,
+      session: ActorSession,
+      context: WriteContext,
+    ) => run(command, session, context, revert),
     mutate: (
       command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
       session: ActorSession,
@@ -374,7 +368,7 @@ export function createWriteCommands(deps: {
       docId: address.documentId,
       filePath: address.filePath,
       plan: overwrite
-        ? { groups: [{ edits: overwrite.edits, targets: "all" }], ir: overwrite.ir }
+        ? { groups: [{ edits: overwrite.edits, targets: "all", ir: overwrite.ir }] }
         : { blocks: written.blocks },
       creation: {
         createdDocument: context.createdDocument === true,
@@ -384,6 +378,95 @@ export function createWriteCommands(deps: {
         ? { copy: { from: command.command === "copy" ? command.from.path : "", edges: false } }
         : {}),
     });
+  }
+
+  async function revert(
+    command: Extract<WriteCommand, { command: "revert" }>,
+    session: ActorSession,
+    context: WriteContext,
+  ): Promise<InternalWriteResult> {
+    const address = parseFileAddress(command);
+    if (!address.ok) return status("invalid_write", address.message);
+    if (context.responseIdentity?.editScopeId) {
+      responseCommitter.assertCanStage({
+        responseId: context.responseIdentity.editScopeId,
+        docId: address.documentId,
+        session,
+        turnId: context.turnId,
+        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
+      });
+    }
+    const actor = mutationActor(session, address.documentId, context);
+    return withRoom(
+      { docId: address.documentId, commandName: command.command, session, context },
+      (room) =>
+        withPlanDoc(room, address.documentId, context, actor, async (planDoc, planned) => {
+          const source = await options.coordinator.resolveRevertSource({
+            threadId: session.threadId,
+            documentId: address.documentId,
+            edit: command.edit,
+            destination: room,
+          });
+          if ("refusal" in source) {
+            if (source.refusal === "invalid_write")
+              return status(
+                "invalid_write",
+                `Unknown edit ${command.edit} in ${command.file}. Read with format: "edits" for a valid handle.`,
+              );
+            const reason =
+              source.refusal === "no_cuts"
+                ? "it was written before reverts could be merged"
+                : source.reason === "draft_closed" || source.reason === "draft_reset_or_discarded"
+                  ? "the draft it was written in was discarded or reset"
+                  : source.refusal === "cut_not_contained"
+                    ? "its original document history is no longer available"
+                    : "the version it was written in is no longer available";
+            return status("cant_revert", `${command.edit} can't be reverted: ${reason}.`);
+          }
+          try {
+            const block =
+              options.model.projectBlocks(toDocHandle(source.a))[0] ??
+              options.model.projectBlocks(toDocHandle(source.b))[0] ??
+              options.model.projectBlocks(toDocHandle(planDoc))[0];
+            if (!block) return formatUnchangedSuccess();
+            const groups = planRevert({
+              schema: block.type.schema,
+              a: source.a,
+              b: source.b,
+              view: planDoc,
+              effect: source.effect,
+              documentId: address.documentId,
+              file: address.filePath,
+            });
+            if (!groups.length) return formatUnchangedSuccess();
+            for (const group of groups) validateResolvedIr(group.ir, address.documentId, planDoc);
+            const shown = await shownLinksFor(address.documentId, context);
+            const links = await openCommandLinks(options, {
+              documentId: address.documentId,
+              docs: [...planDocs(planDoc, room), source.a, source.b],
+              context,
+              shown,
+            });
+            return await finishPreparedEdit({
+              command,
+              session,
+              context,
+              room,
+              planDoc,
+              planned,
+              actor,
+              links,
+              assigner: linkAssigner(address.documentId, links.scope, shown, context.uploadsChat),
+              docId: address.documentId,
+              filePath: address.filePath,
+              plan: { groups },
+            });
+          } finally {
+            source.a.destroy();
+            source.b.destroy();
+          }
+        }),
+    );
   }
 
   async function mutate(
@@ -476,8 +559,13 @@ export function createWriteCommands(deps: {
             docId: address.documentId,
             filePath: address.filePath,
             plan: {
-              groups: [{ edits: resolved.edits, targets: targetIndexes(planDoc, resolved.edits) }],
-              ir: resolved.ir,
+              groups: [
+                {
+                  edits: resolved.edits,
+                  targets: targetIndexes(planDoc, resolved.edits),
+                  ir: resolved.ir,
+                },
+              ],
             },
             ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
           });

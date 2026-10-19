@@ -2,7 +2,7 @@
 import type { DocumentCoordinator, UpdateJournal } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts";
 import { type Database, documentEditParts, documentEdits } from "@meridian/database";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { createRevertSourceResolver } from "../domain/agent-edit-cores.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
@@ -25,7 +25,7 @@ export function createDrizzleRevertSourceResolver(input: {
             eq(documentEdits.threadId, threadId as ThreadId),
             eq(documentEdits.documentId, documentId as DocumentId),
             eq(documentEdits.actor, "agent"),
-            inArray(documentEdits.kind, ["write", "revert"]),
+            eq(documentEdits.kind, "write"),
             eq(documentEdits.wId, wId),
           ),
         )

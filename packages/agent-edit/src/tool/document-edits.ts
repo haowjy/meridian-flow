@@ -89,7 +89,7 @@ export function createDocumentEditCommands(deps: {
       const receipt = renderReceipt(
         {
           commandName: command.command,
-          writeId: result.writeId ?? "",
+          writeId: "",
           durableWriteId: result.actionId,
           touchedBlocks: afterBlocks.filter(
             (block) => beforeById.get(blockId(block)) !== block.body,
@@ -98,7 +98,7 @@ export function createDocumentEditCommands(deps: {
         },
         beforeBlocks,
         afterBlocks,
-        { phase: "committed", ...(result.writeId ? { writeId: result.writeId } : {}) },
+        { phase: "committed" },
       );
       return await observed({
         ...receipt,
@@ -110,7 +110,6 @@ export function createDocumentEditCommands(deps: {
       return await observed({
         status: "success",
         phase: "committed",
-        ...(result.writeId ? { writeId: result.writeId } : {}),
         model: { message: result.message, awarenessDegraded: true },
       });
     } finally {

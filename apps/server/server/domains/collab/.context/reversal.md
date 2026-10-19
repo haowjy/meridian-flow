@@ -1,7 +1,7 @@
 # Collab — reversal contracts
 
 Reversal uses the same forward-inverse primitive for card actions, model
-Undo/Redo/Revert, and failed-response rollback. An inverse is an ordinary
+Undo/Redo, and failed-response rollback. An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
 ## Commands and policy
@@ -19,8 +19,9 @@ entry or mark the whole action undone. A rolled-back action has no stack
 impact, and repeated rollback does not append another inverse.
 
 The model owns one strict stack per thread/document. `write undo` and `write
-redo` accept a count; `write revert` creates a new edit at the current
-(destination) view; `read(format: "edits")` reads immutable parts through the
+redo` accept a count. `write revert` is a forward write through ordinary
+model-view planning, grouped region checks and the response save, not an
+inverse-kernel command. `read(format: "edits")` reads immutable parts through the
 host port. Model actions cannot use a reconstruction endpoint, reversal table,
 or reserved client. A multi-edit Undo is all-or-nothing and Redo restores the
 last undone edit first; a count beyond what is available refuses with the
@@ -75,7 +76,7 @@ unwinds the whole attempt and recaptures. After four misses one more capture is
 planned without writing: a plan that refuses every part answers with its own
 reasons, and one that still applies is a conflict, `ReversalConflictError` for
 the card and `internal_error` ("the document changed while reversing; try again")
-for model Undo, Redo and Revert, never an invented refusal. Delivery runs
+for model Undo and Redo, never an invented refusal. Delivery runs
 after the commit, outside the scope. `markBlocking` is its own short write:
 Work rows, then the held draft rows, then the bump.
 
@@ -89,3 +90,17 @@ Failed-response rollback selects immutable parts by `editScopeId`, records
 accepted parts as terminal rollback edits, and keeps only uninvertible pending
 targets in `rollback_pending`. A failed checkpoint or report cannot reject a
 durable save.
+
+## Forward model revert
+
+The coordinator resolves exact A/B cuts from the source edit, independently of
+its current placement. The write door merges onto the model view and stages an
+ordinary `write` row. Later edits do not cause identity-inverse skips; normal
+region checks can refuse individual passages. The next result shows those
+passages from the saved cut. Undo/redo, card actions and rollback retain their
+inverse authority. Immutable history offers revert only when its write has cuts.
+
+No new `revert`-kind rows are produced or selected as writes. The Postgres enum
+(and its read-side TypeScript union) retains that value: removing a Postgres enum
+value needs type/column replacement, not an online-safe enum deletion. There is
+no fallback for old revert rows or writes without cuts.
