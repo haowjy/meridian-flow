@@ -15,7 +15,7 @@ thread-peer core and names its Work. Scratch and uploads are always live.
 A reply may hold a live core and a thread core at once. Staged writes overlay
 only reads of the destination to which they were pinned. A live read never
 shows staged draft content. Rebinding is resolved again for each query; a
-read-only draft query without a peer may pull live into the shared Work draft,
+read-only draft query without a peer may rebase live content into the shared Work draft,
 but does not create a peer.
 
 The composition root wires required services and provider ports. It owns no

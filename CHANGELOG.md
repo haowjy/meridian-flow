@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Align the peer-retraction probe with the upstream-first refusal check.
+
 - Read committed live authority and tail atomically without repeating checkpoint bytes for each journal row.
 
 - Reset the draft runtime's late-typing cache when the kernel reaches its memory bound.

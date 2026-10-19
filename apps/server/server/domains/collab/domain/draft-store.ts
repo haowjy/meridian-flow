@@ -193,7 +193,7 @@ export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
-  /** A work draft's effect baseline; null for a draft that carries no effect. */
+  /** Candidate block ids whose deletion is certified by a server row's receipt. */
   serverDeletedBlocks(
     draftId: string,
     ids: readonly { client: number; clock: number }[],

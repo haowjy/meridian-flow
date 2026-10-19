@@ -1,6 +1,6 @@
 /**
  * Decision D22 item 1 (re-gate F2/RS1): a peer pull whose drafts are retracted between capture
- * and commit ends in its typed loss: the commit answers `closed` under the row lock, so
+ * and commit ends in its typed loss: the upstream check answers `upstreamMoved` under its row lock, so
  * `pullThreadPeer` reports `ThreadPeerPullLost`, the error staged writes classify as a discarded
  * document.
  */
@@ -14,7 +14,7 @@ export const d22RetractedPeerPull: Probe = {
   name: "d22-retracted-peer-pull",
   decision: "D22",
   expected:
-    "retraction `retracted`; the pull's commit answers `closed`; the pull rejects `ThreadPeerPullLost`",
+    "retraction `retracted`; the pull's upstream check answers `upstreamMoved`; the pull rejects `ThreadPeerPullLost`",
   async run(harness) {
     const { branchId, threadId } = await harness.seedWork("retracted-peer");
     const { documentId, live } = await harness.seedDocument("retracted-peer");
@@ -56,7 +56,7 @@ export const d22RetractedPeerPull: Probe = {
       );
       observe("retracted", { retraction, outcomes, pull });
       assert.equal(retraction, "retracted");
-      assert.equal(outcomes.at(-1), "closed");
+      assert.equal(outcomes.at(-1), "upstreamMoved");
       assert.equal(pull.ok, false);
       assert.equal(pull.ok ? undefined : pull.name, "ThreadPeerPullLost");
     } finally {
