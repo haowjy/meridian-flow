@@ -14,18 +14,18 @@
  * source it touched inside the transaction (F23), as Apply does.
  */
 
-import type { BranchId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts, draftWriteJournal } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
+import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import {
   acquireEndUseScope,
   type EndUseRequest,
@@ -54,9 +54,10 @@ import {
 import type { PeerRetirementCause, RetiredDraft } from "../domain/peer-retirement.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { claimCommandWithinTx } from "./drizzle-branch-commands.js";
-import { settleDraftGeneration } from "./drizzle-document-edits.js";
+import { closeDrafts } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
+  removal: DocumentRemoval;
   branches: Pick<Branches, "close">;
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 };
@@ -67,13 +68,13 @@ async function endUseReconciled(
   deps: KernelDeps,
   branchId: BranchId,
   request: EndUseRequest,
-  cause: PeerRetirementCause,
   userId?: UserId,
 ) {
   const scope = await readEndUseScope(db, request);
   const ended = await endUse(db, {
     branchId,
     documentIds: scope.documentIds,
+    removal: deps.removal,
     actor: userId ? { userId } : { cause: "repair" },
   });
   if (ended.tombstoned.length > 0 && scope.sourceIds.length > 0) {
@@ -82,20 +83,7 @@ async function endUseReconciled(
       ended.tombstoned.map((ref) => ref.id),
     );
   }
-  return {
-    ...ended,
-    retired: ended.releasedDrafts.map((documentDraft) => retired(documentDraft, cause)),
-  };
-}
-
-/** A draft the kernel ended, as retirement names it: a thread peer says why. */
-function retired(
-  documentDraft: { draftId: string; documentId: DocumentId; threadId: ThreadId | null },
-  cause: PeerRetirementCause,
-): RetiredDraft {
-  return documentDraft.threadId
-    ? { ...documentDraft, threadId: documentDraft.threadId, cause }
-    : { draftId: documentDraft.draftId, documentId: documentDraft.documentId, threadId: null };
+  return ended;
 }
 
 /**
@@ -111,35 +99,14 @@ async function closeBranchDrafts(
 ): Promise<RetiredDraft[]> {
   if (documentIds?.length === 0) return [];
   const tx = currentDrizzleDb(db);
-  const open = await tx
-    .select({ id: documentDrafts.id })
-    .from(documentDrafts)
-    .where(
-      and(
-        eq(documentDrafts.branchId, branchId),
-        eq(documentDrafts.status, "active"),
-        documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
-      ),
-    );
-  const closed = await bumpDraftRevisions(
+  return closeDrafts(
     tx,
-    open.map((row) => row.id),
-    { status: "closed" },
-  );
-  for (const documentDraft of closed) {
-    if (documentDraft.kind === "work_draft") {
-      await settleDraftGeneration(tx, documentDraft.draftId, documentDraft.generation, "discarded");
-    }
-  }
-  return closed.map((documentDraft) =>
-    retired(
-      {
-        ...documentDraft,
-        documentId: documentDraft.documentId as DocumentId,
-        threadId: documentDraft.threadId as ThreadId | null,
-      },
-      cause,
+    and(
+      eq(documentDrafts.branchId, branchId),
+      documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
     ),
+    "discarded",
+    cause,
   );
 }
 
@@ -154,21 +121,17 @@ async function discardWholeLocked(
   branchId: BranchId,
   userId?: UserId,
 ): Promise<DiscardKernelResult> {
-  const ended = await endUseReconciled(
-    db,
-    deps,
-    branchId,
-    { branches: [{ branchId }] },
-    "branch_closed",
-    userId,
-  );
   const closed = await closeBranchDrafts(db, branchId, "branch_closed");
+  const ended = await endUseReconciled(db, deps, branchId, { branches: [{ branchId }] }, userId);
   await deps.branches.close(branchId, new Date());
   return {
     branchClosed: true,
     tombstoned: ended.tombstoned,
     releasedObjects: ended.releasedObjects,
-    retired: [...ended.retired, ...closed],
+    retired: closed.filter(
+      (row) =>
+        !ended.tombstoned.some((ref) => ref.kind === "document" && ref.id === row.documentId),
+    ),
   };
 }
 
@@ -276,19 +239,19 @@ export function createDrizzleBranchDiscard(
     const hiddenNow = await hiddenDocumentIds(db, withRows);
     const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
     const created = items.filter(isCreated).map((item) => item.documentId);
+    const closed = await closeBranchDrafts(db, branchId, "document_discarded", created);
     const ended = await endUseReconciled(
       db,
       deps,
       branchId,
       { branches: [{ branchId, documentIds: withRows }] },
-      "document_discarded",
       input.userId,
     );
     // A hidden create another branch still uses stays, but this branch's drafts on it end.
-    const retiredDrafts: RetiredDraft[] = [
-      ...ended.retired,
-      ...(await closeBranchDrafts(db, branchId, "document_discarded", created)),
-    ];
+    const retiredDrafts = closed.filter(
+      (row) =>
+        !ended.tombstoned.some((ref) => ref.kind === "document" && ref.id === row.documentId),
+    );
     for (const item of items) {
       if (item.draftId && !isCreated(item)) {
         retiredDrafts.push(

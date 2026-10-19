@@ -59,6 +59,27 @@ then retires those peers after commit. A fresh peer in the same thread and
 peers for other Works survive. Thread-core invalidation is a post-discard
 side effect, never a preview side effect.
 
+Removal closes all active drafts on the document through `closeDrafts`, the same
+operation Discard, purge and retraction use. It prelocks Work drafts in ID order,
+then thread peers in ID order, matching a pull's upstream-before-peer order.
+Retraction takes that order before checking for other contributions and closes
+rather than deleting. Removed documents refuse new draft/peer inserts under
+their document mutation lock, after Work/thread and branch admission.
+
+Only a committed removal closes live and draft sockets with `4208`. The room
+helper closes the gateway transport before Hocuspocus's protocol close, which
+otherwise arrives as `1000`. Pending-count reconciliation runs in a separate
+root transaction after those document and draft locks have been released.
+Failures are logged as `collab.removal.after_commit.failed`.
+
+A discarded document's closed draft rows remain as lifecycle records, but their
+journals are deleted, `state`/`state_vector` are zero-length bytea and
+`live_cut`/`discarded_state_vector` are NULL. Zero-length state is deliberately
+invalid Yjs: `readDraftAt` omits its checkpoint and `materializeDraftRead`
+rejects it, including a raw zero-length checkpoint. It is never an empty document.
+A `deleted` removal retains all bytes. Restoring the document does not reopen
+its old drafts.
+
 ## Save, replay, and grants
 
 The thread-peer pool is the only model document entry point. Each call carries
@@ -169,7 +190,8 @@ cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a draft is frozen is derived on every
 read from its branch's origin Work (archived, deleted, or missing), never
-stored. Archive, delete and restore lock no draft row and bump no revision:
+stored. Archive and restore lock no draft row and bump no revision (Work deletion also
+removes its owned documents through the tree removal protocol, closing their drafts):
 every rewrite and reply save locks the Work through the Works
 mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its

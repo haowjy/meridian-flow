@@ -14,7 +14,16 @@ import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@m
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
-import { type AnyColumn, getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
+import {
+  type AnyColumn,
+  and,
+  getTableColumns,
+  inArray,
+  isNull,
+  type SQL,
+  Subquery,
+  sql,
+} from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -28,7 +37,6 @@ import {
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
-import { loadSourceOwners, type SourceOwner } from "./branch-ownership.js";
 import type { NodeRef, TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries
@@ -695,4 +703,17 @@ export async function loadSubtreeNodes(
     extension: row.extension,
     hidden: row.hidden,
   }));
+}
+
+/** Complete living identity set for a Work-source cascade under its source namespace locks. */
+export async function loadLivingSourceDocumentIds(
+  db: DrizzleDb,
+  sourceIds: readonly ContextSourceId[],
+): Promise<DocumentId[]> {
+  if (!sourceIds.length) return [];
+  const rows = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(inArray(documents.contextSourceId, [...sourceIds]), isNull(documents.deletedAt)));
+  return rows.map((row) => row.id as DocumentId);
 }

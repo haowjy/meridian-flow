@@ -214,7 +214,7 @@ describe("writer frames racing rewrites (postgres)", () => {
         expect(run.bWaited).toBe(true);
         expect(run.a).toMatchObject({ ok: true, value: { outcome: "retracted" } });
         expect(run.b.ok && run.b.value.admitted).toBe(false);
-        expect(await readDraftAt(db, draftId)).toBeNull();
+        expect((await readDraftAt(db, draftId))?.documentDraft.status).toBe("closed");
       }
     } finally {
       frame.destroy();

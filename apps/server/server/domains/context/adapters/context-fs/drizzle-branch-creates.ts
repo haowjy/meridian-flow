@@ -4,8 +4,10 @@
  * draft lifecycle, journals and pooled cores).
  */
 import type { Database } from "@meridian/database";
+import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
 import type { BranchCreatePort } from "../../ports/branch-create.js";
+import type { DocumentRemoval } from "../../ports/document-removal.js";
 import { createInBranch } from "../../tree/creates.js";
 import { retractCreate } from "../../tree/end-use.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
@@ -13,12 +15,13 @@ import { lockDocumentNamespaces } from "./document-locations.js";
 
 export function createDrizzleBranchCreates(deps: {
   db: Database;
+  removal: DocumentRemoval;
   /** The source, provisioned when the first create needs it. */
   sourceId(): Promise<string>;
   documents: Pick<MarkdownDocumentStore, "ensureDocument">;
   drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   /** Repair on touch: the candidate picker reports what it repaired (§12.4). */
-  repair?: Pick<HiddenNodeRepair, "report">;
+  repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
 }): BranchCreatePort {
   /**
    * The source, with its namespace held (§14: after the command's Work and branch, before
@@ -49,13 +52,26 @@ export function createDrizzleBranchCreates(deps: {
     },
     async retractCreate({ branch, documentId, cause }) {
       await lockedSource();
+      let retire: (() => Promise<void>) | undefined;
       const retracted = await retractCreate(deps.db, {
         branchId: branch.id,
         documentId,
         cause,
-        retractDraft: () =>
-          deps.drafts.retractCreatedDocumentDraft({ documentId, branchId: branch.id }),
+        removal: deps.removal,
+        retractDraft: async () => {
+          const result = await deps.drafts.retractCreatedDocumentDraft({
+            documentId,
+            branchId: branch.id,
+          });
+          if (result.outcome === "retracted") retire = result.retire;
+          return result.outcome;
+        },
       });
+      if (
+        retire &&
+        !retracted.tombstoned.some((ref) => ref.kind === "document" && ref.id === documentId)
+      )
+        runAfterDrizzleCommit(retire);
       return retracted.retracted ? "retracted" : "stands";
     },
   };

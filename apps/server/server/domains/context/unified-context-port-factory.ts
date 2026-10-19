@@ -70,6 +70,7 @@ import type {
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { DocumentRemoval } from "./ports/document-removal.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -431,6 +432,7 @@ function createInMemoryStoreResolvers(
 function createProductionStoreResolvers(
   db: Database,
   catalogMutations: ContextCatalogMutationPort,
+  removal: DocumentRemoval,
   arrivals?: DocumentArrivals,
   repair?: HiddenNodeRepair,
 ): ContextStoreResolvers {
@@ -478,7 +480,7 @@ function createProductionStoreResolvers(
       return workId;
     },
     resolveMutationStore() {
-      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals, repair);
+      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals, repair, removal);
     },
   };
 }
@@ -598,8 +600,10 @@ export function createProductionUnifiedContextPortFactory(options: {
   links: ContextFSDeps["links"];
   db: Database;
   documentSync: ContextFSDeps["documentSync"] &
-    DocumentCreationAggregate &
-    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+    DocumentCreationAggregate & { documentRemoval: DocumentRemoval } & Pick<
+      DraftPeerShadowAccess,
+      "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft"
+    >;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
@@ -627,6 +631,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   const storeResolvers = createProductionStoreResolvers(
     options.db,
     catalogMutations,
+    options.documentSync.documentRemoval,
     options.arrivals,
     options.hiddenNodeRepair,
   );
@@ -641,6 +646,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     creates: (store) =>
       createDrizzleBranchCreates({
         db: options.db,
+        removal: options.documentSync.documentRemoval,
         sourceId: () => store.contextSourceId(),
         documents: options.documentSync,
         drafts: options.documentSync,

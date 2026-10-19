@@ -1,10 +1,19 @@
+import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
 // Raw fixture model producers reserve identity before durable draft admission.
 import { createDrizzleDraftStore } from "../adapters/drizzle-drafts.js";
 import { createDrizzleJournal } from "../adapters/drizzle-journal.js";
 import type { AppendDraftJournalInput } from "../domain/draft-store.js";
 
-export function createFixtureDraftStore(...args: Parameters<typeof createDrizzleDraftStore>) {
-  const store = createDrizzleDraftStore(...args);
+export function createFixtureDraftStore(
+  ...args: [
+    Parameters<typeof createDrizzleDraftStore>[0],
+    Omit<Parameters<typeof createDrizzleDraftStore>[1], "removals">,
+  ]
+) {
+  const store = createDrizzleDraftStore(args[0], {
+    ...args[1],
+    removals: createDrizzleDocumentRemovals(args[0]),
+  });
   const journal = createDrizzleJournal(args[0]);
   return {
     ...store,

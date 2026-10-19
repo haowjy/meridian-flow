@@ -16,6 +16,7 @@ import {
   createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository,
   createProjectRepositoryForTest,
 } from "../../domains/projects/test-support/project-repository.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -762,6 +763,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             fileAccess: createAllowAllFileAccess(),
             projectRepo: createProjectRepositoryForTest({ db }),
             workRepo: createDrizzleProjectWorkRepository({
+              removal: createTestDocumentRemoval(db),
               db,
               lineageScratch: createDrizzleLineageScratchLifecycle(db),
               fileAccessChanges: createLocalFileAccessChanges(),

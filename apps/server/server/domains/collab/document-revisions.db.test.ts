@@ -1,8 +1,3 @@
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "./adapters/drizzle-branches.js";
-import { createBranches } from "./domain/branches.js";
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
@@ -16,6 +11,7 @@ import {
   runInDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
@@ -26,6 +22,11 @@ import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
+import {
+  createDrizzleBranchStore,
+  createDrizzleBranchWriteBoundary,
+} from "./adapters/drizzle-branches.js";
+import { createBranches } from "./domain/branches.js";
 import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
@@ -111,7 +112,6 @@ async function fixture(
         closeDraftRoom: () => {},
         agentEdit: f.collab.agentEdit(),
       }),
-      deferUntilCommit: () => false,
       branches,
     }),
     links,
@@ -125,6 +125,7 @@ async function fixture(
     documents: effective,
     branches,
     works: createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),

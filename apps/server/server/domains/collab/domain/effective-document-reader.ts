@@ -48,7 +48,6 @@ export function createEffectiveDocumentReader(input: {
   links: DocumentLinkScopes;
   branches: Pick<Branches, "viewForWork">;
   retirePeers: PeerRetirement;
-  deferUntilCommit(callback: () => Promise<void>): boolean;
 }): DraftPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
@@ -207,14 +206,12 @@ export function createEffectiveDocumentReader(input: {
     },
     async retractCreatedDocumentDraft(command) {
       const retracted = await input.drafts.retractCreatedDocumentDraft(command);
-      if (retracted.outcome === "retracted" && retracted.deleted.length > 0) {
-        // Rooms and pooled cores hold the deleted drafts' state; exactly those go, once
-        // the deletion is durable (an abort keeps the drafts). Another Work's peers on
-        // the same document are not this retraction's.
-        const { deleted } = retracted;
-        const retire = () =>
+      if (retracted.outcome === "stands") return retracted;
+      return {
+        outcome: "retracted",
+        retire: () =>
           input.retirePeers(
-            deleted.map(({ draftId, threadId }) =>
+            retracted.closed.map(({ draftId, threadId }) =>
               threadId
                 ? {
                     draftId,
@@ -224,10 +221,8 @@ export function createEffectiveDocumentReader(input: {
                   }
                 : { draftId, documentId: command.documentId, threadId: null },
             ),
-          );
-        if (!input.deferUntilCommit(retire)) await retire();
-      }
-      return retracted.outcome;
+          ),
+      };
     },
   };
 }

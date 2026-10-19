@@ -17,6 +17,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { DocumentRemovedError } from "../../context/ports/document-removals.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
@@ -422,6 +423,8 @@ export function createThreadPeerCorePool(input: {
     cause: unknown,
     view: LinkView,
   ): Promise<DiscardedWriteReason | undefined> {
+    if (cause instanceof DocumentRemovedError && cause.removal.reason === "discarded")
+      return "discarded_document";
     const lost = cause instanceof ThreadPeerPullLost;
     if (
       !lost &&

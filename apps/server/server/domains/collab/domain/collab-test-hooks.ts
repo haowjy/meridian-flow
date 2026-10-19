@@ -7,6 +7,9 @@
  */
 
 const COLLAB_HOOK_POINTS = [
+  "draft.ensure.afterDocumentLock",
+  "draft.peer.afterDocumentLock",
+  "removal.afterClose",
   "save.afterWorkLock",
   "checkpoint.afterAuthorityRead",
   /** A Discard attempt has not entered its commit scope. */

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removing a document now closes its drafts, settles pending edits and closes live and draft connections after commit. Draft creation cannot race a removal, and discarded creations release content without deleting their closed draft records (#854).
+
 - Removed documents record whether they were deleted or discarded, who acted (a writer, Work, or system cleanup), and when. Existing tombstones are classified on upgrade; their active drafts close with a removal cause and obsolete pending tree uses retire (#854).
 
 - The draft/branch rename upgrade now includes all-zero command IDs and nonpositive receipt IDs. Renaming receipt placement keys no longer generates recursive change-trail work; real placement changes still signal normally (#880).

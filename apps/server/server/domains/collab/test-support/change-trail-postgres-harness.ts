@@ -1,7 +1,3 @@
-import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
-import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
-import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
-import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -24,11 +20,13 @@ import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { FileGrant } from "../../file-policy/index.js";
+import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
@@ -38,12 +36,15 @@ import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.j
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { readLiveReviewRevision } from "../adapters/drizzle-draft-review-live.js";
 import { createDrizzleReviewCut, readLiveDoc } from "../adapters/drizzle-review-cut.js";
+import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createBranchDiscard } from "../domain/branch-discard.js";
+import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
+import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementApplyStep } from "../domain/ports/settlement-apply.js";
@@ -783,6 +784,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
+        removal: createTestDocumentRemoval(db),
         branches: workBranches,
         drafts: draftStore,
         coordinator: draftCoordinator,

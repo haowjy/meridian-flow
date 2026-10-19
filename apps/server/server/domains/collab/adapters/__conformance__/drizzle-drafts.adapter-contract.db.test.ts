@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { createDrizzleDocumentRemovals } from "../../../context/tree/document-removals.js";
 import {
   commitJournaledUpdate,
   resetDraftFromDoc,
@@ -153,6 +154,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     let livePersistence = createDrizzleCollabPersistence(db);
     function createDraftStore() {
       return createDrizzleDraftStore(db, {
+        removals: createDrizzleDocumentRemovals(db),
         workProjection: createTestWorkProjectionMutation(db),
         live: {
           journal: livePersistence.journal,
@@ -315,6 +317,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog,
       });
       const measuredStore = createDrizzleDraftStore(db, {
+        removals: createDrizzleDocumentRemovals(db),
         live: { journal: livePersistence.journal, lifecycle: livePersistence.lifecycle },
         workProjection: projection,
         branches: createDrizzleBranchStore(db),

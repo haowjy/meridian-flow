@@ -24,15 +24,15 @@ export type ApplicationDraftStore = DraftStore &
       branchId: BranchId;
     }): Promise<void>;
     /**
-     * Delete the branch's draft on a document it created and that draft's thread peers,
+     * Close the branch's draft on a document it created and that draft's thread peers,
      * unless any of them holds a journal row that isn't discarded (a contribution).
-     * `deleted` is exactly the drafts removed, with each peer's thread.
+     * `closed` is exactly the drafts closed, with each peer's thread.
      */
     retractCreatedDocumentDraft(input: { documentId: DocumentId; branchId: BranchId }): Promise<
       | { outcome: "stands" }
       | {
           outcome: "retracted";
-          deleted: readonly { draftId: string; threadId: ThreadId | null }[];
+          closed: readonly { draftId: string; threadId: ThreadId | null }[];
         }
     >;
     /**

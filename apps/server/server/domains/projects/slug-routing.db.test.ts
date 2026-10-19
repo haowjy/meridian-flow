@@ -5,6 +5,7 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../file-policy/index.js";
@@ -41,6 +42,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const workRepository = () =>
       createDrizzleWorkRepository({
+        removal: createTestDocumentRemoval(db),
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),

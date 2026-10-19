@@ -104,7 +104,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
       if (change === "delete") await c.s.writer.delete("chapter.md");
     });
     const answer = await c.applyChange(request);
-    expect(answer.body).toMatchObject({ status: "stale" });
+    expect(answer.body).toMatchObject({ status: change === "delete" ? "gone" : "stale" });
     expect(await c.s.batchStates()).toEqual([]);
   });
 

@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
 import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
@@ -471,7 +472,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db, failingCatalog),
+        mutationStore: new DrizzleContextTreeMutationStore(
+          db,
+          failingCatalog,
+          undefined,
+          undefined,
+          createTestDocumentRemoval(db),
+        ),
         scheme: "manuscript",
         documentSync: {
           ensureDocument: async () => {},
@@ -516,7 +523,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db, failingCatalog),
+        mutationStore: new DrizzleContextTreeMutationStore(
+          db,
+          failingCatalog,
+          undefined,
+          undefined,
+          createTestDocumentRemoval(db),
+        ),
         scheme: "kb",
         documentSync: {
           ensureDocument: async () => {},
@@ -575,6 +588,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db);
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
+        removal: createTestDocumentRemoval(db),
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
@@ -610,6 +624,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(authority()).resolves.toMatchObject({ available: true, entityRevision: "5" });
 
       const failingRepository = createDrizzleWorkRepository({
+        removal: createTestDocumentRemoval(db),
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
@@ -661,7 +676,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID, KB_SOURCE_ID]);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const before = await catalog.snapshot(scope);
-      const mutationStore = new DrizzleContextTreeMutationStore(db, catalog);
+      const mutationStore = new DrizzleContextTreeMutationStore(
+        db,
+        catalog,
+        undefined,
+        undefined,
+        createTestDocumentRemoval(db),
+      );
       await expect(
         mutationStore.commitProvisionalGraduation({
           kind: "file",

@@ -11,6 +11,7 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Ok } from "../../../../shared/result.js";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
@@ -78,7 +79,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const markdownByDocument = new Map<string, string>();
       const observedWriteFiletypes: Array<string | null> = [];
       let beforeCollabWrite: (() => Promise<void>) | null = null;
-      const mutationStore = new DrizzleContextTreeMutationStore(db);
+      const mutationStore = new DrizzleContextTreeMutationStore(
+        db,
+        undefined,
+        undefined,
+        undefined,
+        createTestDocumentRemoval(db),
+      );
       const context = new ContextFS({
         placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
@@ -277,7 +284,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("ignores source content activity during an overwrite move", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
-      const tree = new DrizzleContextTreeMutationStore(db, createDrizzleContextCatalog(db));
+      const tree = new DrizzleContextTreeMutationStore(
+        db,
+        createDrizzleContextCatalog(db),
+        undefined,
+        undefined,
+        createTestDocumentRemoval(db),
+      );
       const source = await tree.inspect(SOURCE_ID, "rollback-source");
       const target = await tree.inspect(SOURCE_ID, "rollback-target");
       expect(source?.kind).toBe("file");

@@ -219,7 +219,7 @@ export async function readDraftAt(
   return {
     documentDraft: mapDraft(row),
     checkpoint:
-      row.state && row.stateVector
+      row.state?.length && row.stateVector?.length
         ? { state: new Uint8Array(row.state), stateVector: new Uint8Array(row.stateVector) }
         : null,
     tail,

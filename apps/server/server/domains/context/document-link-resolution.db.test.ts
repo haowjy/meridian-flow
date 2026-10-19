@@ -18,6 +18,7 @@ import {
   type DocumentLinkRouteDeps,
   handleDocumentLinkResolveRequest,
 } from "../../lib/document-link-route.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
@@ -297,7 +298,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const targetId = await add("manuscript", "old");
       const [target] = await db.select().from(documents).where(eq(documents.id, targetId));
       if (!target) throw new Error("target fixture missing");
-      const tree = new DrizzleContextTreeMutationStore(db);
+      const tree = new DrizzleContextTreeMutationStore(
+        db,
+        undefined,
+        undefined,
+        undefined,
+        createTestDocumentRemoval(db),
+      );
       const source = await tree.inspect(target.contextSourceId, "old");
       if (source?.kind !== "file") throw new Error("source fixture missing");
       expect(

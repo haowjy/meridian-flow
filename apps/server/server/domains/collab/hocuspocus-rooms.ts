@@ -39,3 +39,34 @@ export function whenRoomRegistered(hocuspocus: Hocuspocus, document: Document): 
   if (!loading) return Promise.resolve(registered());
   return loading.then(registered, () => false);
 }
+
+/** After commit only: retire the whole removal batch, including rooms still loading. */
+export async function closeRemovedDocumentRooms(
+  hocuspocus: Hocuspocus | null,
+  documentIds: readonly string[],
+  draftIds: readonly string[],
+): Promise<void> {
+  if (!hocuspocus) return;
+  const live = new Set(documentIds);
+  const drafts = new Set(draftIds);
+  const names = new Set([...hocuspocus.documents.keys(), ...hocuspocus.loadingDocuments.keys()]);
+  const matching = [...names].filter((name) => {
+    const room = parseYjsRoomName(name);
+    return live.has(name) || (room?.kind === "draft" && drafts.has(room.draftId));
+  });
+  await Promise.all(
+    matching.map(async (name) => {
+      const loading = hocuspocus.loadingDocuments.get(name);
+      if (loading) await loading.catch(() => undefined);
+      const document = hocuspocus.documents.get(name);
+      if (!document) return;
+      for (const connection of document.getConnections()) {
+        // Hocuspocus's protocol CLOSE loses the code (the provider reports 1000).
+        // Send the transport close first, as Work access revocation does.
+        connection.context.closeTransport?.(WS_CLOSE.DOCUMENT_DELETED);
+        connection.close(WS_CLOSE.DOCUMENT_DELETED);
+      }
+      await hocuspocus.unloadDocument(document);
+    }),
+  );
+}

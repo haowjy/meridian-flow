@@ -26,6 +26,7 @@ import {
   type ScenarioWork,
 } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
 import { setCollabHook } from "../../collab/domain/collab-test-hooks.js";
@@ -335,7 +336,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const branch = await scenario.branchOf(drafting);
       const ids = order === "one first" ? [one, two] : [two, one];
       await runInDrizzleTransaction(db, () =>
-        endUse(db, { branchId: branch.id, documentIds: ids, actor: { cause: "repair" } }),
+        endUse(db, {
+          removal: createTestDocumentRemoval(db),
+          branchId: branch.id,
+          documentIds: ids,
+          actor: { cause: "repair" },
+        }),
       );
       expect(await foldersNamed(scenario, "root"), "root pruned").toEqual([]);
       expect(await foldersNamed(scenario, "one")).toEqual([]);
