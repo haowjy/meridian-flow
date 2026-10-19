@@ -114,7 +114,7 @@ the same shutdown hook sequence.
 
 ## Invariants
 
-- A turn permits at most 32 model/tool iterations.
+- An execution permits at most 32 model/tool generations, including notes.
 - Cancellation is authorized only by the run signal or durable cancel request,
   checked before calls, after stream events, and around tool execution.
 - One response's tool calls run sequentially, in the model's order; timeout and

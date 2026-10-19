@@ -1012,12 +1012,19 @@ restart smoke check.
   interrupt or report; each gets `{ refusal: "notes_step" }`, `isError: false`,
   exact held notice and no permission event. Confirm admitted paths still reach
   ordinary Agent/file denials. Existing files outside the folder stay unchanged.
+  Inspect held `spawn`, `ask_user` and `return_result` before reloading as well
+  as after reload: all three stay neutral process rows, never reports or cards.
 - **Lifecycle:** check run-start and mid-loop entry. Late input spends existing
   room, never resets E/A/count. Discard a proposal on moved leaf and failed
   commit; only the winning marker/request/count installs. If late pins destroy
   the cut, preserve below-U generation/no-fit failure rather than a stale C.
   Check exhausted credits and tree budget after a compact-eligible response:
-  neither may reserve/pay C; summary spend is checked again before B. Check
+  neither may reserve/pay C; summary spend is checked again before B. Repeat at
+  run start with exhausted tree-turn/tree-cost budgets and denied continuation
+  credit, at iteration 32 with a terminal response plus late input, and after
+  forced provider overflow. No new marker/C is reserved and no summary runs.
+  A terminal response without pending input still completes in debt. Late input
+  continues this execution's iteration budget, not an implicit fresh budget. Check
   queue-switch yield and Stop precedence, both retaining saved notes/marker.
   A later run sees the marker but does not resume run-local notes counters.
 - **Prefix exception:** while notes is active, break an included image or join
@@ -1031,7 +1038,11 @@ restart smoke check.
   Large listed notes use ordinary C13 room: skipped notes are named as not
   re-shown, receive no frontier credit from C, and must be read before writing.
 - **Summary recovery:** return text plus calls on warm and rolling paths;
-  expect text kept and no tool execution. On the warm path return only two
+  expect text kept and no tool execution. Repeat mixed text/tool output with
+  OpenAI `length`, Responses `incomplete/max_output_tokens`, filter and failure
+  terminations: reject the summary, keep each attempted usage row, and never
+  commit its partial text as C. Successful mixed output still completes.
+  On the warm path return only two
   calls with reasoning, then text. Expect the retry to preserve its original
   request and exact assistant content, then append one non-error tool-result
   message per deduplicated call id saying "Tools are unavailable while the summary
