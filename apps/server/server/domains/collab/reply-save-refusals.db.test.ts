@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { removalPhrase } from "../context/document-removal-copy.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -50,13 +51,20 @@ const DOC = "Write did not land: the user discarded this new document. Re-read a
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 type Saved = Awaited<ReturnType<ReturnType<typeof createHarness>["commit"]>>;
-/** Each refused write's document and the copy its receipt carries, in save order. */
+/** A Discard that released the creation refuses at document level with the removal record's copy. */
+const REMOVED = "discarded from the draft";
+/** Each refused write's document and the copy it carries, in save order. */
 function refused(saved: Saved) {
-  return saved.documents.flatMap((doc) =>
-    doc.receipts.flatMap((receipt) =>
-      receipt.result.status === "invalid_write" ? [[doc.documentId, receipt.result.message]] : [],
+  return [
+    ...saved.documents.flatMap((doc) =>
+      doc.receipts.flatMap((receipt) =>
+        receipt.result.status === "invalid_write" ? [[doc.documentId, receipt.result.message]] : [],
+      ),
     ),
-  );
+    ...("refused" in saved ? saved.refused : []).flatMap((refusal) =>
+      "removed" in refusal ? [[refusal.documentId, removalPhrase(refusal.removed)]] : [],
+    ),
+  ];
 }
 
 describe("reply save refusals (postgres)", () => {
@@ -275,7 +283,7 @@ describe("reply save refusals (postgres)", () => {
     const { second, review } = await createdThenStaged();
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(second);
-    expect(refused(saved)).toEqual([[NEW_ID, DOC]]);
+    expect(refused(saved)).toEqual([[NEW_ID, REMOVED]]);
     const [row] = await db
       .select()
       .from(schema.documents)
@@ -469,7 +477,7 @@ describe("reply save refusals (postgres)", () => {
     it.each([
       { name: "a revealed create", reveal: true, other: false, copy: EDIT },
       { name: "a hidden create another Work's branch uses", reveal: false, other: true, copy: DOC },
-      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: DOC },
+      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: REMOVED },
     ])("$name refuses its draft state's copy", async ({ reveal, other, copy }) => {
       const { second, review, fixture } = await createdThenStaged();
       if (reveal) {
@@ -594,7 +602,7 @@ describe("reply save refusals (postgres)", () => {
     expect(late.isError).toBe(true);
     if (phase === "before the upstream read") expect(late.status).toBe("invalid_write");
     expect(JSON.stringify(late.result)).toContain("the user discarded this new document");
-    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, DOC]]);
+    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, REMOVED]]);
   });
 
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {

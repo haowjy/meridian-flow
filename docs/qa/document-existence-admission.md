@@ -44,3 +44,10 @@ deleted (`collab-hook-controller.ts`; points in `collab-test-hooks.ts`).
 7. **Legacy tombstone.** Apply a Work draft whose live document was deleted
    (an active draft left on a tombstone). PASS: `held`, `deleted_live`, nothing
    staged or revived.
+8. **The receipt names who removed it.** Start the stack with
+   `COLLAB_PAUSE_AT=save.beforeWorkLock` (the save must not hold the Work lock the
+   delete needs). A draft-mode chat replaces a line; pause, `./mf doc rm` the document,
+   resume. PASS: the write's result reads "This file was deleted by <name> before this
+   reply was saved, so this change wasn't made." (a name appears only when the user row
+   has one: dev login blanks it, so set `users.name` after the delete and before
+   resuming). Repeat in a No Work chat.
