@@ -46,7 +46,7 @@ deduplicates; a different command under a used id answers 409
 failure on the item), or 404 `unknown_command` (nothing committed, resend).
 
 - **Item Apply and Discard** address `{ branchId, itemKey, commandId }`. Item
-  Apply is unfenced by operation ids. It answers `applied` (with notes), 409
+  Apply is unfenced by operation ids. It answers `applied`, 409
   `held` (5a, such as `path_taken`) or 409 `stale`, or 202 `pending` while
   recovery finishes. Apply never closes the branch.
 - **Per-change Apply** sends every operation id of the selected

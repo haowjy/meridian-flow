@@ -279,7 +279,7 @@ export type DraftApplyRequest = {
   itemKey: DraftItemKey;
   commandId: BranchCommandId;
 } & Partial<DraftItemTokens>;
-/** Item Apply's 200. `item` is the settled item's result (applied notes). */
+/** Item Apply's 200. `item` is the settled item's result. */
 export type DraftApplyResponse = {
   status: "applied";
   branchId: BranchId;

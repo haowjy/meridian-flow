@@ -4,7 +4,7 @@
  * may change document activity timestamps without invalidating a prepared tree
  * mutation.
  */
-import type { Filetype } from "@meridian/contracts/protocol";
+import type { Filetype, RetractionCause } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
 export const CONTEXT_ROOT_DIRECTORY_ID = "__context_root__";
@@ -102,7 +102,7 @@ export interface ContextTreeDeleteResult {
 
 export type ContextTreeDeleteCommand = {
   actorUserId?: string;
-  removal?: { reason: "discarded"; cause: "reply_rolled_back" | "create_failed" };
+  removal?: { reason: "discarded"; cause: RetractionCause };
   root: ContextLocationToken;
   mode: "recursive";
 };

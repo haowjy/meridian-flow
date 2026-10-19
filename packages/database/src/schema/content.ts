@@ -8,6 +8,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
@@ -285,7 +286,7 @@ export const documents = pgTable(
     deletedByUserId: uuid("deleted_by_user_id")
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
-    deletionCause: text("deletion_cause").$type<"reply_rolled_back" | "create_failed" | "repair">(),
+    deletionCause: text("deletion_cause").$type<DocumentRemovalCause>(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),

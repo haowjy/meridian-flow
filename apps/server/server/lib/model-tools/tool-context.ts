@@ -78,7 +78,7 @@ export interface ToolWiringDeps {
   objectStore: ObjectStorePort;
   /** Every model read and write asks the file policy first (file-access §1). */
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
-  /** The removal record behind a missing file the model already addresses by id (e2 D9). */
+  /** The removal record behind a missing file the model already addresses by id. */
   documentRemovals: DocumentRemovals;
   /** The calling thread's bound skills, read as files under `skills://` (D52). */
   agentRevisions: SkillFilesDeps["agentRevisions"];

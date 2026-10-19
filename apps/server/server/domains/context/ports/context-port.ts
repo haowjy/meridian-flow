@@ -18,6 +18,7 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
+  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -303,7 +304,7 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 }
 
 export interface ContextDeleteOptions extends ContextWriteOptions {
-  removal?: { reason: "discarded"; cause: "reply_rolled_back" | "create_failed" };
+  removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
 }
@@ -394,7 +395,7 @@ export interface ContextPort {
    */
   retractCreate(
     uri: string,
-    options: { documentId: string; cause: "reply_rolled_back" | "create_failed" },
+    options: { documentId: string; cause: RetractionCause },
   ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */

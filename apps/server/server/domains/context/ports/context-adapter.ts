@@ -6,7 +6,7 @@
  */
 
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
-import type { ParsedDocumentFilename } from "@meridian/contracts/protocol";
+import type { ParsedDocumentFilename, RetractionCause } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
@@ -176,7 +176,7 @@ export interface ContextSchemeAdapter {
   retractCreate(
     path: string,
     documentId: string,
-    cause: "reply_rolled_back" | "create_failed",
+    cause: RetractionCause,
   ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>>;
   writeBinary(
     path: string,
