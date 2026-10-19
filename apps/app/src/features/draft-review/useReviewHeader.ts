@@ -41,7 +41,7 @@ export type ReviewHeaderModel = {
   /** Nothing left to apply: the server closed the draft, so its commands go. */
   finished: boolean;
   /** The draft is open but lists no change: formatting remains, handled by Apply draft or Discard draft. */
-  unlisted: boolean;
+
   /** The last change's command is in flight: the review says so and is not finished. */
   completing: "apply" | "discard" | null;
   /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
@@ -80,11 +80,7 @@ export function useReviewHeader({
   const { controller, files } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
-  const next = nextReviewFile(
-    files,
-    documentId,
-    controller.inlineReview?.completion?.documentName ?? null,
-  );
+  const next = nextReviewFile(files, documentId, null);
   // The draft Apply draft, Discard draft and Next draft move to is read while
   // the writer is still here (once this review's own read is in), so opening it
   // finds its preview already in the cache.
@@ -104,7 +100,7 @@ export function useReviewHeader({
     );
   }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
-  const { finished, completing, unlisted } = view;
+  const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
@@ -125,7 +121,6 @@ export function useReviewHeader({
     next,
     locked,
     finished,
-    unlisted,
     completing,
     commandError,
     failedElsewhere,

@@ -46,6 +46,39 @@ commit, viewport, run-owned identities, request scope/order, screenshots, clean
 console and fresh manuscript/draft readback. Read-only API success does not prove
 writer interaction.
 
+## Browser-computed review (runtime and paint)
+
+Use an existing manuscript with at least three paragraphs and a named Work in
+Draft mode. Record the exact Work, document, draft room, commit and viewport.
+Server Apply may still be unavailable; these checks need no disposition command.
+
+1. Ask the mock model to replace a word in the middle paragraph. Open its
+   review from the collapsed chat dock, then from an expanded Work row. The
+   dock count, list and stepper agree with the same group ids. Removed words
+   are red and struck; inserted words green. There is no writer colour/byline
+   while attribution is unknown.
+2. Type inside the green box and beside it. Existing marks stay on their text
+   while the 120 ms projection waits; the new text becomes green without
+   losing the caret. Ctrl+Z restores text and review together.
+3. Cut the changed paragraph, paste it after another paragraph, then Undo.
+   Repeat using block drag. The move is a removal and insertion, never marks
+   stranded on an unrelated paragraph. Copying text into another paragraph
+   does not copy removal widgets into the manuscript.
+4. Bold a word and change a heading with an adjacent prose edit. Both use
+   red/green replacement paint; neither disappears as a “formatting remains”
+   fallback. A one-character typo narrows its paint to that character; other
+   replacements retain whole words within paragraph boundaries.
+5. Edit live in another tab and watch it reach the draft. New base and draft
+   arrive as one visible review, with no flash or missing anchors. A scheduled
+   list refresh must survive an editor room rebind.
+6. Disconnect the browser, type an identifiable suffix, and reload before the
+   server can acknowledge it. Cached text returns, with “Saved locally
+   (offline)”; a never-synced headless row offers no Discard. Reconnect and
+   confirm server readback retains the suffix once acknowledged.
+7. Verify desktop and phone layout, removal expand/fold, marks visibility,
+   stepper clicks and editor/dock attachment changes. Capture screenshots,
+   console and errors, then stop only the owned stack and browser session.
+
 ## Frozen-click server wire
 
 The per-document `draft/apply` route accepts only `commandId`, `snapshot`

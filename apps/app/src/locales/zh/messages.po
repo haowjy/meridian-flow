@@ -214,8 +214,8 @@ msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "{before} → {after}"
-msgstr ""
+#~ msgid "{before} → {after}"
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
@@ -314,16 +314,16 @@ msgid "{links, plural, one {Updated # link} other {Updated # links}}"
 msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "{mark} changed on “{text}”"
-msgstr ""
+#~ msgid "{mark} changed on “{text}”"
+#~ msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "{mark} off “{text}”"
-msgstr ""
+#~ msgid "{mark} off “{text}”"
+#~ msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "{mark} on “{text}”"
-msgstr ""
+#~ msgid "{mark} on “{text}”"
+#~ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -652,8 +652,8 @@ msgid "Agent: {agentName}"
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "AI"
-msgstr ""
+#~ msgid "AI"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
@@ -835,8 +835,8 @@ msgid "Billing"
 msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "Block"
-msgstr ""
+#~ msgid "Block"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Block alignment"
@@ -846,7 +846,6 @@ msgstr ""
 msgid "blockquote"
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
@@ -860,7 +859,6 @@ msgstr "一起头脑风暴吧"
 msgid "Breadcrumb"
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr ""
@@ -1116,7 +1114,6 @@ msgid "Closed"
 msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
-#: src/features/draft-review/operation-change-text.ts
 msgid "Code"
 msgstr ""
 
@@ -1337,8 +1334,11 @@ msgstr ""
 msgid "Couldn't apply this draft. Try again."
 msgstr ""
 
-#: src/features/chat/DraftDockMessages.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't apply yet. Try again in a moment."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
@@ -1370,8 +1370,8 @@ msgid "Couldn't confirm whether this discarded. Check what is left before you tr
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
-msgstr ""
+#~ msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
@@ -1426,12 +1426,12 @@ msgid "Couldn't delete this folder. Try again."
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Couldn't discard this change."
-msgstr ""
+#~ msgid "Couldn't discard this change."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Couldn't discard this change. Try again."
-msgstr ""
+#~ msgid "Couldn't discard this change. Try again."
+#~ msgstr ""
 
 #: src/features/chat/DraftDockMessages.tsx
 msgid "Couldn't discard this chat's changes."
@@ -1450,7 +1450,6 @@ msgid "Couldn't discard this draft. Try again."
 msgstr ""
 
 #: src/features/chat/DraftDockMessages.tsx
-#: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
@@ -1927,8 +1926,8 @@ msgid "Discard this chat's changes?"
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Discard with your edits"
-msgstr ""
+#~ msgid "Discard with your edits"
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
@@ -1945,8 +1944,8 @@ msgid "Dismiss"
 msgstr ""
 
 #: src/features/editor/WriterHandoffLossNotice.tsx
-msgid "Dismiss typing notice"
-msgstr "关闭输入提示"
+#~ msgid "Dismiss typing notice"
+#~ msgstr "关闭输入提示"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -2249,17 +2248,17 @@ msgid "Form payload is malformed."
 msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "Formatting"
-msgstr ""
+#~ msgid "Formatting"
+#~ msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "Formatting changed"
-msgstr ""
+#~ msgid "Formatting changed"
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/work/WorkChangeFile.tsx
-msgid "Formatting changes remain"
-msgstr ""
+#~ msgid "Formatting changes remain"
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -2327,14 +2326,13 @@ msgstr ""
 msgid "Header row"
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "Heading {before} → {after}"
-msgstr ""
+#~ msgid "Heading {before} → {after}"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2487,7 +2485,6 @@ msgstr ""
 msgid "It may have moved or been removed."
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -2556,7 +2553,6 @@ msgstr "我们开始吧"
 msgid "Light"
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Link"
 msgstr ""
@@ -3059,8 +3055,8 @@ msgid "Not reported"
 msgstr "未报告"
 
 #: src/features/editor/SyncStatus.tsx
-msgid "Not saved yet (keep this tab open until you're back online)"
-msgstr ""
+#~ msgid "Not saved yet (keep this tab open until you're back online)"
+#~ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "Notebook"
@@ -3091,7 +3087,6 @@ msgstr ""
 msgid "now"
 msgstr "刚刚"
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
@@ -3132,6 +3127,12 @@ msgstr ""
 #. placeholder {1}: excerptText(excerpt)
 #: src/features/chat/PassageDoor.tsx
 msgid "Open {0} at this passage. {1}"
+msgstr ""
+
+#. placeholder {0}: displayThreadTitle(chat.subagentTitle)
+#. placeholder {1}: chatName(chat)
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Open {0} in {1}"
 msgstr ""
 
 #: src/features/chat/ChatUploadsMenu.tsx
@@ -3195,8 +3196,8 @@ msgid "Open source chat {name}"
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Open the chat that wrote this change"
-msgstr ""
+#~ msgid "Open the chat that wrote this change"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Open this document in a project to upload figures."
@@ -3246,7 +3247,6 @@ msgstr "输出词元"
 msgid "Over your monthly usage"
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr ""
@@ -3914,8 +3914,8 @@ msgid "Some changes to {name} couldn't be completed."
 msgstr ""
 
 #: src/features/editor/WriterHandoffLossNotice.tsx
-msgid "Some typing inside a discarded change couldn't be kept."
-msgstr "已丢弃改动中的部分输入未能保留。"
+#~ msgid "Some typing inside a discarded change couldn't be kept."
+#~ msgstr "已丢弃改动中的部分输入未能保留。"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while changing {name}."
@@ -4021,14 +4021,13 @@ msgstr ""
 msgid "Stopping the handoff brief"
 msgstr ""
 
-#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
 msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
-msgid "Structure changed"
-msgstr ""
+#~ msgid "Structure changed"
+#~ msgstr ""
 
 #: src/features/project/chat/SubagentPathRow.tsx
 msgid "Subagent chat path"
@@ -4442,12 +4441,12 @@ msgid "This change only applies together with the rest of the document. Apply th
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "This change was updated. Check it and apply again."
-msgstr ""
+#~ msgid "This change was updated. Check it and apply again."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "This change was updated. Check it and discard again."
-msgstr ""
+#~ msgid "This change was updated. Check it and discard again."
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This chapter is no longer available, so its change details can't be shown."
@@ -4859,8 +4858,8 @@ msgid "workReceipt.unarchived"
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Unattributed"
-msgstr ""
+#~ msgid "Unattributed"
+#~ msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Unavailable"

@@ -17,7 +17,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
 import { ReviewChangeRow } from "./ReviewChangeRow";
-import type { ReviewChange } from "./review-changes";
+import type { ReviewChange } from "./review-model";
 import { useArrivedChanges } from "./useArrivedChanges";
 
 export function DocumentChangeRows({
@@ -70,10 +70,10 @@ export function DocumentChangeRows({
           wholeDocument={wholeDocument}
           documentName={wholeDocument ? documentName : undefined}
           showAttribution={showAttribution}
-          key={change.classId}
+          key={change.id}
           change={change}
-          focused={view.focused?.classId === change.classId}
-          arrived={arrived.has(change.classId)}
+          focused={view.focused?.id === change.id}
+          arrived={arrived.has(change.id)}
           disabled={view.locked}
           failure={failure}
           draftFailure={draftFailure}

@@ -59,7 +59,7 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
-- `EditorMountIdentity` distinguishes live and generation-fenced review rooms
+- `EditorMountIdentity` distinguishes live and stable draft review rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
   TipTap. Review identity includes both `itemKey` and `roomName`.
@@ -67,10 +67,10 @@ barrier that drains that open.
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- Live sessions may use a qualified, generation-aware IndexedDB key. Review
-  draft sessions use no local cache because a cache can recover into the wrong
-  review generation. Unacknowledged draft edits survive retirement only through
-  the transport outbox and its handoff path.
+- Live sessions use a qualified, generation-aware IndexedDB key. Draft sessions
+  use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
+  draft recovers unsent text. Terminal cache removal belongs to the draft-close
+  owner, not the painter or a generation carry path.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -161,13 +161,10 @@ identity in anchors or holds.
 - Writer-visible save state: an outage (`offline` or a stalled cache adoption)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
-  healthy sessions show nothing. A draft room has no cache, so its
-  outage copy is "Not saved yet (keep this tab open until you're back online)":
-  unacknowledged draft edits are lost if the tab closes or the writer signs out
-  before acknowledgement. Never show a draft room the "Saved locally" copy.
-- Draft review colors a hunk by author (agent jade, writer gold, nested
-  authorship per span). A merge artifact or unclassified hunk is neutral, never
-  an invented AI color.
+  healthy sessions show nothing. Draft sessions use the same local save copy.
+- Draft review paints removed base text red and inserted draft text green,
+  including writer edits and formatting. Attribution is a byline/membership
+  overlay; it never chooses a third paint colour or splits boxes.
 - Keep the custom `math_display` node; do not install TipTap mathematics nodes
   that are absent from the shared schema.
 

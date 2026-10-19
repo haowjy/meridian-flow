@@ -172,10 +172,10 @@ function DockFileLine({
       documentId: file.row.documentId,
       itemKey: file.row.draft.itemKey,
     },
-    { controller: dock.controller, enabled: expanded },
+    { controller: dock.controller, enabled: true, item: file.row.draft },
   );
-  const own = new Set(file.changes.map((change) => change.classId));
-  const items = view.items.filter(({ change }) => own.has(change.classId));
+  const own = new Set(file.changes.map((change) => change.id));
+  const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // Ownership comes from the rows that will actually render, not the kind of document.
   const renderedItems =

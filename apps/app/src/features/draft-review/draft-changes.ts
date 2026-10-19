@@ -1,9 +1,7 @@
 /** Shared change presentation data and failures. Open and listed bindings add their own command authority; only the open review adds focus and stepping. */
-import type { DraftPreviewResponse } from "@meridian/contracts/branches";
-import { useMemo } from "react";
-import { selectionOf } from "./change-selection";
-import type { ReviewChange } from "./review-changes";
+
 import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
+import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeItem = {
   change: ReviewChange;
@@ -18,12 +16,6 @@ export type DraftChangesData = {
   /** `error`: the draft's preview could not be read. Never read it as "no changes". */
   status: "idle" | "loading" | "error" | "ready" | "gone";
   items: readonly ReviewChangeItem[];
-  /**
-   * The draft is still open, but its read lists no change and no command of
-   * ours is hiding one. This is not evidence of terminal settlement.
-   * Apply draft and Discard draft are the way to finish it.
-   */
-  unlisted: boolean;
   /** Read the preview again; present when `status` is `error`. */
   retry?: () => void;
 };
@@ -38,34 +30,16 @@ export type DraftChangesView = DraftChangesData & {
 };
 
 /** A ready new document is the file itself, not a header followed by a second named row. */
-export function isWholeDocumentChange(
-  view: Pick<DraftChangesData, "status" | "items" | "unlisted">,
-): boolean {
-  return (
-    view.status === "ready" &&
-    !view.unlisted &&
-    view.items.length === 1 &&
-    view.items[0]?.change.target.kind === "draft"
-  );
+export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "items">): boolean {
+  return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.frame === null;
 }
 
 type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
 
-export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
-
-/** The preview when it can be listed: active, with its inline model. */
-export function listablePreview(preview: DraftPreviewResponse | null): ActivePreview | null {
-  return preview?.status === "active" ? preview : null;
-}
-
-/**
- * The changes with what failed on each (a change asks with its own class, so a
- * refusal of a larger selection shows on every change it overlaps), and
- * whether a command of ours is hiding changes from the read.
- */
+/** B2b joins item failures here; text and group identity remain the runtime's. */
 export function useChangeItems(
   _draft: DraftRef | null,
   changes: readonly ReviewChange[],
-): { items: readonly ReviewChangeItem[]; hiding: boolean } {
-  return { items: changes.map((change) => ({ change, failure: null })), hiding: false };
+): { items: readonly ReviewChangeItem[] } {
+  return { items: changes.map((change) => ({ change, failure: null })) };
 }

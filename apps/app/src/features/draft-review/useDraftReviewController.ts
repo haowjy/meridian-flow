@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { noteReviewNavigation } from "@/core/editor/review-place";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -14,7 +13,7 @@ import {
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
-import type { ReviewFocus } from "./review-changes";
+import type { ReviewFocus } from "./review-model";
 import {
   type BranchCommandOutcome,
   type CommandStart,
@@ -27,7 +26,7 @@ type SelectionCommand = WorkBranchCommands["applyChanges"];
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
-export type ReviewChangeTarget = ReviewFocus & { anchorOperationId: string };
+export type ReviewChangeTarget = ReviewFocus;
 
 export type DraftReviewStateOwner = Readonly<{
   state: typeof EMPTY_DRAFT_REVIEW_STATE;
@@ -169,7 +168,6 @@ export function useDraftReviewController({
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
-      const draft = { projectId, workId, documentId, itemKey };
       // The review opens on the newest proposal the caches know of, and a command
       // already in flight on this draft (sent from the strip or the Work page)
       // is its to show: it adopts the claim if it acted on that generation.
@@ -177,7 +175,6 @@ export function useDraftReviewController({
         type: "enterInline",
         documentId,
         itemKey,
-        draftGeneration: undefined,
       });
     },
     [projectId, queryClient, workId],
@@ -234,7 +231,7 @@ export function useDraftReviewController({
       type: "changeFocused",
       documentId: review.documentId,
       itemKey: review.itemKey,
-      focus: { classId: change.classId, operationIds: change.operationIds, keys: change.keys },
+      focus: { id: change.id },
     });
   }, []);
 
@@ -249,9 +246,6 @@ export function useDraftReviewController({
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
       if (inline?.documentId !== review.documentId || inline.itemKey !== review.itemKey) return;
       reportFocusedChange(review, change);
-      // The writer chose where to go: a place held across an editor swap yields to it.
-      if (options?.scroll)
-        noteReviewNavigation(`${review.documentId}:${review.itemKey}`, change.keys ?? []);
       const runtime = inlineRuntimeRef.current;
       if (
         !runtime ||
@@ -260,9 +254,9 @@ export function useDraftReviewController({
         runtime.editor.isDestroyed
       )
         return;
-      runtime.editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
+      runtime.editor.commands.setReviewActiveChange(change.id);
       if (options?.scroll)
-        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId, {
+        runtime.editor.commands.scrollReviewChangeIntoView(change.id, {
           instant: options.instant,
         });
     },

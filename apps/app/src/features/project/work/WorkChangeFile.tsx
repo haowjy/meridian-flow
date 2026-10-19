@@ -1,8 +1,7 @@
 /** A Work's pending file, expandable to its changes. Commands act in place; the file name opens review. Preview reads begin only when expanded. */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
@@ -35,19 +34,15 @@ export function WorkChangeFile({
   const [previewing, setPreviewing] = useState(false);
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
-  if (
-    expanded &&
-    (view.status === "gone" ||
-      (view.status === "ready" && view.items.length === 0 && !view.unlisted))
-  )
+  if (expanded && (view.status === "gone" || (view.status === "ready" && view.items.length === 0)))
     return null;
   const wholeDocument = expanded && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
-  const review = (focusOperationIds?: readonly string[]) =>
+  const review = (focusGroupIds?: readonly string[]) =>
     file.draft.draftGeneration !== null
-      ? openReviewFile(file, workId, focusOperationIds)
+      ? openReviewFile(file, workId, focusGroupIds)
       : imageOpenable && setPreviewing(true);
 
   return (
@@ -113,7 +108,7 @@ function FileChanges({
 }: {
   view: DraftChangesView;
   touch: boolean;
-  onSelect: (operationIds: readonly string[]) => void;
+  onSelect: (groupIds: readonly string[]) => void;
   documentName?: string;
 }) {
   return (
@@ -122,22 +117,7 @@ function FileChanges({
       showAttribution
       view={view}
       touch={touch}
-      onSelect={(change) => onSelect(change.operationIds)}
-      standIn={
-        view.unlisted ? (
-          <StateLine>
-            <Trans>Formatting changes remain</Trans>
-          </StateLine>
-        ) : null
-      }
+      onSelect={(change) => onSelect([change.id])}
     />
-  );
-}
-
-function StateLine({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-      {children}
-    </p>
   );
 }
