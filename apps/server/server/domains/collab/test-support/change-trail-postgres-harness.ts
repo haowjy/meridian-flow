@@ -527,7 +527,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const reviewItems = createBranchReviewItems({
     tree: createTreeReader(db),
     drafts: (branchId, documentIds) =>
-      durableWorkBranchPendingStore.listBranchDraftEvidence(branchId, documentIds),
+      durableWorkBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
+    pendingThreadIds: durableWorkBranchPendingStore.pendingThreadIds,
     creators: (branchId, documentIds) =>
       durableWorkBranchPendingStore.listCreators(branchId, documentIds),
   });
