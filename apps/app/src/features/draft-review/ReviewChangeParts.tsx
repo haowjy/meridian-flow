@@ -7,7 +7,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ChangeCommandMode, ChangeFailureCode, ServerRefusal } from "./review-command-types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +20,7 @@ import { cn } from "@/lib/utils";
 import type { ChangeAttribution, ChangeChat } from "./change-attribution";
 import { RefusalReason } from "./ReviewMessageText";
 import type { ReviewChange, ReviewChangeTone } from "./review-changes";
+import type { ChangeCommandMode, ChangeFailureCode, ServerRefusal } from "./review-command-types";
 
 const DOT_TONE: Record<ReviewChangeTone, string> = {
   ai: "bg-primary",

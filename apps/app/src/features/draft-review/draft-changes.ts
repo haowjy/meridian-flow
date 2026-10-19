@@ -1,10 +1,9 @@
 /** Shared change presentation data and failures. Open and listed bindings add their own command authority; only the open review adds focus and stepping. */
 import type { DraftPreviewResponse } from "@meridian/contracts/branches";
 import { useMemo } from "react";
-
-import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 import { selectionOf } from "./change-selection";
 import type { ReviewChange } from "./review-changes";
+import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 
 export type ReviewChangeItem = {
   change: ReviewChange;

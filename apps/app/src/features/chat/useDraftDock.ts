@@ -1,10 +1,6 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
 import { useCallback, useMemo, useState } from "react";
-import type {
-  BranchCommandFailure,
-  ChangeCommandState,
-} from "@/features/draft-review/review-command-types";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
@@ -13,6 +9,10 @@ import {
 } from "@/features/draft-review/DraftImagePreview";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
+import type {
+  BranchCommandFailure,
+  ChangeCommandState,
+} from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";

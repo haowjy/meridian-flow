@@ -11,10 +11,10 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { BranchCommandFailure } from "./review-command-types";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftReview } from "./DraftReviewProvider";
+import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 

@@ -1,13 +1,12 @@
 /** Focused change attribution and Apply/Discard, one row on desktop and phone. Failures stay inline on the acted-on change. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-
-import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { ReviewChange } from "./review-changes";
+import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;

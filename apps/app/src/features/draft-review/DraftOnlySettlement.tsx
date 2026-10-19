@@ -4,7 +4,6 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { DraftRef } from "./review-command-types";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
@@ -19,6 +18,7 @@ import {
   type DraftOnlyPresentation,
   useDraftOnlyLifecycle,
 } from "./draft-only-lifecycle";
+import type { DraftRef } from "./review-command-types";
 
 export function DraftOnlySettlement({
   projectId,

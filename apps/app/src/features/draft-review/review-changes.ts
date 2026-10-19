@@ -19,7 +19,9 @@ import {
   type ThreadDraftListItem,
 } from "@meridian/contracts/branches";
 import type { ChangeSelection } from "./review-command-types";
+
 const wholeItemHidden = (_preview: unknown) => false;
+
 import {
   attributionThreadIds,
   type ChangeAttribution,
