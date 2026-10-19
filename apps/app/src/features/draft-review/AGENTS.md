@@ -1,8 +1,9 @@
 # features/draft-review — text-derived review
 
 The draft room's `review_base` and `prosemirror` fragments decide the review.
-One kernel `ReviewGroup.id` is one change everywhere: rows, counts, focus,
-stepper, chat dock and editor paint. Attribution adds names and membership;
+One kernel `ReviewGroup.id` is one change within its projection everywhere:
+rows, counts, focus, stepper, chat dock and editor paint. Focus retains the
+projection with the id and invalidates when the projection changes. Attribution adds names and membership;
 it never partitions the text.
 
 ## Ownership

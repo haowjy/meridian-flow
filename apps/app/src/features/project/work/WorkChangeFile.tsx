@@ -10,6 +10,7 @@ import {
   type DraftChangesView,
   isWholeDocumentChange,
 } from "@/features/draft-review/draft-changes";
+import type { ReviewFocus } from "@/features/draft-review/review-model";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
@@ -45,10 +46,10 @@ export function WorkChangeFile({
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
-  const review = (focusGroupIds?: readonly string[]) => {
+  const review = (focus?: ReviewFocus) => {
     controller.dismissNotice();
     return file.draft.hasDraft
-      ? openReviewFile(file, workId, focusGroupIds)
+      ? openReviewFile(file, workId, focus)
       : imageOpenable && setPreviewing(true);
   };
 
@@ -117,7 +118,7 @@ function FileChanges({
 }: {
   view: DraftChangesView;
   touch: boolean;
-  onSelect: (groupIds: readonly string[]) => void;
+  onSelect: (focus: ReviewFocus) => void;
   documentName?: string;
 }) {
   return (
@@ -126,7 +127,7 @@ function FileChanges({
       showAttribution
       view={view}
       touch={touch}
-      onSelect={(change) => onSelect([change.id])}
+      onSelect={onSelect}
     />
   );
 }

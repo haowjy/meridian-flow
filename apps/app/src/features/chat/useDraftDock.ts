@@ -112,11 +112,7 @@ export function useDraftDock({
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;
       }
-      openReviewFile(
-        file.row,
-        workId,
-        change ? [change.id] : file.changes[0] ? [file.changes[0].id] : undefined,
-      );
+      openReviewFile(file.row, workId, change ?? file.changes[0]);
     },
     [openReviewFile, projectId, workId],
   );

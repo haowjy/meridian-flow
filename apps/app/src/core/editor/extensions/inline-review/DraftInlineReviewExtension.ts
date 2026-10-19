@@ -251,6 +251,8 @@ export function buildInlineReviewPlugin() {
             next.expandedRemovals = new Set(
               [...previous.expandedRemovals].filter((key) => retainedKeys.has(key)),
             );
+            // An occurrence suffix addresses only this projection, not the next equal change.
+            if (meta.review?.diff !== previous.review?.diff) next.activeChangeId = null;
             next.review = meta.review;
             next.edits = null;
             repaint = true;

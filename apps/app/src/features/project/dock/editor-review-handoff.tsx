@@ -13,6 +13,7 @@ import {
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { ContextUri } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { type PresentedDocument, usePresentedDocument } from "../presented-document";
@@ -26,12 +27,8 @@ export type AiDraftLaunchTarget = {
   contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
   isNew?: boolean;
-  /**
-   * Operations of the change to focus once this review has painted (the
-   * strip's Review, a Work page change row). When none is in the review any
-   * more, it opens at the top.
-   */
-  focusGroupIds?: readonly string[];
+  /** A projection-local change to focus, only if that projection still paints. */
+  focus?: ReviewFocus;
 };
 
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
@@ -212,12 +209,12 @@ export function EditorReviewIntentClaimant({
     review.controller.enterInlineReview(intent.documentId, intent.itemKey);
     // The latest launch decides the focus: one without it clears an older request.
     setFocus(
-      intent.focusGroupIds?.length
+      intent.focus
         ? {
             sequence: intent.sequence,
             documentId: intent.documentId,
             itemKey: intent.itemKey,
-            groupIds: intent.focusGroupIds,
+            focus: intent.focus,
           }
         : null,
     );

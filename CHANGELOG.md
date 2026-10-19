@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Scope draft-review focus to its projection so successive identical changes cannot apply the wrong occurrence.
+
 - Correct draft collaboration references for the completed cutover and frontier-compaction probe.
 
 - Remove obsolete server-preview contracts, legacy restoration claims, dead review helpers and unreachable trail notices; the append probe uses the same restoration recorder as the editor.
