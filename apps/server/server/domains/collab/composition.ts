@@ -58,7 +58,6 @@ import {
 import {
   createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkBranchPendingStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchTreeStep } from "./adapters/drizzle-branch-tree-step.js";
 import {
@@ -86,6 +85,7 @@ import {
 import { createDrizzleReviewCut, readLiveDoc } from "./adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
@@ -179,6 +179,8 @@ type CollabDomainDeps = {
   aheadRegistrations?: AheadRegistrationRecovery;
   /** Deletes a discarded hidden image's stored object after commit (§12.2 step 4). */
   objects?: Pick<ObjectRelease, "storageUrls">;
+  /** Stops staging new Applies while settlement drains (cutover); staged ones complete. */
+  drainSettlement?: boolean;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -540,6 +542,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches: workBranches,
     reviewItems,
     push: branchPush,
+    ...(deps.drainSettlement ? { drainSettlement: true } : {}),
   });
   const discardStore = createDrizzleBranchDiscard(deps.db, {
     branches: workBranches,

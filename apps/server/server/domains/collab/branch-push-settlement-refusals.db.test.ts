@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
-import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import type { SettlementBatchScope } from "./domain/ports/settlement-apply.js";
 import {
   ALPHA_ID,
