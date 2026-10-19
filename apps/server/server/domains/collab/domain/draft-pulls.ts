@@ -2,12 +2,14 @@
 
 import {
   type DocumentCoordinator,
+  DocumentNotFoundError,
   type UpdateJournal,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import { DocumentRemovedError } from "../../context/ports/document-removals.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftConcurrentJournalWatermarks } from "./draft-agent-edit.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
@@ -108,12 +110,19 @@ export function createDraftPullService(input: {
     // Releasing the room checkpoints it under the document's mutation lock. In
     // a caller's transaction that lock would outlive the snapshot and block the
     // root pull in `run` that the caller then waits on.
-    // A missing or removed document is never an empty upstream: nothing pulls it.
-    const state = await input.outsideTransaction(() =>
-      input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
-        Y.encodeStateAsUpdate(liveDoc),
-      ),
-    );
+    const state = await input
+      .outsideTransaction(() =>
+        input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
+          Y.encodeStateAsUpdate(liveDoc),
+        ),
+      )
+      .catch((cause: unknown) => {
+        // A live side with no state yet (a hidden creation) is an empty upstream; a removed
+        // document is not, and its pull fails by name.
+        if (cause instanceof DocumentNotFoundError && !(cause instanceof DocumentRemovedError))
+          return Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
+        throw cause;
+      });
     const doc = new Y.Doc({ gc: false });
     Y.applyUpdate(doc, state);
     return doc;
