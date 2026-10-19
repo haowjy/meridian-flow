@@ -1,5 +1,6 @@
 /** Programmatic Drizzle migration runner with file-aware PostgreSQL failures. */
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 import { isLocalDevPostgres } from "./dev-db";
 import {
@@ -13,6 +14,7 @@ import {
   CONCURRENT_INDEX_CREATE,
   executableSql,
   isNoTransactionMigration,
+  migrationCompanion,
   normalizeMigrationSql,
 } from "./migration-sql";
 
@@ -154,6 +156,13 @@ export async function runMigrations(input: {
                 await session.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.name}`);
               }
             }
+          }
+          const companion = migrationCompanion(content);
+          if (companion) {
+            const code = await import(
+              pathToFileURL(path.join(input.migrationsDirectory, companion.file)).href
+            );
+            await code.migrate(session);
           }
           for (const statement of content.split("--> statement-breakpoint")) {
             await session.unsafe(statement);

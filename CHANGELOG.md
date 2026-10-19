@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Database migrations can run digest-pinned TypeScript conversions in ledger order, on the migration runner's locked session, before their SQL completion barriers.
+
 - Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.
 
 - Align the peer-retraction probe with the upstream-first refusal check.
