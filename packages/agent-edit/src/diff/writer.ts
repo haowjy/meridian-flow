@@ -174,7 +174,15 @@ export function writeBlocks(
     let from = c0;
     for (let t = t0; t < t1; t++) {
       let best = -1;
-      let bestSim = preserve ? -1 : 0.3;
+      // A lone flat rewrite has no competing alignment: retain its container even when
+      // no words survived, so a late key still has a live parent.
+      const oneToOneFlat =
+        c1 - c0 === 1 &&
+        t1 - t0 === 1 &&
+        current[c0].type === target[t].type &&
+        flat(current[c0]) &&
+        flat(target[t]);
+      let bestSim = preserve || oneToOneFlat ? -1 : 0.3;
       for (let c = from; c < c1; c++) {
         const sim =
           current[c].type === target[t].type ? similarity(current[c], target[t], true) : 0;

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Shared frozen Apply merging and optimistic base deltas now use the draft review kernel; low-similarity flat rewrites retain their paragraph identity.
+
 - Ported the browser-safe draft review text kernel for shared review, Apply, Discard and rebase.
 
 - Removed document stays removed (W52, #854). Live keystroke, reply save, Apply, checkpoint, compaction or version restore that reaches it after removal changes nothing. Only a create makes a document. Apply holds a removed file with its record and applies the rest.
