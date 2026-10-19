@@ -37,6 +37,8 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Give non-executed notes-step calls one neutral tool row, including report and normally hidden tools.
+
 - Render staged compaction reminders from prepared request inputs without resolving images or preparing the prompt twice.
 
 - A compaction summary keeps text returned alongside tool calls. A warm summary that returns only calls gets one text-only reminder retry; both attempts settle, and no tools execute (C14).

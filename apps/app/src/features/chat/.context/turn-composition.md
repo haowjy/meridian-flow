@@ -96,3 +96,7 @@ flowchart TD
 Interrupt settlement and the runtime probe are tracked in
 [chat TODO](TODO.md). Activity, spacing, composer, fork, and tool surfaces have
 their own references in the parent [chat guide](../AGENTS.md).
+
+A typed `{ refusal: "notes_step" }` result keeps every held tool visible as
+one ordinary process pair, including `return_result` (not a report). The fold
+counts it as a neutral step, never a read, skill invocation or edit receipt.

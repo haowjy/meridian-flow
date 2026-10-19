@@ -12,7 +12,7 @@ import { isToolDeliveryBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { isArtifactBlock } from "./tool-kind";
-import { isToolViewVisible } from "./tool-view-visibility";
+import { isNotesStepHeldResult, isToolViewVisible } from "./tool-view-visibility";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -28,15 +28,6 @@ export function isReasoningBlock(block: Block): boolean {
 
 export function partitionTurn(blocks: Block[]): RenderItem[] {
   const hidden = hiddenToolCallIds(blocks);
-  const reportCalls = new Set(
-    blocks.flatMap((block) => {
-      if (block.blockType !== "tool_use") return [];
-      const content = blockContentRecord(block);
-      return content.toolName === "return_result" && typeof content.toolCallId === "string"
-        ? [content.toolCallId]
-        : [];
-    }),
-  );
   // return_result's typed result: `{ ok: true }`, `{ ok: false, message }`,
   // or an executor error `{ code, message }`.
   const resultByCall = new Map<string, Record<string, JsonValue>>();
@@ -47,6 +38,17 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
       resultByCall.set(content.toolCallId, content.result);
     }
   }
+  const reportCalls = new Set(
+    blocks.flatMap((block) => {
+      if (block.blockType !== "tool_use") return [];
+      const content = blockContentRecord(block);
+      return content.toolName === "return_result" &&
+        typeof content.toolCallId === "string" &&
+        !isNotesStepHeldResult(resultByCall.get(content.toolCallId))
+        ? [content.toolCallId]
+        : [];
+    }),
+  );
   const items: RenderItem[] = [];
   let runs: Run[] | null = null;
 
@@ -65,7 +67,11 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     if (isToolDeliveryBlock(block)) {
       const content = blockContentRecord(block);
       const toolCallId = content.toolCallId;
-      if (block.blockType === "tool_use" && content.toolName === "return_result") {
+      if (
+        block.blockType === "tool_use" &&
+        typeof toolCallId === "string" &&
+        reportCalls.has(toolCallId)
+      ) {
         const input = isRecord(content.input) ? content.input : {};
         const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
         flushProcess();

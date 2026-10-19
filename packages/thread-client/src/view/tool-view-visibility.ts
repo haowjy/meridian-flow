@@ -11,7 +11,19 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
 import { threadMessageRow } from "./thread-message-result";
 
+/** A non-executed call, not a failure or a successful tool receipt. */
+export function isNotesStepHeldResult(result: unknown): result is { refusal: "notes_step" } {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    !Array.isArray(result) &&
+    "refusal" in result &&
+    result.refusal === "notes_step"
+  );
+}
+
 export function isToolViewVisible(tool: ToolView): boolean {
+  if (isNotesStepHeldResult(tool.result)) return true;
   if (tool.toolName === "ask_user") return false;
   if (tool.toolName === "spawn") return false;
   if (tool.toolName === "thread_message") return threadMessageRow(tool) !== null;

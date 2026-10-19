@@ -1130,16 +1130,35 @@ async function settleCancelledResponse(input: {
   return currentTurn;
 }
 
-async function persistToolRejection(input: {
+async function persistToolOutcome(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  reason: string;
+  outcome: { kind: "permission_denied"; reason: string } | { kind: "notes_held" };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const rejectionResult: JsonObject = { error: "permission_denied", reason: input.reason };
+  const denied = input.outcome.kind === "permission_denied";
+  const result: JsonObject =
+    input.outcome.kind === "permission_denied"
+      ? { error: "permission_denied", reason: input.outcome.reason }
+      : { refusal: "notes_step" };
+  const output = denied
+    ? result
+    : "Held: during the notes step only reads and writes under `scratch://$THREAD/` run. Finish your notes, or answer without tools to start the summary.";
+  const extraEvents: OrchestratorEvent[] =
+    input.outcome.kind === "permission_denied"
+      ? [
+          {
+            type: "permission.denied",
+            toolCallId: input.call.id,
+            toolName: input.call.name,
+            category: "tool_denied",
+            reason: input.outcome.reason,
+          },
+        ]
+      : [];
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1147,9 +1166,9 @@ async function persistToolRejection(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output: rejectionResult,
-        result: rejectionResult,
-        isError: true,
+        output,
+        result,
+        isError: denied,
       },
       status: "complete",
     });
@@ -1157,19 +1176,13 @@ async function persistToolRejection(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        {
-          type: "permission.denied" as const,
-          toolCallId: input.call.id,
-          toolName: input.call.name,
-          category: "tool_denied" as const,
-          reason: input.reason,
-        },
+        ...extraEvents,
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output: rejectionResult,
-          result: rejectionResult,
-          isError: true,
+          output,
+          result,
+          isError: denied,
         },
       ],
     };
@@ -2453,12 +2466,12 @@ async function executeLoop({
               // If denied, we still persist a tool_result block (with isError: true)
               // so the model sees the rejection in the next turn's context build.
               if (!built.policy.has(call.name)) {
-                const persistedRejection = await persistToolRejection({
+                const persistedRejection = await persistToolOutcome({
                   deps,
                   threadId: input.threadId,
                   turn: currentTurn,
                   call,
-                  reason: missingToolRefusal(call.name),
+                  outcome: { kind: "permission_denied", reason: missingToolRefusal(call.name) },
                   blockSeq,
                 });
                 blockSeq = persistedRejection.nextBlockSeq;

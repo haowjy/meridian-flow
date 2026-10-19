@@ -14,6 +14,8 @@ import {
   toolInputObject,
 } from "./tool-command";
 
+import { isNotesStepHeldResult } from "./tool-view-visibility";
+
 export type FoldToolCounts = {
   /** Skill slugs the fold loaded, in call order. */
   invokedSkills: Set<string>;
@@ -44,6 +46,10 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   let steps = 0;
 
   for (const tool of tools) {
+    if (isNotesStepHeldResult(tool.result)) {
+      steps++;
+      continue;
+    }
     const resultPath =
       tool.result && typeof tool.result === "object" && !Array.isArray(tool.result)
         ? stringInput(tool.result, "path")

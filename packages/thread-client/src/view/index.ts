@@ -5,4 +5,5 @@
 
 export { latestRow } from "./latest-row";
 export { replyDrawsNothing } from "./reply-draws-nothing";
+export { isNotesStepHeldResult } from "./tool-view-visibility";
 export { chatMovedPast, deliveriesUnder, rowOf } from "./transcript-model";

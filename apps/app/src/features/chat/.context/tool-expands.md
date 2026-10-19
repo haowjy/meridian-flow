@@ -204,3 +204,7 @@ competes with the assistant's own voice for "this is the content". Previews
 render at the compact stop in muted ink through the `text-tier-quoted` wrapper,
 which demotes headings to bold body text and drops the editor's block margins,
 so a chapter title inside a preview cannot outrank the prose quoting it.
+
+Before choosing any command descriptor or renderer, a notes-held tool gets
+one done row: "Not run during the notes step". It has no expand, action,
+document destination or error treatment, regardless of the tool name.

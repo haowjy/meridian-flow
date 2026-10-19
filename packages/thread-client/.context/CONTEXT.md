@@ -388,3 +388,7 @@ visible. The guard still fences every product callback, state transition, and
 reconnect decision for stale socket generations. Lifecycle observers receive
 only the socket epoch, numeric close code, and `wasClean`; URL and raw close
 reason text do not cross the core observer contract.
+
+`isNotesStepHeldResult`, exported from the main and view subpaths, identifies
+non-executed notes calls by their typed result. Visibility, report partitioning
+and fold counts give them one neutral process step, before tool-specific rules.

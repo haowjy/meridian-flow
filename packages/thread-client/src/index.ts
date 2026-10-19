@@ -87,7 +87,7 @@ export {
   type WorkReceipt,
   workReceipt,
 } from "./view/tool-command";
-export { isToolViewVisible } from "./view/tool-view-visibility";
+export { isNotesStepHeldResult, isToolViewVisible } from "./view/tool-view-visibility";
 export type {
   DeliveryEvent,
   InheritedMark,

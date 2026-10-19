@@ -65,8 +65,9 @@ and pricing rejects a negative uncached remainder rather than clamping it.
 ## Chat notes addresses
 
 `$THREAD` and `$PARENT` expand only at address/href intake from prepared chat
-scope, before parsing and file-policy selection. The thread projection carries
-current and derivation-source locations; uploads still use the top primary chat.
+scope, before parsing and file-policy selection. The server-only notes-scope
+reader supplies current and derivation-source locations; uploads still use the
+top primary chat.
 Both policy and the ContextPort receive the same variable map. Editor holders,
 admission references and keep-open lines are canonical-only.
 
@@ -77,3 +78,7 @@ Results carry canonical addresses; model prose, note links and keep-open lines
 should reuse them. AI-written link preparation and assignment share the same
 map. `return_result` accepts raw artifact strings, expands them in its handler,
 then applies the unchanged canonical capture schema before saving object refs.
+
+`persistToolOutcome` owns persisted and live non-executed results. Permission
+denials remain errors with `permission.denied`; notes-held results use
+`{ refusal: "notes_step" }`, a non-error notice and no denial event.
