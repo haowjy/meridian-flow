@@ -337,10 +337,6 @@ function createCoordinator(
     diagnostics: deps.diagnostics,
   });
 
-  function recover(docId: string): Promise<void> {
-    return catchUp(docId).then(() => undefined);
-  }
-
   /**
    * Applies the committed journal rows the open room lacks. Given `into`, only into that room:
    * false, reading nothing, once Hocuspocus no longer holds it (unloaded, or replaced by a room
@@ -374,7 +370,6 @@ function createCoordinator(
   }
 
   return {
-    recover,
     deliver: delivery.deliver,
     withDocument<T>(
       docId: string,

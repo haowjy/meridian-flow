@@ -52,7 +52,7 @@ class MemoryJournal implements UpdateJournal {
     for (const batchEntry of entries) {
       const beforeState = before.get(batchEntry.docId) as Uint8Array;
       const seq = await this.append(batchEntry.docId, batchEntry.update, batchEntry.meta);
-      results.push({ seq, journalCommitKind: "durable", beforeState });
+      results.push({ seq, beforeState });
     }
     return results;
   }
@@ -148,7 +148,7 @@ describe("createHocuspocusCoordinator", () => {
     expect(text(websocketDoc)).toBe("initial + server");
   });
 
-  it("recovers idempotently and rebuilds a dropped live doc from the journal", async () => {
+  it("delivers idempotently and rebuilds a dropped live doc from the journal", async () => {
     const journal = new MemoryJournal();
     const persisted = new Y.Doc({ gc: false });
     persisted.getText("body").insert(0, "Alpha");
@@ -159,16 +159,16 @@ describe("createHocuspocusCoordinator", () => {
     const openLiveDoc = vi.fn(openFrom(docs));
     const coordinator = coordinatorFor(docs, journal, openLiveDoc);
 
-    await coordinator.recover(DOC_ID);
+    await coordinator.deliver(DOC_ID);
     expect(text(live)).toBe("Alpha");
     const recoveredBytes = Array.from(Y.encodeStateAsUpdate(live));
 
-    await coordinator.recover(DOC_ID);
+    await coordinator.deliver(DOC_ID);
     expect(text(live)).toBe("Alpha");
     expect(Array.from(Y.encodeStateAsUpdate(live))).toEqual(recoveredBytes);
 
     docs.delete(DOC_ID);
-    await coordinator.recover(DOC_ID);
+    await coordinator.deliver(DOC_ID);
     expect(text(requireDoc(docs, DOC_ID))).toBe("Alpha");
     expect(openLiveDoc).toHaveBeenCalledTimes(1);
   });

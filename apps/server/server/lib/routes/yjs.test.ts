@@ -97,7 +97,6 @@ describe("Yjs draft handshake route guard", () => {
       outsideTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
-        recover: async () => {},
       },
       draftCoordinator,
       drafts: {

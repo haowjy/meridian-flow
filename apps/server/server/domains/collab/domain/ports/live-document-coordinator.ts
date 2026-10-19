@@ -20,8 +20,6 @@ export interface LiveDocumentCoordinator {
     fn: (doc: Y.Doc) => Promise<T>,
     options?: { timeoutMs?: number; signal?: AbortSignal },
   ): Promise<T>;
-  /** Applies committed journal rows the room lacks, once. Idempotent; rejects on failure. */
-  recover(docId: string): Promise<void>;
   /**
    * The committed journal's obligation to the open room, owned here: coalesced per document,
    * and after a failure retried with backoff for as long as Hocuspocus holds the room that fell

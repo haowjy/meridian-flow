@@ -72,7 +72,7 @@ type SettleResult =
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
-  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover">;
+  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Settlement runs in its documents' scope, so nested document doors join it. */

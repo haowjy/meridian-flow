@@ -38,7 +38,7 @@ type CheckpointMarkdownDocuments = {
 };
 
 type CheckpointServiceDeps = {
-  coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover">;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   store: CheckpointStore;
   journal: Pick<CheckpointJournal, "captureCheckpoint">;
   markdownDocuments: CheckpointMarkdownDocuments;

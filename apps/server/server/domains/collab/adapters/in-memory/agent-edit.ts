@@ -207,7 +207,8 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     return { doc: copy, room: liveRoomFor(docId, copy) };
   }
 
-  function recover(docId: string): Promise<void> {
+  // In memory a catch-up can't fail: nothing to retry.
+  function deliver(docId: string): Promise<void> {
     return mutex.run(docId, async () => {
       const state = await loadDocumentState(journal, docId);
       if (!state && !docs.has(docId)) return;
@@ -221,7 +222,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     readRoom: async (docId, staged) => withStaged(await roomCopy(docId), staged),
     prepareSave: async (input) =>
       liveSave(await roomCopy(input.docId).catch(emptyWhenMissing), input, journal, () => {
-        void recover(input.docId);
+        void deliver(input.docId);
       }),
     withDocument<T>(
       docId: string,
@@ -230,9 +231,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     ): Promise<T> {
       return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },
-    recover,
-    // In memory a catch-up can't fail: nothing to retry.
-    deliver: recover,
+    deliver,
   };
 }
 
