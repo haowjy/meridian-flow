@@ -111,7 +111,7 @@ export function useWorkBranchCommands({
         show(removed);
         return { sent: true, outcome };
       }
-      const discarded = owner.discard(ref(draft), target, surface);
+      const discarded = owner.discard(ref(draft), target, surface, endNotice);
       if (!discarded) return blocked();
       if (surface === "dock")
         show({

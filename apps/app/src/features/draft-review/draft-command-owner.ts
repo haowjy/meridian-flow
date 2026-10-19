@@ -65,6 +65,7 @@ export type CommandOutcome =
 type Binding = {
   session: DocumentSession;
   runtime: ReviewRuntime;
+  notices: Set<() => void>;
   stop(): void;
   cache: WeakMap<Schema, readonly PMNode[]>;
 };
@@ -227,6 +228,7 @@ export class DraftCommandOwner {
     const binding: Binding = {
       session,
       runtime: hold.runtime,
+      notices: new Set(),
       cache: new WeakMap(),
       stop: () => {},
     };
@@ -260,6 +262,7 @@ export class DraftCommandOwner {
     let stopSession = () => {};
     binding.stop = () => {
       stopSession();
+      for (const end of binding.notices) end();
       base.unobserveDeep(invalidate);
       record.unobserveDeep(observe);
       binding.runtime.setBaseProvider((room, schema) => readBase(room.document, schema));
@@ -337,6 +340,7 @@ export class DraftCommandOwner {
       unsentText,
       liveUri: liveUri ?? null,
     });
+    if (entry?.binding) for (const end of entry.binding.notices) end();
     entry?.queue.close();
     const id = this.identities.get(ref.itemKey);
     if (id) void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
@@ -458,7 +462,12 @@ export class DraftCommandOwner {
   }
 
   /** The caller selects history ownership, never whether an editor happens to be mounted. */
-  discard(ref: DraftRef, target: ChangeTarget, surface: "editor" | "dock"): DiscardNotice | null {
+  discard(
+    ref: DraftRef,
+    target: ChangeTarget,
+    surface: "editor" | "dock",
+    onNoticeEnd?: () => void,
+  ): DiscardNotice | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
     if (!this.active || !entry || !binding?.runtime.state().ready) return null;
@@ -508,17 +517,25 @@ export class DraftCommandOwner {
     const end = () => {
       if (!active) return;
       active = false;
+      binding.notices.delete(end);
       history.destroy();
       lease.dispose();
       entry.users--;
       if (id?.kind === "draft") this.releaseIdle(id.draftId, entry);
+      onNoticeEnd?.();
     };
+    binding.notices.add(end);
     return {
       kind: "discarded",
       itemKey: ref.itemKey,
       end,
       undo: () => {
-        if (!active || !this.active || this.state(ref.itemKey).closed) {
+        if (
+          !active ||
+          !this.active ||
+          entry.binding !== binding ||
+          this.state(ref.itemKey).closed
+        ) {
           end();
           return;
         }

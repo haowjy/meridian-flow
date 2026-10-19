@@ -13,7 +13,7 @@ it never partitions the text.
 - Text Discard is one local transaction. Its caller owns history: editor
   Ctrl+Z, or a pool-held surface notice with its own UndoManager. A dock
   Discard never enters editor history. Notice history ends on Undo, the next
-  action or leaving the surface.
+  action, leaving the surface or retiring the session binding that owns it.
 - Room readers retain the rooms on screen, even without an editor. Cached
   text may paint before first sync, but a row is ready only after sync.
 - The editor extension is a passive painter. Every frame addresses the actual
