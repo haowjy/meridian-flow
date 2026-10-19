@@ -29,15 +29,16 @@ export type ReplyRecord = {
   documents: Map<DocumentId, ReplyDocument>;
 };
 
+/** A drafted write's ensured peer becomes its reply document's pin, before its room read. */
 export function pinStaged(entry: ReplyDocument | undefined, staged: WriteContext): void {
-  const pulled = staged.interactionContext;
-  if (!entry || pulled?.mode !== "threadPeer" || entry.linkView.kind !== "branch") return;
-  if (!pulled.peerDraftId || !pulled.upstreamDraftId)
+  const peer = staged.interactionContext;
+  if (!entry || peer?.mode !== "threadPeer" || entry.linkView.kind !== "branch") return;
+  if (!peer.peerDraftId || !peer.upstreamDraftId)
     throw new Error("Drafted write has no reply peer identity");
   entry.pin = {
     branchId: entry.linkView.branchId,
-    peerDraftId: pulled.peerDraftId,
-    upstreamDraftId: pulled.upstreamDraftId,
+    peerDraftId: peer.peerDraftId,
+    upstreamDraftId: peer.upstreamDraftId,
   };
 }
 export type ReplySaveFences = {
@@ -145,7 +146,7 @@ export function createReplySaveFences(deps: {
           );
         } else if (record.threadId) {
           // A denial carries the policy's document-level copy; the writes are dropped (D29, D42).
-          await entry.core.invalidateThreadDocument(documentId, record.threadId);
+          entry.core.dropStaged(documentId, record.threadId);
           denied.add(entry.core);
         }
       }

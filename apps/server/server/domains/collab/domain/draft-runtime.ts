@@ -7,6 +7,11 @@ import {
   recoverLatePeerEdits,
   retainLateTypingDeletions,
 } from "@meridian/agent-edit/diff";
+import {
+  type SaveCut,
+  type SavePrecondition,
+  SavePreconditionRefused,
+} from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import {
   buildDocumentSchema,
@@ -31,7 +36,6 @@ import {
   DraftStaleUpdateError,
   type DraftStore,
   materializeDraftRead,
-  type RewriteOutcome,
   type RewritePolicy,
 } from "./draft-store.js";
 import type { WriterFrameDiagnostics } from "./draft-writer-frames.js";
@@ -109,8 +113,13 @@ export type DraftRuntime = {
   prepareAppend(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
-    options?: { admitted?: Y.Doc; authorServerRows?: AuthorServerRows; work?: "active" | "any" },
-  ): PreparedDraftWrite;
+    options?: {
+      admitted?: Y.Doc;
+      authorServerRows?: AuthorServerRows;
+      work?: "active" | "any";
+      precondition?: SavePrecondition;
+    },
+  ): PreparedDraftAppend;
   prepareRewrite(
     draftId: string,
     candidate: Y.Doc,
@@ -148,16 +157,8 @@ export type PreparedDraftWrite = {
   dispose(): void;
 };
 
-/** A rewrite refused for a reason other than a moved revision: never retried. */
-export class DraftRewriteRefused extends Error {
-  constructor(
-    readonly draftId: string,
-    readonly status: Extract<RewriteOutcome["status"], "upstreamMoved">,
-  ) {
-    super(`Draft ${draftId} rewrite was refused: ${status}`);
-    this.name = "DraftRewriteRefused";
-  }
-}
+/** An append's committed-prefix cut, available after persist resolves. */
+export type PreparedDraftAppend = PreparedDraftWrite & { cut(): SaveCut };
 
 export type DraftRuntimeInput = {
   store: DraftStore;
@@ -435,10 +436,15 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   function prepareAppend(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
-    options?: { admitted?: Y.Doc; authorServerRows?: AuthorServerRows; work?: "active" | "any" },
-  ): PreparedDraftWrite {
+    options?: {
+      admitted?: Y.Doc;
+      authorServerRows?: AuthorServerRows;
+      work?: "active" | "any";
+      precondition?: SavePrecondition;
+    },
+  ): PreparedDraftAppend {
     const { snapshot, replica } = base;
-    const { admitted, authorServerRows, work = "active" } = options ?? {};
+    const { admitted, authorServerRows, work = "active", precondition } = options ?? {};
     let prefix: Y.Doc;
     try {
       prefix = cloneReplica(replica);
@@ -448,7 +454,8 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     }
     let finalized: FinalizedAppend | undefined;
     let committedDoc: Y.Doc | undefined;
-    return preparedWrite({
+    let cut: SaveCut | undefined;
+    const write = preparedWrite({
       draftId: snapshot.draftId,
       candidate: admitted ?? prefix,
       owned: () => [prefix, ...(committedDoc ? [committedDoc] : [])],
@@ -486,6 +493,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               containment: documentContainment,
               validateWriter: assertWriterAuthorship,
               authorServerRows,
+              precondition,
               ...(snapshot.kind === "work_draft"
                 ? {
                     recovery: {
@@ -498,10 +506,13 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
             });
             committedDoc = judged.doc;
             finalized = judged.result;
+            cut = judged.cut;
             return judged.finalization;
           },
         });
         if (outcome.status === "contained") return { contained: true };
+        if (outcome.status === "preconditionFailed")
+          throw new SavePreconditionRefused(snapshot.documentId);
         if (outcome.status === "refused")
           throw new DraftStaleUpdateError(`Draft ${snapshot.draftId}`);
         if (outcome.status === "prefixMissing") {
@@ -542,6 +553,13 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         };
       },
     });
+    return {
+      ...write,
+      cut() {
+        if (!cut) throw new Error(`Draft ${snapshot.draftId} append has not persisted`);
+        return cut;
+      },
+    };
   }
 
   /** `candidate` committed through shape B as `rewrite` describes it. */
@@ -555,8 +573,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       candidate,
       async persist() {
         const outcome = await input.store.commitRewrite({ draftId, doc: candidate, ...rewrite });
-        if (outcome.status === "upstreamMoved")
-          throw new DraftRewriteRefused(draftId, outcome.status);
         if (outcome.status !== "committed") throw new DraftCasConflictError(draftId);
         // The fold may have applied rows this process never installed: delivery diffs the
         // documents rather than trusting anything computed before the lock.

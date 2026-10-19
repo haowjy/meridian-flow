@@ -2,12 +2,9 @@
  * Durable multi-document inverse admission: a lock-free capture, a plan on attempt-local
  * documents, one commit scope that validates the capture; delivers only after it commits.
  */
+
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-  ComputedInverseEdit,
-  DocumentCoordinator,
-  UpdateJournal,
-} from "@meridian/agent-edit/integration";
+import type { ComputedInverseEdit, UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId, UserId } from "@meridian/contracts";
 import {
@@ -39,6 +36,8 @@ import {
   type DraftDispositionView,
 } from "../domain/draft-disposition.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
+import { liveRoom } from "../domain/observation-rooms.js";
+import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { ReversalConflictError } from "../domain/reversal-conflict.js";
 import {
@@ -58,7 +57,7 @@ type Dependencies = {
   db: Database;
   journal: UpdateJournal;
   drafts: DraftStore;
-  coordinator: DocumentCoordinator;
+  coordinator: LiveDocumentCoordinator;
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
   onDraftCommitted(draftId: string): void;
   resolveDocumentUri(documentId: string): Promise<string | null>;
@@ -115,12 +114,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       wId: edit.wId,
     }));
   }
-  async function materialize(documentId: DocumentId): Promise<Y.Doc> {
+  async function materialize(documentId: DocumentId): Promise<{ doc: Y.Doc; room: string | null }> {
     const snapshot = await input.journal.read(documentId);
     const doc = new Y.Doc({ gc: false });
     if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
     for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
+    return {
+      doc,
+      room: snapshot.authority ? liveRoom(documentId, snapshot.authority.generation) : null,
+    };
   }
   /** Historical origin drafts supply disposition; only active drafts below admit writes. */
   function inverseDraftIds(
@@ -154,10 +156,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const removals = await readRemovalRecords(db(), ids);
       try {
         for (const documentId of ids) {
-          // A removed document has no live content to plan against: its parts are skipped
-          // with the record, and a released one has no head to materialize.
           const removal = removals.get(documentId) ?? null;
-          const live = removal ? new Y.Doc({ gc: false }) : await materialize(documentId);
+          const { doc: live, room: liveRoomName } = removal
+            ? { doc: new Y.Doc({ gc: false }), room: null }
+            : await materialize(documentId);
           const [head] = await db()
             .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
             .from(documentYjsUpdates)
@@ -167,6 +169,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             documentId,
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             live,
+            liveRoom: liveRoomName,
             removal,
             history: parts.filter((part) => part.documentId === documentId),
             drafts: new Map(),
@@ -356,7 +359,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ),
       );
       attempt.deliveries.push(...deliveries);
-      return handles;
+      return { handles, updates: planned.flatMap((entry) => entry.updates) };
     },
   };
 
@@ -562,7 +565,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         input.onDraftCommitted(draft.draftId);
         await input.draftCoordinator.deliverCommitted(draft.draftId);
       } else {
-        await input.coordinator.recover(document.documentId);
+        await input.coordinator.deliver(document.documentId);
         await input.refreshDocument(document.documentId);
         await input.flushLivePull(document.documentId);
       }

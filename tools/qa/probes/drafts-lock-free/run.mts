@@ -16,9 +16,7 @@ import { appendTailOrder } from "./append-tail-order.mts";
 import { archiveInFlightAppend } from "./archive-in-flight-append.mts";
 import { clientResync } from "./client-resync.mts";
 import { d12CreateDuringArchive } from "./d12-create-during-archive.mts";
-import { d13CandidateDisposal } from "./d13-candidate-disposal.mts";
 import { d22ConcurrentUndo } from "./d22-concurrent-undo.mts";
-import { d22RetractedPeerPull } from "./d22-retracted-peer-pull.mts";
 import { d23ArchivedDraftRebases } from "./d23-archived-draft-rebases.mts";
 import { effectProjection } from "./effect-projection.mts";
 import { effectWatermarkSweep } from "./effect-watermark-sweep.mts";
@@ -32,8 +30,6 @@ import { twoProcessCompaction, twoProcessFold, twoProcessFrames } from "./two-pr
 
 const PROBES: readonly Probe[] = [
   d12CreateDuringArchive,
-  d13CandidateDisposal,
-  d22RetractedPeerPull,
   f1InverseGrant,
   f1InverseDeadlock,
   d22ConcurrentUndo,

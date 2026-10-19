@@ -47,12 +47,10 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 
 import {
   type AgentEditResultV1,
-  applyConcurrentRenderBudget,
-  type ConcurrentEditInfo,
+  createReplyMutations,
   type FrontierLookup,
   isAgentEditResultEnvelope,
   type LinkShowing,
-  modelConcurrentResult,
   modelResult,
   type ObservationFrontier,
   type ResponseCommitWriteReceipt,
@@ -141,7 +139,7 @@ import {
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
-import { frontierLookup, recordFrontier } from "./frontier-recording.js";
+import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -173,6 +171,7 @@ import {
   loadReferenceReads,
   type ReferenceEvidence,
   type ReferenceReader,
+  recordReferenceEvidence,
 } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
@@ -269,9 +268,7 @@ export interface OrchestratorDeps {
   runClaim: RunClaim;
   activeDocuments: ActiveDocumentResolver;
   imageAssets: ImageAssetPort;
-  /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
-  concurrentRenderBudgetBytes?(request: GenerateRequest): number;
-  /** Shown-link evidence: tool results, reference reads, settled receipts and backfilled concurrent runs record here. */
+  /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
   observationFrontiers: ObservationFrontiers;
@@ -292,10 +289,9 @@ type ResponseWriteCommitOutcome =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      /** The saved documents' frontiers at the post-commit cut, for those that recorded one. */
+      /** The saved documents' frontiers at the save's after-state, for those that recorded one. */
       frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
-      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
-      /** Documents the save left out; their writes did not land (D29). A removal's carry its record. */
+      /** Documents the save left out; their writes did not land (D29). */
       refused: Array<{
         documentId: string;
         message: string;
@@ -1319,23 +1315,6 @@ async function persistCommittedWriteResult(input: {
 }
 
 /**
- * Records accepted reference reads' evidence: shown links under the turn whose
- * request shows them, frontiers on each reference block. Callers run it inside
- * the commit persisting those blocks, after they are projected.
- */
-async function recordReferenceEvidence(
-  deps: Pick<OrchestratorDeps, "shownLinks" | "observationFrontiers" | "eventSink">,
-  threadId: string,
-  turnId: string,
-  evidence: ReferenceEvidence,
-): Promise<void> {
-  for (const showing of evidence.shown)
-    await deps.shownLinks.record({ ...showing, threadId, turnId });
-  for (const { sourceBlockId, frontier } of evidence.frontiers)
-    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
-}
-
-/**
  * Loads text-reference reads for one user turn, returning prepared events and
  * blocks with read results applied. Used both
  * at iteration 1 (the run's triggering turn) and when a mid-run drain adopts a
@@ -1347,8 +1326,8 @@ async function prepareReferenceReads(input: {
   userTurnId: string;
   assistantTurnId: string;
   blocks: readonly Block[];
-  /** The run's blocks the reads are shown beside: their frontiers chain from these. */
-  runBlocks: readonly Block[];
+  /** What the reads are shown beside: their frontiers chain from these and the turn's own blocks. */
+  credited: CreditedBlocks;
   signal?: AbortSignal;
 }): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; evidence: ReferenceEvidence }> {
   const { blocks: loaded, evidence } = await loadReferenceReads({
@@ -1360,7 +1339,7 @@ async function prepareReferenceReads(input: {
     signal: input.signal,
     recordingFrontier: frontierLookup(
       input.deps,
-      () => [...input.runBlocks, ...input.blocks].map((block) => block.id),
+      () => [...input.credited.ids(), ...input.blocks.map((block) => block.id)],
       { threadId: input.threadId, turnId: input.assistantTurnId },
     ),
   });
@@ -1548,8 +1527,9 @@ function createResponseScope(input: {
   turnId: TurnId;
   responseId: string;
   allBlocks: Block[];
+  credited: CreditedBlocks;
 }) {
-  const { deps, threadId, turnId, allBlocks } = input;
+  const { deps, threadId, turnId, allBlocks, credited } = input;
   const writes = new Map<
     string,
     Array<{
@@ -1559,17 +1539,20 @@ function createResponseScope(input: {
       uri: string | null;
     }>
   >();
-  /** Records what a settled receipt or a backfilled concurrent run showed the model, from the binding that rendered it. */
+  /** Records what a settled receipt showed the model, from the binding that rendered it. */
   const recordShown = async (documentId: string, shown: { showing?: LinkShowing }) => {
     if (!shown.showing) return;
     await deps.shownLinks.record({ threadId, turnId, documentId, ...shown.showing });
   };
   let id = input.responseId;
   let active = true;
+  const reply = createReplyMutations();
   return {
     get id() {
       return id;
     },
+    /** The reply's own accepted mutations: they outlive edit-scope rotations, not the reply. */
+    reply,
     get hasWrites() {
       return writes.size > 0;
     },
@@ -1634,10 +1617,7 @@ function createResponseScope(input: {
           turnId,
           // The settled receipts are a result like any other: their frontier chains from the
           // model's latest row, which may be a sibling read's in this step.
-          recordingFrontier: frontierLookup(deps, () => allBlocks.map((block) => block.id), {
-            threadId,
-            turnId,
-          }),
+          recordingFrontier: frontierLookup(deps, () => credited.ids(), { threadId, turnId }),
         },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
@@ -1700,48 +1680,6 @@ function createResponseScope(input: {
         if (index >= 0) allBlocks[index] = block;
       }
       return outcome;
-    },
-    async backfill(
-      editsByDocument: Extract<
-        ResponseWriteCommitOutcome,
-        { status: "committed" }
-      >["concurrentEdits"],
-      remainingBytes: number,
-    ) {
-      const renderBudget = { remainingBytes };
-      // Backfill body-complete concurrent runs into the last write result per document.
-      for (const { documentId, concurrentEdits: edits } of editsByDocument) {
-        const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-        const last = writes.get(documentId)?.at(-1);
-        if (!last) continue;
-        const block = last.block;
-        const content = block.content as JsonObject | null;
-        const staged = stagedWriteResult(block);
-        if (!content || !staged) continue;
-
-        const updatedContent = {
-          ...content,
-          ...writeResultContent({ ...staged, concurrent: modelConcurrentResult(boundedEdits) }),
-        };
-        const updatedBlockRow = contentForBlockInput({
-          id: block.id,
-          turnId: block.turnId,
-          responseId: block.responseId,
-          blockType: "tool_result",
-          sequence: block.sequence,
-          content: toJsonValue(updatedContent),
-          provider: block.provider,
-          status: "complete",
-        });
-        const persistedBackfill = await persistAndAppendEvents(deps, input.threadId, async () => ({
-          result: localBlockFromEvent(updatedBlockRow),
-          events: [{ type: "block.upserted", block: updatedBlockRow }],
-        }));
-        const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
-        if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-        // Only runs that fit the render budget were shown.
-        for (const run of boundedEdits.runs) await recordShown(documentId, run);
-      }
     },
     async rollback() {
       if (!active) return;
@@ -1833,6 +1771,7 @@ async function executeLoop({
   }
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
+  const credited = new CreditedBlocks(initialContext?.creditedBlockIds);
   // Only the blocks of the turns the request holds: a forgotten turn's blocks stay in the table.
   const requestTurnIds = new Set(allTurns.map((turn) => turn.id));
   const allBlocks: Block[] = [
@@ -1893,7 +1832,7 @@ async function executeLoop({
           userTurnId: turn.id,
           assistantTurnId: currentTurn.id,
           blocks,
-          runBlocks: allBlocks,
+          credited,
           signal: input.signal,
         });
         const skillBody = await prepareSkillBodies({
@@ -1999,7 +1938,8 @@ async function executeLoop({
       retriedContextOverflow = false;
     skillBodies.committed(result.drain.turns);
     allTurns.push(...result.drain.turns);
-    for (const block of result.drain.blocks) {
+    for (const block of [...(result.completedBlocks ?? []), ...result.drain.blocks]) {
+      credited.add(block.id);
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
       else allBlocks[index] = block;
@@ -2066,7 +2006,6 @@ async function executeLoop({
     pendingSummaryResponses = [];
     pendingSummary = undefined;
     preparedContext = result.preparedContext;
-    if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
     return acceptBoundary(result.successor);
   }
 
@@ -2224,9 +2163,12 @@ async function executeLoop({
           gatewaySignal: gatewayAbort.signal,
         });
         const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
+        const requestCreditedIds = preparedContext.creditedBlockIds;
         preparedContext = undefined;
-        // The effective conversation this request was built from: every call it produces plans on it (C4).
-        const planningBlockIds = allBlocks.map((block) => block.id);
+        // What credits is what this request carries (C10), so a compaction restarts the chain here.
+        // Every call it produces plans on that set as of now (C4); results persisting later join `credited`.
+        credited.reset(requestCreditedIds);
+        const planningBlockIds = credited.ids();
         thread = built.thread;
         const request = built.request;
         const gatewayCallId = crypto.randomUUID();
@@ -2483,124 +2425,127 @@ async function executeLoop({
             turnId: currentTurn.id,
             responseId,
             allBlocks,
+            credited,
           });
           responseScope = scope;
-          if (isCancelled()) {
-            return cancelExit();
-          }
-
-          // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-          // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
-          for (const call of toolCallsFromResult) {
+          // The reply owns its own-mutation sequence until here, whichever way it ends.
+          try {
             if (isCancelled()) {
               return cancelExit();
             }
 
-            if (scope.hasWrites && isSaveBoundary(call)) {
-              const boundary = await scope.commit();
-
-              if (boundary.status === "branch_closed") {
-                return exitRun(true, abortTerminal());
+            // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+            // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
+            for (const call of toolCallsFromResult) {
+              if (isCancelled()) {
+                return cancelExit();
               }
-              scope.rotate();
-            }
 
-            // If denied, we still persist a tool_result block (with isError: true)
-            // so the model sees the rejection in the next turn's context build.
-            if (!built.policy.has(call.name)) {
-              const persistedRejection = await persistToolRejection({
-                deps,
-                threadId: input.threadId,
-                turn: currentTurn,
-                call,
-                reason: missingToolRefusal(call.name),
-                blockSeq,
-              });
-              blockSeq = persistedRejection.nextBlockSeq;
-              allBlocks.push(persistedRejection.block);
+              if (scope.hasWrites && isSaveBoundary(call)) {
+                const boundary = await scope.commit();
 
-              continue;
-            }
+                if (boundary.status === "branch_closed") {
+                  return exitRun(true, abortTerminal());
+                }
+                scope.rotate();
+              }
 
-            await publishPhase("waiting");
-            const interruptState = {
-              thread,
-              threadId: input.threadId,
-              currentTurn: currentTurn,
-              autoResume: interruptAutoResume,
-              signal: input.signal,
-              blockSeqRef: { value: blockSeq },
-              allBlocks,
-            };
-            const interruptSession = createInterruptSession(
-              {
-                interruptRegistry: deps.interruptRegistry,
-                interruptArtifacts: deps.interruptArtifacts,
-                persistenceDeps: deps,
-                eventSink,
-              },
-              interruptState,
-            );
-            const dispatched = await dispatchToolCall(
-              {
-                toolExecutor: deps.toolExecutor,
-                childRunCoordinator: deps.childRunCoordinator,
-                eventSink,
-                persistenceDeps: deps,
-                executionReports: deps.repos.executionReports,
-                readSnapshot: deps.repos.readSnapshot,
-                runClaim: deps.runClaim,
-                shownLinks: deps.shownLinks,
-                observationFrontiers: deps.observationFrontiers,
-              },
-              call,
-              {
+              // If denied, we still persist a tool_result block (with isError: true)
+              // so the model sees the rejection in the next turn's context build.
+              if (!built.policy.has(call.name)) {
+                const persistedRejection = await persistToolRejection({
+                  deps,
+                  threadId: input.threadId,
+                  turn: currentTurn,
+                  call,
+                  reason: missingToolRefusal(call.name),
+                  blockSeq,
+                });
+                blockSeq = persistedRejection.nextBlockSeq;
+                allBlocks.push(persistedRejection.block);
+
+                continue;
+              }
+
+              await publishPhase("waiting");
+              const interruptState = {
                 thread,
-                lease: input.lease,
-                agentSlug: built.agentSlug,
-                responseId,
-                editResponseId: scope.id,
-                state: interruptState,
-                interruptSession,
-                interruptAutoResume,
-                treeBudget,
-                blockSeqRef: interruptState.blockSeqRef,
-                allTurns,
-                planningBlockIds,
-              },
-            );
-            currentTurn = interruptState.currentTurn;
-            blockSeq = interruptState.blockSeqRef.value;
+                threadId: input.threadId,
+                currentTurn: currentTurn,
+                autoResume: interruptAutoResume,
+                signal: input.signal,
+                blockSeqRef: { value: blockSeq },
+                allBlocks,
+              };
+              const interruptSession = createInterruptSession(
+                {
+                  interruptRegistry: deps.interruptRegistry,
+                  interruptArtifacts: deps.interruptArtifacts,
+                  persistenceDeps: deps,
+                  eventSink,
+                },
+                interruptState,
+              );
+              const dispatched = await dispatchToolCall(
+                {
+                  toolExecutor: deps.toolExecutor,
+                  childRunCoordinator: deps.childRunCoordinator,
+                  eventSink,
+                  persistenceDeps: deps,
+                  executionReports: deps.repos.executionReports,
+                  readSnapshot: deps.repos.readSnapshot,
+                  runClaim: deps.runClaim,
+                  shownLinks: deps.shownLinks,
+                  observationFrontiers: deps.observationFrontiers,
+                },
+                call,
+                {
+                  thread,
+                  lease: input.lease,
+                  agentSlug: built.agentSlug,
+                  responseId,
+                  editResponseId: scope.id,
+                  state: interruptState,
+                  interruptSession,
+                  interruptAutoResume,
+                  treeBudget,
+                  blockSeqRef: interruptState.blockSeqRef,
+                  allTurns,
+                  planningBlockIds,
+                  credited,
+                  replyMutations: scope.reply,
+                },
+              );
+              currentTurn = interruptState.currentTurn;
+              blockSeq = interruptState.blockSeqRef.value;
 
-            if (!dispatched.cancelled) scope.stage(dispatched);
-            if (dispatched.cancelled || isCancelled()) {
+              if (!dispatched.cancelled) scope.stage(dispatched);
+              if (dispatched.cancelled || isCancelled()) {
+                return cancelExit();
+              }
+              if (dispatched.endTurn === true) endTurnRequested = true;
+            }
+            if (isCancelled()) {
               return cancelExit();
             }
-            if (dispatched.endTurn === true) endTurnRequested = true;
-          }
-          if (isCancelled()) {
-            return cancelExit();
-          }
-          const concurrentEdits = await scope.commit();
-          responseScope = undefined;
+            const saved = await scope.commit();
+            responseScope = undefined;
 
-          if (concurrentEdits.status === "branch_closed") {
-            return exitRun(true, abortTerminal());
+            if (saved.status === "branch_closed") {
+              return exitRun(true, abortTerminal());
+            }
+
+            if (endTurnRequested) {
+              // A child called return_result: the report is captured and persisted,
+              // so the turn ends here instead of looping into another model round.
+              // A message that landed in the exit window keeps the run going.
+              return exitRun(true, completeTerminal(result));
+            }
+
+            return true;
+          } finally {
+            scope.reply.clear();
           }
-
-          await scope.backfill(
-            concurrentEdits.concurrentEdits,
-            deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
-          );
-
-          if (endTurnRequested) {
-            // A child called return_result: the report is captured and persisted,
-            // so the turn ends here instead of looping into another model round.
-            // A message that landed in the exit window keeps the run going.
-            return exitRun(true, completeTerminal(result));
-          }
-
-          return true;
         }
 
         return exitRun(true, completeTerminal(result));

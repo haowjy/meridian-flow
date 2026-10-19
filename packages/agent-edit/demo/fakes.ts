@@ -21,14 +21,6 @@ export class InMemoryCoordinator implements DocumentCoordinator {
     return this.lock(docId, async () => fn(this.getOrCreate(docId)));
   }
 
-  async recover(docId: string): Promise<void> {
-    await this.withDocument(docId, async (doc) => {
-      const snapshot = await this.journal.read(docId);
-      if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-      for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
-    });
-  }
-
   requireDocument(docId: string): Y.Doc {
     const doc = this.docs.get(docId);
     if (!doc) throw new DocumentNotFoundError(docId);

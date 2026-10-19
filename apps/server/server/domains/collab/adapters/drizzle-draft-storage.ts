@@ -263,14 +263,11 @@ export type RewriteCommit = {
   draftId: string;
   policy: RewritePolicy;
   /**
-   * `active`: the checkpoint `UPDATE` carries the draft's Work-is-active predicate (a content
-   * write the Work admits); zero rows is `moved`. `any`: a pull or compaction, which no
-   * Work lifecycle gates: an archived Work's drafts keep rebasing on live.
+   * `active`: the checkpoint `UPDATE` carries the draft's Work-is-active predicate; zero
+   * rows is `moved`. `any`: compaction runs regardless of Work lifecycle.
    */
   work: "active" | "any";
-  /** A peer's captured upstream: locked `FOR SHARE` before the peer row, then checked. */
-  upstream?: { draftId: string };
-  /** The new checkpoint. Under `fold`, a pull applies the tail into it. */
+  /** The new checkpoint. Under `fold`, the committed tail is applied into it. */
   doc: Y.Doc;
   schemaVersion?: CollabSchemaVersion;
   /** A content-free fold: the reader-visible modification stamp (`updated_at`) stays. */
@@ -282,8 +279,8 @@ export type RewriteCommit = {
 };
 
 /**
- * Shape B, the one checkpoint door, inside the caller's transaction: lock the upstream
- * (`FOR SHARE`) then the draft row (`FOR UPDATE`), validate the policy and the fence, fold
+ * Shape B, the one checkpoint door, inside the caller's transaction: lock the draft row
+ * (`FOR UPDATE`), validate the policy and the fence, fold
  * the tail, write the checkpoint at `revision + 1` with `checkpoint_seq` covering every row
  * the draft now has. No compute beyond the fold runs under the lock.
  */
@@ -291,14 +288,6 @@ export async function commitRewriteWithinTx(
   db: DrizzleDb,
   input: RewriteCommit,
 ): Promise<RewriteOutcome> {
-  if (input.upstream) {
-    const [upstream] = await db
-      .select({ status: documentDrafts.status })
-      .from(documentDrafts)
-      .where(eq(documentDrafts.id, input.upstream.draftId))
-      .for("share");
-    if (upstream?.status !== "active") return { status: "upstreamMoved" };
-  }
   const [locked] = await db
     .select({
       documentId: documentDrafts.documentId,

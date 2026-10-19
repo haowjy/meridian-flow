@@ -13,7 +13,6 @@ import {
 import type {
   AgentEditCodecFactory,
   AgentEditModel,
-  DocumentCoordinator,
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import type { ApplyClickAnswer, ApplyClickResult } from "@meridian/contracts/branches";
@@ -55,6 +54,7 @@ import {
 } from "../domain/draft-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { storedDocument } from "./document-loader.js";
 import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
 
@@ -75,7 +75,7 @@ export function createDrizzleApplyClick(
     workProjection: WorkProjectionMutation;
     coordinator: Pick<DraftCoordinator, "loadBase" | "prepareAppend">;
     live: UpdateJournal;
-    liveCoordinator: Pick<DocumentCoordinator, "recover">;
+    liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     model: AgentEditModel;
     codec: AgentEditCodecFactory;
     links: DocumentLinkScopes;
@@ -378,7 +378,7 @@ export function createDrizzleApplyClick(
                       };
                       await finish(answer);
                       deferUntilDrizzleCommit(async () => {
-                        await deps.liveCoordinator.recover(command.documentId);
+                        await deps.liveCoordinator.deliver(command.documentId);
                         await deps.onCommitted(command.documentId);
                       });
                       return answer;

@@ -160,7 +160,6 @@ describe("durable document derivations", () => {
         const checkpoints = createCheckpointService({
           coordinator: {
             withDocument: async (_id, operation) => operation(room),
-            recover: async () => {},
           },
           store: persistence.store,
           journal: persistence.journal,
@@ -659,7 +658,6 @@ describe("durable document derivations", () => {
     const explicit = createCheckpointService({
       coordinator: {
         withDocument: async (_id, operation) => operation(room),
-        recover: async () => {},
       },
       store: persistence.store,
       journal: persistence.journal,

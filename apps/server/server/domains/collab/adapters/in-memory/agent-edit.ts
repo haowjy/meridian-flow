@@ -1,7 +1,6 @@
 /** In-memory agent-edit adapters for tests and the in-memory app graph. */
 
 import {
-  type DocumentAccess,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type PersistedUpdate,
@@ -18,6 +17,7 @@ import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../../domain/ports/checkpoint-authority.js";
+import type { LiveDocumentCoordinator } from "../../domain/ports/live-document-coordinator.js";
 import type {
   LiveWriterAppend,
   LiveWriterJournal,
@@ -25,6 +25,7 @@ import type {
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState, storedDocument } from "../document-loader.js";
+import { emptyWhenMissing, liveRoomFor, liveSave, withStaged } from "../hocuspocus-coordinator.js";
 
 export type InMemoryCheckpointRecord = {
   id: string;
@@ -167,9 +168,11 @@ export function createInMemoryJournal(): InMemoryJournal {
   return new InMemoryCollabJournal();
 }
 
-export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoordinator & {
-  ensureEmpty(docId: string): Y.Doc;
-} {
+/** Both doors over in-process rooms: a save appends to the journal and delivers at once. */
+export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoordinator &
+  LiveDocumentCoordinator & {
+    ensureEmpty(docId: string): Y.Doc;
+  } {
   const docs = new Map<string, Y.Doc>();
   const mutex = new KeyedMutex();
 
@@ -195,25 +198,39 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     Y.applyUpdate(doc, missing, { type: "system" });
   }
 
+  async function roomCopy(docId: string): Promise<{ doc: Y.Doc; room: string | null }> {
+    const copy = createCollabYDoc({ gc: false });
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(requireDoc(docId)));
+    await applyPersisted(docId, copy);
+    bindDocumentAuthority(copy, { authorityId: docId as never, generation: 1n });
+    return { doc: copy, room: liveRoomFor(docId, copy) };
+  }
+
+  // In memory a catch-up can't fail: nothing to retry.
+  function deliver(docId: string): Promise<void> {
+    return mutex.run(docId, async () => {
+      const state = await loadDocumentState(journal, docId);
+      if (!state && !docs.has(docId)) return;
+      const doc = ensureEmpty(docId);
+      if (state) await applyPersisted(docId, doc);
+    });
+  }
+
   return {
     ensureEmpty,
-
+    readRoom: async (docId, staged) => withStaged(await roomCopy(docId), staged),
+    prepareSave: async (input) =>
+      liveSave(await roomCopy(input.docId).catch(emptyWhenMissing), input, journal, () => {
+        void deliver(input.docId);
+      }),
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentAccess,
+      options?: { timeoutMs?: number; signal?: AbortSignal },
     ): Promise<T> {
       return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },
-
-    recover(docId: string): Promise<void> {
-      return mutex.run(docId, async () => {
-        const state = await loadDocumentState(journal, docId);
-        if (!state && !docs.has(docId)) return;
-        const doc = ensureEmpty(docId);
-        if (state) await applyPersisted(docId, doc);
-      });
-    },
+    deliver,
   };
 }
 

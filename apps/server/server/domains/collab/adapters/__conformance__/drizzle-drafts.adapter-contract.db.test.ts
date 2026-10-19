@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { commitDraftRows } from "../../test-support/draft-update-writes.js";
 import { createDraftClose } from "../drizzle-draft-close.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -172,7 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         branchId: BRANCH_ID as never,
-        liveDoc: live,
+        liveDoc: async () => live,
       });
       await db.insert(works).values({
         id: NEXT_WORK_ID,
@@ -207,7 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         branchId: NEXT_BRANCH_ID as never,
-        liveDoc: live,
+        liveDoc: async () => live,
       });
       const [oldRow, nextUpstream] = await Promise.all([
         db
@@ -290,7 +291,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           store: measuredStore,
         });
         expect(
-          await coordinator.commitSegmentRows({
+          await commitDraftRows(coordinator, {
             draftId: documentDraft.draftId,
             sourceDoc: source,
             rows,
