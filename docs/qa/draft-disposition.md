@@ -28,6 +28,9 @@ An assertion failure exits nonzero. No new test-suite case is registered.
 - Discard all across five drafts: all drafts closed with cause `discarded`,
   immutable parts and journal statuses exactly unchanged. Non-applied receipts
   read discarded; historical Apply evidence still reads applied after close.
+- Revert on a closed draft: `nothing_to_revert` with discarded copy, live text
+  unchanged, and no new immutable edit part. Historical readability never grants
+  write admission.
 
 Fixtures explicitly create the two review fragments following DV's fixture
 pattern. They write immutable AI receipts and construct Apply records directly:
