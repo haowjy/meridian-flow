@@ -2,12 +2,9 @@
  * Durable multi-document inverse admission: a lock-free capture, a plan on attempt-local
  * documents, one commit scope that validates the capture; delivers only after it commits.
  */
+
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-  ComputedInverseEdit,
-  DocumentCoordinator,
-  UpdateJournal,
-} from "@meridian/agent-edit/integration";
+import type { ComputedInverseEdit, UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates, textInRanges } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId, UserId } from "@meridian/contracts";
 import {
@@ -37,6 +34,7 @@ import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
 import { liveRoom } from "../domain/observation-rooms.js";
+import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { ReversalConflictError } from "../domain/reversal-conflict.js";
 import {
@@ -55,7 +53,7 @@ type Dependencies = {
   db: Database;
   journal: UpdateJournal;
   drafts: DraftStore;
-  coordinator: DocumentCoordinator;
+  coordinator: LiveDocumentCoordinator;
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;

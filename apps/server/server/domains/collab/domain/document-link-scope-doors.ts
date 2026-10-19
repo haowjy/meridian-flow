@@ -69,7 +69,6 @@ export function scopeAgentEdit(
   });
   return asThreadPeerAgentEditCore({
     // Passed through: no Markdown of their own, or it comes from the scoped engine.
-    recover: core.recover,
     // Saved and rolled back within the reply's thread, by the finalizer below.
     rollbackResponse: core.rollbackResponse,
     commitResponse: core.commitResponse,

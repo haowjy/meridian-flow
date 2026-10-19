@@ -17,8 +17,8 @@ coordinator; a room copy is a disposable per-call Y.Doc read from it.
   ([#111](https://github.com/haowjy/meridian-flow/issues/111)).
 - Written links are assigned before alignment and never round-trip through
   Markdown. Unchanged refs keep their attributes; ahead refs are registered
-  before apply or lock. Fresh creates recheck empty-document admission at the
-  journal boundary.
+  before apply or save. A create without overwrite rechecks that the document is
+  empty on the state its save reads.
 - `remove` structurally removes blocks and takes exactly one scope selector;
   empty-string `replace` remains text-span deletion. Scope addresses are
   view-scoped while CRDT identity stays document-scoped. A write resolves its
@@ -51,8 +51,9 @@ and the room copy, so parallel calls and write/undo/write in one reply never
 reuse a client. A write with no valid view is refused with the region's current
 text ([write-architecture.md](write-architecture.md#the-region-check)).
 
-Commit re-sync applies durable updates one at a time with persisted origin so
-human/agent attribution survives restart; containment in the view is the only
+Commit-time detection, on the state the save read, applies the updates the
+first write's view lacks one at a time with persisted origin so human/agent
+attribution survives restart; containment in the view is the only
 skip, the model's own earlier updates included. A session snapshot cannot
 substitute for that baseline.
 

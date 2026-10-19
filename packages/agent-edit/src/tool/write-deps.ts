@@ -8,7 +8,7 @@ import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
-import type { UpdateJournal } from "../ports/update-journal.js";
+import type { AgentEditJournal } from "../ports/update-journal.js";
 import type {
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
@@ -29,7 +29,7 @@ export interface ObservationFailedDetail {
 }
 
 export interface CreateWriteToolOptions {
-  journal: UpdateJournal;
+  journal: AgentEditJournal;
   documentEdits?: import("../ports/document-edits.js").DocumentEdits;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
@@ -59,6 +59,4 @@ export interface CreateWriteToolOptions {
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onUnexpectedWriteError?: (event: UnexpectedWriteErrorDetail) => void;
   closedResponseTombstoneCap?: number;
-  /** Commit-phase seam for deterministic race injection and host observability. */
-  afterResponsePreflight?: (responseId: string) => Promise<void> | void;
 }

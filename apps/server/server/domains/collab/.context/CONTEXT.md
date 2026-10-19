@@ -481,8 +481,8 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
-Each concurrent-attribution preflight and final recheck uses its own upstream
-cut. Baseline containment compares struct clocks and the delete set: equal
+A save's concurrent attribution reads the upstream cut its save read (the
+save's before state); there is no preflight or second recheck. Baseline containment compares struct clocks and the delete set: equal
 state vectors alone do not establish equality, so delete-only writer edits are
 still attributed. There is no journal floor: each check reads the Work draft
 generation's rows and skips only those the view contains, so its cost grows with

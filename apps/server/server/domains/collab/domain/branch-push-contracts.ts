@@ -3,7 +3,6 @@
 import type {
   AgentEditCodecFactory,
   CanonicalBlockIdentity,
-  DocumentCoordinator,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
@@ -17,6 +16,7 @@ import type { DraftSnapshot, DraftStore } from "./draft-store.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { ApplyItemHold, ApplyItemOutcome, ApplyRefusal } from "./ports/settlement-apply.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -307,7 +307,7 @@ export type BranchPushServiceInput = {
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
   journal: UpdateJournal;
-  liveCoordinator: Pick<DocumentCoordinator, "withDocument" | "recover">;
+  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Push and settlement scope themselves; the trail text spells through it. */

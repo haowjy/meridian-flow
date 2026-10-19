@@ -51,9 +51,12 @@ export interface RoomRead extends StagedReconcile {
 
 /** A save of one scope's entries: the kept and refused ones, and where they went. */
 export interface StagedWriteSaveResult extends StagedReconcile {
-  /** The room the rows append into. */
+  /** The room the rows append into; null records no frontier (a document this save creates). */
   room: string | null;
-  /** The room's committed state before the kept rows, and with them. */
+  /**
+   * The room's committed state before the kept rows, and with them: what the save's receipts,
+   * commit-time detection and recorded frontier read.
+   */
   beforeState: Uint8Array;
   afterState: Uint8Array;
   /**
@@ -65,28 +68,18 @@ export interface StagedWriteSaveResult extends StagedReconcile {
 }
 
 /**
- * A host's prepared write of a save's kept entries, owned by the caller's attempt: nothing is
- * persisted until `persist` runs inside the caller's commit scope; `transfer` hands the write
- * to the host once that attempt completed, and the host installs it when the enclosing root
- * transaction commits (never before); `dispose` drops it on any unwind. `persist` throws when
- * the host's base moved since preparing; the caller then disposes this write and prepares again.
+ * A host's prepared write of a save's kept entries, owned by the caller: nothing is persisted
+ * until `persist` runs inside the caller's commit scope; `transfer` hands the write to the host
+ * once that scope completed, and the host installs it (a live host delivers it to open
+ * editors) when the enclosing root transaction commits, never before, or at once when there is
+ * none; `dispose` drops it on any unwind. `persist` throws when the host's base moved since
+ * preparing; the caller then disposes this write and prepares again.
  */
 export interface StagedWriteCommit {
   kind: "write";
   persist(): Promise<void>;
   transfer(): void;
   dispose(): void;
-}
-
-/**
- * A host that saves a response's staged writes itself (a draft host): it reconciles them
- * against the scope's cut on the current room and prepares their rows. Pure with respect to
- * the host until `persist`.
- */
-export interface StagedWriteHost {
-  prepareSave(
-    input: StagedRoomEntries & { docId: string; access?: DocumentAccess },
-  ): Promise<StagedWriteSaveResult>;
 }
 
 /**
@@ -118,10 +111,9 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 }
 
 /**
- * Port callers' access to the host-owned canonical Y.Doc (live or draft). `readRoom` is the one
- * way a call gets a document to render, plan from or record: a private copy, read without
- * serializing against other callers. `withDocument` is a commit door: callers must not rely on
- * mutual exclusion (a live host serializes callers; a draft host saves through `stagedWrites`).
+ * A host's documents (live or draft) as agent-edit reaches them: `readRoom` is the one way a
+ * call gets a document to render, plan from or record, and `prepareSave` the one way any write
+ * lands, a reply's or one outside a reply alike. Neither serializes against other callers.
  */
 export interface DocumentCoordinator {
   /**
@@ -135,32 +127,19 @@ export interface DocumentCoordinator {
     access?: DocumentAccess,
   ): Promise<RoomRead>;
 
-  /** Staged response writes, for a host that saves them itself (a draft host). */
-  stagedWrites?: StagedWriteHost;
-
-  /** Immutable host generation bound to this canonical document, when supported. */
-  documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;
   /**
-   * The room label of a document this host handed to `withDocument`, under its access: what a
-   * save that committed into it records. Null when the host can't name it.
+   * One save of a scope's entries, reconciled against its cut on the current room and prepared
+   * without touching the host until `persist`. A document that doesn't exist yet saves onto an
+   * empty one.
    */
-  roomFor?(docId: string, doc: Y.Doc): string | null;
-  /**
-   * Runs `fn` on the host's document for the duration of the call. Its mutations commit
-   * atomically or refuse; callers must not rely on mutual exclusion with other callers.
-   * Rejects with DocumentNotFoundError when the document is missing; other
-   * rejections are runtime failures and surface as retryable internal errors.
-   */
-  withDocument<T>(
-    docId: string,
-    fn: (doc: Y.Doc) => Promise<T>,
-    options?: DocumentAccess,
-  ): Promise<T>;
+  prepareSave(
+    input: StagedRoomEntries & { docId: string; access?: DocumentAccess },
+  ): Promise<StagedWriteSaveResult>;
 
   /**
-   * Optional origin-aware description of the updates present in the coordinated doc that
-   * `baselineDoc` (the view the writes planned on) doesn't contain: containment is the only
-   * skip. Generic live-doc adapters omit this and callers treat the delta as human-origin.
+   * Optional origin-aware description of the updates present in `doc` (the save's before
+   * state) that `baselineDoc` (the view the writes planned on) doesn't contain: containment is
+   * the only skip. Hosts that omit it have the whole delta treated as the writer's.
    */
   concurrentUpdatesSince?(input: {
     docId: string;
@@ -170,22 +149,10 @@ export interface DocumentCoordinator {
     reportingCut?: Uint8Array;
     access?: DocumentAccess;
   }): Promise<ConcurrentUpdate[]>;
-
-  /**
-   * Replay persisted-but-not-applied updates on startup or recovery.
-   * Idempotent: safe to call multiple times; applies only updates missing from the coordinated doc.
-   */
-  recover(docId: string): Promise<void>;
 }
 
 /** How a caller reaches a host document. */
 export interface DocumentAccess {
-  /**
-   * A live host only: the maximum wait for its per-document serialization. Callback duration
-   * is not timed; a draft host, which serializes nothing, ignores it.
-   */
-  timeoutMs?: number;
-  signal?: AbortSignal;
   /**
    * The thread peer a draft-mode call is bound to (`InteractionContext.peerDraftId`): the host
    * reads and saves exactly its Work draft and never provisions another.

@@ -1,10 +1,10 @@
-// Echo for post-merge apply results, and the lineage concurrent updates made visible.
+// Block snapshots, and the echo a write shows of what it changed.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
-import type { ApplyEchoHunk, ConcurrentUpdate } from "./types.js";
+import type { ApplyEchoHunk } from "./types.js";
 
 export interface BlockSnapshot {
   hash: string;
@@ -17,11 +17,6 @@ export interface BlockSnapshot {
   serialized: string;
   /** Visible prose ancestry; identities come from CRDT items, never text bytes. */
   lineage: readonly ContentLineage[];
-}
-
-/** Lineage concurrent updates first made visible, by the actor kind that wrote it. */
-export interface ConcurrentDetectionResult {
-  lineageOrigins: readonly (ContentLineage & { origin: "human" | "agent" })[];
 }
 
 export interface EchoInput {
@@ -50,55 +45,6 @@ export function snapshotBlocks(
     serialized: serialized[index],
     lineage: model.getVisibleContentLineage(block),
   }));
-}
-
-/**
- * Apply concurrent updates one at a time, recording the lineage each first made visible and
- * who wrote it. Update bytes don't carry their origin, so callers pass it beside each one.
- */
-export function applyConcurrentUpdates(
-  doc: DocHandle,
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-  updates: readonly ConcurrentUpdate[],
-): ConcurrentDetectionResult {
-  const lineageOrigins: Array<ContentLineage & { origin: "human" | "agent" }> = [];
-  for (const item of updates) {
-    if (item.update.length === 0) continue;
-    if (item.origin.type === "system") {
-      model.applyUpdate(doc, item.update, item.origin);
-      continue;
-    }
-    const before = visibleLineage(snapshotBlocks(doc, model, codec));
-    model.applyUpdate(doc, item.update, item.origin);
-    const actor = item.origin.type === "agent" ? "agent" : "human";
-    for (const lineage of visibleLineage(snapshotBlocks(doc, model, codec)))
-      if (!lineageCovered(lineage, before)) lineageOrigins.push({ ...lineage, origin: actor });
-  }
-  return { lineageOrigins };
-}
-
-function visibleLineage(blocks: readonly BlockSnapshot[]): ContentLineage[] {
-  return blocks.flatMap((block) => block.lineage);
-}
-
-function lineageCovered(target: ContentLineage, candidates: readonly ContentLineage[]): boolean {
-  const end = target.clock + target.length;
-  let coveredUntil = target.clock;
-  const relevant = candidates
-    .filter(
-      (candidate) =>
-        candidate.clientID === target.clientID &&
-        candidate.clock < end &&
-        candidate.clock + candidate.length > target.clock,
-    )
-    .sort((left, right) => left.clock - right.clock);
-  for (const candidate of relevant) {
-    if (candidate.clock > coveredUntil) return false;
-    coveredUntil = Math.max(coveredUntil, candidate.clock + candidate.length);
-    if (coveredUntil >= end) return true;
-  }
-  return false;
 }
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */

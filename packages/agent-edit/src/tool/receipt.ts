@@ -5,10 +5,10 @@ import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import type { StagedWriteRejectionReason } from "../ports/document-coordinator.js";
 import type { CommandLinks } from "./command-links.js";
+import type { DestructiveSweepReport } from "./commit-detection.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { modelResult, type WriteRejection } from "./model-result.js";
-import type { DestructiveSweepReport } from "./mutation-commit.js";
 import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName, ResponseCommitDocumentResult } from "./types.js";
 

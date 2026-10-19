@@ -5,10 +5,10 @@
  * Meridian server persistence/read-model concern, built only by orchestrating the
  * package codec/model, Yjs fragment helper, journal, and document coordinator.
  */
+
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCodecFactory,
-  type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
@@ -49,6 +49,7 @@ import {
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -85,7 +86,7 @@ type MarkdownDocumentEngineDeps = {
   links: DocumentLinkScopes;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
-  coordinator: Pick<DocumentCoordinator, "withDocument" | "recover">;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover">;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;

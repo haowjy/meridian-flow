@@ -1,11 +1,10 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
 
 import { describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
-import type { StagedWriteHost } from "../ports/document-coordinator.js";
+import type * as Y from "yjs";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
-import { blockTexts, outcomeText } from "./test-support/assertions.js";
+import { blockTexts } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
@@ -101,37 +100,28 @@ describe("response committer", () => {
       }
       return readRoom(docId, staged);
     };
-    // A save's prepared write is counted, so the commit below proves it was consumed.
+    // Every save's prepared write is counted, so the commit below proves it was consumed.
     const saves = { persisted: 0, transferred: 0 };
-    const stagedWrites: StagedWriteHost = {
-      prepareSave: async (request) => {
-        const before = await readRoom(request.docId, null);
-        const after = await readRoom(request.docId, request);
-        try {
-          return {
-            kept: after.kept,
-            rejected: [],
-            room: after.room,
-            beforeState: Y.encodeStateAsUpdate(before.doc),
-            afterState: Y.encodeStateAsUpdate(after.doc),
-            write: {
-              kind: "write",
-              persist: async () => {
-                saves.persisted += 1;
-              },
-              transfer: () => {
-                saves.transferred += 1;
-              },
-              dispose: () => {},
-            },
-          };
-        } finally {
-          before.doc.destroy();
-          after.doc.destroy();
-        }
-      },
+    const prepareSave = prepared.coordinator.prepareSave.bind(prepared.coordinator);
+    prepared.coordinator.prepareSave = async (request) => {
+      const saved = await prepareSave(request);
+      const { write } = saved;
+      if (write.kind !== "write") return saved;
+      return {
+        ...saved,
+        write: {
+          ...write,
+          persist: async () => {
+            saves.persisted += 1;
+            await write.persist();
+          },
+          transfer: () => {
+            saves.transferred += 1;
+            write.transfer();
+          },
+        },
+      };
     };
-    Object.assign(prepared.coordinator, { stagedWrites });
     const peer = {
       ...context,
       responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
@@ -202,7 +192,7 @@ describe("response committer", () => {
     expect(saves.transferred).toBe(saves.persisted);
   });
 
-  it("commits a multi-document thread-peer response in one journal batch", async () => {
+  it("commits a multi-document thread-peer response, one journal batch per document", async () => {
     const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "Beta." });
     const responseId = "response-multi-thread-peer";
     await ctx.core.read({ file: "alpha.md" }, context);
@@ -227,60 +217,11 @@ describe("response committer", () => {
       documentCount: 2,
     });
     expect(ctx.journal.recordedBatches()).toEqual([
-      ["alpha.md:turn-alpha.md", "beta.md:turn-beta.md"],
+      ["alpha.md:turn-alpha.md"],
+      ["beta.md:turn-beta.md"],
     ]);
     expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha.", "Tail."]);
     expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["Beta.", "Tail."]);
-  });
-
-  it("closes a durable response when projection and recovery both fail", async () => {
-    const transitions: ResponseCommitterTransitionDetail[] = [];
-    let ctx!: ReturnType<typeof harness>;
-    ctx = harness(
-      { "chapter.md": "Alpha." },
-      {
-        onResponseCommitterTransition: (event) => transitions.push(event),
-        afterResponsePreflight: () => ctx.coordinator.failWith(new Error("projection failed")),
-      },
-    );
-    const responseId = "response-durable-projection-recovery-failure";
-    const responseContext = {
-      ...context,
-      turnId: "turn-durable-projection-recovery-failure",
-      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    };
-    await ctx.core.read({ file: "chapter.md" }, context);
-    await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Durable words." },
-      responseContext,
-    );
-
-    const originalRecover = ctx.coordinator.recover.bind(ctx.coordinator);
-    const recover = vi
-      .spyOn(ctx.coordinator, "recover")
-      .mockRejectedValueOnce(new Error("recovery failed"));
-
-    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("projection failed");
-    expect(transitions.at(-1)).toMatchObject({
-      transition: "closed",
-      closedOutcome: "committed",
-      journalCommitKind: "durable",
-    });
-    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("already committed");
-    const staged = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Must not stage." },
-      responseContext,
-    );
-    expect(staged).toMatchObject({ status: "invalid_write", isError: true });
-    expect(outcomeText(staged)).toContain("already committed");
-
-    ctx.coordinator.failWith(undefined);
-    recover.mockImplementation(originalRecover);
-    // The next read catches the room copy up from the journal: nothing is resident to recover.
-    expect(outcomeText(await ctx.core.read({ file: "chapter.md" }, context))).toContain(
-      "Durable words.",
-    );
-    expect(recover).toHaveBeenCalledTimes(1);
   });
 
   it("rejects staging while a response commit owns its snapshot", async () => {
@@ -359,14 +300,14 @@ describe("response committer", () => {
     ).toEqual(["committed"]);
   });
 
-  it("does not reclassify a durable journal commit when onTransition throws on journal_committed", async () => {
+  it("does not reclassify a persisted save when onTransition throws on journal_staged", async () => {
     const transitions: ResponseCommitterTransitionDetail[] = [];
     const ctx = harness(
       { "chapter.md": "Alpha." },
       {
         onResponseCommitterTransition: (event) => {
           transitions.push(event);
-          if (event.transition === "journal_committed") {
+          if (event.transition === "journal_staged") {
             throw new Error("observer exploded");
           }
         },
@@ -397,7 +338,7 @@ describe("response committer", () => {
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
     expect(transitions.map((event) => event.transition)).toEqual(
-      expect.arrayContaining(["journal_committed", "closed"]),
+      expect.arrayContaining(["journal_staged", "closed"]),
     );
     expect(transitions.find((event) => event.transition === "closed")).toMatchObject({
       closedOutcome: "committed",
@@ -480,7 +421,7 @@ describe("reasoned refusal of staged writes", () => {
       document.receipts.map((receipt) => JSON.stringify(receipt)),
     );
 
-  it("rolls a staged thread-peer reply back without any coordinator call (U5)", async () => {
+  it("rolls a staged thread-peer reply back without saving anything (U5)", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-rollback";
     await ctx.core.read({ file: "chapter.md" }, context);
@@ -488,11 +429,11 @@ describe("reasoned refusal of staged writes", () => {
       { command: "insert", file: "chapter.md", content: "One." },
       peerContext(responseId, "peer-1", "turn-1"),
     );
-    const withDocument = vi.spyOn(ctx.coordinator, "withDocument");
+    const prepareSave = vi.spyOn(ctx.coordinator, "prepareSave");
 
     await ctx.core.rollbackResponse(responseId);
 
-    expect(withDocument).not.toHaveBeenCalled();
+    expect(prepareSave).not.toHaveBeenCalled();
     expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(false);
   });
 

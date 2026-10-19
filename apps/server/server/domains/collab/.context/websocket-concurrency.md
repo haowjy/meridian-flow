@@ -6,9 +6,12 @@ durable authority synchronously before applying or broadcasting.
 
 `withDocument()` serializes coordinator callers only. Writer admission is
 journal-first; optional sweep detection may degrade to no elevation but never
-supplies apply authority. Agent-edit's
-`applyCommittedUpdateWithRecheck`, draft push, and reversal execution all use
-this final recheck. Take sorted live-document locks before any transaction (the
+supplies apply authority. Draft push and reversal execution use this final
+recheck. An agent-edit save applies nothing to a live room: its `persist`
+appends the kept entries to the journal under the document's advisory lock
+(taken by the reply's save, else by the append), and the room receives them
+only through `recover` after the root transaction commits, as push settlement
+does. A writer frame that races it waits on that lock and journals after. Take sorted live-document locks before any transaction (the
 lock order in [CONTEXT.md](CONTEXT.md)), and do not treat the coordinator mutex
 as coverage for socket writes.
 

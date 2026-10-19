@@ -9,7 +9,9 @@ Never add server, route, auth, or Work concepts to these interfaces.
 ### `UpdateJournal` (`src/ports/update-journal.ts`)
 
 The journal appends, batches, reads, compacts, and reserves per-document/thread
-write ordinals. One logical edit may expand to ordered rows. `read` returns a
+write ordinals. Agent-edit itself only reads it (`AgentEditJournal`: ordinals,
+`read`, attribution and destructive provenance); rows append through the host's
+save (`StagedWriteCommit.persist`). One logical edit may expand to ordered rows. `read` returns a
 checkpoint and retained updates in order; `since` does not hide retained rows
 behind a newer checkpoint. A persistence watermark includes the checkpoint cut
 even when no rows remain above it. The host, not this package, mints captured
@@ -29,27 +31,27 @@ copy of the room the host holds (`doc`, the `room` label it read, its
 scope's first-stage snapshot cut. The host answers which entries it `kept`
 (applied to the copy) and which it `rejected`, with reasons; a rejected entry
 leaves the scope and never reappears. A live host reads without taking the
-document's mutex (the deferred projection pattern); a draft host rebases live
-into the Work draft first, then copies the Work draft replica. A bound call
-whose draft a Discard took throws `DocumentAccessLostError(reason)`. `roomFor`
-names the room a live save committed into.
+document's mutex; a draft host rebases live into the Work draft first, then
+copies the Work draft replica. A bound call whose draft a Discard took throws
+`DocumentAccessLostError(reason)`.
 
-`withDocument` runs a callback on the host's document for a live save; its
-mutations commit atomically or refuse. Callers must not rely on mutual
-exclusion. A drafted host commits only through `stagedWrites`. Neither fences a
-separate WebSocket transport; the host supplies that authority check.
-`DocumentAccess.timeoutMs` bounds only a live host's wait. `recover` replays
-persisted-but-unapplied updates and reports a missing coordinator document as
-`DocumentNotFoundError`.
-
-A host that stages response writes on private candidates provides
-`stagedWrites.prepareSave`: the same reconcile as `readRoom` against the scope's
-cut, the `room` it saves into, the before and after cuts, and a required
-`write`: either a `StagedWriteCommit` the caller's attempt owns (`persist`
-inside the commit scope, `transfer` once the attempt completed, `dispose` on
-any unwind; the host installs the write at root commit, never at `transfer`), or an
-explicit `{ kind: "no-effect" }`, which the committer refuses when it kept
-entries. An ordinary CRDT write commits as an unfenced append. Whole Discard
+`prepareSave` is the one way any write lands, a reply's save and a write
+outside a reply (`saveNow`, a one-entry save) alike, for both hosts: the same
+reconcile as `readRoom` against the scope's cut (a live host keeps every
+entry), the `room` it saves into (null for a document the save creates, which
+records no frontier), the before and after states, and a required `write`:
+either a `StagedWriteCommit` the caller owns (`persist` inside the commit
+scope, `transfer` once that scope completed, `dispose` on any unwind; the host
+installs the write at root commit, never at `transfer`, or at once outside a
+transaction), or an explicit `{ kind: "no-effect" }`, which the committer
+refuses when it kept entries. A live host's `persist` appends the kept entries
+as one journal batch; its install is delivery to open editors, whenever entries
+were kept. A draft host's `persist` throws when the draft moved since preparing,
+and the caller prepares again. Commit-time detection reads the save's before
+and after states for both hosts. Neither host fences a WebSocket transport from
+this port: nothing applies to a live room inside a transaction (LOCK-WS, collab
+`websocket-concurrency.md`). An ordinary CRDT write commits as an unfenced
+append. Whole Discard
 retires only the addressed peer/document epoch. A host's response-attempt
 surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
 once, from `integration.ts`.
@@ -92,14 +94,14 @@ host composition supplies its schema explicitly.
 
 ### `ActorSessionStore` (`src/ports/actor-session-store.ts`)
 
-It maps transport identities to persistent `ActorSession` values. Membership is
-an initialized-document set, not a retained state vector or attribution
-snapshot. It is optional and may fall back to an in-memory map.
+It maps transport identities to persistent `ActorSession` values: a stable
+session id and the thread it acts for, no document state. It is optional and
+may fall back to an in-memory map.
 
 ### `AgentEditCore` (`src/index.ts`)
 
 The facade exposes read/write, `readRoom` (the effective reader's door),
-recovery, response commit/rollback, response-document discovery, peer
+response commit/rollback, response-document discovery, peer
 retirement and `dropStaged`. The host chooses
 destination, stack policy, immutable receipt persistence, notices, and
 install-after-commit. `responseIdentity` separates provider authorship from

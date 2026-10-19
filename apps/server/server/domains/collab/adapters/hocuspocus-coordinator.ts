@@ -1,13 +1,16 @@
-/** DocumentCoordinator adapters over live Hocuspocus Y.Docs: lock-free room reads, locked commits. */
+/**
+ * Live Hocuspocus documents: agent-edit's coordinator (lock-free room reads, saves that append
+ * to the journal and reach the room only after commit) and collab's locked room door.
+ */
 
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
-  type DocumentAccess,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type JournalSnapshot,
   type RoomRead,
   type StagedRoomEntries,
+  type StagedWriteSaveResult,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
@@ -22,6 +25,7 @@ import {
 } from "../domain/document-handle.js";
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
+import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { loadDocumentState } from "./document-loader.js";
 
 type CoordinatorDeps = {
@@ -42,22 +46,22 @@ const RECOVERY_ORIGIN = {
   context: { origin: { type: "system", reason: "journal-recovery" } },
 } satisfies TransactionOrigin;
 
-export function createHocuspocusCoordinator(deps: CoordinatorDeps): DocumentCoordinator {
+export function createHocuspocusCoordinator(deps: CoordinatorDeps): LiveDocumentCoordinator {
   return createCoordinator(deps, defaultOpenLiveDocument(deps.hocuspocus));
 }
 
 /**
- * The live agent-edit core's coordinator (D42). Outside a database
- * transaction it is the live coordinator. Inside one, agent-edit works on a
- * private copy of the live document as others see it (the open room plus
- * committed journal rows), and open editors receive the result only after
- * commit, through `recover`. A rollback therefore leaves nothing on screen.
- * The copy needs no document mutex: the room is only read, synchronously.
+ * The live agent-edit core's coordinator (D42). A call reads a private copy of the live
+ * document as others see it (the open room plus committed journal rows). A save appends its
+ * kept entries to the journal in the caller's commit scope, and open editors receive them only
+ * after the root transaction commits, through `recover`: a rollback leaves nothing on screen,
+ * and nothing applies to the room inside a transaction (LOCK-WS). The copy needs no document
+ * mutex: the room is only read, synchronously.
  */
 export function createDeferredLiveProjectionCoordinator(deps: {
   hocuspocus: () => Hocuspocus;
-  journal: UpdateJournal;
-  live: DocumentCoordinator;
+  journal: Pick<UpdateJournal, "read" | "appendBatch">;
+  live: Pick<LiveDocumentCoordinator, "recover">;
   transactions: {
     inTransaction(): boolean;
     outsideTransaction<T>(operation: () => T): T;
@@ -76,31 +80,70 @@ export function createDeferredLiveProjectionCoordinator(deps: {
       });
     return copy ?? liveRoomCopy(deps, docId);
   };
+  // A delivery that fails leaves the room behind the journal until the next `recover` or locked
+  // open of the document catches it up; every room copy already reads the journal.
+  const deliver = (docId: string) => () => deps.live.recover(docId).catch(() => undefined);
   return {
     readRoom: async (docId, staged) => withStaged(await committedCopy(docId), staged),
-    roomFor: liveRoomFor,
-    async withDocument<T>(
-      docId: string,
-      fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentAccess,
-    ): Promise<T> {
-      if (!deps.transactions.inTransaction()) return deps.live.withDocument(docId, fn, options);
-      const { doc: copy } = await committedCopy(docId);
-      // Any change, a pure deletion included: a delete set moves no state vector.
-      let changed = false;
-      copy.on("update", () => {
-        changed = true;
-      });
-      try {
-        const result = await fn(copy);
-        if (changed) deps.transactions.afterCommit(() => deps.live.recover(docId));
-        return result;
-      } finally {
-        copy.destroy();
-      }
-    },
-    recover: (docId) => deps.live.recover(docId),
+    prepareSave: async (input) =>
+      liveSave(
+        await committedCopy(input.docId).catch(emptyWhenMissing),
+        input,
+        deps.journal,
+        () => {
+          const delivery = deliver(input.docId);
+          if (!deps.transactions.afterCommit(delivery)) void delivery();
+        },
+      ),
   };
+}
+
+/** A document a save creates has no room yet: its rows append onto an empty one. */
+export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null } {
+  if (!(cause instanceof DocumentNotFoundError)) throw cause;
+  return { doc: new Y.Doc({ gc: false }), room: null };
+}
+
+/**
+ * A live save of one scope's entries onto `copy` (the room's committed state, consumed): every
+ * entry is kept, since a live room has no retirement or inverse to reconcile against. `persist`
+ * appends them as one journal batch bound to the copy's authority, joining the caller's
+ * transaction when there is one; `transfer` hands them to `deliver`.
+ */
+export function liveSave(
+  copy: { doc: Y.Doc; room: string | null },
+  input: StagedRoomEntries & { docId: string },
+  journal: Pick<UpdateJournal, "appendBatch">,
+  deliver: () => void,
+): StagedWriteSaveResult {
+  try {
+    const beforeState = Y.encodeStateAsUpdate(copy.doc);
+    for (const entry of input.entries) Y.applyUpdate(copy.doc, entry.update);
+    const authority = boundDocumentAuthority(copy.doc) ?? undefined;
+    const result = {
+      kept: input.entries.flatMap((entry) =>
+        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+      ),
+      rejected: [],
+      room: copy.room,
+      beforeState,
+      afterState: Y.encodeStateAsUpdate(copy.doc),
+    };
+    if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
+    return {
+      ...result,
+      write: {
+        kind: "write",
+        async persist() {
+          await journal.appendBatch(input.entries.map((entry) => ({ ...entry, authority })));
+        },
+        transfer: deliver,
+        dispose() {},
+      },
+    };
+  } finally {
+    copy.doc.destroy();
+  }
 }
 
 /**
@@ -109,7 +152,7 @@ export function createDeferredLiveProjectionCoordinator(deps: {
  * which also catches up a room behind it after a failed projection. Named by that authority.
  */
 async function liveRoomCopy(
-  deps: { hocuspocus: () => Hocuspocus; journal: UpdateJournal },
+  deps: { hocuspocus: () => Hocuspocus; journal: Pick<UpdateJournal, "read"> },
   docId: string,
 ): Promise<{ doc: Y.Doc; room: string | null }> {
   const snapshot = await deps.journal.read(docId);
@@ -160,14 +203,14 @@ export function liveRoomFor(docId: string, doc: Y.Doc): string | null {
 
 export function createHocuspocusCoordinatorForTest(
   deps: CoordinatorDeps & { openLiveDoc: OpenLiveDocument },
-): DocumentCoordinator {
+): LiveDocumentCoordinator {
   return createCoordinator(deps, deps.openLiveDoc);
 }
 
 function createCoordinator(
   deps: CoordinatorDeps,
   openLiveDoc: OpenLiveDocument,
-): DocumentCoordinator {
+): LiveDocumentCoordinator {
   const mutex = deps.mutex ?? new KeyedMutex();
 
   async function persistedState(
@@ -210,13 +253,10 @@ function createCoordinator(
   }
 
   return {
-    documentAuthority,
-    readRoom: async (docId, staged) => withStaged(await liveRoomCopy(deps, docId), staged),
-    roomFor: liveRoomFor,
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentAccess,
+      options?: { timeoutMs?: number; signal?: AbortSignal },
     ): Promise<T> {
       return mutex.run(
         docId,

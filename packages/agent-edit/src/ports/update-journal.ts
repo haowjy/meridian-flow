@@ -89,6 +89,15 @@ export interface UpdateJournal {
   }>;
 }
 
+/**
+ * What agent-edit itself reads from a host's journal: write ordinals and the provenance a
+ * destructive report reads. Appending belongs to the host's save (`StagedWriteCommit.persist`).
+ */
+export type AgentEditJournal = Pick<
+  UpdateJournal,
+  "reserveWriteOrdinal" | "read" | "readAttribution" | "materializeDestructiveProvenance"
+>;
+
 export interface DestructiveProvenanceRun {
   target: LineageRange;
   root: LineageRange;

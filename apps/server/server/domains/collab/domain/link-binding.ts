@@ -19,9 +19,9 @@
  * it is never applied to another; bound fresh, it lands only in an empty
  * document.
  */
+
 import {
   assignLinkRefs,
-  type DocumentCoordinator,
   isDocumentNotFoundError,
   toDocHandle,
   type YProsemirrorDocumentModel,
@@ -41,6 +41,7 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 declare const boundBrand: unique symbol;
 
@@ -119,7 +120,7 @@ export interface LinkBinderDeps {
   codec: MarkupCodec;
   schema: Schema;
   model: YProsemirrorDocumentModel;
-  coordinator: Pick<DocumentCoordinator, "withDocument">;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   links: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;

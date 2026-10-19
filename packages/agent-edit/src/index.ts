@@ -9,7 +9,6 @@ export type AgentEditCoreOptions = CreateWriteToolOptions;
 export interface AgentEditCore {
   read: ReturnType<typeof createWriteTool>["read"];
   write: ReturnType<typeof createWriteTool>["write"];
-  recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   prepareResponse: ReturnType<typeof createWriteTool>["prepareResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
@@ -26,7 +25,6 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   return {
     read: tool.read,
     write: tool.write,
-    recover: tool.recover,
     commitResponse: tool.commitResponse,
     prepareResponse: tool.prepareResponse,
     rollbackResponse: tool.rollbackResponse,

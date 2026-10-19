@@ -95,14 +95,14 @@ function fixture(existingUpstream?: Y.Doc) {
 }
 
 describe("draft concurrent attribution", () => {
-  it("reports writer content arriving after the fast preflight in the actual response save", async () => {
-    let afterPreflight = () => {};
-    const ctx = createWriteToolHarness(
-      { "chapter.md": "Alpha para.\n\nBeta para." },
-      {
-        afterResponsePreflight: () => afterPreflight(),
-      },
-    );
+  it("reports writer content arriving before the save reads the room in the actual response save", async () => {
+    let beforeSave = () => {};
+    const ctx = createWriteToolHarness({ "chapter.md": "Alpha para.\n\nBeta para." });
+    const prepareSave = ctx.coordinator.prepareSave.bind(ctx.coordinator);
+    ctx.coordinator.prepareSave = async (input) => {
+      beforeSave();
+      return prepareSave(input);
+    };
     const f = fixture(ctx.liveDoc("chapter.md"));
     f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
     ctx.coordinator.concurrentUpdatesSince = f.coordinator.concurrentUpdatesSince;
@@ -117,7 +117,7 @@ describe("draft concurrent attribution", () => {
       { command: "replace", file: "chapter.md", in: 1, content: "Alpha AI edit." },
       context,
     );
-    afterPreflight = () => {
+    beforeSave = () => {
       const vector = Y.encodeStateVector(f.upstream);
       humanText(f.upstream, 0, { from: 11, to: 11 }, " WRITER");
       f.rows.push(f.row(Y.encodeStateAsUpdate(f.upstream, vector)));

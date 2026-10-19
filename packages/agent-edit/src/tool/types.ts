@@ -125,23 +125,15 @@ export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;
 
-export type ResponseCommitterPhase =
-  | "buffered"
-  | "journalStaged"
-  | "journalCommitted"
-  | "liveProjected"
-  | "closed";
+export type ResponseCommitterPhase = "buffered" | "journalStaged" | "closed";
 
 export type ResponseCommitterTransition =
   | "stage"
   | "drop_for_thread"
   | "journal_staged"
-  | "journal_committed"
-  | "live_projected"
+  | "document_saved"
   | "closed"
   | "rollback"
-  | "recovery_succeeded"
-  | "recovery_failed"
   | "evicted";
 
 export interface ResponseCommitterTransitionDetail {
@@ -149,7 +141,6 @@ export interface ResponseCommitterTransitionDetail {
   transition: ResponseCommitterTransition;
   responseId: string;
   phase: ResponseCommitterPhase;
-  journalCommitKind?: import("../ports/update-journal.js").JournalCommitKind;
   closedOutcome?: ResponseLifecycleClosedState;
   documentId?: string;
   threadId?: string;
@@ -246,7 +237,7 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+  lateSweep?: import("./commit-detection.js").DestructiveSweepReport;
   /**
    * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
    * the frontier at the post-commit cut, crediting every accepted receipt and what the last
