@@ -59,7 +59,7 @@
 
 - Preserve typed eligibility failures during initial request preparation, including terminal diagnostics and child reports.
 ### Added
-- Host reference reads can preserve a read selector alongside their document identity.
+- Keep-open lines can select a heading, block or range after compaction, with whole-read fallback for unreadable selections and full tail copies preserved after partial re-shows.
 
 - Chat address inputs accept `$THREAD` for their own notes and `$PARENT` for their originating chat’s notes. Tool results, AI-written links and returned artifacts keep canonical addresses; variables outside chat scope fail instead of becoming filenames.
 

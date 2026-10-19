@@ -79,15 +79,17 @@ Kept verbatim, in order (a passage may start mid-message):
 - user: "Task"
 
 ## Documents to keep open
-End the summary with this section: one context URI per line, working-notes files first, then the documents most important to the task.
+End the summary with this section: one context URI per line, optionally with one read selector, working-notes files first, then the documents most important to the task.
+List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a block hash, a 1-based block number, or an inclusive start..end range. Do not combine #fragment and in:. Leave the section empty if none apply.
 For each notes file you list under Documents to keep open, say in one line what it holds; detail that lives there need not be repeated.
 Put those accounts in the narrative sections; keep this section one URI per line.
-List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.
 The server replaces this list with the documents it actually re-shows; list what you need.
 
 Example:
 scratch://@/c12/@/c15/plan.md
-manuscript://Chapter 1.md
+manuscript://Chapter 1.md#the-duel
+manuscript://Chapter 2.md in: a1b2
+manuscript://Chapter 3.md in: 40..95
 </system_update>"
 `;
 
@@ -156,15 +158,17 @@ Kept verbatim, in order (a passage may start mid-message):
 - user: "Task"
 
 ## Documents to keep open
-End the summary with this section: one context URI per line, working-notes files first, then the documents most important to the task.
+End the summary with this section: one context URI per line, optionally with one read selector, working-notes files first, then the documents most important to the task.
+List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a block hash, a 1-based block number, or an inclusive start..end range. Do not combine #fragment and in:. Leave the section empty if none apply.
 For each notes file you list under Documents to keep open, say in one line what it holds; detail that lives there need not be repeated.
 Put those accounts in the narrative sections; keep this section one URI per line.
-List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.
 The server replaces this list with the documents it actually re-shows; list what you need.
 
 Example:
 scratch://@/c12/@/c15/plan.md
-manuscript://Chapter 1.md
+manuscript://Chapter 1.md#the-duel
+manuscript://Chapter 2.md in: a1b2
+manuscript://Chapter 3.md in: 40..95
 </system_update>",
           "type": "text",
         },

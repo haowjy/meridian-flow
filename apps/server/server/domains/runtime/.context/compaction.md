@@ -42,45 +42,48 @@ model text.
 A summary cannot credit the model with having seen a document, so the successor
 re-shows the ones it most needs ([credit scope](document-text.md#observation-frontiers),
 owner rulings C10, C12 and C13). The summarizer ends its output with
-`## Documents to keep open`, one context URI per line, working-notes files first, then documents most important to the task. `compaction/important-files.ts` owns the instruction and parser. Each listed note
-also gets a one-line account in the narrative, not on its exact-match URI line.
+`## Documents to keep open`, one context URI per line with an optional read selector, working-notes files first, then documents most important to the task. `compaction/important-files.ts` owns the instruction and parser. Each listed note
+also gets a one-line account in the narrative, not on its keep-open line.
 `prepareCompactionSuccessor` strips that section and any model-emitted
 `## Documents not re-shown` section from the stored summary. Both reserved
 headings accept any Markdown heading level, case differences, a trailing colon
 and closing hashes. An empty narrative after stripping fails with `empty_text`
 through the summary-failure path; documents and the note cannot replace it.
-A listed line names a shown URI only by exact match: list markers are removed,
-then the line is checked against the shown URIs before each layer of decoration
-is peeled (a wrapping backtick, angle bracket or quote; trailing `.,;:`; a
-trailing parenthetical), so a name like `Chapter 1 (revised)` keeps its
-parenthesis and `Chapter 1.bak` never becomes `Chapter 1`. Matching uses
-`documentRevisions` evidence from the **whole pre-compaction history**, not only the retained tail. Unknown URIs are
-dropped with `important_file.unknown_uris` (count). Candidates are all
-matched entries, then the 3 most recently shown documents, deduplicated by
-document id. Missing or malformed lists naturally leave only the 3 recent.
+Listed lines match shown URIs across all decoration layers before interpreting
+selectors, preserving exact filenames (including literal ` in: 40..95`). Supported
+suffixes are `#fragment` (heading slug or block hash) and ` in: target` (block
+hash, 1-based number, or inclusive `start..end` range). Numeric endpoints become
+numbers, hash endpoints strings; the ordinary read resolver owns their meaning.
+Mixed or malformed selectors count as unknown. List markers and wrapping
+backticks, angles or quotes, trailing punctuation and parenthetical descriptions
+are peeled without prefix/extension guessing.
+Matching uses `documentRevisions` evidence from the **whole pre-compaction
+history**, not only the retained tail. Unknown lines are dropped with
+`important_file.unknown_uris` (count). Listed targets rank first, followed by the
+3 most recently shown identities as whole reads. Deduplicate once by document id:
+first-ranked wins, never union selectors or resurrect an omitted first choice.
 
-The full text is selected greedily in that order, within
+The requested text is selected greedily in that order, within
 half the headroom between the measured compacted base and the auto-compaction
 trigger, less estimator slack, of rendered text using the successor model's tokenizer and shared part estimator,
-including the exact projected heading plus read. Before admitting documents,
-the picker reserves the longest list it can write (every candidate named),
-priced with that same estimator and tokenizer. Each admitted document only
-shortens that list. The 1,000-token margin is estimator slack only. When the base
-and the reserved list already exhaust trigger headroom, no document is admitted
-and the list is empty; this base can remain over the trigger. A document whose
-full text exceeds what is left is skipped, never truncated (a truncated copy
-would be a partial read with its own listing). There is no count cap or fixed
-token budget. Without a trigger there is no limit. Reads stop as soon as the
-remaining room is spent; oversized documents are skipped so later smaller
-candidates can still fit.
+including the exact selector-bearing projected heading plus read. Before admitting documents,
+the picker reserves the longest list it can write (every candidate named), priced with
+that same estimator and tokenizer. Each admitted document only shortens that list. The
+1,000-token margin is estimator slack only. When the base and the reserved list already
+exhaust trigger headroom, no document is admitted and the list is empty; this base can
+remain over the trigger. A document whose rendered selection exceeds what is left is
+skipped, never truncated (a truncated copy would be a partial read with its own listing).
+There is no count cap or fixed token budget. Without a trigger there is no limit. Reads
+stop as soon as the remaining room is spent; oversized documents are skipped so later
+smaller candidates can still fit.
 
-The summary's `## Documents to keep open` section is written from the admitted
-reads, in read order, replacing whatever the summarizer listed. The list and the
-blocks therefore cannot disagree: a candidate that did not fit, could not be
-read, or was never shown is simply absent, and no omission note is written for
-the model or the writer.
+The summary's `## Documents to keep open` section is written from the admitted reads,
+in read order, each with the selector that was actually read, replacing whatever the
+summarizer listed. The list and the blocks therefore cannot disagree: a candidate that
+did not fit, could not be read, or was never shown is simply absent, and no omission
+note is written for the model or the writer.
 
-Each is read in full through the reference reader (`readDocument`, an
+Each is read through the reference reader (`readDocument`, an
 omitted-version read, so a draft-mode thread gets its Work draft and auto-apply
 gets live) and persisted as a reference-shaped text block with its `read` on the
 compaction turn, `sequence` 1 and up beside the summary at 0, most important
@@ -88,12 +91,20 @@ first. The next compaction ranks earlier blocks on this turn as more recent:
 recorded evidence is inserted backwards for compaction turns because the recent
 picker reverses evidence insertion order. Its evidence is
 recorded like an @-mentioned document's, by `afterEvents` of the completing
-transaction: shown links, and a frontier chained from nothing (a fresh chain). A
-document that cannot be read is skipped with a warning
-(`important_file.read_failed`); it never fails the compaction. Assembly runs
+transaction: shown links, and a frontier chained from nothing (a fresh chain). A selected read without usable evidence retries the base URI once as a whole
+read. Both attempts repeat identity/grant checks. Persist and price only the
+successful effective target; whole fallback drops the selector. A successful but
+oversized selection is omitted without fallback. Unreadable whole targets are
+omitted; thrown non-cancellation failures emit `important_file.read_failed`.
+Cancellation escapes immediately. Failed/oversized attempts record no evidence.
+A successful fallback drops the selector, so only the effective target is listed.
+The effective selector is stored inside the host-generated reference `read`
+snapshot beside its result and revision, and survives reload/recompaction.
+Selected frontiers start fresh, leaving outside blocks `unshown`, not initially
+`changed`; later writer changes appear through the ordinary concurrent listing. Assembly runs
 once without them to size the budget and fail early, then once with them: that
-second pass measures `tokensAfter` with the final summary, including any
-not-re-shown note, even when no documents fit.
+second pass measures `tokensAfter` with the final summary, even when no documents
+fit.
 A retried successor preparation reads again; only the completing attempt's
 blocks and evidence persist.
 
@@ -102,9 +113,11 @@ summary, each as a plain text block (the heading "Current text of <uri>,
 re-shown after the summary:" plus the read) that keeps the block's id, and
 credits their ids. The completion commit hands its persisted blocks (summary and
 re-shown) back on the adopted batch (`completedBlocks`), so the run's in-memory
-history holds them for every later request, like any other adopted block. The retained tail's copies of a re-shown document
-are elided as `reshown` (`compaction/elide.ts`), so a request carries each
-re-shown document once. A later compaction sees these blocks as ordinary
+history holds them for every later request, like any other adopted block. Only effective whole reads authorize retained-tail `reshown` elisions
+(`compaction/elide.ts`). Selected reads leave full tail copies visible (unless
+independently stale), even if the selection happens to cover all current blocks.
+Admission identities and whole-re-shown identities are distinct. Tail copies
+still credit nothing after C. A later compaction sees these blocks as ordinary
 pre-compaction history.
 
 ## Decisions and projection

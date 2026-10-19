@@ -1,5 +1,9 @@
-/** Model-ranked documents a compaction re-shows in full, within its token budget. */
-import type { DocumentRevisionEvidence, ReferenceOccurrence } from "@meridian/contracts/protocol";
+/** Model-ranked document selections a compaction re-shows, within its token budget. */
+import type {
+  DocumentRevisionEvidence,
+  ReferenceOccurrence,
+  ReferenceReadSelector,
+} from "@meridian/contracts/protocol";
 import type { TokenizerFamily } from "../../gateway/index.js";
 import type { RecordedDocuments } from "./elide.js";
 import { estimateModelPartTokens } from "./estimate.js";
@@ -9,15 +13,17 @@ const RECENT_DOCUMENTS_COUNT = 3;
 
 export const KEEP_OPEN_INSTRUCTION_LINES = [
   KEEP_OPEN_HEADING,
-  "End the summary with this section: one context URI per line, working-notes files first, then the documents most important to the task.",
+  "End the summary with this section: one context URI per line, optionally with one read selector, working-notes files first, then the documents most important to the task.",
+  "List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a block hash, a 1-based block number, or an inclusive start..end range. Do not combine #fragment and in:. Leave the section empty if none apply.",
   "For each notes file you list under Documents to keep open, say in one line what it holds; detail that lives there need not be repeated.",
   "Put those accounts in the narrative sections; keep this section one URI per line.",
-  "List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.",
   "The server replaces this list with the documents it actually re-shows; list what you need.",
   "",
   "Example:",
   "scratch://@/c12/@/c15/plan.md",
-  "manuscript://Chapter 1.md",
+  "manuscript://Chapter 1.md#the-duel",
+  "manuscript://Chapter 2.md in: a1b2",
+  "manuscript://Chapter 3.md in: 40..95",
 ];
 
 /** Remove both server-directed sections, even when followed by another summary section. */
@@ -45,9 +51,29 @@ export function parseImportantFiles(text: string): { summary: string; listedLine
   return { summary: summary.join("\n").trim(), listedLines };
 }
 
-/** The exact text projected for a re-shown read, shared with its budget estimate. */
-export function importantFileText(uri: string, text: string): string {
-  return `Current text of ${uri}, re-shown after the summary:\n${text}`;
+/** A current read target, distinct from historical revision evidence. */
+export interface ImportantFileCandidate {
+  documentId: string;
+  uri: string;
+  selector?: ReferenceReadSelector;
+}
+
+export function importantFileLabel(
+  target: Pick<ImportantFileCandidate, "uri" | "selector">,
+): string {
+  const { uri, selector } = target;
+  if (!selector) return uri;
+  if ("fragment" in selector) return `${uri}#${selector.fragment}`;
+  return `${uri} in: ${Array.isArray(selector.in) ? selector.in.join("..") : selector.in}`;
+}
+
+/** Exact projected text, shared with budget estimation. */
+export function importantFileText(
+  uri: string,
+  text: string,
+  selector?: ReferenceReadSelector,
+): string {
+  return `Current text of ${importantFileLabel({ uri, selector })}, re-shown after the summary:\n${text}`;
 }
 
 /** Estimator slack only; the written list is priced and reserved separately. */
@@ -75,11 +101,11 @@ const WRAPPERS: Record<string, string> = { "`": "`", "<": ">", '"': '"', "'": "'
  * shown set is checked before each peel, because a name can itself end in what looks like
  * decoration (`Chapter 1 (revised)`, `Notes.`). A line that never matches names nothing.
  */
-function resolveListedUri<T>(line: string, byUri: ReadonlyMap<string, T>): T | undefined {
+function decoratedLayers(line: string): string[] {
+  const layers: string[] = [];
   let current = line;
   for (;;) {
-    const ref = byUri.get(current);
-    if (ref) return ref;
+    layers.push(current);
     const closing = WRAPPERS[current[0] ?? ""];
     const next = (
       closing && current.length > 1 && current.endsWith(closing)
@@ -88,28 +114,79 @@ function resolveListedUri<T>(line: string, byUri: ReadonlyMap<string, T>): T | u
           ? current.slice(0, -1)
           : current.replace(/\s+\([^()]*\)$/u, "")
     ).trim();
-    if (next === current) return undefined;
+    if (next === current) return layers;
     current = next;
   }
+}
+
+function selectorEndpoint(text: string): string | number | undefined {
+  if (/^[1-9]\d*$/u.test(text)) {
+    const number = Number(text);
+    return Number.isSafeInteger(number) ? number : undefined;
+  }
+  return /^[0-9a-f]{4,}$/iu.test(text) && !/^\d+$/u.test(text) ? text : undefined;
+}
+
+function resolveListedUri(
+  line: string,
+  byUri: ReadonlyMap<string, DocumentRevisionEvidence>,
+): ImportantFileCandidate | undefined {
+  const layers = decoratedLayers(line);
+  // Exact names win across ALL decoration layers before interpreting any suffix.
+  for (const layer of layers) {
+    const ref = byUri.get(layer);
+    if (ref) return { documentId: ref.documentId, uri: layer };
+  }
+  for (const layer of layers) {
+    const fragment = layer.match(/^(.+)#([^#\s]+)$/u);
+    if (fragment && !/\s+in:/u.test(layer)) {
+      const ref = byUri.get(fragment[1] as string);
+      if (ref)
+        return {
+          documentId: ref.documentId,
+          uri: fragment[1] as string,
+          selector: { fragment: fragment[2] as string },
+        };
+    }
+    const scoped = layer.match(/^(.+)\s+in:\s*(\S+)$/u);
+    if (!scoped || layer.includes("#")) continue;
+    const ref = byUri.get(scoped[1] as string);
+    if (!ref) continue;
+    const parts = (scoped[2] as string).split("..");
+    const endpoints = parts.map(selectorEndpoint);
+    const first = endpoints[0];
+    if (first === undefined || endpoints.some((value) => value === undefined)) continue;
+    const second = endpoints[1];
+    if (parts.length === 1)
+      return { documentId: ref.documentId, uri: scoped[1] as string, selector: { in: first } };
+    if (parts.length === 2 && second !== undefined)
+      return {
+        documentId: ref.documentId,
+        uri: scoped[1] as string,
+        selector: { in: [first, second] },
+      };
+  }
+  return undefined;
 }
 
 /** Model-listed shown URIs first, then the three most recent documents, deduplicated by id. */
 export function importantFileCandidates(
   recorded: RecordedDocuments,
   listedLines: readonly string[],
-): { candidates: DocumentRevisionEvidence[]; unknownUriCount: number } {
+): { candidates: ImportantFileCandidate[]; unknownUriCount: number } {
   const newestFirst = [...recorded.values()]
     .reverse()
     .flatMap((refs) => [...(refs ?? [])].reverse());
   const byUri = new Map<string, DocumentRevisionEvidence>();
-  const recent: DocumentRevisionEvidence[] = [];
+  const recent: ImportantFileCandidate[] = [];
   const recentIds = new Set<string>();
   for (const ref of newestFirst) {
     if (!ref.uri) continue;
     if (!byUri.has(ref.uri)) byUri.set(ref.uri, ref);
     if (recentIds.has(ref.documentId)) continue;
     recentIds.add(ref.documentId);
-    if (recent.length < RECENT_DOCUMENTS_COUNT) recent.push(ref);
+    if (recent.length < RECENT_DOCUMENTS_COUNT)
+      recent.push({ documentId: ref.documentId, uri: ref.uri });
   }
   const listed = listedLines.flatMap((line) => {
     const ref = resolveListedUri(line, byUri);
@@ -135,45 +212,50 @@ export function documentsSection(labels: readonly string[]): string {
 
 /**
  * Reads candidates in priority order until the budget is spent. A document
- * whose full text does not fit the remaining budget is skipped, never
+ * whose selected text does not fit the remaining budget is skipped, never
  * truncated: a truncated copy would be a partial read with its own listing.
  * `read` answers null for a document that cannot be read.
  */
 export async function chooseImportantFiles<T extends { text: string }>(input: {
-  candidates: readonly DocumentRevisionEvidence[];
+  candidates: readonly ImportantFileCandidate[];
   budgetTokens: number;
   tokenizer: TokenizerFamily;
-  read: (reference: ReferenceOccurrence) => Promise<T | null>;
-}): Promise<{ reference: ReferenceOccurrence; read: T }[]> {
+  read: (reference: ReferenceOccurrence, selector?: ReferenceReadSelector) => Promise<T | null>;
+}): Promise<{ reference: ReferenceOccurrence; selector?: ReferenceReadSelector; read: T }[]> {
   // The rewritten list is part of the summary: reserve the longest one it can become.
   const listTokens = estimateModelPartTokens(
     {
       type: "text",
-      text: `\n\n${documentsSection(input.candidates.map((candidate) => candidate.uri as string))}`,
+      text: `\n\n${documentsSection(input.candidates.map(importantFileLabel))}`,
     },
     input.tokenizer,
   );
   let remaining = Math.max(0, input.budgetTokens - listTokens);
-  const kept: { reference: ReferenceOccurrence; read: T }[] = [];
+  const kept: { reference: ReferenceOccurrence; selector?: ReferenceReadSelector; read: T }[] = [];
   for (const candidate of input.candidates) {
     // Nothing more can fit; the list stops where the reads stopped.
     if (remaining <= 0) break;
-    const uri = candidate.uri as string;
+    const uri = candidate.uri;
     const reference: ReferenceOccurrence = {
       type: "reference",
       documentId: candidate.documentId,
       uri,
       text: uri,
     };
-    const read = await input.read(reference);
+    let selector = candidate.selector;
+    let read = await input.read(reference, selector);
+    if (!read && selector) {
+      selector = undefined;
+      read = await input.read(reference);
+    }
     if (!read) continue;
     const tokens = estimateModelPartTokens(
-      { type: "text", text: importantFileText(uri, read.text) },
+      { type: "text", text: importantFileText(uri, read.text, selector) },
       input.tokenizer,
     );
     if (tokens > remaining) continue;
     remaining -= tokens;
-    kept.push({ reference, read });
+    kept.push({ reference, ...(selector ? { selector } : {}), read });
   }
   return kept;
 }
