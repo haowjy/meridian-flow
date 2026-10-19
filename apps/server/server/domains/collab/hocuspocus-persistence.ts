@@ -378,7 +378,8 @@ export function createHocuspocusPersistenceService(
           ? room.documentId
           : (await requireDraftStore().getDraft(room.draftId))?.documentId;
       if (!documentId) return null;
-      return (await deps.removals.lookup([documentId])).get(documentId) ?? null;
+      const removal = (await deps.removals.lookup([documentId])).get(documentId);
+      return removal ? { documentId, removal } : null;
     },
 
     async resolveDraftHocuspocusRoom(draftId, generation) {
