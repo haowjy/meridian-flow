@@ -11,6 +11,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ReplyMutations } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -69,6 +70,8 @@ export interface ToolDispatchContext {
   allTurns: Turn[];
   /** The ids that credited the request that produced this call (C4's planning cut). */
   planningBlockIds: readonly string[];
+  /** The provider reply's own accepted mutations, replayed after the planning cut. */
+  replyMutations: ReplyMutations;
   /** The run's credited ids, live: a sibling call's result counts as seen. */
   credited: CreditedBlocks;
 }
@@ -286,6 +289,7 @@ export async function dispatchToolCall(
       frontiers: {
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        reply: ctx.replyMutations,
       },
     },
   );

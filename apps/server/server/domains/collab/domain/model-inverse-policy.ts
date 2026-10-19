@@ -408,8 +408,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         };
       const before = Y.encodeStateAsUpdate(policy.view),
         after = Y.encodeStateAsUpdate(scratch);
-      const writeHandles = preview
-        ? []
+      const committed = preview
+        ? { handles: [], updates: [] }
         : await store.commit({
             query,
             kind: command.command,
@@ -431,7 +431,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         room: query.draftId ? draftRoom(query.draftId) : document.liveRoom,
         before,
         after,
-        ...(command.command === "revert" ? { writeId: writeHandles[0] } : {}),
+        updates: committed.updates,
+        ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
         message:
           command.command === "revert"
             ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`

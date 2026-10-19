@@ -317,7 +317,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ),
       );
       attempt.deliveries.push(...deliveries);
-      return handles;
+      return { handles, updates: planned.flatMap((entry) => entry.updates) };
     },
   };
 

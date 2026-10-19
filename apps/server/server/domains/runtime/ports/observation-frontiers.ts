@@ -8,7 +8,11 @@
  * order. Nothing is copied at fork time; a fork reads the inherited blocks'
  * rows by their ids.
  */
-import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
+import type {
+  FrontierLookup,
+  ObservationFrontier,
+  ReplyMutations,
+} from "@meridian/agent-edit/integration";
 import type { TurnBlockId } from "@meridian/contracts";
 
 export interface ObservationFrontiers {
@@ -33,9 +37,12 @@ export interface ObservationFrontiers {
  * The lookups a tool call reads. `recording` is the run's current blocks: what
  * a result records chains from it, so a sibling call's result counts as seen.
  * `planning` is the blocks the authoring request was built from (C4): a call
- * plans on the model's view as of that request.
+ * plans on the model's view as of that request. `reply` is the provider reply's
+ * own accepted mutations since then, which the view replays: the reply owns it
+ * and clears it at its terminal boundary.
  */
 export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
+  reply: ReplyMutations;
 }

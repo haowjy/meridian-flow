@@ -16,8 +16,12 @@ link, and model ports; this package owns no Postgres, routes, auth, or
 Meridian Project/Work concepts.
 
 `ResponseCommitter` is the explicit response durability lifecycle: it stages
-writes, accepts or rolls them back according to host settlement, and owns the
-reply's settled own updates for its later views. Reporting is best-effort and
+writes and accepts or rolls them back according to host settlement. The reply's
+own accepted mutations live in `ReplyMutations`, which the host's reply owns and
+passes in `WriteContext.frontiers.reply`: the committer appends a save's entries
+there at its root commit, an inverse and an immediate write append their bytes,
+and the reply clears it at its terminal boundary. No core, cache cap or LRU
+holds them. Reporting is best-effort and
 never mutates recovery state.
 
 ## Rules

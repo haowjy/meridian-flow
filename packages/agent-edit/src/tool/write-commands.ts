@@ -178,7 +178,6 @@ export function createWriteCommands(deps: {
   async function withPlanDoc(
     room: RoomCopy,
     docId: string,
-    session: ActorSession,
     context: WriteContext,
     use: (planDoc: Y.Doc, planned: Planned) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
@@ -188,16 +187,10 @@ export function createWriteCommands(deps: {
     const snapshot = room.room ? planningSnapshot(room.doc, room.room, frontier) : null;
     const view =
       snapshot &&
-      createPlanningView(
-        room.doc,
-        snapshot,
-        responseCommitter.ownUpdates({
-          threadId: session.threadId,
-          providerResponseId: context.responseIdentity?.providerResponseId,
-          responseId: context.responseIdentity?.editScopeId,
-          docId,
-        }),
-      );
+      createPlanningView(room.doc, snapshot, [
+        ...(context.frontiers?.reply?.updates(docId) ?? []),
+        ...responseCommitter.stagedUpdates(context.responseIdentity?.editScopeId, docId),
+      ]);
     try {
       return await use(view ?? room.doc, view ? frontier : null);
     } finally {
@@ -309,7 +302,7 @@ export function createWriteCommands(deps: {
             alreadyExists,
           });
         return existing && hasText(room.doc)
-          ? withPlanDoc(room, address.documentId, session, context, plan)
+          ? withPlanDoc(room, address.documentId, context, plan)
           : plan(room.doc, undefined);
       },
     );
@@ -428,7 +421,7 @@ export function createWriteCommands(deps: {
     return withRoom(
       { docId: address.documentId, commandName: command.command, session, context },
       (room) =>
-        withPlanDoc(room, address.documentId, session, context, async (planDoc, planned) => {
+        withPlanDoc(room, address.documentId, context, async (planDoc, planned) => {
           const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
           const links = await openCommandLinks(options, {
             documentId: address.documentId,
@@ -628,6 +621,7 @@ export function createWriteCommands(deps: {
         semanticEditIr,
         copied,
         interactionContext,
+        ...(context.frontiers?.reply ? { reply: context.frontiers.reply } : {}),
       });
       if (rejected) return rejected;
       phase = "staged";
@@ -667,6 +661,7 @@ export function createWriteCommands(deps: {
         interactionContext,
       });
       if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
+      context.frontiers?.reply?.append(docId, [update]);
       if (committed.ok) {
         revision = committed.revision;
         lateSweep = committed.lateSweep;

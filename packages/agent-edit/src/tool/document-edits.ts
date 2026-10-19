@@ -39,6 +39,8 @@ export function createDocumentEditCommands(deps: {
         ? await port.execute({ ...request, command })
         : await port.read({ ...request, command });
     if (result.status !== "success") return status(result.status, result.message);
+    if ("command" in command && result.updates)
+      context.frontiers?.reply?.append(address.documentId, result.updates);
     if (!("command" in command))
       return {
         status: "success",

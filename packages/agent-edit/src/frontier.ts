@@ -26,11 +26,36 @@ export type FrontierLookup = (room: string) => Promise<ObservationFrontier | nul
 /**
  * A call's lookups. `recording` chains what a result records (a sibling call's
  * result counts as seen); `planning` is the model's view as of the request that
- * produced the call (C4), which a write plans on.
+ * produced the call (C4), which a write plans on; `reply` is what the reply has
+ * itself done since that request, which the view replays after the frontier.
  */
 export interface FrontierLookups {
   recording: FrontierLookup;
   planning?: FrontierLookup;
+  reply?: ReplyMutations;
+}
+
+/**
+ * One provider reply's own accepted mutations per document, in execution order: its writes
+ * once their save's root commit settled them, its immediate writes and its undo, redo and
+ * revert, each as the exact bytes it committed. The reply owns it from its first tool call to
+ * its terminal boundary, which clears it; nothing caps or evicts it before then.
+ */
+export interface ReplyMutations {
+  updates(docId: string): readonly Uint8Array[];
+  append(docId: string, updates: readonly Uint8Array[]): void;
+  clear(): void;
+}
+
+export function createReplyMutations(): ReplyMutations {
+  const docs = new Map<string, Uint8Array[]>();
+  return {
+    updates: (docId) => docs.get(docId) ?? [],
+    append(docId, updates) {
+      if (updates.length) docs.set(docId, [...(docs.get(docId) ?? []), ...updates]);
+    },
+    clear: () => docs.clear(),
+  };
 }
 
 /** The stable serialization of a block's identity: its top-level Yjs item id. */

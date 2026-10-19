@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
-import type { FrontierLookup } from "../frontier.js";
+import type { FrontierLookup, ReplyMutations } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
@@ -63,11 +63,8 @@ export interface ResponseCommitter {
   openRoom(input: RoomCallInput): Promise<RoomCopy | InternalWriteResult>;
   /** Whether this edit scope already began writing into the document: its cut is taken. */
   hasScopeCut(responseId: string, docId: string): boolean;
-  /**
-   * What a write's view replays after the planning cut, in order: the reply's settled own
-   * updates for the document, then this edit scope's kept entries.
-   */
-  ownUpdates(input: OwnUpdatesInput): Uint8Array[];
+  /** This edit scope's kept entries for a document, in order: a write's view replays them last. */
+  stagedUpdates(responseId: string | undefined, docId: string): Uint8Array[];
   stageUpdate(input: ResponseStageUpdateInput): InternalWriteResult | null;
   /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
@@ -171,14 +168,6 @@ export interface RoomCopy {
   dispose(): void;
 }
 
-export interface OwnUpdatesInput {
-  threadId: string;
-  /** The reply (`responseIdentity.providerResponseId`); outlives edit-scope rotations. */
-  providerResponseId?: string;
-  responseId?: string;
-  docId: string;
-}
-
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
@@ -232,6 +221,8 @@ export interface ResponseStageUpdateInput {
   semanticEditIr?: SemanticEditIRV1;
   /** A copy's receipt, which its settled receipt repeats instead of echoing the text. */
   copied?: CopySummary;
+  /** The reply's own-mutation sequence, which this write joins once its save settles. */
+  reply?: ReplyMutations;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -254,6 +245,8 @@ interface StagedResponseUpdate extends JournaledUpdate {
 /** One document's staged entries for one edit scope; nothing resident. */
 interface ResponseDocumentBuffer {
   providerResponseId: string;
+  /** The reply's own-mutation sequence; a root-committed save appends the saved entries. */
+  reply?: ReplyMutations;
   docId: string;
   session: ActorSession;
   commandName: DocumentCommandName;
@@ -324,8 +317,6 @@ export function isResponseLifecycleError(error: unknown): error is ResponseLifec
   return error instanceof ResponseLifecycleError;
 }
 
-/** Threads whose last reply's settled own updates are kept; one reply per thread. */
-const OWN_UPDATE_THREADS = 256;
 /** A room read whose scope's entries change while it awaits reads again, this many times. */
 const ROOM_READ_ATTEMPTS = 4;
 
@@ -352,11 +343,6 @@ export function createResponseCommitter(deps: {
   // Includes calls bound before the first staged write creates a document buffer.
   const documentEpochs = new Map<string, Map<string, DocumentEpoch>>();
   let nextDocumentEpoch = 0;
-  /**
-   * Each thread's current reply and the own updates it settled per document (amendment 3):
-   * outlives edit-scope rotations, holds only what a save's root commit finalized.
-   */
-  const settledOwn = new Map<string, { reply: string; docs: Map<string, Uint8Array[]> }>();
   function lifetime(
     responseId: string,
     docId: string,
@@ -477,7 +463,12 @@ export function createResponseCommitter(deps: {
     assertCanStage,
     openRoom,
     hasScopeCut: (responseId, docId) => Boolean(activeBuffer(responseId)?.docs.has(docId)),
-    ownUpdates,
+    stagedUpdates: (responseId, docId) =>
+      responseId
+        ? (activeBuffer(responseId)
+            ?.docs.get(docId)
+            ?.updates.map((entry) => entry.update) ?? [])
+        : [],
     stageUpdate,
     commitResponse,
     prepareResponse,
@@ -589,41 +580,13 @@ export function createResponseCommitter(deps: {
     }
   }
 
-  function ownUpdates({
-    threadId,
-    providerResponseId,
-    responseId,
-    docId,
-  }: OwnUpdatesInput): Uint8Array[] {
-    const reply = settledOwn.get(threadId);
-    const settled =
-      providerResponseId && reply?.reply === providerResponseId
-        ? (reply.docs.get(docId) ?? [])
-        : [];
-    const kept = responseId ? (activeBuffer(responseId)?.docs.get(docId)?.updates ?? []) : [];
-    return [...settled, ...kept.map((entry) => entry.update)];
-  }
-
   /** A save's root commit settled these entries: the reply's later views replay them. */
   function settle(buffer: ResponseBuffer): void {
-    for (const docBuffer of buffer.docs.values()) {
-      if (!docBuffer.updates.length) continue;
-      const threadId = docBuffer.session.threadId;
-      let reply = settledOwn.get(threadId);
-      if (reply?.reply !== docBuffer.providerResponseId) {
-        reply = { reply: docBuffer.providerResponseId, docs: new Map() };
-        settledOwn.delete(threadId);
-        settledOwn.set(threadId, reply);
-        for (const oldest of settledOwn.keys()) {
-          if (settledOwn.size <= OWN_UPDATE_THREADS) break;
-          settledOwn.delete(oldest);
-        }
-      }
-      reply.docs.set(docBuffer.docId, [
-        ...(reply.docs.get(docBuffer.docId) ?? []),
-        ...docBuffer.updates.map((entry) => entry.update),
-      ]);
-    }
+    for (const docBuffer of buffer.docs.values())
+      docBuffer.reply?.append(
+        docBuffer.docId,
+        docBuffer.updates.map((entry) => entry.update),
+      );
   }
 
   async function prepareCommitLinks(
@@ -1511,6 +1474,7 @@ export function createResponseCommitter(deps: {
         createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
         cut: input.cut,
+        ...(input.reply ? { reply: input.reply } : {}),
       };
       buffer.docs.set(input.docId, docBuffer);
     }

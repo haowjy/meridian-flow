@@ -47,6 +47,7 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 
 import {
   type AgentEditResultV1,
+  createReplyMutations,
   type FrontierLookup,
   isAgentEditResultEnvelope,
   type LinkShowing,
@@ -1535,10 +1536,13 @@ function createResponseScope(input: {
   };
   let id = input.responseId;
   let active = true;
+  const reply = createReplyMutations();
   return {
     get id() {
       return id;
     },
+    /** The reply's own accepted mutations: they outlive edit-scope rotations, not the reply. */
+    reply,
     get hasWrites() {
       return writes.size > 0;
     },
@@ -2409,118 +2413,124 @@ async function executeLoop({
             credited,
           });
           responseScope = scope;
-          if (isCancelled()) {
-            return cancelExit();
-          }
-
-          // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-          // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
-          for (const call of toolCallsFromResult) {
+          // The reply owns its own-mutation sequence until here, whichever way it ends.
+          try {
             if (isCancelled()) {
               return cancelExit();
             }
 
-            if (scope.hasWrites && isSaveBoundary(call)) {
-              const boundary = await scope.commit();
-
-              if (boundary.status === "branch_closed") {
-                return exitRun(true, abortTerminal());
+            // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+            // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
+            for (const call of toolCallsFromResult) {
+              if (isCancelled()) {
+                return cancelExit();
               }
-              scope.rotate();
-            }
 
-            // If denied, we still persist a tool_result block (with isError: true)
-            // so the model sees the rejection in the next turn's context build.
-            if (!built.policy.has(call.name)) {
-              const persistedRejection = await persistToolRejection({
-                deps,
-                threadId: input.threadId,
-                turn: currentTurn,
-                call,
-                reason: missingToolRefusal(call.name),
-                blockSeq,
-              });
-              blockSeq = persistedRejection.nextBlockSeq;
-              allBlocks.push(persistedRejection.block);
+              if (scope.hasWrites && isSaveBoundary(call)) {
+                const boundary = await scope.commit();
 
-              continue;
-            }
+                if (boundary.status === "branch_closed") {
+                  return exitRun(true, abortTerminal());
+                }
+                scope.rotate();
+              }
 
-            await publishPhase("waiting");
-            const interruptState = {
-              thread,
-              threadId: input.threadId,
-              currentTurn: currentTurn,
-              autoResume: interruptAutoResume,
-              signal: input.signal,
-              blockSeqRef: { value: blockSeq },
-              allBlocks,
-            };
-            const interruptSession = createInterruptSession(
-              {
-                interruptRegistry: deps.interruptRegistry,
-                interruptArtifacts: deps.interruptArtifacts,
-                persistenceDeps: deps,
-                eventSink,
-              },
-              interruptState,
-            );
-            const dispatched = await dispatchToolCall(
-              {
-                toolExecutor: deps.toolExecutor,
-                childRunCoordinator: deps.childRunCoordinator,
-                eventSink,
-                persistenceDeps: deps,
-                executionReports: deps.repos.executionReports,
-                readSnapshot: deps.repos.readSnapshot,
-                runClaim: deps.runClaim,
-                shownLinks: deps.shownLinks,
-                observationFrontiers: deps.observationFrontiers,
-              },
-              call,
-              {
+              // If denied, we still persist a tool_result block (with isError: true)
+              // so the model sees the rejection in the next turn's context build.
+              if (!built.policy.has(call.name)) {
+                const persistedRejection = await persistToolRejection({
+                  deps,
+                  threadId: input.threadId,
+                  turn: currentTurn,
+                  call,
+                  reason: missingToolRefusal(call.name),
+                  blockSeq,
+                });
+                blockSeq = persistedRejection.nextBlockSeq;
+                allBlocks.push(persistedRejection.block);
+
+                continue;
+              }
+
+              await publishPhase("waiting");
+              const interruptState = {
                 thread,
-                lease: input.lease,
-                agentSlug: built.agentSlug,
-                responseId,
-                editResponseId: scope.id,
-                state: interruptState,
-                interruptSession,
-                interruptAutoResume,
-                treeBudget,
-                blockSeqRef: interruptState.blockSeqRef,
-                allTurns,
-                planningBlockIds,
-                credited,
-              },
-            );
-            currentTurn = interruptState.currentTurn;
-            blockSeq = interruptState.blockSeqRef.value;
+                threadId: input.threadId,
+                currentTurn: currentTurn,
+                autoResume: interruptAutoResume,
+                signal: input.signal,
+                blockSeqRef: { value: blockSeq },
+                allBlocks,
+              };
+              const interruptSession = createInterruptSession(
+                {
+                  interruptRegistry: deps.interruptRegistry,
+                  interruptArtifacts: deps.interruptArtifacts,
+                  persistenceDeps: deps,
+                  eventSink,
+                },
+                interruptState,
+              );
+              const dispatched = await dispatchToolCall(
+                {
+                  toolExecutor: deps.toolExecutor,
+                  childRunCoordinator: deps.childRunCoordinator,
+                  eventSink,
+                  persistenceDeps: deps,
+                  executionReports: deps.repos.executionReports,
+                  readSnapshot: deps.repos.readSnapshot,
+                  runClaim: deps.runClaim,
+                  shownLinks: deps.shownLinks,
+                  observationFrontiers: deps.observationFrontiers,
+                },
+                call,
+                {
+                  thread,
+                  lease: input.lease,
+                  agentSlug: built.agentSlug,
+                  responseId,
+                  editResponseId: scope.id,
+                  state: interruptState,
+                  interruptSession,
+                  interruptAutoResume,
+                  treeBudget,
+                  blockSeqRef: interruptState.blockSeqRef,
+                  allTurns,
+                  planningBlockIds,
+                  credited,
+                  replyMutations: scope.reply,
+                },
+              );
+              currentTurn = interruptState.currentTurn;
+              blockSeq = interruptState.blockSeqRef.value;
 
-            if (!dispatched.cancelled) scope.stage(dispatched);
-            if (dispatched.cancelled || isCancelled()) {
+              if (!dispatched.cancelled) scope.stage(dispatched);
+              if (dispatched.cancelled || isCancelled()) {
+                return cancelExit();
+              }
+              if (dispatched.endTurn === true) endTurnRequested = true;
+            }
+            if (isCancelled()) {
               return cancelExit();
             }
-            if (dispatched.endTurn === true) endTurnRequested = true;
-          }
-          if (isCancelled()) {
-            return cancelExit();
-          }
-          const saved = await scope.commit();
-          responseScope = undefined;
+            const saved = await scope.commit();
+            responseScope = undefined;
 
-          if (saved.status === "branch_closed") {
-            return exitRun(true, abortTerminal());
-          }
+            if (saved.status === "branch_closed") {
+              return exitRun(true, abortTerminal());
+            }
 
-          if (endTurnRequested) {
-            // A child called return_result: the report is captured and persisted,
-            // so the turn ends here instead of looping into another model round.
-            // A message that landed in the exit window keeps the run going.
-            return exitRun(true, completeTerminal(result));
-          }
+            if (endTurnRequested) {
+              // A child called return_result: the report is captured and persisted,
+              // so the turn ends here instead of looping into another model round.
+              // A message that landed in the exit window keeps the run going.
+              return exitRun(true, completeTerminal(result));
+            }
 
-          return true;
+            return true;
+          } finally {
+            scope.reply.clear();
+          }
         }
 
         return exitRun(true, completeTerminal(result));
