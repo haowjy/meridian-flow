@@ -101,7 +101,7 @@ export function createWriteCommands(deps: {
 
   /** The call's room copy, disposed when `use` settles; a door that can't read answers its result. */
   async function withRoom(
-    input: Omit<RoomCallInput, "threadId" | "interactionContext" | "responseId"> & {
+    input: Omit<RoomCallInput, "threadId" | "interactionContext" | "responseId" | "workDraftId"> & {
       session: ActorSession;
       context: WriteContext;
     },
@@ -113,6 +113,7 @@ export function createWriteCommands(deps: {
       responseId: context.responseIdentity?.editScopeId,
       threadId: session.threadId,
       interactionContext: context.interactionContext,
+      ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
     });
     if (isInternalWriteResult(room)) return room;
     try {

@@ -222,7 +222,7 @@ export function createDraftAgentEditCoordinator(input: {
       await input.flushLivePull(docId as DocumentId);
       return peer
         ? underAccess(peer, (workDraftId) => read(workDraftId, true))
-        : read((await threadWorkDraft(docId as DocumentId)).draftId, false);
+        : read(access?.workDraftId ?? (await threadWorkDraft(docId as DocumentId)).draftId, false);
     },
 
     async prepareSave({

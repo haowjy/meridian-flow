@@ -182,6 +182,8 @@ export interface WriteContext {
    * generation, and optional attempt guard travel as one object.
    */
   interactionContext?: InteractionContext;
+  /** Host-routed: the Work draft a draft read bound to no peer reads (`DocumentAccess.workDraftId`). */
+  workDraftId?: string;
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
   /** True only when the host resolved this create to a previously missing document. */

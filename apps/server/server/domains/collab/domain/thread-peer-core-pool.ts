@@ -226,13 +226,13 @@ export function createThreadPeerCorePool(input: {
     };
   }
 
-  /** Whether the thread already has a Work draft of the document a draft read can show. */
-  async function hasWorkDraft(documentId: DocumentId, threadId: string): Promise<boolean> {
+  /** The thread's Work draft of the document a draft read can show, if it has one. */
+  async function workDraftFor(documentId: DocumentId, threadId: string): Promise<string | null> {
     try {
-      await input.drafts.resolveWorkDraftForThread(documentId, threadId as ThreadId);
-      return true;
+      return (await input.drafts.resolveWorkDraftForThread(documentId, threadId as ThreadId))
+        .draftId;
     } catch (cause) {
-      if (cause instanceof DraftNotFoundError) return false;
+      if (cause instanceof DraftNotFoundError) return null;
       throw cause;
     }
   }
@@ -254,28 +254,38 @@ export function createThreadPeerCorePool(input: {
    * Where a read goes, for a tool read and an effective read alike: the reply's pinned
    * participant with its edit scope (an explicit live read never takes a draft pin), else the
    * thread's core for a draft read of a document the thread has a Work draft of, else live. A
-   * read never makes a branch, a draft or a peer (S1).
+   * read never makes a branch, a draft or a peer (S1). A draft read names the Work draft it
+   * resolved, so the core's host reads it without resolving it again.
    */
   async function routeRead(request: {
     documentId: DocumentId | null;
     threadId?: string | null;
     responseId?: string | null;
     version: "live" | "draft";
-  }): Promise<{ core: AgentEditCore; pinned?: ReplyDocument; scope?: string }> {
+  }): Promise<{
+    core: AgentEditCore;
+    pinned?: ReplyDocument;
+    scope?: string;
+    workDraftId?: string;
+  }> {
     const { documentId, threadId, responseId, version } = request;
     const entry =
       documentId && responseId ? responses.get(responseId)?.documents.get(documentId) : undefined;
     if (entry && (version === "draft" || entry.grant.destination.kind === "live"))
       return { core: entry.core, pinned: entry, ...(responseId ? { scope: responseId } : {}) };
-    const drafted =
-      version === "draft" && documentId && threadId && (await hasWorkDraft(documentId, threadId));
-    return { core: drafted && threadId ? lookupCore(threadId) : input.liveUtilityCore };
+    const workDraftId =
+      version === "draft" && documentId && threadId
+        ? await workDraftFor(documentId, threadId)
+        : null;
+    return workDraftId && threadId
+      ? { core: lookupCore(threadId), workDraftId }
+      : { core: input.liveUtilityCore };
   }
 
   async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
     const { grant, liveVersion, ...context } = routed;
     const version = liveVersion ? "live" : grant.destination.kind;
-    const { core, pinned } = await routeRead({
+    const { core, pinned, workDraftId } = await routeRead({
       documentId: documentIdFromCommand(command),
       threadId: context.threadId,
       responseId: context.responseIdentity?.editScopeId,
@@ -285,7 +295,10 @@ export function createThreadPeerCorePool(input: {
       pinned?.grant.destination ??
       (version === "live" ? ({ kind: "live" } as const) : grant.destination);
     evictIdleCores();
-    const routedContext = await routedTo(context, destination, pinned?.linkView);
+    const routedContext = {
+      ...(await routedTo(context, destination, pinned?.linkView)),
+      ...(workDraftId ? { workDraftId } : {}),
+    };
     // An edits read shows history, not the document: it records no frontier.
     const outcome = await core.read(
       command,
@@ -669,7 +682,7 @@ export function createThreadPeerCorePool(input: {
       return pinned?.core.hasResponseDocument(responseId, docId) ?? false;
     },
     async readRoom({ documentId, threadId, responseId, live }) {
-      const { core, scope } = await routeRead({
+      const { core, scope, workDraftId } = await routeRead({
         documentId,
         threadId,
         responseId,
@@ -678,6 +691,7 @@ export function createThreadPeerCorePool(input: {
       return core.readRoom(documentId, {
         threadId: threadId ?? "",
         ...(scope ? { responseId: scope } : {}),
+        ...(workDraftId ? { workDraftId } : {}),
       });
     },
     async rollbackResponse(responseId) {
