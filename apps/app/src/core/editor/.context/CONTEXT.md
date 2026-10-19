@@ -59,7 +59,7 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
-- `EditorMountIdentity` distinguishes live and stable-id review rooms
+- `EditorMountIdentity` distinguishes live and stable draft review rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
   TipTap. Review identity includes both `itemKey` and `roomName`.
@@ -67,10 +67,10 @@ barrier that drains that open.
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- Live sessions may use a qualified, generation-aware IndexedDB key. Review
-  draft sessions still use no local cache in this lane; B2 owns IndexedDB and terminal
-  cache drop. The reset-era cross-generation writer handoff is deleted: a terminal
-  draft close never transfers updates into a replacement draft.
+- Live sessions use a qualified, generation-aware IndexedDB key. Draft sessions
+  use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
+  draft recovers unsent text. Terminal `closed`/`removed` session teardown clears that exact cache; the
+  painter and local Discard never do.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -161,13 +161,10 @@ identity in anchors or holds.
 - Writer-visible save state: an outage (`offline` or a stalled cache adoption)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
-  healthy sessions show nothing. A draft room has no cache, so its
-  outage copy is "Not saved yet (keep this tab open until you're back online)":
-  unacknowledged draft edits are lost if the tab closes or the writer signs out
-  before acknowledgement. Never show a draft room the "Saved locally" copy.
-- Draft review colors a hunk by author (agent jade, writer gold, nested
-  authorship per span). A merge artifact or unclassified hunk is neutral, never
-  an invented AI color.
+  healthy sessions show nothing. Draft sessions use the same local save copy.
+- Draft review paints removed base text red and inserted draft text green,
+  including writer edits and formatting. Attribution is a byline/membership
+  overlay; it never chooses a third paint colour or splits boxes.
 - Keep the custom `math_display` node; do not install TipTap mathematics nodes
   that are absent from the shared schema.
 
@@ -214,7 +211,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   document-scoped ref, and released.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement, `refused` rejects pending edits,
-  `schema` fences the room, and `removed` (4205 discarded or 4208 document-deleted) ends it: nothing restarts it
+  `schema` fences the room, and `removed` (4208) ends it: nothing restarts it
   unless a lookup after the close proves the document present (a restore won
   the race).
 - A draft room's update refusal (`1008`) is bounded in the transport: after
@@ -223,6 +220,6 @@ keyboard, pointer, drop, or draft-recovery answer.
   It keeps its outbox, and `DraftRoomPool` does not retire it while an owner
   retains it: the review editor stays mounted read-only with the unsent text,
   and the save pill offers Reopen draft, which rebuilds the room from the
-  server (a closed draft answers with its terminal close). Live rooms
+  server (a re-forked draft answers that reconnect as superseded). Live rooms
   never count refusals. A `4207 draft-prefix-missing` close is a plain reconnect,
   never a refusal: the next handshake's SyncStep2 uploads the missing bytes.

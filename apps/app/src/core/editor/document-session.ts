@@ -128,7 +128,13 @@ export type DocumentSessionResetReason =
  * rebuilds or replays on its own; the session stays read-only until its owner
  * closes it, or an exact open proves the document present and restarts it.
  */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema" | "removed";
+export type ResetDisposition =
+  | "superseded"
+  | "rebuild"
+  | "refused"
+  | "schema"
+  | "removed"
+  | "closed";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -162,6 +168,7 @@ export function updatesRefused(state: DocumentSessionConnectionState | null | un
 export type DocumentSessionTransportProvider = {
   /** Local updates not acknowledged on this connection, merged; null when none. */
   unacknowledgedUpdates(): Uint8Array | null;
+  whenCurrentChangesAcknowledged?: () => Promise<void>;
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
@@ -409,6 +416,22 @@ export class DocumentSession {
     return this.transportProvider?.unacknowledgedUpdates() ?? null;
   }
 
+  /** Captured synchronously with an Apply snapshot; later typing does not move this barrier. */
+  whenCurrentChangesAcknowledged(): Promise<void> {
+    if (this.transportProvider?.whenCurrentChangesAcknowledged)
+      return this.transportProvider.whenCurrentChangesAcknowledged();
+    if (this.serverHasLocalChanges) return Promise.resolve();
+    return new Promise((resolve) => {
+      let stop = () => {};
+      stop = this.subscribe((snapshot) => {
+        if (snapshot.serverHasLocalChanges) {
+          stop();
+          resolve();
+        }
+      });
+    });
+  }
+
   hasUnacknowledgedEdits(): boolean {
     return this.unacknowledgedUpdates() !== null;
   }
@@ -649,6 +672,10 @@ export class DocumentSession {
    */
   destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
     if (this.destroyPromise) return this.destroyPromise;
+    const closed =
+      this.transportState?.kind === "reset" &&
+      (this.transportState.disposition === "closed" ||
+        this.transportState.disposition === "removed");
     if (!this.destroyStages) {
       this.destroyed = true;
       this.localPeers?.stop();
@@ -684,7 +711,9 @@ export class DocumentSession {
         {
           settled: false,
           run: () =>
-            options.clearPersistence ? this.persistence?.clearData() : this.persistence?.destroy(),
+            options.clearPersistence || closed
+              ? this.persistence?.clearData()
+              : this.persistence?.destroy(),
         },
         { settled: false, run: () => this.schemaRepairWitness?.destroy() },
         { settled: false, run: () => this.awareness.destroy() },

@@ -43,3 +43,9 @@ The API-core recipe is [atomic Apply](../../../../../../docs/qa/atomic-apply.md)
 It uses a scratch database and the real route core, file policy, command store,
 append door and trail writer. It does not stand in for integrated browser FIFO
 and optimistic-review verification.
+
+A still-hidden creation with no text draft uses empty `groupIds`/`baseViewDelta`
+and omits `snapshot`. The same transaction claims its command, rechecks hidden
+creation and no-room identity under the tree/live locks, reveals it and clears
+its branch rows. No room, Apply record or text lineage is fabricated. Empty
+groups on any other item are malformed.

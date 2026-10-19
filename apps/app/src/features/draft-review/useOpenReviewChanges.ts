@@ -1,60 +1,38 @@
-/** Retained, projected open-review presentation data, without focus or command bindings. */
-import { useDraftPreview } from "@/client/query/useDraftPreview";
-import {
-  type DraftChangesData,
-  listablePreview,
-  type ReviewChangeItem,
-  useChangeItems,
-} from "./draft-changes";
-import { type ReviewChange, reviewChangesOfPreview } from "./review-changes";
+/** Open review rows are the room runtime's group projection, without command or focus ownership. */
+import { useSyncExternalStore } from "react";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import type { DraftChangesData } from "./draft-changes";
+import { useChangeItems } from "./draft-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
-
-const _NO_ITEMS: readonly ReviewChangeItem[] = [];
-const NO_CHANGES: readonly ReviewChange[] = [];
-
-/** The open review's draft and its changes, derived once per preview. */
+import { useRoomReview } from "./useRoomReview";
 export function useOpenReviewChanges(
   controller: Pick<DraftReviewController, "projectId" | "workId" | "inlineReview">,
   options?: { enabled?: boolean },
 ) {
   const inline = options?.enabled === false ? null : controller.inlineReview;
-  const documentId = inline?.documentId ?? null;
-  const itemKey = inline?.itemKey ?? null;
-  const { preview } = useDraftPreview(
-    controller.projectId,
-    controller.workId,
-    documentId,
-    itemKey,
-    { enabled: inline !== null },
-  );
-  const active = listablePreview(preview);
-  const changes = active ? reviewChangesOfPreview(active) : NO_CHANGES;
-  const { items } = useChangeItems(
-    documentId && itemKey
-      ? { projectId: controller.projectId, workId: controller.workId, documentId, itemKey }
-      : null,
-    changes,
-  );
-  const status: DraftChangesData["status"] = !inline
-    ? "idle"
-    : active
-      ? "ready"
-      : preview?.status === "gone"
-        ? "gone"
-        : preview?.status === "corrupt"
-          ? "error"
-          : "loading";
+  const draft = inline
+    ? {
+        projectId: controller.projectId,
+        workId: controller.workId,
+        documentId: inline.documentId,
+        itemKey: inline.itemKey,
+      }
+    : null;
+  const read = useRoomReview(draft);
+  const owner = useDraftCommandOwner();
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  const command = owner.state(draft?.itemKey ?? "");
+  const { items } = useChangeItems(draft, read.changes);
   return {
     inline,
-    documentId,
-    itemKey,
-    preview,
-    active,
-    changes,
-    status,
+    documentId: inline?.documentId ?? null,
+    itemKey: inline?.itemKey ?? null,
+    changes: read.changes,
+    retry: read.retry,
     items,
-    unlisted: status === "ready" && !items.length,
-    completing: null,
-    finished: false,
+    status: read.status as DraftChangesData["status"],
+
+    completing: command.applying ? ("apply" as const) : null,
+    finished: read.status === "ready" && !items.length && !command.pending,
   };
 }

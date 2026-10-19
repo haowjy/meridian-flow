@@ -119,6 +119,18 @@ restoration chains recover insertion origin only. Without deletion evidence, the
 its footprint keeps all candidate parts, and uncertain naming contributes no author. A state vector alone cannot fence deletion-only writes. The classifier also returns the unresolved item
 ranges so the browser requests evidence revisions rather than every text snapshot.
 
+The model-side `originOf(id, provenance)` and `deleterOf(id, provenance)` are
+current-ID readers, not review-role readers. They never follow restoration links
+or consult Apply/Discard records. Birth names an insertion receipt's thread or
+writer; otherwise client 1 is a server copy and the remainder is the project
+user. Deletion names a current-ID deletion receipt, otherwise the project user.
+A receipt whose thread/turn was deleted answers unknown rather than inventing
+an author. Call against the captured cut; absence outside it is not proof of
+writer activity. Treat provenance and its range arrays as immutable: the model
+readers share their interval indexes by provenance object. Optional writer
+receipts support these model readers; the review classifier still assumes the
+current single-user project model.
+
 `appliedParts(doc, parts, record?)` associates positive Apply evidence with
 immutable receipt ranges. Insertions match `base`, including validated Undo
 restoration ancestry; deletions match `settled` by current ID only. Any overlap

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Integrated text-based draft review with stable server rooms, addressed draft metadata, and Apply for empty or image creations.
+
 - Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.
 
 - Align the peer-retraction probe with the upstream-first refusal check.
@@ -25,6 +27,14 @@
 
 - Work Discard all closes drafts without rewriting receipts; pending lists and counts follow active text effects, with conversation membership derived from the shared review.
 
+- Text Discard now edits the same draft locally in one undoable step. Dock and Work notices have isolated Undo history; terminal closes leave review and clear the room cache. Removed the server-preview client.
+
+- Apply clicks now keep their frozen meaning in a per-draft browser FIFO, retry the same command after a lost answer, and wait only for the edits captured by the click to be acknowledged.
+### Changed
+- Review bylines now classify the room's item identities, name writer edits as “You”, and link AI changes to their conversation (subagent changes reveal the spawn card). Evidence reads are shared per room and refreshed by unresolved ranges and provenance roots, not keystrokes.
+- Draft review reads snapshot-bounded receipt provenance through an authenticated endpoint, with indexed AI receipt reads independent of writer history. Model attribution exposes current-item birth and deleter readers.
+
+- Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.
 - Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
 
 - Isolated reply replay journal reads from the retiring Apply settlement store.

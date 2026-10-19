@@ -1,5 +1,5 @@
 /**
- * The session registry's stable-id draft (review) rooms: retained per
+ * The session registry's stable draft (review) rooms: retained per
  * owner, torn down after a grace period once no owner holds them, retired when
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
@@ -14,14 +14,10 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { type DocumentSession, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
-export type DraftRoomRef = Readonly<{
-  roomKey: string;
-}>;
-
 export class DraftRoomPool {
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
-  private readonly retainedByOwner = new Map<string, Map<string, DraftRoomRef>>();
+  private readonly retainedByOwner = new Map<string, Set<string>>();
   private readonly teardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
@@ -37,14 +33,14 @@ export class DraftRoomPool {
     return this.rooms.get(roomKey);
   }
 
-  retain(ownerId: string, refs: readonly DraftRoomRef[]): void {
-    const keys = new Set(refs.map((ref) => ref.roomKey));
+  retain(ownerId: string, roomKeys: readonly string[]): void {
+    const keys = new Set(roomKeys);
     for (const roomKey of keys) {
       if (parseYjsRoomName(roomKey)?.kind !== "draft") {
         throw new Error(`Draft retention requires a draft room: ${roomKey}`);
       }
     }
-    this.retainedByOwner.set(ownerId, new Map(refs.map((ref) => [ref.roomKey, ref])));
+    this.retainedByOwner.set(ownerId, keys);
     for (const roomKey of keys) this.cancelTeardown(roomKey);
     this.reconcile();
   }

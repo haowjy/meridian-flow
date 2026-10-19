@@ -9,6 +9,7 @@ import type {
   DocumentAttribution,
   DocumentCheckpoints,
   DocumentProjectionRefresher,
+  DraftAttributionAccess,
   DraftPeerShadowAccess,
   MarkdownDocumentStore,
   ResponseWriteFinalizer,
@@ -28,6 +29,7 @@ export type CollabFacadeServices = {
   responses: ResponseWriteFinalizer;
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
+  draftAttribution: DraftAttributionAccess;
   draftPeers: DraftPeerShadowAccess;
   branches: CollabBranches;
   branchResolver: CollabBranchResolver;
@@ -46,6 +48,7 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.responses,
     ...services.checkpoints,
     ...services.attribution,
+    ...services.draftAttribution,
     ...services.draftPeers,
     ...services.branches,
     ...services.branchResolver,

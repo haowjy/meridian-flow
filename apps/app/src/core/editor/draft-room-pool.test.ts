@@ -35,8 +35,8 @@ describe("DraftRoomPool.release", () => {
         } as never;
       },
     });
-    pool.retain("editor", [{ roomKey: room }]);
-    pool.retain("refresh", [{ roomKey: room }]);
+    pool.retain("editor", [room]);
+    pool.retain("refresh", [room]);
     pool.get(room);
     resetListener({
       connectionState: { kind: "reset", reason: "discarded", disposition: "removed" },

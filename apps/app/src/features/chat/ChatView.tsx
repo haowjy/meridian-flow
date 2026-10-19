@@ -600,7 +600,7 @@ export function ChatView({
   // auto-apply streams never light the dock.
   const generating =
     isStreaming && (latestAssistantTurn?.writeMode ?? activeThread?.aiWriteMode) === "draft";
-  const dock = useDraftDock({ threadId, generating });
+  const dock = useDraftDock({ threadId, generating, active });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     replyRetry.clearRefused();

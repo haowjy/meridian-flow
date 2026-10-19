@@ -24,14 +24,14 @@ The client never reads `branchId` as a document draft id. The server alone maps 
   candidates: a chat's writes may have been overwritten; previews confirm
   visible changes. Writer and threadless rows are excluded; applied/discarded
   journal rows no longer contribute.
-- Preview responses carry `branchId` and `itemKey`, the stable
-  `reviewRoomName`, live markdown, draft markdown, review operations and
-  hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the
-  chat title at preview time); writer operations carry neither. A preview that
-  cannot be read answers a refusal (`corrupt` carries the `branchId` so the
-  writer can discard the whole branch).
-- `hasDraft` reports text-draft existence only. A draft room keeps the same key until close;
-  a later proposal has a new draft id and room. Preview revisions do not order proposals.
+- `DraftProvenanceResponse` carries encoded snapshot bytes, the project user,
+  AI receipt ranges and nullable owner/reveal metadata. A provenance read
+  addresses an already admitted room, not a new room lookup. It accepts only
+  unresolved clock ranges for writer receipts; single-user projects omit them
+  and never query human history. Missing owner metadata must not drop a part's
+  item ranges. Byline names and membership come from the kernel classifier.
+- `hasDraft` reports text-draft existence only. Its stable `draft:<draftId>` room
+  lasts until close; the next proposal has a new draft id.
 
 ## Commands
 

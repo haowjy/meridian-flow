@@ -79,7 +79,7 @@ export const projectQueryKeys = {
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  workDraftPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
+  workDraftMetadata: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,

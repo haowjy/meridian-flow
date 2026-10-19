@@ -49,8 +49,15 @@ browser loop of per-document clicks; there is no settlement executor or recovery
 worker behind the route.
 
 The server preview route and review-cut/attribution/selection engine are deleted.
-The app's legacy preview reader returns empty data until lane B2 builds review
-from the room. Edited-text Discard belongs to the browser's local undoable edit.
+The SQL-only addressed metadata GET resolves active drafts even when unlisted;
+it returns the stable room name without loading that room. Browser provenance reads use `domain/draft-provenance.ts`
+over the disposition store's repeatable-read capture, without a server diff.
+The route checks project/Work and draft-file read authority, then verifies the
+captured draft belongs to that document and Work. It returns snapshot bytes
+and owner-rolled AI ranges; current single-user projects never query human
+receipts, even when unresolved ranges were requested. The receipt query starts
+with the document's agent edits (partial actor index) and joins parts by edit
+and immutable origin draft, so human typing history need not be scanned. Edited-text Discard belongs to the browser's local undoable edit.
 The per-document HTTP Discard can only end a still-hidden creation's branch use;
 a creation revealed before its locks answers `stale`, without changing text or
 claiming a command. Work Discard all and purge keep the shared close/end-use kernel.

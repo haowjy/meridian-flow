@@ -25,8 +25,8 @@ export type ApplySpanPatch = {
 /** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
 export type ApplyClick = {
   commandId: BranchCommandId;
-  /** Base64 of Y.encodeSnapshotV2(room snapshot). */
-  snapshot: string;
+  /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted only for a no-room creation reveal. */
+  snapshot?: string;
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
 };
@@ -112,6 +112,11 @@ export interface DocumentDraftHintsResponse {
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
 }
+
+/** SQL-only addressed lookup; no text room is loaded or created. */
+export type DraftMetadataResponse =
+  | { status: "active"; draftId: string; reviewRoomName: string; item: ThreadDraftListItem }
+  | { status: "gone" };
 
 type ActiveDraftPreviewBase = {
   status: "active";

@@ -498,6 +498,13 @@
       "when": 1792424068880,
       "tag": "0076_atomic_apply_trail",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792424201714,
+      "tag": "0077_draft_attribution_indexes",
+      "breakpoints": true
     }
   ]
 }

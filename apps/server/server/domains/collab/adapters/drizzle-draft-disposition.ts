@@ -56,6 +56,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
             and(
               sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
               eq(documentEdits.actor, "agent"),
+              eq(documentEdits.documentId, draft.documentDraft.documentId),
             ),
           )
           .orderBy(desc(documentEdits.createdAt), desc(documentEditParts.id));

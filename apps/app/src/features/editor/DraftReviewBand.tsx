@@ -123,7 +123,6 @@ export function DraftReviewBand({
       ) : null}
       <ReviewStateInline
         finished={finished}
-        unlisted={header.unlisted}
         completing={header.completing}
         next={header.next}
         draftOnly={header.draftOnly}

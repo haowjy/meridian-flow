@@ -1,4 +1,8 @@
-/** A change's excerpt, attribution and commands on one line. The excerpt truncates first; touch controls retain 44px targets. Failures stay inline. */
+/**
+ * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets and failures stay inline.
+ * The red and green text claims its width first: when the line is full the byline truncates before it, but only down
+ * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
@@ -6,8 +10,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
-import { changeExcerpt, type ReviewChange } from "./review-changes";
 import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
+import { changeExcerpt, type ReviewChange } from "./review-model";
 
 export type ReviewChangeRowProps = {
   change: ReviewChange;
@@ -16,9 +20,10 @@ export type ReviewChangeRowProps = {
   arrived?: boolean;
   /** Disposition is locked (a command is in flight, or the Work is archived). */
   disabled: boolean;
+  canApply?: boolean;
 
   /** Why the last command on this change did not land. */
-  failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
+  failure: ChangeCommandState | null;
   draftFailure?: BranchCommandFailure | null;
   onFocus: () => void;
   onApply: () => void;
@@ -34,6 +39,7 @@ export function ReviewChangeRow({
   focused,
   arrived = false,
   disabled,
+  canApply = true,
 
   failure,
   draftFailure,
@@ -45,17 +51,19 @@ export function ReviewChangeRow({
   wholeDocument = false,
   documentName,
 }: ReviewChangeRowProps) {
-  const runs = documentName ? [{ kind: "added", text: documentName }] : changeExcerpt(change);
+  const runs = documentName
+    ? [{ kind: "added" as const, text: documentName }]
+    : changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
-  const firstLine = touch ? "min-h-11" : change.target.kind !== "display" ? "min-h-6" : undefined;
+  const firstLine = touch ? "min-h-11" : "min-h-6";
   const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
     // the excerpt button, which is the row's one tab stop for focusing it.
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above.
     <li
-      data-review-change-row={change.classId}
+      data-review-change-row={change.id}
       data-focused={focused ? "true" : undefined}
       data-arrived={arrived ? "true" : undefined}
       onClick={onFocus}
@@ -73,7 +81,9 @@ export function ReviewChangeRow({
             <ChangeDot change={change} />
           </span>
         )}
-        <div className="flex min-w-0 flex-1 items-center gap-x-2">
+        {/* Two tracks: the excerpt grows to its full width before the byline takes the rest, and the
+            byline's track never drops below its floor (the byline's own min-width). */}
+        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,max-content)_minmax(auto,1fr)] items-center gap-x-2">
           <button
             type="button"
             aria-current={focused ? "true" : undefined}
@@ -82,7 +92,7 @@ export function ReviewChangeRow({
               onFocus();
             }}
             className={cn(
-              "focus-ring flex min-w-0 flex-1 items-center rounded-sm text-left text-caption",
+              "focus-ring flex min-w-0 items-center rounded-sm text-left text-caption",
               firstLine,
               touch && "text-sm",
             )}
@@ -95,7 +105,10 @@ export function ReviewChangeRow({
                     key={index}
                     className={cn(
                       index < runs.length - 1 && "mr-1",
-                      run.kind === "removed" && "text-muted-foreground line-through",
+                      !documentName &&
+                        (run.kind === "removed"
+                          ? "text-diff-removed line-through"
+                          : "text-diff-added"),
                     )}
                   >
                     {run.text}
@@ -107,27 +120,23 @@ export function ReviewChangeRow({
             </span>
           </button>
           {showAttribution ? (
-            <ChangeAuthor
-              overflow="hide"
-              attribution={change.attribution}
-              className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
-            />
+            <ChangeAuthor fit="first" change={change} touch={touch} className="justify-end" />
           ) : null}
         </div>
-        {change.target.kind !== "display" ? (
-          <span className="flex shrink-0 items-center">
-            <IconButton
-              size="xs"
-              tooltip={discardLabel(change)}
-              disabled={disabled}
-              className={iconButton}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDiscard();
-              }}
-            >
-              <X aria-hidden />
-            </IconButton>
+        <span className="flex shrink-0 items-center">
+          <IconButton
+            size="xs"
+            tooltip={discardLabel()}
+            disabled={disabled}
+            className={iconButton}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDiscard();
+            }}
+          >
+            <X aria-hidden />
+          </IconButton>
+          {canApply ? (
             <IconButton
               size="xs"
               tooltip={t`Apply`}
@@ -140,8 +149,8 @@ export function ReviewChangeRow({
             >
               <Check aria-hidden />
             </IconButton>
-          </span>
-        ) : null}
+          ) : null}
+        </span>
       </div>
       {failure || draftFailure ? (
         <p role="status" className="min-w-0 max-w-[50%] text-caption text-destructive">
