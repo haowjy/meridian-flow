@@ -414,7 +414,8 @@ export function createThreadPeerCorePool(input: {
       responseId,
       frontiers ? { recordingFrontier: frontiers.recording } : undefined,
     );
-    if (staged.isError) return staged;
+    // A write that changed nothing staged nothing: its unchanged result is the answer.
+    if (staged.isError || !staged.settlementId) return staged;
     const denial = saved.refused.find(
       (refusal) => refusal.documentId === documentId && "denial" in refusal,
     );
