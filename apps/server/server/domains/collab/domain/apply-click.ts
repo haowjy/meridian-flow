@@ -1,14 +1,203 @@
-/** Form-check a frozen Apply click while execution is unavailable (lane A replaces this). */
-import type { ApplyClick, ApplyClickRefusalReason } from "@meridian/contracts/branches";
+/** Frozen Apply compilation and command identity: no live state or locks enter the clicked cut. */
+import {
+  type ApplyEntry,
+  applyRecordOf,
+  applySpanPatches,
+  classifyChanges,
+  composeGroups,
+  diffBlocks,
+  projectReview,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+  type SpanPatch,
+  validateSpanPatches,
+} from "@meridian/agent-edit/diff";
+import type {
+  ApplyClick,
+  ApplyClickAnswer,
+  ApplyClickRefusalReason,
+  ApplyClickResult,
+} from "@meridian/contracts/branches";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
+import type { CollabBranches } from "../contracts.js";
+import { BranchCommandExistsError, type BranchCommands } from "./branch-commands.js";
+import type { BranchReviewIdentity } from "./branch-review-identity.js";
+import type { DraftBase } from "./draft-runtime.js";
+import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
+import type { TrailOwner } from "./trail-read-kernel.js";
 
-export function checkApplyClick(request: ApplyClick): ApplyClickRefusalReason | null {
+export type ApplyClickCommand = Parameters<CollabBranches["draftReview"]["applyClick"]>[0];
+export type CompiledClick = {
+  schema: import("prosemirror-model").Schema;
+  optimistic: readonly PMNode[];
+  patched: readonly PMNode[];
+  record: ApplyEntry;
+  owners: readonly TrailOwner[];
+};
+export interface ApplyClickStore {
+  closed(command: ApplyClickCommand): Promise<ApplyClickResult>;
+  loadBase(draftId: string): Promise<DraftBase | null>;
+  execute(
+    command: ApplyClickCommand,
+    base: DraftBase,
+    click: CompiledClick,
+  ): Promise<ApplyClickAnswer>;
+  measured?(input: { commandId: string; compileClickMs: number }): void;
+}
+const schema = buildDocumentSchema();
+
+export class ApplyClickRefused extends Error {
+  constructor(readonly reason: ApplyClickRefusalReason) {
+    super(reason);
+  }
+}
+
+/** Snapshot containment includes tombstones: a delete-only key must have been acknowledged too. */
+function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
+  for (const [client, clock] of clicked.sv) if (clock > (current.sv.get(client) ?? 0)) return false;
+  return Y.equalDeleteSets(current.ds, Y.mergeDeleteSets([current.ds, clicked.ds]));
+}
+
+export function compileClick(
+  doc: Y.Doc,
+  request: ApplyClick,
+  provenance: {
+    userId: string;
+    parts: import("@meridian/agent-edit/diff").Provenance["parts"];
+  },
+): CompiledClick {
+  let snapshot: Y.Snapshot;
   try {
     const bytes = Buffer.from(request.snapshot, "base64");
-    if (bytes.toString("base64") !== request.snapshot) return "malformed";
-    Y.decodeSnapshotV2(bytes);
-    return null;
+    if (bytes.toString("base64") !== request.snapshot) throw new Error("Invalid base64");
+    snapshot = Y.decodeSnapshotV2(bytes);
   } catch {
-    return "malformed";
+    throw new ApplyClickRefused("malformed");
   }
+  if (!containsSnapshot(Y.snapshot(doc), snapshot)) throw new ApplyClickRefused("unsynced");
+  const cut = Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }));
+  try {
+    const base = readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+    let patches: SpanPatch[];
+    try {
+      patches = request.baseViewDelta.map((patch) => ({
+        ...patch,
+        blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
+      }));
+      if (validateSpanPatches(schema, base, patches)) throw new Error("Invalid patches");
+    } catch {
+      throw new ApplyClickRefused("malformed");
+    }
+    const optimistic = applySpanPatches(base, patches, "base");
+    const projection = projectReview(
+      diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
+    );
+    const known = new Set(projection.groups.map((group) => group.id));
+    if (
+      !request.groupIds.length ||
+      new Set(request.groupIds).size !== request.groupIds.length ||
+      request.groupIds.some((id) => !known.has(id))
+    )
+      throw new ApplyClickRefused("malformed");
+    const classifications = classifyChanges(
+      cut,
+      projection,
+      { ...provenance, snapshot },
+      { record: true },
+    );
+    const members = new Set(
+      request.groupIds.flatMap((id) => classifications.get(id)?.members ?? []),
+    );
+    const owners = new Map<string, TrailOwner>();
+    for (const index of members) {
+      const part = provenance.parts[index];
+      if (part?.threadId && part.turnId)
+        owners.set(`${part.threadId}:${part.turnId}`, {
+          threadId: part.threadId,
+          turnId: part.turnId,
+        });
+    }
+    return {
+      schema,
+      optimistic,
+      patched: applySpanPatches(
+        optimistic,
+        composeGroups(schema, projection, request.groupIds, "apply"),
+        "base",
+      ),
+      record: { ...applyRecordOf(classifications, request.groupIds), commandId: request.commandId },
+      owners: [...owners.values()],
+    };
+  } finally {
+    cut.destroy();
+  }
+}
+
+export function createApplyClickService(input: {
+  identity: BranchReviewIdentity;
+  commands: BranchCommands;
+  evidence: DraftDispositionStore;
+  store: ApplyClickStore;
+}) {
+  return async (command: ApplyClickCommand): Promise<ApplyClickAnswer> => {
+    const commandId = command.envelope.commandId;
+    const lookup = async (): Promise<ApplyClickAnswer | null> => {
+      const found = await input.commands.lookup(command.envelope);
+      if (found.kind === "none") return null;
+      if (found.kind === "done")
+        return found.commandKind === "apply_click"
+          ? (found.result as ApplyClickResult)
+          : { status: "conflict", commandId };
+      return { status: found.kind, commandId };
+    };
+    const first = await lookup();
+    if (first) return first;
+    try {
+      const resolved = await input.identity.resolveReviewItemByDocument(command);
+      if (!resolved?.draftId) {
+        const result = await input.store.closed(command);
+        return (await lookup()) ?? result;
+      }
+      const start = performance.now();
+      const base = await input.store.loadBase(resolved.draftId);
+      if (!base || base.snapshot.status === "closed") {
+        const result = await input.store.closed(command);
+        return (await lookup()) ?? result;
+      }
+      // Receipts are captured after this replica, so they cover every item a contained click can name.
+      const captured = await input.evidence.capture(resolved.draftId);
+      if (!captured || captured.draft.documentDraft.status === "closed") {
+        const result = await input.store.closed(command);
+        return (await lookup()) ?? result;
+      }
+      const lifecycle = captured.draft.documentDraft.lifecycle;
+      if (lifecycle !== "active")
+        throw new ApplyClickRefused(
+          lifecycle === "archived"
+            ? "work_archived"
+            : lifecycle === "deleted"
+              ? "work_deleted"
+              : "not_found",
+        );
+      const doc = base.replica.doc;
+      let click: CompiledClick;
+      try {
+        click = compileClick(doc, command.request, captured);
+      } finally {
+        input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
+      }
+      const result = await input.store.execute(command, base, click);
+      return result.status === "closed" || result.status === "refused"
+        ? ((await lookup()) ?? result)
+        : result;
+    } catch (cause) {
+      if (cause instanceof BranchCommandExistsError)
+        return (await lookup()) ?? { status: "pending", commandId };
+      if (cause instanceof ApplyClickRefused)
+        return (await lookup()) ?? { status: "refused", commandId, reason: cause.reason };
+      throw cause;
+    }
+  };
 }

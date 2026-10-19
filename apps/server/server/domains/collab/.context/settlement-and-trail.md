@@ -3,15 +3,16 @@
 The staged Apply/settlement pipeline is deleted. There is no pending settlement
 store, contribution replacement/refinement, seed parser, owner reopening,
 worker recovery call, ingress barrier or offline-reconciliation service.
-Lane A builds atomic Apply and its committed live effect; it must not replay
-draft journal rows onto live to reconstruct owners. Receipt classification
-supplies ownership; canonical live before/after identities supply navigation.
+Atomic Apply records its committed live effect without replaying draft journal
+rows onto live. Receipt classification supplies ownership; canonical live
+before/after identities supply navigation. See [Apply](apply.md).
 
 `DurableTrailRecord`, normalized committed changes, aggregate persistence,
 authorized reads/navigation, dirty signals and the delivery outbox remain.
 `draft-trail-projection.ts` retains live identity comparison/navigation and
 committed record persistence, not journal-attribution reconstruction.
-`document-difference.ts` remains for lane A's focused trim.
+`document-difference.ts` compares only committed live block identity and visible
+content.
 
 The aggregate keeps terminal-turn and `rollback_pending` readiness. Pending
 Apply settlement no longer blocks it. Trail shells' observable
@@ -27,5 +28,6 @@ an ambiguous relocation chain.
 
 Journal and receipt signal triggers still run inside an append's draft row
 hold. `change_trail_owners` retains JIT off and primary-key journal lookups;
-D1 does not change installed SQL or migrations. A/MIG own replacement signaling,
-historical Apply conversion and physical settlement-table drops.
+migration 0076 removes push-journal, placement and settlement ownership reads.
+Apply explicitly signals all selected member owners. Historical Apply conversion
+and physical settlement-table drops remain with the migration lane.

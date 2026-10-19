@@ -581,6 +581,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const lookups = createDrizzleCollabLookups(db);
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
+    applyClick: async () => {
+      throw new Error("Apply click is not configured in the trail fixture");
+    },
     branches: workBranches,
     reviewItems,
     pending: durableWorkBranchPendingStore,

@@ -302,7 +302,7 @@ function createInMemoryBranchStub(): CollabBranches {
   return {
     draftReview: {
       async applyClick({ request }) {
-        return { status: "refused", commandId: request.commandId, reason: "unavailable" };
+        return { status: "closed", commandId: request.commandId };
       },
       async list() {
         return [];

@@ -13,7 +13,8 @@ change-trail persistence, and Hocuspocus admission. It composes
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
   Review is computed in the browser from the draft room (lane B2). The old server
-  review, settlement and reset services are deleted; lane A builds atomic Apply.
+  review, settlement and reset services are deleted. Apply commits its frozen clicked
+  content into live and the review base in one transaction; see [Apply](.context/apply.md).
 - Authority identity and generation fence every live connection and mutation.
   The domain owns authorization, persistence, coordination and
   trail projection around the agent-edit core.

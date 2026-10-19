@@ -31,6 +31,8 @@ const TEST_HOOK_POINTS = [
   "draft.beforeRetirement",
   /** A thread core's access, or a peer pull past its ensures, is about to read its drafts. */
   "draft.beforeAccess",
+  "apply.beforeBoundary",
+  "apply.afterLive",
   "applyItems.beforeStaging",
   "applyItems.afterStaging",
   /** A created document's retraction read its drafts and holds no draft row yet. */

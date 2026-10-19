@@ -51,7 +51,7 @@ describe("change trail dirty signals (postgres)", () => {
     return edit.id;
   };
 
-  it("captures receipt/part and recursively targeted ownerless inverse placement", async () => {
+  it("captures receipt and recursively targeted inverse owners, ignoring placement-only writes", async () => {
     await clear();
     const original = await receipt();
     expect(await signals()).toEqual(
@@ -71,9 +71,7 @@ describe("change trail dirty signals (postgres)", () => {
       .update(schema.documentEditParts)
       .set({ placement: { kind: "discarded" } })
       .where(eq(schema.documentEditParts.editId, rollback));
-    expect(await signals()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ turnId: TURN_ID })]),
-    );
+    expect(await signals()).toEqual([]);
     expect(
       (await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.id, rollback)))[0]
         .turnId,

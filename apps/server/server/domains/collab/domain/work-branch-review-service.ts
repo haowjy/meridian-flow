@@ -1,14 +1,10 @@
-/** Work draft listing, idempotent hidden-create/whole Discard, and the frozen Apply stub. */
+/** Work draft listing, idempotent hidden-create/whole Discard, and the frozen Apply command. */
 import type { BranchId, WorkId } from "@meridian/contracts";
-import type {
-  ApplyClickAnswer,
-  BranchCommandResult,
-  ThreadDraftListItem,
-} from "@meridian/contracts/branches";
+import type { BranchCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CollabBranches, CommandOutcome, ModelDraftRow } from "../contracts.js";
-import { checkApplyClick } from "./apply-click.js";
+
 import {
   type BranchCommandEnvelope,
   BranchCommandExistsError,
@@ -28,32 +24,10 @@ export function createWorkBranchReviewService(input: {
   identity: BranchReviewIdentity;
   discard: BranchDiscard;
   commands: BranchCommands;
+  applyClick: CollabBranches["draftReview"]["applyClick"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument">;
 }): CollabBranches {
-  async function applyClick(
-    command: Parameters<CollabBranches["draftReview"]["applyClick"]>[0],
-  ): Promise<ApplyClickAnswer> {
-    const commandId = command.envelope.commandId;
-    async function lookup(): Promise<ApplyClickAnswer | null> {
-      const found = await input.commands.lookup(command.envelope);
-      if (found.kind === "none") return null;
-      if (found.kind === "done") {
-        if (found.commandKind !== "apply_click") return { status: "conflict", commandId };
-        return found.result as ApplyClickAnswer;
-      }
-      return { status: found.kind === "conflict" ? "conflict" : "pending", commandId };
-    }
-    const recorded = await lookup();
-    if (recorded) return recorded;
-    const refuse = async (
-      reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
-    ): Promise<ApplyClickAnswer> => (await lookup()) ?? { status: "refused", commandId, reason };
-    const resolved = await input.identity.resolveReviewItemByDocument(command);
-    if (!resolved?.draftId) return (await lookup()) ?? { status: "closed", commandId };
-    return refuse(checkApplyClick(command.request) ?? "unavailable");
-  }
-
   async function workItems(
     workId: WorkId,
   ): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }> {
@@ -111,7 +85,7 @@ export function createWorkBranchReviewService(input: {
 
   return {
     draftReview: {
-      applyClick,
+      applyClick: input.applyClick,
       async list(command) {
         const { items } = await workItems(command.workId);
         return items.map(
