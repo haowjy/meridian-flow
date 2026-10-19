@@ -118,11 +118,7 @@ async function fixture(
     agentCatalog,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
-    derivationLock: {
-      withDestination: (_id, operation) => operation(new AbortController().signal),
-    },
-    holdDestination: (id) => rig.runClaim.hold(id),
-    inheritNotes: async () => "ready" as const,
+    inheritNotes() {},
     effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
     handoffBriefs: {
       async hold() {

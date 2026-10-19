@@ -240,10 +240,8 @@ import { readThreadActivity } from "../domains/threads/domain/thread-activity.js
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
-  createDrizzleDerivationLock,
   createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
-  type DerivationLock,
   requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
@@ -265,7 +263,6 @@ import {
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
-import { KeyedMutex } from "../shared/keyed-mutex.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
@@ -325,13 +322,7 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   handoffBriefs: HandoffBriefs;
-  derivationLock: DerivationLock;
-  holdDerivationDestination: HandoffBriefs["hold"];
-  inheritThreadNotes(
-    sourceId: ThreadId,
-    destinationId: ThreadId,
-    signal?: AbortSignal,
-  ): Promise<"ready" | "cancelled">;
+  inheritThreadNotes(sourceId: ThreadId, destinationId: ThreadId): void;
   shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
@@ -366,8 +357,8 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 }
 
 export type ProductionAppPorts = {
-  derivationLock: DerivationLock;
   inheritThreadNotes: AppServices["inheritThreadNotes"];
+  stopThreadNotesCopies(): void;
   db: Database;
   /** Detached work any port started; the composed app drains it at shutdown. */
   backgroundTasks: DetachedWorkTracker;
@@ -631,21 +622,23 @@ export async function createProductionAppPorts(input: {
     arrivals,
     catalog: contextCatalog,
   });
-  async function inheritThreadNotes(
-    sourceId: ThreadId,
-    destinationId: ThreadId,
-    cancellation?: AbortSignal,
-  ): Promise<"ready" | "cancelled"> {
+  const notesCopyShutdown = new AbortController();
+  function inheritThreadNotes(sourceId: ThreadId, destinationId: ThreadId): void {
+    if (notesCopyShutdown.signal.aborted) return;
+    backgroundTasks.track(copyThreadNotes(sourceId, destinationId), "thread notes copy");
+  }
+  async function copyThreadNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void> {
+    const started = Date.now();
     const timeoutMs = 12_000;
     const deadline = Date.now() + timeoutMs;
     const timeout = AbortSignal.timeout(timeoutMs);
-    const signal = cancellation ? AbortSignal.any([cancellation, timeout]) : timeout;
+    const signal = AbortSignal.any([notesCopyShutdown.signal, timeout]);
     try {
-      await withDatabaseSignal(signal, async () => {
+      const outcome = await withDatabaseSignal(signal, async () => {
         const source = await threadRepos.threads.findById(sourceId);
         const destination = await threadRepos.threads.findById(destinationId);
         if (!source?.notesScope?.current || !destination?.notesScope?.current) return;
-        await notesCopy.copy({
+        return notesCopy.copy({
           projectId: source.projectId,
           userId: source.userId,
           source: source.notesScope.current,
@@ -654,7 +647,17 @@ export async function createProductionAppPorts(input: {
           deadline,
         });
       });
-      return "ready";
+      emitEvent(eventSink, {
+        level: "info",
+        source: "context.thread-notes",
+        name: `copy.${outcome ?? "skipped"}`,
+        correlation: { threadId: destinationId },
+        payload: {
+          sourceThreadId: sourceId,
+          destinationThreadId: destinationId,
+          elapsedMs: Date.now() - started,
+        },
+      });
     } catch (error) {
       emitEvent(eventSink, {
         level: "warn",
@@ -667,7 +670,6 @@ export async function createProductionAppPorts(input: {
           ...unknownToEventPayload(error),
         },
       });
-      return signal.aborted ? "cancelled" : "ready";
     }
   }
   const uploadIntake = createUploadIntake({
@@ -737,8 +739,8 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
-    derivationLock: createDrizzleDerivationLock(db),
     inheritThreadNotes,
+    stopThreadNotesCopies: () => notesCopyShutdown.abort(new Error("Server shutdown")),
     backgroundTasks,
     runClaim,
     statusReader,
@@ -1236,8 +1238,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     recovery,
     handoffBriefs,
-    derivationLock: ports.derivationLock,
-    holdDerivationDestination: handoffBriefs.hold,
     inheritThreadNotes: ports.inheritThreadNotes,
     userTurnAdmission,
     runClaim: runClaim,
@@ -1256,6 +1256,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     changeTrails,
     changeTrailDelivery,
     async shutdown() {
+      ports.stopThreadNotesCopies();
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
       ports.documentSync.dispose();
@@ -1278,7 +1279,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 }
 
 export function createInMemoryAppServices(): AppServices {
-  const derivations = new KeyedMutex();
   const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
@@ -1738,12 +1738,7 @@ export function createInMemoryAppServices(): AppServices {
     delivery,
     recovery,
     handoffBriefs,
-    derivationLock: {
-      withDestination: (id, operation) =>
-        derivations.run(id, () => operation(new AbortController().signal)),
-    },
-    holdDerivationDestination: (id) => runClaim.hold(id),
-    inheritThreadNotes: async () => "ready",
+    inheritThreadNotes() {},
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };

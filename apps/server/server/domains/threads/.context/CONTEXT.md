@@ -354,14 +354,18 @@ response may continue to another model request on the same assistant if fresh
 compaction planning generates instead; its next stream must use the next durable
 block position, never append to the previous response's positional message id.
 
-Fork/handoff creation copies the acted-on chat's notes root, not the cutoff
+After creation commits, a tracked detached task copies the acted-on chat's notes root, not the cutoff
 owner's, into the destination's current Scratch owner. This includes a new
 lineage for a No Work handoff. Missing notes allocate nothing; subagents do
 not copy. Failures log both thread ids, never fail creation, and never retry
 on create-or-get replay. The creation seed names the source's canonical notes
 address so the model can read the originals if no copy exists. There are no
 copy jobs, status projection or Retry operation. Existing destination roots
-are untouched. See [context copying](../../context/.context/CONTEXT.md#thread-notes-copying).
+are untouched. Creation/replay never await copying, and the task owns neither a
+run claim nor a destination lock. First turns may run before notes arrive;
+seeds say so and point to the originals. Handoff brief generation is independent.
+Deadline/shutdown cancels the copy and drains rollback before task settlement.
+See [context copying](../../context/.context/CONTEXT.md#thread-notes-copying).
 
 `derivation_source_thread_id` is nullable, with no cascading thread FK; notes
 retention does not become a new thread-deletion dependency. Historical rows

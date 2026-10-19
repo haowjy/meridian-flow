@@ -73,9 +73,7 @@ type HandoffBriefServiceDeps = {
   schedulePostCommit(task: () => Promise<void>): void;
 };
 
-type BriefLaunch = Parameters<HandoffBriefLauncher["launchAfterCommit"]>[0] & {
-  prepared?: () => void;
-};
+type BriefLaunch = Parameters<HandoffBriefLauncher["launchAfterCommit"]>[0];
 
 type LiveBrief = { controller: AbortController; threadId: ThreadId };
 
@@ -257,28 +255,10 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
       }, REMOTE_STOP_POLL_MS);
       poll.unref();
 
-      const preparation = await input.prepare?.(controller.signal);
-      // Stop has already settled the seed. Shutdown/lost ownership leave recovery evidence.
       if (controller.signal.aborted) return;
-      if (preparation === "cancelled") {
-        // Copy rollback has drained. Seed reporting must not retain the conversation
-        // if its ending transaction encounters an unrelated lifecycle lock.
-        await input.claim.release();
-        input.prepared?.();
-        await finish(input.threadId, input.seedTurnId, {
-          outcome: {
-            kind: "failed",
-            error: new Error("Notes copy deadline exceeded"),
-            modelResponses: [],
-          },
-          failure: { reason: "interrupted", phase: "launch" },
-        });
-        return;
-      }
       const initial = await currentSeed(input.seedTurnId);
       if (!initial || initial.thread.id !== input.threadId || initial.seed.status !== "pending")
         return;
-      input.prepared?.();
       publishStatus(initial.thread.id);
       if (!(await deps.billingUsage.canStartTurn(initial.thread.userId))) {
         await finish(input.threadId, input.seedTurnId, {
@@ -353,26 +333,21 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           correlation: { threadId: input.threadId },
           payload: unknownToEventPayload(error),
         });
-      } finally {
-        input.prepared?.();
       }
     }
   }
 
   function startLaunch(input: BriefLaunch): Promise<void> {
     if (shutdown.started) {
-      return input.claim
-        .release()
-        .catch((error) => {
-          emitEvent(deps.eventSink, {
-            level: "error",
-            source: "runtime.handoff",
-            name: "claim.release_failed",
-            correlation: { threadId: input.threadId },
-            payload: unknownToEventPayload(error),
-          });
-        })
-        .finally(() => input.prepared?.());
+      return input.claim.release().catch((error) => {
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "runtime.handoff",
+          name: "claim.release_failed",
+          correlation: { threadId: input.threadId },
+          payload: unknownToEventPayload(error),
+        });
+      });
     }
     return launch(input).catch((error) => {
       emitEvent(deps.eventSink, {
@@ -385,11 +360,9 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     });
   }
 
-  function launchAfterCommit(input: BriefLaunch): Promise<void> {
-    return new Promise((prepared) => {
-      deps.schedulePostCommit(async () => {
-        backgroundTasks.track(startLaunch({ ...input, prepared }), "handoff brief launch");
-      });
+  async function launchAfterCommit(input: BriefLaunch): Promise<void> {
+    deps.schedulePostCommit(async () => {
+      backgroundTasks.track(startLaunch(input), "handoff brief launch");
     });
   }
 

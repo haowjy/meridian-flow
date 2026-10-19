@@ -283,7 +283,10 @@ It reads content before the destination namespace transaction, without retained
 source leases or revision revalidation. This is live content during copying,
 not a creation-instant snapshot. A missing source root allocates nothing; an
 empty root (including empty descendants) is copied. An existing destination
-root is left alone, including concurrent writer/model notes.
+root is left alone, including concurrent writer/model notes. Root allocation
+uses an insert-or-skip against the live `(context_source_id, thread_id)` unique
+index; it never adopts another creator's root. Skips and completion are logged
+with both thread ids and elapsed time.
 
 The installer uses the ordinary associated-root proof and placement path,
 fresh node rows and collab's initialize-only authority seeding. Tracked nodes
@@ -292,7 +295,8 @@ receipts. Binary object preparation is shared with single-file copy and its
 uncommitted objects are released on failure within the same cancellation budget;
 cleanup left when it expires is skipped and reported, not awaited indefinitely.
 The composition root supplies one 12-second deadline and database cancellation
-scope, including scope lookups and live-document reads. Installation also sets
+scope, including scope lookups and live-document reads. Shutdown aborts copying
+before the app drains its tracked tasks; rollback drains before a task settles. Installation also sets
 transaction-local lock and statement timeouts from the remaining budget.
 Content and tree install together;
 arrivals settle once against the complete tree and the destination catalog

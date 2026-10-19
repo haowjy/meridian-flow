@@ -1,7 +1,7 @@
 /** Failed session-lock releases clear local claims and make later claims usable. */
 import type { Database } from "@meridian/database";
 import { describe, expect, it, vi } from "vitest";
-import { createDrizzleSessionLock } from "../../../shared/drizzle-session-lock.js";
+import { createDrizzleSessionLock } from "./drizzle-session-lock.js";
 
 describe("PostgreSQL session advisory lock", () => {
   it("drops a dead session, notifies holders, and reserves a fresh one", async () => {

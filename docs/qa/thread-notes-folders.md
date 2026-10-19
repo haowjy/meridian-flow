@@ -158,9 +158,8 @@ uses `Untitled chat`; a subagent uses its spawning parent's title plus `(subagen
 
 ## Fork and handoff copies (Phase 3)
 
-Creation commits the conversation, copies notes best-effort in the same request,
-then returns. Handoff launches its detached brief after copying; creation does
-not wait for brief generation. There is no notes-copy job, status UI or Retry.
+Creation commits the conversation and registers a tracked detached best-effort
+copy. Creation, replay, the handoff brief and first turns never wait for copying. There is no notes-copy job, status UI or Retry.
 An idempotent creation replay does not retry copying, even after failure.
 
 Capture the source assistant turn id from
@@ -181,7 +180,7 @@ UUIDs and retain each request body unchanged for replay:
    an empty descendant with the ordinary context folder-create route, using
    `?workId=<work-id>` and `{type:"folder",path:"/@cN/empty"}`. This is a
    source-relative transport path, not a public URI. Fork and hand off. Each
-   destination reads its own copy immediately after creation returns. Folder
+   destination returns before copying finishes, then reads its own copy. Folder
    shape, empty descendants and persisted text filetypes survive. The seed
    names the canonical source folder where originals remain.
 2. **No Work.** Repeat on a No Work source. A fork keeps the lineage source
@@ -232,23 +231,20 @@ UUIDs and retain each request body unchanged for replay:
    tree, not one per file. Reconnect and reload see the same tree and title
    labels. No source document is moved or relabelled.
 10. **Copy lifecycle and replay.** In a separate SQL session, hold
-    `document_yjs_checkpoints` with `ACCESS EXCLUSIVE`. Start creation using a
-    client UUID, then replay that body once the destination row commits. Both
-    requests must remain pending; a fork send accepted during copying has no
-    execution lease yet. Release the lock before the 12-second deadline:
-    creation/replay settle, and the first model read sees copied notes. Hold
-    it past the deadline instead: no partial root survives, copying never
-    resumes after unlock, and a settled replay does not retry. Repeat with a
-    40-second document-insert trigger to exercise installation rollback.
-    For handoff, start replay asynchronously and Stop the known pending seed
-    before awaiting replay (replay now deliberately waits for copying). Both
-    requests settle and a new message completes while the source lock is still
-    held. Without Stop, deadline releases ownership and the seed is reported
-    interrupted with its original-notes pointer. A separate process holding
-    the destination's advisory key must also delay replay until it releases.
-    Exercise tracked/binary reads and failed-object cleanup against the same
-    signal. Native cancellation must drain rollback, including a deferred
-    constraint waiting in COMMIT, before installation returns.
+    `document_yjs_checkpoints` with `ACCESS EXCLUSIVE`. Create and replay a
+    client UUID: both return while the lock remains held. A first fork send
+    completes immediately, using originals or creating its own notes root.
+    Release before the 12-second deadline: the copy lands, or skips and logs
+    if the model created a root first. Replaying never copies twice. Hold past
+    the deadline: no partial root survives, copying never resumes on unlock,
+    and replay never retries. Handoff briefs and subsequent turns complete
+    while the copy remains blocked; its deadline does not fail the brief.
+    Stop the server mid-copy and confirm no partial tree after restart.
+    Repeat with a 40-second INSERT delay and a deferred COMMIT trigger:
+    native cancellation drains rollback before the detached task settles.
+    Exercise tracked/binary reads and failed-object cleanup with the same
+    signal. Compare `copy.copied` elapsed times only when all fixture notes
+    were installed; count notes and check errors, not only response latency.
 11. **Populated migration.** Apply migrations 0079–0080 to populated derivation
     fixtures exceeding the 500-row page size. Every historical fork/handoff
     gets its origin turn's owner, organic rows stay null, explicit recorded

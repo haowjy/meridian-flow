@@ -11,10 +11,6 @@ import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import {
-  createDrizzleSessionLock,
-  type SessionLockClaim,
-} from "../../../shared/drizzle-session-lock.js";
-import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
@@ -26,6 +22,7 @@ import {
   type ThreadPhase,
 } from "../loop/ports.js";
 import { markRunStateChanged } from "./drizzle-run-state.js";
+import { createDrizzleSessionLock, type SessionLockClaim } from "./drizzle-session-lock.js";
 
 export interface DrizzleRunClaimOptions {
   /** Stable holder identity for this worker; a random one is minted when omitted. */

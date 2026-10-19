@@ -32,8 +32,6 @@ export default defineEventHandler(async (event) => {
         agentCatalog: app.agentCatalog,
         agentRevisions: app.agentRevisions,
         eventWriter: app.journalWriter,
-        derivationLock: app.derivationLock,
-        holdDestination: app.holdDerivationDestination,
         inheritNotes: app.inheritThreadNotes,
         effectiveWriteMode: (id) => app.delivery.effectiveWriteMode(id),
       },

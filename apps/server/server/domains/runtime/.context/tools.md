@@ -74,10 +74,10 @@ admission references and keep-open lines are canonical-only.
 The model uses `scratch://$THREAD/` for its own notes and `$PARENT` for the
 originating chat's notes (the acted-on source for fork/handoff, even when its
 cutoff turn was inherited; no parent on an ordinary root). Forks and handoffs
-best-effort copy that source folder into their own folder before creation
-returns. Copies have independent identity/history and grant no read credit.
+best-effort copy that source folder into their own folder in a detached task
+after creation commits. Creation and the first turn never wait for it. Copies have independent identity/history and grant no read credit.
 Subagents start without a copy. A creation seed names the originals' canonical
-address, which remains usable if copying failed. Permissions remain
+address and says the copy may still be arriving; the originals remain usable. Permissions remain
 owner-wide. Bare Scratch remains owner-wide and rebinding moves nothing.
 Results carry canonical addresses; model prose, note links and keep-open lines
 should reuse them. AI-written link preparation and assignment share the same

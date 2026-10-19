@@ -9,7 +9,7 @@ import {
   renderFilename,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { threads, works } from "@meridian/database/schema";
+import { folders as folderRows, threads, works } from "@meridian/database/schema";
 import type { PMNode } from "@meridian/markup";
 import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
@@ -26,7 +26,6 @@ import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import { claimDocumentLocation } from "./tree/node-locations.js";
 import { insertDocumentRow, insertFolder, lockDocuments } from "./tree/node-rows.js";
-import { ensureLiveFolderPath } from "./tree/placement.js";
 import { readLiveSubtree } from "./tree/read-subtree.js";
 import { createTreeReader, LIVE_TREE } from "./tree/tree-view.js";
 
@@ -38,7 +37,7 @@ export interface ThreadNotesCopy {
     destination: ContextNotesLocation;
     signal: AbortSignal;
     deadline: number;
-  }): Promise<void>;
+  }): Promise<"copied" | "skipped">;
 }
 
 export function createThreadNotesCopy(deps: {
@@ -79,16 +78,16 @@ export function createThreadNotesCopy(deps: {
       input.signal.throwIfAborted();
       const source = await owner(input.projectId, input.source);
       const sourceId = await source.store.existingContextSourceId();
-      if (!sourceId) return;
+      if (!sourceId) return "skipped";
       const tree = createTreeReader(db);
       const root = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: sourceId as ContextSourceId,
         path: `@${input.source.threadRef}`,
       });
-      if (root.kind !== "found" || root.node.kind !== "folder") return;
+      if (root.kind !== "found" || root.node.kind !== "folder") return "skipped";
       const cut = await readLiveSubtree(db, sourceId as ContextSourceId, root.node.folder.id);
       const cutRoot = cut.folders[0];
-      if (!cutRoot) return;
+      if (!cutRoot) return "skipped";
       const destination = await owner(input.projectId, input.destination);
       const existingDestinationId = await destination.store.existingContextSourceId();
       if (existingDestinationId) {
@@ -96,7 +95,7 @@ export function createThreadNotesCopy(deps: {
           contextSourceId: existingDestinationId as ContextSourceId,
           path: `@${input.destination.threadRef}`,
         });
-        if (existing.kind !== "not_found") return;
+        if (existing.kind !== "not_found") return "skipped";
       }
       const objects: string[] = [];
       const prepared: ({ id: DocumentId; source: (typeof cut.documents)[number] } & (
@@ -174,14 +173,23 @@ export function createThreadNotesCopy(deps: {
           });
           if (existing.kind !== "not_found") return false;
           const association = await associatedRootForSource(db, destinationId, dir);
-          const placed = await ensureLiveFolderPath(db, {
-            contextSourceId: destinationId,
-            dir,
-            associatedRoot: association,
-          });
-          if (!placed.ok || !placed.value.folderId)
-            throw new Error("Cannot allocate copied notes root");
-          const folders = new Map<FolderId, FolderId>([[cutRoot.id, placed.value.folderId]]);
+          if (!association) throw new Error("Cannot prove copied notes root");
+          // A model/writer root wins even if it arrived after preparation. The live
+          // (source, thread) unique index arbitrates without destination ownership.
+          const [placed] = await currentDrizzleDb(db)
+            .insert(folderRows)
+            .values({
+              contextSourceId: destinationId,
+              parentId: null,
+              name: association.name,
+              threadId: association.threadId,
+              hidden: false,
+            })
+            .onConflictDoNothing()
+            .returning({ id: folderRows.id });
+          if (!placed) return false;
+          await claimDocumentLocation(db, destinationId, null, association.name);
+          const folders = new Map<FolderId, FolderId>([[cutRoot.id, placed.id]]);
           const paths = new Map<FolderId, string>([[cutRoot.id, ""]]);
           for (const folder of cut.folders.slice(1)) {
             input.signal.throwIfAborted();
@@ -244,6 +252,7 @@ export function createThreadNotesCopy(deps: {
           await deps.catalog.refreshSources([destinationId]);
           return true;
         });
+        return installed ? "copied" : "skipped";
       } finally {
         if (!installed) await deps.objects.keys(objects, input.signal);
       }

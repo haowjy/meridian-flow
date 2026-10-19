@@ -120,11 +120,7 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
-        derivationLock: (
-          await import("../adapters/drizzle-derivation-lock.js")
-        ).createDrizzleDerivationLock(db),
-        holdDestination: (id: string) => runtime.runClaim.hold(id),
-        inheritNotes: async () => "ready" as const,
+        inheritNotes() {},
         effectiveWriteMode: (id: string) => runtime.delivery.effectiveWriteMode(id as never),
       };
       const firstTurn = await repos.turns.create({
