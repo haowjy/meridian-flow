@@ -101,8 +101,6 @@ describe("change trail aggregate projections (postgres)", () => {
       .values([
         {
           documentId: ALPHA_ID,
-          draftGeneration: 1,
-          journalIds: [],
           idempotencyKey: "attribution-auto",
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -110,8 +108,6 @@ describe("change trail aggregate projections (postgres)", () => {
         },
         {
           documentId: ALPHA_ID,
-          draftGeneration: 1,
-          journalIds: [],
           idempotencyKey: "attribution-manual",
           threadId: THREAD_ID,
           turnId: TURN_ID,

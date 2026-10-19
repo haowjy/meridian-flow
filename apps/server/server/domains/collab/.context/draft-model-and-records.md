@@ -47,9 +47,7 @@ statement, and nothing else reads `state`. Every committed write moves
 without checking it. The projection job's `has_effect` write is the one
 exception: it writes at the judged revision and never bumps it, so it never
 makes an exact rewrite miss. Draft room identity is `draft:<draftId>` for life; journal rows and receipt origins carry no epoch.
-The legacy draft column uses its default; the NOT NULL journal column has no default, so inserts
-write `1` until the migrations lane drops it. Apply writes literal `1` to the legacy NOT NULL push-lineage generation column;
-it never reads or fences on that value.
+
 
 The contract (row, read and write types, the `DraftStore` port, the
 materialization of one read) is `domain/draft-store.ts`. Its Drizzle storage

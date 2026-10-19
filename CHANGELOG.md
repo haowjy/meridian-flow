@@ -2,10 +2,15 @@
 
 ## [Unreleased]
 
+- Consolidate draft review cutover into one ordered migration series with shared receipt-origin indexes; preserve frontier-planned saves and atomic Apply through retirement.
+
 - Leave draft review for the exact live document when another tab discards all, even when metadata arrives before the room close; preserve document-removal handling and drop the retired room cache.
 
 - Integrated text-based draft review with stable server rooms, addressed draft metadata, and Apply for empty or image creations.
 - Integrate frontier-planned model writes with fresh-seeded draft review and atomic Apply; thread peers retain identity only, and draft saves report their locked committed cut.
+- Existing Work drafts retain their text and historical Apply evidence when upgrading to text-derived review. Cutover refuses unrepaired drafts and unfinished Apply, converts restartably under row locks, builds replacement indexes online, then retires draft generations, placement and settlement storage.
+
+- Database migrations can run digest-pinned TypeScript conversions in ledger order, on the migration runner's locked session, before their SQL completion barriers.
 
 - Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.
 

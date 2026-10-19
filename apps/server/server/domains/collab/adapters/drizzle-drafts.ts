@@ -609,6 +609,7 @@ export function createDrizzleDraftStore(
         )
         .where(
           and(
+            sql`${documentEditParts.origin}->>'kind' = 'pending'`,
             sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
             eq(draftWriteJournal.source, "server"),
             sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r

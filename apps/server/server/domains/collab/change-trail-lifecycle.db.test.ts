@@ -174,7 +174,6 @@ describe("change trail (postgres)", () => {
         effect: { inserted: [], deleted: [] },
         frontier: {},
         origin: { kind: "live", seq: 1 },
-        placement: { kind: "live", seq: 1 },
       });
       return edit.id;
     };
