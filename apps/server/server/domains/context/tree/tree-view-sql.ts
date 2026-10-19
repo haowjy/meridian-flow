@@ -13,10 +13,11 @@
 import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
-import { documents, folders } from "@meridian/database/schema";
+import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
 import {
   type AnyColumn,
   and,
+  eq,
   getTableColumns,
   inArray,
   isNull,
@@ -365,8 +366,9 @@ export async function loadActiveBranchUses(
       r.origin_work_id::text AS origin_work_id,
       (extract(epoch FROM r.created_at) * 1000)::float8 AS branch_created_ms
     FROM branch_tree_changes c JOIN branches r ON r.id = c.branch_id
+    JOIN documents d ON d.id = c.node_id
     WHERE c.node_kind = 'document' AND c.node_id IN (${uuidList(documentIds)})
-      AND c.created AND r.status = 'active'
+      AND c.created AND r.status = 'active' AND d.deleted_at IS NULL
     ORDER BY c.node_id, r.created_at, r.id`);
   return rows.map((row) => ({
     documentId: row.document_id as DocumentId,
@@ -718,4 +720,14 @@ export async function loadLivingSourceDocumentIds(
     .from(documents)
     .where(and(inArray(documents.contextSourceId, [...sourceIds]), isNull(documents.deletedAt)));
   return rows.map((row) => row.id as DocumentId);
+}
+
+/** Creation membership survives cascade removal but is inactive until Restore. */
+export function livingDocumentUses(db: DrizzleDb) {
+  return db
+    .select(getTableColumns(branchTreeChanges))
+    .from(branchTreeChanges)
+    .innerJoin(documents, eq(documents.id, branchTreeChanges.nodeId))
+    .where(and(eq(branchTreeChanges.nodeKind, "document"), isNull(documents.deletedAt)))
+    .as("living_document_uses");
 }

@@ -187,6 +187,8 @@ export function createDrizzleDraftStore(
     branchId: BranchId;
     liveDoc: Y.Doc;
   }): Promise<DraftSnapshot> {
+    const current = await activeDocumentDraft(input.documentId, input.branchId);
+    if (current) return current;
     const seed = replicatedSnapshotFrom(input.liveDoc);
     // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.

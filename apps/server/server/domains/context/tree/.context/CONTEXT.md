@@ -22,7 +22,9 @@ a project-only check.
 `identityStatus(view, ids)` distinguishes visible, branch-hidden, gone,
 deleted, and malformed/unspellable identities. A hidden row with no active use
 is gone and may be repaired asynchronously. Link presence and file facts use
-this status; hidden rows outside the selected view are absent.
+this status; hidden rows outside the selected view are absent. Discarded tombstones also
+have diagnostic lineages, so known-id file access can deny access with their
+removal record; this never grants content access or makes them visible.
 
 Anything deciding whether a node may stand at a path asks as a kind (document
 or folder) through one rule, so a create, placement, move, Apply hold, and
@@ -59,8 +61,16 @@ never sets the Work-cascade restore marker. Retractions name
 `DocumentRemoval.remove` is the shared kernel for tree delete, overwrite,
 Work cascade and last use. Callers take Work and namespace locks, then the
 complete sorted document mutation-lock set before any document row lock. The
-kernel writes the removal record, collects the Works of all tree uses before retiring them, and invokes one
-collab capability. End-use also carries the Work of the use it already dropped,
+kernel writes the removal record, collects the Works of all tree uses, and invokes one
+collab capability. Independent removal retires uses; Work cascade retains hidden creations' uses for Restore. Retained uses are inactive while their document is tombstoned: tree
+membership and pending counts filter document liveness. Restore never reopens a
+closed draft and schedules a recount for every Work whose retained uses reactivate.
+
+Production Work sources are Scratch (historical Work uploads were live too);
+file policy routes both schemes live and draft admission rejects them. A hidden
+creation there is not a supported production write. Legacy schemas nevertheless
+permit such rows, so cascade and cutover preserve their membership as well as
+their bytes rather than turning Restore into an orphan eligible for repair. End-use also carries the Work of the use it already dropped,
 even for draftless or revealed creations. Storage release owns no lifecycle:
 only `discarded` removals release bytes, and draft rows are never deleted by it.
 

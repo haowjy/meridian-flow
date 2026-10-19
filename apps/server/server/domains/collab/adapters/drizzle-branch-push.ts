@@ -6,7 +6,6 @@ import {
   branches,
   branchPushSettlementBatches,
   branchPushSettlementPayloads,
-  branchTreeChanges,
   documentDrafts,
   documentEditParts,
   documentEdits,
@@ -22,6 +21,7 @@ import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
+import { livingDocumentUses } from "../../context/tree/tree-view.js";
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -344,6 +344,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
       const tx = currentDrizzleDb(db);
+      const branchTreeChanges = livingDocumentUses(tx);
       const drafted = tx
         .select({ workId: draftBranchWork.workId, documentId: documentDrafts.documentId })
         .from(documentDrafts)
@@ -379,6 +380,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     },
     async listBranchesChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
+      const branchTreeChanges = livingDocumentUses(tx);
       // The same membership arms as the Work counts, narrowed to one document.
       const drafted = tx
         .select({ branchId: documentDrafts.branchId })
@@ -417,6 +419,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       }));
     },
     async listCreators(branchId, documentIds) {
+      const branchTreeChanges = livingDocumentUses(currentDrizzleDb(db));
       const rows = await currentDrizzleDb(db)
         .select({
           documentId: branchTreeChanges.nodeId,

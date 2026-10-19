@@ -152,6 +152,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
   return createCollabFacade({
     removal: {
       documentRemoval: {
+        recount() {
+          throw new Error("Document recount requires the persistent tree");
+        },
         async remove() {
           throw new Error("Document removal requires the persistent tree");
         },

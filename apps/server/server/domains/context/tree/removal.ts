@@ -2,30 +2,27 @@
 import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { branches, branchTreeChanges, documents } from "@meridian/database/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DocumentRemoval, DocumentRemovalCollab } from "../ports/document-removal.js";
 import { bumpLocationVersions } from "./node-locations.js";
 import { releaseDocumentStorage } from "./node-rows.js";
+import { loadDocumentIdentityRows } from "./tree-view-sql.js";
 
 export function createDocumentRemoval(
   db: Database,
   collab: DocumentRemovalCollab,
 ): DocumentRemoval {
   return {
+    recount: collab.recount,
     async remove(input) {
       const ids = [...new Set(input.documentIds)].sort();
       const tx = currentDrizzleDb(db);
-      const living = await tx
-        .select({ id: documents.id })
-        .from(documents)
-        .where(and(inArray(documents.id, ids), isNull(documents.deletedAt)));
+      const living = (await loadDocumentIdentityRows(tx, ids)).filter((row) => !row.deleted);
       const removed = living.map((row) => row.id as DocumentId);
       if (!removed.length) {
-        return collab.closeRemovedDocuments({
-          documentIds: [],
-          workIds: input.affectedWorkIds ?? [],
-        });
+        collab.recount(input.affectedWorkIds ?? []);
+        return [];
       }
       const uses = await tx
         .select({ workId: branches.originWorkId })
@@ -49,14 +46,19 @@ export function createDocumentRemoval(
         })
         .where(inArray(documents.id, removed));
       await bumpLocationVersions(db, { documentIds: removed });
-      await tx
-        .delete(branchTreeChanges)
-        .where(
-          and(
-            eq(branchTreeChanges.nodeKind, "document"),
-            inArray(branchTreeChanges.nodeId, removed),
-          ),
-        );
+      // Only hidden creations need membership to stand again after a cascade Restore.
+      const retired = input.workId
+        ? living.filter((row) => !row.hidden).map((row) => row.id)
+        : removed;
+      if (retired.length)
+        await tx
+          .delete(branchTreeChanges)
+          .where(
+            and(
+              eq(branchTreeChanges.nodeKind, "document"),
+              inArray(branchTreeChanges.nodeId, retired),
+            ),
+          );
       const closed = await collab.closeRemovedDocuments({
         documentIds: removed,
         workIds: [

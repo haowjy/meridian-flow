@@ -556,7 +556,10 @@ export async function createProductionAppPorts(input: {
   // One repair on touch for every production tree reader and create (§12.4).
   const hiddenNodeRepair = createHiddenNodeRepair({
     db,
-    removal: { remove: (input) => documentSync.documentRemoval.remove(input) },
+    removal: {
+      remove: (input) => documentSync.documentRemoval.remove(input),
+      recount: (workIds) => documentSync.documentRemoval.recount(workIds),
+    },
     eventSink,
     objects: objectRelease,
     backgroundTasks,
