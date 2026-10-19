@@ -59,6 +59,7 @@ export function createReplySaveFences(deps: {
       const entries = [...record.documents];
       if (!entries.length) return [];
       const grants = entries.map(([, entry]) => entry.grant);
+      await collabHook("save.beforeWorkLock");
       await deps.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
       await collabHook("save.afterWorkLock");
       // Works first, then the sorted live documents, never a Work after them. A removal takes
