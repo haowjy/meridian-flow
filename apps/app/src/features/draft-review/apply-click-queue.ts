@@ -46,12 +46,15 @@ export class ApplyClickQueue {
     const result = new Promise<ApplyClickResult | { status: "cancelled" }>((finish) => {
       const click: Click = { ...frozen, sent: false, attempts: 0, stalled: false, finish };
       this.clicks.push(click);
-      void frozen.acknowledged.then(() => {
-        if (this.clicks.includes(click)) {
-          click.acknowledged = Promise.resolve();
-          if (this.clicks[0] === click) void this.dispatch(click);
-        }
-      });
+      void frozen.acknowledged.then(
+        () => {
+          if (this.clicks.includes(click)) {
+            click.acknowledged = Promise.resolve();
+            if (this.clicks[0] === click) void this.dispatch(click);
+          }
+        },
+        () => this.refuseUnsent(click),
+      );
     });
     if (!this.feedbackTimer)
       this.feedbackTimer = setTimeout(() => {
@@ -80,6 +83,23 @@ export class ApplyClickQueue {
     void this.dispatch(head);
   }
 
+  /** A retired session cannot acknowledge its unsent cuts; sent ids keep their settlement. */
+  refuseUnsent(only?: Click): void {
+    for (const click of [...this.clicks]) {
+      if (click.sent || (only && click !== only)) continue;
+      const answer = {
+        status: "refused",
+        commandId: click.body.commandId,
+        reason: "unsynced",
+      } as const;
+      this.clicks.splice(this.clicks.indexOf(click), 1);
+      this.port.refused(answer);
+      click.finish(answer);
+    }
+    this.clearFeedbackIfIdle();
+    this.port.changed();
+  }
+
   /** Closed rooms cannot deliver records. Only a durable answer/lookup can settle a sent head. */
   close(): void {
     if (this.closed) return;
@@ -88,11 +108,7 @@ export class ApplyClickQueue {
     const head = this.clicks[0];
     const cancelled = this.clicks.splice(head?.sent ? 1 : 0);
     for (const click of cancelled) click.finish({ status: "cancelled" });
-    if (!this.clicks.length) {
-      clearTimeout(this.feedbackTimer);
-      this.feedbackTimer = undefined;
-      this.applying = false;
-    }
+    this.clearFeedbackIfIdle();
     if (head?.sent) {
       if (head.answer?.status === "applied") this.settle(head, head.answer);
       else if (!this.request) void this.lookupClosed(head);
@@ -108,7 +124,12 @@ export class ApplyClickQueue {
 
   private async dispatch(click: Click): Promise<void> {
     if (this.request || this.clicks[0] !== click || click.stalled) return;
-    await click.acknowledged;
+    try {
+      await click.acknowledged;
+    } catch {
+      this.refuseUnsent(click);
+      return;
+    }
     if (this.request || this.clicks[0] !== click) return;
     this.request = click;
     click.sent = true;
@@ -179,17 +200,20 @@ export class ApplyClickQueue {
     this.port.changed();
   }
 
+  private clearFeedbackIfIdle() {
+    if (this.clicks.length) return;
+    clearTimeout(this.feedbackTimer);
+    this.feedbackTimer = undefined;
+    this.applying = false;
+  }
+
   private settle(click: Click, result: ApplyClickResult | { status: "cancelled" }): void {
     if (this.clicks[0] !== click) return;
     clearTimeout(this.retryTimer);
     this.clicks.shift();
     if (this.request === click) this.request = null;
     click.finish(result);
-    if (!this.clicks.length) {
-      clearTimeout(this.feedbackTimer);
-      this.feedbackTimer = undefined;
-      this.applying = false;
-    }
+    this.clearFeedbackIfIdle();
     this.port.changed();
     const next = this.clicks[0];
     if (next && !this.request) void this.dispatch(next);

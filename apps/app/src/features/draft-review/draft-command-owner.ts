@@ -62,16 +62,19 @@ export type CommandOutcome =
   | { kind: "blocked" }
   | { kind: "done" }
   | { kind: "change-refused"; code: string };
-type Entry = {
-  ref: DraftRef;
+type Binding = {
   session: DocumentSession;
   runtime: ReviewRuntime;
+  stop(): void;
+  cache: WeakMap<Schema, readonly PMNode[]>;
+};
+type Entry = {
+  ref: DraftRef;
+  binding: Binding | null;
   queue: ApplyClickQueue;
   users: number;
   lease: DraftRoomRead | null;
-  releaseRuntime(): void;
-  stop(): void;
-  cache: WeakMap<Schema, readonly PMNode[]>;
+  unwatchLease(): void;
 };
 export type DiscardNotice = {
   itemKey?: string;
@@ -141,48 +144,49 @@ export class DraftCommandOwner {
     if (address?.kind !== "draft") throw new Error("Commands require a draft room");
     this.identities.set(ref.itemKey, address.draftId);
     let entry = this.entries.get(address.draftId);
-    if (entry && entry.session !== session)
-      throw new Error("A draft cannot have two command rooms");
     if (!entry) {
-      const hold = retainReviewRuntime(session);
-      const invalidate = () => {
-        if (!entry) return;
-        entry.cache = new WeakMap();
-        entry.runtime.invalidateBase();
-      };
-      const changed = () => {
-        if (!entry) return;
-        invalidate();
-        const pending = entry.queue.clicks.length > 0;
-        this.setState(
-          ref.itemKey,
-          {
-            pending,
-            applying: entry.queue.applying,
-            stalled: entry.queue.clicks[0]?.stalled ?? false,
-          },
-          address.draftId,
-        );
-        if (pending && !entry.lease) entry.lease = readDraftRoom(this.registry, session.roomKey);
-        if (!pending) {
-          entry.lease?.dispose();
-          entry.lease = null;
-        }
-        this.releaseIdle(address.draftId, entry);
-      };
-      entry = {
+      const owned: Entry = {
         ref,
-        session,
-        runtime: hold.runtime,
+        binding: null,
         users: 0,
         lease: null,
-        releaseRuntime: hold.release,
-        stop: () => {},
-        cache: new WeakMap(),
+        unwatchLease: () => {},
         queue: new ApplyClickQueue({
           send: (body) => applyDraftClick(ref, body),
           lookup: (body) => observeDraftClick(ref, body),
-          changed,
+          changed: () => {
+            const binding = owned.binding;
+            if (binding) {
+              binding.cache = new WeakMap();
+              binding.runtime.invalidateBase();
+            }
+            const pending = owned.queue.clicks.length > 0;
+            this.setState(
+              ref.itemKey,
+              {
+                pending,
+                applying: owned.queue.applying,
+                stalled: owned.queue.clicks[0]?.stalled ?? false,
+              },
+              address.draftId,
+            );
+            if (pending && !owned.lease) {
+              const lease = readDraftRoom(this.registry, session.roomKey);
+              owned.lease = lease;
+              const follow = () => {
+                const next = lease.usable();
+                if (next) this.attach(owned, next);
+              };
+              owned.unwatchLease = lease.subscribe(follow);
+              follow();
+            }
+            if (!pending && owned.lease) {
+              owned.unwatchLease();
+              owned.lease.dispose();
+              owned.lease = null;
+            }
+            this.releaseIdle(address.draftId, owned);
+          },
           refused: (answer) =>
             this.setState(
               ref.itemKey,
@@ -197,73 +201,102 @@ export class DraftCommandOwner {
             ),
         }),
       };
-      const owned = entry;
+      entry = owned;
       this.entries.set(address.draftId, owned);
       this.byItem.set(ref.itemKey, owned);
-      owned.runtime.setBaseProvider((_room, schema) => {
-        let cached = owned.cache.get(schema);
-        if (!cached) {
-          const recorded = new Set(
-            readApplyRecord(session.document).map((record) => record.commandId),
-          );
-          cached = readBase(session.document, schema);
-          for (const click of owned.queue.clicks)
-            if (!recorded.has(click.body.commandId))
-              cached = applyBase(schema, cached, click.optimistic, click.patched);
-          owned.cache.set(schema, cached);
-        }
-        return cached;
-      });
-      const base = session.document.getXmlFragment(REVIEW_BASE_FRAGMENT);
-      const record = session.document.getArray(APPLY_RECORD_ROOT);
-      const observe = () => {
-        invalidate();
-        owned.queue.observe(
-          readApplyRecord(session.document).flatMap((row) =>
-            row.commandId ? [row.commandId] : [],
-          ),
-        );
-      };
-      base.observeDeep(invalidate);
-      record.observeDeep(observe);
-      const stopSession = session.subscribe((snapshot) => {
-        const connection = snapshot.connectionState;
-        if (connection?.kind === "reset" && connection.disposition === "refused") {
-          this.setState(
-            ref.itemKey,
-            {
-              failure: { code: "discard-refused", serverCode: "forbidden" },
-            },
-            address.draftId,
-          );
-          return;
-        }
-        if (
-          connection?.kind === "reset" &&
-          (connection.disposition === "closed" || connection.disposition === "removed")
-        )
-          this.finishClose(ref, connection.disposition);
-      });
-      owned.stop = () => {
-        stopSession();
-        base.unobserveDeep(invalidate);
-        record.unobserveDeep(observe);
-      };
     }
     const held = entry;
     held.users++;
+    this.attach(held, session);
     return () => {
       held.users--;
       this.releaseIdle(address.draftId, held);
     };
   }
+  private detach(entry: Entry) {
+    const binding = entry.binding;
+    if (!binding) return;
+    entry.binding = null;
+    binding.stop();
+  }
+
+  private attach(entry: Entry, session: DocumentSession) {
+    if (entry.binding?.session === session) return;
+    this.detach(entry);
+    const hold = retainReviewRuntime(session);
+    const binding: Binding = {
+      session,
+      runtime: hold.runtime,
+      cache: new WeakMap(),
+      stop: () => {},
+    };
+    entry.binding = binding;
+    const invalidate = () => {
+      binding.cache = new WeakMap();
+      binding.runtime.invalidateBase();
+    };
+    binding.runtime.setBaseProvider((_room, schema) => {
+      let cached = binding.cache.get(schema);
+      if (!cached) {
+        const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
+        cached = readBase(session.document, schema);
+        for (const click of entry.queue.clicks)
+          if (!recorded.has(click.body.commandId))
+            cached = applyBase(schema, cached, click.optimistic, click.patched);
+        binding.cache.set(schema, cached);
+      }
+      return cached;
+    });
+    const base = session.document.getXmlFragment(REVIEW_BASE_FRAGMENT);
+    const record = session.document.getArray(APPLY_RECORD_ROOT);
+    const observe = () => {
+      invalidate();
+      entry.queue.observe(
+        readApplyRecord(session.document).flatMap((row) => (row.commandId ? [row.commandId] : [])),
+      );
+    };
+    base.observeDeep(invalidate);
+    record.observeDeep(observe);
+    let stopSession = () => {};
+    binding.stop = () => {
+      stopSession();
+      base.unobserveDeep(invalidate);
+      record.unobserveDeep(observe);
+      binding.runtime.setBaseProvider((room, schema) => readBase(room.document, schema));
+      hold.release();
+    };
+    stopSession = session.subscribe((snapshot) => {
+      if (entry.binding !== binding) return;
+      const connection = snapshot.connectionState;
+      if (
+        connection?.kind === "reset" &&
+        (connection.disposition === "closed" || connection.disposition === "removed")
+      ) {
+        this.finishClose(entry.ref, connection.disposition);
+      } else if (
+        snapshot.status === "destroyed" ||
+        connection?.kind === "reset" ||
+        connection?.kind === "terminal" ||
+        connection?.kind === "unauthorized"
+      ) {
+        this.detach(entry);
+        entry.queue.refuseUnsent();
+      }
+    });
+    // subscribe publishes synchronously, including an already retired session.
+    if (entry.binding !== binding) stopSession();
+    else observe();
+  }
+
   /** Only the typed metadata `gone` answer enters here, never a failed read or list omission. */
   metadataGone(ref: DraftRef): Promise<void> {
     if (!this.active || this.state(ref.itemKey).closed) return Promise.resolve();
     const pending = this.resolvingGone.get(ref.itemKey);
     if (pending) return pending;
     const entry = this.byItem.get(ref.itemKey);
-    const lease = entry ? readDraftRoom(this.registry, entry.session.roomKey) : null;
+    const lease = entry?.binding
+      ? readDraftRoom(this.registry, entry.binding.session.roomKey)
+      : null;
     if (entry) entry.users++;
     this.setState(ref.itemKey, { checkingClose: true });
     const resolving = (async () => {
@@ -289,11 +322,11 @@ export class DraftCommandOwner {
   private finishClose(ref: DraftRef, disposition: "closed" | "removed", liveUri?: string) {
     if (!this.active || this.state(ref.itemKey).closed) return;
     const entry = this.byItem.get(ref.itemKey);
-    const frame = entry?.runtime.projectNow();
+    const frame = entry?.binding?.runtime.projectNow();
     const unsentText =
       disposition === "closed" &&
       !this.state(ref.itemKey).hidden &&
-      entry?.session.hasUnacknowledgedEdits()
+      entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
     if (disposition === "removed") this.lifecycle.removed?.(ref);
@@ -311,13 +344,12 @@ export class DraftCommandOwner {
 
   private releaseIdle(id: string, entry: Entry) {
     if (entry.users || entry.queue.clicks.length || this.entries.get(id) !== entry) return;
-    entry.stop();
-    entry.releaseRuntime();
+    this.detach(entry);
     this.entries.delete(id);
     if (this.byItem.get(entry.ref.itemKey) === entry) this.byItem.delete(entry.ref.itemKey);
   }
   canApply(itemKey: string): boolean {
-    const state = this.byItem.get(itemKey)?.runtime.state();
+    const state = this.byItem.get(itemKey)?.binding?.runtime.state();
     return Boolean(state?.ready && state.changes.length);
   }
 
@@ -363,9 +395,10 @@ export class DraftCommandOwner {
   /** No await before snapshot, group validation, O, P and acknowledgement barrier are frozen. */
   apply(ref: DraftRef, target: ChangeTarget): { sent: boolean; outcome: Promise<CommandOutcome> } {
     const entry = this.byItem.get(ref.itemKey);
-    if (!this.active || !entry?.runtime.state().ready)
+    const binding = entry?.binding;
+    if (!this.active || !entry || !binding?.runtime.state().ready)
       return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
-    const frame = entry.runtime.projectNow();
+    const frame = binding.runtime.projectNow();
     if (!frame) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
     if (
       target.kind === "groups" &&
@@ -393,11 +426,11 @@ export class DraftCommandOwner {
     const body: ApplyClick = {
       commandId: crypto.randomUUID(),
       draftId: this.identities.get(ref.itemKey),
-      snapshot: base64(Y.encodeSnapshotV2(Y.snapshot(entry.session.document))),
+      snapshot: base64(Y.encodeSnapshotV2(Y.snapshot(binding.session.document))),
       groupIds: [...ids],
       baseViewDelta: baseViewDelta(
         schema,
-        readBase(entry.session.document, schema),
+        readBase(binding.session.document, schema),
         optimistic,
       ).map((patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) })),
     };
@@ -406,9 +439,9 @@ export class DraftCommandOwner {
       body,
       optimistic,
       patched,
-      acknowledged: entry.session.whenCurrentChangesAcknowledged(),
+      acknowledged: binding.session.whenCurrentChangesAcknowledged(),
     });
-    entry.runtime.projectNow();
+    binding.runtime.projectNow();
     return {
       sent: true,
       outcome: result.then((answer) =>
@@ -427,8 +460,9 @@ export class DraftCommandOwner {
   /** The caller selects history ownership, never whether an editor happens to be mounted. */
   discard(ref: DraftRef, target: ChangeTarget, surface: "editor" | "dock"): DiscardNotice | null {
     const entry = this.byItem.get(ref.itemKey);
-    if (!this.active || !entry?.runtime.state().ready) return null;
-    const frame = entry.runtime.projectNow();
+    const binding = entry?.binding;
+    if (!this.active || !entry || !binding?.runtime.state().ready) return null;
+    const frame = binding.runtime.projectNow();
     if (!frame) return null;
     if (
       target.kind === "groups" &&
@@ -443,13 +477,13 @@ export class DraftCommandOwner {
     const ids = target.kind === "draft" ? frame.groups.map((group) => group.id) : target.groupIds;
     if (!ids.length || ids.some((id) => !frame.groups.some((group) => group.id === id)))
       return null;
-    const editor = surface === "editor" ? entry.runtime.editor("editor") : null;
+    const editor = surface === "editor" ? binding.runtime.editor("editor") : null;
     if (surface === "editor" && !editor) return null;
-    const doc = entry.session.document;
+    const doc = binding.session.document;
     const fragment = doc.getXmlFragment("prosemirror");
     if (!editor)
       for (const surface of ["editor", "dock"] as const) {
-        const attached = entry.runtime.editor(surface);
+        const attached = binding.runtime.editor(surface);
         if (attached) yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
       }
     const origin = editor ? ySyncPluginKey : {};
@@ -465,11 +499,11 @@ export class DraftCommandOwner {
     );
     doc.transact(() => writeDiscardBlocks(fragment, frame.doc.type.schema, blocks), origin);
     history.stopCapturing();
-    entry.runtime.projectNow();
+    binding.runtime.projectNow();
     if (editor) return { kind: "discarded", end() {} };
-    const lease = readDraftRoom(this.registry, entry.session.roomKey);
+    const lease = readDraftRoom(this.registry, binding.session.roomKey);
     entry.users++;
-    const id = parseYjsRoomName(entry.session.roomKey);
+    const id = parseYjsRoomName(binding.session.roomKey);
     let active = true;
     const end = () => {
       if (!active) return;
@@ -489,14 +523,17 @@ export class DraftCommandOwner {
           return;
         }
         history.undo();
-        entry.runtime.projectNow();
+        binding.runtime.projectNow();
         end();
       },
     };
   }
 
   acknowledged(itemKey: string): Promise<void> {
-    return this.byItem.get(itemKey)?.session.whenCurrentChangesAcknowledged() ?? Promise.resolve();
+    return (
+      this.byItem.get(itemKey)?.binding?.session.whenCurrentChangesAcknowledged() ??
+      Promise.resolve()
+    );
   }
 
   retry(itemKey: string) {

@@ -113,16 +113,32 @@ function pushLink(out: RestorationLink[], link: RestorationLink) {
 }
 
 /** Both sides can be GC, including an intermediate link in an Undo/Redo chain. */
-function sound(doc: Y.Doc, [client, clock, len, toClient, toClock]: RestorationLink): boolean {
+function known(
+  doc: Y.Doc,
+  client: number,
+  end: number,
+  missing?: (client: number, end: number) => void,
+): boolean {
+  if (Y.getState(doc.store, client) >= end) return true;
+  missing?.(client, end);
+  return false;
+}
+
+function sound(
+  doc: Y.Doc,
+  [client, clock, len, toClient, toClock]: RestorationLink,
+  missing?: (client: number, end: number) => void,
+): boolean {
   if (client < 0 || toClient < 0 || clock < 0 || toClock < 0 || len <= 0) return false;
   if (client === toClient && clock < toClock + len && toClock < clock + len) return false;
-  return (
-    Y.getState(doc.store, client) >= clock + len && Y.getState(doc.store, toClient) >= toClock + len
-  );
+  return known(doc, client, clock + len, missing) && known(doc, toClient, toClock + len, missing);
 }
 
 /** The draft's write-backs and Undo evidence, validated without reading tombstone text. */
-export function readRestorations(doc: Y.Doc): {
+export function readRestorations(
+  doc: Y.Doc,
+  missing?: (client: number, end: number) => void,
+): {
   base: ItemRange[];
   links: RestorationLink[];
   undone: ItemRange[];
@@ -140,16 +156,11 @@ export function readRestorations(doc: Y.Doc): {
       if (!Array.isArray(raw) || !raw.every(Number.isSafeInteger)) continue;
       if (raw.length === 5) {
         const link = raw as unknown as RestorationLink;
-        if (sound(doc, link)) out.links.push(link);
+        if (sound(doc, link, missing)) out.links.push(link);
       } else if (raw.length === 3 || (raw.length === 4 && raw[3] === 0)) {
         const range = raw.slice(0, 3) as unknown as ItemRange;
         const [client, clock, length] = range;
-        if (
-          client >= 0 &&
-          clock >= 0 &&
-          length > 0 &&
-          Y.getState(doc.store, client) >= clock + length
-        )
+        if (client >= 0 && clock >= 0 && length > 0 && known(doc, client, clock + length, missing))
           (raw.length === 3 ? out.base : out.undone).push(range);
       }
     }
