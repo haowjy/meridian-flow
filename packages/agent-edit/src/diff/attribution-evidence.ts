@@ -112,17 +112,27 @@ function roomEvidence(doc: Y.Doc) {
   return { ...evidence.applied, ...evidence.restored };
 }
 
-/** Resolved provenance by item id. */
-class IdMemo {
-  private readonly byClient = new Map<number, Map<number, number>>();
-  get(client: number, clock: number): number | undefined {
-    return this.byClient.get(client)?.get(clock);
+type EvidenceRun = readonly [value: number, length: number];
+
+/** Whether an id is deleted, and how many ids keep that answer. */
+function deletionRun(
+  ds: Provenance["snapshot"]["ds"],
+  client: number,
+  clock: number,
+): readonly [boolean, number] {
+  const ranges = ds.clients.get(client);
+  if (!ranges) return [false, Number.POSITIVE_INFINITY];
+  let a = 0;
+  let b = ranges.length;
+  while (a < b) {
+    const m = (a + b) >>> 1;
+    if (ranges[m].clock <= clock) a = m + 1;
+    else b = m;
   }
-  set(client: number, clock: number, who: number) {
-    const clocks = this.byClient.get(client);
-    if (clocks) clocks.set(clock, who);
-    else this.byClient.set(client, new Map([[clock, who]]));
-  }
+  const previous = ranges[a - 1];
+  if (previous && clock < previous.clock + previous.len)
+    return [true, previous.clock + previous.len - clock];
+  return [false, ranges[a] === undefined ? Number.POSITIVE_INFINITY : ranges[a].clock - clock];
 }
 
 /** A frame-local view of indexed evidence. Never share snapshot-dependent memoized decisions. */
@@ -131,13 +141,11 @@ export class AttributionEvidence {
   private readonly deleted: IdIndex;
   private readonly applied: IdIndex;
   private readonly writeBack: IdIndex;
-  readonly undone: IdIndex;
-  readonly settled: IdIndex;
+  private readonly undone: IdIndex;
+  private readonly settled: IdIndex;
   private readonly links: IdIndex;
-  readonly superseded: IdIndex;
+  private readonly superseded: IdIndex;
   private readonly linkList: readonly RestorationLink[];
-  private readonly originMemo = new IdMemo();
-  private readonly writeBackMemo = new IdMemo();
   constructor(
     doc: Y.Doc,
     private readonly provenance: Provenance,
@@ -155,112 +163,149 @@ export class AttributionEvidence {
     this.superseded = room.superseded;
   }
 
-  private link(client: number, clock: number): [number, number] | null {
-    const l = this.links.get(client, clock);
-    if (l < 0) return null;
-    const link = this.linkList[l];
-    return [link[3], link[4] + (clock - link[1])];
-  }
-
-  /**
-   * Follows restoration links from an item to the item that wrote it. Links point at earlier items, so
-   * the walk ends; what it proves is kept, so a long chain is walked once.
-   */
-  private chase(
-    client: number,
-    clock: number,
-    memo: IdMemo,
-    end: (client: number, clock: number) => number | undefined,
-    unlinked: (client: number, clock: number) => number,
-  ): number {
+  /** Resolve one homogeneous origin run, following restoration intervals with the same offset. */
+  private originRun(client: number, clock: number, length: number): EvidenceRun {
     let c = client;
     let k = clock;
-    let path: Array<[number, number]> | null = null;
-    let who: number;
+    let available = length;
     for (let hops = 0; ; hops++) {
-      const known = memo.get(c, k) ?? end(c, k);
-      if (known !== undefined) {
-        who = known;
-        break;
+      const [applied, appliedLength] = this.applied.run(c, k);
+      available = Math.min(available, appliedLength);
+      if (applied >= 0) return [BASE, available];
+      const [linkAt, linkLength] = this.links.run(c, k);
+      available = Math.min(available, linkLength);
+      const [writeBack, writeBackLength] = this.writeBack.run(c, k);
+      available = Math.min(available, writeBackLength);
+      if (linkAt < 0 && writeBack >= 0) return [BASE, available];
+      const [part, partLength] = this.inserted.run(c, k);
+      available = Math.min(available, partLength);
+      if (part >= 0) return [part, available];
+      if (c === DRAFT_SERVER_CLIENT_ID) return [BASE, available];
+      if (linkAt < 0) {
+        const seen = this.provenance.snapshot.sv.get(c) ?? 0;
+        if (c === this.provenance.localClientId) return [USER, available];
+        if (k < seen) return [USER, Math.min(available, seen - k)];
+        return [UNKNOWN, available];
       }
-      const to = this.link(c, k);
-      if (!to) {
-        who = unlinked(c, k);
-        break;
-      }
-      if (hops > this.linkList.length) {
-        who = UNKNOWN;
-        break;
-      }
-      path ??= [];
-      path.push([c, k]);
-      [c, k] = to;
+      if (hops > this.linkList.length) return [UNKNOWN, available];
+      const link = this.linkList[linkAt];
+      c = link[3];
+      k = link[4] + (k - link[1]);
     }
-    if (path) for (const [pc, pk] of path) memo.set(pc, pk, who);
-    return who;
   }
 
   /** `BASE`, `USER`, `UNKNOWN`, or the index of the AI part that wrote the item. */
   origin(client: number, clock: number): number {
-    return this.chase(
-      client,
-      clock,
-      this.originMemo,
-      (c, k) => {
-        if (this.applied.get(c, k) >= 0) return BASE;
-        // A restoration link takes precedence over a write-back record: Undo keeps its source.
-        if (this.links.get(c, k) < 0 && this.writeBack.get(c, k) >= 0) return BASE;
-        const part = this.inserted.get(c, k);
-        if (part >= 0) return part;
-        return c === DRAFT_SERVER_CLIENT_ID ? BASE : undefined;
-      },
-      (c, k) =>
-        c === this.provenance.localClientId || k < (this.provenance.snapshot.sv.get(c) ?? 0)
-          ? USER
-          : UNKNOWN,
-    );
+    return this.originRun(client, clock, 1)[0];
   }
 
-  /** A Discard copy (including Redo copies), unless Apply has since made it real base. */
-  isWriteBack(client: number, clock: number): boolean {
-    return (
-      this.chase(
-        client,
-        clock,
-        this.writeBackMemo,
-        (c, k) => {
-          if (this.applied.get(c, k) >= 0) return 0;
-          if (this.links.get(c, k) < 0 && this.writeBack.get(c, k) >= 0) return 1;
-          return undefined;
-        },
-        () => 0,
-      ) === 1
-    );
+  origins(
+    client: number,
+    clock: number,
+    length: number,
+    visit: (who: number, clock: number, length: number) => void,
+  ) {
+    for (let offset = 0; offset < length; ) {
+      const [who, run] = this.originRun(client, clock + offset, length - offset);
+      visit(who, clock + offset, run);
+      offset += run;
+    }
   }
 
-  /** Undo removed a known Discard base copy, not manuscript text the draft deleted. */
-  isUndoneWriteBack(client: number, clock: number): boolean {
-    return this.undone.get(client, clock) >= 0 && this.isWriteBack(client, clock);
+  private writeBackRun(client: number, clock: number, length: number): EvidenceRun {
+    let c = client;
+    let k = clock;
+    let available = length;
+    for (let hops = 0; ; hops++) {
+      const [applied, appliedLength] = this.applied.run(c, k);
+      available = Math.min(available, appliedLength);
+      if (applied >= 0) return [0, available];
+      const [linkAt, linkLength] = this.links.run(c, k);
+      available = Math.min(available, linkLength);
+      const [writeBack, writeBackLength] = this.writeBack.run(c, k);
+      available = Math.min(available, writeBackLength);
+      if (linkAt < 0) return [writeBack >= 0 ? 1 : 0, available];
+      if (hops > this.linkList.length) return [0, available];
+      const link = this.linkList[linkAt];
+      c = link[3];
+      k = link[4] + (k - link[1]);
+    }
   }
 
-  /** A pending base tombstone, not an accepted deletion or an old restoration source. */
-  isBaseDeletion(client: number, clock: number): boolean {
-    return (
-      this.settled.get(client, clock) < 0 &&
-      !this.isUndoneWriteBack(client, clock) &&
-      this.origin(client, clock) === BASE &&
-      this.superseded.get(client, clock) < 0
-    );
+  /** Whether every id is a known Undo removal of a Discard base copy. */
+  isAllUndoneWriteBack(client: number, clock: number, length: number): boolean {
+    for (let offset = 0; offset < length; ) {
+      const at = clock + offset;
+      const [undone, undoneLength] = this.undone.run(client, at);
+      const [writeBack, writeBackLength] = this.writeBackRun(client, at, length - offset);
+      if (undone < 0 || writeBack !== 1) return false;
+      offset += Math.min(length - offset, undoneLength, writeBackLength);
+    }
+    return true;
   }
 
   /** Deletion evidence belongs to this item, never to its restored insertion's source. */
   deleter(client: number, clock: number): number {
-    const part = this.deleted.get(client, clock);
-    if (part >= 0) return part;
-    const id = Y.createID(client, clock);
-    return Y.isDeleted(this.provenance.snapshot.ds, id) ||
-      (this.provenance.localDeletions && Y.isDeleted(this.provenance.localDeletions, id))
-      ? USER
-      : UNKNOWN;
+    return this.deleterRun(client, clock, 1)[0];
+  }
+
+  private deleterRun(client: number, clock: number, length: number): EvidenceRun {
+    const [part, partLength] = this.deleted.run(client, clock);
+    if (part >= 0) return [part, Math.min(length, partLength)];
+    const [deleted, deletedLength] = deletionRun(this.provenance.snapshot.ds, client, clock);
+    const [local, localLength] = this.provenance.localDeletions
+      ? deletionRun(this.provenance.localDeletions, client, clock)
+      : ([false, Number.POSITIVE_INFINITY] as const);
+    return [
+      deleted || local ? USER : UNKNOWN,
+      Math.min(length, partLength, deletedLength, localLength),
+    ];
+  }
+
+  /** Current-id deletion evidence, partitioned by accepted and pending intervals. */
+  deletions(
+    client: number,
+    clock: number,
+    length: number,
+    visit: (who: number, settled: boolean, clock: number, length: number) => void,
+  ) {
+    for (let offset = 0; offset < length; ) {
+      const at = clock + offset;
+      const [settled, settledLength] = this.settled.run(client, at);
+      const [who, deleterLength] = this.deleterRun(client, at, length - offset);
+      const run = Math.min(length - offset, settledLength, deleterLength);
+      visit(who, settled >= 0, at, run);
+      offset += run;
+    }
+  }
+
+  /** Pending base tombstones and their deleters, in homogeneous runs. */
+  baseDeletions(
+    client: number,
+    clock: number,
+    length: number,
+    visit: (who: number, length: number) => void,
+  ) {
+    for (let offset = 0; offset < length; ) {
+      const at = clock + offset;
+      const [settled, settledLength] = this.settled.run(client, at);
+      const [undone, undoneLength] = this.undone.run(client, at);
+      const [writeBack, writeBackLength] = this.writeBackRun(client, at, length - offset);
+      const [origin, originLength] = this.originRun(client, at, length - offset);
+      const [superseded, supersededLength] = this.superseded.run(client, at);
+      const [who, deleterLength] = this.deleterRun(client, at, length - offset);
+      const run = Math.min(
+        length - offset,
+        settledLength,
+        undoneLength,
+        writeBackLength,
+        originLength,
+        supersededLength,
+        deleterLength,
+      );
+      if (settled < 0 && !(undone >= 0 && writeBack === 1) && origin === BASE && superseded < 0)
+        visit(who, run);
+      offset += run;
+    }
   }
 }

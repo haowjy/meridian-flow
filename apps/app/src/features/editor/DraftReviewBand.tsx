@@ -154,8 +154,10 @@ export function DraftReviewBand({
             disabled={locked || !header.canApply}
             onClick={header.applyDraft}
           >
-            {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-            {controller.isApplying ? null : (
+            {header.completing === "apply" ? (
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+            ) : null}
+            {header.completing === "apply" ? null : (
               <Check aria-hidden className="identity-command-icon hidden size-3.5" />
             )}
             <span className="identity-command-label">

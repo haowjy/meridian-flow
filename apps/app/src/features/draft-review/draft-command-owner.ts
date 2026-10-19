@@ -30,8 +30,8 @@ import {
 } from "@/core/editor/draft-room-read";
 import { ApplyClickQueue } from "./apply-click-queue";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
-import { type ReviewFrame, readBase } from "./review-frame";
-import type { ChangeTarget } from "./review-model";
+import { readBase } from "./review-frame";
+import type { ChangeTarget, ReviewChange } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 export type DraftCommandState = {
@@ -39,7 +39,7 @@ export type DraftCommandState = {
   stalled: boolean;
   pending: boolean;
   hidden: boolean;
-  discarding: { frame: ReviewFrame; groupIds: readonly string[] } | null;
+  discarding: ((change: ReviewChange) => boolean) | null;
   failure: BranchCommandFailure | null;
   closed: boolean;
   checkingClose: boolean;
@@ -82,7 +82,7 @@ type Entry = {
 export type DiscardNotice = {
   itemKey?: string;
   kind: "discarded" | "removed";
-  undo?: () => void;
+  undo?: () => Promise<void>;
   end(): void;
 };
 const EDITOR_DISCARD_ORIGIN = Symbol("editor-draft-discard");
@@ -615,18 +615,23 @@ export class DraftCommandOwner {
       onNoticeEnd?.();
     };
     binding.notices.add(end);
-    this.setState(ref.itemKey, { discarding: { frame, groupIds: ids }, failure: null });
+    this.setState(ref.itemKey, {
+      discarding: (change) => change.frame?.diff === frame.diff && ids.includes(change.id),
+      failure: null,
+    });
     let paintFrame = 0;
     const onVisibility = () => {
       if (document.visibilityState === "hidden") commit();
     };
     document.addEventListener("visibilitychange", onVisibility);
-    // Two frames give React's row removal and notice a paint before the
-    // indivisible write-back. Hidden pages drain without waiting for rAF.
+    // The notice is returned before React commits it. Allow that commit, then a
+    // full paint opportunity before the indivisible write. Hidden pages drain directly.
     if (document.visibilityState === "hidden") setTimeout(commit, 0);
     else
       paintFrame = requestAnimationFrame(() => {
-        paintFrame = requestAnimationFrame(commit);
+        paintFrame = requestAnimationFrame(() => {
+          paintFrame = requestAnimationFrame(commit);
+        });
       });
     return {
       outcome,
@@ -642,7 +647,7 @@ export class DraftCommandOwner {
             this.state(ref.itemKey).closed
           ) {
             end();
-            return;
+            return Promise.resolve();
           }
           if (pending) {
             pending = false;
@@ -653,17 +658,12 @@ export class DraftCommandOwner {
             history.undo();
             binding.runtime.projectNow();
           }
+          const acknowledged = binding.session.whenCurrentChangesAcknowledged();
           end();
+          return acknowledged;
         },
       },
     };
-  }
-
-  acknowledged(itemKey: string): Promise<void> {
-    return (
-      this.byItem.get(itemKey)?.binding?.session.whenCurrentChangesAcknowledged() ??
-      Promise.resolve()
-    );
   }
 
   retry(itemKey: string) {

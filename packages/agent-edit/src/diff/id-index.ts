@@ -5,7 +5,7 @@ export type ItemRange = readonly [client: number, clock: number, length: number]
 export class IdIndex {
   private readonly byClient = new Map<number, { lo: number[]; hi: number[]; tag: number[] }>();
 
-  /** Overlaps keep the earlier-listed (then lower-clock) range's tag for the shared ids. */
+  /** Overlaps keep the lower-clock range's tag; equal starts keep input order. */
   constructor(
     ranges: Iterable<readonly [client: number, clock: number, length: number, tag: number]>,
   ) {
@@ -38,8 +38,13 @@ export class IdIndex {
 
   /** The tag of the range holding this id, or -1. */
   get(client: number, clock: number): number {
+    return this.run(client, clock)[0];
+  }
+
+  /** The tag at `clock` and how many ids keep that answer. */
+  run(client: number, clock: number): readonly [tag: number, length: number] {
     const list = this.byClient.get(client);
-    if (!list) return -1;
+    if (!list) return [-1, Number.POSITIVE_INFINITY];
     let a = 0;
     let b = list.lo.length;
     while (a < b) {
@@ -47,7 +52,8 @@ export class IdIndex {
       if (list.lo[m] <= clock) a = m + 1;
       else b = m;
     }
-    return a > 0 && clock < list.hi[a - 1] ? list.tag[a - 1] : -1;
+    if (a > 0 && clock < list.hi[a - 1]) return [list.tag[a - 1], list.hi[a - 1] - clock];
+    return [-1, list.lo[a] === undefined ? Number.POSITIVE_INFINITY : list.lo[a] - clock];
   }
 }
 

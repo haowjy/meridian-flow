@@ -15,8 +15,9 @@ import { useEffect, useMemo } from "react";
 import { getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
 import { inlineReviewFocusIntent } from "@/core/editor/extensions/inline-review/DraftInlineReviewExtension";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { resolveFocusedChange } from "@/features/draft-review/review-model";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
-import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useReviewState } from "@/features/draft-review/useReviewRuntime";
 
 export function useInlineReviewFocus({
   editor,
@@ -27,8 +28,9 @@ export function useInlineReviewFocus({
   documentId: string;
   itemKey: string;
 }): void {
-  const { controller } = useDraftReview();
-  const view = useReviewChanges(controller);
+  const { controller, roomOwner } = useDraftReview();
+  const { changes, ready } = useReviewState(roomOwner.runtime);
+  const focused = resolveFocusedChange(changes, controller.focus) ?? changes[0] ?? null;
   const {
     reportFocusedChange,
     marksVisible,
@@ -60,8 +62,8 @@ export function useInlineReviewFocus({
   }, [live, reviewing, marksVisible]);
 
   // The focused change's emphasis.
-  const active = view.focused?.id ?? null;
-  const activeProjection = view.focused?.frame?.diff;
+  const active = focused?.id ?? null;
+  const activeProjection = focused?.frame?.diff;
   useEffect(() => {
     if (!live || !reviewing) return;
     if (getInlineReviewPluginState(live.state)?.activeChangeId === active) return;
@@ -87,11 +89,12 @@ export function useInlineReviewFocus({
   }, [live, reviewing, documentId, itemKey, reportFocusedChange]);
 
   // Changes that arrive while the writer reviews pulse once.
-  const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
   const arrived = useArrivedChanges(
     changes,
-    view.status === "ready",
-    view.documentId && view.itemKey ? `${view.documentId}:${view.itemKey}` : null,
+    ready,
+    controller.inlineReview
+      ? `${controller.inlineReview.documentId}:${controller.inlineReview.itemKey}`
+      : null,
   );
   const pulsed = useMemo(
     () => changes.filter((change) => arrived.has(change.id)).map((change) => change.id),

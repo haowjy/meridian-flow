@@ -69,7 +69,8 @@ export type ReviewHeaderModel = {
 export function useReviewFailures(input: { documentId: string; itemKey: string }) {
   const owner = useDraftCommandOwner();
   const { files } = useDraftReview();
-  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  const snapshot = () => (input.itemKey ? owner.snapshot() : 0);
+  useSyncExternalStore(owner.subscribe, snapshot, snapshot);
   return {
     commandError: owner.state(input.itemKey).failure,
     failedElsewhere: files.flatMap((row) => {

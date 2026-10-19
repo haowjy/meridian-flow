@@ -142,34 +142,44 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
   const owner = useDraftCommandOwner();
   const store = useMemo(() => {
     const runtimes = bindings.map((binding) => binding.runtime);
-    let states = runtimes.map((runtime) => runtime?.state() ?? EMPTY_REVIEW_STATE);
+    const itemKeys = drafts.map((draft) => draft.itemKey);
+    const read = () =>
+      runtimes.map((runtime, index) => ({
+        review: runtime?.state() ?? EMPTY_REVIEW_STATE,
+        command: owner.state(itemKeys[index]),
+      }));
+    let states = read();
     return {
       subscribe(listener: () => void) {
-        const stops = runtimes.map((runtime) => runtime?.subscribe(listener));
+        const stops = [
+          owner.subscribe(listener),
+          ...runtimes.map((runtime) => runtime?.subscribe(listener)),
+        ];
         return () => {
           for (const stop of stops) stop?.();
         };
       },
       snapshot() {
-        const next = runtimes.map((runtime) => runtime?.state() ?? EMPTY_REVIEW_STATE);
-        if (next.some((state, i) => state !== states[i])) states = next;
+        const next = read();
+        if (
+          next.some(
+            (state, i) => state.review !== states[i].review || state.command !== states[i].command,
+          )
+        )
+          states = next;
         return states;
       },
     };
-  }, [bindings]);
+  }, [bindings, owner]);
   const states = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   return bindings.map((binding, index) => {
-    const state = states[index];
-    const discarding = owner.state(drafts[index].itemKey).discarding;
+    const state = states[index].review;
+    const discarding = states[index].command.discarding;
     return {
       ...binding,
       ...state,
       listedChanges: discarding
-        ? state.changes.filter(
-            (change) =>
-              change.frame?.diff !== discarding.frame.diff ||
-              !discarding.groupIds.includes(change.id),
-          )
+        ? state.changes.filter((change) => !discarding(change))
         : state.changes,
       status: binding.status === "ready" && !state.ready ? ("loading" as const) : binding.status,
     };

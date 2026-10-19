@@ -81,12 +81,15 @@ array, keyed by their exact input strings. Their cache is bounded to the 64k
 character budget per node, and hits consume the same naming budget as misses.
 `attribution-evidence.ts` retains interval indexes by immutable receipt-parts
 array identity, and independently by each room's Apply and restoration roots.
+Classification walks homogeneous evidence intervals, including restoration links
+at the same offset, rather than resolving every character separately; scalar
+origin/deleter reads use the same run resolver.
 Only root writes invalidate the room indexes, before projection observers run;
 reads inside an open root transaction rebuild against its current contents.
 Restoration validation also tracks missing clocks for future references so their
 arrival can make a previously invalid record valid without changing the root.
-Snapshot/local-witness decisions, restoration-walk memoization, layout, membership
-and names remain frame-local. No final classification is cached across edits.
+Snapshot/local-witness decisions, layout, membership and names remain frame-local.
+No final classification is cached across edits.
 Incremental attribution and publication remain separate work (#900).
 
 ## Attribution footprint and names

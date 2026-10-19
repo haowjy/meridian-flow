@@ -39,13 +39,18 @@ export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "i
 
 type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
 
+/** Subscribe to this item's record, not another draft's command activity. */
+export function useDraftCommandState(itemKey: string) {
+  const owner = useDraftCommandOwner();
+  const snapshot = () => owner.state(itemKey);
+  return useSyncExternalStore(owner.subscribe, snapshot, snapshot);
+}
+
 /** Join item failures here; text and group identity remain the runtime's. */
 export function useChangeItems(
   draft: DraftRef | null,
   changes: readonly ReviewChange[],
 ): { items: readonly ReviewChangeItem[] } {
-  const owner = useDraftCommandOwner();
-  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
-  const failure = owner.state(draft?.itemKey ?? "").failure;
+  const failure = useDraftCommandState(draft?.itemKey ?? "").failure;
   return { items: changes.map((change) => ({ change, failure: null, draftFailure: failure })) };
 }

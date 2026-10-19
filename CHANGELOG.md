@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep draft typing independent of unchanged sibling drafts, paint Discard feedback without rebuilding the project, and classify attribution by item intervals rather than individual characters.
+
 - Keep draft-review bursts proportional to current text and queued clicks: retain base nodes and clean frames, subscribe controls to their own state, and map peer edits without inflating review paint.
 
 - Subscribe the document toolbar to its control state so unchanged review metadata does not rerender its ten controls.

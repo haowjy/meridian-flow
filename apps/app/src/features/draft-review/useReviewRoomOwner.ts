@@ -13,7 +13,10 @@ export function useReviewRoomOwner(input: {
 }) {
   const { review, dispatch } = input;
   const commands = useDraftCommandOwner();
-  useSyncExternalStore(commands.subscribe, commands.snapshot, commands.snapshot);
+  const hidden = () => commands.state(review?.itemKey ?? "").hidden;
+  const closed = () => commands.state(review?.itemKey ?? "").closed;
+  useSyncExternalStore(commands.subscribe, hidden, hidden);
+  useSyncExternalStore(commands.subscribe, closed, closed);
   const command = commands.state(review?.itemKey ?? "");
   useEffect(() => {
     if (!review || (!command.hidden && !command.closed)) return;

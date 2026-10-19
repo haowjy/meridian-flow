@@ -77,6 +77,10 @@ never picks a first Work for it. An empty (No Work) selection lives in
 href-scoped history state so Back/Forward and reload keep it; a copied URL
 without the parameter may take local defaults.
 
+Route admission observes only its addressed draft's close lifecycle, never account-wide
+Apply/Discard revisions. Command progress belongs to rendering leaves; waking route
+admission for it rerenders the persistent project tree before local feedback can paint.
+
 A review address names its draft's Work and item (`?work=` empty for No Work),
 so a copied No Work review link opens the same draft whatever Work this
 browser last chose. Launching review on another document pushes history;

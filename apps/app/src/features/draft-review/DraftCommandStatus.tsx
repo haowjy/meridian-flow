@@ -1,12 +1,11 @@
 /** Pending delivery and same-id Retry remain on the addressed item, even when no review groups remain. */
 import { Trans } from "@lingui/react/macro";
-import { useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
   const owner = useDraftCommandOwner();
-  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
-  const state = owner.state(itemKey);
+  const state = useDraftCommandState(itemKey);
   return (
     <div
       role="status"
