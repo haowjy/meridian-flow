@@ -136,7 +136,7 @@ describe("response committer", () => {
       ...context,
       responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
       turnId: "prepared-turn",
-      interactionContext: { mode: "threadPeer" as const, afterJournalId: 0 },
+      interactionContext: { mode: "threadPeer" as const },
     };
     const scope = { threadId: THREAD_ID, responseId: peer.responseIdentity.editScopeId };
     await prepared.core.read({ file: "chapter.md" }, peer);

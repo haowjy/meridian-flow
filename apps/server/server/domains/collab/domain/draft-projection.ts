@@ -236,7 +236,7 @@ export function createDraftProjection(input: {
       // A legacy row's baseline is live's current state, established by the draft-scoped
       // exact pull, which writes `live_cut`, `has_effect` and the watermark itself.
       const pulled = await input.pulls.pullWorkDraft({ documentId: judged.documentId, draftId });
-      if (pulled === "pulled" || pulled === "upstreamMoved") return "done";
+      if (pulled === "pulled") return "done";
       if (pulled === "closed") return "drop";
       if (pulled === "fenced") return "fenced";
       if (!diagnosedBlocked.has(draftId)) {

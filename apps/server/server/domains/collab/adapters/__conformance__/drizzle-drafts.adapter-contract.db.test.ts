@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import {
+  commitDraftRows,
   commitJournaledUpdate,
   resetDraftFromDoc,
 } from "../../test-support/draft-update-writes.js";
@@ -355,7 +356,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           store: measuredStore,
         });
         expect(
-          await coordinator.commitSegmentRows({
+          await commitDraftRows(coordinator, {
             draftId: documentDraft.draftId,
             expectedGeneration: snapshot.generation,
             sourceDoc: source,

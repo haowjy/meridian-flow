@@ -22,7 +22,7 @@ import {
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { readResolvedDraft } from "./test-support/draft-store-seam.js";
-import { commitJournaledUpdate } from "./test-support/draft-update-writes.js";
+import { commitDraftRows, commitJournaledUpdate } from "./test-support/draft-update-writes.js";
 import { captureHistoricalDraftRow } from "./test-support/historical-draft-row.js";
 
 const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
@@ -424,7 +424,7 @@ describe("change trail (postgres)", () => {
       { from: draftTextLength, to: draftTextLength },
       " WRITER DRAFT MARKER",
     );
-    const committed = await fixture.draftCoordinator.commitSegmentRows({
+    const committed = await commitDraftRows(fixture.draftCoordinator, {
       draftId: documentDraft.draftId,
       sourceDoc: documentDraft.doc,
       expectedGeneration: documentDraft.generation,

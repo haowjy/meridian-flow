@@ -14,7 +14,6 @@ import { createDocumentContainment } from "./document-containment.js";
 import { documentEffectsEqual } from "./document-content.js";
 import {
   admitSegmentRows,
-  assertSegmentRowsComplete,
   assertWriterAuthorship,
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
@@ -177,21 +176,10 @@ export type StagedDraftView = DraftSnapshot & {
   readonly encoded: Uint8Array;
 };
 
-export type SegmentRowsInput = {
-  draftId: string;
-  expectedGeneration: number;
-  sourceDoc: Y.Doc;
-  rows: readonly Omit<AppendDraftJournalInput, "generation">[];
-};
-
-/**
- * A pull merges `upstream` into the draft. A peer's pull names the upstream epoch it read
- * `upstream` at: the commit locks that row `FOR SHARE` and loses to a re-fork of it.
- */
+/** A pull merges `upstream` into the draft. */
 export type PullInput = {
   draftId: string;
   upstream: Y.Doc;
-  upstreamEpoch?: { draftId: string; generation: number };
 };
 
 /**
@@ -199,17 +187,16 @@ export type PullInput = {
  * document (`fenced`: nothing was written, and the caller tries again later); a settlement
  * terminally blocked on it freezes the pull (`blocked`: nothing written, nothing to retry
  * until something new arrives, since no transition lifts a blocked batch); a closed
- * draft has nothing to pull into; a peer whose upstream re-forked since its read is
- * `upstreamMoved`, its capture abandoned. An archived Work's draft keeps pulling, so it applies
+ * draft has nothing to pull into. An archived Work's draft keeps pulling, so it applies
  * cleanly after unarchive.
  */
-export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed" | "upstreamMoved";
+export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed";
 
 /** A rewrite refused for a reason other than a moved revision: never retried. */
 class DraftRewriteRefused extends Error {
   constructor(
     readonly draftId: string,
-    readonly status: Extract<RewriteOutcome["status"], "fenced" | "blocked" | "upstreamMoved">,
+    readonly status: Extract<RewriteOutcome["status"], "fenced" | "blocked">,
   ) {
     super(`Draft ${draftId} rewrite was refused: ${status}`);
     this.name = "DraftRewriteRefused";
@@ -269,7 +256,6 @@ export type DraftCoordinator = {
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
   ): Promise<{ result: T; write: PreparedDraftWrite | null }>;
-  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   /** A writer frame (`draft-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { draftId: string; generation: number }): void;
@@ -708,11 +694,7 @@ export function createDraftCoordinator(input: {
       candidate,
       async persist() {
         const outcome = await input.store.commitRewrite({ draftId, doc: candidate, ...rewrite });
-        if (
-          outcome.status === "fenced" ||
-          outcome.status === "blocked" ||
-          outcome.status === "upstreamMoved"
-        )
+        if (outcome.status === "fenced" || outcome.status === "blocked")
           throw new DraftRewriteRefused(draftId, outcome.status);
         if (outcome.status !== "committed") throw new DraftCasConflictError(draftId);
         if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
@@ -747,7 +729,6 @@ export function createDraftCoordinator(input: {
       // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
       fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
       operation,
-      ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
     });
   }
 
@@ -760,10 +741,7 @@ export function createDraftCoordinator(input: {
   function prepareReset(
     snapshot: DraftSnapshot,
     upstream: Y.Doc,
-    reset: Pick<ResetInput, "schemaVersion" | "editDisposition"> & {
-      policy: RewritePolicy;
-      upstreamEpoch?: PullInput["upstreamEpoch"];
-    },
+    reset: Pick<ResetInput, "schemaVersion" | "editDisposition"> & { policy: RewritePolicy },
   ): PreparedDraftWrite {
     const candidate = createCollabYDoc({ gc: false });
     replicatedInto(upstream, candidate);
@@ -775,7 +753,6 @@ export function createDraftCoordinator(input: {
         editDisposition: reset.editDisposition ?? "discarded",
         schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
       },
-      ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
     });
   }
 
@@ -805,10 +782,7 @@ export function createDraftCoordinator(input: {
       snapshot.kind === "thread_peer" &&
       !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const write = prepareReset(snapshot, pull.upstream, {
-        policy: foldPolicy(base.replica),
-        ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
-      });
+      const write = prepareReset(snapshot, pull.upstream, { policy: foldPolicy(base.replica) });
       attempt.own(write);
       await attempt.commit(() => write.persist());
       return "pulled";
@@ -847,8 +821,7 @@ export function createDraftCoordinator(input: {
 
   /**
    * `journals` admitted on a fresh copy of the base (the pre-lock policy check, kept as the
-   * write's candidate) and prepared as an append: the one way a save's replay and a segment
-   * batch prepare rows.
+   * write's candidate) and prepared as an append: the one way a save's replay prepares rows.
    */
   function prepareRows(
     base: DraftBase,
@@ -893,20 +866,6 @@ export function createDraftCoordinator(input: {
     }
   }
 
-  async function segmentRowsAttempt(attempt: Attempt, batch: SegmentRowsInput): Promise<boolean> {
-    const base = await loadBase(batch.draftId);
-    const { snapshot } = base;
-    assertWritableDraft(snapshot);
-    if (snapshot.generation !== batch.expectedGeneration)
-      throw new DraftStaleUpdateError(`Draft ${batch.draftId}`);
-    const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
-    const write = journals.length ? attempt.own(prepareRows(base, journals)) : null;
-    assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
-    if (!write) return false;
-    await attempt.commit(() => write.persist());
-    return true;
-  }
-
   const frames = createWriterFrames(
     {
       loadBase,
@@ -927,9 +886,6 @@ export function createDraftCoordinator(input: {
     readDraft: readCommitted,
     copyDraft,
     prepareStagedRows,
-    // An append is sequenced, never fenced: one attempt; a generation change refuses it.
-    commitSegmentRows: (batch) =>
-      commitAttempts((attempt) => segmentRowsAttempt(attempt, batch), { bound: 1 }),
 
     pullFromDoc(pull) {
       return commitAttempts((attempt) => pullAttempt(attempt, pull)).catch((cause: unknown) => {
