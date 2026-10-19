@@ -602,7 +602,7 @@ describe("reply save refusals (postgres)", () => {
     expect(late.isError).toBe(true);
     if (phase === "before the upstream read") expect(late.status).toBe("invalid_write");
     expect(JSON.stringify(late.result)).toContain("the user discarded this new document");
-    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, REMOVED]]);
+    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, other ? DOC : REMOVED]]);
   });
 
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
