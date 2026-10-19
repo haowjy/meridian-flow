@@ -1,4 +1,4 @@
-/** Branded agent-edit core types and the grant that authorizes and routes each model call. */
+/** Routed agent-edit cores, their grants, and immutable revert source materialization. */
 import type {
   AgentEditCore,
   ReadCommand,
@@ -9,9 +9,15 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import {
+  containsSnapshot,
+  type DocumentCoordinator,
+  decodeSnapshot,
+  type RevertSource,
+} from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -119,4 +125,65 @@ export function asThreadPeerAgentEditCore(
 export function sameDestination(left: FileDestination, right: FileDestination): boolean {
   if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;
   return left.workId === right.workId;
+}
+
+/** Immutable receipt and source-history reads; neither grants a destination write. */
+export function createRevertSourceResolver(reads: {
+  receipt(
+    threadId: string,
+    documentId: string,
+    wId: number,
+  ): Promise<{
+    room: string | null;
+    before: Uint8Array | null;
+    after: Uint8Array | null;
+    effect: Extract<RevertSource, { a: Y.Doc }>["effect"];
+  } | null>;
+  source(
+    room: string,
+    documentId: string,
+  ): Promise<{ doc: Y.Doc } | Extract<RevertSource, { refusal: string }>>;
+}): DocumentCoordinator["resolveRevertSource"] {
+  return async ({ threadId, documentId, edit, destination }) => {
+    if (!/^w[1-9]\d*$/.test(edit) || !Number.isSafeInteger(Number(edit.slice(1))))
+      return { refusal: "invalid_write" };
+    const receipt = await reads.receipt(threadId, documentId, Number(edit.slice(1)));
+    if (!receipt) return { refusal: "invalid_write" };
+    if (!receipt.room || !receipt.before || !receipt.after) return { refusal: "no_cuts" };
+    const sameRoom = receipt.room === destination.room;
+    const source = sameRoom
+      ? { doc: destination.doc }
+      : await reads.source(receipt.room, documentId);
+    if ("refusal" in source) return source;
+    let a: Y.Doc | undefined;
+    let b: Y.Doc | undefined;
+    try {
+      const before = decodeSnapshot(receipt.before),
+        after = decodeSnapshot(receipt.after);
+      const current = Y.snapshot(source.doc);
+      if (
+        !before ||
+        !after ||
+        !containsSnapshot(current, before) ||
+        !containsSnapshot(current, after)
+      )
+        return {
+          refusal: "cut_not_contained",
+          reason: receipt.room.startsWith("draft:")
+            ? "draft_reset_or_discarded"
+            : "live_generation_changed",
+        };
+      a = new Y.Doc({ gc: false });
+      b = new Y.Doc({ gc: false });
+      Y.createDocFromSnapshot(source.doc, after, a);
+      Y.createDocFromSnapshot(source.doc, before, b);
+      return { a, b, effect: receipt.effect };
+    } catch (cause) {
+      a?.destroy();
+      b?.destroy();
+      throw cause;
+    } finally {
+      if (!sameRoom) source.doc.destroy();
+    }
+  };
 }

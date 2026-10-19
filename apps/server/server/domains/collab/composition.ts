@@ -83,6 +83,7 @@ import {
   createDrizzlePendingSettlementStore,
   stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createDrizzleRevertSourceResolver } from "./adapters/drizzle-revert-source.js";
 import { createDrizzleReviewCut, readLiveDoc } from "./adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -318,6 +319,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
+      resolveRevertSource: createDrizzleRevertSourceResolver({
+        db: deps.db,
+        drafts,
+        journal: persistence.journal,
+      }),
       hocuspocus: hocuspocusBinding.require,
       journal: persistence.journal,
       live: liveCoordinator,
@@ -404,6 +410,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const agentEdit = scopeAgentEdit(
     createDraftThreadPeerAgentEditCore({
+      resolveRevertSource: createDrizzleRevertSourceResolver({
+        db: deps.db,
+        drafts,
+        journal: persistence.journal,
+      }),
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       liveUtilityCore: runtime.liveUtilityCore,

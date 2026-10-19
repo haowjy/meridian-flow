@@ -19,7 +19,7 @@ export type {
   ObservationFrontier,
   ReplyMutations,
 } from "./frontier.js";
-export { createReplyMutations } from "./frontier.js";
+export { containsSnapshot, createReplyMutations, decodeSnapshot } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";
@@ -47,6 +47,7 @@ export type {
   DocumentAccess,
   DocumentCoordinator,
   RetiredWriteReason,
+  RevertSource,
   RoomRead,
   SaveCut,
   SavePrecondition,

@@ -21,6 +21,7 @@ import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
+  cuts?: { room: string; before: Uint8Array; after: Uint8Array };
   documentId: DocumentId;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
@@ -39,6 +40,22 @@ export interface ReceiptWrite {
 export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<string> {
   if (input.actor === "agent" && input.threadId && input.wId === undefined)
     throw new Error("Model edit capture requires its reserved ordinal");
+  // Retries reuse the immutable logical receipt, including its original cuts and parts.
+  if (input.actor === "agent" && input.threadId && input.wId !== undefined) {
+    const [existing] = await db
+      .select({ id: documentEdits.id })
+      .from(documentEdits)
+      .where(
+        and(
+          eq(documentEdits.documentId, input.documentId),
+          eq(documentEdits.threadId, input.threadId),
+          eq(documentEdits.actor, "agent"),
+          eq(documentEdits.wId, input.wId),
+        ),
+      )
+      .limit(1);
+    if (existing) return existing.id;
+  }
   const wId = input.actor === "agent" ? (input.wId ?? null) : null;
   const [edit] = await db
     .insert(documentEdits)
@@ -54,6 +71,13 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       wId,
       actionId: input.actionId,
       consumes: input.consumes,
+      ...(input.actor === "agent" && input.cuts
+        ? {
+            sourceRoom: input.cuts.room,
+            beforeCut: Buffer.from(input.cuts.before),
+            afterCut: Buffer.from(input.cuts.after),
+          }
+        : {}),
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");

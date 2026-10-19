@@ -48,6 +48,7 @@ export type DraftAgentEditDiagnostics = {
 };
 
 export function createDraftAgentEditCoordinator(input: {
+  resolveRevertSource: DocumentCoordinator["resolveRevertSource"];
   removals: DocumentRemovals;
   threadId: ThreadId;
   draftCoordinator: DraftCoordinator;
@@ -197,6 +198,7 @@ export function createDraftAgentEditCoordinator(input: {
   }
 
   return {
+    resolveRevertSource: input.resolveRevertSource,
     async readRoom(docId, staged, access) {
       const peer = access?.pinnedDraftId;
       const read = async (workDraftId: string, bound: boolean) => {

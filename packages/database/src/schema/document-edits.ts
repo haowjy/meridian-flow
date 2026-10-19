@@ -56,10 +56,20 @@ export const documentEdits = pgTable(
     kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    sourceRoom: text("source_room"),
+    beforeCut: byteaColumn("before_cut"),
+    afterCut: byteaColumn("after_cut"),
     createdAt: createdAt(),
   },
   (t) => [
+    check(
+      "document_edits_cuts_presence",
+      sql`(${t.sourceRoom} IS NULL AND ${t.beforeCut} IS NULL AND ${t.afterCut} IS NULL) OR (${t.sourceRoom} IS NOT NULL AND ${t.beforeCut} IS NOT NULL AND ${t.afterCut} IS NOT NULL)`,
+    ),
     index("document_edits_document_idx").on(t.documentId),
+    index("document_edits_agent_handle_idx")
+      .on(t.documentId, t.threadId, t.wId)
+      .where(sql`${t.actor} = 'agent' AND ${t.wId} IS NOT NULL`),
     index("document_edits_turn_idx").on(t.turnId),
     index("document_edits_action_idx").on(t.actionId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),

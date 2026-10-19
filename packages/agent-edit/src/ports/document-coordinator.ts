@@ -144,12 +144,40 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
   return cause instanceof DocumentNotFoundError;
 }
 
+/** Exact immutable cuts for a forward revert. Successful docs are gc-off and caller-owned. */
+export type RevertSource =
+  | {
+      a: Y.Doc;
+      b: Y.Doc;
+      effect: {
+        inserted: { client: number; clock: number; len: number }[];
+        deleted: { client: number; clock: number; len: number }[];
+      };
+    }
+  | {
+      refusal: "invalid_write" | "no_cuts" | "source_unavailable" | "cut_not_contained";
+      reason?:
+        | "draft_missing"
+        | "draft_closed"
+        | "draft_reset_or_discarded"
+        | "live_generation_changed"
+        | "live_missing";
+    };
+
 /**
  * A host's documents (live or draft) as agent-edit reaches them: `readRoom` is the one way a
  * call gets a document to render, plan from or record, and `prepareSave` the one way any write
  * lands, a reply's or one outside a reply alike. Neither serializes against other callers.
  */
 export interface DocumentCoordinator {
+  /** History read of this thread's edit, independent of destination write permission. */
+  resolveRevertSource(input: {
+    threadId: string;
+    documentId: string;
+    edit: string;
+    destination: Pick<RoomRead, "doc" | "room">;
+  }): Promise<RevertSource>;
+
   /**
    * A private copy of the room's committed state with `staged`'s surviving entries applied,
    * named by the room it was read from. Rejects with DocumentNotFoundError when the document
