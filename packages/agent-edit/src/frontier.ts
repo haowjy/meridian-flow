@@ -32,6 +32,16 @@ export interface ObservationRequest {
  */
 export type FrontierLookup = (room: string) => Promise<ObservationFrontier | null>;
 
+/**
+ * A call's lookups. `recording` chains what a result records (a sibling call's
+ * result counts as seen); `planning` is the model's view as of the request that
+ * produced the call (C4), which a write plans on.
+ */
+export interface FrontierLookups {
+  recording: FrontierLookup;
+  planning?: FrontierLookup;
+}
+
 /** The stable serialization of a block's identity: its top-level Yjs item id. */
 export function frontierBlockId(id: { clientID: number; clock: number }): string {
   return `${id.clientID}:${id.clock}`;

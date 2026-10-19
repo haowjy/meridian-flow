@@ -11,7 +11,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
@@ -79,7 +79,6 @@ export function createAgentEditRuntime(input: {
       codec,
       model,
       semanticProvenance,
-      createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       ...input.observability,
     }),
   );

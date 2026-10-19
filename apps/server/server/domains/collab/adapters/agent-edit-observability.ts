@@ -181,24 +181,6 @@ export function createResponseTransactionDiagnostics(
 
 export function createDraftAgentEditDiagnostics(eventSink?: EventSink): DraftAgentEditDiagnostics {
   return {
-    stagedWriteNoop(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.draft_agent_edit",
-        name: "staged_write.no_durable_journal_row",
-        payload,
-      });
-    },
-    mutationLessPendingEntry(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft_pending_journal",
-        name: "mutation_less_entry_dropped",
-        payload,
-      });
-    },
     replyPinMismatch(payload) {
       if (!eventSink) return;
       emitEvent(eventSink, {

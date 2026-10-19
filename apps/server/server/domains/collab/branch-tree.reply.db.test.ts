@@ -278,7 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               wrote.ok && JSON.stringify(wrote.value),
               "write first: and tells the model its drafts were discarded, not a crash",
             )
-            .toContain("draft changed");
+            .toContain("the user discarded this draft");
         } else {
           expect
             .soft(wrote, "close first: the write commits ahead of the close's commit")

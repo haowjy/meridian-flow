@@ -71,6 +71,8 @@ describe("change trail (postgres)", () => {
     await harness.seedAndStage("retry-response");
     const before = await harness.captureState();
     const staged = harness.stagedUpdates("retry-response");
+    // Staging captured the writer rows its view lacked; the failed attempt must add none.
+    const pending = harness.pendingWatermarkDocuments();
 
     harness.failSecondJournalInsert = true;
     await expect(harness.commit("retry-response")).rejects.toThrow(
@@ -86,7 +88,7 @@ describe("change trail (postgres)", () => {
       1, 1,
     ]); // 5. facade still owns the response
     expect(harness.stagedUpdates("retry-response")).toEqual(staged); // 6. raw staged updates retained
-    expect(harness.pendingWatermarkDocuments()).toEqual([]); // 7. pending watermarks cleared
+    expect(harness.pendingWatermarkDocuments()).toEqual(pending); // 7. no pending watermark added
     expect(harness.responseEvents("retry-response")).not.toContainEqual(
       expect.objectContaining({ transition: "closed" }),
     ); // 8. lifecycle not closed (retained buffers prove buffered ownership)

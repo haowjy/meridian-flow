@@ -6,6 +6,7 @@ import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 
 import {
   createAgentEditCodecFactory,
+  type ObservationFrontier,
   toDocHandle,
   unwrapDoc,
   yProsemirrorModel,
@@ -686,7 +687,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
-      frontierRooms: { liveGeneration: async () => null },
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
@@ -876,15 +876,20 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+      frontiers: modelFrontiers,
     };
     // Establish thread peers first, then append a real concurrent work-draft row.
     // The following staged write must capture that row as a pending watermark.
-    await collab
-      .agentEdit()
-      .read(
-        { file: "alpha.md", documentId: ALPHA_ID },
-        { ...context, responseIdentity: undefined },
-      );
+    for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID])
+      await provisionDraft(documentId);
+    remember(
+      await collab
+        .agentEdit()
+        .read(
+          { file: "alpha.md", documentId: ALPHA_ID },
+          { ...context, responseIdentity: undefined },
+        ),
+    );
     if (options.liveBeta) {
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -900,12 +905,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const betaContext = options.liveBeta
       ? { ...context, grant: testFileGrant({ kind: "live" }) }
       : context;
-    await collab
-      .agentEdit()
-      .read(
-        { file: "beta.md", documentId: BETA_ID },
-        { ...betaContext, responseIdentity: undefined },
-      );
+    remember(
+      await collab
+        .agentEdit()
+        .read(
+          { file: "beta.md", documentId: BETA_ID },
+          { ...betaContext, responseIdentity: undefined },
+        ),
+    );
     for (const documentId of options.liveBeta ? [ALPHA_ID] : [ALPHA_ID, BETA_ID]) {
       const draft = await readResolvedDraft(
         draftStore,
@@ -996,10 +1003,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       turnId: TURN_ID,
       responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       createdDocument: false,
+      frontiers: modelFrontiers,
     };
-    await collab
-      .agentEdit()
-      .read({ file, documentId }, { ...context, responseIdentity: undefined });
+    await provisionDraft(documentId);
+    remember(
+      await collab
+        .agentEdit()
+        .read({ file, documentId }, { ...context, responseIdentity: undefined }),
+    );
     if (writerEditBeforeWrite) {
       await db.insert(schema.modelResponses).values({
         id: responseId as never,
@@ -1060,6 +1071,31 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     return workDraft.draftId;
   }
 
+  // The host's frontier store: a seeded write plans on the view its read showed.
+  const shownFrontiers = new Map<string, ObservationFrontier>();
+  const lookupShown = async (room: string) => shownFrontiers.get(room) ?? null;
+  const modelFrontiers = { recording: lookupShown, planning: lookupShown };
+  function remember<T extends { frontier?: ObservationFrontier }>(outcome: T): T {
+    if (outcome.frontier) shownFrontiers.set(outcome.frontier.room, outcome.frontier);
+    return outcome;
+  }
+
+  /**
+   * The Work draft and thread peer a draft-mode write ensures before its room read. A read
+   * never makes them (S1), so a fixture that seeds drafted content provisions them first.
+   */
+  async function provisionDraft(documentId: DocumentId = ALPHA_ID) {
+    await persistence.lifecycle.ensureDocument(documentId);
+    const scenario = options.ids ?? DEFAULT_SCENARIO_IDS;
+    const branch = await workBranches.ensureActiveForWrite({
+      workId: scenario.WORK_ID,
+      projectId: scenario.PROJECT_ID as never,
+      threadId: THREAD_ID,
+      userId: USER_ID as never,
+    });
+    return draftPulls.ensureThreadPeer({ documentId, threadId: THREAD_ID, branchId: branch.id });
+  }
+
   async function seedDestructivePush(
     responseId: string,
     documentId: DocumentId = ALPHA_ID,
@@ -1086,6 +1122,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     const file = `${documentName(documentId)}.md`;
+    await provisionDraft(documentId);
     await collab
       .agentEdit()
       .read({ file, documentId }, { ...context, responseIdentity: undefined });
@@ -1163,6 +1200,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       turnId: TURN_ID,
       responseIdentity: { providerResponseId: input.responseId, editScopeId: input.responseId },
     };
+    await provisionDraft();
     await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
     const documentDraft = await readResolvedDraft(
       draftStore,
@@ -1370,6 +1408,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       });
     });
     source.destroy();
+    await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -1430,6 +1469,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         seq: 0,
       });
     });
+    await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -1714,6 +1754,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         });
       }
     });
+    await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -1877,6 +1918,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         seq: 0,
       });
     });
+    await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -1898,6 +1940,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       origin: { type: "user", actorUserId: USER_ID as never },
       threadId: THREAD_ID,
     });
+    await provisionDraft();
     await collab.agentEdit().read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -2071,6 +2114,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
+    provisionDraft,
     /** An outstanding tool reply on a real thread peer, not a journaled Work draft. */
     async stagePeerReply(documentId: DocumentId, responseId: string) {
       const context = {
@@ -2081,6 +2125,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       };
       const file = `${documentName(documentId)}.md`;
+      await provisionDraft(documentId);
       await collab
         .agentEdit()
         .read({ file, documentId }, { ...context, responseIdentity: undefined });
@@ -2110,12 +2155,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     },
     /** The reply's staged view of a document: its buffered writes live in the response, not the peer draft. */
     async stagedReplyMarkdown(responseId: string, documentId: DocumentId) {
-      const lease = await collab.agentEdit().prepare(responseId, documentId);
-      if (!lease) throw new Error(`${responseId} has no staged writes on ${documentId}`);
+      const room = await collab
+        .agentEdit()
+        .readRoom({ documentId, threadId: THREAD_ID, responseId, live: false });
       try {
-        return serializeMarkdown(unwrapDoc(lease.doc));
+        return serializeMarkdown(unwrapDoc(room.doc));
       } finally {
-        lease.dispose();
+        room.dispose();
       }
     },
     draftMarkdown: (draftId: string) =>
@@ -2172,6 +2218,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       );
     },
     crossWorkProbeFixture: () => ({
+      provisionDraft,
       draftReview,
       runtime,
       links,
@@ -2517,10 +2564,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     async expectSuccessfulCommit(responseId: string) {
       expect(await this.responseJournalRows()).toHaveLength(2);
       expect(await databaseDraftHashes()).not.toEqual(preCommitDraftHashes);
-      expect(await this.threadPeerMarkdown()).toEqual([
-        expect.stringContaining("Agent alpha."),
-        expect.stringContaining("Agent beta."),
-      ]);
       expect(await this.workDraftMarkdown()).toEqual([
         expect.stringContaining("Agent alpha."),
         expect.stringContaining("Agent beta."),
@@ -2530,9 +2573,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         transition: "closed",
         phase: "closed",
       });
-      // Each document's thread peer takes the reply's rows, and its Work draft the peer's
-      // catch-up: both reach their rooms.
-      expect(draftBroadcasts).toHaveLength(4);
+      // Each document's Work draft takes the reply's rows and reaches its room; a thread peer
+      // is identity only and takes none.
+      expect(draftBroadcasts).toHaveLength(2);
       expect(watermarkCommits).toHaveLength(2);
       expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
     },

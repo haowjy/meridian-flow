@@ -1,6 +1,7 @@
 /**
  * Collab composition (thread peers): assembles the production thread-peer pool from the
- * draft store, coordinator, pulls and agent-edit runtime. Part of the composition root
+ * draft store, coordinator, pulls and agent-edit runtime: each thread's core reads and saves
+ * its Work drafts; its peers are identity only. Part of the composition root
  * (`composition.ts`); the pool itself (`domain/thread-peer-core-pool.ts`) holds no adapters.
  */
 import {
@@ -14,19 +15,13 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { FileAccess } from "../file-policy/index.js";
-import type {
-  FrontierRooms,
-  LiveAgentEditCore,
-  ThreadPeerAgentEditCore,
-} from "./domain/agent-edit-cores.js";
+import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
 import {
   createDraftAgentEditCoordinator,
   createDraftAgentEditJournal,
-  createDraftPendingJournalEntries,
   type DraftAgentEditDiagnostics,
   type DraftConcurrentJournalWatermarks,
   type EnlistResponseParticipant,
@@ -85,7 +80,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
-  frontierRooms: FrontierRooms;
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
@@ -105,34 +99,26 @@ export function createDraftThreadPeerAgentEditCore(input: {
     fileAccess: input.fileAccess,
     lockWorks: input.lockWorks,
     lockLiveDocuments: input.lockLiveDocuments,
-    frontierRooms: input.frontierRooms,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     attemptScope: input.attemptScope,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
-    createThreadCore: (threadId, viewFor) => {
-      const pendingJournalEntries = createDraftPendingJournalEntries(
-        input.enlistResponseParticipant,
-        input.diagnostics,
-      );
-      return createAgentEditCore({
+    createThreadCore: (threadId, viewFor) =>
+      createAgentEditCore({
         links: createScopedDocumentLinks({
           scopes: input.links,
           registrar: input.aheadRefs,
           viewFor,
         }),
-        journal: createDraftAgentEditJournal({
-          liveJournal: input.journal,
-          pendingJournalEntries,
-        }),
+        journal: createDraftAgentEditJournal({ liveJournal: input.journal }),
         coordinator: createDraftAgentEditCoordinator({
           threadId,
           draftCoordinator: input.draftCoordinator,
           drafts: input.drafts,
-          pendingJournalEntries,
           journalRows: input.draftJournal,
           liveJournal: input.journal,
-          diagnostics: input.diagnostics,
+          flushLivePull: (documentId) => input.draftPulls.flushLivePull(documentId),
+          branches: input.branches,
           afterCommit: input.afterCommit,
           enlistResponseParticipant: input.enlistResponseParticipant,
           model: input.model,
@@ -146,10 +132,8 @@ export function createDraftThreadPeerAgentEditCore(input: {
         model: input.model,
         semanticProvenance: input.semanticProvenance,
         defaultThreadId: threadId,
-        createRuntimeDoc: () => createCollabYDoc({ gc: false }),
         ...input.observability,
-      });
-    },
-    pullThreadPeer: (command) => input.draftPulls.pullThreadPeer(command),
+      }),
+    ensureThreadPeer: (command) => input.draftPulls.ensureThreadPeer(command),
   });
 }

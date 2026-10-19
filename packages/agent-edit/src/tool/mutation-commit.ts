@@ -49,8 +49,6 @@ export interface LiveUpdateCommitInput {
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
   links: CommandLinks;
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
   /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
@@ -60,6 +58,7 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 }
 
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
+  /** The call's room copy: it takes the concurrent updates the commit found under the lock. */
   runtime: MutationCommitRuntime;
   /**
    * What admission answers when the document is not empty at that moment. A
@@ -78,13 +77,11 @@ export interface OwnWriteStep {
 
 export interface CommitPreflightInput {
   docId: string;
-  runtime: MutationCommitRuntime;
   /** The command's links: comparison snapshots spell through their codec, the revision reads their scope. */
   links: CommandLinks;
-  deletedHashes: ReadonlySet<string>;
-  touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
-  preOwnSnapshot?: Uint8Array;
+  /** The view the first write planned on: what detection takes as already seen. */
+  preOwnSnapshot: Uint8Array;
   /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
   access?: DocumentAccess;
@@ -113,6 +110,8 @@ export interface DestructiveSweepReport {
 
 export interface ApplyWithRecheckResult {
   revision: string | null;
+  /** The document right after the apply, under the same lock: what a save's receipts render. */
+  afterState?: Uint8Array;
   concurrent: CapturedConcurrentDetection;
   lateSweep?: DestructiveSweepReport;
   awarenessDegraded?: true;
@@ -146,19 +145,7 @@ export class AcceptedMutationSubmissionError extends Error {
 export interface MutationCommit {
   submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
-  detectConcurrentEdits(input: {
-    docId: string;
-    runtime: MutationCommitRuntime;
-    links: CommandLinks;
-    /** Prepared response helpers cannot acquire ambient bytes through reporting. */
-    reportingOnly?: boolean;
-    interactionContext?: InteractionContext;
-    preOwnSnapshot?: Uint8Array;
-    /** Frozen host cut before the checked commit, for terminal receipt reporting. */
-    reportingCut?: Uint8Array;
-    access?: DocumentAccess;
-    ownTurnId?: string;
-  }): Promise<ConcurrentDetectionResult>;
+  detectConcurrentEdits(input: DetectConcurrentInput): Promise<ConcurrentDetectionResult>;
   captureCommitPreflight(
     liveDoc: Y.Doc,
     input: CommitPreflightInput,
@@ -180,6 +167,16 @@ export interface MutationCommit {
   ): Promise<ApplyWithRecheckResult>;
 }
 
+interface DetectConcurrentInput {
+  docId: string;
+  links: CommandLinks;
+  interactionContext?: InteractionContext;
+  /** The view the write planned on: what the listing takes as seen. */
+  preOwnSnapshot: Uint8Array;
+  access?: DocumentAccess;
+  ownTurnId?: string;
+}
+
 export function createMutationCommit(deps: {
   links: DocumentLinksPort;
   journal: UpdateJournal;
@@ -198,50 +195,34 @@ export function createMutationCommit(deps: {
     reportAcceptedMutation,
   };
 
-  async function detectConcurrentEdits(input: {
-    docId: string;
-    runtime: MutationCommitRuntime;
-    links: CommandLinks;
-    /** Prepared response helpers cannot acquire ambient bytes through reporting. */
-    reportingOnly?: boolean;
-    interactionContext?: InteractionContext;
-    preOwnSnapshot?: Uint8Array;
-    /** Frozen host cut before the checked commit, for terminal receipt reporting. */
-    reportingCut?: Uint8Array;
-    access?: DocumentAccess;
-    ownTurnId?: string;
-  }): Promise<ConcurrentDetectionResult> {
-    const detectionDoc = input.preOwnSnapshot
-      ? docFromSnapshot(input.preOwnSnapshot)
-      : input.reportingOnly
-        ? docFromSnapshot(Y.encodeStateAsUpdate(input.runtime.doc))
-        : input.runtime.doc;
-    const detectionVector = Y.encodeStateVector(detectionDoc);
-    const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
+  async function detectConcurrentEdits(
+    input: DetectConcurrentInput,
+  ): Promise<ConcurrentDetectionResult> {
+    const detectionDoc = docFromSnapshot(input.preOwnSnapshot);
+    const preOwnDoc = docFromSnapshot(input.preOwnSnapshot);
     try {
       const updates = await concurrentUpdatesSince(
         coordinator,
         input.docId,
-        preOwnDoc ?? input.runtime.doc,
+        preOwnDoc,
         detectionDoc,
-        detectionVector,
+        Y.encodeStateVector(detectionDoc),
         input.interactionContext?.afterJournalId,
         input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
-        input.reportingCut,
+        undefined,
         input.access,
       );
-      return applyConcurrentOnDoc(
-        detectionDoc,
-        input.runtime,
-        input.links,
+      return applyConcurrentUpdates(
+        toDocHandle(detectionDoc),
+        model,
+        input.links.codec,
         updates,
-        input.ownTurnId,
-        input.reportingOnly,
+        input.ownTurnId ? agentUpdateOrigin(input.ownTurnId) : undefined,
       );
     } finally {
-      preOwnDoc?.destroy();
-      if (detectionDoc !== input.runtime.doc) detectionDoc.destroy();
+      preOwnDoc.destroy();
+      detectionDoc.destroy();
     }
   }
 
@@ -282,10 +263,6 @@ export function createMutationCommit(deps: {
           awarenessDegraded = applied.awarenessDegraded;
           return null;
         },
-        // A thread-peer write commits to exactly the draft it was staged against.
-        input.interactionContext?.mode === "threadPeer"
-          ? { pinnedDraftId: input.interactionContext.peerDraftId }
-          : undefined,
       );
     } catch (cause) {
       if (journalCommitKind) throw new AcceptedMutationSubmissionError(cause, journalCommitKind);
@@ -332,6 +309,7 @@ export function createMutationCommit(deps: {
     });
     return {
       revision: applied.revision,
+      ...(applied.afterState ? { afterState: applied.afterState } : {}),
       concurrent: applied.concurrent,
       ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
       ...(applied.awarenessDegraded ? { awarenessDegraded: true } : {}),
@@ -367,18 +345,26 @@ export function createMutationCommit(deps: {
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
-    const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
+    const afterState = Y.encodeStateAsUpdate(liveDoc);
+    const afterApplyDoc = docFromSnapshot(afterState);
     try {
       const revision = deps.links.revision(afterApplyDoc, input.links.scope);
       const report = await acceptedReport(input, current, beforeApplyDoc, afterApplyDoc);
       return {
         revision,
+        afterState,
         concurrent: current,
         journalCommitKind,
         ...report,
       };
     } catch {
-      return { revision: null, concurrent: current, journalCommitKind, awarenessDegraded: true };
+      return {
+        revision: null,
+        afterState,
+        concurrent: current,
+        journalCommitKind,
+        awarenessDegraded: true,
+      };
     } finally {
       beforeApplyDoc.destroy();
       afterApplyDoc.destroy();
@@ -447,11 +433,7 @@ export function createMutationCommit(deps: {
   ): Promise<CapturedConcurrentDetection> {
     const detectionDoc = previous
       ? docFromSnapshot(previous.detectionSnapshot)
-      : docFromSnapshot(
-          input.interactionContext?.attributionBaseline ??
-            input.preOwnSnapshot ??
-            Y.encodeStateAsUpdate(input.runtime.doc),
-        );
+      : docFromSnapshot(input.preOwnSnapshot);
     const baselineVector = previous?.liveStateVector ?? Y.encodeStateVector(detectionDoc);
     try {
       const updates = await concurrentUpdatesSince(
@@ -492,29 +474,6 @@ export function createMutationCommit(deps: {
       if (item.update.length > 0) Y.applyUpdate(runtime.doc, item.update, item.origin);
     }
     return captured.detection;
-  }
-
-  function applyConcurrentOnDoc(
-    detectionDoc: Y.Doc,
-    runtime: MutationCommitRuntime,
-    links: CommandLinks,
-    updates: readonly ConcurrentUpdate[],
-    turnId: string | undefined,
-    reportingOnly = false,
-  ): ConcurrentDetectionResult {
-    const result = applyConcurrentUpdates(
-      toDocHandle(detectionDoc),
-      model,
-      links.codec,
-      updates,
-      turnId ? agentUpdateOrigin(turnId) : undefined,
-    );
-    if (!reportingOnly && detectionDoc !== runtime.doc) {
-      for (const item of updates) {
-        if (item.update.length > 0) Y.applyUpdate(runtime.doc, item.update, item.origin);
-      }
-    }
-    return result;
   }
 
   async function destructiveReport(

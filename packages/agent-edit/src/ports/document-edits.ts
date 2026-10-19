@@ -14,8 +14,8 @@ export type DocumentEditResult =
       message: string;
       actionId: string;
       writeId?: string;
-      /** The draft the command ran on, null for the live document: an inverse's `after` is its cut. */
-      draftId: string | null;
+      /** The host's label for the room the command ran in: an inverse's `after` is its cut. */
+      room: string | null;
       before?: Uint8Array;
       after?: Uint8Array;
     };

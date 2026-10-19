@@ -12,8 +12,8 @@ unwanted rewriting. The owner seam is echo/response formatting.
 
 ## Complete-plan apply preflight
 
-The write facade restores its pre-write runtime snapshot when a later group or
-provenance materializer rejects. A stronger all-plan preflight or clone-then-
+A write that a later group or provenance materializer rejects leaves nothing
+behind: it ran on that call's disposable view and room copy. A stronger all-plan preflight or clone-then-
 merge path is deferred until an adapter has a concrete failure-prone operation
 that the current preflight cannot protect. Do not add a parallel transaction
 planner without that producer.

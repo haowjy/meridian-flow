@@ -36,6 +36,7 @@ import { documentEffectsEqual } from "../domain/document-content.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
+import { liveRoom } from "../domain/observation-rooms.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { ReversalConflictError } from "../domain/reversal-conflict.js";
 import {
@@ -94,12 +95,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       wId: edit.wId,
     }));
   }
-  async function materialize(documentId: DocumentId): Promise<Y.Doc> {
+  async function materialize(documentId: DocumentId): Promise<{ doc: Y.Doc; room: string | null }> {
     const snapshot = await input.journal.read(documentId);
     const doc = new Y.Doc({ gc: false });
     if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
     for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-    return doc;
+    return {
+      doc,
+      room: snapshot.authority ? liveRoom(documentId, snapshot.authority.generation) : null,
+    };
   }
   /** The drafts an inverse of `query` may read or write: its own and every pending hold. */
   function inverseDraftIds(query: TurnInverseQuery, parts: StoredInversePart[]): string[] {
@@ -139,7 +143,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const heads = new Map<DocumentId, number>();
       try {
         for (const documentId of ids) {
-          const live = await materialize(documentId);
+          const { doc: live, room: liveRoomName } = await materialize(documentId);
           const [head] = await db()
             .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
             .from(documentYjsUpdates)
@@ -149,6 +153,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             documentId,
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             live,
+            liveRoom: liveRoomName,
             history: parts.filter((part) => part.documentId === documentId),
             drafts: new Map(),
           };

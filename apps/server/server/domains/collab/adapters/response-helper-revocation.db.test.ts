@@ -307,8 +307,6 @@ describe("response helper revocation (Postgres)", () => {
       expect(await fixture.draftStore.getDraft(oldPeer.draftId)).toMatchObject({
         status: "closed",
       });
-      // Model the old response entry's eviction by a refusal before its next write.
-      await core.invalidateThreadDocument(ALPHA_ID, THREAD_ID);
       expect(await write("green", "olive", "fresh-during-retirement")).toMatchObject({
         status: "success",
         phase: "staged",
@@ -419,7 +417,12 @@ describe("response helper revocation (Postgres)", () => {
       }
     });
     try {
-      const pending = core.prepare(responseId, ALPHA_ID);
+      const pending = core.readRoom({
+        documentId: ALPHA_ID,
+        threadId: THREAD_ID,
+        responseId,
+        live: false,
+      });
       // Observe rejection before releasing the orphaned read.
       const settled = pending.then(
         (value) => ({ value }),
@@ -432,7 +435,7 @@ describe("response helper revocation (Postgres)", () => {
         release();
       }
       const outcome = await settled;
-      if ("value" in outcome) outcome.value?.dispose();
+      if ("value" in outcome) outcome.value.dispose();
       expect(outcome).toHaveProperty("error");
     } finally {
       release();

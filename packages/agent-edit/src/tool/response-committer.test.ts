@@ -2,7 +2,6 @@
 
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { unwrapDoc } from "../handles.js";
 import type { StagedWriteHost } from "../ports/document-coordinator.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { UpdateJournal } from "../ports/update-journal.js";
@@ -83,10 +82,8 @@ describe("response committer", () => {
       return openLinks(request);
     };
     const prepared = harness({ "chapter.md": "Alpha." }, { links });
-    const snapshots: {
-      bytes: Uint8Array;
-      cut: import("../ports/document-coordinator.js").StagedHelperCut;
-    }[] = [];
+    const readRoom = prepared.coordinator.readRoom.bind(prepared.coordinator);
+    let reads = 0;
     let pauseNext = false;
     let entered!: () => void, release!: () => void;
     const waiting = new Promise<void>((resolve) => {
@@ -95,62 +92,62 @@ describe("response committer", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // A save's prepared write is counted, so the commit below proves it was consumed.
-    const saves = { persisted: 0, transferred: 0 };
-    const replay: StagedWriteHost["replay"] = async (request) => {
+    prepared.coordinator.readRoom = async (docId, staged) => {
+      reads += 1;
       if (pauseNext) {
         pauseNext = false;
         entered();
         await gate;
       }
-      snapshots.push({ bytes: Y.encodeStateAsUpdate(request.sourceDoc), cut: request.helperCut });
-      return prepared.coordinator.withDocument(request.docId, async (canonical) => {
-        const candidate = new Y.Doc({ gc: false });
-        Y.applyUpdate(candidate, Y.encodeStateAsUpdate(canonical));
-        for (const entry of request.entries) Y.applyUpdate(candidate, entry.update);
-        const state = Y.encodeStateAsUpdate(candidate);
-        candidate.destroy();
-        return {
-          keptEntries: request.entries,
-          helperState: state,
-          helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
-          beforeState: Y.encodeStateAsUpdate(canonical),
-        };
-      });
+      return readRoom(docId, staged);
     };
+    // A save's prepared write is counted, so the commit below proves it was consumed.
+    const saves = { persisted: 0, transferred: 0 };
     const stagedWrites: StagedWriteHost = {
-      replay,
-      prepareSave: async (request) => ({
-        ...(await replay(request)),
-        write: {
-          kind: "write",
-          persist: async () => {
-            saves.persisted += 1;
-          },
-          transfer: () => {
-            saves.transferred += 1;
-          },
-          dispose: () => {},
-        },
-      }),
+      prepareSave: async (request) => {
+        const before = await readRoom(request.docId, null);
+        const after = await readRoom(request.docId, request);
+        try {
+          return {
+            kept: after.kept,
+            rejected: [],
+            room: after.room,
+            beforeState: Y.encodeStateAsUpdate(before.doc),
+            afterState: Y.encodeStateAsUpdate(after.doc),
+            write: {
+              kind: "write",
+              persist: async () => {
+                saves.persisted += 1;
+              },
+              transfer: () => {
+                saves.transferred += 1;
+              },
+              dispose: () => {},
+            },
+          };
+        } finally {
+          before.doc.destroy();
+          after.doc.destroy();
+        }
+      },
     };
     Object.assign(prepared.coordinator, { stagedWrites });
     const peer = {
       ...context,
       responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
       turnId: "prepared-turn",
-      interactionContext: { mode: "threadPeer" as const, draftGeneration: 1, afterJournalId: 0 },
+      interactionContext: { mode: "threadPeer" as const, afterJournalId: 0 },
     };
+    const scope = { threadId: THREAD_ID, responseId: peer.responseIdentity.editScopeId };
     await prepared.core.read({ file: "chapter.md" }, peer);
     expect(
       (await prepared.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, peer))
         .status,
     ).toBe("success");
-    const borrowed = await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md");
-    if (!borrowed) throw new Error("Missing prepared lease");
-    unwrapDoc(borrowed.doc).getMap("foreign").set("must-stay-on-replica", true);
+    // Every call's room copy is its own: changing one reaches no later read.
+    const borrowed = await prepared.core.readRoom("chapter.md", scope);
+    borrowed.doc.getMap("foreign").set("must-stay-on-replica", true);
     borrowed.dispose();
-    const before = snapshots.at(-1);
     await prepared.core.write(
       { command: "replace", file: "chapter.md", find: "Alpha.", content: "Pink." },
       context,
@@ -162,11 +159,9 @@ describe("response committer", () => {
       },
     });
     await rollback?.abort();
-    (await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"))?.dispose();
-    expect(snapshots.at(-1)).toEqual(before);
-    // A scoped read replay started before a later stage must not reject that new write.
+    // A read racing a later stage of its scope reads again, so it never hides that write.
     pauseNext = true;
-    const reading = prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md");
+    const reading = prepared.core.readRoom("chapter.md", scope);
     await waiting;
     try {
       expect(
@@ -181,60 +176,30 @@ describe("response committer", () => {
       release();
     }
     const current = await reading;
-    if (!current) throw new Error("Missing read lease");
     try {
-      expect(blockTexts(unwrapDoc(current.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+      expect(blockTexts(current.doc)).toEqual(["Pink.", "Beta.", "Gamma."]);
+      expect(current.doc.getMap("foreign").size).toBe(0);
     } finally {
       current.dispose();
     }
     expect((await prepared.core.read({ file: "chapter.md" }, peer)).result.message).toBeUndefined();
-    const replayCount = snapshots.length;
+    const readCount = reads;
     const readers = await Promise.all(
-      Array.from({ length: 12 }, () =>
-        prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"),
-      ),
+      Array.from({ length: 12 }, () => prepared.core.readRoom("chapter.md", scope)),
     );
     for (const reader of readers) {
-      if (!reader) throw new Error("Missing concurrent read lease");
-      expect(blockTexts(unwrapDoc(reader.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+      expect(blockTexts(reader.doc)).toEqual(["Pink.", "Beta.", "Gamma."]);
       reader.dispose();
     }
-    expect(snapshots.length - replayCount).toBe(12);
+    expect(reads - readCount).toBe(12);
     mutateSaveLinks = true;
     failSaveLinks = true;
-    await expect(prepared.core.commitResponse(peer.responseIdentity.editScopeId)).rejects.toThrow(
-      "link preparation refused",
-    );
+    const failed = await prepared.core.commitResponse(peer.responseIdentity.editScopeId);
+    expect(failed.documents[0]?.receipts[0]?.result.awarenessDegraded).toBe(true);
     expect(saveReplicas.length).toBeGreaterThan(0);
     expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
-    failSaveLinks = false;
-    await prepared.core.commitResponse(peer.responseIdentity.editScopeId, {
-      deferFinalization: (deferred) => {
-        rollback = deferred;
-      },
-    });
     expect(saves.persisted).toBeGreaterThan(0);
     expect(saves.transferred).toBe(saves.persisted);
-    const checkSaveReplica = () => {
-      const snapshot = snapshots.at(-1);
-      if (!snapshot) throw new Error("Missing replay source");
-      const source = new Y.Doc({ gc: false });
-      try {
-        Y.applyUpdate(source, snapshot.bytes);
-        expect(source.getMap("save-link-adapter").size).toBe(0);
-      } finally {
-        source.destroy();
-      }
-    };
-    checkSaveReplica();
-    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
-    await rollback?.abort();
-    (await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"))?.dispose();
-    checkSaveReplica();
-    await prepared.core.rollbackResponse(peer.responseIdentity.editScopeId);
-    expect(prepared.core.hasResponseDocument(peer.responseIdentity.editScopeId, "chapter.md")).toBe(
-      false,
-    );
   });
 
   it("commits a multi-document thread-peer response in one journal batch", async () => {
@@ -251,7 +216,6 @@ describe("response committer", () => {
           turnId: `turn-${file}`,
           interactionContext: {
             mode: "threadPeer",
-            draftGeneration: 1,
             peerDraftId: "draft-peer",
           },
         },
@@ -312,8 +276,11 @@ describe("response committer", () => {
 
     ctx.coordinator.failWith(undefined);
     recover.mockImplementation(originalRecover);
-    await ctx.core.read({ file: "chapter.md" }, context);
-    expect(recover).toHaveBeenCalledTimes(2);
+    // The next read catches the room copy up from the journal: nothing is resident to recover.
+    expect(outcomeText(await ctx.core.read({ file: "chapter.md" }, context))).toContain(
+      "Durable words.",
+    );
+    expect(recover).toHaveBeenCalledTimes(1);
   });
 
   it("rejects staging while a response commit owns its snapshot", async () => {
@@ -378,7 +345,7 @@ describe("response committer", () => {
     };
     const commit = ctx.core.commitResponse(responseId);
     await appendStarted.promise;
-    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
+    ctx.core.dropStaged("chapter.md", THREAD_ID);
     releaseAppend.resolve();
     const result = await commit;
     if (result.status !== "committed") throw new Error("expected committed response");
@@ -504,7 +471,7 @@ describe("reasoned refusal of staged writes", () => {
     ...context,
     turnId: turn,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    interactionContext: { mode: "threadPeer" as const, draftGeneration: 1, peerDraftId },
+    interactionContext: { mode: "threadPeer" as const, peerDraftId },
   });
   const receiptTexts = (
     result: Awaited<ReturnType<ReturnType<typeof harness>["core"]["commitResponse"]>>,

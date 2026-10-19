@@ -6,6 +6,7 @@ import { snapshotBlocks } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
+import { createPlanningView, planningSnapshot } from "../frontier.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
@@ -24,11 +25,10 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
-import { withObservation } from "./observation.js";
+import { recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
-import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
+import type { ResponseCommitter, RoomCallInput, RoomCopy } from "./response-committer.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
-import type { RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
@@ -58,7 +58,6 @@ export function createWriteCommands(deps: {
     | "model"
     | "codec"
     | "lifecycle"
-    | "createRuntimeDoc"
     | "coordinator"
     | "semanticProvenance"
     | "links"
@@ -70,20 +69,10 @@ export function createWriteCommands(deps: {
   renderer: DocumentRenderer;
   journal: CreateWriteToolOptions["journal"];
   mutationCommit: MutationCommit;
-  runtimeStore: RuntimeStore;
   responseCommitter: ResponseCommitter;
 }) {
-  const {
-    options,
-    autoTurnCounter,
-    autoTurnIdNonce,
-    renderer,
-    journal,
-    mutationCommit,
-    runtimeStore,
-    responseCommitter,
-  } = deps;
-  const { markSynced } = runtimeStore;
+  const { options, autoTurnCounter, autoTurnIdNonce, renderer, journal, mutationCommit } = deps;
+  const { responseCommitter } = deps;
 
   return {
     read: (command: ReadCommand, session: ActorSession, context: WriteContext) =>
@@ -108,61 +97,123 @@ export function createWriteCommands(deps: {
       command: C,
       session: ActorSession,
       context: WriteContext,
-      lease: CommandDocumentLease,
     ) => Promise<InternalWriteResult>,
   ) {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    return responseCommitter.stage(
-      {
-        responseId: context.responseIdentity?.editScopeId,
-        docId: address.documentId,
-        session,
-        commandName: "command" in command ? command.command : "read",
-        context,
-      },
-      (lease) => handler(command, session, context, lease),
-    );
+    return handler(command, session, context);
+  }
+
+  /** The call's room copy, disposed when `use` settles; a door that can't read answers its result. */
+  async function withRoom(
+    input: Omit<RoomCallInput, "threadId" | "interactionContext" | "responseId"> & {
+      session: ActorSession;
+      context: WriteContext;
+    },
+    use: (room: RoomCopy) => Promise<InternalWriteResult>,
+  ): Promise<InternalWriteResult> {
+    const { session, context, ...call } = input;
+    const room = await responseCommitter.openRoom({
+      ...call,
+      responseId: context.responseIdentity?.editScopeId,
+      threadId: session.threadId,
+      interactionContext: context.interactionContext,
+    });
+    if (isInternalWriteResult(room)) return room;
+    try {
+      return await use(room);
+    } finally {
+      room.dispose();
+    }
   }
 
   async function read(
     command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
-    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
+    return withRoom(
+      { docId: address.documentId, commandName: "read", session, context },
+      async (room) => {
+        const links = await openCommandLinks(options, {
+          documentId: address.documentId,
+          docs: [room.doc],
+          context,
+        });
+        const selection = renderer.selectReadBlocks(toDocHandle(room.doc), command, address);
+        if (!selection.ok)
+          return errorResponse(
+            selection.code,
+            selection.message,
+            address.filePath,
+            selection.documentBlocks,
+          );
+        return withEvidence(links, room, address.documentId, context, {
+          ...readSuccess(
+            renderer.renderRead(
+              toDocHandle(room.doc),
+              links.codec,
+              selection.blocks,
+              command.format === "outline" ? "outline" : "full",
+            ),
+          ),
+          revision: options.links.revision(room.doc, links.scope),
+          ...(context.includeNodes ? { nodes: selectedNodes(room.doc, selection.blocks) } : {}),
+        });
+      },
+    );
+  }
 
-    const restored = await runtime.restore();
-    if (isInternalWriteResult(restored)) return restored;
-    const links = await openCommandLinks(options, {
-      documentId: address.documentId,
-      docs: [runtime.doc],
-      context,
-    });
-    markSynced(session, address.documentId);
+  /**
+   * The model's view to plan a write on: the room copy at the planning frontier, then the
+   * reply's own surviving updates. Null when the room has no valid frontier or the view is
+   * incomplete.
+   */
+  async function planningView(
+    room: RoomCopy,
+    docId: string,
+    session: ActorSession,
+    context: WriteContext,
+  ): Promise<Y.Doc | null> {
+    if (!room.room || !context.frontiers?.planning) return null;
+    const snapshot = planningSnapshot(
+      room.doc,
+      room.room,
+      await context.frontiers.planning(room.room),
+    );
+    if (!snapshot) return null;
+    return createPlanningView(
+      room.doc,
+      snapshot,
+      responseCommitter.ownUpdates({
+        threadId: session.threadId,
+        providerResponseId: context.responseIdentity?.providerResponseId,
+        responseId: context.responseIdentity?.editScopeId,
+        docId,
+      }),
+    );
+  }
 
-    const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
-    if (!selection.ok)
-      return errorResponse(
-        selection.code,
-        selection.message,
-        address.filePath,
-        selection.documentBlocks,
-      );
-    return withEvidence(links, runtime.doc, address.documentId, context, {
-      ...readSuccess(
-        renderer.renderRead(
-          toDocHandle(runtime.doc),
-          links.codec,
-          selection.blocks,
-          command.format === "outline" ? "outline" : "full",
-        ),
-      ),
-      revision: options.links.revision(runtime.doc, links.scope),
-      ...(context.includeNodes ? { nodes: selectedNodes(runtime.doc, selection.blocks) } : {}),
-    });
+  /**
+   * `use` with the doc a write plans on and the room copy it renders from.
+   * TODO(M2 W2): a write with no valid view is refused with the region's current text; until
+   * the region refusal lands it plans on the room copy, as before M2.
+   */
+  async function withPlanDoc(
+    room: RoomCopy,
+    docId: string,
+    session: ActorSession,
+    context: WriteContext,
+    use: (planDoc: Y.Doc) => Promise<InternalWriteResult>,
+  ): Promise<InternalWriteResult> {
+    const view = await planningView(room, docId, session, context);
+    try {
+      return await use(view ?? room.doc);
+    } finally {
+      view?.destroy();
+    }
   }
 
   /** The selected blocks as nodes, in document order; a copy gets fresh identity when inserted. */
@@ -187,7 +238,6 @@ export function createWriteCommands(deps: {
     command: Extract<WriteCommand, { command: "create" | "copy" }>,
     session: ActorSession,
     context: WriteContext,
-    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
@@ -230,43 +280,88 @@ export function createWriteCommands(deps: {
       );
     }
     const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
-    const overwriting =
-      command.overwrite === true || (deferNewDocumentCreation && !runtime.hasStagedWrites);
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const alreadyExists = status(
       "invalid_write",
       `File already exists: ${address.filePath}. Read it, then edit it; use overwrite=true only to replace all of its content.`,
     );
-    const liveCheck = await runtime.checkEmpty(overwriting, alreadyExists);
-    const missingLiveForDeferredNewDocument =
-      deferNewDocumentCreation &&
-      isInternalWriteResult(liveCheck) &&
-      liveCheck.status === "document_not_found";
-    if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
+    return withRoom(
+      {
+        docId: address.documentId,
+        commandName: command.command,
+        session,
+        context,
+        ...(deferNewDocumentCreation ? { missing: "empty" as const } : {}),
+      },
+      async (room) => {
+        const responseId = context.responseIdentity?.editScopeId;
+        // A deferred create's first write replaces the empty copy; later ones extend it.
+        const overwriting =
+          command.overwrite === true ||
+          (deferNewDocumentCreation &&
+            !(responseId && responseCommitter.hasScopeCut(responseId, address.documentId)));
+        const existing = options.model.getBlocks(toDocHandle(room.doc)).length > 0;
+        if (existing && !overwriting) return alreadyExists;
+        // Creating a document or initializing an empty one plans on the room copy; replacing
+        // a non-empty one plans on the model's view of it.
+        const plan = (planDoc: Y.Doc) =>
+          createOn(planDoc, room, {
+            command,
+            session,
+            context,
+            address,
+            actor,
+            parsed,
+            content,
+            given,
+            copiedNodes,
+            boundNodes,
+            overwriting,
+            alreadyExists,
+          });
+        return existing
+          ? withPlanDoc(room, address.documentId, session, context, plan)
+          : plan(room.doc);
+      },
+    );
+  }
 
-    if (!missingLiveForDeferredNewDocument) {
-      const restored = await runtime.restore();
-      if (isInternalWriteResult(restored)) return restored;
-    }
-    if (missingLiveForDeferredNewDocument) {
-      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
+  async function createOn(
+    planDoc: Y.Doc,
+    room: RoomCopy,
+    input: {
+      command: Extract<WriteCommand, { command: "create" | "copy" }>;
+      session: ActorSession;
+      context: WriteContext;
+      address: Extract<ReturnType<typeof parseFileAddress>, { ok: true }>;
+      actor: MutationActor;
+      parsed: Extract<ParseForCommandResult, { ok: true }>;
+      content: string;
+      given: readonly Block[] | undefined;
+      copiedNodes: readonly Block[] | undefined;
+      boundNodes: readonly Block[] | undefined;
+      overwriting: boolean;
+      alreadyExists: InternalWriteResult;
+    },
+  ): Promise<InternalWriteResult> {
+    const { command, session, context, address, actor, parsed, content, given } = input;
+    const { copiedNodes, boundNodes, overwriting, alreadyExists } = input;
     const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
-      docs: [runtime.doc],
+      docs: planDocs(planDoc, room),
       ...(given ? { stored: given } : { written: parsed.parsed.blocks }),
       shown,
       context,
     });
     const assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
-    const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
+    const existingBlocks = options.model.getBlocks(toDocHandle(planDoc));
     if (existingBlocks.length > 0 && !overwriting) return alreadyExists;
     let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveOverwrite(
         {
-          doc: toDocHandle(runtime.doc),
+          doc: toDocHandle(planDoc),
           model: options.model,
           codec: links.codec,
           links: boundNodes ? "preassigned" : assigner,
@@ -297,7 +392,8 @@ export function createWriteCommands(deps: {
       command,
       session,
       context,
-      runtime,
+      room,
+      planDoc,
       links,
       actor,
       docId: address.documentId,
@@ -317,7 +413,6 @@ export function createWriteCommands(deps: {
     command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
     session: ActorSession,
     context: WriteContext,
-    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
@@ -330,9 +425,6 @@ export function createWriteCommands(deps: {
         writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
       });
     }
-    const synced = await runtime.sync();
-    if (!synced.ok) return synced.response;
-
     const from = command.command === "remove" ? undefined : command.from;
     const copiedNodes = from ? context.copiedNodes : undefined;
     if (from && !copiedNodes) return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
@@ -340,65 +432,80 @@ export function createWriteCommands(deps: {
       return status("invalid_write", `from selected no blocks in ${from?.path}.`);
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
-    const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
-    const links = await openCommandLinks(options, {
-      documentId: address.documentId,
-      docs: [runtime.doc],
-      ...(copiedNodes ? { stored: copiedNodes } : {}),
-      shown,
-      context,
-    });
-    // Planning fixes scope, matches and a find's reconstructed groups; what
-    // ref assignment will see is only known then, so it loads before assignment runs.
-    const plan = planWrite(
-      { doc: toDocHandle(runtime.doc), model: options.model, codec: links.codec },
-      {
-        ...selectors,
-        documentAddress: address,
-        ...(copiedNodes ? { blocks: copiedNodes } : {}),
-      },
-    );
-    if (plan.ok && plan.written.length > 0) {
-      await options.links.prepare({
-        documentId: address.documentId,
-        docs: [],
-        written: plan.written,
-        context,
-      });
-    }
-    const assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
-    const resolved = plan.ok ? plan.assign(assigner) : plan;
-    if (!resolved.ok) {
-      return errorResponse(
-        resolved.error.code,
-        resolved.error.message,
-        address.filePath,
-        documentBlocksDetail(resolved.error.details),
-      );
-    }
-    validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
-    if (resolved.edits.length === 0) return formatUnchangedSuccess();
-    await registerMinted(assigner, address.documentId, context);
+    return withRoom(
+      { docId: address.documentId, commandName: command.command, session, context },
+      (room) =>
+        withPlanDoc(room, address.documentId, session, context, async (planDoc) => {
+          const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
+          const links = await openCommandLinks(options, {
+            documentId: address.documentId,
+            docs: planDocs(planDoc, room),
+            ...(copiedNodes ? { stored: copiedNodes } : {}),
+            shown,
+            context,
+          });
+          // Planning fixes scope, matches and a find's reconstructed groups; what
+          // ref assignment will see is only known then, so it loads before assignment runs.
+          const plan = planWrite(
+            { doc: toDocHandle(planDoc), model: options.model, codec: links.codec },
+            {
+              ...selectors,
+              documentAddress: address,
+              ...(copiedNodes ? { blocks: copiedNodes } : {}),
+            },
+          );
+          if (plan.ok && plan.written.length > 0) {
+            await options.links.prepare({
+              documentId: address.documentId,
+              docs: [],
+              written: plan.written,
+              context,
+            });
+          }
+          const assigner = linkAssigner(
+            address.documentId,
+            links.scope,
+            shown,
+            context.uploadsChat,
+          );
+          const resolved = plan.ok ? plan.assign(assigner) : plan;
+          if (!resolved.ok) {
+            return errorResponse(
+              resolved.error.code,
+              resolved.error.message,
+              address.filePath,
+              documentBlocksDetail(resolved.error.details),
+            );
+          }
+          validateResolvedIr(resolved.ir, address.documentId, planDoc);
+          if (resolved.edits.length === 0) return formatUnchangedSuccess();
+          await registerMinted(assigner, address.documentId, context);
 
-    return finishPreparedEdit({
-      command,
-      session,
-      context,
-      runtime,
-      links,
-      actor: mutationActor(session, address.documentId, context),
-      docId: address.documentId,
-      filePath: address.filePath,
-      plan: { edits: resolved.edits, ir: resolved.ir },
-      ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
-    });
+          return finishPreparedEdit({
+            command,
+            session,
+            context,
+            room,
+            planDoc,
+            links,
+            actor: mutationActor(session, address.documentId, context),
+            docId: address.documentId,
+            filePath: address.filePath,
+            plan: { edits: resolved.edits, ir: resolved.ir },
+            ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
+          });
+        }),
+    );
   }
 
   interface PreparedEdit {
     command: WriteCommand;
     session: ActorSession;
     context: WriteContext;
-    runtime: CommandDocumentLease;
+    /** The call's room copy: the echo and the recorded frontier render from it. */
+    room: RoomCopy;
+    /** What the write plans and applies on: the model's view, or the room copy itself. */
+    planDoc: Y.Doc;
     links: CommandLinks;
     actor: MutationActor;
     docId: string;
@@ -410,55 +517,64 @@ export function createWriteCommands(deps: {
 
   /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
   async function finishPreparedEdit(edit: PreparedEdit): Promise<InternalWriteResult> {
-    const { command, session, context, runtime, links, actor, docId, filePath, plan } = edit;
+    const { command, session, context, room, planDoc, links, actor, docId, filePath, plan } = edit;
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
-    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
+    const editScopeId = context.responseIdentity?.editScopeId;
+    const staged = Boolean(editScopeId) && actor.kind === "agent";
+    // The scope's first stage keeps the room's cut: reconcile reads what retired since.
+    const cut =
+      staged && editScopeId && !responseCommitter.hasScopeCut(editScopeId, docId)
+        ? { generation: room.generation, snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) }
+        : undefined;
+    const preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
+    const planned = snapshotBlocks(toDocHandle(planDoc), options.model, links.codec);
+    const before =
+      planDoc === room.doc
+        ? planned
+        : snapshotBlocks(toDocHandle(room.doc), options.model, links.codec);
+    const beforeVector = Y.encodeStateVector(planDoc);
+    // A view lacks the room's newer clients; a fresh segment client must avoid them too.
+    const roomClients =
+      planDoc === room.doc
+        ? undefined
+        : new Set(Y.decodeStateVector(Y.encodeStateVector(room.doc)).keys());
     const origin = "agent-write";
     const semanticEditIr = "ir" in plan ? plan.ir : undefined;
-    const restore = () => {
-      restorePreWriteSnapshot(runtime, preOwnSnapshot);
-      markSynced(session, docId);
-    };
-    let captured: ReturnType<typeof captureWriteUpdate<import("../apply/types.js").ApplyResult>>;
-    try {
-      captured = captureWriteUpdate(runtime.doc, (beforeSegment) => {
+    const captured = captureWriteUpdate<import("../apply/types.js").ApplyResult>(
+      planDoc,
+      roomClients,
+      (beforeSegment) => {
         if ("edits" in plan)
           return applyEdits(
-            toDocHandle(runtime.doc),
+            toDocHandle(planDoc),
             options.model,
             plan.edits,
             origin,
             beforeSegment,
-            certifySegment(runtime, plan.ir, beforeVector),
+            certifySegment(planDoc, plan.ir, beforeVector),
           );
         beforeSegment?.();
         let insertedBlocks: string[] = [];
-        runtime.doc.transact(() => {
+        planDoc.transact(() => {
           insertedBlocks = options.model
-            .insertBlocks(toDocHandle(runtime.doc), null, { blocks: [...plan.blocks] })
+            .insertBlocks(toDocHandle(planDoc), null, { blocks: [...plan.blocks] })
             .map((block) => options.model.getBlockId(block));
         }, origin);
         return { ok: true, changedBlocks: [], deletedBlocks: [], insertedBlocks };
-      });
-    } catch (cause) {
-      restore();
-      throw cause;
-    }
+      },
+    );
     const { result: applied, update, parts } = captured;
-    if (!applied.ok) {
-      restore();
-      return errorResponse(applied.error.code, applied.error.message, filePath);
-    }
+    if (!applied.ok) return errorResponse(applied.error.code, applied.error.message, filePath);
     const touchedHashes = new Set(applied.changedBlocks),
       deletedHashes = new Set(applied.deletedBlocks);
-    const blockIds = options.model.getDocumentBlockIds(toDocHandle(runtime.doc));
+    const blockIds = options.model.getDocumentBlockIds(toDocHandle(planDoc));
     const touchedBlocks = options.model
-      .getBlocks(toDocHandle(runtime.doc))
+      .getBlocks(toDocHandle(planDoc))
       .filter((_, index) => touchedHashes.has(blockIds[index]))
       .map((block) => options.model.getCanonicalBlockIdentity(block));
-    const deletedBlocks = before.filter((block) => deletedHashes.has(block.hash));
+    const deletedBlocks = planned.filter((block) => deletedHashes.has(block.hash));
+    // The echo shows the write merged into the room, the writer's surviving words included.
+    if (planDoc !== room.doc) Y.applyUpdate(room.doc, update);
     const copied = edit.copy
       ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
       : undefined;
@@ -474,15 +590,13 @@ export function createWriteCommands(deps: {
     let concurrentEdits: import("../apply/types.js").ConcurrentEditInfo | undefined;
     let lateSweep: import("./mutation-commit.js").DestructiveSweepReport | undefined;
     let awarenessDegraded = false;
-    if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
-      // Await attribution before staging: the lease must still be current at acceptance.
+    if (staged && editScopeId && actor.kind === "agent") {
+      // Await attribution before staging: the scope must still be current at acceptance.
       try {
         if (interactionContext) {
           const concurrent = await mutationCommit.detectConcurrentEdits({
             docId,
-            runtime,
             links,
-            reportingOnly: runtime.reportingOnly,
             interactionContext,
             preOwnSnapshot,
             ownTurnId: actor.turnId,
@@ -492,86 +606,71 @@ export function createWriteCommands(deps: {
       } catch {
         awarenessDegraded = true;
       }
-      try {
-        const rejected = responseCommitter.stageUpdate({
-          responseId: context.responseIdentity?.editScopeId,
-          docId,
-          session,
-          runtime,
-          commandName: command.command,
-          documentLabel: command.file,
-          description: stagedWriteDescription(command),
-          update,
-          editParts: parts,
-          meta,
-          liveOrigin,
-          actor,
-          turnId: actor.turnId,
-          writeId: identity.handle,
-          writeOrdinal: identity.ordinal,
-          durableWriteId: identity.durableId,
-          toolCallId: identity.toolCallId,
-          ensureDocumentBeforeCommit: Boolean(edit.creation),
-          createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
-          touchedHashes,
-          deletedHashes,
-          touchedBlocks,
-          deletedBlocks,
-          preOwnSnapshot,
-          semanticEditIr,
-          copied,
-          interactionContext,
-        });
-        if (rejected) {
-          restore();
-          return rejected;
-        }
-      } catch (cause) {
-        restore();
-        throw cause;
-      }
-      markSynced(session, docId);
+      const rejected = responseCommitter.stageUpdate({
+        responseId: editScopeId,
+        docId,
+        session,
+        room,
+        cut,
+        commandName: command.command,
+        documentLabel: command.file,
+        description: stagedWriteDescription(command),
+        update,
+        editParts: parts,
+        meta,
+        liveOrigin,
+        actor,
+        turnId: actor.turnId,
+        writeId: identity.handle,
+        writeOrdinal: identity.ordinal,
+        durableWriteId: identity.durableId,
+        toolCallId: identity.toolCallId,
+        ensureDocumentBeforeCommit: Boolean(edit.creation),
+        createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
+        touchedBlocks,
+        deletedBlocks,
+        preOwnSnapshot,
+        semanticEditIr,
+        copied,
+        interactionContext,
+      });
+      if (rejected) return rejected;
       phase = "staged";
     } else {
-      const committed = await submitPreparedMutation(
-        {
-          docId,
-          commandName: command.command,
-          runtime,
-          links,
-          updates: [
-            {
-              update,
-              meta,
-              mutation: {
-                editParts: parts,
-                threadId: session.threadId,
-                turnId,
-                ...(actor.kind === "agent"
-                  ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
-                  : {}),
-                actorKind: actor.kind,
-                ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-                ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-                writeId: identity.durableId,
-                wId: identity.ordinal,
-                toolCallId: identity.toolCallId,
-                semanticEditIr,
-                ...mutationMode(interactionContext),
-              },
+      const committed = await submitPreparedMutation({
+        docId,
+        commandName: command.command,
+        runtime: { doc: room.doc },
+        links,
+        updates: [
+          {
+            update,
+            meta,
+            mutation: {
+              editParts: parts,
+              threadId: session.threadId,
+              turnId,
+              ...(actor.kind === "agent"
+                ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
+                : {}),
+              actorKind: actor.kind,
+              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+              writeId: identity.durableId,
+              wId: identity.ordinal,
+              toolCallId: identity.toolCallId,
+              semanticEditIr,
+              ...mutationMode(interactionContext),
             },
-          ],
-          liveOrigin,
-          actor,
-          touchedHashes,
-          deletedHashes,
-          preOwnSnapshot,
-          refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
-          ...(turnId ? { turnId } : {}),
-          interactionContext,
-        },
-        session,
-      );
+          },
+        ],
+        liveOrigin,
+        actor,
+        preOwnSnapshot,
+        refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
+        ...(turnId ? { turnId } : {}),
+        interactionContext,
+      });
       if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
       if (committed.ok) {
         revision = committed.revision;
@@ -579,7 +678,6 @@ export function createWriteCommands(deps: {
         lateSweep = committed.lateSweep;
         awarenessDegraded = Boolean(committed.awarenessDegraded);
       } else awarenessDegraded = true;
-      runtime.attach();
       phase = "committed";
     }
     const outcome = {
@@ -591,12 +689,14 @@ export function createWriteCommands(deps: {
       lateSweep,
       awarenessDegraded,
     };
+    // A staged echo records nothing: the reply's save replaces it before the model's next request.
+    const recorded = phase === "staged" ? { ...context, frontiers: undefined } : context;
     try {
-      return withEvidence(
+      return await withEvidence(
         links,
-        runtime.doc,
+        room,
         docId,
-        context,
+        recorded,
         renderReceipt(
           {
             commandName: command.command,
@@ -607,66 +707,56 @@ export function createWriteCommands(deps: {
             copied,
           },
           before,
-          snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
+          snapshotBlocks(toDocHandle(room.doc), options.model, links.codec),
           { ...outcome, concurrentEdits: withRunShownLinks(concurrentEdits, links) },
         ),
       );
     } catch {
       return withEvidence(
         links,
-        runtime.doc,
+        room,
         docId,
-        context,
+        recorded,
         formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
       );
     }
   }
 
-  async function submitPreparedMutation(
-    input: PreparedMutation & { runtime: CommandDocumentLease },
-    session: ActorSession,
-  ) {
+  async function submitPreparedMutation(input: PreparedMutation) {
     let result: Awaited<ReturnType<MutationCommit["submitMutation"]>>;
     try {
       result = await mutationCommit.submitMutation(input);
     } catch (cause) {
-      if (cause instanceof AcceptedMutationSubmissionError) {
-        result = {
-          ok: false,
-          response: status("internal_error", "Retry — transient edit system failure."),
-          journalCommitKind: cause.journalCommitKind,
-        };
-      } else {
-        restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
-        markSynced(session, input.docId);
-        throw cause;
-      }
+      if (!(cause instanceof AcceptedMutationSubmissionError)) throw cause;
+      result = {
+        ok: false,
+        response: status("internal_error", "Retry — transient edit system failure."),
+        journalCommitKind: cause.journalCommitKind,
+      };
     }
-    if (result.ok) return result;
-    if (result.journalCommitKind !== "durable") {
-      await runtimeStore.evictRuntime(session, input.docId);
-      return result;
-    }
-    await input.runtime.recover();
-    return { ...result, awarenessDegraded: true };
+    if (result.ok || result.journalCommitKind !== "durable") return result;
+    // The journal has the write; the room catches up from it (a later read applies the same diff).
+    await options.coordinator.recover(input.docId).catch(() => undefined);
+    return { ...result, awarenessDegraded: true as const };
   }
 
   /**
    * Attach what the rendered result showed: its links, spelled with the
-   * command's links, and, when the host asked, its observation frontier on the
-   * doc it was rendered from.
+   * command's links, and, when the host passed lookups, its observation frontier
+   * in the room the copy was read from.
    */
   function withEvidence(
     links: CommandLinks,
-    doc: Y.Doc,
+    room: RoomCopy,
     documentId: string,
     context: WriteContext,
     result: InternalWriteResult,
-  ): InternalWriteResult {
-    return withObservation(
+  ): Promise<InternalWriteResult> {
+    return recordObservation(
       { ...result, ...shownEvidence(renderedItems(result.model), links) },
-      doc,
-      context.observe,
+      room.doc,
+      room.room,
+      context.frontiers?.recording,
       documentId,
       options.onObservationFailed,
     );
@@ -772,7 +862,7 @@ export function createWriteCommands(deps: {
 
   /** Certify inside the segment's prose transaction, before capture rotates its fresh client. */
   function certifySegment(
-    runtime: { doc: Y.Doc },
+    doc: Y.Doc,
     ir: SemanticEditIRV1,
     beforeStateVector: Uint8Array,
   ): (segment: readonly ResolvedEdit[]) => void {
@@ -790,7 +880,7 @@ export function createWriteCommands(deps: {
         ),
       );
       options.semanticProvenance?.writeCertifiedFacts(
-        toDocHandle(runtime.doc),
+        toDocHandle(doc),
         { ...ir, intent: { ...intent, edits } },
         beforeStateVector,
       );
@@ -800,12 +890,9 @@ export function createWriteCommands(deps: {
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
 
-function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
-  const restored = new Y.Doc({ gc: false });
-  Y.applyUpdate(restored, snapshot, { type: "system" });
-  const previous = runtime.doc;
-  runtime.doc = restored;
-  previous.destroy();
+/** The docs a write's links spell: the plan doc and, when it is a view, the room copy. */
+function planDocs(planDoc: Y.Doc, room: RoomCopy): Y.Doc[] {
+  return planDoc === room.doc ? [planDoc] : [planDoc, room.doc];
 }
 
 function documentBlocksDetail(details: Record<string, unknown> | undefined): number | undefined {
@@ -818,6 +905,7 @@ function documentBlocksDetail(details: Record<string, unknown> | undefined): num
  */
 function captureWriteUpdate<T>(
   doc: Y.Doc,
+  excludedClients: ReadonlySet<number> | undefined,
   write: (beforeSegment?: () => void) => T,
 ): { result: T; update: Uint8Array; parts: Uint8Array[] } {
   const updates: Uint8Array[] = [];
@@ -829,7 +917,7 @@ function captureWriteUpdate<T>(
   };
   const beforeSegment = () => {
     flush();
-    doc.clientID = allocateDocumentClient(doc);
+    doc.clientID = allocateDocumentClient(doc, excludedClients);
   };
   const collect = (update: Uint8Array) => updates.push(update);
   doc.on("update", collect);

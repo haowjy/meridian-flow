@@ -3,7 +3,6 @@ import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
 // A host's response-attempt surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is
 // exported once, from `integration.ts`.
-export type { ResponseReadLease } from "./tool/response-committer.js";
 
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
@@ -15,12 +14,11 @@ export interface AgentEditCore {
   prepareResponse: ReturnType<typeof createWriteTool>["prepareResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
-  prepare: ReturnType<typeof createWriteTool>["prepare"];
+  readRoom: ReturnType<typeof createWriteTool>["readRoom"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
   refuseStaged: ReturnType<typeof createWriteTool>["refuseStaged"];
   retirePeer: ReturnType<typeof createWriteTool>["retirePeer"];
-  invalidateThreadDocument: ReturnType<typeof createWriteTool>["invalidateThreadDocument"];
-  evictThread: ReturnType<typeof createWriteTool>["evictThread"];
+  dropStaged: ReturnType<typeof createWriteTool>["dropStaged"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -33,12 +31,11 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     prepareResponse: tool.prepareResponse,
     rollbackResponse: tool.rollbackResponse,
     hasResponseDocument: tool.hasResponseDocument,
-    prepare: tool.prepare,
+    readRoom: tool.readRoom,
     responseDocuments: tool.responseDocuments,
     refuseStaged: tool.refuseStaged,
     retirePeer: tool.retirePeer,
-    invalidateThreadDocument: tool.invalidateThreadDocument,
-    evictThread: tool.evictThread,
+    dropStaged: tool.dropStaged,
   };
 }
 

@@ -1,6 +1,7 @@
 // Host-only observation frontiers for rendered read and write results.
 import type * as Y from "yjs";
 import {
+  type FrontierLookup,
   frontierBlockId,
   nextObservationFrontier,
   type ObservationFrontier,
@@ -12,19 +13,22 @@ import type { AgentEditModelPayload } from "./model-result.js";
 import type { ObservationFailedDetail } from "./write-deps.js";
 
 /**
- * `result` with the frontier of what it showed, rendered from `doc`, when the
- * host asked (`observe`). A failure is reported and leaves it off.
+ * `result` with the frontier of what it showed, rendered from `doc`, in `room`, chained from
+ * the model's latest frontier there, when the host passed a lookup. A failure is reported and
+ * leaves it off.
  */
-export function withObservation(
+export async function recordObservation(
   result: InternalWriteResult,
   doc: Y.Doc,
-  observe: ObservationRequest | undefined,
+  room: string | null,
+  recording: FrontierLookup | undefined,
   documentId: string,
   onFailed: ((event: ObservationFailedDetail) => void) | undefined,
-): InternalWriteResult {
-  if (!observe) return result;
+): Promise<InternalWriteResult> {
+  if (!room || !recording) return result;
   try {
-    return { ...result, frontier: observeRendered(doc, observe, [result.model]) };
+    const prev = await recording(room);
+    return { ...result, frontier: observeRendered(doc, { room, prev }, [result.model]) };
   } catch (cause) {
     onFailed?.({ documentId, cause });
     return result;

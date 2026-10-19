@@ -1,4 +1,7 @@
-/** Agent-edit bindings that make a thread-peer draft the write tool's document world. */
+/**
+ * Agent-edit bindings over a thread's Work drafts: a call reads its Work draft's room copy, a
+ * reply's save reconciles and appends its rows there. The thread peer is identity only.
+ */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -7,35 +10,43 @@ import {
   type ConcurrentUpdateOrigin,
   cloneYDoc,
   type DocumentAccess,
+  DocumentAccessLostError,
   type DocumentCoordinator,
   type JournalBatchAppendEntry,
-  type JournalBatchAppendResult,
   type JournalReadOptions,
   type JournalSnapshot,
   type PersistedUpdate,
-  type StagedWriteReplayInput,
-  type StagedWriteReplayResult,
+  type StagedReconcile,
+  type StagedRoomEntries,
   type StagedWriteSaveResult,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import type { Branches } from "./branches.js";
 import { collabHook } from "./collab-test-hooks.js";
-import type { DraftCoordinator, PreparedDraftWrite } from "./draft-coordinator.js";
+import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "./draft-journal.js";
-import type { WorkDraftLookup } from "./draft-pulls.js";
-import type { DraftResolver } from "./draft-resolver.js";
+import { peerLossReason, ThreadPeerPullLost, type WorkDraftLookup } from "./draft-pulls.js";
+import type { DraftResolver, ResolvedDraft } from "./draft-resolver.js";
 import { reconcileStagedDraftWrites } from "./draft-response-replay.js";
-import type { DraftSnapshot } from "./draft-store.js";
+import {
+  DraftCasConflictError,
+  DraftMissingError,
+  type DraftSnapshot,
+  DraftStaleUpdateError,
+} from "./draft-store.js";
 import {
   type AttributionRow,
   docFromState,
   partitionByBlockCoverage,
   touchedHashesForCoverage,
 } from "./draft-update-attribution.js";
+import { draftRoom } from "./observation-rooms.js";
 import type { ReplyPin } from "./reply-save-fences.js";
 import type { ResponseCommitParticipant } from "./response-transaction.js";
 
@@ -52,14 +63,6 @@ export type DraftConcurrentJournalWatermarks = {
 };
 
 export type DraftAgentEditDiagnostics = {
-  stagedWriteNoop(payload: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-    turnId: string | null;
-    writeId: string | null;
-  }): void;
-  mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
   replyPinMismatch(payload: { documentId: DocumentId; threadId?: ThreadId; pin: ReplyPin }): void;
 };
 
@@ -123,10 +126,11 @@ export function createDraftAgentEditCoordinator(input: {
   threadId: ThreadId;
   draftCoordinator: DraftCoordinator;
   drafts: DraftLookupWithSnapshots;
-  pendingJournalEntries?: DraftPendingJournalEntries;
   journalRows: DraftReplayJournalReads;
   liveJournal?: Pick<UpdateJournal, "read">;
-  diagnostics?: DraftAgentEditDiagnostics;
+  /** The live→Work rebase at the tool boundary: every room read runs it first. */
+  flushLivePull(documentId: DocumentId): Promise<void>;
+  branches: Pick<Branches, "shareActive">;
   afterCommit: AfterCommit;
   enlistResponseParticipant: EnlistResponseParticipant;
   model: YProsemirrorDocumentModel;
@@ -157,205 +161,208 @@ export function createDraftAgentEditCoordinator(input: {
   const drafts = input.draftCoordinator;
   /** The peer of the access running now: attribution inside it resolves no other identity. */
   const accessedPeer = new AsyncLocalStorage<string>();
+
   /**
-   * A response's staged entries replayed on a candidate of its Work draft. A save also
-   * prepares the draft's append and the peer's catch-up as one write the caller's attempt
-   * owns; no write and no catch-up is an explicit `no-effect`.
+   * One scope's entries reconciled on `doc`, a copy of the Work draft at `generation`: only a
+   * retirement or an inverse since the scope's cut drops a whole logical write.
    */
-  function staged(request: StagedWriteReplayInput, save: false): Promise<StagedWriteReplayResult>;
-  function staged(request: StagedWriteReplayInput, save: true): Promise<StagedWriteSaveResult>;
-  async function staged(
-    request: StagedWriteReplayInput,
-    save: boolean,
-  ): Promise<StagedWriteReplayResult | StagedWriteSaveResult> {
-    const peerId =
-      request.access?.pinnedDraftId ??
-      (await resolveThreadDraftId(input, request.docId as DocumentId));
-    const peer = await input.drafts.getDraft(peerId);
-    const draftId = peer?.upstreamDraftId;
-    if (!draftId) throw new Error("Response peer has no Work draft");
-    return underAccess(peerId, async () => {
-      const { result, write } = await drafts.prepareStagedRows(
-        draftId,
-        async (doc, snapshot) => {
-          if (request.helperCut.generation > snapshot.generation)
-            throw new Error("Response helper belongs to a future draft generation");
-          const retired: Uint8Array[] = [];
-          const inverses: Uint8Array[] = [];
-          const planning = new Y.Doc({ gc: false });
-          try {
-            Y.applyUpdate(planning, request.helperCut.state);
-            const cut = Y.snapshot(planning);
-            // Every intervening generation can contain an inverse; the old cut
-            // excludes already observed removals without a second sequence fence.
-            for (
-              let generation = request.helperCut.generation;
-              generation <= snapshot.generation;
-              generation++
-            ) {
-              const rows = await input.journalRows.listJournalRowsForDraft({
-                draftId,
-                generation,
-              });
-              for (const row of rows) {
-                const observed = Y.snapshotContainsUpdate(cut, row.updateData);
-                if (
-                  generation === request.helperCut.generation &&
-                  generation < snapshot.generation &&
-                  observed
-                )
-                  retired.push(row.updateData);
-                if (!observed && row.editKind && row.editKind !== "write")
-                  inverses.push(row.updateData);
-              }
-            }
-          } finally {
-            planning.destroy();
-          }
-          const replay = reconcileStagedDraftWrites(
-            doc,
-            request.sourceDoc,
-            request.entries,
-            retired,
-            request.helperCut.state,
-            inverses,
-          );
-          const kept = replay.keptEntries;
-          return {
-            result: {
-              keptEntries: kept,
-              rejectedWrites: replay.rejectedWrites,
-              helperState: Y.encodeStateAsUpdate(doc),
-              helperCut: { generation: snapshot.generation, state: snapshot.encoded },
-              beforeState: snapshot.encoded,
-            },
-            rows: draftRows(draftId, kept),
-          };
-        },
-        save,
-      );
-      if (!save) return result;
-      // The thread's peer follows its draft in the same attempt: it catches up to the
-      // upstream as this save commits it, upstream before peer.
-      let catchUp: PreparedDraftWrite | null;
-      try {
-        catchUp = write
-          ? await drafts.prepareCatchUp(peerId, write.candidate)
-          : await drafts.readDraft(draftId, (doc) => drafts.prepareCatchUp(peerId, doc));
-      } catch (cause) {
-        write?.dispose();
-        throw cause;
+  /**
+   * Entries an earlier peer of this scope accepted, when that peer has since closed: a Discard
+   * took them, and its retirement will say so. Until it does, no view shows them and no save
+   * keeps them; each is refused now with the Discard's reason.
+   */
+  async function retiredPeerEntries(
+    entries: readonly JournalBatchAppendEntry[],
+    peerDraftId: string | undefined,
+  ): Promise<Map<string, StagedReconcile["rejected"][number]["reason"]>> {
+    const refused = new Map<string, StagedReconcile["rejected"][number]["reason"]>();
+    const checked = new Map<string, Awaited<ReturnType<typeof peerLossReason>> | null>();
+    for (const entry of entries) {
+      const mutation = entry.mutation;
+      const accepted = mutation?.mode === "threadPeer" ? mutation.peerDraftId : undefined;
+      if (!mutation?.writeId || !accepted || !peerDraftId || accepted === peerDraftId) continue;
+      if (!checked.has(accepted)) {
+        const old = await input.drafts.getDraft(accepted);
+        checked.set(
+          accepted,
+          old && old.status !== "closed"
+            ? null
+            : ((await peerLossReason(
+                input,
+                new ThreadPeerPullLost(accepted, old?.upstreamDraftId ?? "", null),
+                old?.branchId,
+              )) ?? "discarded_edit"),
+        );
       }
-      const writes = [write, catchUp].filter((entry): entry is PreparedDraftWrite =>
-        Boolean(entry),
-      );
-      if (!writes.length) return { ...result, write: { kind: "no-effect" } };
-      return {
-        ...result,
-        write: {
-          kind: "write",
-          async persist() {
-            for (const entry of writes) await entry.persist();
-          },
-          // Installing the replica waits for the enclosing root commit: the coordinator defers it.
-          transfer() {
-            for (const entry of writes) entry.transfer();
-          },
-          dispose() {
-            for (const entry of writes) entry.dispose();
-          },
-        },
-      };
-    });
+      const reason = checked.get(accepted);
+      if (reason) refused.set(mutation.writeId, reason);
+    }
+    return refused;
+  }
+
+  async function reconcile(
+    draftId: string,
+    doc: Y.Doc,
+    generation: number,
+    staged: StagedRoomEntries,
+    peerDraftId: string | undefined,
+  ): Promise<{ keptEntries: JournalBatchAppendEntry[] } & Pick<StagedReconcile, "rejected">> {
+    if (staged.cut.generation > generation)
+      throw new Error("Response cut belongs to a future draft generation");
+    const refused = await retiredPeerEntries(staged.entries, peerDraftId);
+    const entries = staged.entries.filter((entry) => !refused.has(entry.mutation?.writeId ?? ""));
+    const cut = Y.decodeSnapshotV2(staged.cut.snapshot);
+    const retired: Uint8Array[] = [];
+    const inverses: Uint8Array[] = [];
+    // Every intervening generation can contain an inverse; the cut excludes already observed
+    // removals without a second sequence fence.
+    for (let at = staged.cut.generation; at <= generation; at++) {
+      for (const row of await input.journalRows.listJournalRowsForDraft({
+        draftId,
+        generation: at,
+      })) {
+        const observed = Y.snapshotContainsUpdate(cut, row.updateData);
+        if (at === staged.cut.generation && at < generation && observed)
+          retired.push(row.updateData);
+        if (!observed && row.editKind && row.editKind !== "write") inverses.push(row.updateData);
+      }
+    }
+    const replay = reconcileStagedDraftWrites(doc, entries, retired, cut, inverses);
+    return {
+      keptEntries: replay.keptEntries,
+      rejected: [
+        ...[...refused].map(([writeId, reason]) => ({ writeId, reason })),
+        ...replay.rejectedWrites,
+      ],
+    };
   }
 
   /**
-   * Runs `run` as an access to `peerDraftId`. It acquires nothing: a save or a close racing
-   * it is ordered by the revisions its writes were prepared at.
+   * `run` as an access to the peer a call is bound to, on its Work draft: a Discard that closed
+   * the peer, its Work draft or the branch since the ensure is `DocumentAccessLostError` naming
+   * that Discard (else `ThreadPeerPullLost`). It acquires nothing: a save or a close racing it
+   * is ordered by the revisions its writes were prepared at.
    */
-  async function underAccess<T>(peerDraftId: string, run: () => Promise<T>): Promise<T> {
+  async function underAccess<T>(
+    peerDraftId: string,
+    run: (workDraftId: string) => Promise<T>,
+  ): Promise<T> {
     await collabHook("draft.beforeAccess");
-    return accessedPeer.run(peerDraftId, run);
-  }
-  return {
-    async withDocument<T>(
-      docId: string,
-      fn: (doc: Y.Doc) => Promise<T>,
-      access?: DocumentAccess,
-    ): Promise<T> {
-      const draftId =
-        access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
-      let result: T;
-      try {
-        result = await underAccess(draftId, () =>
-          drafts.withTransient(draftId, async (doc, snapshot) => {
-            const beforeState = Y.encodeStateAsUpdate(doc);
-            const result = await fn(doc);
-            const pendingBatch =
-              input.pendingJournalEntries?.shiftBatch(docId, input.threadId) ?? [];
-            if (!bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
-              const workDraftId = snapshot.upstreamDraftId;
-              if (!workDraftId) {
-                throw new Error(`Thread-peer draft ${snapshot.draftId} has no work-draft upstream`);
-              }
-              const first = pendingBatch[0];
-              if (
-                first?.mutation?.mode !== "threadPeer" ||
-                pendingBatch.some(
-                  (pending) =>
-                    pending.mutation?.mode !== "threadPeer" ||
-                    pending.mutation.draftGeneration !==
-                      (first.mutation?.mode === "threadPeer"
-                        ? first.mutation.draftGeneration
-                        : undefined),
-                )
-              ) {
-                throw new Error("thread_peer_commit_missing_draft_generation");
-              }
-              const mutation = first.mutation;
-              const committed = await drafts.commitSegmentRows({
-                draftId: workDraftId,
-                sourceDoc: doc,
-                expectedGeneration: mutation.draftGeneration,
-                rows: draftRows(workDraftId, pendingBatch),
-              });
-              if (!committed) return result;
-              advanceConcurrentJournalWatermark(
-                concurrentJournalWatermarks,
-                input.threadId,
-                docId as DocumentId,
-                input.afterCommit,
-                input.enlistResponseParticipant,
-                first.mutation?.writeId,
-              );
-            } else if (pendingBatch.length > 0) {
-              const workDraftId = snapshot.upstreamDraftId ?? snapshot.draftId;
-              const pending = pendingBatch[0];
-              input.diagnostics?.stagedWriteNoop({
-                documentId: docId as DocumentId,
-                threadId: input.threadId,
-                draftId: workDraftId,
-                turnId: pending?.mutation?.turnId ?? null,
-                writeId: pending?.mutation?.writeId ?? null,
-              });
-              throw new StagedDraftWriteNoopError(workDraftId, docId);
-            }
-            return result;
-          }),
-        );
-      } catch (cause) {
-        concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
-        throw cause;
+    let upstreamDraftId = "";
+    let branchId: BranchId | undefined;
+    try {
+      const peer = await input.drafts.getDraft(peerDraftId);
+      upstreamDraftId = peer?.upstreamDraftId ?? "";
+      branchId = peer?.branchId;
+      if (!peer) throw new DraftMissingError(peerDraftId);
+      if (peer.status === "closed") throw new DraftStaleUpdateError(`Draft ${peerDraftId}`);
+      if (!upstreamDraftId) throw new Error(`Thread peer ${peerDraftId} has no Work draft`);
+      return await accessedPeer.run(peerDraftId, () => run(upstreamDraftId));
+    } catch (cause) {
+      if (
+        cause instanceof DraftStaleUpdateError ||
+        cause instanceof DraftCasConflictError ||
+        cause instanceof DraftMissingError
+      ) {
+        // A Discard's loss is the write's named refusal, not a failure.
+        const lost = new ThreadPeerPullLost(peerDraftId, upstreamDraftId, cause);
+        const reason = await peerLossReason(input, lost, branchId);
+        throw reason ? new DocumentAccessLostError(reason, { cause: lost }) : lost;
       }
-      return result;
+      throw cause;
+    }
+  }
+
+  /** The thread's Work draft a call bound to no peer reads (a read never ensures one). */
+  async function threadWorkDraft(documentId: DocumentId): Promise<ResolvedDraft> {
+    return input.drafts.resolveWorkDraftForThread(documentId, input.threadId);
+  }
+
+  return {
+    async readRoom(docId, staged, access) {
+      const peer = access?.pinnedDraftId;
+      const read = async (workDraftId: string, bound: boolean) => {
+        const { doc, snapshot } = await drafts.copyDraft(workDraftId);
+        try {
+          if (bound && snapshot.status !== "active")
+            throw new DraftStaleUpdateError(`Draft ${workDraftId}`);
+          const replay = staged
+            ? await reconcile(workDraftId, doc, snapshot.generation, staged, peer)
+            : { keptEntries: [], rejected: [] };
+          return {
+            doc,
+            room: draftRoom(workDraftId),
+            generation: snapshot.generation,
+            kept: replay.keptEntries.flatMap((entry) =>
+              entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+            ),
+            rejected: replay.rejected,
+          };
+        } catch (cause) {
+          doc.destroy();
+          throw cause;
+        }
+      };
+      await input.flushLivePull(docId as DocumentId);
+      return peer
+        ? underAccess(peer, (workDraftId) => read(workDraftId, true))
+        : read((await threadWorkDraft(docId as DocumentId)).draftId, false);
+    },
+
+    // A drafted write commits only through its reply's save: the pool runs even a write with
+    // no reply as a one-entry reply, so nothing reaches the draft through this door.
+    withDocument() {
+      throw new Error("A drafted document is read through readRoom and saved by its reply");
     },
 
     stagedWrites: {
-      replay: (request) => staged(request, false),
-      prepareSave: (request) => staged(request, true),
+      async prepareSave({ docId, cut, entries, access }): Promise<StagedWriteSaveResult> {
+        const peerId =
+          access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
+        return underAccess(peerId, async (workDraftId) => {
+          const { result, write } = await drafts.prepareStagedRows(
+            workDraftId,
+            async (doc, snapshot) => {
+              const replay = await reconcile(
+                workDraftId,
+                doc,
+                snapshot.generation,
+                { cut, entries },
+                peerId,
+              );
+              return {
+                result: {
+                  kept: replay.keptEntries.flatMap((entry) =>
+                    entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+                  ),
+                  rejected: replay.rejected,
+                  room: draftRoom(workDraftId),
+                  beforeState: snapshot.encoded,
+                  afterState: Y.encodeStateAsUpdate(doc),
+                },
+                rows: draftRows(workDraftId, replay.keptEntries),
+              };
+            },
+            true,
+          );
+          if (!write) return { ...result, write: { kind: "no-effect" } };
+          return {
+            ...result,
+            write: {
+              kind: "write",
+              async persist() {
+                await write.persist();
+              },
+              // Installing the replica waits for the enclosing root commit: the coordinator defers it.
+              transfer: () => write.transfer(),
+              dispose: () => write.dispose(),
+            },
+          };
+        });
+      },
     },
 
-    // A peer is made only by pulling from a Work draft: recovery never creates one.
+    // A Work draft's committed replica is its truth: there is nothing to recover into.
     async recover(): Promise<void> {},
 
     async concurrentUpdatesSince({
@@ -461,36 +468,20 @@ export function createDraftAgentEditCoordinator(input: {
   };
 }
 
-export function createDraftAgentEditJournal(input: {
-  liveJournal: UpdateJournal;
-  pendingJournalEntries?: DraftPendingJournalEntries;
-}): UpdateJournal {
-  let syntheticSeq = 0;
+/**
+ * The draft core's journal: reads and ordinals come from live; nothing appends through it,
+ * since a drafted write saves through its reply.
+ */
+export function createDraftAgentEditJournal(input: { liveJournal: UpdateJournal }): UpdateJournal {
   const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
     input.liveJournal,
   );
+  const refuse = () =>
+    Promise.reject(new Error("A drafted write saves through its reply, not the journal"));
 
   return {
-    async append(_docId, _update, _meta) {
-      syntheticSeq += 1;
-      return syntheticSeq;
-    },
-
-    async appendBatch(entries) {
-      for (const entry of entries) {
-        input.pendingJournalEntries?.push(entry);
-      }
-      return Promise.all(
-        entries.map(async (entry): Promise<JournalBatchAppendResult> => {
-          syntheticSeq += 1;
-          return {
-            seq: syntheticSeq,
-            wId: entry.mutation?.wId,
-            journalCommitKind: "staged",
-          };
-        }),
-      );
-    },
+    append: refuse,
+    appendBatch: refuse,
 
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
       return Promise.resolve({ checkpoint: null, updates: [] });
@@ -521,77 +512,20 @@ export function createDraftAgentEditJournal(input: {
   };
 }
 
-export class StagedDraftWriteNoopError extends Error {
-  constructor(
-    readonly draftId: string,
-    readonly documentId: string,
-  ) {
-    super(
-      `Staged write for document ${documentId} produced no durable draft journal row on draft ${draftId}`,
-    );
-    this.name = "StagedDraftWriteNoopError";
-  }
-}
-
 export type DraftLookupWithSnapshots = WorkDraftLookup &
   DraftResolver & {
     getDraft(
       draftId: string,
-    ): Promise<Pick<DraftSnapshot, "upstreamDraftId" | "branchId" | "generation"> | null>;
+    ): Promise<Pick<
+      DraftSnapshot,
+      "upstreamDraftId" | "branchId" | "generation" | "status"
+    > | null>;
+    /** The thread's primary Work's active draft on the document, as metadata. */
+    resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
   };
-
-type DraftPendingJournalEntries = {
-  push(entry: JournalBatchAppendEntry): void;
-  shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
-};
-
-export function createDraftPendingJournalEntries(
-  enlistResponseParticipant: EnlistResponseParticipant,
-  diagnostics?: Pick<DraftAgentEditDiagnostics, "mutationLessPendingEntry">,
-): DraftPendingJournalEntries {
-  const byDocument = new Map<string, JournalBatchAppendEntry[]>();
-  return {
-    push(entry) {
-      if (!entry.mutation) {
-        diagnostics?.mutationLessPendingEntry({
-          documentId: entry.docId,
-          origin: entry.meta.origin,
-        });
-        return;
-      }
-      const entries = byDocument.get(entry.docId) ?? [];
-      entries.push(entry);
-      byDocument.set(entry.docId, entries);
-      enlistResponseParticipant({
-        commit() {},
-        abort() {
-          const pending = byDocument.get(entry.docId);
-          if (!pending) return;
-          const remaining = pending.filter((candidate) => candidate !== entry);
-          if (remaining.length > 0) byDocument.set(entry.docId, remaining);
-          else byDocument.delete(entry.docId);
-        },
-      });
-    },
-    shiftBatch(documentId, threadId) {
-      const entries = byDocument.get(documentId);
-      if (!entries || entries.length === 0) return [];
-      const batchThreadId = threadId ?? entries[0]?.mutation?.threadId;
-      const batch = batchThreadId
-        ? entries.filter((entry) => entry.mutation?.threadId === batchThreadId)
-        : [...entries];
-      const remaining = batchThreadId
-        ? entries.filter((entry) => entry.mutation?.threadId !== batchThreadId)
-        : [];
-      if (remaining.length > 0) byDocument.set(documentId, remaining);
-      else byDocument.delete(documentId);
-      return batch;
-    },
-  };
-}
 
 /**
- * The thread's current peer of the document. A peer is made only by pulling from a Work draft:
+ * The thread's current peer of the document. A peer is made only by the write path's ensure:
  * an access that finds none is `DraftNotFoundError`, never a new peer draft.
  */
 async function resolveThreadDraftId(

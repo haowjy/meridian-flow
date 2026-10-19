@@ -14,6 +14,8 @@ import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  type RoomRead,
+  type StagedRoomEntries,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { DocumentLinksPort } from "../../ports/document-links.js";
@@ -36,7 +38,6 @@ export function harness(
   initialDocs: Record<string, string> = {},
   options: {
     lifecycle?: boolean;
-    createRuntimeDoc?: () => Y.Doc;
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseLifecycleError"];
@@ -74,7 +75,6 @@ export function harness(
     links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
-    ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.onResponseLifecycleError
       ? { onResponseLifecycleError: options.onResponseLifecycleError }
       : {}),
@@ -195,6 +195,32 @@ export class MemoryCoordinator implements DocumentCoordinator {
     }
     if (this.failure) throw this.failure;
     return fn(this.require(docId));
+  }
+
+  /**
+   * A copy of the in-memory document caught up from the journal (as a live room behind a
+   * failed projection is), with the staged entries applied in order.
+   */
+  async readRoom(docId: string, staged: StagedRoomEntries | null): Promise<RoomRead> {
+    if (this.failure) throw this.failure;
+    const doc = cloneDoc(this.require(docId));
+    const committed = await this.journal?.read(docId);
+    if (committed?.checkpoint) Y.applyUpdate(doc, committed.checkpoint);
+    for (const entry of committed?.updates ?? []) Y.applyUpdate(doc, entry.update);
+    for (const entry of staged?.entries ?? []) Y.applyUpdate(doc, entry.update);
+    return {
+      doc,
+      room: `memory:${docId}`,
+      generation: 0,
+      kept: (staged?.entries ?? []).flatMap((entry) =>
+        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+      ),
+      rejected: [],
+    };
+  }
+
+  roomFor(docId: string): string {
+    return `memory:${docId}`;
   }
 
   async recover(docId: string): Promise<void> {

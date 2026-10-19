@@ -26,6 +26,7 @@ import type {
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState, storedDocument } from "../document-loader.js";
+import { liveRoomFor, withStaged } from "../hocuspocus-coordinator.js";
 
 export type InMemoryCheckpointRecord = {
   id: string;
@@ -198,6 +199,15 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
 
   return {
     ensureEmpty,
+
+    async readRoom(docId, staged) {
+      const copy = createCollabYDoc({ gc: false });
+      Y.applyUpdate(copy, Y.encodeStateAsUpdate(requireDoc(docId)));
+      await applyPersisted(docId, copy);
+      bindDocumentAuthority(copy, { authorityId: docId as never, generation: 1n });
+      return withStaged({ doc: copy, room: liveRoomFor(docId, copy) }, staged);
+    },
+    roomFor: liveRoomFor,
 
     withDocument<T>(
       docId: string,

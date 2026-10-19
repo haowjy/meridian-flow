@@ -85,7 +85,7 @@ type MarkdownDocumentEngineDeps = {
   links: DocumentLinkScopes;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
-  coordinator: DocumentCoordinator;
+  coordinator: Pick<DocumentCoordinator, "withDocument" | "recover">;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;

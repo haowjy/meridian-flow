@@ -1,4 +1,4 @@
-/** DocumentCoordinator adapter that gates agent writes through live Hocuspocus Y.Docs. */
+/** DocumentCoordinator adapters over live Hocuspocus Y.Docs: lock-free room reads, locked commits. */
 
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
@@ -6,16 +6,22 @@ import {
   type DocumentCoordinator,
   DocumentNotFoundError,
   type JournalSnapshot,
+  type RoomRead,
+  type StagedRoomEntries,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
+  bindDocumentAuthority,
+  boundDocumentAuthority,
   documentAuthority,
   isDocumentHandleRetired,
   RetiredDocumentHandleError,
   retireDocumentHandle,
 } from "../domain/document-handle.js";
+import { liveRoom } from "../domain/observation-rooms.js";
+import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import { loadDocumentState } from "./document-loader.js";
 
 type CoordinatorDeps = {
@@ -58,27 +64,29 @@ export function createDeferredLiveProjectionCoordinator(deps: {
     afterCommit(callback: () => void | Promise<void>): boolean;
   };
 }): DocumentCoordinator {
+  // The transaction's own rows stay out of the copy, as they stay out of the room until
+  // commit; only a document created in this transaction has nothing committed to start from.
+  const committedCopy = async (docId: string) => {
+    if (!deps.transactions.inTransaction()) return liveRoomCopy(deps, docId);
+    const copy = await deps.transactions
+      .outsideTransaction(() => liveRoomCopy(deps, docId))
+      .catch((cause: unknown) => {
+        if (cause instanceof DocumentNotFoundError) return null;
+        throw cause;
+      });
+    return copy ?? liveRoomCopy(deps, docId);
+  };
   return {
+    readRoom: async (docId, staged) => withStaged(await committedCopy(docId), staged),
+    roomFor: liveRoomFor,
     async withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
       options?: DocumentAccess,
     ): Promise<T> {
       if (!deps.transactions.inTransaction()) return deps.live.withDocument(docId, fn, options);
-      const loaded = deps.hocuspocus().documents.get(docId);
-      // The transaction's own rows stay out of the copy, as they stay out of
-      // the room until commit; only a document created in this transaction
-      // has nothing committed to start from.
-      const committed = await deps.transactions.outsideTransaction(() =>
-        loadDocumentState(deps.journal, docId),
-      );
-      const seed = loaded || committed ? committed : await loadDocumentState(deps.journal, docId);
-      if (!loaded && !seed) throw new DocumentNotFoundError(docId);
-      const copy = new Y.Doc({ gc: false });
+      const { doc: copy } = await committedCopy(docId);
       try {
-        if (loaded) Y.applyUpdate(copy, Y.encodeStateAsUpdate(loaded), RECOVERY_ORIGIN);
-        if (seed)
-          Y.applyUpdate(copy, Y.diffUpdate(seed, Y.encodeStateVector(copy)), RECOVERY_ORIGIN);
         const seeded = Y.encodeStateVector(copy);
         const result = await fn(copy);
         if (!sameStateVector(seeded, Y.encodeStateVector(copy))) {
@@ -91,6 +99,61 @@ export function createDeferredLiveProjectionCoordinator(deps: {
     },
     recover: (docId) => deps.live.recover(docId),
   };
+}
+
+/**
+ * A private gc-off copy of a live document as others see it, read without the document mutex:
+ * the in-process room when it belongs to the journal's authority, plus the committed journal,
+ * which also catches up a room behind it after a failed projection. Named by that authority.
+ */
+async function liveRoomCopy(
+  deps: { hocuspocus: () => Hocuspocus; journal: UpdateJournal },
+  docId: string,
+): Promise<{ doc: Y.Doc; room: string | null }> {
+  const snapshot = await deps.journal.read(docId);
+  const authority = snapshot.authority as CheckpointAuthority | undefined;
+  const loaded = deps.hocuspocus().documents.get(docId);
+  const bound = loaded && !isDocumentHandleRetired(loaded) ? boundDocumentAuthority(loaded) : null;
+  // A room bound to another generation is a retired version's: the journal names the current one.
+  const room =
+    loaded &&
+    !isDocumentHandleRetired(loaded) &&
+    (!authority ||
+      !bound ||
+      (bound.authorityId === authority.authorityId && bound.generation === authority.generation))
+      ? loaded
+      : undefined;
+  if (!room && !snapshot.checkpoint && snapshot.updates.length === 0)
+    throw new DocumentNotFoundError(docId);
+  const copy = new Y.Doc({ gc: false });
+  if (room) Y.applyUpdate(copy, Y.encodeStateAsUpdate(room), RECOVERY_ORIGIN);
+  if (snapshot.checkpoint) Y.applyUpdate(copy, snapshot.checkpoint, RECOVERY_ORIGIN);
+  for (const entry of [...snapshot.updates].sort((a, b) => a.seq - b.seq))
+    Y.applyUpdate(copy, entry.update, RECOVERY_ORIGIN);
+  if (authority) bindDocumentAuthority(copy, authority);
+  return { doc: copy, room: authority ? liveRoom(docId, authority.generation) : null };
+}
+
+/** A live room has no retirement or inverse to reconcile against: every staged entry is kept. */
+export function withStaged(
+  copy: { doc: Y.Doc; room: string | null },
+  staged: StagedRoomEntries | null,
+): RoomRead {
+  for (const entry of staged?.entries ?? []) Y.applyUpdate(copy.doc, entry.update);
+  return {
+    ...copy,
+    generation: 0,
+    kept: (staged?.entries ?? []).flatMap((entry) =>
+      entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+    ),
+    rejected: [],
+  };
+}
+
+/** A live handle's room, by the authority its open or journal read bound to it. */
+export function liveRoomFor(docId: string, doc: Y.Doc): string | null {
+  const authority = boundDocumentAuthority(doc);
+  return authority ? liveRoom(docId, authority.generation) : null;
 }
 
 function sameStateVector(left: Uint8Array, right: Uint8Array): boolean {
@@ -150,6 +213,8 @@ function createCoordinator(
 
   return {
     documentAuthority,
+    readRoom: async (docId, staged) => withStaged(await liveRoomCopy(deps, docId), staged),
+    roomFor: liveRoomFor,
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,

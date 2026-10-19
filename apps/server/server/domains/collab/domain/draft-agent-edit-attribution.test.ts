@@ -67,7 +67,10 @@ function fixture(existingUpstream?: Y.Doc) {
         state: Y.encodeStateAsUpdate(upstream),
       }),
       listActiveWorkDraftIds: async () => ["draft"],
+      resolveWorkDraftForThread: async () => snapshot("draft"),
     },
+    flushLivePull: async () => {},
+    branches: { shareActive: async () => null },
     journalRows: {
       listConcurrentJournalRows: async () => rows,
       listJournalRowsForDraft: async () => [],

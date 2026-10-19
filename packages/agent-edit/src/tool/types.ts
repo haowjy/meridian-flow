@@ -4,7 +4,7 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { LinkView } from "@meridian/contracts";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
-import type { ObservationFrontier, ObservationRequest } from "../frontier.js";
+import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -57,9 +57,9 @@ interface WriteOutcomeBase {
    */
   showing?: LinkShowing;
   /**
-   * Host-only: the frontier of what this result showed, present when the
-   * caller asked (`WriteContext.observe` or `observeInverse`). Never copied
-   * into `result`.
+   * Host-only: the frontier of what this result showed, in the room its door
+   * named, present when the caller passed `WriteContext.frontiers`. Never
+   * copied into `result`.
    */
   frontier?: ObservationFrontier;
 }
@@ -160,11 +160,9 @@ export interface ResponseCommitterTransitionDetail {
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
-  /** Durable peer state captured before the host pulls concurrent upstream changes. */
-  attributionBaseline?: Uint8Array;
-  /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
+  /** Host-specific journal floor for retry-safe attribution. */
   afterJournalId?: number;
-  /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
+  /** Live Yjs journal sequence captured with the floor for reconstruction receipts. */
   liveJournalSeq?: number;
   /** Durable write attempt id used to exclude this write from concurrent attribution. */
   attemptId?: string;
@@ -172,13 +170,11 @@ interface InteractionContextBase {
 
 export type InteractionContext =
   | (InteractionContextBase & {
-      /** Live writes have no draft-generation fence by type. */
       mode: "live";
     })
   | (InteractionContextBase & {
-      /** Thread-peer writes must carry the draft-generation fence captured with the baseline. */
+      /** A draft-mode write, bound to its thread peer's identity before its room read. */
       mode: "threadPeer";
-      draftGeneration: number;
       /** Host peer identity, for exact retirement independently of generation replay. */
       peerDraftId?: string;
       upstreamDraftId?: string;
@@ -233,18 +229,12 @@ export interface WriteContext {
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   /**
-   * Host-only: record the result's observation frontier in this room, chained
-   * from the model's previous frontier there. Absent for callers that record
-   * no frontier.
+   * Host-only: the model's frontier lookups for this call. A result that shows
+   * document text records its frontier in the room its door named, chained from
+   * `recording`; a write plans on `planning`'s frontier there. Absent for
+   * callers that record no frontier.
    */
-  observe?: ObservationRequest;
-  /**
-   * Host-only, for an undo, redo or revert: the room is the version the host's
-   * inverse rendered `after` from, which only its result names
-   * (`DocumentEditResult.draftId`, null for the live document). Answers the
-   * request to record under, or undefined to record none.
-   */
-  observeInverse?(draftId: string | null): Promise<ObservationRequest | undefined>;
+  frontiers?: FrontierLookups;
   /**
    * The link view the host routed this command to: the Work branch or live
    * version its destination names. A host that routes between versions sets
@@ -271,8 +261,8 @@ export interface ResponseCommitDocumentResult {
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
   /**
-   * Host-only, when the commit asked (`ResponseCommitOptions.observe`): the
-   * frontier at the post-commit cut, crediting every accepted receipt.
+   * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
+   * the frontier at the post-commit cut, crediting every accepted receipt.
    */
   frontier?: ObservationFrontier;
 }

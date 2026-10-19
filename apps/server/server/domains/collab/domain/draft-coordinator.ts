@@ -2,7 +2,7 @@
  * The draft runtime and the operations on it. The runtime holds one immutable committed
  * replica per draft, prepares every write on a private candidate (append, rewrite, reset) and
  * installs it only once its attempt completes; the operations (pull, reset, a reply's staged
- * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
+ * rows, segment batches) are attempts over it. Writer frames and the tail
  * fold they trigger are `draft-writer-frames.ts`, over the same runtime surface.
  */
 
@@ -253,13 +253,10 @@ export type DraftCoordinator = {
     draftId: string,
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
   ): Promise<T>;
-  // A reply's save (contract §2.3) prepares through these and acquires nothing: every write
+  /** A private copy of the committed draft, the caller's to change and destroy. */
+  copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot }>;
+  // A reply's save (contract §2.3) prepares through this and acquires nothing: every write
   // is an attempt fenced by the revision it was prepared at.
-  /** A private copy of the draft for `fn` to change; nothing it does is kept or installed. */
-  withTransient<T>(
-    draftId: string,
-    fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
-  ): Promise<T>;
   /**
    * Replays a response's rows on a candidate of the committed draft. With `commit`, the rows
    * come back as a prepared write (null when there are none) for the caller's commit scope.
@@ -272,8 +269,6 @@ export type DraftCoordinator = {
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
   ): Promise<{ result: T; write: PreparedDraftWrite | null }>;
-  /** `source` merged into the draft as a checkpoint write; null when it holds `source` already. */
-  prepareCatchUp(draftId: string, source: Y.Doc): Promise<PreparedDraftWrite | null>;
   commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   /** A writer frame (`draft-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
@@ -728,16 +723,6 @@ export function createDraftCoordinator(input: {
     });
   }
 
-  /** `candidate` as the draft's checkpoint at the base's exact revision: a peer's catch-up. */
-  function prepareCheckpoint(base: DraftBase, candidate: Y.Doc): PreparedDraftWrite {
-    const { snapshot } = base;
-    return prepareRewrite(snapshot.draftId, candidate, {
-      policy: { kind: "exact", revision: snapshot.revision },
-      fence: { kind: "none" },
-      operation: { kind: "checkpoint" },
-    });
-  }
-
   /**
    * `candidate`, `upstream` merged into the committed replica, as a fold over the replica's
    * cursor: rows appended since are applied into it under the row lock. A work draft's effect
@@ -854,19 +839,10 @@ export function createDraftCoordinator(input: {
     return fn(base.replica.doc, base.snapshot);
   }
 
-  /** A private copy for `fn`: whatever it changes stays with the copy (decision F6). */
-  async function transient<T>(
-    draftId: string,
-    fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
-  ): Promise<T> {
+  /** A private copy: whatever its owner changes stays with it (decision F6). */
+  async function copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot }> {
     const base = await loadBase(draftId);
-    assertWritableDraft(base.snapshot);
-    const doc = cloneReplica(base.replica);
-    try {
-      return await fn(doc, base.snapshot);
-    } finally {
-      doc.destroy();
-    }
+    return { doc: cloneReplica(base.replica), snapshot: base.snapshot };
   }
 
   /**
@@ -917,19 +893,6 @@ export function createDraftCoordinator(input: {
     }
   }
 
-  async function prepareCatchUp(
-    draftId: string,
-    source: Y.Doc,
-  ): Promise<PreparedDraftWrite | null> {
-    const base = await loadBase(draftId);
-    assertWritableDraft(base.snapshot);
-    const update = Y.encodeStateAsUpdate(source);
-    if (documentContainment.contains(base.replica.doc, update)) return null;
-    const candidate = cloneReplica(base.replica);
-    Y.applyUpdate(candidate, update);
-    return prepareCheckpoint(base, candidate);
-  }
-
   async function segmentRowsAttempt(attempt: Attempt, batch: SegmentRowsInput): Promise<boolean> {
     const base = await loadBase(batch.draftId);
     const { snapshot } = base;
@@ -962,9 +925,8 @@ export function createDraftCoordinator(input: {
   return {
     notifyReset,
     readDraft: readCommitted,
-    withTransient: transient,
+    copyDraft,
     prepareStagedRows,
-    prepareCatchUp,
     // An append is sequenced, never fenced: one attempt; a generation change refuses it.
     commitSegmentRows: (batch) =>
       commitAttempts((attempt) => segmentRowsAttempt(attempt, batch), { bound: 1 }),
