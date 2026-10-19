@@ -3,6 +3,7 @@ import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
+import type { ObservationFrontier } from "../frontier.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -35,6 +36,7 @@ import type {
   MutationCommit,
   OwnWriteStep,
 } from "./mutation-commit.js";
+import { observeRendered } from "./observation.js";
 import { rejectedWriteExplanation, renderSettledReceipts } from "./receipt.js";
 
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -54,6 +56,7 @@ import type {
   ResponseStagedCreateOutcome,
   WriteContext,
 } from "./types.js";
+import type { ObservationFailedDetail } from "./write-deps.js";
 
 export interface ResponseCommitter {
   assertCanStage(input: ResponseStagePreflightInput): void;
@@ -173,6 +176,12 @@ export type CommandDocumentLease = CommandLeaseMethods &
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
+  /**
+   * Host-only: per document, the model's previous frontier for its room when
+   * the host records one. The document's result then carries the frontier at
+   * the post-commit cut (`observation`).
+   */
+  observe?(documentId: string): { prev: ObservationFrontier | null } | undefined;
   /** Host transaction hook; keeps lifecycle delivery aligned with durable commit. */
   deferFinalization?(participant: {
     commit(): void | Promise<void>;
@@ -353,6 +362,7 @@ export function createResponseCommitter(deps: {
   onTransition?: (event: ResponseCommitterTransitionDetail) => void;
   closedResponseTombstoneCap?: number;
   afterPreflight?: (responseId: string) => Promise<void> | void;
+  onObservationFailed?: (event: ObservationFailedDetail) => void;
 }): ResponseCommitter {
   const {
     runtimeStore,
@@ -1204,17 +1214,22 @@ export function createResponseCommitter(deps: {
         if (isLive(docBuffer)) projectLive(docBuffer, applied.concurrent.updates);
         try {
           const lateSweep = applied.lateSweep;
+          const receipts = applied.awarenessDegraded
+            ? renderSettledReceipts(
+                docBuffer.updates,
+                docBuffer.rejectedUpdates ?? [],
+                applied.revision,
+                () => null,
+              )
+            : settledWriteReceipts(docBuffer, applied.revision, lateSweep);
+          const observation = applied.awarenessDegraded
+            ? undefined
+            : observeReceipts(docBuffer, receipts, options);
           return {
             documentId: docBuffer.docId,
             updateCount: docBuffer.updates.length,
-            receipts: applied.awarenessDegraded
-              ? renderSettledReceipts(
-                  docBuffer.updates,
-                  docBuffer.rejectedUpdates ?? [],
-                  applied.revision,
-                  () => null,
-                )
-              : settledWriteReceipts(docBuffer, applied.revision, lateSweep),
+            receipts,
+            ...(observation ? { observation } : {}),
             ...(applied.concurrent.detection.info
               ? {
                   concurrentEdits: withRunShownLinks(
@@ -1423,6 +1438,33 @@ export function createResponseCommitter(deps: {
       if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
       return document;
     });
+  }
+
+  /**
+   * The frontier at the cut every accepted receipt was rendered from,
+   * crediting all of them. Degraded (textless) receipts record none; a failure
+   * is reported and the receipts go out without it.
+   */
+  function observeReceipts(
+    docBuffer: ResponseDocumentBuffer,
+    receipts: ResponseCommitDocumentResult["receipts"],
+    options: ResponseCommitOptions,
+  ): ObservationFrontier | undefined {
+    const accepted = receipts.slice(0, docBuffer.updates.length);
+    if (accepted.length === 0 || accepted.some((receipt) => receipt.result.awarenessDegraded))
+      return undefined;
+    const observe = options.observe?.(docBuffer.docId);
+    if (!observe) return undefined;
+    try {
+      return observeRendered(
+        documentDoc(docBuffer),
+        observe.prev,
+        accepted.map((receipt) => receipt.result),
+      );
+    } catch (cause) {
+      deps.onObservationFailed?.({ documentId: docBuffer.docId, cause });
+      return undefined;
+    }
   }
 
   function degradedDocumentReceipt(

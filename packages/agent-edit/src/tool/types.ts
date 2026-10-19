@@ -4,6 +4,7 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { LinkView } from "@meridian/contracts";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
+import type { ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -55,6 +56,11 @@ interface WriteOutcomeBase {
    * from. Never copied into `result`.
    */
   showing?: LinkShowing;
+  /**
+   * Host-only: the frontier of what this result showed, present when the
+   * caller asked (`WriteContext.observe`). Never copied into `result`.
+   */
+  observation?: ObservationFrontier;
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -226,6 +232,12 @@ export interface WriteContext {
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   /**
+   * Host-only: compute the result's observation frontier, chained from the
+   * model's previous frontier for this room (`null` when it has none). Absent
+   * for callers that record no frontier.
+   */
+  observe?: { prev: ObservationFrontier | null };
+  /**
    * The link view the host routed this command to: the Work branch or live
    * version its destination names. A host that routes between versions sets
    * it on every command; links, sources and the revision spell in it.
@@ -250,6 +262,11 @@ export interface ResponseCommitDocumentResult {
   receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+  /**
+   * Host-only, when the commit asked (`ResponseCommitOptions.observe`): the
+   * frontier at the post-commit cut, crediting every accepted receipt.
+   */
+  observation?: ObservationFrontier;
 }
 
 export interface ResponseCommitWriteReceipt {
