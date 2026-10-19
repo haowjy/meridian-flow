@@ -1,5 +1,5 @@
 /** Account-fenced document namespace transport; durable ownership and retry scheduling stay upstream. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { parseContextUri, sourceLocationFromContextUri } from "@meridian/contracts/context-uri";
 import { contextOwner } from "@meridian/contracts/protocol";
 import {
   catalogEntryOwner,
@@ -63,7 +63,7 @@ export function createResourceNamespaceTransport(
       const parsed = parseContextUri(entry.uri);
       if (
         !parsed.ok ||
-        parsed.value.path !== entry.path.join("/") ||
+        sourceLocationFromContextUri(parsed.value) !== entry.path.join("/") ||
         entry.path.at(-1) !== entry.name
       )
         throw new TypeError("Invalid namespace availability location");
@@ -80,7 +80,7 @@ export function createResourceNamespaceTransport(
             : { kind: "folder", folderId: entry.parentId },
         location: {
           scheme: parsed.value.scheme,
-          path: `/${parsed.value.path}`,
+          path: `/${sourceLocationFromContextUri(parsed.value)}`,
           name: entry.name,
           ...catalogEntryOwner(entry.scope, parsed.value.authority),
         },

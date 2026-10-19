@@ -28,7 +28,11 @@ import {
   resolveStoredLink,
 } from "@meridian/contracts";
 import type { ContextUriVariables } from "@meridian/contracts/context-uri";
-import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  documentTitleFromUri,
+  parseContextUri,
+  sourceLocationFromContextUri,
+} from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
@@ -207,7 +211,7 @@ function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
     documentId: document.documentId,
     title: documentTitleFromUri(document.uri) ?? document.title,
     scheme: parsed.value.scheme,
-    path: parsed.value.path,
+    path: sourceLocationFromContextUri(parsed.value),
     uri: document.uri,
     workId: document.workId,
     ...(document.rootThreadId ? { rootThreadId: document.rootThreadId } : {}),

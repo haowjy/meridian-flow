@@ -1,4 +1,4 @@
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { parseContextUri, sourceLocationFromContextUri } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -92,7 +92,7 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
               ? {
                   kind: "document" as const,
                   scheme: parsed.value.scheme,
-                  path: `/${parsed.value.path}`,
+                  path: `/${sourceLocationFromContextUri(parsed.value)}`,
                 }
               : item.address,
         },

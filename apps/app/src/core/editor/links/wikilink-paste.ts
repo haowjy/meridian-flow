@@ -25,6 +25,7 @@ import {
   documentRef,
   mintAheadRef,
   parseContextUri,
+  sourceLocationFromContextUri,
   storedHref,
 } from "@meridian/contracts";
 import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
@@ -328,7 +329,7 @@ function locate(uri: string, documentId: string | null): Located | null {
     documentId,
     area: `${parsed.value.scheme} ${JSON.stringify(parsed.value.authority)}`,
     scheme: parsed.value.scheme,
-    segments: parsed.value.path.split("/").map(lower),
+    segments: sourceLocationFromContextUri(parsed.value).split("/").map(lower),
   };
 }
 

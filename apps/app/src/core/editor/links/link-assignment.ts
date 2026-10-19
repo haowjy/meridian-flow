@@ -23,6 +23,7 @@ import {
   type LinkRef,
   matchDocumentPath,
   parseContextUri,
+  sourceLocationFromContextUri,
   storedLinkRef,
 } from "@meridian/contracts";
 import { assignFreshLink } from "@meridian/markup/links";
@@ -96,7 +97,8 @@ export function indexedDocumentAt<T extends LinkAssignmentDocument>(
 ): T | null {
   const requested = parseContextUri(uri);
   if (!requested.ok) return null;
-  const { scheme, path, authority } = requested.value;
+  const { scheme, authority } = requested.value;
+  const path = sourceLocationFromContextUri(requested.value);
   const candidates = documents.flatMap((document) => {
     const candidate = parseContextUri(document.uri);
     if (!candidate.ok || candidate.value.scheme !== scheme) return [];
@@ -105,7 +107,7 @@ export function indexedDocumentAt<T extends LinkAssignmentDocument>(
       JSON.stringify(candidate.value.authority) !== JSON.stringify(authority)
     )
       return [];
-    return [{ document, path: candidate.value.path }];
+    return [{ document, path: sourceLocationFromContextUri(candidate.value) }];
   });
   return matchDocumentPath(candidates, path, (candidate) => candidate.path)?.document ?? null;
 }
