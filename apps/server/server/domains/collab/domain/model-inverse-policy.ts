@@ -149,6 +149,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       for (const [i, part] of entry.parts.entries()) {
         const state = states[i];
         const originDraft = part.origin.kind === "pending" ? part.origin.draftId : null;
+        const kernelReason =
+          state.state === "undone"
+            ? "already removed"
+            : state.reasons.includes("inaccessible ancestor")
+              ? "its paragraph was removed"
+              : state.state !== "active"
+                ? "edited since"
+                : null;
         const reason =
           (query.draftId && !draft) || (originDraft && !document.drafts.has(originDraft))
             ? "discarded"
@@ -156,17 +164,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? "in another draft"
               : inspection.rolledBack(part)
                 ? "rolled back"
-                : state.state === "undone"
-                  ? part.disposition === "discarded"
-                    ? "discarded"
-                    : "already removed"
-                  : state.reasons.includes("inaccessible ancestor")
-                    ? "its paragraph was removed"
-                    : state.state !== "active"
-                      ? part.disposition === "discarded"
-                        ? "discarded"
-                        : "edited since"
-                      : null;
+                : kernelReason && part.disposition === "discarded"
+                  ? "discarded"
+                  : kernelReason;
         if (reason) {
           const excerpt = store.describePart(document, part);
           skipped.push(
