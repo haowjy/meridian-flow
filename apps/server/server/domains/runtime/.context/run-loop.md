@@ -30,6 +30,11 @@ foreign key, and both occur in one transaction. Tool dispatch persists typed
 `tool_result` values and delegates policy to the per-turn gate. return-result
 settlement remains spawn-owned.
 
+Initial preparation retains canonical `MeridianError` values through reservation
+and failure finalization, using the same terminal cause as the loop guard.
+Preparation faults still use `request_preparation_failed`; eligibility failures
+keep their canonical terminal error and admitted child-report reason.
+
 **Failure records.** `projectAndAppendEvents` (`loop/persistence.ts`) is the one seam
 every live durable event passes through inside its transaction, so it is also
 where a failure is detected (`loop/failure-detection.ts`). A `turn.error`

@@ -58,6 +58,7 @@ import {
   type WriteRejection,
 } from "@meridian/agent-edit/integration";
 import {
+  isMeridianError,
   type MeridianError,
   meridianErrorFromGateway,
   meridianErrorFromSystem,
@@ -204,13 +205,26 @@ const MAX_TURN_ITERATIONS = 32;
 
 class RequestPreparationError extends Error {
   constructor(readonly original: unknown) {
-    super(original instanceof Error ? original.message : String(original), { cause: original });
+    super(
+      original instanceof Error || isMeridianError(original) ? original.message : String(original),
+      { cause: original },
+    );
     this.name = "RequestPreparationError";
   }
 }
 
-function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error), { cause: error });
+function asPreparationFailure(error: unknown): Error | MeridianError {
+  return error instanceof Error || isMeridianError(error)
+    ? error
+    : new Error(String(error), { cause: error });
+}
+
+function errorTerminal(error: MeridianError | string, reason?: string): TerminalCause {
+  return {
+    kind: "failed",
+    reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
+    error,
+  };
 }
 
 export interface OrchestratorRepositories {
@@ -343,17 +357,21 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                 error: "Runtime shut down before the response completed",
               }
             : { kind: "cancelled", reason: "cancelled" }
-          : {
-              kind: "failed",
-              reason:
-                (error instanceof CompactionPreparationError ? error.reason : contextError?.code) ??
-                (imageResolutionError
-                  ? "image_resolution_failed"
-                  : requestPreparationFailed
-                    ? "request_preparation_failed"
-                    : "execution_error"),
-              error: error instanceof Error ? error.message : String(error),
-            },
+          : isMeridianError(error)
+            ? errorTerminal(error)
+            : {
+                kind: "failed",
+                reason:
+                  (error instanceof CompactionPreparationError
+                    ? error.reason
+                    : contextError?.code) ??
+                  (imageResolutionError
+                    ? "image_resolution_failed"
+                    : requestPreparationFailed
+                      ? "request_preparation_failed"
+                      : "execution_error"),
+                error: error instanceof Error ? error.message : String(error),
+              },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
       return outcome.completion.turn;
@@ -545,7 +563,7 @@ async function runDrainTurn(
   const treeBudget =
     input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
   const accounting = createTurnAccounting({ billingUsage: deps.billingUsage });
-  let preparationError: Error | null = null;
+  let preparationError: Error | MeridianError | null = null;
   const setup = await deps.delivery.adoptBatch(
     input.lease,
     async (selection) => {
@@ -625,7 +643,7 @@ async function runDrainTurn(
           });
         } catch (error) {
           if (input.signal?.aborted) throw error;
-          preparationError = asError(error);
+          preparationError = asPreparationFailure(error);
         }
       }
       let plan = makePlan(preparationError ? [] : selection.notices);
@@ -675,7 +693,7 @@ async function runDrainTurn(
           preflight = await prepareRequestContext(prepareInput);
         } catch (error) {
           if (input.signal?.aborted) throw error;
-          preparationError = asError(error);
+          preparationError = asPreparationFailure(error);
         }
       }
       if (preparationError) {
@@ -2078,11 +2096,6 @@ async function executeLoop({
           error: "Runtime shut down before the response completed",
         }
       : cancelTerminal;
-  const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
-    kind: "failed",
-    reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
-    error,
-  });
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
     finishReason: result.finishReason,

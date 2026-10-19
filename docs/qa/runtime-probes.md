@@ -1023,6 +1023,11 @@ restart smoke check.
   run start with exhausted tree-turn/tree-cost budgets and denied continuation
   credit, at iteration 32 with a terminal response plus late input, and after
   forced provider overflow. No new marker/C is reserved and no summary runs.
+  Initial failures retain `credits_exhausted`, `turn_budget_exceeded` or
+  `cost_budget_exceeded` in assistant metadata, terminal event code/reason and
+  admitted child reports (including `thread_report` and the parent spawn result).
+  Credit failures record source `usage`, not `bug`; canonical event source stays
+  `system`. Preparation faults still use `request_preparation_failed`.
   A terminal response without pending input still completes in debt. Late input
   continues this execution's iteration budget, not an implicit fresh budget. Check
   queue-switch yield and Stop precedence, both retaining saved notes/marker.
