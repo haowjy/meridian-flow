@@ -60,7 +60,7 @@ type Dependencies = {
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
-  /** Revert, rollback and mark-blocking change pending membership, so they reconcile the Works' counts through it. */
+  /** Rollback and mark-blocking change pending membership, so they reconcile the Works' counts through it. */
   workProjection: Pick<WorkProjectionMutation, "mutate">;
 };
 export function createDrizzleTurnInverseService(input: Dependencies) {
@@ -92,6 +92,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       consumes: edit.consumes,
       actor: edit.actor,
       wId: edit.wId,
+      hasRevertCuts: edit.sourceRoom !== null && edit.beforeCut !== null && edit.afterCut !== null,
     }));
   }
   async function materialize(documentId: DocumentId): Promise<{ doc: Y.Doc; room: string | null }> {
@@ -289,7 +290,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       // and a draft destination's effect against the captured live state.
       const planned = plans.map((plan) => planDocument(plan, query));
       const liveIds = planned.filter((entry) => !entry.draft).map((entry) => entry.documentId);
-      const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       await withLiveDocuments([...new Set(liveIds)].sort(), () =>
         scope.commit(() =>
@@ -314,14 +314,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   throw new InverseAttemptMiss();
               }
               for (const entry of planned)
-                handles.push(...(await commitDocument(entry, kind, userId, query, deliveries)));
+                await commitDocument(entry, kind, userId, query, deliveries);
             },
             { seam: true },
           ),
         ),
       );
       attempt.deliveries.push(...deliveries);
-      return { handles, updates: planned.flatMap((entry) => entry.updates) };
+      return { updates: planned.flatMap((entry) => entry.updates) };
     },
   };
 
@@ -388,14 +388,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   /** One planned document inside the commit scope: its rows, receipts, statuses, delivery. */
   async function commitDocument(
     entry: PlannedInverse,
-    kind: "undo" | "redo" | "revert" | "rollback",
+    kind: "undo" | "redo" | "rollback",
     userId: UserId | undefined,
     query: TurnInverseQuery,
     deliveries: (() => Promise<void>)[],
-  ): Promise<string[]> {
+  ): Promise<void> {
     const { plan, draft } = entry;
     const document = plan.document;
-    const handles: string[] = [];
     const origins: EditOrigin[][] = entry.edits.map(() => []);
     if (draft && entry.updates.length) {
       // Shape (a): the captured draft ⊕ live ⊕ the inverse parts, written whole as the
@@ -477,7 +476,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         ? await input.journal.reserveWriteOrdinal(document.documentId, query.threadId)
         : undefined;
       if (wId !== undefined) {
-        handles.push(`w${wId}`);
         for (const receipt of receipts)
           if (receipt.origin.kind === "pending")
             await db()
@@ -510,10 +508,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       );
       const unresolved = document.history.filter(
         (part) =>
-          (part.kind === "write" ||
-            part.kind === "revert" ||
-            part.kind === "undo" ||
-            part.kind === "redo") &&
+          (part.kind === "write" || part.kind === "undo" || part.kind === "redo") &&
           part.editScopeId === query.responseIdentity?.editScopeId &&
           part.placement.kind === "pending" &&
           !accepted.has(`${part.editId}:${part.ordinal}`) &&
@@ -547,7 +542,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           );
       }
     }
-    if (!entry.updates.length) return handles;
+    if (!entry.updates.length) return;
     const deliver = async () => {
       if (draft) await input.draftCoordinator.deliverCommitted(draft.draftId);
       else {
@@ -555,7 +550,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         await input.refreshDocument(document.documentId);
         await input.flushLivePull(document.documentId);
       }
-      if (kind !== "rollback" && kind !== "revert" && !query.model && query.turnId)
+      if (kind !== "rollback" && !query.model && query.turnId)
         await input.notices.record({
           docId: document.documentId,
           threadId: query.threadId,
@@ -566,7 +561,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         });
     };
     deliveries.push(deliver);
-    return handles;
   }
 
   /** The live documents' coordinator mutexes, sorted, around the commit scope only (live scope). */

@@ -21,7 +21,7 @@ export type WriteErrorStatus =
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
-  | "nothing_to_revert"
+  | "cant_revert"
   | "work_archived"
   | "region_changed"
   | "binary_file"

@@ -320,8 +320,7 @@ export function createThreadPeerCorePool(input: {
   ): Promise<RoutedWriteOutcome> {
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
-    const immediateInverse =
-      command.command === "undo" || command.command === "redo" || command.command === "revert";
+    const immediateInverse = command.command === "undo" || command.command === "redo";
     // A drafted write with no reply runs as a one-entry reply (amendment 1): the same ensure,
     // pin and lifetime before its room read, then the save's fences, locks and admission.
     const oneEntry =

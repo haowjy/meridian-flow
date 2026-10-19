@@ -35,6 +35,7 @@ export type StoredInversePart = InversePart & {
   consumes: string[];
   actor: "agent" | "human" | "system";
   wId: number | null;
+  hasRevertCuts?: boolean;
   origin: EditOrigin;
   placement: EditPlacement;
 };
@@ -81,10 +82,10 @@ export interface TurnInverseStore {
   ): Promise<T>;
   commit(input: {
     plans: PreparedDocumentInverse[];
-    kind: "undo" | "redo" | "revert" | "rollback";
+    kind: "undo" | "redo" | "rollback";
     userId?: UserId;
     query: TurnInverseQuery;
-  }): Promise<{ handles: string[]; updates: Uint8Array[] }>;
+  }): Promise<{ updates: Uint8Array[] }>;
   describePart(
     document: InverseDocument,
     part: StoredInversePart,
@@ -95,7 +96,7 @@ const eligiblePlacement = (part: StoredInversePart) =>
 const targetsTurn = (part: StoredInversePart, query: TurnInverseQuery) =>
   (query.responseIdentity
     ? part.actor === "agent" && part.kind !== "rollback"
-    : part.kind === "write" || part.kind === "revert") &&
+    : part.kind === "write") &&
   part.threadId === query.threadId &&
   part.turnId === query.turnId &&
   (!query.responseIdentity || part.editScopeId === query.responseIdentity.editScopeId);

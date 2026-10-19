@@ -1,7 +1,7 @@
 // Host-owned immutable edit history and forward inverses; no reconstruction journal.
 import type { ReadCommand, WriteCommand, WriteContext, WriteStatus } from "../tool/types.js";
 
-export type ModelInverseCommand = Extract<WriteCommand, { command: "undo" | "redo" | "revert" }>;
+export type ModelInverseCommand = Extract<WriteCommand, { command: "undo" | "redo" }>;
 export interface DocumentEditRequest {
   documentId: string;
   threadId: string;
@@ -13,7 +13,6 @@ export type DocumentEditResult =
       status: "success";
       message: string;
       actionId: string;
-      writeId?: string;
       /** The host's label for the room the command ran in: an inverse's `after` is its cut. */
       room: string | null;
       before?: Uint8Array;

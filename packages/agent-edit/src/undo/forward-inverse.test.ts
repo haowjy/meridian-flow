@@ -209,9 +209,8 @@ describe("forward inverse on cold Yjs replicas", () => {
       original = write(v, [(v) => (replacement ? swap(v, "red", "gold") : text(v).delete(1, 4))]);
     inverse(v, original, "invert");
     expect(content(v)).toEqual([initial]);
-    const revert = [v.history[v.history.length - 1]];
-    revert[0].kind = "revert";
-    inverse(v, revert, "invert");
+    const inverseParts = [v.history[v.history.length - 1]];
+    inverse(v, inverseParts, "invert");
     expect(content(v)).toEqual([edited]);
     expect(states(v, original)).toEqual(["active"]);
     inverse(v, original, "invert");

@@ -51,13 +51,14 @@ submits merged `editParts`; host storage chooses journal row expansion. Receipt
 rendering runs outside mutation certification and preserves settlement identity
 when reporting degrades.
 
-A prepared edit plan carries `groups: [{ edits, targets }]` and one semantic IR.
+A prepared edit plan carries `groups: [{ edits, targets, ir }]`, with one semantic IR per passage.
 Targets are the unwidened block indexes on the planning document. Ordinary
 mutations and overwrites supply one group; independent revert passages supply
 several (no overlapping passage windows). Acceptance prepares the view/room
 indexes and snapshots once, checks each group's window once, and applies all
-accepted edits in one update capture. Certification and the stored IR omit
-refused edits and their deleted lineage. Empty-document `blocks` creation
+accepted edits in one update capture. Acceptance combines only accepted groups'
+IRs (scope, deleted lineage and mapped intent); refused groups contribute nothing
+to certification or storage. Empty-document `blocks` creation
 remains unchecked. No edits means unchanged-success; all groups refused means
 one observed `region_changed` result with their current text in document order.
 The ordinary single-group refusal's 16 KB read-instead limit is unchanged;
@@ -94,6 +95,17 @@ are gc-off Yjs docs using `prosemirror`. It merges `rebase(schema, A, V, B)`
 with identity-pinned A↔B alignment, then lowers onto V refs as ordinary edits
 and semantic IR. No input is mutated; refs must be accepted/applied/captured
 against that V before it changes. The host owns acceptance and persistence.
+
+`write-dispatch.ts` sends revert through `write-commands.ts`, not the inverse
+port: room → planning view → `resolveRevertSource` on that room → planner →
+`finishPreparedEdit`. A/B are destroyed at call end. Reverts stage and save as
+`kind: "write"`, so reverting a revert is the same forward operation. Source
+refusals other than an unknown handle (`invalid_write`) use `cant_revert`, with
+the unavailable-history reason in plain words. There is no identity-inverse fallback.
+The orchestrator still saves before revert so its source write has durable cuts.
+The planner schema comes from the host model's projected A/B/V nodes; if all
+three are empty, the operation is unchanged.
+
 
 Leading whitespace is independent of core item identity. Lowering never matches
 N's inserted cores or characters to equal content; retained V text is preserved
@@ -195,7 +207,7 @@ when the host has none) and nothing is resolved before the call. When the
 host passes `WriteContext.frontiers = { recording, planning }`, read results
 and write receipts carry a host-only `frontier` (`{ room, snapshot, unshown }`)
 from the doc they rendered, chained from `recording(room)`; `planning(room)` is
-the view a write plans on. An undo, redo or revert names the room its inverse
+the view a write plans on. An undo or redo names the room its inverse
 committed into (`DocumentEditResult.room`) and the echo records there from the
 inverse's `after` cut. With `ResponseCommitOptions.recordingFrontier` each
 saved document's result carries one at the save's after-state, in the room the

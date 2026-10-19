@@ -6,7 +6,7 @@ import { snapshotBlocks } from "../apply/echo.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { toDocHandle, toRef } from "../handles.js";
-import { intersectLineageRanges } from "../lineage/range-set.js";
+import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -55,6 +55,7 @@ export type Planned = { unshown: readonly string[] } | null | "exempt";
 export interface PreparedEditGroup {
   edits: readonly ResolvedEdit[];
   targets: readonly number[] | "all";
+  ir: SemanticEditIRV1;
 }
 
 export interface PreparedEdit {
@@ -73,9 +74,7 @@ export interface PreparedEdit {
   actor: MutationActor;
   docId: string;
   filePath: string;
-  plan:
-    | { groups: readonly PreparedEditGroup[]; ir: SemanticEditIRV1 }
-    | { blocks: readonly Block[] };
+  plan: { groups: readonly PreparedEditGroup[] } | { blocks: readonly Block[] };
   creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
   copy?: { from: string; edges: boolean };
 }
@@ -122,24 +121,24 @@ export function createWriteAcceptance(deps: {
       blocks.map((block) => options.model.getCanonicalBlockIdentity(toRef(block))),
     );
     const edits = accepted.flatMap((group) => group.edits);
-    let semanticEditIr = "ir" in plan ? plan.ir : undefined;
-    if (semanticEditIr && refusals.length) {
-      if (semanticEditIr.intent.kind !== "mappedEdits")
-        throw new Error("A partially accepted plan requires mapped semantic edits");
-      // Groups are independent passages; only accepted targets can declare deleted lineage.
-      const acceptedScope = edits.flatMap((part) =>
-        part.kind === "insert" ? [] : options.model.getVisibleContentLineage(part.block),
-      );
-      const acceptedEdits = new Set(edits);
-      semanticEditIr = {
-        ...semanticEditIr,
-        deleted: intersectLineageRanges(semanticEditIr.deleted, acceptedScope),
-        intent: {
-          kind: "mappedEdits",
-          edits: semanticEditIr.intent.edits.filter(({ edit }) => acceptedEdits.has(edit)),
-        },
-      };
-    }
+    const firstIr = accepted[0]?.ir;
+    const semanticEditIr =
+      firstIr &&
+      (accepted.length === 1
+        ? firstIr
+        : {
+            ...firstIr,
+            scope: normalizeLineageRanges(accepted.flatMap(({ ir }) => ir.scope)),
+            deleted: normalizeLineageRanges(accepted.flatMap(({ ir }) => ir.deleted)),
+            intent: {
+              kind: "mappedEdits" as const,
+              edits: accepted.flatMap(({ ir }) => {
+                if (ir.intent.kind !== "mappedEdits")
+                  throw new Error("Independent passages require mapped semantic edits");
+                return ir.intent.edits;
+              }),
+            },
+          });
     await registerMinted(edit.assigner, docId, context);
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
     const editScopeId = context.responseIdentity?.editScopeId;

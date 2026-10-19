@@ -28,7 +28,7 @@ export type WriteErrorStatus =
   | "cant_redo_users_undo"
   | "insufficient_undo"
   | "insufficient_redo"
-  | "nothing_to_revert"
+  | "cant_revert"
   | "work_archived"
   | "region_changed"
   | "binary_file"
@@ -221,7 +221,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_redo_held":
     case "cant_redo_elsewhere":
     case "cant_redo_users_undo":
-    case "nothing_to_revert":
+    case "cant_revert":
     case "work_archived":
     case "region_changed":
     case "binary_file":

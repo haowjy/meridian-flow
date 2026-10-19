@@ -83,6 +83,9 @@ host tests cover placement, restoration, stack policy, and rollback.
 Successful edits expose immutable `w<N>` handles to model tools. `read(format:
 "edits")` pages those handles; undo/redo take counts and revert names one edit.
 The host owns policy and notices, and handles do not reach the writer card.
-`region_changed` is in the reversal statuses (`WriteErrorStatus`, contracts'
-`write-reversal.ts`) but no undo, redo or revert runs the region check today; a
-revert reaches it only once M2b routes it through the write door.
+Undo/redo stay on the inverse port, exempt from region checks. Revert is a
+forward write through the ordinary grouped acceptance boundary: `region_changed`
+when all passages are refused; otherwise a normal write echo plus any refused
+passages from the saved cut. Unavailable source history is `cant_revert`; an
+unknown handle is `invalid_write`; an empty plan is unchanged success. Edit
+history offers revert for writes with cuts and names unavailable pre-cut history.

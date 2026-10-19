@@ -217,7 +217,7 @@ it.each([
       });
       expect(await text()).toBe("Alpha Gamma.\n\nBlue.\n");
       const edits = await core.read({ ...address, format: "edits" }, saved);
-      expect(edits.result.message).toMatch(/w2 {2}this turn {2}undone.* {2}redo(?:\n|$)/);
+      expect(edits.result.message).toMatch(/w2 {2}this turn {2}undone.* {2}redo; revert(?:\n|$)/);
       expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
         state: "live-reversed",
         control: "redo",

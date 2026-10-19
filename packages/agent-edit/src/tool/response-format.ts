@@ -156,7 +156,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "cant_redo_held" ||
     status === "cant_redo_elsewhere" ||
     status === "cant_redo_users_undo" ||
-    status === "nothing_to_revert" ||
+    status === "cant_revert" ||
     status === "work_archived" ||
     status === "region_changed" ||
     status === "binary_file" ||

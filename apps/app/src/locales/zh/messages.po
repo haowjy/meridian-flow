@@ -4183,6 +4183,10 @@ msgid "That change can't be redone here because the chat now writes somewhere el
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change can't be reverted because its original history is no longer available."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it is held for review."
 msgstr ""
 
@@ -4382,8 +4386,8 @@ msgid "There isn't enough left to undo."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "There was nothing to revert."
-msgstr ""
+#~ msgid "There was nothing to revert."
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "These preferences follow your account wherever you sign in."

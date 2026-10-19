@@ -169,7 +169,7 @@ const MUTATION_BRANCHES = {
   },
   revert: {
     description:
-      'Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it waits for review.',
+      'Take an earlier write\'s change back out of the current text, keeping what changed since. Name its handle from read(format: "edits") or a write result. A passage changed since you last saw it may be refused with its current text. Returns a new write id; revert that write to reapply. In draft mode it waits for review.',
     fields: { edit: WRITE_HANDLE },
   },
   redo: {
