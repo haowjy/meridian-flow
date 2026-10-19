@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Compile already-current Apply snapshots without duplicating the draft document.
+
 - Reuse immutable draft encodings across append cuts and replicas, keeping unused serialization out of row holds.
 
 - Capture draft edit receipts by retained item ranges instead of expanding every review-base character.
