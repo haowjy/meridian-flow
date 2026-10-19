@@ -231,6 +231,8 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
       return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },
     recover,
+    // In memory a catch-up can't fail: nothing to retry or retire.
+    deliver: recover,
   };
 }
 

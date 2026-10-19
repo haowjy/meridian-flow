@@ -8,14 +8,25 @@ import type * as Y from "yjs";
  */
 export interface LiveDocumentCoordinator {
   /**
-   * Runs `fn` on the open room, caught up from the journal first, under the document's mutex.
-   * Rejects with DocumentNotFoundError when the document is missing.
+   * Runs `fn` under the document's mutex. Outside a transaction `fn` gets the open room,
+   * caught up from the committed journal first. Inside one it gets a private copy (the room,
+   * the committed journal and the transaction's own rows) and the room is never touched: what
+   * the transaction journals reaches the room through `deliver` after the root commits, and a
+   * rollback leaves the room as it was (LOCK-WS). Rejects with DocumentNotFoundError when the
+   * document is missing.
    */
   withDocument<T>(
     docId: string,
     fn: (doc: Y.Doc) => Promise<T>,
     options?: { timeoutMs?: number; signal?: AbortSignal },
   ): Promise<T>;
-  /** Applies committed journal rows the room lacks. Idempotent. */
+  /** Applies committed journal rows the room lacks, once. Idempotent; rejects on failure. */
   recover(docId: string): Promise<void>;
+  /**
+   * The committed journal's obligation to the open room, owned here: coalesced per document,
+   * retried with backoff, and a room that still can't be caught up is retired (its clients
+   * reconnect and cold-load the journal), so nobody keeps editing content the journal no longer
+   * holds. Resolves once the first attempt settled; never rejects.
+   */
+  deliver(docId: string): Promise<void>;
 }

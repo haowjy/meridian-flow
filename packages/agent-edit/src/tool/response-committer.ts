@@ -662,8 +662,11 @@ export function createResponseCommitter(deps: {
       async consume() {
         if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
         if (!owner && stale()) throw new ResponseAttemptStaleError(responseId);
-        for (const { write } of outcomes.values())
-          if (write.kind === "write") await write.persist();
+        for (const [docId, outcome] of outcomes) {
+          const doc = buffer.docs.get(docId);
+          if (!doc) throw new Error(`Response document ${docId} was not prepared`);
+          await documentSave.persist(doc, outcome);
+        }
         if (!outcomes.size) return;
         const threadId = bufferThreadId(buffer);
         emit("journal_staged", responseId, "journalStaged", threadId ? { threadId } : {});

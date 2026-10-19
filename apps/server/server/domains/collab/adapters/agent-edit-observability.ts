@@ -25,6 +25,7 @@ import type { ResponseTransactionDiagnostics } from "../domain/response-transact
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { DraftReviewDiagnostics } from "../domain/work-branch-review-service.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
+import type { RoomDeliveryDiagnostics } from "./hocuspocus-coordinator.js";
 
 /** The effect projection job's failures and blocked legacy baselines. */
 export function createDraftProjectionDiagnostics(
@@ -64,6 +65,25 @@ export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiag
         name: "background.failed",
         correlation: { documentId },
         payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/**
+ * A failed delivery of committed rows to an open live room: a warning while it is retried, an
+ * error when the room was retired instead.
+ */
+export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDeliveryDiagnostics {
+  return {
+    failed({ documentId, attempt, outcome, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: outcome === "retired" ? "error" : "warn",
+        source: "collab.room_delivery",
+        name: outcome === "retired" ? "delivery.room_retired" : "delivery.retrying",
+        correlation: { documentId },
+        payload: { attempt, ...unknownToEventPayload(cause) },
       });
     },
   };

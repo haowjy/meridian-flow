@@ -49,16 +49,21 @@ export interface RoomRead extends StagedReconcile {
   generation: number;
 }
 
-/** A save of one scope's entries: the kept and refused ones, and where they went. */
-export interface StagedWriteSaveResult extends StagedReconcile {
-  /** The room the rows append into; null records no frontier (a document this save creates). */
-  room: string | null;
-  /**
-   * The room's committed state before the kept rows, and with them: what the save's receipts,
-   * commit-time detection and recorded frontier read.
-   */
+/** A document's state before a save's kept rows, and with them. */
+export interface SaveCut {
   beforeState: Uint8Array;
   afterState: Uint8Array;
+}
+
+/**
+ * A save of one scope's entries: the kept and refused ones, and where they went. Its cut is the
+ * prepared candidate's, read before any lock: only a check that must refuse before anything
+ * persists reads it. The save's receipts, detection, revision and frontier read the cut
+ * `persist` resolves.
+ */
+export interface StagedWriteSaveResult extends StagedReconcile, SaveCut {
+  /** The room the rows append into; null records no frontier (a document this save creates). */
+  room: string | null;
   /**
    * The host's prepared write, always present. `no-effect` says there is nothing to persist,
    * and is valid only with no kept entries; the caller refuses it otherwise rather than
@@ -72,12 +77,16 @@ export interface StagedWriteSaveResult extends StagedReconcile {
  * until `persist` runs inside the caller's commit scope; `transfer` hands the write to the host
  * once that scope completed, and the host installs it (a live host delivers it to open
  * editors) when the enclosing root transaction commits, never before, or at once when there is
- * none; `dispose` drops it on any unwind. `persist` throws when the host's base moved since
- * preparing; the caller then disposes this write and prepares again.
+ * none; `dispose` drops it on any unwind.
+ *
+ * `persist` resolves the append's actual cut: the document as the host's serialization of the
+ * append (its document lock) found it, and with the kept rows. Someone else's rows that landed
+ * between preparing and appending are in its `beforeState`, so the report names what the rows
+ * swept of them; the rows themselves are Yjs updates and land the same either way.
  */
 export interface StagedWriteCommit {
   kind: "write";
-  persist(): Promise<void>;
+  persist(): Promise<SaveCut>;
   transfer(): void;
   dispose(): void;
 }

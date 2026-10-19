@@ -66,8 +66,9 @@ export interface ConcurrentDetectionResult {
 
 export interface CommitDetection {
   /**
-   * What the save of `input`'s writes swept: `before` is the room the save read, `after` the
-   * room with its kept writes. The same for every host.
+   * What the save of `input`'s writes swept: `before` is the room the save's append followed,
+   * `after` the room with its kept writes. The same for every host. Never throws: the save
+   * already landed, so a failure degrades the report.
    */
   reportAcceptedMutation(
     before: Y.Doc,
@@ -86,8 +87,9 @@ export function createCommitDetection(deps: {
 
   return {
     async reportAcceptedMutation(before, after, input) {
-      const revision = deps.links.revision(after, input.links.scope);
+      let revision: string | null = null;
       try {
+        revision = deps.links.revision(after, input.links.scope);
         const lateSweep = await destructiveReport(input, before, after);
         return lateSweep ? { revision, lateSweep } : { revision };
       } catch {

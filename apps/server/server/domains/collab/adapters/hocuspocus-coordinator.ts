@@ -1,6 +1,7 @@
 /**
  * Live Hocuspocus documents: agent-edit's coordinator (lock-free room reads, saves that append
- * to the journal and reach the room only after commit) and collab's locked room door.
+ * to the journal and reach the room only after commit), collab's locked room door, and the
+ * owned delivery of committed rows to the open room.
  */
 
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
@@ -9,6 +10,7 @@ import {
   DocumentNotFoundError,
   type JournalSnapshot,
   type RoomRead,
+  type SaveCut,
   type StagedRoomEntries,
   type StagedWriteSaveResult,
   type UpdateJournal,
@@ -26,13 +28,33 @@ import {
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
-import { loadDocumentState } from "./document-loader.js";
+import { loadDocumentState, storedDocument } from "./document-loader.js";
 
 type CoordinatorDeps = {
   hocuspocus: () => Hocuspocus;
   journal: UpdateJournal;
   mutex?: KeyedMutex;
+  /** The ambient database transaction; without it every acquisition gets the open room. */
+  transactions?: {
+    inTransaction(): boolean;
+    afterCommit(callback: () => void | Promise<void>): boolean;
+  };
+  diagnostics?: RoomDeliveryDiagnostics;
+  /** The waits between a failed delivery's attempts; one more failure retires the room. */
+  deliveryBackoffMs?: readonly number[];
 };
+
+/** A delivery attempt that failed, classified once: retried, or the room retired. */
+export type RoomDeliveryDiagnostics = {
+  failed(event: {
+    documentId: string;
+    attempt: number;
+    outcome: "retrying" | "retired";
+    cause: unknown;
+  }): void;
+};
+
+const DELIVERY_BACKOFF_MS = [250, 1_000, 4_000] as const;
 
 type LiveDocHandle = {
   doc: Y.Doc;
@@ -54,14 +76,14 @@ export function createHocuspocusCoordinator(deps: CoordinatorDeps): LiveDocument
  * The live agent-edit core's coordinator (D42). A call reads a private copy of the live
  * document as others see it (the open room plus committed journal rows). A save appends its
  * kept entries to the journal in the caller's commit scope, and open editors receive them only
- * after the root transaction commits, through `recover`: a rollback leaves nothing on screen,
+ * after the root transaction commits, through `deliver`: a rollback leaves nothing on screen,
  * and nothing applies to the room inside a transaction (LOCK-WS). The copy needs no document
  * mutex: the room is only read, synchronously.
  */
 export function createDeferredLiveProjectionCoordinator(deps: {
   hocuspocus: () => Hocuspocus;
   journal: Pick<UpdateJournal, "read" | "appendBatch">;
-  live: Pick<LiveDocumentCoordinator, "recover">;
+  live: Pick<LiveDocumentCoordinator, "deliver">;
   transactions: {
     inTransaction(): boolean;
     outsideTransaction<T>(operation: () => T): T;
@@ -80,9 +102,7 @@ export function createDeferredLiveProjectionCoordinator(deps: {
       });
     return copy ?? liveRoomCopy(deps, docId);
   };
-  // A delivery that fails leaves the room behind the journal until the next `recover` or locked
-  // open of the document catches it up; every room copy already reads the journal.
-  const deliver = (docId: string) => () => deps.live.recover(docId).catch(() => undefined);
+  const deliver = (docId: string) => () => deps.live.deliver(docId);
   return {
     readRoom: async (docId, staged) => withStaged(await committedCopy(docId), staged),
     prepareSave: async (input) =>
@@ -108,16 +128,17 @@ export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null } {
  * A live save of one scope's entries onto `copy` (the room's committed state, consumed): every
  * entry is kept, since a live room has no retirement or inverse to reconcile against. `persist`
  * appends them as one journal batch bound to the copy's authority, joining the caller's
- * transaction when there is one; `transfer` hands them to `deliver`.
+ * transaction when there is one, and resolves the cut that append followed; `transfer` hands
+ * them to `deliver`.
  */
 export function liveSave(
   copy: { doc: Y.Doc; room: string | null },
   input: StagedRoomEntries & { docId: string },
-  journal: Pick<UpdateJournal, "appendBatch">,
+  journal: Pick<UpdateJournal, "appendBatch" | "read">,
   deliver: () => void,
 ): StagedWriteSaveResult {
   try {
-    const beforeState = Y.encodeStateAsUpdate(copy.doc);
+    const prepared = Y.encodeStateAsUpdate(copy.doc);
     for (const entry of input.entries) Y.applyUpdate(copy.doc, entry.update);
     const authority = boundDocumentAuthority(copy.doc) ?? undefined;
     const result = {
@@ -126,7 +147,7 @@ export function liveSave(
       ),
       rejected: [],
       room: copy.room,
-      beforeState,
+      beforeState: prepared,
       afterState: Y.encodeStateAsUpdate(copy.doc),
     };
     if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
@@ -135,7 +156,10 @@ export function liveSave(
       write: {
         kind: "write",
         async persist() {
-          await journal.appendBatch(input.entries.map((entry) => ({ ...entry, authority })));
+          const appended = await journal.appendBatch(
+            input.entries.map((entry) => ({ ...entry, authority })),
+          );
+          return appendCut(journal, input, prepared, Math.min(...appended.map((row) => row.seq)));
         },
         transfer: deliver,
         dispose() {},
@@ -143,6 +167,30 @@ export function liveSave(
     };
   } finally {
     copy.doc.destroy();
+  }
+}
+
+/**
+ * The document as the append of `input`'s rows (the first at `firstSeq`) found it, and with
+ * them. A document's rows are inserted only under its mutation lock, so every row below the
+ * batch's is one the append followed and none above it is: a writer's frame admitted between
+ * preparing and appending is in the cut, and the report names what the rows swept of it. The
+ * prepared copy is merged in for the room it read.
+ */
+async function appendCut(
+  journal: Pick<UpdateJournal, "read">,
+  input: StagedRoomEntries & { docId: string },
+  prepared: Uint8Array,
+  firstSeq: number,
+): Promise<SaveCut> {
+  const doc = storedDocument(await journal.read(input.docId, { until: firstSeq - 1 }));
+  try {
+    Y.applyUpdate(doc, prepared);
+    const beforeState = Y.encodeStateAsUpdate(doc);
+    for (const entry of input.entries) Y.applyUpdate(doc, entry.update);
+    return { beforeState, afterState: Y.encodeStateAsUpdate(doc) };
+  } finally {
+    doc.destroy();
   }
 }
 
@@ -232,12 +280,7 @@ function createCoordinator(
           )
             throw cause;
         }
-        retireDocumentHandle(handle);
-        const hp = deps.hocuspocus();
-        if (hp.documents.get(docId) === handle) {
-          hp.closeConnections(docId);
-          hp.documents.delete(docId);
-        }
+        dropRoom(docId, handle);
       }
       throw cause;
     }
@@ -247,12 +290,76 @@ function createCoordinator(
     return deps.hocuspocus().documents.get(docId);
   }
 
+  /**
+   * A transaction's acquisition: a private copy of the room with the committed journal and the
+   * transaction's own rows, which never reaches the room. Its rows do once the root commits.
+   */
+  async function inTransaction<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+    const copy = await liveRoomCopy(deps, docId);
+    try {
+      return await fn(copy.doc);
+    } finally {
+      copy.doc.destroy();
+      deps.transactions?.afterCommit(() => delivery.deliver(docId));
+    }
+  }
+
+  /**
+   * Retires `room` and, while it is still the open one, closes it: its clients reconnect and
+   * cold-load the journal, and a retired room stores nothing and admits no frame.
+   */
+  function dropRoom(docId: string, room: Y.Doc): void {
+    retireDocumentHandle(room);
+    const hp = deps.hocuspocus();
+    if (hp.documents.get(docId) !== room) return;
+    hp.closeConnections(docId);
+    hp.documents.delete(docId);
+  }
+
   async function applyMissing(doc: Y.Doc, persisted: Uint8Array): Promise<void> {
     const missing = Y.diffUpdate(persisted, Y.encodeStateVector(doc));
     Y.applyUpdate(doc, missing, RECOVERY_ORIGIN);
   }
 
+  const delivery = createRoomDelivery({
+    recover,
+    retire: (docId) =>
+      mutex.run(docId, async () => {
+        const room = liveDoc(docId);
+        if (room) dropRoom(docId, room);
+      }),
+    backoffMs: deps.deliveryBackoffMs ?? DELIVERY_BACKOFF_MS,
+    diagnostics: deps.diagnostics,
+  });
+
+  function recover(docId: string): Promise<void> {
+    return mutex.run(docId, async () => {
+      const snapshot = await deps.journal.read(docId);
+      const live = liveDoc(docId);
+      if (live) {
+        const persisted = await persistedState(docId, live, snapshot);
+        if (!persisted) return;
+        await applyMissing(live, persisted);
+        return;
+      }
+
+      if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
+
+      // Cold open runs Hocuspocus onLoadDocument; after WS rewiring that hook must
+      // call loadDocumentState. Reapplying the diff is harmless if it already did.
+      const handle = await openLiveDoc(docId);
+      try {
+        const bound = await persistedState(docId, handle.doc, snapshot);
+        if (bound) await applyMissing(handle.doc, bound);
+      } finally {
+        await handle.release();
+      }
+    });
+  }
+
   return {
+    recover,
+    deliver: delivery.deliver,
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
@@ -261,6 +368,7 @@ function createCoordinator(
       return mutex.run(
         docId,
         async () => {
+          if (deps.transactions?.inTransaction()) return inTransaction(docId, fn);
           const snapshot = await deps.journal.read(docId);
           if (!liveDoc(docId) && !snapshot.checkpoint && snapshot.updates.length === 0) {
             throw new DocumentNotFoundError(docId);
@@ -277,29 +385,70 @@ function createCoordinator(
         options,
       );
     },
+  };
+}
 
-    recover(docId: string): Promise<void> {
-      return mutex.run(docId, async () => {
-        const snapshot = await deps.journal.read(docId);
-        const live = liveDoc(docId);
-        if (live) {
-          const persisted = await persistedState(docId, live, snapshot);
-          if (!persisted) return;
-          await applyMissing(live, persisted);
+/**
+ * Delivery of committed rows to a document's open room as an obligation that is eventually
+ * met: one chain per document coalesces every request made while it runs into its next pass,
+ * a failed pass is retried after each wait in `backoffMs`, and one failure more retires the
+ * room instead, since a room left behind lets a writer keep typing into text the journal
+ * already deleted. Each failure is reported once, as what it led to.
+ */
+function createRoomDelivery(deps: {
+  recover(docId: string): Promise<void>;
+  retire(docId: string): Promise<void>;
+  backoffMs: readonly number[];
+  diagnostics: RoomDeliveryDiagnostics | undefined;
+}): { deliver(docId: string): Promise<void> } {
+  type Chain = { again: boolean; waiters: (() => void)[] };
+  const chains = new Map<string, Chain>();
+
+  async function run(docId: string, chain: Chain): Promise<void> {
+    let failures = 0;
+    try {
+      while (chain.again) {
+        chain.again = false;
+        const waiters = chain.waiters.splice(0);
+        try {
+          await deps.recover(docId);
+          failures = 0;
+        } catch (cause) {
+          // A room retired for a replaced generation was closed by the attempt itself.
+          if (!(cause instanceof RetiredDocumentHandleError)) {
+            const wait = deps.backoffMs[failures];
+            failures += 1;
+            const outcome = wait === undefined ? "retired" : "retrying";
+            deps.diagnostics?.failed({ documentId: docId, attempt: failures, outcome, cause });
+            if (wait === undefined) await deps.retire(docId).catch(() => undefined);
+            else {
+              chain.again = true;
+              for (const resolve of waiters) resolve();
+              await new Promise((resolve) => setTimeout(resolve, wait).unref?.());
+              continue;
+            }
+          }
+        }
+        for (const resolve of waiters) resolve();
+      }
+    } finally {
+      chains.delete(docId);
+      for (const resolve of chain.waiters.splice(0)) resolve();
+    }
+  }
+
+  return {
+    deliver(docId) {
+      return new Promise<void>((resolve) => {
+        const running = chains.get(docId);
+        if (running) {
+          running.again = true;
+          running.waiters.push(resolve);
           return;
         }
-
-        if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
-
-        // Cold open runs Hocuspocus onLoadDocument; after WS rewiring that hook must
-        // call loadDocumentState. Reapplying the diff is harmless if it already did.
-        const handle = await openLiveDoc(docId);
-        try {
-          const bound = await persistedState(docId, handle.doc, snapshot);
-          if (bound) await applyMissing(handle.doc, bound);
-        } finally {
-          await handle.release();
-        }
+        const chain: Chain = { again: true, waiters: [resolve] };
+        chains.set(docId, chain);
+        void run(docId, chain);
       });
     },
   };

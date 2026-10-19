@@ -161,10 +161,24 @@ records, crediting nothing. A failure is reported through
 `onObservationFailed` and the result goes out without a frontier or a listing;
 `frontier` never reaches `AgentEditResultV1`.
 
+### The accepted save's report
+
+A save has three phases with separate owners: the host's durable append
+(`persist`, inside the caller's commit scope), the host's install or delivery
+after root commit, and agent-edit's report. Once `persist` succeeded the write
+is accepted: `document-save.ts` `reportAccepted` is the one reporting boundary
+for reply saves and immediate writes alike, and any failure in it (links,
+revision, detection, receipts, frontier) answers an accepted
+`awarenessDegraded` result, never an error. An error would leave the tool call
+uncached and invite the model to retry a write that already landed; a degraded
+result keeps its write identity for idempotency, and an immediate write still
+appends its own bytes to the reply's `ReplyMutations`. Ensuring a created
+document belongs to the durable phase.
+
 ### Commit-time detection
 
 `commit-detection.ts` `reportAcceptedMutation(before, after)` is the same for
-both hosts and every save: it reads the updates the save's before state holds
+both hosts and every save, on the append's cut, and never throws: it reads the updates the save's before state holds
 that the first write's view (`preOwnSnapshot`) doesn't contain, the only skip,
 and applies them one at a time to record which lineage each first made visible
 and who wrote it. That

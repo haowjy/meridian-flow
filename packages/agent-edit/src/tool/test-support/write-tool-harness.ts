@@ -195,8 +195,8 @@ export class MemoryCoordinator implements DocumentCoordinator {
   }
 
   /**
-   * A live save: every entry kept, appended to the journal as one batch by `persist`, and
-   * delivered to the in-memory room at `transfer`. A missing document saves onto an empty one.
+   * A live save: every entry kept, appended to the journal as one batch by `persist` (which
+   * resolves the cut the append followed), and delivered to the in-memory room at `transfer`. A missing document saves onto an empty one.
    */
   async prepareSave(input: StagedRoomEntries & { docId: string }): Promise<StagedWriteSaveResult> {
     const failure = this.takeFailure(input.docId);
@@ -222,8 +222,20 @@ export class MemoryCoordinator implements DocumentCoordinator {
         ...result,
         write: {
           kind: "write",
+          // The cut the append followed: the room as it is now, whatever landed since preparing.
           persist: async () => {
             await this.journal?.appendBatch(input.entries);
+            const cut = new Y.Doc({ gc: false });
+            try {
+              Y.applyUpdate(cut, result.beforeState);
+              const room = this.docs.get(input.docId);
+              if (room) Y.applyUpdate(cut, Y.encodeStateAsUpdate(room));
+              const beforeState = Y.encodeStateAsUpdate(cut);
+              for (const entry of input.entries) Y.applyUpdate(cut, entry.update);
+              return { beforeState, afterState: Y.encodeStateAsUpdate(cut) };
+            } finally {
+              cut.destroy();
+            }
           },
           // The room catches up in one apply, as a live room's recovery does.
           transfer: () => {

@@ -545,7 +545,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const deliver = async () => {
       if (draft) await input.draftCoordinator.deliverCommitted(draft.draftId);
       else {
-        await input.coordinator.recover(document.documentId);
+        await input.coordinator.deliver(document.documentId);
         await input.refreshDocument(document.documentId);
         await input.flushLivePull(document.documentId);
       }
