@@ -13,6 +13,7 @@ import type {
 import {
   documentNotFoundMessage,
   formatDocumentFile,
+  isDocumentNotFoundError,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
@@ -43,6 +44,7 @@ import {
 } from "./copy-source.js";
 import {
   documentGrant,
+  documentNotFoundError,
   fileAccessDeniedError,
   firstRefusal,
   inContainer,
@@ -226,6 +228,10 @@ async function writeUnderGrant(
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
+    // A removal that won the document's lock after the grant (a pull, a staged or immediate
+    // commit): the model's interim answer is `document_not_found`, with the record's sentence.
+    if (isDocumentNotFoundError(cause))
+      return documentNotFoundError(parsed.command, address.filePath, cause.modelReason);
     if (!(cause instanceof FileEditRefusedError)) throw cause;
     const refusal = firstRefusal(cause);
     return fileAccessDeniedError(

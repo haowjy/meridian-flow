@@ -73,11 +73,18 @@ export interface StagedWriteHost {
 
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
+  /** A sentence for the model saying why the file is gone, when the host knows. */
+  readonly modelReason?: string;
 
-  constructor(docId: string, message = `Document not found: ${docId}`) {
+  constructor(
+    docId: string,
+    message = `Document not found: ${docId}`,
+    options: { modelReason?: string } = {},
+  ) {
     super(message);
     this.name = "DocumentNotFoundError";
     this.docId = docId;
+    if (options.modelReason) this.modelReason = options.modelReason;
   }
 }
 

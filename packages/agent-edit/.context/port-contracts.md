@@ -48,12 +48,6 @@ retires only the addressed peer/document epoch. A host's response-attempt
 surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
 once, from `integration.ts`.
 
-### `DocumentLifecycle` (`src/ports/document-lifecycle.ts`)
-
-`ensureDocument(docId)` idempotently creates a missing document without
-clobbering content. It is optional; a deployment without creation returns
-`invalid_write`, not a thrown not-found. The port carries only a string ID.
-
 ## Content and identity ports
 
 ### `AgentEditCodec` (`src/codec-adapter.ts`)

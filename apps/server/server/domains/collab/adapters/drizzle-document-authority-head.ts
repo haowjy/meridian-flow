@@ -65,6 +65,32 @@ export async function readDocumentAuthorityHead(
   return row;
 }
 
+/**
+ * The head of a living document, read under the caller's document mutation lock. Every door
+ * that changes retained history (checkpoints, compaction, version replacement) passes it: a
+ * deleted document keeps its head and history for Restore, readable but frozen, so a head
+ * that exists is not a document that may change.
+ */
+export async function findLivingDocumentAuthorityHead(
+  db: AuthorityHeadDb,
+  documentId: string,
+): Promise<DocumentAuthorityHeadGeneration | null> {
+  const [row] = await db
+    .select({
+      authorityId: documentYjsHeads.authorityId,
+      generation: documentYjsHeads.authorityGeneration,
+    })
+    .from(documentYjsHeads)
+    .where(
+      and(
+        eq(documentYjsHeads.documentId, documentId as DocumentId),
+        documentNotDeletedSql(documentYjsHeads.documentId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 /** Returns the current authority head without materializing a missing row. */
 export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
@@ -123,15 +149,9 @@ export async function replaceDocumentAuthorityHeadGeneration(
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as Database;
     await lockDocumentMutation(txDb, input.documentId);
-    const [head] = await txDb
-      .select({
-        authorityId: documentYjsHeads.authorityId,
-        generation: documentYjsHeads.authorityGeneration,
-      })
-      .from(documentYjsHeads)
-      .where(eq(documentYjsHeads.documentId, input.documentId))
-      .limit(1);
-    if (!head || head.generation !== input.expectedGeneration) {
+    const head = await findLivingDocumentAuthorityHead(txDb, input.documentId);
+    if (!head) throw await refusedAuthority(txDb, input.documentId);
+    if (head.generation !== input.expectedGeneration) {
       return { ok: false as const, code: "stale_generation" as const };
     }
     const [pending] = await txDb

@@ -165,7 +165,6 @@ async function harness(
   // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
   const documentSync = {
-    ensureDocument: async () => {},
     readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
       value: {

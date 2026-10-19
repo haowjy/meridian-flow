@@ -9,6 +9,7 @@ import {
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import { DocumentRemovedError } from "../../context/ports/document-removals.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftConcurrentJournalWatermarks } from "./draft-agent-edit.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
@@ -116,7 +117,9 @@ export function createDraftPullService(input: {
         ),
       )
       .catch((cause: unknown) => {
-        if (cause instanceof DocumentNotFoundError)
+        // A live side with no state yet (a hidden creation) is an empty upstream; a removed
+        // document is not, and its pull fails by name.
+        if (cause instanceof DocumentNotFoundError && !(cause instanceof DocumentRemovedError))
           return Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
         throw cause;
       });

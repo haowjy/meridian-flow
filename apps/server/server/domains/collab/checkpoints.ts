@@ -87,6 +87,7 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         }
         return Ok(undefined);
       } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         return Err({
           code: "corrupt_state",
           documentId,

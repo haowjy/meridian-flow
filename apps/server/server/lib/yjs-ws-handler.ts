@@ -66,7 +66,7 @@ export type YjsGatewayConnection = {
 
 export type YjsGatewayServices = {
   liveDocuments: Pick<TreeReader, "findById">;
-  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit">;
+  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit" | "historyAccess">;
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
@@ -265,7 +265,17 @@ async function classifyYjsConnectionAdmission(input: {
   if (room.kind === "live") {
     documentId = room.documentId;
     fileTarget = { kind: "document", documentId };
-    admitted = await roomAccess(services, userId, fileTarget);
+    const found = await findRoomAccess(services, userId, fileTarget);
+    if (!found) {
+      // The file policy denies a removed document. A reader of it reconnecting after the
+      // removal gets the terminal removed close; an unknown or unreadable id stays denied.
+      if (
+        (await services.fileAccess.historyAccess({ accountId: userId }, documentId)) === "deleted"
+      )
+        await refuseIfRemoved(services, context, { documentId });
+      throw permissionDenied("permission-denied");
+    }
+    admitted = found;
     if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
       await refuseIfRemoved(services, context, { documentId });
       throw permissionDenied("permission-denied");

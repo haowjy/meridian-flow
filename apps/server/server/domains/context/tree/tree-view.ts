@@ -163,9 +163,9 @@ export type TreeStateNode = {
   hidden: boolean;
   binary: boolean;
   fileType: string;
-  /** Soft-deleted live: Apply restores it with its deleted ancestors (decisions 7 and 9). */
+  /** Soft-deleted live: Apply holds it with the removal's record and revives nothing (W52). */
   deleted: boolean;
-  /** The row's own location, the only one a document has: where Apply reveals or restores it. */
+  /** The row's own location, the only one a document has: where Apply reveals it. */
   target: {
     contextSourceId: ContextSourceId;
     parentFolderId: FolderId | null;
@@ -186,7 +186,7 @@ export type TreeStateNode = {
      * document holds the path of a folder the target needs.
      */
     | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
-    /** Created-and-revealed or edited, then deleted live: Apply restores it (decision 7, F9). */
+    /** Created-and-revealed or edited, then deleted live: Apply holds it (W52). */
     | { kind: "deleted_live" };
 };
 
