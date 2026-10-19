@@ -9,8 +9,10 @@
  * `apply` yields the base with the selected hunks applied. `discard` yields the draft with the
  * selected hunks reverted, which is the base with every other hunk applied.
  */
-import type { Node as PMNode, Schema } from "prosemirror-model";
-import type { BlockDiff, Hunk } from "./hunks.js";
+import { Fragment, type Node as PMNode, type Schema } from "prosemirror-model";
+import { blocksEqual } from "./equal.js";
+import { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";
+import { rebase } from "./merge.js";
 import { buildBlocks, isBlockTok, type Side, type Tok } from "./tokens.js";
 
 export interface SpanPatch {
@@ -137,4 +139,77 @@ export function applySpanPatches(
   ))
     out.splice(p[side].from, p[side].to - p[side].from, ...p.blocks);
   return out;
+}
+
+/** The shared server write and optimistic fold of a frozen Apply click (O → P). */
+export function applyBase(
+  schema: Schema,
+  committed: readonly PMNode[],
+  optimistic: readonly PMNode[],
+  patched: readonly PMNode[],
+): readonly PMNode[] {
+  return blocksEqual(optimistic, committed)
+    ? patched
+    : rebase(schema, optimistic, committed, patched).blocks;
+}
+
+/** One block-range delta from the room's base to the base the writer saw, not a chain of clicks. */
+export function baseViewDelta(
+  schema: Schema,
+  committed: readonly PMNode[],
+  optimistic: readonly PMNode[],
+): SpanPatch[] {
+  if (blocksEqual(committed, optimistic)) return [];
+  const diff = diffBlocks(committed, optimistic);
+  return composeHunks(schema, diff, diff.hunks, "apply");
+}
+
+export type SpanPatchError =
+  | { kind: "invalid_range"; patch: number }
+  | { kind: "overlapping_ranges"; patch: number }
+  | { kind: "invalid_blocks" };
+
+/** Checks the applied side before a decoded request reaches composition; never mutates its inputs. */
+export function validateSpanPatches(
+  schema: Schema,
+  blocks: readonly PMNode[],
+  patches: readonly SpanPatch[],
+  side: "base" | "draft" = "base",
+): SpanPatchError | null {
+  const ordered = patches.map((patch, index) => ({ patch, index }));
+  for (const { patch, index } of ordered) {
+    const range = patch[side];
+    if (
+      !range ||
+      !Number.isSafeInteger(range.from) ||
+      !Number.isSafeInteger(range.to) ||
+      range.from < 0 ||
+      range.to < range.from ||
+      range.to > blocks.length
+    )
+      return { kind: "invalid_range", patch: index };
+  }
+  ordered.sort(
+    (a, b) => a.patch[side].from - b.patch[side].from || a.patch[side].to - b.patch[side].to,
+  );
+  for (let i = 1; i < ordered.length; i++) {
+    const previous = ordered[i - 1].patch[side];
+    const current = ordered[i].patch[side];
+    // Two insertions at one boundary have no unique order in a wire delta.
+    if (current.from < previous.to || current.from === previous.from)
+      return { kind: "overlapping_ranges", patch: ordered[i].index };
+  }
+  try {
+    const result = applySpanPatches(blocks, patches, side);
+    for (const block of result) {
+      if (block.type.schema !== schema || !block.isBlock) return { kind: "invalid_blocks" };
+      block.check();
+    }
+    // Empty block lists are the kernel's empty document, filled by buildBlocks on write.
+    if (result.length && !schema.topNodeType.validContent(Fragment.fromArray(result)))
+      return { kind: "invalid_blocks" };
+  } catch {
+    return { kind: "invalid_blocks" };
+  }
+  return null;
 }

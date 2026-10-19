@@ -13,6 +13,7 @@ import type { ItemRange } from "./id-index.js";
 export const APPLY_RECORD_ROOT = "__meridian_review_applied_v1";
 
 export interface ApplyEntry {
+  commandId?: string;
   base: ItemRange[];
   settled: ItemRange[];
 }
@@ -26,7 +27,11 @@ export function readApplyRecord(doc: Y.Doc): ApplyEntry[] {
     if (item.deleted || item.id.client !== DRAFT_SERVER_CLIENT_ID) continue;
     for (const entry of item.content.getContent() as Array<Partial<ApplyEntry> | null>)
       if (entry && Array.isArray(entry.base) && Array.isArray(entry.settled))
-        out.push({ base: entry.base, settled: entry.settled });
+        out.push({
+          base: entry.base,
+          settled: entry.settled,
+          ...(typeof entry.commandId === "string" ? { commandId: entry.commandId } : {}),
+        });
   }
   return out;
 }

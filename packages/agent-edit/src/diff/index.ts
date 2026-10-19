@@ -16,7 +16,14 @@ export {
   type ItemRange,
   type Provenance,
 } from "./attribution.js";
-export { applySpanPatches } from "./compose.js";
+export {
+  applyBase,
+  applySpanPatches,
+  baseViewDelta,
+  type SpanPatch,
+  type SpanPatchError,
+  validateSpanPatches,
+} from "./compose.js";
 export {
   convertLegacyDraft,
   DRAFT_SERVER_CLIENT_ID,

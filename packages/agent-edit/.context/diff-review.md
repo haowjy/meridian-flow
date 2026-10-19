@@ -102,7 +102,7 @@ membership or Apply evidence. The room's Apply records establish accepted items
 as base. Discard's `writeDiscardBlocks` preserves text-run identities even with
 inline atoms or low similarity. Structural rebuilds record copied equal spans as
 source links; only the other inserted IDs become base write-backs. AI/rebase
-`writeBlocks` keeps its allocation policy. Both record kinds share the writer-writable
+`writeBlocks` retains a one-to-one same-type flat paragraph even with no shared words. Both record kinds share the writer-writable
 restoration root. `recordRestorations` wraps each history's Undo/Redo in a transaction
 with the manager's origin, so prose and links travel in one update. The same record includes Undo's deletions: removing a Discard base
 copy must not count as a second deletion of the review base. Its origin remains
@@ -133,6 +133,19 @@ similarity is zero. Before editing a gap, it splits existing word boundaries in
 client-clock order, avoiding repeated shifts of Yjs's struct arrays during the
 backwards block write. Splitting allocates no clocks; the edits, identities and
 restoration records remain unchanged.
+
+A frozen Apply click holds O (the optimistic base seen) and P (O with its selected
+groups applied). `applyBase(schema, committed, O, P)` returns P when O equals the
+committed base, otherwise the blocks of `rebase(schema, O, committed, P)`. Browser
+queue folds and server base writes use this same function. Apply records carry an
+optional `commandId`; conversion history has none.
+
+`baseViewDelta(schema, roomBase, O)` builds a single set of disjoint whole-block
+patches, never a chain of queued clicks. Its payload contains only replaced blocks.
+The wire decoder constructs PM nodes; `validateSpanPatches` checks safe integer
+bounds and non-overlap on the applied side, and checks the resulting blocks against
+the schema before composition is trusted. Empty block lists represent an empty
+document. Unused side coordinates convey projection positions, not write authority.
 
 ## The rebase
 
@@ -172,6 +185,9 @@ Discard or Undo can carry tens of thousands of structs. The existing ancestry
 depth bound and the ordered lost-edit output are unchanged. The shared pinned
 Yjs adapter owns that index: noncanonical updates with repeated, out-of-order
 client blocks retain first-match lookup rather than changing admission.
+
+The caller filters lost typing to top-level blocks deleted by server rows; typing
+under another writer's deleted block is not recovered.
 
 The caller's contract: `LateTyping` is opaque in-process memory the host keeps
 per draft, so a reconnect that sends one keystroke per frame extends one
