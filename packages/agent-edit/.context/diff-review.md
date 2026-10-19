@@ -120,6 +120,15 @@ remain conservatively pending even if the character edit touches only writer tex
 Provenance includes the snapshot its parts cover. An unlisted ID is the writer only within that state
 vector or from the caller's explicitly identified local browser client; an unlisted deletion requires
 coverage in the snapshot's delete set or an explicitly supplied locally witnessed delete set.
+A wholly removed paragraph can text-align with a fresh empty replacement. When that
+replacement has no character tombstones, its block deletion witness supplies the
+deleter even for rebased base text that never existed in the draft. Recreated
+blocks do not bound that witness: the candidate region extends to retained base
+containers, and competing or uncovered tombstones leave the byline empty. A
+surviving container, or one with ordinary character tombstones, cannot borrow
+another block's author. Only proven Undo deletions of Discard base copies are
+excluded from that guard, so undoing Discard preserves the original block byline.
+
 Deletion evidence addresses the actual item ID, never an ancestor reached by a restoration link;
 restoration chains recover insertion origin only. Without deletion evidence, the item is unresolved:
 its footprint keeps all candidate parts, and uncertain naming contributes no author. A state vector alone cannot fence deletion-only writes. The classifier also returns the unresolved item

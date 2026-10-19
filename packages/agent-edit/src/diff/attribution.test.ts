@@ -23,7 +23,7 @@ import { diffBlocks } from "./hunks.js";
 import { rebase } from "./merge.js";
 import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
-import { writeBlocks } from "./writer.js";
+import { writeBlocks, writeDiscardBlocks } from "./writer.js";
 
 const schema = buildDocumentSchema();
 const frag = (d: Y.Doc) => d.getXmlFragment("prosemirror");
@@ -647,4 +647,69 @@ it("unlisted item IDs need a covered revision or this browser's client, never ab
       }).values(),
     ][0].byline,
   ).toEqual([{ kind: "user", userId: "u" }]);
+});
+
+it("a removed paragraph's block tombstone names its deleter when rebased text has no character witness", () => {
+  for (const actor of ["user", "thread", "unknown"] as const) {
+    const r = room(["abcdef", "tail"]);
+    const before = Y.snapshot(r.draft);
+    const remove = (doc: Y.Doc) => {
+      frag(doc).delete(0, 1);
+      frag(doc).insert(0, [paragraphXml("")]);
+    };
+    if (actor === "thread") r.ai(remove);
+    else r.writer(remove);
+    r.rebase([para("abc LIVE def"), para("tail")]);
+    for (const restored of [false, true]) {
+      if (restored)
+        r.discardUndo(
+          (doc) => writeDiscardBlocks(frag(doc), schema, [para("abc LIVE def"), para("tail")]),
+          2,
+        );
+      const projection = r.projection();
+      for (const doc of [r.draft, peer(r.draft, 50, true)]) {
+        const out = [
+          ...classifyChanges(doc, projection, {
+            userId: "u1",
+            parts: r.parts,
+            snapshot: actor === "unknown" ? before : Y.snapshot(doc),
+          }).values(),
+        ];
+        expect(out.map((c) => c.byline)).toEqual([
+          actor === "unknown"
+            ? []
+            : actor === "user"
+              ? [{ kind: "user", userId: "u1" }]
+              : [{ kind: "thread", threadId: "chat0", turnId: "turn" }],
+        ]);
+      }
+    }
+  }
+  for (const moved of [false, true]) {
+    const r = room(["neighbor", "abcdef", "separator", "tail"]);
+    r.ai((doc) => {
+      if (moved) {
+        frag(doc).delete(2, 1);
+        frag(doc).insert(1, [paragraphXml("separator")]);
+      }
+      frag(doc).delete(0, 1);
+      frag(doc).insert(0, [paragraphXml("neighbor")]);
+    });
+    r.writer((doc) => {
+      frag(doc).delete(moved ? 2 : 1, 1);
+      frag(doc).insert(1, [paragraphXml("")]);
+    });
+    r.rebase([para("neighbor"), para("abc LIVE def"), para("separator"), para("tail")]);
+    expect(r.read().map((c) => c.byline)).toEqual([[]]);
+  }
+  const surviving = room(["neighbor", "tail"]);
+  surviving.ai((doc) => {
+    frag(doc).insert(1, [paragraphXml("abcdef")]);
+    frag(doc).delete(0, 1);
+    frag(doc).insert(0, [paragraphXml("neighbor")]);
+  });
+  surviving.rebase([para("neighbor"), para("abcdef"), para("tail")]);
+  surviving.writer((doc) => textOf(doc, 1).delete(0, 6));
+  surviving.rebase([para("neighbor"), para("abc LIVE def"), para("tail")]);
+  expect(surviving.read().map((c) => c.byline)).toEqual([[]]);
 });

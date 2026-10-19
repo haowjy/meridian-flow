@@ -253,6 +253,7 @@ class Classifier {
   private readonly slide: number;
   private readonly blocks: { items: Y.Item[]; gaps: Y.Item[][] };
   private readonly indexes = new Map<number, BlockIx>();
+  private readonly removalRegions = new Map<number, readonly Y.Item[]>();
   private readonly texts = [new Map<number, SideText>(), new Map<number, SideText>()] as const;
   private readonly evidence: AttributionEvidence;
 
@@ -402,6 +403,8 @@ class Classifier {
         this.eachChar(ix, lo, hi, live);
         for (let i = lowerBound(ix.dead, lo); i < ix.dead.length && ix.dead[i].at <= hi; i++)
           dead(ix.dead[i].item);
+        if (was && !now.text)
+          for (const gap of this.paragraphRemovals(b)) for (const item of gap) dead(item);
       },
       items: (items) => {
         for (const current of items) {
@@ -428,6 +431,7 @@ class Classifier {
       text: (b, raw, was, now, before) => {
         const deleted = this.chars(acc, b, now.at, before, now.text);
         if (acc.incomplete || !deleted) return;
+        if (was && !raw.text) this.red(acc, this.paragraphRemovals(b), 1);
         const { head, added, removed } = replacement(raw.text, was);
         if (!added || !removed || added === removed) return;
         const start = raw.at + head;
@@ -490,6 +494,33 @@ class Classifier {
     );
   }
 
+  /** A fresh empty container can stand in for a removed paragraph after rebase.
+   * Ordinary character tombstones mean this may be text cleared in its original
+   * container. Undo's deletions of Discard base copies do not witness that edit. */
+  private paragraphRemovals(b: number): Array<readonly Y.Item[]> {
+    const retained = (at: number) => {
+      const { id } = this.blocks.items[at];
+      return this.evidence.origin(id.client, id.clock) === BASE;
+    };
+    if (this.text(1, b).text !== "" || retained(b)) return [];
+    for (const { item } of this.index(b).dead)
+      for (let k = 0; k < item.length; k++)
+        if (!this.evidence.isUndoneWriteBack(item.id.client, item.id.clock + k)) return [];
+    let candidates = this.removalRegions.get(b);
+    if (!candidates) {
+      let lo = b;
+      let hi = b;
+      // Recreated unchanged blocks cannot prove an old container's position.
+      // Only retained base containers bound the possible replacement region.
+      while (lo > 0 && !retained(lo - 1)) lo--;
+      while (hi + 1 < this.blocks.items.length && !retained(hi + 1)) hi++;
+      candidates = this.blocks.gaps.slice(lo, hi + 2).flat();
+      for (let at = lo; at <= hi; at++) this.removalRegions.set(at, candidates);
+    }
+    // Keep competing tombstones together: one removal needs exactly one witness.
+    return [candidates];
+  }
+
   /** Red: exact `weight` tombstones must account for a visible deletion of `deleted` characters or blocks. */
   private red(acc: Names, points: Array<readonly Y.Item[]>, weight: number, deleted = weight) {
     const valid: Array<Map<string, number>> = [];
@@ -499,12 +530,7 @@ class Classifier {
         for (let k = 0; k < item.length; k++) {
           const c = item.id.client;
           const clock = item.id.clock + k;
-          if (
-            this.evidence.settled.get(c, clock) < 0 &&
-            !(this.evidence.undone.get(c, clock) >= 0 && this.evidence.isWriteBack(c, clock)) &&
-            this.evidence.origin(c, clock) === BASE &&
-            this.evidence.superseded.get(c, clock) < 0
-          )
+          if (this.evidence.isBaseDeletion(c, clock))
             deleters.push(this.evidence.deleter(c, clock));
         }
       if (deleters.length === weight) {
