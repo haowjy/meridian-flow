@@ -37,6 +37,8 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Guard automatic notes and compaction reservations at run start, reply closure, tool continuation and overflow with the same non-spending budget check. A completed reply without pending input still succeeds in debt.
+
 - Preserve output-limit and failure terminations for OpenAI responses that also contain tool calls, so partial summaries cannot replace history.
 
 - Expand C14 and RP-4 probes for bounded notes, held calls, interruption and fresh compaction planning.

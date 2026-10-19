@@ -133,3 +133,12 @@ and remaining-slot eligibility, which precedes a potentially paid compaction.
 An actual ordinary generation alone increments/spends the iteration. Recheck
 budget after summary spend before the successor call. Notes no-tools output
 is persisted then continues to a fresh boundary, never successful reply closure.
+
+Successful reply closure only requests continuation when pending input exists;
+it never prepares a boundary. The next loop boundary applies Stop/yield and the
+same non-spending eligibility used before run-start preparation, then reserves
+notes or compaction. Late input continues the existing execution's 32-generation
+budget; it does not create a new execution. Forced overflow also requests this
+boundary rather than preparing inline. A finished reply without pending input
+closes successfully even in debt. Eligibility authorizes the whole summary phase
+(including retry/rolling); successor generation rechecks monetary eligibility.

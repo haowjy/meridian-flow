@@ -542,6 +542,9 @@ async function runDrainTurn(
   input: DrainRunLoopInput,
   reservedTurnId: TurnId = crypto.randomUUID(),
 ): Promise<PreparedLoop> {
+  const treeBudget =
+    input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
+  const accounting = createTurnAccounting({ billingUsage: deps.billingUsage });
   let preparationError: Error | null = null;
   const setup = await deps.delivery.adoptBatch(
     input.lease,
@@ -663,6 +666,12 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           };
+          const eligibilityError = await accounting.assertContinuationEligibility(
+            MAX_TURN_ITERATIONS,
+            treeBudget,
+            setupThread,
+          );
+          if (eligibilityError) throw eligibilityError;
           preflight = await prepareRequestContext(prepareInput);
         } catch (error) {
           if (input.signal?.aborted) throw error;
@@ -835,9 +844,7 @@ async function runDrainTurn(
         initialCompaction: preflight?.compaction ?? { kind: "generate" },
         initialExecutionAdmitted: setup.executionAdmitted,
         carriedReservedFor: setup.carriedReservedFor,
-        treeBudget:
-          input.treeBudget ??
-          createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+        treeBudget,
         skillBodies: setup.skillBodies,
       });
     },
@@ -1816,6 +1823,8 @@ async function executeLoop({
   let yieldRequested = false;
   let continuingTask = false;
   let iteration = 0;
+  let pendingCompletion: TerminalCause | undefined;
+  let forcedCompaction: ForcedCompactionDecision | undefined;
   // One emergency retry per reply, even across tool iterations and compaction splits.
   let retriedContextOverflow = false;
 
@@ -2044,18 +2053,19 @@ async function executeLoop({
   }
 
   async function exitRun(continueOnPending: boolean, cause: TerminalCause): Promise<boolean> {
+    if (continueOnPending && cause.kind === "success") {
+      pendingCompletion = cause;
+      return true;
+    }
     const outcome = await deps.delivery.close({
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
       localCancellation: () => (input.signal?.aborted ? abortTerminal() : null),
       settleSummaryResponses: () => settlePendingSummary(),
-      ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
+      continueOnPending,
     });
-    if (outcome.kind === "split") {
-      queuedDrain = await acceptBoundary(outcome.adopted);
-      return true;
-    }
+    if (outcome.kind === "continue") throw new Error("Terminal close cannot continue");
     currentTurn = outcome.completion.turn;
     return false;
   }
@@ -2111,16 +2121,6 @@ async function executeLoop({
 
   for (;;) {
     try {
-      if (initialCompaction.kind === "compact") {
-        const firstDecision = initialCompaction;
-        initialCompaction = { kind: "generate" };
-        queuedDrain = await acceptBoundary({
-          next: currentTurn,
-          split: false,
-          drain: { turns: [], blocks: [], events: [], ackIds: [] },
-          compaction: firstDecision,
-        });
-      }
       if (terminalControl) return currentTurn;
       // The in-process abort is the fast cancel path; the durable lease flag is the
       // cross-process one, read at each iteration's safe boundary. Either set means
@@ -2151,11 +2151,32 @@ async function executeLoop({
           return cancelExit();
         }
 
-        // Eligibility precedes any boundary that could reserve and pay for a summary.
-        // Spending a generation slot happens only after that boundary is accepted.
-        if (iteration >= MAX_TURN_ITERATIONS)
-          return exitRun(false, errorTerminal("exceeded max tool iterations"));
-        const eligibilityError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+        // Closure only asks whether input needs another request. No pending input
+        // means a successful response stays successful, even after spending into debt.
+        const completion = pendingCompletion;
+        pendingCompletion = undefined;
+        if (completion) {
+          const closed = await deps.delivery.close({
+            lease: input.lease,
+            turnId: currentTurn.id,
+            cause: completion,
+            localCancellation: () => (isCancelled() ? abortTerminal() : null),
+            settleSummaryResponses: () => settlePendingSummary(),
+            continueOnPending: true,
+          });
+          if (closed.kind === "completed") {
+            currentTurn = closed.completion.turn;
+            return false;
+          }
+        }
+
+        // All automatic continuations share this owner, including reply closure,
+        // initial compaction and a forced overflow retry. This check spends nothing.
+        const eligibilityError = await turnAccounting.assertContinuationEligibility(
+          MAX_TURN_ITERATIONS - iteration,
+          treeBudget,
+          thread,
+        );
         if (eligibilityError) return exitRun(false, errorTerminal(eligibilityError));
 
         const gatewayAbort = new AbortController();
@@ -2172,9 +2193,24 @@ async function executeLoop({
         }
 
         const boundaryTurnId = currentTurn.id;
-        const drain =
-          queuedDrain ??
-          (await acceptBoundary(await deps.delivery.splitAndContinue(boundaryInput())));
+        if (initialCompaction.kind === "compact") {
+          const firstDecision = initialCompaction;
+          initialCompaction = { kind: "generate" };
+          queuedDrain = await acceptBoundary({
+            next: currentTurn,
+            split: false,
+            drain: { turns: [], blocks: [], events: [], ackIds: [] },
+            compaction: firstDecision,
+          });
+        }
+        let drain = queuedDrain;
+        if (!drain) {
+          const adopted = await deps.delivery.splitAndContinue(boundaryInput(forcedCompaction));
+          forcedCompaction = undefined;
+          // Input may have been withdrawn since close requested continuation.
+          if (completion && !adopted.split) return exitRun(false, completion);
+          drain = await acceptBoundary(adopted);
+        }
 
         queuedDrain = undefined;
         if (terminalControl) return false;
@@ -2183,19 +2219,12 @@ async function executeLoop({
         if (acceptedStatus.kind === "awake" && acceptedStatus.cancelRequested)
           leaseCancelled = true;
         if (isCancelled()) return cancelExit();
-        iteration += 1;
-        if (iteration > MAX_TURN_ITERATIONS) {
-          return exitRun(false, errorTerminal("exceeded max tool iterations"));
-        }
-
         // A summary may spend credits while moving to its successor. Ordinary
         // no-split boundaries have already checked eligibility above.
         if (currentTurn.id !== boundaryTurnId) {
           const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
           if (budgetError) return exitRun(false, errorTerminal(budgetError));
         }
-
-        turnAccounting.recordIterationSpend(treeBudget);
 
         if (!preparedContext)
           throw new Error("Request context must be prepared before assistant generation");
@@ -2218,7 +2247,7 @@ async function executeLoop({
           gatewayCallId,
           threadId: input.threadId,
           turnId: currentTurn.id,
-          iteration: iteration - 1,
+          iteration,
           ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
         };
 
@@ -2249,7 +2278,7 @@ async function executeLoop({
             gatewayCallId,
             threadId: input.threadId,
             turnId: currentTurn.id,
-            iteration: iteration - 1,
+            iteration,
             agentSlug: built.agentSlug,
             request,
             toolRegistry: deps.toolRegistry,
@@ -2278,6 +2307,8 @@ async function executeLoop({
           string,
           { toolName: string; arguments: string; targetRecorded: boolean }
         >();
+        iteration += 1;
+        turnAccounting.recordIterationSpend(treeBudget);
         for await (const event of gateway.stream(request)) {
           if (isCancelled()) {
             cancelRequested = true;
@@ -2380,16 +2411,12 @@ async function executeLoop({
               retriedContextOverflow = true;
               if (usableWindowTokens === null)
                 throw new Error("Context overflow requires a resolved model");
-              queuedDrain = await acceptBoundary(
-                await deps.delivery.splitAndContinue(
-                  boundaryInput({
-                    kind: "compact",
-                    trigger: "auto",
-                    knownTooLarge: true,
-                    fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
-                  }),
-                ),
-              );
+              forcedCompaction = {
+                kind: "compact",
+                trigger: "auto",
+                knownTooLarge: true,
+                fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
+              };
               return true;
             }
             return exitRun(false, {

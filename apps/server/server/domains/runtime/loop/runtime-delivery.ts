@@ -256,8 +256,7 @@ export interface RuntimeDelivery
      */
     localCancellation?: () => TerminalCause | null;
     settleSummaryResponses?: () => Promise<void>;
-    continueWith?: DeliveryBoundary;
-  }): Promise<
-    { kind: "split"; adopted: AdoptedBatch } | { kind: "completed"; completion: FinalizedExecution }
-  >;
+    /** Ask the loop for a guarded continuation when input still waits. Never prepares it. */
+    continueOnPending?: boolean;
+  }): Promise<{ kind: "continue" } | { kind: "completed"; completion: FinalizedExecution }>;
 }
