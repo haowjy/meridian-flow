@@ -34,6 +34,8 @@ export type ServerAcknowledgementTracker = {
   beginConnection(): void;
   /** The socket closed, is reconnecting, or the transport is terminal. */
   endConnection(): void;
+  /** Refuse all captured cuts when this transport can never acknowledge them. */
+  terminate(): void;
   /** A frame was handed to the open socket (not merely queued for later). */
   noteFrameSent(frame: Uint8Array): void;
   /**
@@ -80,7 +82,12 @@ export function createServerAcknowledgementTracker(
   let sent = 0;
   let acknowledgedCount = 0;
   let published = false;
-  const barriers = new Set<{ target: number | null; resolve(): void }>();
+  let terminal = false;
+  const barriers = new Set<{
+    target: number | null;
+    resolve(): void;
+    reject(error: Error): void;
+  }>();
 
   const compute = () => open && handshakeSent && !rejected && acknowledgedCount >= sent;
   const publish = () => {
@@ -99,6 +106,7 @@ export function createServerAcknowledgementTracker(
 
   return {
     beginConnection() {
+      if (terminal) return;
       for (const barrier of barriers) barrier.target = null;
       open = true;
       handshakeSent = false;
@@ -109,6 +117,13 @@ export function createServerAcknowledgementTracker(
     },
     endConnection() {
       open = false;
+      publish();
+    },
+    terminate() {
+      terminal = true;
+      open = false;
+      for (const barrier of barriers) barrier.reject(new Error("Document transport ended"));
+      barriers.clear();
       publish();
     },
     noteFrameSent(frame) {
@@ -147,9 +162,10 @@ export function createServerAcknowledgementTracker(
       publish();
     },
     whenCurrentChangesAcknowledged() {
+      if (terminal) return Promise.reject(new Error("Document transport ended"));
       if (published) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        barriers.add({ target: open && handshakeSent ? sent : null, resolve });
+      return new Promise<void>((resolve, reject) => {
+        barriers.add({ target: open && handshakeSent ? sent : null, resolve, reject });
       });
     },
     get acknowledged() {

@@ -1,0 +1,8 @@
+# Draft review follow-ups
+
+- Dock Discard Undo is bound to the document/history captured at Discard. Probe
+  refusal and same-draft session replacement while its notice is open: the
+  callback currently checks terminal closure but not binding identity, so it can
+  target the retired document. End or transfer that notice explicitly rather
+  than offering Undo against a retired binding. Found during B4 C2 review; not
+  exercised by the archive-with-pending-Apply browser scenario.
