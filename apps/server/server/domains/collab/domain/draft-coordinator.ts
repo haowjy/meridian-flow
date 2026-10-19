@@ -65,8 +65,7 @@ export type PullInput = {
 };
 
 /**
- * A completed pull, a closed draft, or a changed upstream. The legacy fenced/blocked
- * arms have no producer after settlement deletion; lane R owns the Work-pull contract cut.
+ * A completed thread-peer pull, a closed draft, or a changed upstream.
  */
 export type PullOutcome = "pulled" | "closed" | "upstreamMoved";
 
@@ -175,9 +174,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
 
   /**
    * `candidate`, `upstream` merged into the committed replica, as a fold over the replica's
-   * cursor: rows appended since are applied into it under the row lock. A work draft's effect
-   * is judged against `upstream`, its new baseline, before the lock, and judged again on the
-   * folded checkpoint only when the fold applied rows.
+   * cursor: rows appended since are applied into it under the row lock.
    */
   function preparePull(base: DraftBase, candidate: Y.Doc, pull: PullInput): PreparedDraftWrite {
     const { snapshot } = base;
@@ -189,7 +186,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
   }
 
   /**
-   * One pull attempt: everything, the effect included, computed on a candidate of the
+   * One thread-peer pull attempt: computed on a candidate of the
    * committed replica before the attempt's scope; inside it the fold applies what landed since
    * and the checkpoint is written.
    */
@@ -302,6 +299,8 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
   ): Promise<PreparedDraftWrite | null> {
     const base = await loadBase(draftId);
     assertWritableDraft(base.snapshot);
+    if (base.snapshot.kind !== "thread_peer")
+      throw new Error("Only thread peers replicate a catch-up");
     const update = Y.encodeStateAsUpdate(source);
     if (documentContainment.contains(base.replica.doc, update)) return null;
     const candidate = cloneReplica(base.replica);

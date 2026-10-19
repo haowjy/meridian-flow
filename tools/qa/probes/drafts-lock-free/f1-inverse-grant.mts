@@ -66,6 +66,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     }
   });
   const inverse = createDrizzleTurnInverseService({
+    onDraftCommitted: () => {},
     db: harness.db,
     journal: harness.persistence.journal,
     drafts: harness.store,

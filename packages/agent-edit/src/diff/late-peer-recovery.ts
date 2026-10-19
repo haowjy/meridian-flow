@@ -65,6 +65,17 @@ export interface LateRecovery {
   memory: LateTyping;
 }
 
+/** Keep separator deletions observed while a host's append awaited I/O, without replacing
+ * its newly recovered spans. Remembered typing still wins over stale backspaces. */
+export function retainLateTypingDeletions(memory: LateTyping, observed: LateTyping): LateTyping {
+  if (memory === observed || !observed.deleted.size) return memory;
+  const remembered = new Set(memory.spans.flatMap((span) => span.ids));
+  const deleted = new Set(memory.deleted);
+  for (const id of observed.deleted) if (!remembered.has(id)) deleted.add(id);
+  const size = deleted.size + memory.spans.reduce((n, span) => n + span.ids.length, 0);
+  return size > MEMORY_LIMIT ? NO_LATE_TYPING : { spans: memory.spans, deleted };
+}
+
 const keyOf = (id: Y.ID) => `${id.client}:${id.clock}`;
 const elementOf = (item: Y.Item) => (item.content as Y.ContentType).type as Y.XmlElement;
 

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve incremental late-frame recovery across contained deletion echoes and reconnect snapshots; verify the content-rebase cutover with production-store probes.
+
 - Seed Work drafts with independent review content, rebase live through server appends, recover late typing deleted by rebases, and derive badges from the room's two fragments. Turn inverses no longer merge live identity into drafts.
 
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
