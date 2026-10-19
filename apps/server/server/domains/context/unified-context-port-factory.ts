@@ -43,6 +43,7 @@ import {
   resolveActiveFolderUri,
 } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+import { createDrizzleThreadFolders } from "./adapters/thread-folders.js";
 import type { ChatFileLookup } from "./chat-file-addresses.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
@@ -73,6 +74,7 @@ import type {
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import type { DocumentRemoval } from "./ports/document-removal.js";
+import type { ThreadFolders } from "./ports/thread-folders.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -114,6 +116,7 @@ export interface UnifiedContextPortFactory {
 }
 
 interface ContextStoreResolvers {
+  threadFolders?: ThreadFolders;
   lineages: ScratchLineages;
   chats: ChatUploadsOwners;
   /** Absent in the in-memory factory, which has no threads to ask. */
@@ -363,6 +366,8 @@ function buildUnifiedContextPort(input: {
   if (uploadsOwner) sources.set("uploads", chatSource(uploadsOwner));
   return createContextPortRouter({
     sources,
+    resolveThreadFolder: (owner, ref) =>
+      storeResolvers.threadFolders?.resolve(scope.projectId, owner, ref) ?? Promise.resolve(null),
     resolveChatSource: async (ref) => {
       const chat = await storeResolvers.chats.byRef(scope.projectId, ref);
       if (!chat) return { kind: "missing" };
@@ -440,6 +445,7 @@ function createProductionStoreResolvers(
 ): ContextStoreResolvers {
   return {
     lineages: createDrizzleScratchLineages(db),
+    threadFolders: createDrizzleThreadFolders(db),
     chats: createDrizzleChatUploadsOwners(db),
     resolveLineageStore(projectId, rootThreadId) {
       return createLineageContextDocumentStore(
@@ -528,6 +534,29 @@ export function createInMemoryUnifiedContextPortFactory(
   );
 
   if (options.chatFiles) storeResolvers.chatFiles = options.chatFiles;
+  storeResolvers.threadFolders = {
+    async resolve(projectId, owner, ref) {
+      const sourceId =
+        "workId" in owner
+          ? `work:${owner.workId}:scratch`
+          : owner.kind === "lineage"
+            ? `work:${(await storeResolvers.lineages.byRef(projectId, owner.rootThreadRef))?.rootThreadId}:scratch`
+            : null;
+      if (!sourceId) return null;
+      const retained = [...registry.backing.folders.values()].find(
+        (row) =>
+          row.contextSourceId === sourceId &&
+          row.parentId === null &&
+          row.name === `@${ref}` &&
+          !row.deletedAt,
+      );
+      return (
+        retained?.threadId ??
+        registry.backing.threadFolderAssociations.get(`${sourceId}/@${ref}`) ??
+        null
+      );
+    },
+  };
 
   const resolveFolder =
     (

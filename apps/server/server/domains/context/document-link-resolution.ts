@@ -6,6 +6,7 @@ import {
   matchDocumentPath,
   parseContextUri,
   resolveDocumentHref,
+  sourceLocationFromContextUri,
 } from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
@@ -45,7 +46,8 @@ export function createDocumentLinkResolver({
   async function location(input: ResolveDocumentLinkInput, uri: string): Promise<Location | null> {
     const parsed = parseContextUri(uri);
     if (!parsed.ok || !parsed.value.path) return null;
-    const { scheme, path, authority } = parsed.value;
+    const { scheme, authority } = parsed.value;
+    const path = sourceLocationFromContextUri(parsed.value);
     let scope: CatalogScope | null;
     if (scheme === "user") scope = { kind: "user", userId: input.userId };
     else if (isProjectScopedScheme(scheme)) scope = { kind: "project", projectId: input.projectId };
@@ -87,7 +89,7 @@ export function createDocumentLinkResolver({
       if (entry.kind !== "file") return [];
       const parsed = parseContextUri(entry.uri);
       return parsed.ok && parsed.value.scheme === address.scheme
-        ? [{ entry, path: parsed.value.path }]
+        ? [{ entry, path: sourceLocationFromContextUri(parsed.value) }]
         : [];
     });
     const match = matchDocumentPath(files, address.path, (file) => file.path);
@@ -115,7 +117,7 @@ function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
     documentId: file.entryId,
     title: documentTitleFromUri(file.uri) ?? file.name,
     scheme: parsed.value.scheme,
-    path: parsed.value.path,
+    path: sourceLocationFromContextUri(parsed.value),
     uri: file.uri,
     ...(file.scope.kind === "lineage" ? { rootThreadId: file.scope.rootThreadId } : {}),
     ...(file.scope.kind === "chat" ? { chatThreadId: file.scope.chatId } : {}),

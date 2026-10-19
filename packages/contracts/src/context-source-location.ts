@@ -27,8 +27,12 @@ export function decodeContextSourcePath(
   return validateContextEntryPath(path, options);
 }
 
-export function sourceLocationFromContextUri(location: Pick<ParsedContextUri, "path">): string {
-  return location.path;
+export function sourceLocationFromContextUri(
+  location: Pick<ParsedContextUri, "path" | "threadRef">,
+): string {
+  return location.threadRef
+    ? [`@${location.threadRef}`, location.path].filter(Boolean).join("/")
+    : location.path;
 }
 
 export function contextUriFromSourceLocation(
@@ -36,7 +40,8 @@ export function contextUriFromSourceLocation(
   path: string,
   authority: CanonicalContextAuthority = { kind: "contextual" },
 ): string {
-  return canonicalContextUri(scheme, path, authority);
+  const decoded = sourceLocation(scheme, path);
+  return canonicalContextUri(scheme, decoded.path, authority, decoded);
 }
 
 /** Syntax-only owner variant for clients that have not resolved Work identity. */
@@ -45,5 +50,16 @@ export function parsedContextUriFromSourceLocation(
   path: string,
   authority: ParsedContextAuthority,
 ): string {
-  return formatParsedContextUri(scheme, path, authority);
+  const decoded = sourceLocation(scheme, path);
+  return formatParsedContextUri(scheme, decoded.path, authority, decoded);
+}
+
+function sourceLocation(
+  scheme: ContextUriScheme,
+  path: string,
+): { path: string; threadRef?: string } {
+  const [root, ...tail] = path.split("/");
+  return scheme === "scratch" && /^@[cp][1-9][0-9]*$/.test(root ?? "")
+    ? { threadRef: root?.slice(1), path: tail.join("/") }
+    : { path };
 }

@@ -3,6 +3,7 @@ import {
   isOwnedContextScheme,
   isWorkScopedScheme,
   parseUnifiedContextUri,
+  sourceLocationFromContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -80,7 +81,7 @@ export function resolveContextReadPath(
       if ("kind" in authority && authority.kind === "contextual")
         throw createError({ statusCode: 500, message: "Missing resolved context authority" });
       if (parsed.value.authority.kind === "contextual") {
-        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
+        uri = ownedBrowseUri(scheme, authority, sourceLocationFromContextUri(parsed.value));
       } else {
         const sameAuthority =
           "workSlug" in authority
@@ -98,7 +99,7 @@ export function resolveContextReadPath(
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
-        uri = ownedBrowseUri(scheme, authority, parsed.value.path);
+        uri = ownedBrowseUri(scheme, authority, sourceLocationFromContextUri(parsed.value));
       }
     } else uri = parsed.value.normalized;
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {

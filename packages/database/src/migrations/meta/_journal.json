@@ -484,6 +484,27 @@
       "when": 1792387204654,
       "tag": "0074_document_removal_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792445692772,
+      "tag": "0075_thread_notes_folder",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792445692773,
+      "tag": "0076_thread_notes_folder_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792445692774,
+      "tag": "0077_thread_notes_folder_validate",
+      "breakpoints": true
     }
   ]
 }

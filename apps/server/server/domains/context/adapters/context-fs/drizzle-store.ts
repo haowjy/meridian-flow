@@ -5,13 +5,9 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import {
-  type DocumentFileType,
-  type Filetype,
-  folderDocumentName,
-} from "@meridian/contracts/protocol";
+import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections, documents } from "@meridian/database/schema";
+import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -47,6 +43,7 @@ import {
 } from "../../tree/tree-view.js";
 import { loadHiddenFilenames } from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
+import { associatedRootForSource } from "../thread-folders.js";
 import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
 
 type DocumentRow = Pick<
@@ -192,6 +189,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const ensured = await ensureLiveFolderPath(this.deps.db, {
         contextSourceId: this.sourceId,
         dir,
+        associatedRoot: await associatedRootForSource(this.deps.db, this.sourceId, dir),
       });
       if (!ensured.ok) throw new ContextEntryConflictError("file");
       const { folderId, placed } = ensured.value;

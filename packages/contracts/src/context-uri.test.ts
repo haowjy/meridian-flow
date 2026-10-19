@@ -27,7 +27,7 @@ describe("parseContextUri", () => {
   it("recognizes qualifier chains through normalized separators", () => {
     expect(parseContextUri("scratch:////@other-project//@revision-pass/notes.md")).toMatchObject({
       ok: false,
-      error: { reason: expect.stringContaining("not yet supported") },
+      error: { reason: expect.stringContaining("reserved") },
     });
   });
 
@@ -104,7 +104,7 @@ describe("parseContextUri", () => {
   it.each([
     "scratch://@revision-pass/folder/@reserved/file.md",
     "scratch://@bad_slug/file.md",
-    "scratch://@other/@/c12/file.md",
+    "scratch://@other/@/c12/@/c13/file.md",
   ])("rejects reserved path segments and invalid authorities: %s", (uri) => {
     expect(parseContextUri(uri)).toMatchObject({ ok: false });
   });

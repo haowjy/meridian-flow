@@ -92,6 +92,7 @@ export type CanonicalContextAuthority =
 export interface ParsedContextUri {
   scheme: ContextUriScheme;
   authority: ParsedContextAuthority;
+  threadRef?: string;
   /** Normalized path: no edge slash, empty or `.` segments, or repeated slashes. */
   path: string;
   /** Grammar-normalized syntax. Real-Work identity is not resolved yet. */
@@ -104,7 +105,13 @@ type ContextUriParseError = {
    * `unknownScheme` marks a URI that names no context scheme, so it addresses no document.
    * `chatHandle` marks `uploads://@c1/…`, a chat's handle spelled straight after `@`.
    */
-  error: { uri: string; reason: string; unknownScheme?: string; chatHandle?: string };
+  error: {
+    uri: string;
+    reason: string;
+    unknownScheme?: string;
+    chatHandle?: string;
+    unresolvedVariable?: string;
+  };
 };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
@@ -114,6 +121,7 @@ type AuthorityParseResult =
 export interface ParseContextUriOptions {
   barePathDefault?: ContextUriScheme;
   schemes?: readonly ContextUriScheme[];
+  variables?: ContextUriVariables;
 }
 
 /** Canonical string form of a parsed scheme + optional authority + path. */
@@ -121,21 +129,25 @@ export function canonicalContextUri(
   scheme: ProjectScopedContextUriScheme,
   path: string,
   authority?: Extract<CanonicalContextAuthority, { kind: "contextual" }>,
+  location?: { threadRef?: string },
 ): string;
 export function canonicalContextUri(
   scheme: OwnedContextUriScheme,
   path: string,
   authority?: CanonicalContextAuthority,
+  location?: { threadRef?: string },
 ): string;
 export function canonicalContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority?: CanonicalContextAuthority,
+  location?: { threadRef?: string },
 ): string;
 export function canonicalContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: CanonicalContextAuthority = { kind: "contextual" },
+  location: { threadRef?: string } = {},
 ): string {
   if (isProjectScopedScheme(scheme) && !("kind" in authority && authority.kind === "contextual")) {
     throw new RangeError(`Scheme "${scheme}" does not support authority qualifiers`);
@@ -164,7 +176,18 @@ export function canonicalContextUri(
   ) {
     throw new RangeError(uploadsBelongToChat);
   }
-  const qualifier = authorityQualifier(authority);
+  const ownerQualifier = authorityQualifier(authority);
+  if (
+    location.threadRef &&
+    (scheme !== "scratch" ||
+      !ownerQualifier ||
+      ownerQualifier === "@" ||
+      !/^[cp][1-9][0-9]*$/.test(location.threadRef))
+  )
+    throw new RangeError("Thread folders require an explicit Scratch owner and a c/p handle");
+  const qualifier = location.threadRef
+    ? `${ownerQualifier}/@/${location.threadRef}`
+    : ownerQualifier;
   if (qualifier)
     return normalizedPath
       ? `${scheme}://${qualifier}/${normalizedPath}`
@@ -193,7 +216,9 @@ export function parseContextUri(
 ): ContextUriParseResult {
   const schemes = options.schemes ?? CONTEXT_URI_SCHEMES;
   const bareDefault = options.barePathDefault ?? "manuscript";
-  const trimmed = raw.trim();
+  const expanded = expandContextUriVariables(raw, options.variables);
+  if (!expanded.ok) return expanded;
+  const trimmed = expanded.value.trim();
   if (!trimmed) return invalidContextUri(raw, "Empty URI");
 
   let scheme: ContextUriScheme;
@@ -223,7 +248,24 @@ export function parseContextUri(
   const authorityResult = parseAuthorityPrefix(scheme, rawPath, raw);
   if (!authorityResult.ok) return authorityResult;
 
-  const segments = authorityResult.value.rawPath
+  let tail = authorityResult.value.rawPath;
+  let threadRef: string | undefined;
+  if (tail.startsWith("@/")) {
+    const [_, ref, ...rest] = tail.split("/");
+    const owner = authorityResult.value.authority;
+    if (
+      scheme !== "scratch" ||
+      (owner.kind !== "work" && owner.kind !== "lineage") ||
+      !/^[cp][1-9][0-9]*$/.test(ref ?? "")
+    )
+      return invalidContextUri(
+        raw,
+        "Thread folders require an explicit Scratch owner and a c/p handle",
+      );
+    threadRef = ref;
+    tail = rest.join("/");
+  }
+  const segments = tail
     .replace(/^\/+/, "")
     .replace(/\/+$/, "")
     .split("/")
@@ -236,20 +278,27 @@ export function parseContextUri(
   }
 
   const path = segments.join("/");
-  const normalized = formatParsedContextUri(scheme, path, authorityResult.value.authority);
+  const normalized = formatParsedContextUri(scheme, path, authorityResult.value.authority, {
+    threadRef,
+  });
   return {
     ok: true,
     value: {
       scheme,
       authority: authorityResult.value.authority,
       path,
+      ...(threadRef ? { threadRef } : {}),
       normalized,
     },
   };
 }
 
-export function parseUnifiedContextUri(raw: string): ContextUriParseResult {
+export function parseUnifiedContextUri(
+  raw: string,
+  options: ParseContextUriOptions = {},
+): ContextUriParseResult {
   return parseContextUri(raw, {
+    ...options,
     barePathDefault: "manuscript",
     schemes: CONTEXT_URI_SCHEMES,
   });
@@ -277,7 +326,7 @@ function parseAuthorityPrefix(
 
   const segments = rawPath.split("/").filter((segment) => segment !== "" && segment !== ".");
   const qualifiers: string[] = [];
-  while (segments[0]?.startsWith("@")) qualifiers.push(segments.shift() ?? "");
+  if (segments[0]?.startsWith("@")) qualifiers.push(segments.shift() ?? "");
   if (qualifiers.length === 0) {
     return { ok: true, value: { authority: { kind: "contextual" }, rawPath } };
   }
@@ -357,8 +406,9 @@ export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: ParsedContextAuthority,
+  location: { threadRef?: string } = {},
 ): string {
-  const qualifier =
+  const ownerQualifier =
     authority.kind === "lineage"
       ? `@/${authority.rootThreadRef}`
       : authority.kind === "chat"
@@ -368,6 +418,9 @@ export function formatParsedContextUri(
           : authority.kind === "none"
             ? "@"
             : null;
+  const qualifier = location.threadRef
+    ? `${ownerQualifier}/@/${location.threadRef}`
+    : ownerQualifier;
   if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
   return path ? `${scheme}://${path}` : `${scheme}://`;
 }
@@ -420,3 +473,46 @@ export {
   parsedContextUriFromSourceLocation,
   sourceLocationFromContextUri,
 } from "./context-source-location.js";
+
+/** Prepared owner/thread locations; variables are input shorthand, never stored authority. */
+export type ContextNotesLocation = {
+  owner: Extract<ParsedContextAuthority, { kind: "work" | "lineage" }>;
+  threadRef: string;
+};
+export type ContextNotesScope = { current?: ContextNotesLocation; parent?: ContextNotesLocation };
+export type ContextUriVariables = Readonly<Partial<Record<"THREAD" | "PARENT", string>>>;
+
+export function contextUriVariables(scope: ContextNotesScope): ContextUriVariables {
+  const variables: Partial<Record<"THREAD" | "PARENT", string>> = {};
+  for (const [key, location] of [
+    ["THREAD", scope.current],
+    ["PARENT", scope.parent],
+  ] as const) {
+    if (!location || !/^[cp][1-9][0-9]*$/.test(location.threadRef)) continue;
+    variables[key] = formatParsedContextUri("scratch", "", location.owner, location)
+      .slice("scratch://".length)
+      .replace(/\/$/, "");
+  }
+  return variables;
+}
+
+/** Expand only a whole first segment after `scheme://`, before grammar interpretation. */
+export function expandContextUriVariables(
+  raw: string,
+  variables: ContextUriVariables = {},
+): { ok: true; value: string } | ContextUriParseError {
+  const match = /^([a-z][a-z0-9+.-]*:\/\/)\$([A-Z][A-Z0-9_]*)(?=\/|$)/.exec(raw.trim());
+  if (!match) return { ok: true, value: raw };
+  const name = match[2] ?? "";
+  const replacement = name === "THREAD" || name === "PARENT" ? variables[name] : undefined;
+  if (replacement === undefined)
+    return {
+      ok: false,
+      error: {
+        uri: raw,
+        reason: `Unresolved $${name}. Supported variables: $THREAD and $PARENT (only in chat scope; a root chat has no $PARENT).`,
+        unresolvedVariable: name,
+      },
+    };
+  return { ok: true, value: `${match[1]}${replacement}${raw.trim().slice(match[0].length)}` };
+}

@@ -219,6 +219,8 @@ export const folders = pgTable(
       .notNull()
       .references(() => contextSources.id, { onDelete: "cascade" }),
     parentId: uuid("parent_id").$type<FolderId>(),
+    /** Association survives chat purge, just like content source owners. No thread FK. */
+    threadId: uuid("thread_id").$type<ThreadId>(),
     name: text("name").notNull(),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -233,6 +235,12 @@ export const folders = pgTable(
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
+    check("folders_thread_root_only", sql`${table.threadId} IS NULL OR ${table.parentId} IS NULL`),
+    uniqueIndex("folders_source_thread_live")
+      .on(table.contextSourceId, table.threadId)
+      .where(
+        sql`${table.threadId} IS NOT NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`,
+      ),
     index("folders_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),

@@ -28,11 +28,16 @@ export type ResolvedUri = {
   chatRef: string | null;
   /** The chat's thread id, which the server's `chatId` query takes; null unless `chatRef` is set. */
   chatId: string | null;
+  rootThreadId?: string;
 };
 
 /** The owner the context route helpers send: the chat for uploads, else the Work. */
 export function ownerOf(target: ResolvedUri): ContextOwner {
-  return target.chatId ? { chatThreadId: target.chatId } : { workId: target.workId };
+  return target.chatId
+    ? { chatThreadId: target.chatId }
+    : target.rootThreadId
+      ? { rootThreadId: target.rootThreadId }
+      : { workId: target.workId };
 }
 
 export async function resolveUri(
@@ -49,6 +54,7 @@ export async function resolveUri(
   if (!path) throw usageError(`URI ${raw} has no path`);
   let workId: string | null = null;
   let chatRef: string | null = null;
+  let rootThreadId: string | undefined;
   if (scheme === "uploads") {
     if (workOverride !== undefined)
       throw usageError("uploads belong to a chat: use --chat <c-handle>");
@@ -67,6 +73,9 @@ export async function resolveUri(
         `uploads belong to a chat: use uploads://@/<c-handle>/… or --chat <c-handle>`,
       );
     }
+  } else if (scheme === "scratch" && authority.kind === "lineage") {
+    if (workOverride !== undefined) throw usageError("Lineage Scratch cannot have a Work override");
+    rootThreadId = await resolveThreadId(session, authority.rootThreadRef, projectId);
   } else if (scheme === "scratch") {
     const workRaw =
       workOverride ?? (authority.kind === "work" ? `@${authority.workSlug}` : undefined);
@@ -89,6 +98,7 @@ export async function resolveUri(
     workId,
     chatRef,
     chatId,
+    ...(rootThreadId ? { rootThreadId } : {}),
   };
 }
 

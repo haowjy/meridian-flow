@@ -48,7 +48,11 @@ spelling. Browser/HTTP paths are storage coordinates, not URI tails. Validate
 writer-created names with entry validation; decode transport paths with the
 scheme-aware source-location decoder. It recognizes only an exact Scratch
 reserved root (`@c15` or `@p7`), and validates every remaining segment normally.
-It does not prove association or grant access. Public URI intake remains strict.
+It does not prove association or grant access. Public URI intake remains strict: the
+stored `@c15` spelling is never accepted as a URI tail. Thread locations are
+`threadRef` beside the owner and serialize as `scratch://@arc/@/c15/x`.
+Relative href spelling compares both owner and thread location. Explicit contextual
+Scratch links inherit the holder owner only, not its thread qualifier.
 
 
 `context-uri.ts` owns scheme classification and address syntax. Draft-mode

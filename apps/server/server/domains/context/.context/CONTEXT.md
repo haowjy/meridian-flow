@@ -37,6 +37,14 @@ extension-omitted lookup. Documents and folders share one namespace: a folder's
 comparison name uses the document-name codec, so `Lore.md` occupies the
 `Lore` document alias.
 
+Thread folders use a root row with `thread_id` and stored name `@<ref>`.
+There is no thread FK: a retained live root proves its qualifier after purge.
+Before allocation the adapter proves same-project Work membership (any retained
+membership) or lineage membership; it repeats that proof under the source lock.
+Create, mkdir and move destinations use the one associated-root placement path.
+Reads never allocate. The shared relocation kernel refuses associated roots;
+deleting one is ordinary recursive deletion, and a later write allocates afresh.
+
 ## Access, source capabilities, and transactions
 
 File policy decides whether a caller may read or edit and whether an agent

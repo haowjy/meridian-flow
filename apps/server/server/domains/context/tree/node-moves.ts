@@ -31,7 +31,7 @@ import {
   type SplitPlan,
 } from "./folder-normalization.js";
 import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
-import { ensureLiveFolderPath } from "./placement.js";
+import { type AssociatedRoot, ensureLiveFolderPath } from "./placement.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, type NodeRef } from "./tree-view.js";
 import {
@@ -59,6 +59,7 @@ export type NodeMove = {
   to: MoveTarget;
   /** The document's file type after the move; null keeps it. */
   filetype: Filetype | null;
+  associatedRoot?: AssociatedRoot;
 };
 
 export type MoveFault = {
@@ -111,6 +112,13 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
   const { node: ref, to } = move;
   const current = await currentNode(db, ref);
   if (!current) return Err({ code: "stale_source", node: ref });
+  if (ref.kind === "folder") {
+    const [row] = await currentDrizzleDb(db)
+      .select({ threadId: folders.threadId })
+      .from(folders)
+      .where(eq(folders.id, ref.id));
+    if (row?.threadId) return Err({ code: "invalid_operation", node: ref });
+  }
   const path = [...to.dir, filenameOf({ kind: ref.kind, ...to })].join("/");
   if (
     ref.kind === "folder" &&
@@ -230,6 +238,7 @@ async function installMove(
   const ensured = await ensureLiveFolderPath(db, {
     contextSourceId: to.contextSourceId,
     dir: to.dir,
+    associatedRoot: move.associatedRoot,
   });
   if (!ensured.ok) return Err({ code: "conflict", node });
   // The mover's caller refreshes the catalog over every source the move touches.

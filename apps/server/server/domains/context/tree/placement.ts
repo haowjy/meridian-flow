@@ -9,10 +9,10 @@
  * Every function runs in its caller's transaction, which holds the namespaces of every
  * source involved and the document locks of every target document.
  */
-import type { ContextSourceId, FolderId } from "@meridian/contracts";
+import type { ContextSourceId, FolderId, ThreadId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -90,12 +90,48 @@ export async function walkFolders(
  * opposite-kind check, a visible folder is inserted and its location claimed. The caller
  * holds the source's namespace lock. `placed`: the folders revealed or inserted.
  */
+export type AssociatedRoot = { name: string; threadId: ThreadId };
+
 export async function ensureLiveFolderPath(
   db: Database,
-  input: { contextSourceId: ContextSourceId; dir: readonly string[] },
+  input: {
+    contextSourceId: ContextSourceId;
+    dir: readonly string[];
+    associatedRoot?: AssociatedRoot;
+  },
 ): Promise<Result<{ folderId: FolderId | null; placed: readonly FolderId[] }, CreateFault>> {
   const { contextSourceId } = input;
   const created: FolderId[] = [];
+  if (input.dir[0]?.startsWith("@")) {
+    const association = input.associatedRoot;
+    if (!association || association.name !== input.dir[0])
+      throw new Error("Missing proven thread-root association");
+    const tx = currentDrizzleDb(db);
+    const [existing] = await tx
+      .select({ id: folders.id, threadId: folders.threadId })
+      .from(folders)
+      .where(
+        and(
+          eq(folders.contextSourceId, contextSourceId),
+          isNull(folders.parentId),
+          eq(folders.name, association.name),
+          isNull(folders.deletedAt),
+          eq(folders.hidden, false),
+        ),
+      );
+    if (existing) {
+      if (existing.threadId !== association.threadId)
+        throw new Error("Thread-root association mismatch");
+    } else {
+      const id = await insertFolder(
+        db,
+        { contextSourceId, parentId: null, name: association.name },
+        { hidden: false, threadId: association.threadId },
+      );
+      await claimDocumentLocation(db, contextSourceId, null, association.name);
+      created.push(id);
+    }
+  }
   const walk = await walkFolders(db, LIVE_TREE, contextSourceId, input.dir, async (gap) => {
     const at = { contextSourceId, ...gap };
     const hidden = await findHiddenFolder(db, at);

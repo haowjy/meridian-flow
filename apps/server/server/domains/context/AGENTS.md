@@ -19,6 +19,12 @@ the storage seam; file access remains the responsibility of [file policy](../fil
 - Work URI authorities use the persisted opaque slug. Membership selects a
   thread's primary Work but does not grant context access.
 
+A Scratch location may add a thread qualifier after its owner, such as
+`scratch://@arc/@/c15/plan`. Storage encodes that location as an associated
+root `@c15`, not a writer name. The live root proves its association even
+after the chat is purged; new roots require project/owner membership proof.
+The root cannot be renamed or moved. Contents can; root deletion is allowed.
+
 ## Rules that change behavior
 
 - Routes and tools ask file policy before calling this domain. Storage

@@ -185,6 +185,9 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     policy: LocationChangePolicy,
   ): Promise<Result<ContextMoveResult, ContextError>> {
+    const parsedSource = parseContextUri(source.canonical);
+    if (parsedSource.ok && parsedSource.value.threadRef && !parsedSource.value.path)
+      return Err({ code: "invalid_operation", uri: source.canonical });
     await this.moveLinks?.flush(source);
     let lockedDestination = destination;
     const destinationResolver = policy.target === "exact" ? policy.resolveDestination : undefined;

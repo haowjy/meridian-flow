@@ -11,6 +11,7 @@ import {
   isOwnedContextScheme,
   isProjectScopedScheme,
   parseContextUri,
+  sourceLocationFromContextUri,
 } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
 import { documentPreviousLocations, projects, threads, works } from "@meridian/database/schema";
@@ -26,7 +27,9 @@ import {
   loadDocumentAddresses,
   presentSourceId,
 } from "../tree/tree-addresses.js";
+import { catalogSourceAuthority } from "./catalog-file-mapper.js";
 import { inspectTreeLocation } from "./context-fs/drizzle-tree-mutation-store.js";
+import { createDrizzleThreadFolders } from "./thread-folders.js";
 
 type CoordinateKey = Pick<
   DocumentCoordinates,
@@ -100,7 +103,8 @@ export async function resolveCanonicalAddress(
   if (!parsed.ok || parsed.value.normalized !== input.address) {
     throw new UnresolvableAddressError(input.address, `Address is not canonical: ${input.address}`);
   }
-  const { scheme, authority, path } = parsed.value;
+  const { scheme, authority } = parsed.value;
+  const path = sourceLocationFromContextUri(parsed.value);
   if (!isAheadFilename(path.split("/").at(-1) ?? "")) {
     throw new UnresolvableAddressError(
       input.address,
@@ -196,6 +200,23 @@ export async function resolveCanonicalAddress(
     }
     workId = lockWorkId = work.id;
   }
+  if (
+    parsed.value.threadRef &&
+    !(await createDrizzleThreadFolders(db).resolve(
+      projectId,
+      catalogSourceAuthority(
+        scheme,
+        workId,
+        authority.kind === "work" ? authority.workSlug : null,
+        authority.kind === "lineage" ? authority.rootThreadRef : null,
+      ),
+      parsed.value.threadRef,
+    ))
+  )
+    throw new UnresolvableAddressError(
+      input.address,
+      "Thread is not associated with this Scratch owner",
+    );
   return {
     projectId,
     userId: holder.userId,

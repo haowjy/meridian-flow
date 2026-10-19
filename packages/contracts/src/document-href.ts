@@ -2,6 +2,7 @@
 
 import {
   formatParsedContextUri,
+  type ParseContextUriOptions,
   type ParsedContextUri,
   parseContextUri,
   splitDocumentHrefSuffix,
@@ -15,6 +16,7 @@ export type ResolvedDocumentHref = { uri: string; suffix: string };
 export function resolveDocumentHref(
   href: string,
   baseUri: string | null,
+  options: ParseContextUriOptions = {},
 ): ResolvedDocumentHref | null {
   const { path: rawPath, suffix } = splitDocumentHrefSuffix(href);
   if (!rawPath || rawPath.startsWith("/") || rawPath.endsWith("/")) return null;
@@ -25,7 +27,7 @@ export function resolveDocumentHref(
   // base, wherever a `://` might appear inside it.
   const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(path)?.[1];
   if (scheme) {
-    const full = parseContextUri(scheme.toLowerCase() + path.slice(scheme.length));
+    const full = parseContextUri(scheme.toLowerCase() + path.slice(scheme.length), options);
     return full.ok && full.value.path ? { uri: full.value.normalized, suffix } : null;
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return null;
@@ -43,7 +45,12 @@ export function resolveDocumentHref(
   }
   if (!segments.length) return null;
   return {
-    uri: formatParsedContextUri(base.value.scheme, segments.join("/"), base.value.authority),
+    uri: formatParsedContextUri(
+      base.value.scheme,
+      segments.join("/"),
+      base.value.authority,
+      base.value,
+    ),
     suffix,
   };
 }
@@ -75,6 +82,7 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
     target.value.scheme,
     encodePath(target.value.path),
     target.value.authority,
+    target.value,
   );
 }
 
@@ -132,7 +140,7 @@ function decodePath(path: string): string | null {
 }
 
 function sameAuthority(a: ParsedContextUri, b: ParsedContextUri): boolean {
-  return JSON.stringify(a.authority) === JSON.stringify(b.authority);
+  return a.threadRef === b.threadRef && JSON.stringify(a.authority) === JSON.stringify(b.authority);
 }
 
 function encodePath(path: string): string {

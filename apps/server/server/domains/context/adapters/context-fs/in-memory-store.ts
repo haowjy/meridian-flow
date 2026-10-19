@@ -38,6 +38,7 @@ import type { LiveCreateCandidate } from "../../tree/hidden-node-types.js";
 import type { PathResolution, TreeView } from "../../tree/tree-view.js";
 
 type FolderRow = ContextFolder & {
+  threadId?: string;
   contextSourceId: string;
   deletedAt: string | null;
   updatedAt: string;
@@ -52,6 +53,8 @@ type DocumentRow = ContextDocument & {
 };
 
 export interface InMemoryContextDocumentStoreBacking {
+  /** Fixture-proved membership, keyed by source and reserved root name. */
+  threadFolderAssociations: Map<string, string>;
   previousLocations: Map<string, string>;
   /** Joined-create forwards, `from → to`. */
   forwards: Map<string, string>;
@@ -69,6 +72,7 @@ export interface InMemoryContextDocumentStoreOptions {
 
 export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocumentStoreBacking {
   return {
+    threadFolderAssociations: new Map(),
     previousLocations: new Map(),
     forwards: new Map(),
     folders: new Map(),
@@ -77,6 +81,27 @@ export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocu
     clock: { value: 0 },
     availabilityGeneration: { value: 0n },
   };
+}
+
+function threadRootAssociation(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  name: string,
+): string | undefined {
+  if (parentId !== null || !name.startsWith("@")) return undefined;
+  if (!/^@[cp][1-9][0-9]*$/.test(name)) throw new Error("Invalid thread root");
+  const existing = [...backing.folders.values()].find(
+    (row) =>
+      row.contextSourceId === sourceId &&
+      row.parentId === null &&
+      row.name === name &&
+      !row.deletedAt,
+  );
+  const id = existing?.threadId ?? backing.threadFolderAssociations.get(`${sourceId}/${name}`);
+  if (!id || (existing && existing.threadId !== id))
+    throw new Error("Missing proven thread-root association");
+  return id;
 }
 
 export function findInMemoryContextDocumentsById(
@@ -285,11 +310,13 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
     if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder"))
       throw new ContextEntryConflictError("file");
+    const threadId = threadRootAssociation(this.backing, this.sourceId, parentId, name);
     const existing = this.findFolderRecord(parentId, name);
     if (existing) return existing;
     const folder: FolderRow = {
       id: crypto.randomUUID(),
       contextSourceId: this.sourceId,
+      threadId,
       parentId,
       name,
       deletedAt: null,
@@ -635,6 +662,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   private ensureFolderPath(sourceId: string, dir: readonly string[]): string | null {
     let parentId: string | null = null;
     for (const name of dir) {
+      const threadId = threadRootAssociation(this.backing, sourceId, parentId, name);
       const existing = this.findDirectFolder(sourceId, parentId, name);
       if (existing) {
         parentId = existing.id;
@@ -645,6 +673,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const folder: FolderRow = {
         id: crypto.randomUUID(),
         contextSourceId: sourceId,
+        threadId,
         parentId,
         name,
         deletedAt: null,
@@ -790,6 +819,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   async commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
+    if (
+      input.source.kind === "directory" &&
+      this.backing.folders.get(input.source.nodeId)?.threadId
+    )
+      return Err({ code: "invalid_operation" });
     return this.atomic(async () => {
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);

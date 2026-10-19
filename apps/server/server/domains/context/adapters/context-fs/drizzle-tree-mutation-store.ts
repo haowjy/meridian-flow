@@ -34,6 +34,7 @@ import { moveNode } from "../../tree/node-moves.js";
 import { lockDocuments } from "../../tree/node-rows.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
+import { associatedRootForSource } from "../thread-folders.js";
 import {
   lockContextSources,
   lockMovedDocumentRows,
@@ -316,6 +317,11 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           ...(extension === undefined ? {} : { extension }),
         },
         filetype: input.destinationFiletype ?? null,
+        associatedRoot: await associatedRootForSource(
+          this.db,
+          input.destinationSourceId,
+          treePathSegments(targetParentPath),
+        ),
       });
       if (!moved.ok) rollback(moved.error.code);
       if (

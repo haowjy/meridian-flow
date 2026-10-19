@@ -54,7 +54,7 @@ import type {
 } from "../ports/context-port.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
-import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
+import { type ParseContextUriOptions, parseContextUri } from "./uri.js";
 
 export interface ContextSourceBinding {
   adapter: ContextSchemeAdapter;
@@ -62,6 +62,7 @@ export interface ContextSourceBinding {
 }
 
 export interface ContextPortRouterDeps {
+  resolveThreadFolder?: (owner: CanonicalContextAuthority, ref: string) => Promise<string | null>;
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   /** The document a device's create id was forwarded to (a join), within this project. */
   resolveForward?: (documentId: string) => Promise<string | null>;
@@ -497,7 +498,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         reason:
           "Bare scratch:// requires a chat or named Work. Use scratch://@/c12/x for another lineage.",
       });
-    const canonical = toCanonical(scheme, path, canonicalAuthority);
+    if (
+      parsed.value.threadRef &&
+      !(await deps.resolveThreadFolder?.(canonicalAuthority, parsed.value.threadRef))
+    )
+      return Err({
+        code: "invalid_uri",
+        uri,
+        reason: "Thread is not associated with this Scratch owner",
+      });
+    const canonical = contextUriFromSourceLocation(scheme, path, canonicalAuthority);
 
     if (!adapter) {
       return Err({
