@@ -4,6 +4,7 @@
  */
 import type {
   ConcurrentEditInfo,
+  ObservationFrontier,
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
 } from "@meridian/agent-edit/integration";
@@ -11,11 +12,7 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
-import type {
-  FrontierLookups,
-  RoomFrontier,
-  ToolHandlerContext,
-} from "../../domains/runtime/index.js";
+import type { FrontierLookups, ToolHandlerContext } from "../../domains/runtime/index.js";
 import {
   deletedFileMessage,
   isPermissionDenial,
@@ -43,17 +40,21 @@ export interface AgentEditResponseWriteLifecycle {
   ): Promise<void>;
 }
 
-/** A save records each document's frontier, chained from the run's latest for its room. */
+/** A save records each document's frontier, chained from the one its step was planned on. */
 type SaveContext = Pick<ToolHandlerContext, "threadId" | "turnId"> & {
-  recordingFrontier?: FrontierLookups["recording"];
+  planningFrontier?: FrontierLookups["planning"];
 };
 
 type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      /** Host-only: each saved document's frontier at the post-commit cut. */
-      frontiers: Array<{ documentId: string; frontiers: RoomFrontier[] }>;
+      /** Host-only: each saved document's room and its frontier at the post-commit cut, or null. */
+      frontiers: Array<{
+        documentId: string;
+        roomKey: string;
+        frontier: ObservationFrontier | null;
+      }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
@@ -130,9 +131,7 @@ export function createAgentEditResponseWriteLifecycle(
             document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
           ),
           frontiers: result.documents.flatMap((document) =>
-            document.frontiers?.length
-              ? [{ documentId: document.documentId, frontiers: document.frontiers }]
-              : [],
+            document.room ? [{ documentId: document.documentId, ...document.room }] : [],
           ),
           concurrentEdits: result.documents.flatMap((document) =>
             document.concurrentEdits

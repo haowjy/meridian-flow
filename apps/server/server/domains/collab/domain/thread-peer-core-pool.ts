@@ -23,6 +23,7 @@ import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/i
 import {
   asThreadPeerAgentEditCore,
   type FrontierLookup,
+  type FrontierRooms,
   type LiveAgentEditCore,
   type RefusedResponseDocument,
   type ResponseSaveResult,
@@ -115,11 +116,7 @@ export function createThreadPeerCorePool(input: {
    * a reply's save. Authorizes a reversal at the destination its write landed in.
    */
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
-  /**
-   * A live document's authority generation (the version-restore epoch), or null
-   * when it has none yet or it can't be read: the call then records no frontier.
-   */
-  liveAuthorityGeneration(documentId: DocumentId): Promise<bigint | null>;
+  frontierRooms: FrontierRooms;
   /** Locks Work rows `FOR NO KEY UPDATE` in one id-ordered select, in the save's transaction. */
   lockWorks(workIds: readonly string[]): Promise<void>;
   /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
@@ -257,21 +254,27 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * The room a call renders from (decision 8): the pulled peer's Work draft, or
-   * the live document at its authority generation, read before the call so a
-   * restore in between leaves the frontier keyed to the old epoch. Never the
-   * peer id, never the draft generation.
+   * The room a call renders from (decision 8): the pulled peer's Work draft; the
+   * branch's Work draft for an undo, redo or revert, which plans on that draft
+   * itself, never a peer; or the live document at its authority generation.
+   * Read before the call, so a restore in between leaves the frontier keyed to
+   * the old epoch. Never the peer id, never the draft generation.
    */
   async function roomKeyFor(
     core: AgentEditCore,
     documentId: DocumentId,
     context: WriteContext,
+    inverse: boolean,
   ): Promise<string | undefined> {
     const pulled = context.interactionContext;
     if (pulled?.mode === "threadPeer")
       return pulled.upstreamDraftId ? `draft:${pulled.upstreamDraftId}` : undefined;
+    if (inverse && context.linkView?.kind === "branch") {
+      const draftId = await input.frontierRooms.workDraftId(documentId, context.linkView.branchId);
+      return draftId === null ? undefined : `draft:${draftId}`;
+    }
     if (core !== input.liveUtilityCore) return undefined;
-    const generation = await input.liveAuthorityGeneration(documentId);
+    const generation = await input.frontierRooms.liveGeneration(documentId);
     return generation === null ? undefined : `live:${documentId}:${generation}`;
   }
 
@@ -281,9 +284,10 @@ export function createThreadPeerCorePool(input: {
     documentId: DocumentId | null,
     context: WriteContext,
     lookup: FrontierLookup | undefined,
+    inverse = false,
   ): Promise<{ context: WriteContext; roomKey?: string }> {
     if (!lookup || !documentId) return { context };
-    const roomKey = await roomKeyFor(core, documentId, context);
+    const roomKey = await roomKeyFor(core, documentId, context, inverse);
     if (!roomKey) return { context };
     return { context: { ...context, observe: { prev: await lookup(roomKey) } }, roomKey };
   }
@@ -408,14 +412,16 @@ export function createThreadPeerCorePool(input: {
     const call = async () => {
       if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
       if (!immediateInverse) pinStaged(entry, callContext);
-      // An undo or redo records no frontier in M1.
       const observed = await observedCall(
         core,
         documentId,
         callContext,
-        immediateInverse ? undefined : recordingFrontier,
+        recordingFrontier,
+        immediateInverse,
       );
       roomKey = observed.roomKey;
+      // The reply's save records this document's frontier in the room its staged writes did.
+      if (entry && !immediateInverse && roomKey) entry.roomKey = roomKey;
       return core.write(command, observed.context);
     };
     // An immediate drafted write that lost its branch to a close (Discard all) between the
@@ -586,21 +592,18 @@ export function createThreadPeerCorePool(input: {
     if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
   }
 
-  /** The room and previous frontier of each document a reply saves, when the caller records frontiers. */
+  /**
+   * The room of each document a reply saves, the one its staged writes recorded
+   * under, with the frontier the reply's step was planned on there.
+   */
   async function savedRooms(
     record: ResponseRecord,
     lookup: FrontierLookup | undefined,
   ): Promise<Map<string, { prev: ObservationFrontier | null; roomKey: string }>> {
     const rooms = new Map<string, { prev: ObservationFrontier | null; roomKey: string }>();
     if (!lookup) return rooms;
-    for (const [documentId, entry] of record.documents) {
-      const roomKey = entry.pin
-        ? `draft:${entry.pin.upstreamDraftId}`
-        : entry.core === input.liveUtilityCore
-          ? await roomKeyFor(entry.core, documentId, {})
-          : undefined;
+    for (const [documentId, { roomKey }] of record.documents)
       if (roomKey) rooms.set(documentId, { roomKey, prev: await lookup(roomKey) });
-    }
     return rooms;
   }
 
@@ -651,9 +654,8 @@ export function createThreadPeerCorePool(input: {
       // side; only a reply that never wrote falls back to the live core, which closes it.
       const wrote = record.participants.size > 0;
       const participantsNow = () => (wrote ? [...record.participants] : [input.liveUtilityCore]);
-      // Each saved document's frontier chains from the model's latest for its room, read now:
-      // every staged result recorded before the save began.
-      const observed = await savedRooms(record, options?.recordingFrontier);
+      // Read before the save's transaction opens, so a failed lookup cannot abort it.
+      const observed = await savedRooms(record, options?.planningFrontier);
       const saveOptions = {
         ...finalizeOptions(),
         observe: (documentId: string) => observed.get(documentId),
@@ -831,9 +833,16 @@ function mergeSaveResults(
   refused: RefusedResponseDocument[],
   rooms: ReadonlyMap<string, { roomKey: string }> = new Map(),
 ): ResponseSaveResult {
+  // A saved document in a recorded room names it even when no frontier could be computed:
+  // the caller still supersedes the step's rows there.
   const documents = results
     .flatMap((result) => result.documents)
-    .map((document) => withFrontiers(document, rooms.get(document.documentId)?.roomKey));
+    .map(({ observation, ...document }) => {
+      const room = rooms.get(document.documentId);
+      return room
+        ? { ...document, room: { roomKey: room.roomKey, frontier: observation ?? null } }
+        : document;
+    });
   const discardedClaims = results.flatMap((result) => result.discardedClaims ?? []);
   return {
     status: "committed",

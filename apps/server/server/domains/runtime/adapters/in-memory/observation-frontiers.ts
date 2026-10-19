@@ -1,5 +1,5 @@
 /**
- * In-memory `ObservationFrontiers`: the same replace and latest-by-recording
+ * In-memory `ObservationFrontiers`: the same remove, insert and latest-by-recording
  * semantics as the Drizzle adapter. Rows join the repositories' transaction
  * owner, so a frontier recorded with a result that fails to persist rolls back
  * with it. Rows are not removed with their block; a test deletes no blocks.
@@ -19,8 +19,13 @@ export function createInMemoryObservationFrontiers(deps: {
   const rows = deps.transactionOwner.map<string, Row>();
   let seq = 0;
   return {
-    async replace(sourceBlockId, frontiers) {
-      for (const [key, row] of rows) if (row.sourceBlockId === sourceBlockId) rows.delete(key);
+    async remove(sourceBlockIds, roomKey) {
+      const ids = new Set(sourceBlockIds);
+      for (const [key, row] of rows)
+        if (ids.has(row.sourceBlockId) && (roomKey === undefined || row.roomKey === roomKey))
+          rows.delete(key);
+    },
+    async insert(sourceBlockId, frontiers) {
       for (const frontier of frontiers) {
         rows.set(JSON.stringify([sourceBlockId, frontier.roomKey]), {
           sourceBlockId,

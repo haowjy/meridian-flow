@@ -54,7 +54,7 @@ function createPool() {
     fileAccess: createFakeFileAccess(),
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
-    liveAuthorityGeneration: async () => null,
+    frontierRooms: { liveGeneration: async () => null, workDraftId: async () => null },
   });
   return { pool, liveCore, threadCore, pullThreadPeer, ...ports };
 }
@@ -162,7 +162,7 @@ describe("thread-peer pool", () => {
         fileAccess: createFakeFileAccess(),
         lockWorks: async () => {},
         lockLiveDocuments: async () => {},
-        liveAuthorityGeneration: async () => null,
+        frontierRooms: { liveGeneration: async () => null, workDraftId: async () => null },
         maxThreadCores: 1,
       });
       if (pausedEviction) {
@@ -280,7 +280,7 @@ describe("reasoned refusal and retirement through the pool", () => {
       fileAccess: createFakeFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
-      liveAuthorityGeneration: async () => null,
+      frontierRooms: { liveGeneration: async () => null, workDraftId: async () => null },
       maxThreadCores: 1,
     });
     await pool.write(insertCh12, replyContext("reply-a", "thread-a" as ThreadId));

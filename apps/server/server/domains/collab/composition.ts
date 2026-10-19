@@ -1,6 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
@@ -24,7 +24,7 @@ import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import { type EventSink, emitEvent } from "../observability/index.js";
 import type { WorkProjectionMutation } from "../projects/index.js";
 import type { ObjectRelease } from "../storage/index.js";
 import {
@@ -71,13 +71,13 @@ import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-docum
 import {
   createDrizzleAuthorityGenerationReader,
   createDrizzleDocumentAuthorityHeads,
-  createDrizzleLiveAuthorityGenerationReader,
 } from "./adapters/drizzle-document-authority-head.js";
 import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
+import { createDrizzleFrontierRooms } from "./adapters/drizzle-frontier-rooms.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
@@ -410,7 +410,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         const tx = currentDrizzleDb(deps.db);
         for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
       },
-      liveAuthorityGeneration: liveFrontierGeneration(deps.db, deps.eventSink),
+      frontierRooms: createDrizzleFrontierRooms(deps.db, deps.eventSink),
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
       drafts,
@@ -703,27 +703,4 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     documentCreation,
   });
-}
-
-/**
- * The live room key's generation. Read outside any save transaction; a failure
- * is reported and the call records no frontier, never fails.
- */
-function liveFrontierGeneration(db: Database, eventSink: EventSink | undefined) {
-  const read = createDrizzleLiveAuthorityGenerationReader(db);
-  return async (documentId: DocumentId): Promise<bigint | null> => {
-    try {
-      return await read(documentId);
-    } catch (cause) {
-      if (eventSink)
-        emitEvent(eventSink, {
-          level: "warn",
-          source: "collab.agent_edit",
-          name: "observation_frontier.room_key_failed",
-          correlation: { documentId },
-          payload: unknownToEventPayload(cause),
-        });
-      return null;
-    }
-  };
 }

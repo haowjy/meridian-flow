@@ -1,8 +1,9 @@
 /**
  * Records observation frontiers with the transcript block that showed them and
- * builds the tool call's frontier lookups. Recording never fails the block:
- * the store isolates its insert in a savepoint, and a failure is logged and
- * leaves the block with no frontier.
+ * builds the tool call's frontier lookups. Clearing a block's old rows is part
+ * of writing the block and fails it; recording the new rows never does: the
+ * store isolates its insert in a savepoint, and a failure is logged and leaves
+ * the block with no frontier.
  */
 import type { Block } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -30,8 +31,10 @@ export async function recordFrontiers(
   frontiers: readonly RoomFrontier[],
   correlation: { threadId: string; turnId: string },
 ): Promise<void> {
+  await deps.observationFrontiers.remove([sourceBlockId]);
+  if (frontiers.length === 0) return;
   try {
-    await deps.observationFrontiers.replace(sourceBlockId, frontiers);
+    await deps.observationFrontiers.insert(sourceBlockId, frontiers);
   } catch (error) {
     emitEvent(deps.eventSink, {
       level: "warn",
@@ -77,6 +80,6 @@ export function frontierLookups(
 }
 
 /** Only persisted rows hold frontiers; a block's id is a UUID once it is. */
-function persistedIds(ids: readonly string[]): string[] {
+export function persistedIds(ids: readonly string[]): string[] {
   return ids.filter((id) => UUID.test(id));
 }

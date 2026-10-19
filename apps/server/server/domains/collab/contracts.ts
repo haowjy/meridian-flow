@@ -2,6 +2,7 @@
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
   ConcurrentEditInfo,
+  ObservationFrontier,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
@@ -290,8 +291,11 @@ export type ResponseWriteCommitDocument = {
   receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
-  /** Host-only: the document's frontier at the post-commit cut, when the save recorded one. */
-  frontiers?: RoomObservation[];
+  /**
+   * Host-only, when the save recorded frontiers: the room it committed to and
+   * the document's frontier at the post-commit cut, null when not computed.
+   */
+  room?: { roomKey: string; frontier: ObservationFrontier | null };
 };
 
 export type BranchClosedFinalizeResult = {
@@ -320,7 +324,7 @@ export type ResponseWriteRollbackFinalizeResult = {
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier?: FrontierLookup },
+    ctx: { threadId: ThreadId; turnId: TurnId; planningFrontier?: FrontierLookup },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(

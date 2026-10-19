@@ -25,7 +25,7 @@ export function createResponseWriteFinalizer(input: {
     /** One save step for every reply, live and drafted documents together (D42). */
     async finalizeResponseCommit(responseIdentity, ctx, beforeTransactionCommit) {
       const result = await input.agentEdit.commitResponse(responseIdentity.editScopeId, {
-        ...(ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {}),
+        ...(ctx.planningFrontier ? { planningFrontier: ctx.planningFrontier } : {}),
         beforeTransactionCommit: async (saved) => {
           await beforeTransactionCommit?.(mapResult(saved));
           // These effects belong to a committed response, never to its save attempt.
