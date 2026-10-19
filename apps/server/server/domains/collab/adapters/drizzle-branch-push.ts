@@ -2,13 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  documentDrafts,
-  documentEditParts,
-  documentEdits,
-  draftWriteJournal,
-  pushLineage,
-} from "@meridian/database/schema";
+import { draftWriteJournal, pushLineage } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -36,6 +30,7 @@ import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-branch-comm
 import { readHeadRevision } from "./drizzle-document-authority-head.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
+import { createDrizzleDraftReplayJournalReads } from "./drizzle-draft-journal-reads.js";
 import { commitRewriteWithinTx } from "./drizzle-draft-storage.js";
 import {
   assertRootOwnedSettlement,
@@ -53,6 +48,7 @@ export function sortPushesByDocumentId<T extends { documentDraft: { documentId: 
 
 export function createDrizzleDraftJournalReadStore(db: Database): BranchPushReadStore {
   return {
+    ...createDrizzleDraftReplayJournalReads(db),
     async listActiveJournalRows(draftId, generation) {
       const rows = await db
         .select()
@@ -103,43 +99,6 @@ export function createDrizzleDraftJournalReadStore(db: Database): BranchPushRead
       return rows.map(mapJournalRow);
     },
 
-    async listJournalRowsForDraft(input) {
-      const conditions = [
-        eq(draftWriteJournal.draftId, input.draftId),
-        eq(draftWriteJournal.generation, input.generation),
-      ];
-      if (input.throughJournalId !== undefined) {
-        conditions.push(sql`${draftWriteJournal.id} <= ${input.throughJournalId}`);
-      }
-      const rows = await currentDrizzleDb(db)
-        .select({
-          row: draftWriteJournal,
-          editKind: documentEdits.kind,
-        })
-        .from(draftWriteJournal)
-        .leftJoin(
-          documentEditParts,
-          sql`
-          ${documentEditParts.origin}->>'kind' = 'pending'
-          and ${documentEditParts.origin}->>'draftId' = ${draftWriteJournal.draftId}::text
-          and ${documentEditParts.origin}->>'generation' = ${draftWriteJournal.generation}::text
-          and ${documentEditParts.origin}->>'rowId' = ${draftWriteJournal.id}::text
-        `,
-        )
-        .leftJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-        .where(and(...conditions))
-        .orderBy(draftWriteJournal.id);
-      // A row can carry several parts of one edit: one entry per row, in journal order.
-      const byRow = new Map<number, ReturnType<typeof mapJournalRow>>();
-      for (const { row, editKind } of rows) {
-        const seen = byRow.get(row.id);
-        if (!seen || (!seen.editKind && editKind)) {
-          byRow.set(row.id, { ...mapJournalRow(row), ...(editKind ? { editKind } : {}) });
-        }
-      }
-      return [...byRow.values()];
-    },
-
     async listPushLineageForTurn(input) {
       const turnRows = await db
         .select({ id: draftWriteJournal.id })
@@ -165,38 +124,6 @@ export function createDrizzleDraftJournalReadStore(db: Database): BranchPushRead
         )
         .orderBy(pushLineage.id);
       return rows.map(mapLineage);
-    },
-
-    async listConcurrentJournalRows(draftId, generation, options) {
-      const floor = options.afterJournalId ?? 0;
-      // A save's attribution reads inside its own transaction: the root pool handle would
-      // wait on another connection and miss that transaction's uncommitted rows.
-      const rows = await currentDrizzleDb(db)
-        .select({ row: draftWriteJournal })
-        .from(draftWriteJournal)
-        .innerJoin(documentDrafts, eq(draftWriteJournal.draftId, documentDrafts.id))
-        .where(
-          and(
-            eq(documentDrafts.documentId, options.documentId),
-            sql`${draftWriteJournal.id} > ${floor}`,
-            // Same-draft active rows and cross-draft pushed rows are both needed for
-            // attribution. Cold-start scans are deliberately unbounded until we add a
-            // push-ordered floor; max(journal.id) is unsound because journal ids can include
-            // unpushed sibling rows and do not encode push order. Each row remains bounded
-            // by its owning draft generation so reset/future-generation rows cannot leak
-            // backward.
-            sql`(
-              (${draftWriteJournal.draftId} = ${draftId}
-                AND ${draftWriteJournal.generation} <= ${generation}
-                AND ${draftWriteJournal.status} IN ('active', 'pushed'))
-              OR (${draftWriteJournal.draftId} <> ${draftId}
-                AND ${draftWriteJournal.generation} <= ${documentDrafts.generation}
-                AND ${draftWriteJournal.status} = 'pushed')
-            )`,
-          ),
-        )
-        .orderBy(draftWriteJournal.id);
-      return rows.map(({ row }) => mapJournalRow(row));
     },
 
     async latestPushForDraft(draftId, generation) {
