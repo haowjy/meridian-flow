@@ -49,8 +49,8 @@ never delivers into a replacement. Room lifetime is Hocuspocus's alone:
 delivery never closes connections, removes a room from the registry or retires
 a handle. A delivery that keeps failing means the journal can't be read, and a
 writer's frames are journal-first, so they fail too. A request made during a
-retry's wait (a save, a transactional door's commit) ends the wait: its pass
-runs at once into whatever room is open, so a save never waits on a stalled
+retry's wait or its failing attempt (a save, a transactional door's commit)
+runs its pass at once into whatever room is open, so a save never waits on a stalled
 delivery. Without one, a room stays behind the journal after the database
 recovers until the next retry, up to 30 s; the writer can type into it
 meanwhile and catches up on that pass. An outage is logged once at each end
