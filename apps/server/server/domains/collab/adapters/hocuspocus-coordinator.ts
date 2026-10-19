@@ -399,6 +399,8 @@ function createCoordinator(
  * pass starts an outage against the room that is behind; it is retried after each wait in
  * `backoffMs` (the last repeating) for as long as Hocuspocus holds that same room, and ends with
  * a pass that catches it up or with the room unloaded or replaced (a load reads the journal).
+ * A request made during a wait ends the wait: its pass runs at once into whatever room is open,
+ * so a save after the outage never waits out the backoff.
  * Room lifetime stays Hocuspocus's: delivery never closes or drops a room. A writer's frames are
  * journal-first, so while the journal can't be read they fail too.
  */
@@ -408,7 +410,8 @@ function createRoomDelivery(deps: {
   backoffMs: readonly number[];
   diagnostics: RoomDeliveryDiagnostics | undefined;
 }): { deliver(docId: string): Promise<void> } {
-  type Chain = { again: boolean; waiters: (() => void)[] };
+  // `wake` cuts short a retry's wait: a new request is served at once, not after the backoff.
+  type Chain = { again: boolean; waiters: (() => void)[]; wake?: () => void };
   const chains = new Map<string, Chain>();
 
   async function run(docId: string, chain: Chain): Promise<void> {
@@ -439,7 +442,15 @@ function createRoomDelivery(deps: {
             else {
               const wait = deps.backoffMs[Math.min(failures, deps.backoffMs.length) - 1] ?? 0;
               for (const resolve of waiters) resolve();
-              await new Promise((resolve) => setTimeout(resolve, wait).unref?.());
+              await new Promise<void>((resolve) => {
+                const timer = setTimeout(resolve, wait);
+                timer.unref?.();
+                chain.wake = () => {
+                  clearTimeout(timer);
+                  resolve();
+                };
+              });
+              chain.wake = undefined;
               continue;
             }
           }
@@ -459,6 +470,7 @@ function createRoomDelivery(deps: {
         if (running) {
           running.again = true;
           running.waiters.push(resolve);
+          running.wake?.();
           return;
         }
         const chain: Chain = { again: true, waiters: [resolve] };
