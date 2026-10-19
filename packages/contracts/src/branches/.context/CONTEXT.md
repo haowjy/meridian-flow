@@ -13,6 +13,11 @@ The contracts name five things; never let one stand in for another.
 | **command** | One writer action (Apply, Discard, per item, per change or for all). | a client-made `commandId` |
 | **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewWorkId` + `itemKey` |
 
+`change=` can display the current selection id, but a bare id cannot restore
+selection into a newer projection. Launch focus carries its immutable `ReviewFrame`: the text diff projection and
+the Yjs snapshot it describes. Group ids are interpreted only within that
+projection; an id alone cannot be applied to a newer one.
+
 The client never reads `branchId` as a document draft id. The server alone maps an
 `itemKey` to a draft (collab `domain/branch-review-identity.ts`).
 
@@ -33,8 +38,12 @@ The client never reads `branchId` as a document draft id. The server alone maps 
 
 ## Commands
 
-`ApplyClick` carries a UUID command id, the captured stable `draftId`, a base64 `Y.encodeSnapshotV2` snapshot,
-one block-range `baseViewDelta` and unique nonempty projection group ids. Patch
+A text `ApplyClick` carries a UUID command id, the captured stable `draftId`, a
+base64 `Y.encodeSnapshotV2` snapshot, one block-range `baseViewDelta` and unique
+nonempty projection group ids. A still-hidden creation with no text room uses
+empty groups and delta and omits both snapshot and draft id; the server verifies
+that no-room creation in the reveal transaction. Every other empty-group click
+is malformed. See the [Apply storage contract](../../../../../apps/server/server/domains/collab/.context/apply.md). Patch
 blocks are ProseMirror node JSON; the server constructs and validates the nodes.
 The reply is for that id only: `applied`, `closed` (including a removal record
 when removed), or `refused` with a closed reason enum. Same-id lookups may also
@@ -42,8 +51,9 @@ answer `pending`, `conflict`, or `none`. A refusal has no `stale` variant.
 The authenticated scope and whole body are part of the request digest.
 
 There is one per-document Apply route, no separate per-change or Work Apply-all
-route. Item-form Discard takes `{ branchId, itemKey, commandId }`; Discard all
-takes `{ branchId, commandId }`. 
+route. Text Discard is a local Yjs edit, not an HTTP command. Server item
+Discard takes `{ branchId, itemKey, commandId }` only to end a still-hidden
+creation's use; Discard all takes `{ branchId, commandId }` and closes drafts.
 
 ## Room review
 

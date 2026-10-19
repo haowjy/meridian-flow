@@ -285,7 +285,7 @@ early exits only. `waitMs` and `holdMs` of every append are the
 median) includes the change-trail triggers that fire on each journal and
 receipt insert, three per keystroke; a slower trigger or `change_trail_owners`
 query there is keystroke latency for every writer on the draft (see
-[settlement-and-trail.md](settlement-and-trail.md)).
+[change-trail.md](change-trail.md)).
 
 Every rewrite is fenced by the row's `revision`, under one of two policies.
 An **exact** rewrite commits only at the revision it was computed at: a
@@ -606,7 +606,7 @@ retires the addressed peer and does not roll back unrelated documents in the rep
 - [Draft model and durable records](draft-model-and-records.md)
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
-- [Committed change trail](settlement-and-trail.md)
+- [Committed change trail](change-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 

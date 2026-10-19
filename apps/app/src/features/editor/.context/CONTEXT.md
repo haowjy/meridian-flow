@@ -1,7 +1,7 @@
 # features/editor — contracts and architecture
 
 This reference covers the app-facing editor boundary: session binding, review
-projection, scope, shared geometry, and handoff. Read [`AGENTS.md`](../AGENTS.md)
+projection, scope, shared geometry, and peer marks. Read [`AGENTS.md`](../AGENTS.md)
 for the short operating rules; core editor contracts remain in `core/editor`.
 
 ## Boundary and geometry
@@ -55,7 +55,7 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Review projects the mounted draft text against its review base. Removed base
+Review projects the mounted draft text against its server-owned `review_base`, the live text used for comparison. Removed base
 text is red and struck; inserted draft text is green, including writer edits.
 Attribution supplies bylines without partitioning changes. Removed-text widgets
 are not manuscript content. Desktop review is editable; phone review is
@@ -63,13 +63,13 @@ read-only. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
 `DraftReviewProvider` supplies the presented review. Identity/header chrome and
-change bars read the shared model; `EditorView` does not own a second review
+change bars read the shared review projection; `EditorView` does not own a second review
 controller. The review controls live in the identity bar's path row (the
 `DraftReviewChip` on a live document with a pending draft, the
 `DraftReviewBand` in review), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after
-the change's last paragraph. Draft review lifecycle, generation, commands, and settlement belong
+the change's last paragraph. Draft room lifecycle, frozen commands and Discard history belong
 to [`draft-review`](../../draft-review/.context/draft-review.md).
 
 `PaintHold` retains finished paint across lifecycle handoffs. Ordinary text
@@ -77,8 +77,8 @@ Discard edits the same draft Y.Doc in place, without replacing the editor,
 selection or undo manager. An empty review stays in the same draft room.
 
 `useInlineReviewFocus` registers the mounted editor for controller-owned jumps
-and releases only its own claim on unmount. Same-entry URL replacements stand
-down router scroll restoration. Dock/Work rows and their notice paint before
+and releases only its own claim on unmount. Same-entry URL replacements
+disable router scroll restoration so editor anchor navigation owns scrolling. Dock/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 
 ## Schema and repair
@@ -93,7 +93,7 @@ and can be dismissed locally; it shows every recovered excerpt in full with a
 copy button, and never gates editing or offers reinsertion or approval. The notice reads session repair snapshots rather than inspecting the
 editor document.
 
-## Peer marks and handoff
+## Peer marks
 
 The peer-mark surface reads the projection plugin's click/Enter/caret state.
 The editor feature holds no duplicate mark state. Trail evidence is read-only;
@@ -108,14 +108,6 @@ pointer close restores the held selection; keyboard activation moves focus into
 the popover, and Escape or close returns it to the mark's current span. Neither
 hands focus back when another surface opened in its place (Mod+K arrives as a
 close, and the caret then belongs to what opened).
-
-`WriterHandoffLossNotice` reports unrecoverable typing on the addressed
-document, not on a vanished review or in a global toast. Review room refs write
-one local loss flag per project and document into the account-owned
-QueryClient; the desktop Editor and dock chrome and the phone document host
-render the same dismissible sentence, including after review ends or the
-document is reopened. It does not expire off screen, survive account
-replacement, gate writing, or keep a review active.
 
 ## Related contracts
 

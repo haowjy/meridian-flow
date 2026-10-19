@@ -10,7 +10,7 @@ owns diffing, grouping, move pairing and formatting context.
 changes, not text frames. `useRoomReviews` subscribes to those runtimes through
 `useSyncExternalStore`; frames stay in the runtime rather than queued React state.
 Open reviews and headless dock/Work readers share the runtime by session object; a replacement account/session cannot inherit another
-room's frame. Metadata effect keys contain only the four draft-address strings and metadata
+room's frame. Metadata effect keys contain only the `projectId`, `workId`, `documentId` and `itemKey` address strings and metadata
 revision/status/error, never the caller's object: presentation focus carries a
 whole projection, and structural typing does not strip those extra fields.
 The final holder destroys its runtime. The pool keeps room
@@ -18,11 +18,11 @@ sessions through its normal release grace and drains unacknowledged edits;
 IndexedDB keeps the local text across reloads.
 
 `review-frame.ts` reads the projection and its snapshot. Headless reads retain unchanged
-PM nodes using the same Yjs mapping invalidation as the binding, exported by
+ProseMirror nodes using the same Yjs mapping invalidation as the binding, exported by
 the scoped y-tiptap patch. Attaching an editor adopts its schema and retained
 nodes off the typing path. Editor projection uses the editor's own mapping;
 another attached editor receives positions only if its full content agrees.
-Base reads also retain PM nodes and their block array. Each base fragment has one
+Base reads also retain ProseMirror nodes and their block array. Each base fragment has one
 current-schema reader; a schema replacement disposes the old observer while frozen
 frames keep their immutable nodes. Removal widgets never enter either Yjs fragment.
 
@@ -91,8 +91,10 @@ list omission alone must not infer local Discard or successful Apply.
 surfaces. `bind(ref, session)` joins one stable draft-row queue and installs a replaceable
 session binding (runtime, cached base provider and root observers). A pending
 queue owns a room reader that follows replacement sessions even without a surface.
-Retiring a session detaches that binding, not the draft queue. `apply(ref, target)` synchronously freezes the Yjs
-snapshot, O/P blocks, selected ids and one room-base-to-O delta. The queue
+Retiring a session detaches that binding, not the draft queue. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
+snapshot, the reviewed base blocks (O), selected ids, the result of applying those
+groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
+the server to acknowledge every local update in that captured cut before dispatch. The queue
 retains a `readDraftRoom` lease independently of React until terminal.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
@@ -159,7 +161,8 @@ pool to retire it and drop its exact cache. One-document text Discard clears nei
 Addressed room lookup is `useDraftMetadata`, never a server text preview.
 The route retains this read above editor address admission, so catalog
 invalidation cannot strand a review after unmounting its room readers. A gone
-room is a lifecycle transition, not a room-opening error. The metadata GET and
-no-text creation Apply capability are integration
-requirements: the browser cannot derive a draft id from the list item key,
-nor manufacture a text snapshot for an image. Such an Apply is not offered.
+room is a lifecycle transition, not a room-opening error. The metadata GET returns the stable draft id and room name, or authoritative
+`gone`; list item keys cannot supply room identity. A still-hidden creation with
+no text room uses a reveal-only Apply: empty `groupIds` and `baseViewDelta`, no
+`snapshot` or `draftId`. The server rechecks that exact no-room creation before
+revealing it; every other empty-group click is malformed.

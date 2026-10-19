@@ -44,10 +44,10 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   lane owns trigger specs. Extensions register with those seams rather than
   binding private listeners.
 - Draft identity is stable until close. Terminal draft retirement never transfers
-  the old outbox to a replacement draft; see [the session contract](.context/CONTEXT.md).
+  queued unacknowledged updates to a replacement draft; see [the session contract](.context/CONTEXT.md).
 - Draft sessions persist locally under their room name. Review projection reads
   the mounted document and its server-owned review base; it never replays a
-  retired snapshot or reconstructs selection across generations.
+  retired snapshot or transfers selection to a replacement draft.
 - Editor-owned keys remain consumed on refusals, and table drops have one
   landing authority. The Tab ladder, cell Enter behavior, dropcursor policy,
   diagram faces, and `@` delimiter rule are in the editor context.
