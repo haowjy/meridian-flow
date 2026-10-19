@@ -17,10 +17,12 @@ export type RemoveDocumentsInput = {
   affectedWorkIds?: readonly WorkId[];
 };
 export interface DocumentRemoval {
+  recount(workIds: readonly WorkId[]): void;
   remove(input: RemoveDocumentsInput): Promise<readonly ClosedDocumentDraft[]>;
 }
 /** Collab owns draft closure and the after-commit effects, not document tombstones. */
 export interface DocumentRemovalCollab {
+  recount(workIds: readonly WorkId[]): void;
   closeRemovedDocuments(input: {
     documentIds: readonly DocumentId[];
     workIds: readonly WorkId[];

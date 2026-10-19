@@ -1,4 +1,5 @@
 /** Removal's collab capability: durable close now, room/runtime retirement and recount after commit. */
+import type { WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { branches, documentDrafts } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -22,7 +23,21 @@ export function createDrizzleDocumentRemovalCollab(
     onError(error: unknown): void;
   },
 ): DocumentRemovalCollab {
+  function recount(workIds: readonly WorkId[]) {
+    if (!workIds.length) return;
+    runAfterDrizzleCommit(async () => {
+      try {
+        await runInRootDrizzleTransaction(db, () =>
+          deps.workProjection.mutate({ works: workIds }, async () => undefined),
+        );
+      } catch (error) {
+        deps.onError(error);
+        throw error;
+      }
+    });
+  }
   return {
+    recount,
     async closeRemovedDocuments({ documentIds, workIds }) {
       const tx = currentDrizzleDb(db);
       const owners = await tx
@@ -63,17 +78,13 @@ export function createDrizzleDocumentRemovalCollab(
                   : { draftId: row.draftId, documentId: row.documentId, threadId: null },
               ),
             ),
-            affected.length
-              ? runInRootDrizzleTransaction(db, () =>
-                  deps.workProjection.mutate({ works: affected }, async () => undefined),
-                )
-              : Promise.resolve(),
           ]);
         } catch (error) {
           deps.onError(error);
           throw error;
         }
       });
+      recount(affected);
       await collabHook("removal.afterClose");
       return closed;
     },

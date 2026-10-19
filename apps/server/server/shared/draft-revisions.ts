@@ -8,12 +8,12 @@ import { documentDrafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { DrizzleDb } from "./drizzle-transaction.js";
 
-export type DraftRevisionChange = {
+export type DraftRevisionChange = (
+  | { status: "closed"; closedCause: "discarded" | "document_removed" }
+  | { status?: never; closedCause?: never }
+) & {
   /** Sets the hold flag; a draft already holding this value is left alone. */
   blocking?: boolean;
-  /** Closes the draft; one already closed is left alone. */
-  status?: "closed";
-  closedCause?: "discarded" | "document_removed";
   /** The draft must still be active at exactly this revision, or nothing is written. */
   expectedRevision?: number;
 };
@@ -48,7 +48,7 @@ export async function bumpDraftRevisions(
     .update(documentDrafts)
     .set({
       ...set,
-      ...(set.status ? { updatedAt: new Date(), closedCause: set.closedCause ?? "discarded" } : {}),
+      ...(set.status ? { updatedAt: new Date() } : {}),
       revision: sql`${documentDrafts.revision} + 1`,
     })
     .where(

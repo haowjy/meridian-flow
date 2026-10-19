@@ -14,7 +14,10 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockContextNamespaces } from "../../context/adapters/context-fs/document-locations.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { lockDocuments } from "../../context/tree/node-rows.js";
-import { loadLivingSourceDocumentIds } from "../../context/tree/tree-view-sql.js";
+import {
+  loadActiveBranchUses,
+  loadLivingSourceDocumentIds,
+} from "../../context/tree/tree-view-sql.js";
 
 type WorkCascadeInput = {
   removal: DocumentRemoval;
@@ -87,8 +90,8 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
       await lockDocuments(db, documentIds);
       await removal.remove({ documentIds, reason: "deleted", workId, at });
     },
-    async cascadeRestore({ db, workId }) {
-      await currentDrizzleDb(db)
+    async cascadeRestore({ db, workId, removal }) {
+      const restored = await currentDrizzleDb(db)
         .update(documents)
         .set({
           deletedAt: null,
@@ -98,7 +101,15 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
           deletedByWorkId: null,
           locationVersion: sql`${documents.locationVersion} + 1`,
         })
-        .where(eq(documents.deletedByWorkId, workId));
+        .where(eq(documents.deletedByWorkId, workId))
+        .returning({ id: documents.id });
+      const uses = await loadActiveBranchUses(
+        currentDrizzleDb(db),
+        restored.map(({ id }) => id),
+      );
+      removal.recount([
+        ...new Set(uses.flatMap(({ originWorkId }) => (originWorkId ? [originWorkId] : []))),
+      ]);
     },
   },
   {
@@ -159,15 +170,9 @@ export async function cascadeDelete(
   input: Omit<CascadeContext, "db" | "sourceIds">,
 ): Promise<ThreadId[]> {
   const context = await cascadeContext(db, input);
-  await lockContextNamespaces(
-    db,
-    { projectId: input.projectId, userId: "" },
-    [
-      { scheme: "scratch", workId: null },
-      { scheme: "uploads", workId: null },
-    ],
-    { sourceIds: context.sourceIds },
-  );
+  await lockContextNamespaces(db, { projectId: input.projectId, userId: "" }, [], {
+    sourceIds: context.sourceIds,
+  });
   const cascadedThreads: ThreadId[] = [];
   for (const entry of WORK_CASCADE) {
     const ids = await entry.cascadeDelete(context);

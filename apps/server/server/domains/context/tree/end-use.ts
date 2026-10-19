@@ -98,11 +98,7 @@ export async function tombstoneUnused(
   const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
   await treeHook("endUse.afterRevalidate");
   if (ending.length === 0) {
-    await options.removal.remove({
-      documentIds: [],
-      reason: "discarded",
-      affectedWorkIds: options.affectedWorkIds,
-    });
+    options.removal.recount(options.affectedWorkIds ?? []);
     return NOTHING_ENDED;
   }
   const endingIds = ending.map((row) => row.id);

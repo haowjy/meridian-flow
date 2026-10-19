@@ -468,7 +468,11 @@ export function createDrizzleProjectContextAvailability(
             : [];
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
-          const removals = await createDrizzleDocumentRemovals(db).lookup(ids as DocumentId[]);
+          const removals = await createDrizzleDocumentRemovals(db).lookup(
+            rows
+              .filter((row) => row.document.deletedAt)
+              .map((row) => row.document.id as DocumentId),
+          );
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);
             if (!row) return { kind: "not-visible", documentId, checkedGeneration } as never;
@@ -501,7 +505,9 @@ export function createDrizzleProjectContextAvailability(
             // (its draft folder went with it) stays not visible, never inconsistent.
             if (
               classification.kind === "not-visible" ||
-              (classification.kind === "inconsistent" && (document as { hidden?: boolean }).hidden)
+              (classification.kind === "inconsistent" &&
+                document.deletedAt &&
+                document.deletionReason === "discarded")
             ) {
               return { kind: "not-visible", documentId, checkedGeneration } as never;
             }

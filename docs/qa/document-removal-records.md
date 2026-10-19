@@ -19,8 +19,24 @@ by deleting a document in the browser. The record lookup is owner-gated through
    Read `a1-closed`: closed, `discarded`, revision unchanged. The current
    generation's pending part must be exactly `{"kind":"discarded"}`; the older
    generation's part must remain pending. Its tree-use row must be absent.
-5. Confirm another 0071 run changes none of those values, and remove the scratch
-   database.
+5. Give a removed shared creation more than 500 branch-use rows. Capture
+   statement-level DELETE transition-table counts: no page deletes more than
+   500 uses. Hidden cascade-marked uses remain; revealed and independent tombstones lose theirs.
+6. Pause 0071's parent-close UPDATE with a scratch-only trigger waiting on an
+   advisory lock. While paused, commit production Work Restore from another
+   connection. Release the barrier. The parent and its earlier-sorting peer
+   must both close with `document_removed`; only current-generation parts
+   settle. Restore must not make later passes skip that closure.
+7. Seed a stale stored Work count, including one that should become zero.
+   Check the exact pending-document rule after upgrade: stored counts agree
+   and each changed Work's `entity_revision` advances once. Re-run 0071:
+   no revision, closure, placement or count changes.
+8. Legacy schemas permit a hidden creation in a Work-owned source although
+   production routes Scratch/uploads live and rejects their draft creation.
+   Seed one with retained Yjs prose and a tree use. Cascade, then Restore and
+   hidden-node repair. Membership is inactive while removed; after Restore
+   it is present again, the draft stays closed, and repair erases nothing.
+   Remove the scratch database.
 
 The migration fixture is retained because the upgrade transforms persisted
 writer data. No additional unit case is needed for these recipe-covered risks.
@@ -53,6 +69,12 @@ same document ID and record. The optional availability `removal` is filled
 on every tombstone availability answers `deleted`: visible tombstones, and a
 discarded creation that still places (a hidden one in a discarded draft folder,
 any other hidden tombstone, and a living hidden document stay not visible).
+A malformed living hidden identity in its branch still emits
+`ProjectContextIdentityInconsistent`; only a discarded removal record can
+suppress that classification. All-living availability requests issue no
+removal-record query; mixed requests query only the deleted IDs. Direct,
+list, and draft file facts for a discarded creation are deleted facts, so
+known-id denial can include its record without allowing content access.
 
 ## Removal protocol
 
@@ -65,7 +87,9 @@ any other hidden tombstone, and a living hidden document stay not visible).
    and every affected Work's stored pending count drops.
 2. Pause at `removal.afterClose`, then abort the transaction. No room/runtime
    retirement or recount may run. The document and drafts remain living/active.
-3. Race the first Work-draft ensure and first peer creation separately against
+3. Hold both a living document's mutation lock and its Work row lock on one
+   connection; ensure its already-active draft on another. It returns
+   immediately with no locking SQL. Then race the first Work-draft ensure and first peer creation separately against
    removal. Pause creation at `draft.ensure.afterDocumentLock` or
    `draft.peer.afterDocumentLock` for creation-first. For removal-first pause
    at `removal.afterClose`. Removal either closes the inserted row or creation
