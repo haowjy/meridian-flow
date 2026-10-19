@@ -21,17 +21,6 @@ export function frontierBlockId(id: { clientID: number; clock: number }): string
 }
 
 /**
- * True when `doc` holds every struct and every deletion the snapshot names:
- * each state-vector clock is reached and each deleted range is deleted in `doc`.
- * A state vector alone accepts a snapshot whose staged deletion was refused,
- * since a delete-only update allocates no clock.
- */
-export function roomContainsSnapshot(doc: Y.Doc, snapshot: Uint8Array | Y.Snapshot): boolean {
-  const decoded = snapshot instanceof Uint8Array ? decodeSnapshot(snapshot) : snapshot;
-  return decoded !== null && containsSnapshot(Y.snapshot(doc), decoded);
-}
-
-/**
  * The frontier a result rendered from `doc` records:
  * `(prev.unshown ∪ changedSince(prev, doc)) ∩ blocks(doc) − shownInFull`.
  * A block changed when some item in its subtree (children, text, formats,
@@ -74,6 +63,12 @@ function decodeSnapshot(bytes: Uint8Array): Y.Snapshot | null {
 
 type Range = readonly [start: number, end: number];
 
+/**
+ * True when `current` holds every struct and every deletion `previous` names:
+ * each state-vector clock is reached and each deleted range is deleted. A state
+ * vector alone accepts a snapshot whose staged deletion was refused, since a
+ * delete-only update allocates no clock.
+ */
 function containsSnapshot(current: Y.Snapshot, previous: Y.Snapshot): boolean {
   for (const [client, clock] of previous.sv) {
     if (clock > 0 && (current.sv.get(client) ?? 0) < clock) return false;
