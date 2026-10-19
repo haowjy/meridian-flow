@@ -225,7 +225,13 @@ export function createDraftAgentEditCoordinator(input: {
         : read((await threadWorkDraft(docId as DocumentId)).draftId, false);
     },
 
-    async prepareSave({ docId, cut, entries, access }): Promise<StagedWriteSaveResult> {
+    async prepareSave({
+      docId,
+      cut,
+      entries,
+      access,
+      precondition,
+    }): Promise<StagedWriteSaveResult> {
       const peerId =
         access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
       return underAccess(peerId, async (workDraftId) => {
@@ -246,13 +252,12 @@ export function createDraftAgentEditCoordinator(input: {
                 ),
                 rejected: replay.rejected,
                 room: draftRoom(workDraftId),
-                beforeState: snapshot.encoded,
-                afterState: Y.encodeStateAsUpdate(doc),
               },
               rows: draftRows(workDraftId, replay.keptEntries),
             };
           },
           true,
+          precondition,
         );
         if (!write) return { ...result, write: { kind: "no-effect" } };
         return {
@@ -275,28 +280,22 @@ export function createDraftAgentEditCoordinator(input: {
      * The Work draft's rows (and anything the journal can't explain, as the writer's) that the
      * baseline, the view the writes planned on, doesn't contain: containment is the only skip.
      */
-    async concurrentUpdatesSince({ docId, doc, baselineDoc, reportingCut, access }) {
-      const concurrent = await concurrentUpstreamJournalRows(
+    async concurrentUpdatesSince({ docId, doc, baselineDoc, access }) {
+      const rows = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
         access,
         accessedPeer.getStore(),
       );
-      if (reportingCut) {
-        const cut = Y.snapshot(doc);
-        concurrent.rows = concurrent.rows.filter((row) =>
-          Y.snapshotContainsUpdate(cut, row.updateData),
-        );
-        concurrent.upstreamState = reportingCut;
-      }
+      // `doc` is the save's cut, frozen: a row that landed after it is not reported.
+      const cut = Y.snapshot(doc);
       return partitionConcurrentUpdates(
         baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null,
         baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot,
-        concurrent.rows.map((row) => ({
-          origin: originForJournalRow(row),
-          update: row.updateData,
-        })),
-        concurrent.upstreamState ?? Y.encodeStateAsUpdate(doc),
+        rows
+          .filter((row) => Y.snapshotContainsUpdate(cut, row.updateData))
+          .map((row) => ({ origin: originForJournalRow(row), update: row.updateData })),
+        Y.encodeStateAsUpdate(doc),
       );
     },
   };
@@ -361,7 +360,7 @@ async function resolveThreadDraftId(
   return (await input.drafts.resolveThreadDraft(documentId, input.threadId)).draftId;
 }
 
-/** The upstream draft's rows, and its state they were read at. */
+/** The upstream draft's journal rows on its current generation. */
 async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
@@ -372,22 +371,19 @@ async function concurrentUpstreamJournalRows(
   documentId: DocumentId,
   access?: DocumentAccess,
   accessedPeer?: string,
-): Promise<{ rows: DraftJournalRow[]; upstreamState?: Uint8Array }> {
+): Promise<DraftJournalRow[]> {
   // A pinned or running access names the peer; only a free-standing read resolves it.
   const peerId =
     access?.pinnedDraftId ??
     accessedPeer ??
     (await input.drafts.resolveThreadDraft(documentId, input.threadId)).draftId;
   const upstreamDraftId = (await input.drafts.getDraft(peerId))?.upstreamDraftId;
-  if (!upstreamDraftId) return { rows: [] };
-  return input.draftCoordinator.readDraft(upstreamDraftId, async (doc, snapshot) => {
-    const rows = await input.journalRows.listConcurrentJournalRows(
-      upstreamDraftId,
-      snapshot.generation,
-      { documentId },
-    );
-    return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
-  });
+  if (!upstreamDraftId) return [];
+  return input.draftCoordinator.readDraft(upstreamDraftId, (_doc, snapshot) =>
+    input.journalRows.listConcurrentJournalRows(upstreamDraftId, snapshot.generation, {
+      documentId,
+    }),
+  );
 }
 
 function originForJournalRow(row: DraftJournalRow): ConcurrentUpdateOrigin {

@@ -15,6 +15,8 @@ import {
   type DocumentCoordinator,
   DocumentNotFoundError,
   type RoomRead,
+  type SavePrecondition,
+  SavePreconditionRefused,
   type StagedRoomEntries,
   type StagedWriteSaveResult,
 } from "../../ports/document-coordinator.js";
@@ -196,60 +198,62 @@ export class MemoryCoordinator implements DocumentCoordinator {
 
   /**
    * A live save: every entry kept, appended to the journal as one batch by `persist` (which
-   * resolves the cut the append followed), and delivered to the in-memory room at `transfer`. A missing document saves onto an empty one.
+   * judges the precondition on, and resolves, the cut the append followed: the room as it is
+   * then), and delivered to the in-memory room at `transfer`. A missing document saves onto an
+   * empty one.
    */
-  async prepareSave(input: StagedRoomEntries & { docId: string }): Promise<StagedWriteSaveResult> {
+  async prepareSave(
+    input: StagedRoomEntries & { docId: string; precondition?: SavePrecondition },
+  ): Promise<StagedWriteSaveResult> {
     const failure = this.takeFailure(input.docId);
     if (failure) throw failure;
     const doc = this.docs.has(input.docId)
       ? (await this.readRoom(input.docId, null)).doc
       : new Y.Doc({ gc: false });
+    let prepared: Uint8Array;
     try {
-      const beforeState = Y.encodeStateAsUpdate(doc);
-      for (const entry of input.entries) Y.applyUpdate(doc, entry.update);
-      const kept = input.entries.flatMap((entry) =>
-        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-      );
-      const result = {
-        kept,
-        rejected: [],
-        room: this.docs.has(input.docId) ? `memory:${input.docId}` : null,
-        beforeState,
-        afterState: Y.encodeStateAsUpdate(doc),
-      };
-      if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
-      return {
-        ...result,
-        write: {
-          kind: "write",
-          // The cut the append followed: the room as it is now, whatever landed since preparing.
-          persist: async () => {
-            await this.journal?.appendBatch(input.entries);
-            const cut = new Y.Doc({ gc: false });
-            try {
-              Y.applyUpdate(cut, result.beforeState);
-              const room = this.docs.get(input.docId);
-              if (room) Y.applyUpdate(cut, Y.encodeStateAsUpdate(room));
-              const beforeState = Y.encodeStateAsUpdate(cut);
-              for (const entry of input.entries) Y.applyUpdate(cut, entry.update);
-              return { beforeState, afterState: Y.encodeStateAsUpdate(cut) };
-            } finally {
-              cut.destroy();
-            }
-          },
-          // The room catches up in one apply, as a live room's recovery does.
-          transfer: () => {
-            Y.applyUpdate(
-              this.ensureEmpty(input.docId),
-              Y.mergeUpdates(input.entries.map((entry) => entry.update)),
-            );
-          },
-          dispose: () => {},
-        },
-      };
+      prepared = Y.encodeStateAsUpdate(doc);
     } finally {
       doc.destroy();
     }
+    const result = {
+      kept: input.entries.flatMap((entry) =>
+        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+      ),
+      rejected: [],
+      room: this.docs.has(input.docId) ? `memory:${input.docId}` : null,
+    };
+    if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
+    return {
+      ...result,
+      write: {
+        kind: "write",
+        persist: async () => {
+          const cut = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(cut, prepared);
+            const room = this.docs.get(input.docId);
+            if (room) Y.applyUpdate(cut, Y.encodeStateAsUpdate(room));
+            const beforeState = Y.encodeStateAsUpdate(cut);
+            if (input.precondition && !input.precondition(beforeState))
+              throw new SavePreconditionRefused(input.docId);
+            await this.journal?.appendBatch(input.entries);
+            for (const entry of input.entries) Y.applyUpdate(cut, entry.update);
+            return { beforeState, afterState: Y.encodeStateAsUpdate(cut) };
+          } finally {
+            cut.destroy();
+          }
+        },
+        // The room catches up in one apply, as a live room's recovery does.
+        transfer: () => {
+          Y.applyUpdate(
+            this.ensureEmpty(input.docId),
+            Y.mergeUpdates(input.entries.map((entry) => entry.update)),
+          );
+        },
+        dispose: () => {},
+      },
+    };
   }
 
   /**

@@ -1,6 +1,7 @@
 import type { DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
+import type { SavePrecondition } from "./document-coordinator.js";
 import type { CompactionResult, JournalSnapshot, UpdateMeta } from "./types.js";
 
 export type JournalCommitKind = "durable" | "staged";
@@ -77,8 +78,15 @@ export interface UpdateJournal {
     meta: UpdateMeta,
     authority?: JournalAuthority,
   ): Promise<number>;
-  /** Append logical edit envelopes atomically; the storage adapter expands their ordered parts. */
-  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  /**
+   * Append logical edit envelopes atomically; the storage adapter expands their ordered parts.
+   * `precondition` is judged on each document's `beforeState` under its lock, before anything
+   * is written; a failure rejects with SavePreconditionRefused and appends nothing.
+   */
+  appendBatch(
+    entries: readonly JournalBatchAppendEntry[],
+    precondition?: SavePrecondition,
+  ): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   /** Durable attributed base used when reporting destructive effects. */
   readAttribution?(docId: string): Promise<JournalSnapshot>;

@@ -11,6 +11,7 @@ import {
   type JournalSnapshot,
   type RoomRead,
   type SaveCut,
+  type SavePrecondition,
   type StagedRoomEntries,
   type StagedWriteSaveResult,
   type UpdateJournal,
@@ -131,38 +132,38 @@ export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null } {
  * A live save of one scope's entries onto `copy` (the room's committed state, consumed): every
  * entry is kept, since a live room has no retirement or inverse to reconcile against. `persist`
  * appends them as one journal batch bound to the copy's authority, joining the caller's
- * transaction when there is one, and resolves the cut that append returned; `transfer` hands
- * them to `deliver`.
+ * transaction when there is one, with `precondition` judged on the cut under the document's
+ * lock, and resolves the cut that append returned; `transfer` hands them to `deliver`.
  */
 export function liveSave(
   copy: { doc: Y.Doc; room: string | null },
-  input: StagedRoomEntries & { docId: string },
+  input: StagedRoomEntries & { docId: string; precondition?: SavePrecondition },
   journal: Pick<UpdateJournal, "appendBatch">,
   deliver: () => void,
 ): StagedWriteSaveResult {
   try {
-    const prepared = Y.encodeStateAsUpdate(copy.doc);
-    for (const entry of input.entries) Y.applyUpdate(copy.doc, entry.update);
-    const authority = boundDocumentAuthority(copy.doc) ?? undefined;
     const result = {
       kept: input.entries.flatMap((entry) =>
         entry.mutation?.writeId ? [entry.mutation.writeId] : [],
       ),
       rejected: [],
       room: copy.room,
-      beforeState: prepared,
-      afterState: Y.encodeStateAsUpdate(copy.doc),
     };
     if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
+    const prepared = Y.encodeStateAsUpdate(copy.doc);
+    const authority = boundDocumentAuthority(copy.doc) ?? undefined;
+    const { precondition } = input;
     return {
       ...result,
       write: {
         kind: "write",
         async persist() {
-          const appended = await journal.appendBatch(
+          const [first] = await journal.appendBatch(
             input.entries.map((entry) => ({ ...entry, authority })),
+            precondition && ((found) => precondition(cutBefore(found, prepared))),
           );
-          return appendCut(input, prepared, appended[0]?.beforeState ?? prepared);
+          if (!first) throw new Error(`The journal returned no rows for ${input.docId}`);
+          return appendCut(input, cutBefore(first.beforeState, prepared));
         },
         transfer: deliver,
         dispose() {},
@@ -174,17 +175,27 @@ export function liveSave(
 }
 
 /**
- * The cut the append of `input`'s rows followed: `found`, the journal it read under the
- * document's lock before them (a writer's frame admitted between preparing and appending is in
- * it, and the report names what the rows swept of it), with the prepared copy merged in for the
- * room it read. In-memory Yjs over bytes already in hand: nothing here waits on storage.
+ * The state a live save's rows follow: `found`, the journal its append read under the
+ * document's lock (a writer's frame admitted between preparing and appending is in it, and the
+ * report names what the rows swept of it), with the prepared copy merged in for the room it
+ * read. In-memory Yjs over bytes already in hand: nothing here waits on storage.
  */
-function appendCut(input: StagedRoomEntries, prepared: Uint8Array, found: Uint8Array): SaveCut {
+function cutBefore(found: Uint8Array, prepared: Uint8Array): Uint8Array {
   const doc = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(doc, found);
     Y.applyUpdate(doc, prepared);
-    const beforeState = Y.encodeStateAsUpdate(doc);
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** The cut of `input`'s rows appended after `beforeState`. */
+function appendCut(input: StagedRoomEntries, beforeState: Uint8Array): SaveCut {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, beforeState);
     for (const entry of input.entries) Y.applyUpdate(doc, entry.update);
     return { beforeState, afterState: Y.encodeStateAsUpdate(doc) };
   } finally {

@@ -34,8 +34,6 @@ export interface CommitDetectionInput {
   interactionContext?: InteractionContext;
   /** The view the first write planned on: what detection takes as already seen. */
   preOwnSnapshot: Uint8Array;
-  /** The save's before state, frozen: the host reports only what it contains. */
-  reportingCut?: Uint8Array;
   access?: DocumentAccess;
   actor: MutationActor;
   /**
@@ -143,7 +141,6 @@ export function createCommitDetection(deps: {
         input.docId,
         before,
         detectionDoc,
-        input.reportingCut,
         input.access,
       );
       return applyConcurrentUpdates(toDocHandle(detectionDoc), model, input.links.codec, updates);
@@ -249,7 +246,6 @@ async function concurrentUpdatesSince(
   docId: string,
   doc: Y.Doc,
   baselineDoc: Y.Doc,
-  reportingCut?: Uint8Array,
   access?: DocumentAccess,
 ): Promise<ConcurrentUpdate[]> {
   const sinceStateVector = Y.encodeStateVector(baselineDoc);
@@ -259,7 +255,6 @@ async function concurrentUpdatesSince(
       doc,
       baselineDoc,
       sinceStateVector,
-      reportingCut,
       access,
     });
   }

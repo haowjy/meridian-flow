@@ -8,7 +8,11 @@ import type {
   UpdateJournal,
   UpdateMeta,
 } from "@meridian/agent-edit/integration";
-import { captureEditParts, unwrapDoc } from "@meridian/agent-edit/integration";
+import {
+  captureEditParts,
+  SavePreconditionRefused,
+  unwrapDoc,
+} from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -641,7 +645,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       });
     },
 
-    async appendBatch(entries) {
+    async appendBatch(entries, precondition) {
       if (entries.length === 0) return [];
       // Inside a reply's save the rows join its one transaction (D42) and stay
       // staged until it commits; otherwise this call owns a durable transaction.
@@ -654,15 +658,19 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         );
         for (const entry of entries)
           await validateAppendAuthority(txDb, entry.docId, entry.authority);
+        // Each document as this append finds it under its lock: the batch's cut, the state its
+        // precondition is judged on before anything is written (a refusal leaves an ambient
+        // transaction untouched), and the base its receipts are captured against.
+        const beforeStates = new Map<string, Uint8Array>();
+        for (const docId of uniqueSortedDocIds(entries.map((e) => e.docId))) {
+          const beforeState = encodeJournalSnapshot(await this.read(docId));
+          if (precondition && !precondition(beforeState)) throw new SavePreconditionRefused(docId);
+          beforeStates.set(docId, beforeState);
+        }
         const admissions = new Map<string, Awaited<ReturnType<typeof allocateDocumentAdmission>>>();
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
         }
-        // Each document as this append finds it under its lock: the batch's cut and the base
-        // its receipts are captured against.
-        const beforeStates = new Map<string, Uint8Array>();
-        for (const docId of uniqueSortedDocIds(entries.map((e) => e.docId)))
-          beforeStates.set(docId, encodeJournalSnapshot(await this.read(docId)));
         const mutated = new Set(entries.filter((e) => e.mutation).map((e) => e.docId));
         const batchOrdinals = new Map<string, number>();
 
