@@ -109,7 +109,7 @@ editor beside the chat dock.
 
 ## Last run
 
-2026-10-19, M2 W2 on `feat/m2-plan-on-frontier`, API level only (an in-process probe on the real
+2026-10-19, M2 W2 at `f8e5f62b94`, API level only (an in-process probe on the real
 collab domain, writer edits applied as Yjs updates to the live room and as writer frames to the
 Work draft): all eight cells as expected above. Before-state and W1's browser run:
 `work/concurrent-edit-design/m2/probe/before/` and `probe/after/` in the docs repository; W2 raw
