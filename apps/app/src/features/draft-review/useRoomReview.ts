@@ -15,6 +15,8 @@ import {
   retainReviewRuntime,
 } from "./review-runtime";
 
+import { retainRoomAttribution } from "./room-attribution";
+
 type HeldReview = {
   state: ReviewState;
   runtime: ReviewRuntime | null;
@@ -58,6 +60,7 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
       let runtime: ReviewRuntime | null = null;
       let release = () => {};
       let unwatchRuntime = () => {};
+      let releaseAttribution = () => {};
       const publish = () =>
         setHeld((prior) =>
           new Map(prior).set(name, {
@@ -71,6 +74,7 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
         const next = read.session();
         if (next !== session) {
           unwatchRuntime();
+          releaseAttribution();
           release();
           session = next;
           const draft = drafts[names.indexOf(name)];
@@ -81,6 +85,8 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
             detach();
             hold?.release();
           };
+          releaseAttribution =
+            next && runtime ? retainRoomAttribution(next, runtime, draft) : () => {};
           unwatchRuntime = runtime?.subscribe(publish) ?? (() => {});
         }
         publish();
@@ -90,6 +96,7 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
       leases.current.set(name, () => {
         unwatch();
         unwatchRuntime();
+        releaseAttribution();
         release();
         read.dispose();
       });

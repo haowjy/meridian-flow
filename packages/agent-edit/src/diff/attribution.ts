@@ -40,10 +40,16 @@ export interface AttributionPart {
   inserted: readonly ItemRange[];
   deleted: readonly ItemRange[];
 }
+export interface WriterReceipt {
+  userId: string;
+  inserted: readonly ItemRange[];
+  deleted: readonly ItemRange[];
+}
 export interface Provenance {
   /** The human who owns the draft's browser clients (`projects.user_id` while a project has one user). */
   userId: string;
   parts: readonly AttributionPart[];
+  writers?: readonly WriterReceipt[];
   /** The room revision whose AI parts have been read, including deletion-only writes. */
   snapshot: Y.Snapshot;
   /** Only this browser can positively identify its own unacknowledged insertions. */
