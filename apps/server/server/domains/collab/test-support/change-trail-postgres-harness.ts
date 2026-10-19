@@ -34,8 +34,8 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
+import { readHeadRevision } from "../adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
-import { readLiveReviewRevision } from "../adapters/drizzle-draft-review-live.js";
 import { createDrizzleReviewCut, readLiveDoc } from "../adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
@@ -101,7 +101,7 @@ const { createDrizzleDocumentProjectionEffects } = await import(
 );
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
 const { documentAuthority } = await import("../domain/document-handle.js");
-const { readDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
+const { readDocumentAuthorityHead, replaceGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
@@ -1494,7 +1494,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .limit(1);
       if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
       const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+      const replaced = await replaceGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
         expectedGeneration: authorityHead.generation,
@@ -1586,7 +1586,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
     const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const replaced = await replaceGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
       expectedGeneration: authorityHead.generation,
@@ -1633,10 +1633,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     }
 
     const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
+    let replacement: ReturnType<typeof replaceGeneration> | undefined;
     try {
       await waitForAdvisoryLockWaiters(1);
-      replacement = replaceDocumentAuthorityHeadGeneration(db, {
+      replacement = replaceGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId,
         expectedGeneration: authorityHead.generation,
@@ -1783,7 +1783,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const checkpointId = Number(
       await persistence.store.createCheckpoint(cut, "oracle-explicit-restoration"),
     );
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const replaced = await replaceGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
       expectedGeneration: authorityHead.generation,
@@ -1952,7 +1952,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       draftId: documentDraft.draftId,
       selectRows: async () => ({
         journalIds: [discarded.id],
-        expectedLiveRevision: await readLiveReviewRevision(db, ALPHA_ID),
+        expectedLiveRevision: await readHeadRevision(db, ALPHA_ID),
       }),
       reviewedByUserId: USER_ID,
     });
@@ -2339,7 +2339,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .limit(1);
       if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
       const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
-      return replaceDocumentAuthorityHeadGeneration(db, {
+      return replaceGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
         expectedGeneration: authorityHead.generation,

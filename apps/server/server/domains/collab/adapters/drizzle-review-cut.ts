@@ -22,7 +22,7 @@ import {
 } from "../domain/draft-store.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../domain/ports/document-link-scope.js";
 import type { ReadReviewCut } from "../domain/ports/review-cut.js";
-import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
+import { readHeadRevision } from "./drizzle-document-authority-head.js";
 
 export function createDrizzleReviewCut(input: {
   db: Database;
@@ -51,10 +51,7 @@ export function createDrizzleReviewCut(input: {
         throw new DraftChangeRefusal("gone");
       assertReadableDraft(documentDraft);
       const live = await input.journal.read(resolved.documentId);
-      const revision = await readLiveReviewRevision(
-        currentDrizzleDb(input.db),
-        resolved.documentId,
-      );
+      const revision = await readHeadRevision(currentDrizzleDb(input.db), resolved.documentId);
       const history = await input.rows.listJournalRowsForDraft({
         draftId: documentDraft.draftId,
         generation: documentDraft.generation,
