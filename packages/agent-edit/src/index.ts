@@ -95,6 +95,7 @@ export {
   readCall,
   renderAgentEditResult,
 } from "./tool/result-text.js";
+export { planRevert, type RevertPassage, type RevertPlanInput } from "./tool/revert-plan.js";
 export type {
   MutationActor,
   ReadFunction,

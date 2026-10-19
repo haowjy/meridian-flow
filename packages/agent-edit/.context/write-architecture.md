@@ -85,6 +85,29 @@ transaction-origin identity. Model handles are reserved through
 ordinals independently of transport compaction. Certified aliases are the only
 persisted restoration correspondence, never text or length guesses.
 
+## Forward-revert planning
+
+`planRevert` is a pure, synchronous planner, not a second write door. Its caller
+supplies exact post-edit A and pre-edit B cuts, the model view V including its
+reply's writes, and the selected edit's inserted/deleted item ranges. All docs
+are gc-off Yjs docs using `prosemirror`. It merges `rebase(schema, A, V, B)`
+with identity-pinned A↔B alignment, then lowers onto V refs as ordinary edits
+and semantic IR. No input is mutated; refs must be accepted/applied/captured
+against that V before it changes. The host owns acceptance and persistence.
+
+Leading whitespace is independent of core item identity. Lowering never matches
+N's inserted cores or characters to equal content; retained V text is preserved
+and restored text is fresh, not certified restoration. A text-only V paragraph
+entirely from N that becomes empty is removed in the planner, without changing
+the merge kernel's policy for other callers. Existing empty parents retain their
+identity. Punctuation attachment follows original identity even when content-only
+alignment would place the restoration elsewhere.
+
+Passages join overlapping echo windows and structural dependencies. Empty output
+means unchanged; a target of -1 means document start. Non-textblock structures
+are whole-block units. Rebuilt V loses item correspondence: equal copied text can
+be matched by content only, so original-copy preservation is not guaranteed there.
+
 ## Observation frontiers
 
 `src/frontier.ts` is pure Yjs and host-agnostic. A frontier is a snapshot of
