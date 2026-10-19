@@ -11,6 +11,7 @@ import {
 import { blockItemKey, type ReviewFormattingChange } from "@meridian/contracts/branches";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
+import type { ClockRange } from "./document-content.js";
 import {
   documentProseEqual,
   richDifference,
@@ -18,7 +19,6 @@ import {
   visibleContent,
   visibleItemRanges,
 } from "./document-content.js";
-import type { ClockRange } from "./draft-review-attribution.js";
 import { encodeTrailPosition, rootRelativePosition } from "./trail-read-kernel.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);

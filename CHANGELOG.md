@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
+
 - Isolated reply replay journal reads from the retiring Apply settlement store.
 
 - Removed the settlement-era draft-review command client in preparation for the per-draft command owner.

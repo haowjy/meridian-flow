@@ -89,60 +89,13 @@ export function testEnvelope(input: {
   };
 }
 
-/** The per-change selection a client sends after previewing, for the operations it clicked. */
-export function fencedSelection(
-  preview: {
-    liveRevisionToken: string;
-    draftRevisionToken: string;
-    operations: readonly {
-      operationId: string;
-      partKey?: string;
-      admissionToken: string;
-      closureClassId: string;
-    }[];
-  },
-  operationIds: string[],
-) {
-  const clicked = preview.operations.filter((op) => operationIds.includes(op.operationId));
-  return {
-    operationIds,
-    memberPartKeys: clicked.flatMap((op) => (op.partKey ? [op.partKey] : [])),
-    memberPartKeysComplete: true,
-    admissionTokens: [...new Set(clicked.map((op) => op.admissionToken))],
-    closureClassIds: [...new Set(clicked.map((op) => op.closureClassId))],
-    liveRevisionToken: preview.liveRevisionToken,
-    draftRevisionToken: preview.draftRevisionToken,
-  };
-}
-
-export type ClickedChanges = {
-  documentId: string;
-  preview: ActivePreview;
-  operationIds: string[];
-};
-
-/** What a click on `operationIds` of a previewed item sends. */
-export function fencedRequest(
-  command: { documentId: string },
-  preview: ActivePreview,
-  operationIds: string[],
-): ClickedChanges {
-  return { documentId: command.documentId, preview, operationIds };
-}
-
-type ActivePreview = Extract<Awaited<ReturnType<DraftReviewApi["preview"]>>, { status: "active" }>;
-
-/**
- * The writer's review commands by document, each under a fresh command id, answering the
- * command's stored body. The facade names items by `itemKey`; suites name documents.
- */
 export function reviewDriver(
   review: DraftReviewApi,
   scope: { workId?: WorkId; userId?: UserId } = {},
 ) {
   const workId = scope.workId ?? (WORK_ID as WorkId);
   const userId = scope.userId ?? (USER_ID as UserId);
-  const body = (outcome: Awaited<ReturnType<DraftReviewApi["applyItem"]>>) =>
+  const body = (outcome: Awaited<ReturnType<DraftReviewApi["discardItem"]>>) =>
     outcome.kind === "result" ? outcome.result : outcome;
   async function resolved(documentId: string) {
     const found = await review.resolveItemByDocument({ workId, documentId: documentId as never });
@@ -151,11 +104,6 @@ export function reviewDriver(
   }
   const driver = {
     resolved,
-    /** The wire-less shape of a click: the document, its preview and the operations chosen. */
-    applyRequest: (request: ClickedChanges) =>
-      driver.applyChanges(request.documentId, request.preview, request.operationIds),
-    discardRequest: (request: ClickedChanges) =>
-      driver.discardChanges(request.documentId, request.preview, request.operationIds),
     async actorThreads(documentId: string) {
       const listed = await review.listItems({ workId });
       const item = listed.items.find((candidate) => candidate.documentId === documentId);
@@ -164,27 +112,8 @@ export function reviewDriver(
         title: listed.threadTitles.get(threadId) ?? null,
       }));
     },
-    async preview(documentId: string) {
-      return review.preview({ workId, itemKey: (await resolved(documentId)).itemKey });
-    },
-    async activePreview(documentId: string): Promise<ActivePreview> {
-      const preview = await driver.preview(documentId);
-      if (preview.status !== "active") throw new Error(`No active review of ${documentId}`);
-      return preview;
-    },
     async list() {
       return (await review.items({ workId })).items;
-    },
-    async applyItem(documentId: string) {
-      const { item, branchId } = await resolved(documentId);
-      return body(
-        await review.applyItem({
-          workId,
-          item,
-          userId,
-          envelope: testEnvelope({ workId, kind: "apply_items", branchId, userId }),
-        }),
-      );
     },
     async discardItem(documentId: string) {
       const { item, branchId } = await resolved(documentId);
@@ -194,19 +123,6 @@ export function reviewDriver(
           item,
           userId,
           envelope: testEnvelope({ workId, kind: "discard_items", branchId, userId }),
-        }),
-      );
-    },
-    async applyChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
-      const { itemKey, branchId } = await resolved(documentId);
-      const ids = operationIds ?? preview.operations.map((op) => op.operationId);
-      return body(
-        await review.applyChanges({
-          workId,
-          itemKey,
-          userId,
-          envelope: testEnvelope({ workId, kind: "apply_changes", branchId, userId }),
-          selection: { kind: "apply", ...fencedSelection(preview, ids) },
         }),
       );
     },
@@ -220,33 +136,6 @@ export function reviewDriver(
           branchId,
           userId,
           envelope: testEnvelope({ workId, kind: "discard_branch", branchId, userId }),
-        }),
-      );
-    },
-    /** Apply every listed item of the Work's active branch. */
-    async applyAll() {
-      const { branchId, items } = await review.items({ workId });
-      if (!branchId) throw new Error("No active branch");
-      return body(
-        await review.applyAll({
-          workId,
-          branchId,
-          items: items.map(({ itemKey }) => ({ itemKey })),
-          userId,
-          envelope: testEnvelope({ workId, kind: "apply_items", branchId, userId }),
-        }),
-      );
-    },
-    async discardChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
-      const { itemKey, branchId } = await resolved(documentId);
-      const ids = operationIds ?? preview.operations.map((op) => op.operationId);
-      return body(
-        await review.discardChanges({
-          workId,
-          itemKey,
-          userId,
-          envelope: testEnvelope({ workId, kind: "discard_changes", branchId, userId }),
-          selection: { kind: "discard", ...fencedSelection(preview, ids) },
         }),
       );
     },

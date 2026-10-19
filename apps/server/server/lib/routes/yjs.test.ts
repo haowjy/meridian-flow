@@ -362,11 +362,11 @@ describe("Yjs live writer admission", () => {
     let commit: (() => void) | undefined;
     const admitLiveWriterUpdate = vi.fn(
       () =>
-        new Promise<{ admitted: true; joinedSettlement: boolean }>((resolve) => {
+        new Promise<{ admitted: true }>((resolve) => {
           events.push("accept");
           commit = () => {
             events.push("journal");
-            resolve({ admitted: true, joinedSettlement: true });
+            resolve({ admitted: true });
           };
         }),
     );
@@ -428,7 +428,6 @@ describe("Yjs live writer admission", () => {
     const payload = new Uint8Array([0, 0]);
     const admitLiveWriterUpdate = vi.fn(async () => ({
       admitted: false as const,
-      joinedSettlement: false as const,
     }));
 
     await expect(
@@ -444,7 +443,7 @@ describe("Yjs live writer admission", () => {
         userId: "user-1" as never,
         expectedGeneration: 1n,
       }),
-    ).resolves.toEqual({ admitted: false, joinedSettlement: false });
+    ).resolves.toEqual({ admitted: false });
   });
 
   it("rejects a failed admission and accepts the client's resubmitted update", async () => {
@@ -452,7 +451,7 @@ describe("Yjs live writer admission", () => {
     const admitLiveWriterUpdate = vi
       .fn()
       .mockRejectedValueOnce(new Error("journal down"))
-      .mockResolvedValueOnce({ admitted: true, joinedSettlement: false });
+      .mockResolvedValueOnce({ admitted: true });
     const input = {
       services: {
         ...services(false),
@@ -472,7 +471,6 @@ describe("Yjs live writer admission", () => {
     });
     await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,
-      joinedSettlement: false,
     });
     expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
   });
@@ -489,7 +487,7 @@ describe("Yjs room access", () => {
       bindHocuspocus: vi.fn(),
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),
-      admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true, joinedSettlement: false })),
+      admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true })),
       resolveDraftHocuspocusRoom: vi.fn(async () => ({
         draftId: "draft_1",
         documentId: liveRoom,

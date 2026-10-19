@@ -92,8 +92,6 @@ export interface ThreadDraftListItem {
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   conflict: DraftItemConflict | null;
   tokens: DraftItemTokens;
-  /** True while a staged batch holds the item: progress only, never a settlement signal. */
-  settling: boolean;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
@@ -264,14 +262,8 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
 // --- Commands and outcomes (contract §4.5, §4.6) ---------------------------------------------
 //
-// Every Apply and Discard carries a client `commandId`. One outcome matrix serves them all:
-//   applied / discarded -> 200 (per-change and item results say whether the item closed)
-//   held (5a)           -> per-item `held` inside an item or Apply-all result, or 409 on item Apply
-//   stale / gone        -> 409 on Apply, 200 body on per-change commands; the review refreshes
-//   pending             -> 202 `{ status: "pending", branchId, commandId }`; observe the command
-//   blocked             -> observed `{ state: "blocked" }`, never a 200; terminal for the client
-//   unknown (transport) -> resend the same `commandId` and body; the server deduplicates
-// The client never infers a command's settlement from the list.
+// Discard commands replay their stored outcome by command id; pending claims answer 202.
+// Frozen Apply clicks have their own answer/observation contract below.
 
 /** Which writer command a `commandId` was recorded for. */
 export const BRANCH_COMMAND_KINDS = [
@@ -289,22 +281,10 @@ export const BRANCH_COMMAND_CONFLICT_CODE = "command_conflict";
 /** HTTP 404 code on observation: nothing committed under this `commandId`, so the client resends. */
 export const BRANCH_COMMAND_UNKNOWN_CODE = "unknown_command";
 
-/**
- * Why Apply landed nothing for an item: its live path is taken (5a), or its live document
- * was removed, which Apply never revives (the removal closed the draft; `removal` is its
- * record, null if it could not be read).
- */
-export type DraftHeldReason =
-  | { code: "path_taken"; path: string }
-  | { code: "deleted_live"; removal: DocumentRemovalRecord | null };
-export type DraftApplyItemResult =
-  | { itemKey: DraftItemKey; status: "applied" }
-  | { itemKey: DraftItemKey; status: "held"; reason: DraftHeldReason };
-
-/** 202 before the Apply has a client command to observe. */
-export type DraftApplyPending = { status: "pending"; branchId: BranchId };
-/** 202: the batch is staged and recovery is finishing it. Observe `commandId` for the result. */
-export type DraftApplyPendingResponse = DraftApplyPending & { commandId: BranchCommandId };
+/** A claim is pending; observe its command id for the committed result. */
+export type BranchCommandPending = { status: "pending"; branchId: BranchId };
+/** 202: a command claim exists but has not yet supplied its result. */
+export type BranchCommandPendingResponse = BranchCommandPending & { commandId: BranchCommandId };
 
 /** Whether a settled item left review, and how (applied if anything reached live). */
 export type DraftItemSettlement = {
@@ -312,27 +292,6 @@ export type DraftItemSettlement = {
   /** Present when `itemClosed`. */
   itemDisposition?: "applied" | "discarded";
 };
-
-// Item Apply and Discard: one whole item, by `itemKey`.
-
-export type DraftApplyRequest = {
-  branchId: BranchId;
-  itemKey: DraftItemKey;
-  commandId: BranchCommandId;
-} & Partial<DraftItemTokens>;
-/** Item Apply's 200. `item` is the settled item's result. */
-export type DraftApplyResponse = {
-  status: "applied";
-  branchId: BranchId;
-  itemKey: DraftItemKey;
-  item: DraftApplyItemResult;
-};
-/** Item Apply: confirmed 200 or staged 202. */
-export type DraftApplyHttpResponse = DraftApplyResponse | DraftApplyPendingResponse;
-/** A held or stale item Apply answers 409 with this body. */
-export type DraftApplyRefusalBody =
-  | { status: "held"; branchId: BranchId; itemKey: DraftItemKey; reason: DraftHeldReason }
-  | { status: "stale"; branchId: BranchId; itemKey: DraftItemKey };
 
 export type DraftDiscardRefusalStatus = "stale" | "gone" | "whole_item" | "incomplete_class";
 
@@ -343,89 +302,13 @@ export type DraftDiscardResponse =
       itemKey: DraftItemKey;
     } & DraftItemSettlement)
   | { status: DraftDiscardRefusalStatus; branchId: BranchId; itemKey: DraftItemKey };
-/**
- * The most `memberPartKeys` a per-change Discard carries. A writer's change holds one part per
- * keystroke frame, unbounded, so a client sends an even sample of a longer selection and says
- * so with `memberPartKeysComplete: false`. A sample proves a member survives; it cannot prove
- * none does.
- */
-export const MAX_DISCARD_MEMBER_PART_KEYS = 500;
 
-/**
- * Item Discard sends no selection. Per-change Discard admits by class: `closureClassIds` with
- * `admissionTokens` over the clicked classes' closed rows and rich effect, and `memberPartKeys`
- * (immutable part keys, empty for fallback-only classes) that only classify an absent class.
- * Physical journal ids never cross the wire, and `operationIds` are not part of the request.
- */
+/** End one still-hidden creation's branch use; edited-text Discard is browser-local. */
 export type DraftDiscardRequest = {
   branchId: BranchId;
   itemKey: DraftItemKey;
   commandId: BranchCommandId;
-  /** Required for per-change Discard; absent for item Discard. */
-  liveRevisionToken?: string;
-  draftRevisionToken?: string;
-  /** Required for per-change Discard: stable server-vended class identities at click. */
-  closureClassIds?: string[];
-  /** Required for per-change Discard: unchanged closed-row and rich-effect evidence at click. */
-  admissionTokens?: string[];
-  /** Clicked immutable members classify a missing class, never authorize a replacement. */
-  memberPartKeys?: string[];
-  /**
-   * Required for per-change Discard: whether `memberPartKeys` lists every clicked member. A
-   * missing class with no listed survivor is `gone` only when this is true, `stale` otherwise.
-   */
-  memberPartKeysComplete?: boolean;
 };
-
-// Per-change Apply: complete server-vended classes. Physical journal ids never cross the wire
-// except as the preview's operation ids, which name the selected classes.
-
-export type DraftApplyChangesRequest = {
-  branchId: BranchId;
-  itemKey: DraftItemKey;
-  commandId: BranchCommandId;
-  operationIds: string[];
-  liveRevisionToken: string;
-  draftRevisionToken: string;
-};
-export type DraftApplyChangesResponse =
-  | ({
-      status: "applied";
-      branchId: BranchId;
-      itemKey: DraftItemKey;
-      operationIds: string[];
-      closureClassIds: string[];
-    } & DraftItemSettlement)
-  | {
-      status: "stale" | "gone" | "whole_item" | "incomplete_class";
-      branchId: BranchId;
-      itemKey: DraftItemKey;
-    }
-  | DraftApplyPendingResponse;
-
-// Apply all and Discard all: one server command over the Work's whole branch.
-
-// These request types remain only until the client command-layer deletion (C0) lands.
-export type BranchApplyAllRequest = {
-  branchId: string;
-  commandId: string;
-  items: {
-    itemKey: string;
-    locationToken: string;
-    liveTextToken?: string;
-    draftGenerationToken?: string;
-  }[];
-};
-
-/**
- * `completed` means the command settled, including selections whose items were all held. Apply never
- * closes the branch, so the result carries no branch closure.
- */
-export type BranchApplyAllResponse =
-  | DraftApplyPendingResponse
-  | { status: "completed"; branchId: BranchId; items: DraftApplyItemResult[] }
-  | { status: "stale"; branchId: BranchId; staleItemKeys: DraftItemKey[] }
-  | { status: "gone"; branchId: BranchId };
 
 export const BranchDiscardAllRequestSchema = z.object({
   /** A `branches` row id (D68), never a per-document draft id. */
@@ -441,19 +324,11 @@ export type BranchDiscardAllResponse =
 // Observing a command: `GET …/works/:w/branches/commands/:commandId`.
 
 /** The terminal body of a command, exactly what its 200 carried. */
-export type BranchCommandResult =
-  | DraftApplyResponse
-  | DraftApplyChangesResponse
-  | BranchApplyAllResponse
-  | DraftDiscardResponse
-  | BranchDiscardAllResponse
-  | DraftApplyRefusalBody;
+export type BranchCommandResult = DraftDiscardResponse | BranchDiscardAllResponse;
 /**
- * `pending` keeps the claim and polling; `done` settles it as the 200 would; `blocked` is terminal
- * (stop polling, show the failure on the item, never retry automatically). A missing command answers
+ * `pending` keeps the claim; `done` returns the committed result. A missing command answers
  * 404 `unknown_command`: nothing committed, so the client resends.
  */
 export type BranchCommandObservation =
   | { state: "pending" }
-  | { state: "done"; result: BranchCommandResult }
-  | { state: "blocked" };
+  | { state: "done"; result: BranchCommandResult };

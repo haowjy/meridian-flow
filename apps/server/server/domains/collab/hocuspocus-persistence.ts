@@ -22,13 +22,11 @@ import {
 } from "./domain/document-mutation-policy.js";
 import type { DraftCoordinator } from "./domain/draft-coordinator.js";
 import type { DraftStore } from "./domain/draft-store.js";
-import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
-import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
@@ -67,7 +65,6 @@ type HocuspocusPersistenceDeps = {
   onLiveUpdatePersisted?(documentId: DocumentId): void;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
   onDraftWriterUpdateAdmitted?(draftId: string): void;
-  offlineReconciliation?: OfflineReconciliation;
 };
 
 export type HocuspocusPersistenceService = Pick<
@@ -79,7 +76,6 @@ export type HocuspocusPersistenceService = Pick<
   | "currentLiveGeneration"
   | "validateHocuspocusDocument"
   | "admitDraftWriterUpdate"
-  | "persistConnectionUpdate"
   | "storeHocuspocusDocument"
   | "storeHocuspocusDraft"
   | "drainHocuspocusPersistence"
@@ -89,7 +85,6 @@ export type HocuspocusPersistenceService = Pick<
   | "enrollHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 > & {
-  writerIngressBarrier: WriterIngressBarrier;
   disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
 };
 
@@ -100,9 +95,6 @@ export function createHocuspocusPersistenceService(
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
-  const liveAppendTails = new Map<string, Promise<void>>();
-  const ingressGenerations = new Map<string, number>();
-  const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
   // A reconnected client has current transport authority but can replay cached
   // pre-restore structs/deletes. Handle fencing cannot identify that byte history.
   const retiredStateVectors = new Map<string, Uint8Array>();
@@ -110,24 +102,6 @@ export function createHocuspocusPersistenceService(
   const afterCallerCommit = deps.afterCallerCommit ?? ((callback: () => void) => callback());
   const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
-
-  const writerIngressBarrier: WriterIngressBarrier = {
-    async drain(documentId) {
-      const generation = ingressGenerations.get(documentId) ?? 0;
-      const admitted = admittedByDocument.get(documentId);
-      if (admitted) {
-        await Promise.all(
-          [...admitted].flatMap(([admissionGeneration, promise]) =>
-            admissionGeneration <= generation ? [promise] : [],
-          ),
-        );
-      }
-      return generation;
-    },
-    isGenerationCurrent(documentId, generation) {
-      return (ingressGenerations.get(documentId) ?? 0) === generation;
-    },
-  };
 
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
@@ -154,17 +128,6 @@ export function createHocuspocusPersistenceService(
         pendingAppends.delete(id);
       });
     pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
-  }
-
-  function enqueueLiveAppend(documentId: string, operation: () => Promise<void>): void {
-    const previous = liveAppendTails.get(documentId) ?? Promise.resolve();
-    const current = previous.then(operation);
-    const settled = current.catch(() => undefined);
-    liveAppendTails.set(documentId, settled);
-    void settled.finally(() => {
-      if (liveAppendTails.get(documentId) === settled) liveAppendTails.delete(documentId);
-    });
-    trackAppend(documentId, current);
   }
 
   function rejectReservedClientIdUpdate(input: {
@@ -264,28 +227,6 @@ export function createHocuspocusPersistenceService(
     }
   }
 
-  function emitOfflineReconciliationFailure(documentId: string, cause: unknown): void {
-    if (!deps.eventSink) return;
-    emitEvent(deps.eventSink, {
-      level: "error",
-      source: "collab.hocuspocus",
-      name: "offline_reconciliation.failed_after_durability",
-      correlation: { documentId },
-      payload: unknownToEventPayload(cause),
-    });
-  }
-
-  function emitOfflineReconciliationDegraded(documentId: string): void {
-    if (!deps.eventSink) return;
-    emitEvent(deps.eventSink, {
-      level: "warn",
-      source: "collab.hocuspocus",
-      name: "offline_reconciliation.evidence_degraded",
-      correlation: { documentId },
-      payload: {},
-    });
-  }
-
   function latestMetrics(): CollabPersistenceMetrics {
     const byDocument = new Map<
       string,
@@ -361,7 +302,6 @@ export function createHocuspocusPersistenceService(
   }
 
   return {
-    writerIngressBarrier,
     validateHocuspocusDocument,
     async currentLiveGeneration(documentId) {
       return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
@@ -472,37 +412,22 @@ export function createHocuspocusPersistenceService(
           // transaction, so the journal judges novelty again under the document lock (#946).
           isContained: () => documentContainment.contains(input.document, input.update),
           async append() {
-            const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
-            ingressGenerations.set(input.documentId, generation);
-            const admitted = admittedByDocument.get(input.documentId) ?? new Map();
-            admittedByDocument.set(input.documentId, admitted);
             const append = deps.journal.appendWriterUpdate(
               input.documentId,
               input.update,
               deps.metaForOrigin(input.origin),
               authority,
             );
-            const tracked = append.catch((cause) => {
-              recordDroppedConnectionUpdate(input.documentId);
-              emitPersistenceAppendFailure(input.documentId, cause);
-              throw cause;
-            });
-            admitted.set(generation, tracked);
-            try {
-              return await tracked;
-            } finally {
-              admitted.delete(generation);
-              if (admitted.size === 0) admittedByDocument.delete(input.documentId);
-            }
+            trackAppend(input.documentId, append);
+            return await append;
           },
         });
         // Refused before the lock, or under it: another copy of this update was stored first.
         if (!admission.admitted || admission.value.status === "contained")
-          return { admitted: false, joinedSettlement: false };
+          return { admitted: false };
         deps.onLiveUpdatePersisted?.(input.documentId);
         return {
           admitted: true,
-          joinedSettlement: admission.value.joinedSettlement,
         };
       } catch (cause) {
         if (cause instanceof ReservedWriterClientIdError) {
@@ -511,25 +436,6 @@ export function createHocuspocusPersistenceService(
         }
         throw cause;
       }
-    },
-
-    persistConnectionUpdate(input) {
-      // The durability boundary is the awaited pre-apply admission hook. This queue
-      // retains only post-apply reconciliation work and may lag acknowledgements.
-      if (input.origin.type !== "user" || !input.reconcileOffline) return;
-      const convergedState = Y.encodeStateAsUpdate(input.document);
-      enqueueLiveAppend(input.documentId, async () => {
-        try {
-          const result = await deps.offlineReconciliation?.reconcile({
-            documentId: input.documentId,
-            incomingUpdate: input.update,
-            convergedState,
-          });
-          if (result?.degraded) emitOfflineReconciliationDegraded(input.documentId);
-        } catch (cause) {
-          emitOfflineReconciliationFailure(input.documentId, cause);
-        }
-      });
     },
 
     admitDraftWriterUpdate(input) {

@@ -12,8 +12,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { findItem, itemIsVisible } from "@meridian/agent-edit/yjs-mutation";
 import * as Y from "yjs";
-import { assertNoPendingIntegration, DraftPeerIntegrationError } from "./branch-push-plan.js";
-import { subtractRanges } from "./draft-review-closure.js";
+import type { ClockRange } from "./document-content.js";
 
 /** Mutates only this disposable candidate; caller persists it under its existing draft lock. */
 export function reconcileStagedDraftWrites(
@@ -135,4 +134,55 @@ export function reconcileStagedDraftWrites(
     keptEntries: kept.map((row) => row.entry),
     rejectedWrites: [...reasons].map(([writeId, reason]) => ({ writeId, reason })),
   };
+}
+
+class DraftPeerIntegrationError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly journalIds: readonly number[],
+  ) {
+    super(`${operation} left pending Yjs dependencies for journal rows ${journalIds.join(",")}`);
+    this.name = "DraftPeerIntegrationError";
+  }
+}
+
+export function assertNoPendingIntegration(
+  doc: Y.Doc,
+  operation: string,
+  journalIds: readonly number[],
+): void {
+  const { pendingStructs, pendingDs } = doc.store;
+  if (hasPending(pendingStructs) || hasPending(pendingDs)) {
+    throw new DraftPeerIntegrationError(operation, journalIds);
+  }
+}
+
+function hasPending(value: unknown): boolean {
+  if (value == null) return false;
+  if (value instanceof Uint8Array) return value.length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value instanceof Map || value instanceof Set) return value.size > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+
+function subtractRanges(
+  ranges: readonly ClockRange[],
+  excluded: readonly ClockRange[],
+): ClockRange[] {
+  return ranges.flatMap((range) => {
+    let remaining = [range];
+    for (const cut of excluded) {
+      remaining = remaining.flatMap((part) => {
+        if (!rangesOverlap(part, cut)) return [part];
+        const end = part.clock + part.length;
+        const cutEnd = cut.clock + cut.length;
+        return [
+          ...(part.clock < cut.clock ? [{ ...part, length: cut.clock - part.clock }] : []),
+          ...(cutEnd < end ? [{ ...part, clock: cutEnd, length: end - cutEnd }] : []),
+        ];
+      });
+    }
+    return remaining;
+  });
 }

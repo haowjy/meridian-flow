@@ -27,7 +27,8 @@ authority for the exact current surface.
   offers exactly one token, and header resolution accepts exactly one matching
   token (absent, zero, or multiple matches resolve to the `0.0.0` sentinel).
 - `restoration-claims.ts` carries untrusted draft Undo claims and local redone
-  links. It is evidence for server certification, never authorship authority.
+  links for the legacy editor until lane B2. Server certification and metadata
+  parsing are deleted; the claims are never authorship authority.
 
 ## Why parity matters
 

@@ -1,4 +1,4 @@
-/** Legacy editor Undo claims and retained inverse metadata; new writer admission issues no certificate. */
+/** Legacy editor Undo claims until room-derived review replaces them in lane B2. */
 import * as Y from "yjs";
 
 export const RESTORATION_CLAIMS_TYPE = "meridian_restoration_claims";
@@ -34,33 +34,4 @@ export function captureUndoRestorationClaims(doc: Y.Doc): () => void {
   };
   doc.on("beforeObserverCalls", capture);
   return () => doc.off("beforeObserverCalls", capture);
-}
-
-export function restorationAliasesFromMetadata(metadata: unknown): RestorationAlias[] {
-  if (!metadata || typeof metadata !== "object" || !("restorationAliases" in metadata)) return [];
-  const aliases = metadata.restorationAliases;
-  return Array.isArray(aliases) ? aliases.filter(isRestorationAlias) : [];
-}
-
-export function isRestorationAlias(value: unknown): value is RestorationAlias {
-  if (!value || typeof value !== "object" || !("source" in value) || !("target" in value))
-    return false;
-  return (
-    isRange(value.source) && isRange(value.target) && value.source.length === value.target.length
-  );
-}
-
-function isRange(value: unknown): value is RestorationRange {
-  if (!value || typeof value !== "object") return false;
-  const range = value as RestorationRange;
-  return (
-    Number.isSafeInteger(range.client) &&
-    range.client >= 0 &&
-    range.client <= 0xffffffff &&
-    Number.isSafeInteger(range.clock) &&
-    range.clock >= 0 &&
-    Number.isSafeInteger(range.length) &&
-    range.length > 0 &&
-    Number.isSafeInteger(range.clock + range.length)
-  );
 }

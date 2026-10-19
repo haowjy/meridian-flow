@@ -369,7 +369,7 @@ export function createMarkdownDocumentEngine(
             };
             if (!deps.deferUntilCommit?.(applyWarm)) await applyWarm();
           }
-          return { sequence: BigInt(seq), joined: 0 };
+          return { sequence: BigInt(seq) };
         },
       },
       { source: authorshipSource(origin), update },

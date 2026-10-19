@@ -2,9 +2,9 @@
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
-import type { AppendDraftJournalInput, DraftStore } from "../domain/draft-store.js";
+import type { AppendDraftJournalInput } from "../domain/draft-store.js";
 
-type SaveDoors = Pick<DraftCoordinator, "readDraft" | "commitSegmentRows" | "resetFromDoc">;
+type SaveDoors = Pick<DraftCoordinator, "readDraft" | "commitSegmentRows">;
 
 /** Journals `updateData` as one row on the draft's current generation. */
 export async function commitJournaledUpdate(
@@ -27,22 +27,4 @@ export async function commitJournaledUpdate(
   } finally {
     staged.sourceDoc.destroy();
   }
-}
-
-/** Resets an active Work draft to `upstream`, reading its expected state straight from the store. */
-export async function resetDraftFromDoc(
-  coordinator: SaveDoors,
-  store: Pick<DraftStore, "getDraft">,
-  draftId: string,
-  upstream: Y.Doc,
-): Promise<boolean> {
-  const expected = await store.getDraft(draftId);
-  if (!expected) throw new Error(`Draft ${draftId} does not exist`);
-  return coordinator.resetFromDoc({
-    draftId,
-    upstream,
-    policy: "exact",
-    expectedGeneration: expected.generation,
-    expectedRevision: expected.revision,
-  });
 }
