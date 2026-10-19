@@ -41,7 +41,7 @@ export function collectRecordedDocuments(
   policies: DocumentTextPolicies,
 ): RecordedDocuments {
   const recorded = new Map<string, readonly DocumentRevisionEvidence[] | undefined>();
-  for (const { blocks } of slices) {
+  for (const { turn, blocks } of slices) {
     for (const { result } of documentPairs(blocks, policies)) {
       const metadata = (result.content as JsonObject).metadata as JsonObject | undefined;
       recorded.set(
@@ -49,7 +49,10 @@ export function collectRecordedDocuments(
         metadata?.documentRevisions as DocumentRevisionEvidence[] | undefined,
       );
     }
-    for (const block of blocks) {
+    // The recent picker reverses Map insertion order. Compaction blocks are persisted
+    // most important first, so insert their evidence backwards to favour that first block.
+    const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
+    for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);
       if (reference?.read)
         recorded.set(block.id, [

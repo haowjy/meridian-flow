@@ -53,7 +53,7 @@ Style directions and preferences, in the user's words where possible.
 The immediate next action.
 Be concise: bullets under each heading, no preamble.
 ## Documents to keep open
-End the summary with this section: one context URI per line, most important first, at most 10.
+End the summary with this section: one context URI per line, most important first.
 List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.
 Do not carry forward an earlier summary's ## Documents not re-shown section; the server replaces it for this compaction.
 Example:
@@ -114,7 +114,7 @@ Style directions and preferences, in the user's words where possible.
 The immediate next action.
 Be concise: bullets under each heading, no preamble.
 ## Documents to keep open
-End the summary with this section: one context URI per line, most important first, at most 10.
+End the summary with this section: one context URI per line, most important first.
 List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.
 Do not carry forward an earlier summary's ## Documents not re-shown section; the server replaces it for this compaction.
 Example:

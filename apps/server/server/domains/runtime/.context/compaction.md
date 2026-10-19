@@ -41,9 +41,8 @@ model text.
 
 A summary cannot credit the model with having seen a document, so the successor
 re-shows the ones it most needs ([credit scope](document-text.md#observation-frontiers),
-owner rulings C10 and C12). The summarizer ends its output with
-`## Documents to keep open`, one context URI per line, most important first
-(at most 10). `compaction/important-files.ts` owns the instruction and parser.
+owner rulings C10, C12 and C13). The summarizer ends its output with
+`## Documents to keep open`, one context URI per line, most important first. `compaction/important-files.ts` owns the instruction and parser.
 `prepareCompactionSuccessor` strips that section and any model-emitted
 `## Documents not re-shown` section from the stored summary. Both reserved
 headings accept any Markdown heading level, case differences, a trailing colon
@@ -55,14 +54,13 @@ is peeled (a wrapping backtick, angle bracket or quote; trailing `.,;:`; a
 trailing parenthetical), so a name like `Chapter 1 (revised)` keeps its
 parenthesis and `Chapter 1.bak` never becomes `Chapter 1`. Matching uses
 `documentRevisions` evidence from the **whole pre-compaction history**, not only the retained tail. Unknown URIs are
-dropped with `important_file.unknown_uris` (count). Candidates are the first 10
+dropped with `important_file.unknown_uris` (count). Candidates are all
 matched entries, then the 3 most recently shown documents, deduplicated by
 document id. Missing or malformed lists naturally leave only the 3 recent.
 
 The full text is selected greedily in that order, within
-min(20,000 tokens, 10% of the usable window, the headroom the successor has
-under the auto-compaction trigger once its base is measured, less estimator slack) of
-rendered text using the successor model's tokenizer and shared part estimator,
+half the headroom between the measured compacted base and the auto-compaction
+trigger, less estimator slack, of rendered text using the successor model's tokenizer and shared part estimator,
 including the exact projected heading plus read. Before admitting documents,
 the picker reserves the worst-case omission note (every candidate omitted),
 priced with that same estimator and tokenizer. Each admitted document only
@@ -70,8 +68,9 @@ shrinks the note. The 1,000-token margin is estimator slack only. When the base
 and mandatory note already exhaust trigger headroom, no document is admitted,
 but the note still names every omission; this base can remain over the trigger. A document whose full text
 exceeds what is left is skipped, never truncated (a truncated copy would be a partial read with its
-own listing). There is no kept-document count cap; reads are bounded by the
-candidate list (at most 13). Candidates that do not fit or cannot be read are
+own listing). There is no count cap or fixed token budget. Without a trigger there is no
+limit. Reads stop as soon as the remaining room is spent; oversized documents
+are skipped so later smaller candidates can still fit. Candidates that do not fit or cannot be read are
 named in a trailing summary section as not re-shown, with an instruction to
 read them again before writing in them. That note is visible in the writer's
 compaction divider too. Its URI list is deduplicated. The server regenerates
@@ -81,9 +80,10 @@ the summarizer carried forward.
 Each is read in full through the reference reader (`readDocument`, an
 omitted-version read, so a draft-mode thread gets its Work draft and auto-apply
 gets live) and persisted as a reference-shaped text block with its `read` on the
-compaction turn, `sequence` 1 and up beside the summary at 0, least important
-first (the highest priority sits nearest the conversation and ranks most
-recent at the next compaction). Its evidence is
+compaction turn, `sequence` 1 and up beside the summary at 0, most important
+first. The next compaction ranks earlier blocks on this turn as more recent:
+recorded evidence is inserted backwards for compaction turns because the recent
+picker reverses evidence insertion order. Its evidence is
 recorded like an @-mentioned document's, by `afterEvents` of the completing
 transaction: shown links, and a frontier chained from nothing (a fresh chain). A
 document that cannot be read is skipped with a warning
