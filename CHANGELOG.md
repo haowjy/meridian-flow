@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Stop computing and shipping unused live fingerprints on draft review lists.
+
 - Bind frozen Apply clicks to their original draft so delayed delivery cannot apply a replacement after Discard.
 
 - Consolidate draft review cutover into one ordered migration series with shared receipt-origin indexes; preserve frontier-planned saves and atomic Apply through retirement.

@@ -38,7 +38,6 @@ import {
 import { createBranchDiscard } from "../domain/branch-discard.js";
 import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
-import { fullStateFingerprint } from "../domain/document-content.js";
 import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
@@ -531,8 +530,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       durableWorkBranchPendingStore.listBranchDraftEvidence(branchId, documentIds),
     creators: (branchId, documentIds) =>
       durableWorkBranchPendingStore.listCreators(branchId, documentIds),
-    liveFingerprint: (documentId) =>
-      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
   });
   // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
   // the pooled cores' thread state.
@@ -1454,8 +1451,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     /** A writer edit on the warm room, journaled first, as a socket write would be. */
     appendWriterPrefix,
     /** The warm room's full-state fingerprint, as a text token captures it. */
-    liveFingerprint: (documentId: DocumentId) =>
-      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
     crossWorkProbeFixture: () => ({
       provisionDraft,
       runtime,

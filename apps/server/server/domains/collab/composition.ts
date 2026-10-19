@@ -81,7 +81,6 @@ import {
   createDeferredLiveProjectionCoordinator,
   createHocuspocusCoordinator,
 } from "./adapters/hocuspocus-coordinator.js";
-import { createLiveFingerprintReader } from "./adapters/live-fingerprint-reader.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
@@ -92,7 +91,6 @@ import { createBranchReviewIdentity } from "./domain/branch-review-identity.js";
 import { createBranchReviewItems } from "./domain/branch-review-items.js";
 import { createBranches } from "./domain/branches.js";
 import { createDocumentAttribution } from "./domain/document-attribution.js";
-import { fullStateFingerprint } from "./domain/document-content.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
 import { createDocumentDerivationService } from "./domain/document-derivations.js";
 import {
@@ -433,17 +431,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts: (branchId, documentIds) =>
       workBranchPendingStore.listBranchDraftEvidence(branchId, documentIds),
     creators: (branchId, documentIds) => workBranchPendingStore.listCreators(branchId, documentIds),
-    liveFingerprint: createLiveFingerprintReader({
-      db: deps.db,
-      roomOpen: (documentId) => {
-        const hocuspocus = hocuspocusBinding.current();
-        return Boolean(
-          hocuspocus?.documents.has(documentId) || hocuspocus?.loadingDocuments.has(documentId),
-        );
-      },
-      read: (documentId) =>
-        liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
-    }),
   });
   // Exactly what each committed transaction ended: its closed drafts' rooms and thread peers.
   deps.draftClose.bindRetirement(

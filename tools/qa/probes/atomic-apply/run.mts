@@ -142,7 +142,6 @@ async function fixture(
       tree: createTreeReader(h.db),
       drafts: pending.listBranchDraftEvidence,
       creators: pending.listCreators,
-      liveFingerprint: async () => "unused",
     }),
   });
   const service = createApplyClickService({

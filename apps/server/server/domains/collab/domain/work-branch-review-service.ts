@@ -99,11 +99,10 @@ export function createWorkBranchReviewService(input: {
       },
       async listItems(command) {
         const { branchId, items } = await workItems(command.workId);
-        const rendered = await input.reviewItems.withLiveTextTokens(items);
         const threadTitles = await input.resolveThreadTitles([
-          ...new Set(rendered.flatMap((item) => item.actorThreadIds)),
+          ...new Set(items.flatMap((item) => item.actorThreadIds)),
         ]);
-        return { branchId, items: rendered, threadTitles };
+        return { branchId, items, threadTitles };
       },
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
       items: (command) => workItems(command.workId),

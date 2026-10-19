@@ -59,12 +59,6 @@ export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
 /** Why an item cannot be applied as-is: another live change collided with it. */
 export type DraftItemConflict = { code: "path_taken"; path: string } | { code: "deleted_live" };
 
-/** Freshness evidence a client echoes back on an item command. */
-export type DraftItemTokens = {
-  locationToken: string;
-  liveTextToken: string | null;
-};
-
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
  * The list, Work counts and the open review all read this one row.
@@ -87,7 +81,6 @@ export interface ThreadDraftListItem {
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   conflict: DraftItemConflict | null;
-  tokens: DraftItemTokens;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;

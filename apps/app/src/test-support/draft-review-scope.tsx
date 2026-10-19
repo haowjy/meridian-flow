@@ -57,10 +57,6 @@ export const listed = {
   binary: false,
   wholeItem: false,
   conflict: null,
-  tokens: {
-    locationToken: "location-1",
-    liveTextToken: "live-1",
-  },
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
