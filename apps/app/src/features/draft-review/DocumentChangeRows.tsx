@@ -1,7 +1,7 @@
 /**
  * DocumentChangeRows — one draft's changes as rows, from any `DraftChangesView`:
  * the open review's (`useReviewChanges`) or an unopened draft's
- * (`useDraftView`). Loading shows a skeleton, an unreadable preview shows
+ * (`useDraftView`). Loading shows a skeleton, an unreadable room shows
  * Retry (never "no changes"), a ready draft shows its rows in document order
  * and pulses a change that arrived while the writer was looking.
  *
@@ -17,7 +17,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
 import { ReviewChangeRow } from "./ReviewChangeRow";
-import type { ReviewChange } from "./review-changes";
+import type { ReviewChange } from "./review-model";
 import { useArrivedChanges } from "./useArrivedChanges";
 
 export function DocumentChangeRows({
@@ -70,11 +70,12 @@ export function DocumentChangeRows({
           wholeDocument={wholeDocument}
           documentName={wholeDocument ? documentName : undefined}
           showAttribution={showAttribution}
-          key={change.classId}
+          key={change.id}
           change={change}
-          focused={view.focused?.classId === change.classId}
-          arrived={arrived.has(change.classId)}
+          focused={view.focused?.id === change.id}
+          arrived={arrived.has(change.id)}
           disabled={view.locked}
+          canApply={view.canApply}
           failure={failure}
           draftFailure={draftFailure}
           onFocus={() => onSelect(change)}

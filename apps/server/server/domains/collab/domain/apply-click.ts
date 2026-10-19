@@ -42,8 +42,9 @@ export interface ApplyClickStore {
   loadBase(draftId: string): Promise<DraftBase | null>;
   execute(
     command: ApplyClickCommand,
-    base: DraftBase,
-    click: CompiledClick,
+    base: DraftBase | null,
+    click: CompiledClick | null,
+    branchId: import("@meridian/contracts").BranchId,
   ): Promise<ApplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
@@ -71,6 +72,7 @@ export function compileClick(
 ): CompiledClick {
   let snapshot: Y.Snapshot;
   try {
+    if (!request.snapshot) throw new Error("Missing snapshot");
     const bytes = Buffer.from(request.snapshot, "base64");
     if (bytes.toString("base64") !== request.snapshot) throw new Error("Invalid base64");
     snapshot = Y.decodeSnapshotV2(bytes);
@@ -158,6 +160,21 @@ export function createApplyClickService(input: {
     await testHook("apply.beforeCompile");
     try {
       const resolved = await input.identity.resolveReviewItemByDocument(command);
+      const revealOnly =
+        !command.request.snapshot &&
+        !command.request.groupIds.length &&
+        !command.request.baseViewDelta.length;
+      if (revealOnly) {
+        if (
+          !resolved ||
+          resolved.draftId ||
+          !resolved.item.isNew ||
+          resolved.item.origin !== "created"
+        )
+          throw new ApplyClickRefused("malformed");
+        return await input.store.execute(command, null, null, resolved.branchId);
+      }
+      if (!command.request.groupIds.length) throw new ApplyClickRefused("malformed");
       if (!resolved?.draftId) {
         const result = await input.store.closed(command);
         return (await lookup()) ?? result;
@@ -190,7 +207,7 @@ export function createApplyClickService(input: {
       } finally {
         input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
       }
-      const result = await input.store.execute(command, base, click);
+      const result = await input.store.execute(command, base, click, resolved.branchId);
       return result.status === "closed" || result.status === "refused"
         ? ((await lookup()) ?? result)
         : result;

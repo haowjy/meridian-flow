@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { noteReviewNavigation } from "@/core/editor/review-place";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -14,7 +13,7 @@ import {
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
-import type { ReviewFocus } from "./review-changes";
+import type { ReviewFocus } from "./review-model";
 import {
   type BranchCommandOutcome,
   type CommandStart,
@@ -22,12 +21,10 @@ import {
   type WorkBranchCommands,
 } from "./useWorkBranchCommands";
 
-type SelectionCommand = WorkBranchCommands["applyChanges"];
-
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
-export type ReviewChangeTarget = ReviewFocus & { anchorOperationId: string };
+export type ReviewChangeTarget = ReviewFocus;
 
 export type DraftReviewStateOwner = Readonly<{
   state: typeof EMPTY_DRAFT_REVIEW_STATE;
@@ -60,7 +57,6 @@ export type DraftReviewController = {
   /** Dispatch the normalized target through this review's Work authority. */
   commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
-  isDisposing: boolean;
   /**
    * Every Apply and Discard control disables on this: a disposition is in
    * flight, or the Work is archived and its drafts are frozen (D30). Review
@@ -97,21 +93,9 @@ export type DraftReviewController = {
     change: ReviewChangeTarget,
     options?: { scroll?: boolean; instant?: boolean },
   ) => void;
-  /**
-   * Apply or Discard a selection of changes of any draft of this Work. The
-   * changes leave every surface at once. Every review of the addressed draft
-   * observes completion; callers never select the reviewing controller as
-   * executor.
-   */
-  applyChanges: SelectionCommand;
-  discardChanges: SelectionCommand;
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
   enterInlineReview: (documentId: string, itemKey: string) => void;
-  /**
-   * The editor reports a closed draft room. The review refreshes its presentation;
-   * it never replays the ended room's contents into a replacement draft.
-   */
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, itemKey: string) => void;
@@ -144,7 +128,7 @@ export function useDraftReviewController({
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
   const { state, dispatch } = stateOwner;
-  const commands = useWorkBranchCommands({ projectId, work, threadId });
+  const commands = useWorkBranchCommands({ projectId, work, threadId, surface: "editor" });
   const stateRef = useRef(state);
   const activeRef = useRef(true);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
@@ -159,16 +143,14 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
 
-  const isApplying = false;
-  const isDisposing = false;
+  const isApplying = commands.owner.state(inlineReview?.itemKey ?? "").applying;
   const dispositionLocked = commands.dispositionLocked;
   const changesLocked = commands.changesLocked;
   const canApplyReviewedDraft =
-    state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
+    state.surface.kind === "inline" && commands.owner.canApply(state.surface.itemKey);
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
-      const _draft = { projectId, workId, documentId, itemKey };
       // The review opens on the newest proposal the caches know of, and a command
       // already in flight on this draft (sent from the strip or the Work page)
       // is its to show: it adopts the claim if it acted on that generation.
@@ -176,7 +158,6 @@ export function useDraftReviewController({
         type: "enterInline",
         documentId,
         itemKey,
-        draftGeneration: undefined,
       });
     },
     [projectId, queryClient, workId],
@@ -186,7 +167,7 @@ export function useDraftReviewController({
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     if (inline) {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(
+        queryKey: projectQueryKeys.workDraftMetadata(
           projectId,
           workId,
           inline.documentId,
@@ -233,7 +214,7 @@ export function useDraftReviewController({
       type: "changeFocused",
       documentId: review.documentId,
       itemKey: review.itemKey,
-      focus: { classId: change.classId, operationIds: change.operationIds, keys: change.keys },
+      focus: { id: change.id },
     });
   }, []);
 
@@ -248,9 +229,6 @@ export function useDraftReviewController({
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
       if (inline?.documentId !== review.documentId || inline.itemKey !== review.itemKey) return;
       reportFocusedChange(review, change);
-      // The writer chose where to go: a place held across an editor swap yields to it.
-      if (options?.scroll)
-        noteReviewNavigation(`${review.documentId}:${review.itemKey}`, change.keys ?? []);
       const runtime = inlineRuntimeRef.current;
       if (
         !runtime ||
@@ -259,9 +237,9 @@ export function useDraftReviewController({
         runtime.editor.isDestroyed
       )
         return;
-      runtime.editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
+      runtime.editor.commands.setReviewActiveChange(change.id);
       if (options?.scroll)
-        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId, {
+        runtime.editor.commands.scrollReviewChangeIntoView(change.id, {
           instant: options.instant,
         });
     },
@@ -276,10 +254,9 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  const { applyChanges, discardChanges, disposeDrafts } = commands;
+  const { disposeDrafts } = commands;
   const startDraft = useCallback(
     (mode: "apply" | "discard", draft: DraftReviewSelection) => {
-      // B2: command owner
       return commands.startDraft(mode, draft);
     },
     [commands],
@@ -304,7 +281,6 @@ export function useDraftReviewController({
       isApplying,
       canApplyReviewedDraft,
       commandChange: commands.commandChange,
-      isDisposing,
       dispositionLocked,
       changesLocked,
       marksVisible: state.marksVisible,
@@ -312,8 +288,6 @@ export function useDraftReviewController({
       focus: inlineReview?.focus ?? null,
       reportFocusedChange,
       focusReviewChange,
-      applyChanges,
-      discardChanges,
       toast: state.toast,
       dismissToast,
       enterInlineReview,
@@ -336,7 +310,6 @@ export function useDraftReviewController({
       inlineReview,
       isApplying,
       canApplyReviewedDraft,
-      isDisposing,
       dispositionLocked,
       changesLocked,
       state.marksVisible,
@@ -344,8 +317,6 @@ export function useDraftReviewController({
       inlineReview?.focus,
       reportFocusedChange,
       focusReviewChange,
-      applyChanges,
-      discardChanges,
       state.toast,
       dismissToast,
       enterInlineReview,

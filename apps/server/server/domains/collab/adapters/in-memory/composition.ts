@@ -217,6 +217,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lineage,
     responses: responseFinalizer,
     checkpoints,
+    draftAttribution: {
+      async readDraftProvenance() {
+        return null;
+      },
+    },
     attribution: {
       async getLastUpdateAttribution(documentId) {
         const latest = await store.latestUpdate(documentId);

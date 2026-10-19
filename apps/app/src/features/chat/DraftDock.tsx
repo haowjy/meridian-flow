@@ -5,7 +5,9 @@ import { useLingui } from "@lingui/react";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
@@ -61,9 +63,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           >
             <Trans>Discard</Trans>
           </QuietButton>
-          <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
-            <Trans>Apply</Trans>
-          </QuietButton>
+          {dock.canApply ? (
+            <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+              <Trans>Apply</Trans>
+            </QuietButton>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -75,7 +79,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
-        onClick={confirming ? undefined : () => setExpanded((value) => !value)}
+        onClick={
+          confirming
+            ? undefined
+            : () => {
+                dock.controller.dismissNotice();
+                setExpanded((value) => !value);
+              }
+        }
         className={cn(
           "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
@@ -98,6 +109,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
                 onClick={(event) => {
                   event.stopPropagation();
+                  dock.controller.dismissNotice();
                   setExpanded((value) => !value);
                 }}
                 className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
@@ -143,6 +155,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
+      <DiscardNotice commands={dock.controller} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );
@@ -172,10 +185,10 @@ function DockFileLine({
       documentId: file.row.documentId,
       itemKey: file.row.draft.itemKey,
     },
-    { controller: dock.controller, enabled: expanded },
+    { controller: dock.controller, enabled: true, item: file.row.draft },
   );
-  const own = new Set(file.changes.map((change) => change.classId));
-  const items = view.items.filter(({ change }) => own.has(change.classId));
+  const own = new Set(file.changes.map((change) => change.id));
+  const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // Ownership comes from the rows that will actually render, not the kind of document.
   const renderedItems =
@@ -214,6 +227,7 @@ function DockFileLine({
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
+      <DraftCommandStatus itemKey={file.row.draft.itemKey} />
       {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows

@@ -1,124 +1,115 @@
 /**
- * Draft-only review projection: model geometry plus a pending writer overlay.
- * Local insertions paint gold before the Yjs binding writes; view.update then
- * captures their relative anchors. Rebuilds resolve those identities, never
- * mapped decorations. Only explicit writer coverage in a model refresh retires
- * pending text. Visibility gates output without changing attribution.
- * Focus, folds, pulses and locale repaint cached model geometry; live editors
- * never install this extension. Removal widgets never enter manuscript content.
+ * Draft-only review painting: the browser-computed review (`ProjectedReview`)
+ * becomes green marks and red removal widgets. The extension is a passive
+ * receiver: the draft's review runtime computes and pushes the frame, and
+ * a view owner updates focus, folds, pulses and locale without changing decoration equality. Until the next
+ * frame arrives, the painter owns position mapping: the writer's edits are
+ * accumulated and mapped through only when a position is read (`currentReview`),
+ * so typing never blanks the review and a keystroke does not clone every group.
+ * Painting may be newer than the chrome's frame; that never changes what a
+ * click on older chrome means. Live editors never install this extension.
+ * Removal widgets never enter manuscript content.
  */
 
-import { i18n } from "@lingui/core";
-import { captureUndoRestorationClaims } from "@meridian/prosemirror-schema";
 import { type Command, Extension } from "@tiptap/core";
-import type { EditorState, Transaction } from "@tiptap/pm/state";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import type { EditorState } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
-import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import type * as Y from "yjs";
-import { isRemoteDocumentRebuild } from "../../anchors";
-import {
-  relativePositionForIndex,
-  relativePositionRuntimeFromState,
-  resolveRelativeRange,
-} from "../../relative-position-runtime";
-import {
-  inlineReviewClassNames,
-  paintDecorations,
-  type ReviewGeometry,
-  resolveGeometry,
-} from "./decorations";
-import type { InlineReviewModel } from "./model";
-import type { RemovalHandlers } from "./removal-widget";
-import { reviewWriterClient } from "./writer-client";
+import { Mapping } from "@tiptap/pm/transform";
+import { DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { CHANGE_ATTR, paintDecorations } from "./decorations";
+import { mapReview, type ProjectedReview } from "./model";
+import { matchRenderKeys } from "./paint-identity";
+import { createReviewPaintView } from "./paint-view";
+import type { RemovalHandlers, RemovalPlan } from "./removal-widget";
 
-export interface DraftInlineReviewOptions {
-  /** Optional initial model — usually the plugin starts empty and receives the model via command. */
-  initialModel: InlineReviewModel | null;
-  /** Draft document whose content client rotates across independent changes. */
-  document?: Y.Doc;
-  adoptDocumentClient?: () => void;
-  /** Whether marks start visible. Toggle later with `setInlineReviewMarksVisible`. */
-  marksVisible: boolean;
+/** The writer's edits since the review was projected, newest first; mapped only when a position is read. */
+interface PendingEdits {
+  mapping: Mapping;
+  doc: PMNode;
+  earlier: PendingEdits | null;
 }
 
-/** A decoration DOM node carries operation attribution on `data-review-operations`. */
-const OPERATION_ATTR = "data-review-operations";
-
 export interface InlineReviewPluginState {
-  model: InlineReviewModel | null;
-  activeOperationId: string | null;
-  /** Operations of changes that just arrived; their marks pulse once. */
-  pulsedOperationIds: ReadonlySet<string>;
-  /** False hides every mark and removal; the model and selection are kept. */
+  /** The review as projected, or null before the first frame and while `review_base` is absent. Read it through `currentReview`. */
+  review: ProjectedReview | null;
+  /** The edits that moved the text since `review` was projected. */
+  edits: PendingEdits | null;
+  renderKeys: ReadonlyMap<number, string>;
+  removals: ReadonlyMap<string, RemovalPlan>;
+  composing: boolean;
+  pulseRevision: number;
+  arrivals: ReadonlySet<string>;
+  activeChangeId: string | null;
+  /** Changes that just arrived; their marks pulse once. */
+  pulsedChangeIds: ReadonlySet<string>;
+  /** False hides every mark and removal; the review and selection are kept. */
   marksVisible: boolean;
   /** Identities of long removals the writer has unfolded. */
   expandedRemovals: ReadonlySet<string>;
   /** The focused change's bar has no room in the margin and takes a block after the change. */
   barSlot: boolean;
-  /**
-   * The model's anchors resolved in `geometry.doc`, kept until the model or
-   * the document changes. Null while the binding cannot resolve anchors yet.
-   */
-  geometry: ReviewGeometry | null;
-  pendingWriterRanges: PendingWriterRange[];
-  /** Full projection, including pending writer attribution, even while hidden. */
+  /** Full projection, even while hidden. */
   decorations: DecorationSet;
 }
 
-type Range = { from: number; to: number };
-type PendingWriterRange = Range & {
-  anchors: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
-};
-
 type PluginMeta =
-  | { kind: "capture-writer"; ranges: PendingWriterRange[] }
-  | { kind: "set-model"; model: InlineReviewModel | null }
-  | { kind: "set-active-operation"; operationId: string | null }
-  | { kind: "focus-click"; operationId: string }
+  | { kind: "set-review"; review: ProjectedReview | null }
+  | { kind: "set-active-change"; changeId: string | null }
+  | { kind: "focus-click"; changeId: string }
   | { kind: "set-marks-visible"; visible: boolean }
-  | { kind: "set-pulse"; operationIds: readonly string[] }
+  | { kind: "set-pulse"; changeIds: readonly string[] }
   | { kind: "set-bar-slot"; open: boolean }
   | { kind: "relocalize" }
-  | { kind: "removal-click"; operationId: string; toggle: string | null; keyboard: boolean };
+  | { kind: "composition"; active: boolean }
+  | { kind: "removal-click"; changeId: string; toggle: string | null };
+
+const mappedReviews = new WeakMap<PendingEdits, ProjectedReview>();
+
+/** The review at today's positions: one mapping through every edit since the frame, done once per read. */
+export function currentReview(state: InlineReviewPluginState): ProjectedReview | null {
+  const { review, edits } = state;
+  if (!review || !edits) return review;
+  let mapped = mappedReviews.get(edits);
+  if (!mapped) {
+    const mapping = new Mapping();
+    const chain: PendingEdits[] = [];
+    for (let step: PendingEdits | null = edits; step; step = step.earlier) chain.push(step);
+    for (let i = chain.length - 1; i >= 0; i--) mapping.appendMapping(chain[i].mapping);
+    mapped = mapReview(review, mapping, edits.doc);
+    mappedReviews.set(edits, mapped);
+  }
+  return mapped;
+}
 
 /** Public plugin key so React consumers can read state without holding the extension instance. */
 export const draftInlineReviewPluginKey = new PluginKey<InlineReviewPluginState>(
   "meridian:draft-inline-review",
 );
 
-/** TipTap command surface — provides `editor.commands.setInlineReviewModel(...)` etc. */
+/** TipTap command surface: `editor.commands.setReviewProjection(...)` etc. */
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     draftInlineReview: {
-      setInlineReviewModel: (model: InlineReviewModel | null) => ReturnType;
-      setInlineReviewActiveOperation: (operationId: string | null) => ReturnType;
-      setInlineReviewMarksVisible: (visible: boolean) => ReturnType;
-      /** Mark these operations' changes as just arrived; pass [] to end the pulse. */
-      setInlineReviewPulse: (operationIds: readonly string[]) => ReturnType;
+      /** Paint this review. Ignored when it was computed on another document than the editor's now. */
+      setReviewProjection: (review: ProjectedReview | null) => ReturnType;
+      setReviewActiveChange: (changeId: string | null) => ReturnType;
+      setReviewMarksVisible: (visible: boolean) => ReturnType;
+      /** Mark these changes as just arrived; pass [] to end the pulse. */
+      setReviewPulse: (changeIds: readonly string[]) => ReturnType;
       /** Open a block after the focused change for its bar, when the margin has no room. */
-      setInlineReviewBarSlot: (open: boolean) => ReturnType;
+      setReviewBarSlot: (open: boolean) => ReturnType;
       /** `instant` jumps: for a scroll the editor is about to be replaced under, which must not stop half way. */
-      scrollInlineReviewOperationIntoView: (
-        operationId: string,
-        options?: { instant?: boolean },
-      ) => ReturnType;
+      scrollReviewChangeIntoView: (changeId: string, options?: { instant?: boolean }) => ReturnType;
     };
   }
 }
 
-export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOptions>({
+export const DraftInlineReviewExtension = Extension.create({
   name: "draftInlineReview",
 
-  addOptions() {
-    return {
-      initialModel: null,
-      marksVisible: true,
-    };
-  },
-
   addProseMirrorPlugins() {
-    const { initialModel, marksVisible, document, adoptDocumentClient } = this.options;
-    return [buildInlineReviewPlugin({ initialModel, marksVisible, document, adoptDocumentClient })];
+    return [buildInlineReviewPlugin()];
   },
 
   addCommands() {
@@ -132,20 +123,23 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
         return true;
       };
     return {
-      setInlineReviewModel: (model) => command({ kind: "set-model", model }),
-      setInlineReviewActiveOperation: (operationId) =>
-        command({ kind: "set-active-operation", operationId }),
-      setInlineReviewMarksVisible: (visible) => command({ kind: "set-marks-visible", visible }),
-      setInlineReviewPulse: (operationIds) => command({ kind: "set-pulse", operationIds }),
-      setInlineReviewBarSlot: (open) => command({ kind: "set-bar-slot", open }),
-      scrollInlineReviewOperationIntoView:
-        (operationId, options) =>
+      setReviewProjection: (review) => command({ kind: "set-review", review }),
+      setReviewActiveChange: (changeId) => command({ kind: "set-active-change", changeId }),
+      setReviewMarksVisible: (visible) => command({ kind: "set-marks-visible", visible }),
+      setReviewPulse: (changeIds) => command({ kind: "set-pulse", changeIds }),
+      setReviewBarSlot: (open) => command({ kind: "set-bar-slot", open }),
+      scrollReviewChangeIntoView:
+        (changeId, options) =>
         ({ view }) => {
-          // Scroll the manuscript block from cached anchors, never painted marks or selection.
-          const geometry = draftInlineReviewPluginKey.getState(view.state)?.geometry;
-          const hunk = geometry?.hunks.find((hunk) => hunk.operationIds.includes(operationId));
-          if (!hunk) return false;
-          const position = hunk.marks[0]?.from ?? hunk.end;
+          // Scroll the manuscript block from the projection, never painted marks or selection.
+          const pluginState = draftInlineReviewPluginKey.getState(view.state);
+          const review = pluginState && currentReview(pluginState);
+          const group = review?.groups.find((candidate) => candidate.id === changeId);
+          if (!review || !group) return false;
+          const position = Math.min(
+            ...group.hunks.map((hunk) => hunk.inserted?.from ?? hunk.anchor),
+            view.state.doc.content.size,
+          );
           const resolved = view.state.doc.resolve(position);
           const target = view.nodeDOM(resolved.depth > 0 ? resolved.before(1) : position);
           if (!(target instanceof HTMLElement)) return false;
@@ -162,14 +156,6 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
   },
 });
 
-interface PluginContext {
-  initialModel: InlineReviewModel | null;
-  /** Draft document whose content client rotates across independent changes. */
-  document?: Y.Doc;
-  adoptDocumentClient?: () => void;
-  marksVisible: boolean;
-}
-
 function dispatchMeta(view: EditorView, meta: PluginMeta): void {
   const tr = view.state.tr;
   tr.setMeta(draftInlineReviewPluginKey, meta);
@@ -180,8 +166,7 @@ function dispatchMeta(view: EditorView, meta: PluginMeta): void {
 /** What a removal widget does on click: it holds the view it was drawn in. */
 function removalHandlersFor(view: EditorView): RemovalHandlers {
   return {
-    activate: (operationId, toggle, keyboard) =>
-      dispatchMeta(view, { kind: "removal-click", operationId, toggle, keyboard }),
+    activate: (changeId, toggle) => dispatchMeta(view, { kind: "removal-click", changeId, toggle }),
     placeCaret: (identity, side) => {
       // A read-only review (the phone's body) has no caret to move.
       if (!view.editable) return;
@@ -206,234 +191,129 @@ function removalHandlersFor(view: EditorView): RemovalHandlers {
   };
 }
 
-/**
- * The geometry to paint: the one already resolved when it still belongs to this
- * model and this document, otherwise a fresh resolve. A remote rebuild always
- * re-resolves, since the binding's mapping changes under an unchanged document
- * on its first passes.
- */
-function geometryFor(
-  model: InlineReviewModel | null,
-  previous: ReviewGeometry | null,
-  newState: EditorState,
-  reresolve: boolean,
-): ReviewGeometry | null {
-  if (!model) return null;
-  if (!reresolve && previous?.model === model && previous.doc === newState.doc) return previous;
-  const resolver = relativePositionRuntimeFromState(newState);
-  return resolver ? resolveGeometry(model, resolver) : null;
-}
-
-function paint(
-  geometry: ReviewGeometry | null,
-  state: InlineReviewPluginState,
-  refocusRemoval: string | null = null,
-) {
-  if (!geometry) return DecorationSet.empty;
+function paint(state: InlineReviewPluginState) {
+  const projected = currentReview(state);
+  if (!projected)
+    return { decorations: DecorationSet.empty, removals: new Map<string, RemovalPlan>() };
   return paintDecorations(
-    geometry,
-    {
-      activeOperationId: state.activeOperationId,
-      pulsedOperationIds: state.pulsedOperationIds,
-      expandedRemovals: state.expandedRemovals,
-      refocusRemoval,
-      barSlot: state.barSlot,
-    },
+    projected,
+    state.renderKeys,
+    state.decorations,
+    state.activeChangeId,
+    state.barSlot,
     removalHandlersFor,
   );
 }
 
-/**
- * Ranges a local transaction inserted, in the new document. Remote Yjs
- * rebuilds never reach here (they re-resolve from the server model instead).
- */
-function insertedRanges(tr: Transaction): Array<{ from: number; to: number }> {
-  const ranges: Array<{ from: number; to: number }> = [];
-  tr.mapping.maps.forEach((map, index) => {
-    const later = tr.mapping.slice(index + 1);
-    map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-      if (newEnd <= newStart) return;
-      const from = later.map(newStart, 1);
-      const to = later.map(newEnd, -1);
-      if (to > from) ranges.push({ from, to });
-    });
-  });
-  return ranges;
-}
-
-/** Subtract only explicit writer coverage; stale and partial receipts leave the rest pending. */
-function uncovered(ranges: Range[], coverage: Range[]): Range[] {
-  return coverage.reduce(
-    (remaining, cover) =>
-      remaining.flatMap((range) => {
-        if (cover.to <= range.from || cover.from >= range.to) return [range];
-        return [
-          ...(cover.from > range.from ? [{ from: range.from, to: cover.from }] : []),
-          ...(cover.to < range.to ? [{ from: cover.to, to: range.to }] : []),
-        ];
-      }),
-    ranges,
-  );
-}
-
-function coalesced(ranges: (Range & Partial<PendingWriterRange>)[]): PendingWriterRange[] {
-  const result: PendingWriterRange[] = [];
-  for (const range of ranges.sort((a, b) => a.from - b.from)) {
-    if (range.to <= range.from) continue;
-    const last = result.at(-1);
-    if (last && range.from <= last.to) {
-      last.to = Math.max(last.to, range.to);
-      last.anchors = null;
-    } else result.push({ anchors: null, ...range });
-  }
-  return result;
-}
-
-export function buildInlineReviewPlugin({
-  initialModel,
-  marksVisible,
-  document,
-  adoptDocumentClient,
-}: PluginContext) {
-  const writerClient = document ? reviewWriterClient(document, adoptDocumentClient) : null;
+export function buildInlineReviewPlugin() {
+  let serial = 0;
+  let compositionTimer: ReturnType<typeof setTimeout> | undefined;
   return new Plugin<InlineReviewPluginState>({
     key: draftInlineReviewPluginKey,
     state: {
-      init(_config, state) {
-        const initial: InlineReviewPluginState = {
-          model: initialModel,
-          activeOperationId: null,
-          pulsedOperationIds: new Set(),
-          marksVisible,
-          expandedRemovals: new Set(),
-          barSlot: false,
-          geometry: null,
-          pendingWriterRanges: [],
-          decorations: DecorationSet.empty,
-        };
-        const geometry = geometryFor(initialModel, null, state, true);
-        return { ...initial, geometry, decorations: paint(geometry, initial) };
-      },
-      apply(tr, previous, oldState, newState) {
-        // Accepted PM content transactions precede the binding's Yjs write in
-        // view.update. Rotate here, never inside an active Yjs transaction.
-        writerClient?.apply(tr, oldState, previous.model, newState);
+      init: () => ({
+        review: null,
+        edits: null,
+        renderKeys: new Map(),
+        removals: new Map(),
+        composing: false,
+        pulseRevision: 0,
+        arrivals: new Set(),
+        activeChangeId: null,
+        pulsedChangeIds: new Set(),
+        marksVisible: true,
+        expandedRemovals: new Set(),
+        barSlot: false,
+        decorations: DecorationSet.empty,
+      }),
+      apply(tr, previous, _oldState, newState) {
         const meta = tr.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
-        // A remote y-sync transaction is the moment the y-prosemirror binding
-        // populates or updates its mapping. Re-resolve from RelativePositions
-        // on those. This also handles the initial-mount race where the model
-        // can arrive before the binding has any mapping entries at all.
-        const ySyncChangeOrigin = isRemoteDocumentRebuild(tr);
-
+        if (!meta && !tr.docChanged) return previous;
         const next = { ...previous };
-        const mustRebuild = Boolean(
-          ySyncChangeOrigin || (meta && meta.kind !== "set-marks-visible"),
-        );
-        let refocusRemoval: string | null = null;
-        if (meta?.kind === "set-model") next.model = meta.model;
-        else if (meta?.kind === "set-active-operation" || meta?.kind === "focus-click")
-          next.activeOperationId = meta.operationId;
-        else if (meta?.kind === "set-pulse") next.pulsedOperationIds = new Set(meta.operationIds);
-        else if (meta?.kind === "set-bar-slot") {
-          if (meta.open === previous.barSlot) return previous;
-          next.barSlot = meta.open;
-        } else if (meta?.kind === "set-marks-visible") next.marksVisible = meta.visible;
-        else if (meta?.kind === "removal-click") {
-          next.activeOperationId = meta.operationId;
-          if (meta.toggle !== null) {
-            const expanded = new Set(previous.expandedRemovals);
-            if (!expanded.delete(meta.toggle)) expanded.add(meta.toggle);
-            next.expandedRemovals = expanded;
-            if (meta.keyboard) refocusRemoval = meta.toggle;
+        let repaint = false;
+        // Every repaint and scroll reads current positions through `currentReview`, so the review follows the
+        // text without a keystroke paying to map every change.
+        if (tr.docChanged && meta?.kind !== "set-review" && next.review)
+          next.edits = { mapping: tr.mapping, doc: newState.doc, earlier: previous.edits };
+        switch (meta?.kind) {
+          case "set-review": {
+            // A projection of another document would place marks on the wrong text; the next one is coming.
+            if (meta.review && meta.review.doc !== newState.doc) return previous;
+            next.renderKeys = meta.review
+              ? matchRenderKeys(
+                  currentReview(next),
+                  previous.renderKeys,
+                  meta.review,
+                  () => `h${++serial}`,
+                )
+              : new Map();
+            const retainedKeys = new Set(next.renderKeys.values());
+            next.expandedRemovals = new Set(
+              [...previous.expandedRemovals].filter((key) => retainedKeys.has(key)),
+            );
+            next.review = meta.review;
+            next.edits = null;
+            repaint = true;
+            break;
           }
-        } else if (meta?.kind === "capture-writer") next.pendingWriterRanges = meta.ranges;
-
-        const runtime = relativePositionRuntimeFromState(newState);
-        if (mustRebuild && runtime) {
-          next.pendingWriterRanges = coalesced(
-            next.pendingWriterRanges.flatMap((range) => {
-              const resolved = range.anchors && resolveRelativeRange(runtime, range.anchors);
-              return !resolved
-                ? [range]
-                : resolved.to > resolved.from
-                  ? [{ ...range, ...resolved }]
-                  : [];
-            }),
-          );
-        } else if (tr.docChanged && !ySyncChangeOrigin) {
-          next.pendingWriterRanges = coalesced([
-            ...next.pendingWriterRanges.map((range) => ({
-              from: tr.mapping.map(range.from, 1),
-              to: tr.mapping.map(range.to, -1),
-            })),
-            ...insertedRanges(tr),
-          ]);
+          case "set-active-change":
+          case "focus-click":
+            next.activeChangeId = meta.changeId;
+            repaint = next.barSlot;
+            break;
+          case "set-pulse":
+            if (
+              meta.changeIds.length !== previous.pulsedChangeIds.size ||
+              meta.changeIds.some((id) => !previous.pulsedChangeIds.has(id))
+            ) {
+              next.pulsedChangeIds = new Set(meta.changeIds);
+              const arrivals = meta.changeIds.filter((id) => !previous.pulsedChangeIds.has(id));
+              if (arrivals.length) {
+                next.arrivals = new Set(arrivals);
+                next.pulseRevision++;
+              }
+            }
+            break;
+          case "set-bar-slot":
+            if (meta.open === previous.barSlot) return previous;
+            next.barSlot = meta.open;
+            repaint = true;
+            break;
+          case "set-marks-visible":
+            next.marksVisible = meta.visible;
+            break;
+          case "relocalize":
+            break;
+          case "composition":
+            next.composing = meta.active;
+            repaint = !meta.active;
+            break;
+          case "removal-click":
+            next.activeChangeId = meta.changeId;
+            if (meta.toggle !== null) {
+              const expanded = new Set(previous.expandedRemovals);
+              if (!expanded.delete(meta.toggle)) expanded.add(meta.toggle);
+              next.expandedRemovals = expanded;
+            }
+            repaint = next.barSlot;
+            break;
         }
-        if (mustRebuild) {
-          next.geometry = geometryFor(
-            next.model,
-            previous.geometry,
-            newState,
-            ySyncChangeOrigin || meta?.kind === "capture-writer",
-          );
-          if (meta?.kind === "set-model") {
-            const coverage =
-              next.geometry?.hunks.flatMap((hunk) =>
-                hunk.marks.filter((mark) => mark.tone === "writer"),
-              ) ?? [];
-            next.pendingWriterRanges = coalesced(uncovered(next.pendingWriterRanges, coverage));
-          }
-          next.decorations = paint(next.geometry, next, refocusRemoval);
-        } else if (tr.docChanged) {
-          // Before the binding writes, map only the model's painted projection.
-          next.decorations = paint(previous.geometry, next).map(tr.mapping, tr.doc);
-        }
-        if (mustRebuild || tr.docChanged) {
-          next.decorations = next.decorations.add(
-            tr.doc,
-            next.pendingWriterRanges.map(({ from, to }) =>
-              Decoration.inline(
-                from,
-                to,
-                { class: inlineReviewClassNames.writer },
-                { optimisticWriter: true },
-              ),
-            ),
-          );
-        }
+        if (tr.docChanged) next.decorations = previous.decorations.map(tr.mapping, tr.doc);
+        if (repaint && !next.composing) Object.assign(next, paint(next));
         return next;
       },
     },
-    // Collaboration's view updates first (registered before review). Only then
-    // can relative positions address the writer's newly allocated Yjs items.
     view: (view) => {
-      const detach = document && captureUndoRestorationClaims(document);
-      // The fold's label is copy: a locale change redraws it from the same geometry.
-      const unsubscribe = i18n.on("change", () => dispatchMeta(view, { kind: "relocalize" }));
+      const paintView = createReviewPaintView(
+        view,
+        (state) => draftInlineReviewPluginKey.getState(state),
+        () => dispatchMeta(view, { kind: "relocalize" }),
+      );
       return {
-        update: (view) => {
-          writerClient?.capture(view.state);
-          const state = draftInlineReviewPluginKey.getState(view.state);
-          const ranges = state?.pendingWriterRanges;
-          const runtime = relativePositionRuntimeFromState(view.state);
-          if (
-            !runtime ||
-            !ranges ||
-            (!ranges.some((range) => !range.anchors) &&
-              (!state?.geometry || state.geometry.doc === view.state.doc))
-          )
-            return;
-          const captured = ranges.map((range) => {
-            const start = relativePositionForIndex(runtime, range.from);
-            const end = relativePositionForIndex(runtime, range.to);
-            return { ...range, anchors: start && end ? { start, end } : null };
-          });
-          if (captured.every((range) => range.anchors))
-            dispatchMeta(view, { kind: "capture-writer", ranges: captured });
-        },
+        update: paintView.update,
         destroy: () => {
-          unsubscribe();
-          detach?.();
+          clearTimeout(compositionTimer);
+          paintView.destroy();
         },
       };
     },
@@ -442,12 +322,57 @@ export function buildInlineReviewPlugin({
         const pluginState = draftInlineReviewPluginKey.getState(state);
         return pluginState?.marksVisible ? pluginState.decorations : DecorationSet.empty;
       },
-      // Editor-side click seam. A click on any hunk decoration DOM adopts its
-      // first-listed operation as the active one — surfaces reading plugin
-      // state (the dock Changes rows) can reflect the emphasis.
       handleDOMEvents: {
+        beforeinput: (view, event) => {
+          const state = draftInlineReviewPluginKey.getState(view.state);
+          if (
+            !event.cancelable ||
+            event.inputType !== "insertText" ||
+            event.data === null ||
+            event.isComposing ||
+            view.composing ||
+            state?.composing ||
+            !state?.marksVisible
+          )
+            return false;
+          const { from, to } = view.state.selection;
+          const targets = event.getTargetRanges();
+          if (
+            targets.length &&
+            (targets.length !== 1 ||
+              view.posAtDOM(targets[0].startContainer, targets[0].startOffset) !== from ||
+              view.posAtDOM(targets[0].endContainer, targets[0].endOffset) !== to)
+          )
+            return false;
+          if (!state.decorations.find(from, to, (spec) => spec.side === "added").length)
+            return false;
+          // Native characterData dirties the entire decorated TextViewDesc in PM 1.41.9,
+          // which replaces its wrapper even when decoration identity is unchanged. Route ordinary
+          // typing through PM's existing text-input handlers before the browser mutates that DOM.
+          // Composition, replacement input, paste and deletion retain their native PM paths.
+          const text = event.data;
+          const insert = () => view.state.tr.insertText(text, from, to).scrollIntoView();
+          if (!view.someProp("handleTextInput", (handler) => handler(view, from, to, text, insert)))
+            view.dispatch(insert());
+          event.preventDefault();
+          return true;
+        },
+        compositionstart: (view) => {
+          clearTimeout(compositionTimer);
+          dispatchMeta(view, { kind: "composition", active: true });
+          return false;
+        },
+        compositionend: (view) => {
+          // Release deferred decorations after the native mutation. PM can reconcile wrappers
+          // again later; the paint view hydrates those unchanged-state updates too.
+          compositionTimer = setTimeout(
+            () => dispatchMeta(view, { kind: "composition", active: false }),
+            0,
+          );
+          return false;
+        },
         input: (view) => {
-          // Review projection can repaint before the MutationObserver's delivery,
+          // A repaint can land before the MutationObserver's delivery,
           // overwriting a native input's caret with the previous PM selection.
           // Consume it through PM's own observer (prosemirror-view 1.41.9), not a
           // second DOM parser or a numeric selection repair after the repaint.
@@ -458,22 +383,15 @@ export function buildInlineReviewPlugin({
           domObserver.flush();
           return false;
         },
+        // A click on any mark focuses its change, so surfaces reading plugin
+        // state (the stepper, the list rows) can reflect the emphasis.
         mousedown: (view, event) => {
           const target = event.target as HTMLElement | null;
-          const hit = target?.closest?.(`[${OPERATION_ATTR}]`);
-          if (!hit) return false;
-          const raw = hit.getAttribute(OPERATION_ATTR);
-          const [operationId] = (raw ?? "").split(" ").filter(Boolean);
-          if (!operationId) return false;
-          const current = draftInlineReviewPluginKey.getState(view.state)?.activeOperationId;
-          if (current === operationId) return false;
-          const tr = view.state.tr;
-          tr.setMeta(draftInlineReviewPluginKey, {
-            kind: "focus-click",
-            operationId,
-          });
-          tr.setMeta("addToHistory", false);
-          view.dispatch(tr);
+          const changeId = target?.closest?.(`[${CHANGE_ATTR}]`)?.getAttribute(CHANGE_ATTR);
+          if (!changeId) return false;
+          if (draftInlineReviewPluginKey.getState(view.state)?.activeChangeId === changeId)
+            return false;
+          dispatchMeta(view, { kind: "focus-click", changeId });
           // Do not swallow the event; the browser still owns normal focus.
           return false;
         },
@@ -487,10 +405,10 @@ export function getInlineReviewPluginState(state: EditorState): InlineReviewPlug
   return draftInlineReviewPluginKey.getState(state) ?? null;
 }
 
-/** Only writer input produces a focus intent; model and programmatic emphasis are output. */
+/** Only writer input produces a focus intent; projections and programmatic emphasis are output. */
 export function inlineReviewFocusIntent(transaction: {
   getMeta: (key: PluginKey) => unknown;
 }): string | null {
   const meta = transaction.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
-  return meta?.kind === "focus-click" || meta?.kind === "removal-click" ? meta.operationId : null;
+  return meta?.kind === "focus-click" || meta?.kind === "removal-click" ? meta.changeId : null;
 }

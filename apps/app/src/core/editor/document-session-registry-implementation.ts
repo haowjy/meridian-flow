@@ -1,6 +1,6 @@
 /**
  * Account-scoped owner of live document sessions and stable-id draft rooms.
- * Live acquisition is lease-required; draft rooms remain keyed by draft id.
+ * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
 import type {
   AccountId,
@@ -38,7 +38,7 @@ import type {
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import { DraftRoomPool } from "./draft-room-pool";
 import { LocalDocumentSessionTransfers } from "./local-document-session-transfers";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
@@ -119,11 +119,10 @@ export class DocumentSessionRegistry
       document,
       awareness,
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    _epochSignal: AbortSignal = new AbortController().signal,
   ) {
     this.draftRooms = new DraftRoomPool({
       openSession: (roomKey) => {
-        const session = this.createSession(roomKey, { kind: "none" });
+        const session = this.createSession(roomKey, { kind: "indexeddb", key: roomKey });
         this.attachSessionTransport(session);
         return session;
       },
@@ -286,7 +285,7 @@ export class DocumentSessionRegistry
     return () => this.removedRoomObservers.delete(observer);
   }
 
-  retainDraftRooms(ownerId: string, refs: readonly DraftRoomRef[]): void {
+  retainDraftRooms(ownerId: string, refs: readonly string[]): void {
     this.draftRooms.retain(ownerId, refs);
   }
 

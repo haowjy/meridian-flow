@@ -132,7 +132,6 @@ export function useDraftReviewScopeValue({
     workId: effectiveWorkId,
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
-    disposing: controller.isDisposing,
     presented,
   });
   useReconcileReviewFocus(controller, presented);

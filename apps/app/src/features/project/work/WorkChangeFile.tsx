@@ -1,10 +1,10 @@
 /** A Work's pending file, expandable to its changes. Commands act in place; the file name opens review. Preview reads begin only when expanded. */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
 import {
   type DraftChangesView,
@@ -36,19 +36,21 @@ export function WorkChangeFile({
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
   if (
+    !controller.owner.state(file.draft.itemKey).pending &&
     expanded &&
-    (view.status === "gone" ||
-      (view.status === "ready" && view.items.length === 0 && !view.unlisted))
+    (view.status === "gone" || (view.status === "ready" && view.items.length === 0))
   )
     return null;
   const wholeDocument = expanded && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
-  const review = (focusOperationIds?: readonly string[]) =>
-    file.draft.hasDraft
-      ? openReviewFile(file, workId, focusOperationIds)
+  const review = (focusGroupIds?: readonly string[]) => {
+    controller.dismissNotice();
+    return file.draft.hasDraft
+      ? openReviewFile(file, workId, focusGroupIds)
       : imageOpenable && setPreviewing(true);
+  };
 
   return (
     <>
@@ -60,7 +62,10 @@ export function WorkChangeFile({
             type="button"
             aria-expanded={expanded}
             aria-label={t`Changes in ${name}`}
-            onClick={() => setExpanded((open) => !open)}
+            onClick={() => {
+              controller.dismissNotice();
+              setExpanded((open) => !open);
+            }}
             className={cn(
               "focus-ring grid shrink-0 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-dropdown-hover motion-reduce:transition-none",
               touch ? "size-11" : "size-8",
@@ -83,13 +88,14 @@ export function WorkChangeFile({
           <button
             type="button"
             className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-            disabled={!file.contextLocation || (!file.draft.hasDraft && !imageOpenable)}
+            disabled={!file.contextLocation || (file.draft.hasDraft === false && !imageOpenable)}
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
           </button>
         )}
       </div>
+      <DraftCommandStatus itemKey={file.draft.itemKey} />
       <DraftImagePreview
         target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
@@ -111,7 +117,7 @@ function FileChanges({
 }: {
   view: DraftChangesView;
   touch: boolean;
-  onSelect: (operationIds: readonly string[]) => void;
+  onSelect: (groupIds: readonly string[]) => void;
   documentName?: string;
 }) {
   return (
@@ -120,22 +126,7 @@ function FileChanges({
       showAttribution
       view={view}
       touch={touch}
-      onSelect={(change) => onSelect(change.operationIds)}
-      standIn={
-        view.unlisted ? (
-          <StateLine>
-            <Trans>Formatting changes remain</Trans>
-          </StateLine>
-        ) : null
-      }
+      onSelect={(change) => onSelect([change.id])}
     />
-  );
-}
-
-function StateLine({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-      {children}
-    </p>
   );
 }

@@ -1,17 +1,7 @@
 /**
- * useReviewRefresh — the one owner of "the open review's draft changed, read it
- * again". It watches the review room (the draft's text: the writer typing, the
- * AI writing, a peer editing) and the live document the draft is measured
- * against (another tab's Apply, a collaborator), and after the changes settle
- * invalidates the Work's draft list and the draft's preview once.
- *
- * The manuscript does not subscribe on its own: `useInlineReviewSync` only
- * projects the preview this refreshes into the editor, so a local edit costs one
- * read, and the review stays current with no document editor mounted.
- *
- * A burst of changes is one read after it settles (`SETTLE_MS`), but a stream
- * that never pauses (the AI writing) still refreshes every `MAX_WAIT_MS`, so the
- * review does not sit on a stale list until the stream ends.
+ * Refresh list/room metadata after draft or live updates. Text review is projected locally by the runtime.
+ * The timer belongs to the review identity, not either room binding: a pending refresh survives rebind.
+ * A continuous stream refreshes at least every MAX_WAIT_MS instead of waiting forever for quiet.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
@@ -71,7 +61,7 @@ export function useReviewRefresh({
         ),
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
+            queryKey: projectQueryKeys.workDraftMetadata(projectId, workId, documentId, itemKey),
           },
           { cancelRefetch: false },
         ),

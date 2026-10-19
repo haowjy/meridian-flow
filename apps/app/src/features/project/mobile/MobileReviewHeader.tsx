@@ -56,7 +56,6 @@ export function MobileReviewHeader({
         <ReviewStateInline
           touch
           finished={finished}
-          unlisted={header.unlisted}
           completing={header.completing}
           next={header.next}
           draftOnly={header.draftOnly}

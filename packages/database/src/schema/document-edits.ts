@@ -60,6 +60,9 @@ export const documentEdits = pgTable(
   },
   (t) => [
     index("document_edits_document_idx").on(t.documentId),
+    index("document_edits_agent_document_idx")
+      .on(t.documentId, t.id)
+      .where(sql`${t.actor} = 'agent'`),
     index("document_edits_turn_idx").on(t.turnId),
     index("document_edits_action_idx").on(t.actionId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
@@ -90,6 +93,7 @@ export const documentEditParts = pgTable(
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
+    index("document_edit_parts_edit_origin_draft_idx").on(t.editId, sql`(${t.origin}->>'draftId')`),
     index("document_edit_parts_pending_idx")
       .on(sql`(${t.placement}->>'draftId')`, sql`(${t.placement}->>'generation')`)
       .where(sql`${t.placement}->>'kind' = 'pending'`),

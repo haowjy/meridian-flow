@@ -21,11 +21,12 @@ import {
   type BranchCommandResult,
   type BranchDiscardAllRequest,
   type DocumentDraftHintsResponse,
+  type DraftMetadataResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
+import { draftRoomName, meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -113,7 +114,7 @@ const RangeBody = z
   .refine((range) => range.to >= range.from);
 const ApplyClickBody = z.strictObject({
   commandId: BranchCommandIdSchema,
-  snapshot: z.string().min(1),
+  snapshot: z.string().min(1).optional(),
   baseViewDelta: z.array(
     z.strictObject({
       base: RangeBody,
@@ -121,10 +122,7 @@ const ApplyClickBody = z.strictObject({
       blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
     }),
   ),
-  groupIds: z
-    .array(z.string().min(1))
-    .min(1)
-    .refine((ids) => new Set(ids).size === ids.length),
+  groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
 });
 const DiscardBody = z.strictObject(Base);
 
@@ -348,6 +346,28 @@ export async function handleWorkBranchListRequest(
     items: listed.items
       .filter((item) => readable.has(item.documentId) || item.deletedLive)
       .map((item) => toWireItem(item, listed.threadTitles)),
+  };
+}
+
+/** Addressability is independent of list membership and reads only persisted metadata. */
+export async function handleDraftMetadataRequest(
+  deps: BranchRouteServices,
+  input: CommandScope & { documentId: DocumentId; itemKey: string },
+): Promise<DraftMetadataResponse> {
+  await requireBranchWorkAccess(deps, input);
+  await requireFileGrant(
+    deps.fileAccess,
+    input.userId,
+    { kind: "draft", documentId: input.documentId, workId: input.workId },
+    "read",
+  );
+  const resolved = await deps.documentSync.draftReview.resolveItem(input);
+  if (!resolved?.draftId || resolved.documentId !== input.documentId) return { status: "gone" };
+  return {
+    status: "active",
+    draftId: resolved.draftId,
+    reviewRoomName: draftRoomName(resolved.draftId),
+    item: toWireItem(resolved.item, new Map()),
   };
 }
 

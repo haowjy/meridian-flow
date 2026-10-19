@@ -1,7 +1,7 @@
 /**
  * FocusOpenedReview — opens a review on a given change.
  *
- * A launch that names operations (`focusOperationIds`) makes the Editor scope's
+ * A launch that names operations (`focusGroupIds`) makes the Editor scope's
  * claimant mount this once it has entered the review. It applies the request
  * once, when the review it names is the open one, has painted
  * (`inlineReview.shown`) and its preview has loaded: the change holding any of
@@ -21,7 +21,7 @@ export type ReviewFocusRequest = {
   sequence: number;
   documentId: string;
   itemKey: string;
-  operationIds: readonly string[];
+  groupIds: readonly string[];
 };
 
 export function FocusOpenedReview({
@@ -32,7 +32,7 @@ export function FocusOpenedReview({
   onDone: () => void;
 }) {
   const { controller } = useDraftReview();
-  const { active, preview, changes } = useOpenReviewChanges(controller);
+  const { status, changes } = useOpenReviewChanges(controller);
   // Set once the requested review has been the open one: leaving it ends the request.
   const entered = useRef(false);
 
@@ -44,18 +44,16 @@ export function FocusOpenedReview({
     }
     entered.current = true;
     if (!open.shown) return;
-    if (preview?.status === "gone") return onDone();
-    if (!active) return;
-    const wanted = new Set(request.operationIds);
-    const change = changes.find((candidate) =>
-      candidate.operationIds.some((operationId) => wanted.has(operationId)),
-    );
+    if (status === "gone") return onDone();
+    if (status !== "ready") return;
+    const wanted = new Set(request.groupIds);
+    const change = changes.find((candidate) => wanted.has(candidate.id));
     if (change) {
       const { documentId, itemKey } = request;
       controller.focusReviewChange({ documentId, itemKey }, change, { scroll: true });
     }
     onDone();
-  }, [active, changes, controller, onDone, preview, request]);
+  }, [status, changes, controller, onDone, request]);
 
   return null;
 }

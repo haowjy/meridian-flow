@@ -531,7 +531,6 @@ export async function createProductionAppPorts(input: {
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
-  let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
@@ -617,7 +616,7 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
-  contextPorts = createProductionUnifiedContextPortFactory({
+  const contextPorts = createProductionUnifiedContextPortFactory({
     links: documentLinks,
     db,
     documentSync,

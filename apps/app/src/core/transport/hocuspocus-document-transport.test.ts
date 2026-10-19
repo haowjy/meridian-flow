@@ -46,7 +46,7 @@ describe("Hocuspocus document transport adapter", () => {
         code: 4205,
         reason: "discarded",
       }),
-    ).toEqual({ kind: "reset", reason: "discarded", disposition: "removed", code: 4205 });
+    ).toEqual({ kind: "reset", reason: "discarded", disposition: "closed", code: 4205 });
     expect(
       classifyDocumentTransportClose("document-1", {
         code: 1006,
@@ -60,13 +60,13 @@ describe("Hocuspocus document transport adapter", () => {
       signal: "close",
       contract: WS_CLOSE.DRAFT_CLOSED,
       pending: true,
-      disposition: "removed",
+      disposition: "closed",
     },
     {
       signal: "denial",
       contract: WS_CLOSE.DRAFT_CLOSED,
       pending: true,
-      disposition: "removed",
+      disposition: "closed",
     },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: "refused" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
