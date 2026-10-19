@@ -230,7 +230,7 @@
     "apps/server/server/domains/collab/branch-push-settlement-refusals.db.test.ts": 4,
     "apps/server/server/domains/collab/branch-tree.apply-holds.db.test.ts": 5,
     "apps/server/server/domains/collab/branch-tree.apply-links.db.test.ts": 1,
-    "apps/server/server/domains/collab/branch-tree.apply-placement.db.test.ts": 7,
+    "apps/server/server/domains/collab/branch-tree.apply-placement.db.test.ts": 4,
     "apps/server/server/domains/collab/branch-tree.apply-staleness.db.test.ts": 4,
     "apps/server/server/domains/collab/branch-tree.discard.db.test.ts": 8,
     "apps/server/server/domains/collab/branch-tree.preview.db.test.ts": 3,
