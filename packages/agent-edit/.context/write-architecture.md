@@ -42,7 +42,8 @@ container.
 
 ## Prepared writes and receipts
 
-Create, copy, and mutation commands share one `PreparedEdit` path. It runs the
+Create, copy, and mutation commands share one `PreparedEdit` path in
+`tool/write-acceptance.ts`; `write-commands.ts` owns command planning. It runs the
 region check first (below), registers the refs the write minted, reserves a
 write identity, captures the before cut and ordered transaction parts,
 certifies each segment, then stages or submits one logical edit. The command
