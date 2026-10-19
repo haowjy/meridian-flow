@@ -1,7 +1,7 @@
 /** Review room binding while B2 replaces settlement-era command ownership. */
 import type { Dispatch } from "react";
-import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftPreviewRead } from "@/client/query/useDraftPreview";
+import type { DocumentSession } from "@/core/editor/document-session";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 
 export function useReviewRoomOwner(_input: {

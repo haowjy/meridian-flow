@@ -1,7 +1,6 @@
 /** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import type { DraftRef } from "./review-command-types";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { usePresentedDraftReview } from "./DraftReviewProvider";
 import {
@@ -11,6 +10,7 @@ import {
   useChangeItems,
 } from "./draft-changes";
 import { type ReviewChange, reviewChangesOfPreview, wholeItemChange } from "./review-changes";
+import type { DraftRef } from "./review-command-types";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 import type { WorkBranchCommands } from "./useWorkBranchCommands";
 

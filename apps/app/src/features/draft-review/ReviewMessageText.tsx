@@ -3,8 +3,8 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 import { RemovedDocumentApplyRefusal } from "@/features/project/context/RemovedDocumentNotice";
+import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {

@@ -1,11 +1,11 @@
 /** Whole-draft failures and inline review completion. End states share the existing review/path row rather than adding a banner. */
 import { Plural, Trans } from "@lingui/react/macro";
-import type { BranchCommandFailure } from "./review-command-types";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
+import type { BranchCommandFailure } from "./review-command-types";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
