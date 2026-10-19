@@ -68,9 +68,14 @@ Discard. Once synced, temporary offline status does not forget that history.
   An empty frame shows “No changes left”; only the close contract can end the
   draft room or send the editor to live.
 
-`useReviewRefresh` retains its pending timer by review identity, independently
-of the room subscription. Rebinding an editor must not drop a refresh already
-scheduled from a live pull.
+`useReviewRefresh` discovers list/metadata changes from the runtime's semantic
+membership: any differences, pending owner-thread ids, and unknown attribution.
+A new frame or another key with the same membership never refetches the whole
+Work. A semantic change schedules only after its captured room cut is acknowledged,
+so a slow append cannot leave a first change absent from the server list. This
+wait gates only background discovery, never input or commands. An independent live-room update still schedules discovery; a mounted review
+session is not also a live source. Its pending timer belongs to the review
+identity, so rebinding an editor cannot drop discovery already scheduled by a pull.
 
 ## Other lifecycle boundaries
 
@@ -100,7 +105,11 @@ own contribution. A terminal close cancels unsent clicks and observes a sent
 head's durable outcome; applied then needs no room record. Feedback starts at
 500 ms in reserved footer space. No queue or optimistic base persists. Queue changes invalidate its optimistic
 contribution independently of account UI notifications; the account publishes only
-changed command state or a changed item-to-draft binding.
+changed command state or a changed item-to-draft binding. Rendering leaves subscribe
+to those records; command callbacks and the project controller do not. The room
+owner observes only hidden/closed lifecycle transitions. Listed-room snapshots
+combine stable text and per-item command records, including deferred Discard.
+Apply callbacks refresh discovery when the item's FIFO drains, not after every head.
 
 The base provider folds `applyBase` over unrecorded clicks in order. Base,
 record and queue changes invalidate it; typing only reprojects. Group targets
@@ -113,7 +122,8 @@ calls `writeDiscardBlocks` (including `recordWriteBack`) in one transaction.
 Editor Discard executes synchronously. Dock/Work Discard first publishes its
 notice and a projection-scoped `discarding` target. Listed surfaces omit those
 groups for one paint opportunity; room frames and editor paint still come only
-from text. The next animation frame after that paint performs the whole write-back,
+from text. One animation frame allows React to commit the returned notice, a second gives
+it a paint opportunity, and the next performs the whole write-back,
 then clears the list overlay. Hidden pages drain on visibility change rather than
 waiting for animation frames. Changed base or prose refuses the stale write and
 restores the row, preserving intervening edits. Only the same item's further
@@ -123,7 +133,9 @@ Direct writes never impersonate the binding origin: its delete-only transactions
 without a writer ProseMirror transaction are schema-repair evidence. A dock
 or Work notice owns a separate manager and pool lease, retains the runtime,
 and installs `recordRestorations` so Undo writes links in its own transaction.
-Undo restores a cached list item before server discovery catches up. At most
+Undo captures its own session acknowledgement barrier before releasing notice ownership,
+then restores a cached list item before server discovery catches up. A later item lookup
+cannot prove that retired session's edits landed. At most
 the surface's latest Discard history is offered; another action ends it.
 The notice belongs to that exact session binding. Retiring the binding or
 closing the draft ends its notice and destroys its history; replacement

@@ -412,7 +412,11 @@ function ReadableProjectDestination({
       : null;
   const closeMetadata = useDraftMetadata(closingRef ? [closingRef] : [])[0];
   const draftCommands = useDraftCommandOwner();
-  useSyncExternalStore(draftCommands.subscribe, draftCommands.snapshot, draftCommands.snapshot);
+  const closeSnapshot = () => {
+    const state = draftCommands.state(address.itemKey ?? "");
+    return JSON.stringify([state.closed, state.removed, state.checkingClose, state.liveUri]);
+  };
+  useSyncExternalStore(draftCommands.subscribe, closeSnapshot, closeSnapshot);
   const closeState = draftCommands.state(address.itemKey ?? "");
   useLayoutEffect(() => {
     if (closingRef && closeMetadata?.data?.status === "gone")

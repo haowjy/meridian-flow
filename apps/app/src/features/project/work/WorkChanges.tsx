@@ -14,7 +14,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,11 @@ export function WorkChanges({
 }) {
   const workId = work.id;
   const controller = useWorkBranchCommands({ projectId, work });
+  useSyncExternalStore(
+    controller.owner.subscribe,
+    controller.owner.snapshot,
+    controller.owner.snapshot,
+  );
   const drafts = useWorkBranchDrafts(projectId, workId);
   const held = useRoomReviews(
     (drafts.files ?? [])

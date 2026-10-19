@@ -1,13 +1,14 @@
 /**
- * Refresh list/room metadata after draft or live updates. Text review is projected locally by the runtime.
+ * Refresh discovery when review membership or the independent live document changes, never on each draft key.
  * The timer belongs to the review identity, not either room binding: a pending refresh survives rebind.
- * A continuous stream refreshes at least every MAX_WAIT_MS instead of waiting forever for quiet.
+ * A stream of discovery changes refreshes at least every MAX_WAIT_MS instead of waiting forever for quiet.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { DocumentSession } from "@/core/editor/document-session";
+import type { ReviewRuntime, ReviewState } from "./review-runtime";
 
 const SETTLE_MS = 500;
 const MAX_WAIT_MS = 2_000;
@@ -16,6 +17,7 @@ export function useReviewRefresh({
   projectId,
   workId,
   review,
+  runtime,
   session,
   liveSession,
 }: {
@@ -23,7 +25,9 @@ export function useReviewRefresh({
   workId: string | null;
   /** The open review's draft, or null when none is open. */
   review: { documentId: string; itemKey: string } | null;
-  /** The review's room, once resolved. */
+  /** Text and attribution already computed for this review. */
+  runtime: ReviewRuntime | null;
+  /** Discovery reads the committed membership after this room acknowledges the semantic change. */
   session: DocumentSession | null;
   /** The live document of the reviewed draft, when a surface holds it. */
   liveSession: DocumentSession | null;
@@ -90,11 +94,42 @@ export function useReviewRefresh({
   }, [projectId, workId, documentId, itemKey, queryClient]);
 
   useEffect(() => {
-    const sources = [session, liveSession].filter((source) => source !== null);
-    const changed = () => schedule.current?.();
-    for (const source of sources) source.document.on("update", changed);
-    return () => {
-      for (const source of sources) source.document.off("update", changed);
+    if (!runtime || !session) return;
+    let active = true;
+    const membership = (state: ReviewState) =>
+      JSON.stringify([
+        state.changes.length > 0,
+        state.changes.some((change) => !change.attributed),
+        [...new Set(state.changes.flatMap((change) => change.members))].sort(),
+      ]);
+    let previous: string | null = null;
+    const changed = () => {
+      const state = runtime.state();
+      if (!state.ready) return;
+      const next = membership(state);
+      if (next === previous) return;
+      previous = next;
+      void session.whenCurrentChangesAcknowledged().then(
+        () => {
+          if (active) schedule.current?.();
+        },
+        () => {
+          // A refused/retired binding cannot publish committed membership; its replacement discovers again.
+        },
+      );
     };
-  }, [session, liveSession]);
+    const stop = runtime.subscribe(changed);
+    changed();
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [runtime, session]);
+
+  useEffect(() => {
+    if (!liveSession) return;
+    const changed = () => schedule.current?.();
+    liveSession.document.on("update", changed);
+    return () => liveSession.document.off("update", changed);
+  }, [liveSession]);
 }

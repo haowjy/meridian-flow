@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The review's one refresh owner: what makes the open review read its draft
- * again, and how often. Real Yjs documents and a real query client; the clock
+ * again, and how often. Independent live Yjs documents and a real query client; the clock
  * is the only fake.
  */
 
@@ -29,8 +29,9 @@ function Owner() {
     projectId: "p",
     workId: "w",
     review,
-    session: sessions.get("room-a"),
-    liveSession: null,
+    runtime: null,
+    session: null,
+    liveSession: sessions.get("room-a"),
   });
   return null;
 }
@@ -144,8 +145,9 @@ describe("useReviewRefresh", () => {
         projectId: "p",
         workId: "w",
         review,
-        session: sessions.get("room-a"),
-        liveSession: bound ? sessions.get("live-a") : null,
+        runtime: null,
+        session: null,
+        liveSession: bound ? sessions.get("room-a") : null,
       });
       return null;
     }

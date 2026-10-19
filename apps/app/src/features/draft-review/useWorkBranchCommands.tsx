@@ -10,7 +10,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
@@ -34,7 +33,6 @@ export function useWorkBranchCommands({
   surface?: "editor" | "dock";
 }) {
   const owner = useDraftCommandOwner();
-  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
   const queryClient = useQueryClient();
   const workId = work?.id ?? "";
   const locked = !work || isWorkArchived(work);
@@ -53,9 +51,6 @@ export function useWorkBranchCommands({
     },
     [owner, projectId, workId, threadId],
   );
-  useEffect(() => {
-    if (notice?.itemKey && owner.state(notice.itemKey).closed) endNotice();
-  }, [notice, owner, owner.snapshot()]);
   return useMemo(() => {
     const ref = (draft: DraftReviewSelection) => ({ projectId, workId, ...draft });
     const row = (draft: DraftReviewSelection) =>
@@ -88,7 +83,9 @@ export function useWorkBranchCommands({
           item?.isNew && !item.hasDraft && target.kind === "draft"
             ? owner.reveal(ref(draft))
             : owner.apply(ref(draft), target);
-        void started.outcome.then(refresh);
+        void started.outcome.then(() => {
+          if (!owner.state(draft.itemKey).pending) refresh();
+        });
         return started;
       }
       if (item?.isNew && target.kind === "draft") {
@@ -118,7 +115,7 @@ export function useWorkBranchCommands({
           ...discarded.notice,
           undo: discarded.notice.undo
             ? () => {
-                discarded.notice.undo?.();
+                const acknowledged = discarded.notice.undo?.() ?? Promise.resolve();
                 if (item)
                   queryClient.setQueryData<ThreadDraftListItem[]>(
                     projectQueryKeys.workBranchDrafts(projectId, workId),
@@ -127,7 +124,7 @@ export function useWorkBranchCommands({
                         ? rows
                         : [...(rows ?? []), item],
                   );
-                void owner.acknowledged(draft.itemKey).then(refresh, refresh);
+                return acknowledged.then(refresh, refresh);
               }
             : undefined,
         });
@@ -181,7 +178,7 @@ export function useWorkBranchCommands({
         });
       },
     };
-  }, [owner, owner.snapshot(), locked, projectId, workId, threadId, surface, queryClient, notice]);
+  }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

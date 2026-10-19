@@ -1,6 +1,6 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   type DraftImagePreviewTarget,
@@ -38,6 +38,11 @@ export function useDraftDock({
   active?: boolean;
 }) {
   const controller = useBoundWorkBranchCommands();
+  useSyncExternalStore(
+    controller.owner.subscribe,
+    controller.owner.snapshot,
+    controller.owner.snapshot,
+  );
   const dismiss = useRef(controller.dismissNotice);
   dismiss.current = controller.dismissNotice;
   useEffect(() => {

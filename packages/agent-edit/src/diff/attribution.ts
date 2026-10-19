@@ -314,11 +314,11 @@ class Classifier {
     return ix;
   }
 
-  private eachChar(
+  private eachRange(
     ix: BlockIx,
     from: number,
     to: number,
-    fn: (client: number, clock: number) => void,
+    fn: (client: number, clock: number, length: number) => void,
   ) {
     let u = lowerBound(ix.units, from + 1) - 1;
     for (let pos = from; pos < to; ) {
@@ -326,7 +326,8 @@ class Classifier {
       const unit = ix.units[u];
       if (!unit) return;
       const end = Math.min(to, unit.at + unit.item.length);
-      for (; pos < end; pos++) fn(unit.item.id.client, unit.item.id.clock + (pos - unit.at));
+      fn(unit.item.id.client, unit.item.id.clock + (pos - unit.at), end - pos);
+      pos = end;
     }
   }
 
@@ -343,27 +344,26 @@ class Classifier {
       if (who >= 0) footprint.members.add(who);
       if (who === UNKNOWN) footprint.unresolved = true;
     };
-    const live = (client: number, clock: number) => {
-      const who = this.evidence.origin(client, clock);
-      if (who === BASE) return;
-      include(who);
-      if (who === UNKNOWN) pushRange(footprint.unresolvedItems, client, clock);
-      if (this.options.record) pushRange(footprint.base, client, clock);
+    const live = (client: number, clock: number, length: number) => {
+      this.evidence.origins(client, clock, length, (who, at, run) => {
+        if (who === BASE) return;
+        include(who);
+        if (who === UNKNOWN) pushRange(footprint.unresolvedItems, client, at, run);
+        if (this.options.record) pushRange(footprint.base, client, at, run);
+      });
     };
     const dead = (item: Y.Item) => {
-      for (let k = 0; k < item.length; k++) {
-        const c = item.id.client;
-        const clock = item.id.clock + k;
-        if (this.evidence.settled.get(c, clock) >= 0) continue;
-        if (this.options.record) pushRange(footprint.settled, c, clock);
-        const who = this.evidence.deleter(c, clock);
+      const c = item.id.client;
+      this.evidence.deletions(c, item.id.clock, item.length, (who, settled, clock, length) => {
+        if (settled) return;
+        if (this.options.record) pushRange(footprint.settled, c, clock, length);
         include(who);
-        if (who === UNKNOWN) pushRange(footprint.unresolvedItems, c, clock);
-      }
+        if (who === UNKNOWN) pushRange(footprint.unresolvedItems, c, clock, length);
+      });
     };
     const item = (value: Y.Item) => {
       if (value.deleted) dead(value);
-      else for (let k = 0; k < value.length; k++) live(value.id.client, value.id.clock + k);
+      else live(value.id.client, value.id.clock, value.length);
     };
     const subtree = (value: Y.Item) => {
       item(value);
@@ -400,7 +400,7 @@ class Classifier {
           lo = 0;
           hi = last ? last.at + last.item.length : 0;
         }
-        this.eachChar(ix, lo, hi, live);
+        this.eachRange(ix, lo, hi, live);
         for (let i = lowerBound(ix.dead, lo); i < ix.dead.length && ix.dead[i].at <= hi; i++)
           dead(ix.dead[i].item);
         if (was && !now.text)
@@ -436,9 +436,10 @@ class Classifier {
         if (!added || !removed || added === removed) return;
         const start = raw.at + head;
         let replaced = true;
-        this.eachChar(this.index(b), start, start + added.length, (c, k) => {
-          const who = this.evidence.origin(c, k);
-          if (who === BASE || who === UNKNOWN) replaced = false;
+        this.eachRange(this.index(b), start, start + added.length, (c, k, length) => {
+          this.evidence.origins(c, k, length, (who) => {
+            if (who === BASE || who === UNKNOWN) replaced = false;
+          });
         });
         // Equal letters in recreated words are not retained base anchors: sword → sabre shares
         // s/r, but its five base tombstones can still prove who made a visible deletion.
@@ -480,9 +481,8 @@ class Classifier {
     const all: Array<Set<number>> = [];
     for (let p = lo; p <= hi; p++) {
       const origins = new Set<number>();
-      this.eachChar(ix, p, p + n, (c, k) => {
-        const who = this.evidence.origin(c, k);
-        origins.add(who);
+      this.eachRange(ix, p, p + n, (c, k, length) => {
+        this.evidence.origins(c, k, length, (who) => origins.add(who));
       });
       all.push(origins);
     }
@@ -504,8 +504,8 @@ class Classifier {
     };
     if (this.text(1, b).text !== "" || retained(b)) return [];
     for (const { item } of this.index(b).dead)
-      for (let k = 0; k < item.length; k++)
-        if (!this.evidence.isUndoneWriteBack(item.id.client, item.id.clock + k)) return [];
+      if (!this.evidence.isAllUndoneWriteBack(item.id.client, item.id.clock, item.length))
+        return [];
     let candidates = this.removalRegions.get(b);
     if (!candidates) {
       let lo = b;
@@ -525,25 +525,27 @@ class Classifier {
   private red(acc: Names, points: Array<readonly Y.Item[]>, weight: number, deleted = weight) {
     const valid: Array<Map<string, number>> = [];
     for (const tombs of points) {
-      const deleters: number[] = [];
-      for (const item of tombs)
-        for (let k = 0; k < item.length; k++) {
-          const c = item.id.client;
-          const clock = item.id.clock + k;
-          if (this.evidence.isBaseDeletion(c, clock))
-            deleters.push(this.evidence.deleter(c, clock));
-        }
-      if (deleters.length === weight) {
-        const names = this.keyed(deleters);
+      let count = 0;
+      let unknown = false;
+      const names = new Map<string, number>();
+      const counts = new Map<string, number>();
+      for (const item of tombs) {
+        this.evidence.baseDeletions(item.id.client, item.id.clock, item.length, (who, length) => {
+          count += length;
+          if (isUnknown(who)) {
+            unknown = true;
+            return;
+          }
+          const key = this.keyOf(who);
+          names.set(key, Math.min(names.get(key) ?? who, who));
+          counts.set(key, (counts.get(key) ?? 0) + length);
+        });
+      }
+      if (count === weight) {
+        if (unknown) names.clear();
         // Whole-word evidence may include equal letters. A remover is certain only if their
         // characters cannot all fit outside this visible deletion, regardless of alignment.
         if (deleted < weight) {
-          const counts = new Map<string, number>();
-          for (const who of deleters) {
-            if (isUnknown(who)) continue;
-            const key = this.keyOf(who);
-            counts.set(key, (counts.get(key) ?? 0) + 1);
-          }
           for (const key of names.keys())
             if ((counts.get(key) ?? 0) <= weight - deleted) names.delete(key);
         }

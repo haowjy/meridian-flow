@@ -227,5 +227,14 @@ characters. Interleave at least three pairs against main with the same
 corpus/configuration; record host load and each run, not just a pooled average.
 Profile a separate run if the tail regresses: room metadata identity must never
 serialize `focus.frame` or any other caller-supplied presentation fields.
+Repeat in a Work containing an untouched all-changed 50k sibling draft with
+Discard/Undo history. After initial room/evidence discovery settles, same-membership
+typing must make no Work-list or addressed-metadata requests. A new frame/group id
+alone must not run the server's whole-Work disposition reader. First/last change,
+Undo and changed AI membership still refresh discovery, as does a real independent
+live-room update. An editor mounted in review must not also be a live refresh source.
+Queued Apply heads update local paint/counts immediately, but only the drained
+item's outcome refreshes its list. Notice, failure and pending feedback update at
+rendering leaves without rebuilding the project file tree.
 Undo the typing, navigate changes, toggle Show changes and Discard a change,
 then Ctrl+Z: all must preserve exact prose and restore the review from text.

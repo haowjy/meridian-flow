@@ -52,7 +52,6 @@ export type DraftReviewController = {
   /** The open review's room, once a read has resolved it (`inlineReview.roomName`). */
   reviewRoomName: string | null;
   reviewRoomError: boolean;
-  isApplying: boolean;
   /** Dispatch the normalized target through this review's Work authority. */
   commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
@@ -142,7 +141,6 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
 
-  const isApplying = commands.owner.state(inlineReview?.itemKey ?? "").applying;
   const dispositionLocked = commands.dispositionLocked;
   const changesLocked = commands.changesLocked;
 
@@ -275,7 +273,6 @@ export function useDraftReviewController({
       inlineReview,
       reviewRoomName: inlineReview?.roomName ?? null,
       reviewRoomError: inlineReview?.roomError ?? false,
-      isApplying,
       commandChange: commands.commandChange,
       dispositionLocked,
       changesLocked,
@@ -304,7 +301,6 @@ export function useDraftReviewController({
       workId,
       threadId,
       inlineReview,
-      isApplying,
       dispositionLocked,
       changesLocked,
       state.marksVisible,

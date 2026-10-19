@@ -45,7 +45,7 @@ export function MobileReviewHeader({
                 ? undefined
                 : {
                     canApply: header.canApply,
-                    applying: controller.isApplying,
+                    applying: header.completing === "apply",
                     onApply: header.applyDraft,
                     onDiscard: header.discardDraft,
                   }

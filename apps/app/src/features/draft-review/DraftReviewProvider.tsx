@@ -179,8 +179,10 @@ export function useDraftReviewScopeValue({
     projectId,
     workId,
     review: controller.inlineReview,
+    runtime: roomOwner.runtime,
     session: roomOwner.session,
     liveSession:
+      !activeEditorProjection?.inReview &&
       activeEditorProjection?.documentId === controller.inlineReview?.documentId
         ? (activeEditorProjection?.session ?? null)
         : null,
