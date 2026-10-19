@@ -2,7 +2,7 @@
 
 This page records the contracts that cross collab's Yjs, persistence, review,
 and transport boundaries. The focused pages hold draft vocabulary, authority,
-reversal, settlement, and WebSocket details; this page keeps their shared rules.
+reversal, committed trail, and WebSocket details; this page keeps their shared rules.
 
 ## Boundary and destinations
 
@@ -22,7 +22,7 @@ The composition root wires required services and provider ports. It owns no
 business behavior, mutable runtime state, or optional capability matrix.
 `collab-facade.ts` only assembles the domain surface. Agent-edit owns the
 memory-only mutation kernel; collab owns authorization, persistence,
-coordination, settlement, and trail projection.
+coordination and trail projection.
 
 ## Draft review admission and Apply clicks
 
@@ -40,14 +40,18 @@ for integer, non-overlapping link and known-range bounds after integration;
 content kinds and tombstone text never certify them. Browser restoration
 certificates are no longer written into journal metadata.
 
-Apply has one HTTP door per document: `draft/apply`. It accepts a frozen
-snapshot click, never a revision/generation token or operation selection. The
-command digest covers the authenticated envelope and the entire body. Lookup
-precedes form checking and is repeated before every fresh refusal. Form checks
-use the snapshot's base, schema-valid patch blocks and projected group ids.
-Execution currently refuses `unavailable`; the settlement services still in this
-directory are not reachable from that route. Work Apply all has no HTTP door;
-it is one click per draft. Only item-form HTTP Discard and Work Discard all remain.
+Apply has one HTTP door per document: `draft/apply`. The stub preserves command
+lookup before resolution and before a fresh refusal, checks the frozen snapshot's
+encoding, then refuses `unavailable`. Lane A replaces this with atomic Apply;
+there is no settlement executor, worker recovery or ingress barrier behind it.
+Work Apply all will be a browser loop of per-document clicks.
+
+The server preview route and review-cut/attribution/selection engine are deleted.
+The app's legacy preview reader returns empty data until lane B2 builds review
+from the room. Edited-text Discard belongs to the browser's local undoable edit.
+The per-document HTTP Discard can only end a still-hidden creation's branch use;
+a creation revealed before its locks answers `stale`, without changing text or
+claiming a command. Work Discard all and purge keep the shared close/end-use kernel.
 
 ## Revision and review authority
 
@@ -58,30 +62,9 @@ pure deletion and a document snapshot misses tree-only moves. Reads and applies
 compute the token synchronously in their prepared link scope; an unverified
 recovery returns `null`, never a later read's token.
 
-Preview and selective disposition use one `ReadReviewCut`. The first draft
-read fixes a repeatable-read snapshot containing the draft (checkpoint ⊕ tail
-through the read seam, with its revision and generation),
-review rows, history status, live journal/head, thread titles, and live/branch
-link views. It performs no room reads, pulls, provisioning, or repair. A
-missing draft is `gone`, not an invitation to create one. Returned bytes and
-scopes are detached before rich difference work begins.
-
-The review compares live with the draft as its next pull will leave it: live
-structs the draft has not pulled yet are merged into the cut's draft copy
-before the difference. Pulls are debounced (2–10 s), so live is routinely
-ahead of the draft; without the merge, another writer's new live text reads as
-the draft's unattributed removal, and live's deletions as its insertions.
-
-Apply fences the displayed cut. Selective Discard fences the displayed class
-identities and the server-vended closed-row/rich-effect evidence, allowing
-independent draft typing but refusing changed selected evidence. Whole Apply
-and whole Discard retain their existing document-level semantics. Corrupt
-previews return a typed refusal without resetting state; the whole Discard
-command is the recovery path for a corrupt draft.
-
-Discard closes only peers whose upstream is the addressed Work draft. A fresh
-peer in the same thread and peers for other Works survive. Thread-core
-invalidation is a post-discard side effect, never a preview side effect.
+Hidden-creation Discard closes its addressed drafts and peers; Work Discard
+all closes the branch. Edited-text Discard closes no server peer. Thread-core
+invalidation follows committed close retirement.
 
 Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
 cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
@@ -147,7 +130,7 @@ no push policy. Trail reconciliation consumes transactional dirty signals and
 never applies a draft. Active unapplied rows do not delay a terminal receipt.
 
 A reply's save resolves exactly the peer each document was pinned to and
-refuses that document stale when the pin no longer holds (closed peer, reset or
+refuses that document stale when the pin no longer holds (closed peer or
 closed draft, closed branch). Peers are created only by pulls in an existing
 draft, never by a save.
 
@@ -202,9 +185,8 @@ no drafts.
 
 A Work draft is shared by every thread editing the same document in that Work.
 Thread peers fork from it and retain the upstream draft identity and
-peer-draft generation independently of that Work draft's current generation. Draft
-Apply lands its selected changes or whole draft through the single push seam;
-Discard re-forks from live plus surviving rows and creates no restoration copy.
+peer-draft generation independently of that Work draft's current generation. Draft reset and peer re-fork no longer exist. A peer whose upstream no longer
+contains its saved state refuses through `ThreadPeerPullLost`, never re-forks.
 
 Attribution is based on immutable journal provenance and dependency closure,
 not text similarity or block proximity. Writer rows retain their identity.
@@ -252,12 +234,12 @@ query there is keystroke latency for every writer on the draft (see
 Every rewrite is fenced by the row's `revision`, under one of two policies.
 An **exact** rewrite commits only at the revision it was computed at: a
 checkpoint rewrite through `commitRewrite` (a peer's catch-up, an inverse's
-destination, an exact reset), and every metadata change (a close, a hold, a
+destination), and every metadata change (a close, a hold, a
 journal row's status) through the one door
 `bumpDraftRevisions` (`shared/draft-revisions.ts`), which locks the rows in
 ID order and bumps their revision with the change. A miss surfaces as
 `DraftCasConflictError`, and the attempt captures again. A **fold** (a pull,
-compaction, a peer's re-fork, item Discard's reset) commits over the replica's
+compaction) commits over the replica's
 cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a draft is frozen is derived on every
@@ -314,16 +296,14 @@ acquisition (the Work, the draft row, the Works-notice participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision
 is re-judged at once, so the badge converges within the max wait once typing
 pauses and eventually while typing. That is the contract, not a bound to
-tighten: the job's write must never bump `revision` (an in-flight Apply staging
-would miss), and the badge must not move back onto the append. Every writer of `has_effect` (the job, a pull or reset's
-rewrite, `refreshDraftEffect`) writes the watermark with it; `-1` is stale
+tighten: the job's write must never bump `revision`, and the badge must not move back onto the append. Every writer of `has_effect` (the job or a pull's
+rewrite) writes the watermark with it; `-1` is stale
 whatever the revision. A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
 crash inside the debounce converges without another key. A legacy draft with
-no stored baseline is established once by the draft-scoped `pullWorkDraft`; a
-document whose settlement is terminally blocked parks it with one
-`projection_baseline_blocked` warning until its next append. Review readers
-(`isEdited`, the Works badge, Apply's item plan) may lag a key by that second;
+no stored baseline is established once by the draft-scoped `pullWorkDraft`; the effect job retains its baseline-repair refusal handling until lane R
+replaces the baseline. Review readers
+(`isEdited` and the Works badge) may lag a key by that second;
 the draft editor and Undo read the replica and receipts, never `has_effect`.
 Tests that assert membership right after a write read through
 `test-support/converged-review.ts`, which flushes the job first.
@@ -333,9 +313,7 @@ baseline-writing creator makes rows with null `live_cut` and the default `-1`,
 which the sweep finds and the pull repairs. The contract step comes in a later
 deploy, once every server runs that creator: the gate query
 `SELECT id, document_id FROM document_drafts WHERE kind = 'work_draft' AND
-status = 'active' AND live_cut IS NULL` returns nothing (a remainder is a
-document with a terminally blocked settlement, named by
-`projection_baseline_blocked`, resolved through the settlement's own recovery),
+status = 'active' AND live_cut IS NULL` returns nothing,
 then the next free migration adds `CHECK (kind <> 'work_draft' OR status <>
 'active' OR live_cut IS NOT NULL) NOT VALID` and the one after it
 (no-transaction) validates it (0065 is the change-trail cost fix, not this
@@ -453,26 +431,12 @@ and database transactions, and holds nothing between attempts: its candidate
 and `has_effect` are computed before the scope, and it commits as a fold over the replica's
 cursor, applying any rows appended since into the checkpoint under the row
 lock (re-judging `has_effect` there only when it applied some). Frames never
-make a pull retry; only another rewrite does. A live pull into a Work draft is
-fenced by a pending settlement on its document rather than moving the revision
-that settlement's completion resets at, and it re-arms its debounce: one
-capture and merge per debounce period until the settlement completes or is
-withdrawn and the next run commits, after which polling stops. That is the
-only re-arm: a terminally blocked settlement answers `blocked` and does not
-re-arm (nothing lifts it on its own, so polling would capture and merge
-forever on an idle document), and a closed draft leaves the active list. Live pulls
-snapshot before any transaction and re-read draft membership. A thread-peer
-pull reads its upstream with its generation and commits holding that row
-`FOR SHARE`: an upstream re-forked since the read (`upstreamMoved`), or a
-closed peer, abandons the capture as `ThreadPeerPullLost`. A shared pull
-promise resolves when its attempt finishes, which is not always a catch-up:
-`pulled` resolves after the commit, but a fenced live pull resolves once it has
-re-armed the debounce, with nothing written, and the draft catches up on a
-later run after the settlement completes. A caller joining an in-flight live
-pull awaits one coalesced run that starts after its call, since the in-flight snapshot may predate a writer edit it must
-see. Pulls run after persisted live updates, on draft review room open and
-reconnect, and at agent tool boundaries; the room trigger is fire-and-forget
-and Hocuspocus admission never waits for it.
+make a pull retry; only another rewrite does. Live pulls snapshot before a
+transaction and re-read draft membership; settlement fencing is gone. A peer
+pull holds its captured upstream `FOR SHARE` and refuses a closed/moved upstream
+or a no-longer-contained peer through `ThreadPeerPullLost`. Peer replication,
+pull and exact checkpoints remain until Track M. Lane R owns the Work pull,
+`live_cut` and effect-baseline replacement.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row
@@ -495,17 +459,10 @@ upstream before its peer, otherwise ID order. No path takes a Work row, a
 live lock or a namespace lock after a draft row, and none takes a namespace
 lock while holding a document lock: it computes the complete namespace set
 first and revalidates. Live mutexes are held around a commit scope (an
-inverse's live destinations, item Discard, Apply completion). Two captures
-still run under them, the live-scope exceptions: a live pull snapshots the live
-bytes inside `withDocument` (before any transaction), and Apply staging
-captures each document's LOCK-WS lock cut and prepares its Apply under
-those live scopes. No path awaits writer ingress while it holds a Work or
-draft row: Apply completion drains live writer admissions before the
-scope's first row lock, and an admission that starts after the drain makes the
-completion retry rather than wait. No process-level draft lease or mutex exists: no save, frame,
-pull, reset, Apply, Discard, inverse or compaction takes one. Background timers
-remain armed across failed pulls; only a committed run with no newer work may
-clear them.
+inverse's live destinations). No writer-ingress epoch barrier remains.
+No process-level draft lease or mutex exists: no save, frame, pull, Discard,
+inverse or compaction takes one. Background timers remain armed across failed
+pulls; only a committed run with no newer work may clear them.
 
 ## Authority, checkpoints, and derivation
 
@@ -527,8 +484,7 @@ deleted.
 
 `domain/document-derivations.ts` is the sole projection pipeline for search,
 listings, sizes, and the link index. It derives from a journal-locked durable
-cut. Push completion derives in its ambient completion transaction, so trail,
-projection, watermark, and settlement succeed or roll back together. Recovery
+cut. Recovery
 sweeps stale rows and retries failures without advancing certification; a
 projection is never substituted for live Yjs when serving document content.
 
@@ -550,23 +506,6 @@ a global maximum.
 `document_links` is a hint from a certified cut, never link authority. Changing
 the extractor bumps its version, and no second post-write writer exists.
 
-Review attribution compares live, draft, and journal content from one cut.
-It must preserve surviving Yjs identities, distinguish rich changes from text
-changes, and leave incomplete ownership as `unclassified`. Missing authorship
-never disappears from a complete hunk and never becomes invented AI credit.
-Every class touching an unclassified hunk is `canApplyOrDiscard: false`; both
-selectors refuse it as `incomplete_class`, so only document-level Apply or
-Discard can settle it. Deleted text carries per-author spans (agent or writer)
-from deletion attribution, since one deletion can contain both authors.
-Apply uses canonical block identities, not display hash prefixes or
-serialized prose. Agent preview operations carry their chat thread (with its
-title, resolved in one batched lookup) and the journal row's turn and tool-call
-ids so the app can open the chat at the write; writer operations carry none.
-Review hunks and Apply compare prose (`documentProseEqual`); pending
-effects and terminal settlement also compare managed manifest membership
-(`documentEffectsEqual`). Manifest changes have their own review operations and
-never become prose hunks.
-
 ## Selective disposition and response retirement
 
 Apply and Discard parse required-field selection variants and thread them
@@ -579,17 +518,6 @@ class is `stale` if a listed immutable member survives, and `gone` only when
 none does and the request says its member list is complete
 (`memberPartKeysComplete`): a client sends at most 500 members, an even sample
 of a longer selection, and a sample cannot prove that no member survives.
-
-No visible review operations is not permission to reset a draft. An empty
-draft settles only when its complete document effect (prose, marks, attributes,
-ordered children, and managed manifest membership) equals live; incomplete
-attribution never makes a semantically changed draft empty. When a per-change
-Apply or Discard leaves such a draft, its generation resets and the terminal
-`itemDisposition` is `applied` if any current-generation row reached live, else
-`discarded`; pushed history stays pushed. Cleanup failure after a committed
-disposition leaves `itemClosed: false` and cannot reject the command. Staged
-item Apply (the branch tree step) compares its location, live-text, and
-generation tokens only at the staging check: staging is the consent boundary.
 
 A thread peer's segment write applies ordered per-segment journal rows to a
 provisional target clone and never regenerates durable Work journal rows from a
@@ -617,10 +545,8 @@ back unrelated documents in the reply.
 - [Draft model and durable records](draft-model-and-records.md)
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
-- [Push settlement and change trail](settlement-and-trail.md)
+- [Committed change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
-- [Collab visual explainer](collab-domain.html)
-- [Draft/live visual model](draft-live-model.html)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 
 [kb-archive]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/work/management/work-archive-and-delete.md

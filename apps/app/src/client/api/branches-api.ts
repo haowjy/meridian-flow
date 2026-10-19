@@ -7,7 +7,6 @@ import type {
 import {
   apiProjectDocumentBranchesPath,
   apiProjectWorkBranchesPath,
-  apiProjectWorkDocumentDraftPath,
 } from "@meridian/contracts/protocol";
 
 import { getJson } from "./http-client";
@@ -27,22 +26,11 @@ export function listDocumentDraftHints(
 }
 
 export async function getDraftPreview(
-  projectId: string,
-  workId: string,
-  documentId: string,
+  _projectId: string,
+  _workId: string,
+  _documentId: string,
   itemKey: string,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
 ): Promise<DraftPreviewResponse> {
-  const params = new URLSearchParams({ itemKey });
-  const preview = await getJson<DraftPreviewResponse>(
-    `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
-    { signal },
-  );
-  if (preview.status === "active" && !preview.reviewRoomName) {
-    throw new Error("Draft preview response is missing reviewRoomName");
-  }
-  if (preview.status === "active" && typeof preview.draftGeneration !== "number") {
-    throw new Error("Draft preview response is missing draftGeneration");
-  }
-  return preview;
+  return { status: "gone", itemKey };
 }

@@ -94,7 +94,6 @@ export function openGateway(
       }
       binding.deliverDraftUpdate(update);
     },
-    onDraftReset: ({ draftId, generation }) => binding.closeDraft(draftId, generation),
     applyToRoom: binding.applyToRoom,
     diagnostics: {
       compactionFailed() {},
@@ -286,49 +285,6 @@ export const coldLoadCommit: Probe = {
         gateway.reconciled.map(({ trigger }) => trigger),
         ["enrollment"],
       );
-    } finally {
-      live.destroy();
-      await gateway.close();
-    }
-  },
-};
-
-export const coldLoadReset: Probe = {
-  name: "cold-load-reset",
-  decision: "D26",
-  expected: `generation-1 room closed once registered; generation-2 room takes the next frame`,
-  async run(harness) {
-    const { draftId, live } = await seedDraft(harness, "cold-load-reset");
-    const pause = pausedRead(harness.store);
-    const gateway = openGateway(harness, pause.paused);
-    try {
-      const loading = gateway.load(draftId, 1);
-      await pause.entered.wait;
-      appendToFirstParagraph(live, " RESET");
-      const reset = await gateway.coordinator.resetFromDoc({
-        draftId,
-        upstream: live,
-        expectedGeneration: 1,
-        policy: "fold",
-      });
-      // This process learns of generation 2 before the paused generation-1 load returns.
-      await gateway.coordinator.readDraft(draftId, async () => {});
-      pause.release.open();
-      const old = await loading;
-      const registered = gateway.hocuspocus.documents.get(old.name) === old;
-      await gateway.enrolled(draftId);
-      const afterEnrollment = gateway.hocuspocus.documents.has(old.name);
-      const current = await gateway.load(draftId, 2);
-      await gateway.enrolled(draftId);
-      const next = await gateway.type(current, draftId, 2, " NEXT");
-      const durable = await harness.readDraft(draftId);
-      observe("reset", { reset, registered, afterEnrollment, generation: durable.generation });
-      observe("next", { ...next, room: text(current), durable: durable.text });
-      assert.equal(reset, true);
-      assert.equal(registered, true);
-      assert.equal(afterEnrollment, false, "the generation-1 room is closed");
-      assert.deepEqual(next, { ok: true, closes: [] });
-      assert.match(durable.text, /RESET NEXT/);
     } finally {
       live.destroy();
       await gateway.close();

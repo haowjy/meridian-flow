@@ -1,5 +1,18 @@
 # QA: draft-review runtime probes
 
+> PR B D1 intermediate state: server preview, selective server Discard, reset and
+> staged Apply are deleted. The old preview read returns empty data; a valid frozen
+> Apply click refuses `unavailable` until lane A. Lane B2 supplies room-derived
+> review and local undoable text Discard. The full writer-flow recipes below are
+> the later integration gate, not evidence that those replacements exist now.
+>
+> D1 smoke: type and undo in a live editor; save a model proposal and read the Work
+> list; verify no preview request; send a valid/malformed frozen click; discard a
+> still-hidden creation; verify an edited or revealed item's server Discard is
+> `stale` and leaves text unchanged; Discard all closes the Work branch. Check
+> the writer's rendered state in a browser, with `./mf` only for setup/debugging.
+
+
 Repeatable browser probes for the AI draft-review surface (DraftDock, bulk
 dispositions, review from the Work page). Run them whenever a change touches draft
 disposition state, the draft dock, the Work page's Changes to review, or

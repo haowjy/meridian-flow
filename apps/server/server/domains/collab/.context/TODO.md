@@ -1,12 +1,12 @@
 # collab TODO
 
 Open follow-ups must preserve immutable edit identity, durable authority fences,
-and the one push/discard kernels.
+and the close/end-use kernel.
 
 ## Per-change Apply Undo
 
 Expose per-change Apply Undo through the existing immutable edit-part and
-forward-inverse authority. Apply currently confirms settlement only; this does
+forward-inverse authority. Lane A builds atomic Apply; this does
 not need a separate reversal planner or mutable receipt.
 
 ## Connection ownership
@@ -16,11 +16,6 @@ Audit paths that hold a pooled connection while acquiring another:
 `createDeferredLiveProjectionCoordinator.withDocument` inside a response
 transaction. Restructure only if concurrency measurements show pool
 exhaustion; preserve the lock order and independent root pull transactions.
-
-## Empty-paragraph preview
-
-Support empty text blocks in the draft-preview anchoring seam instead of
-returning an internal error.
 
 ## Code representation
 
@@ -44,30 +39,14 @@ and the final concurrency fence intact. [#932] tracks the provenance side:
 sequence it after the diff-based review re-lands ([#862]), so nothing that
 change deletes is optimized first.
 
-## Generation invalidation
-
-Thread-peer and Work-draft generations remain independent. A reset must evict
-the affected thread peers individually; audit for missing invalidation paths
-before considering a unified generation API.
-
 ## Draft store follow-ups
 
 These mechanisms still run beside the draft store and each has an owner.
 Do not port them onto the store or extend them.
 
-- **Apply and settlement.** Settlement claims with renewal, `plan_version`, the
-  outbox and lock cut, post-cut joins and the writer-ingress barrier
-  (`domain/branch-push-transition.ts`, `adapters/drizzle-pending-settlement.ts`)
-  are replaced, not ported, when the diff-based review re-lands ([#862]): Apply
-  becomes one bounded attempt and settlement is deleted, closing [#906].
-- **Selective-review server path.** `refreshDraftEffect`'s direct `has_effect`
-  bump (`adapters/drizzle-draft-effect.ts`), selective Discard's survivor
-  re-journal (`adapters/drizzle-branch-push.ts`), Apply staging's revision check
-  and the sampled member list (`memberPartKeysComplete`) go together with the
-  diff-based review's group-addressed wire ([#862]).
 - **Work projection on operations** ([#931]): keystrokes already take no Work
   lock and count nothing (the projection job does it afterward), and the Works
-  mutation boundary no longer counts. Operations (pulls, Apply staging, Discard,
+  mutation boundary no longer counts. Operations (pulls, Discard,
   Undo, draft creation) still lock the Work for lifecycle order and touch it in
   their own transaction. Decide whether anything of #931 remains before
   scheduling it.
@@ -81,7 +60,6 @@ Do not port them onto the store or extend them.
   (`adapters/hocuspocus-coordinator.ts`).
 
 [#862]: https://github.com/haowjy/meridian-flow/pull/862
-[#906]: https://github.com/haowjy/meridian-flow/issues/906
 [#931]: https://github.com/haowjy/meridian-flow/issues/931
 [#932]: https://github.com/haowjy/meridian-flow/issues/932
 [#933]: https://github.com/haowjy/meridian-flow/issues/933

@@ -258,11 +258,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import {
-  currentDrizzleDb,
-  runAfterDrizzleCommit,
-  runInDrizzleSavepoint,
-} from "../shared/drizzle-transaction.js";
+import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
@@ -602,7 +598,6 @@ export async function createProductionAppPorts(input: {
     objects: objectRelease,
     draftClose,
     documentRemoval,
-    drainSettlement: environment.DRAIN_APPLY_SETTLEMENT === "1",
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -796,7 +791,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
-    recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({

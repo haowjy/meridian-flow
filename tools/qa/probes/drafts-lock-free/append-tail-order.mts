@@ -144,7 +144,7 @@ export const appendTailOrder: Probe = {
                 checkpointRevision: read.documentDraft.checkpointRevision,
                 seq: highId,
               },
-              fence: { kind: "none" },
+
               operation: { kind: "compact" },
             }),
           );

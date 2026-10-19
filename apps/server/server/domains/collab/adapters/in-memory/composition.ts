@@ -14,7 +14,6 @@ import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type {
-  BranchPushAccess,
   CollabBranches,
   CollabDomain,
   CommandOutcome,
@@ -171,8 +170,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       roomRemoval: async () => null,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
-      writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
-      persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
       storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
       storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
@@ -229,7 +226,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    branchPush: IN_MEMORY_BRANCH_PUSH_STUB,
     draftPeers: createInMemoryDraftPeerStub(
       runtime.markdownDocuments,
       coordinator,
@@ -250,12 +246,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     documentCreation,
   });
 }
-
-const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
-  async recoverPendingLiveSettlements() {
-    return 0;
-  },
-};
 
 function createInMemoryDraftPeerStub(
   documents: {
@@ -332,31 +322,10 @@ function createInMemoryBranchStub(): CollabBranches {
       async resolveItemByDocument() {
         return null;
       },
-      async preview(input) {
-        return { status: "gone", itemKey: input.itemKey };
-      },
       async lookupCommand() {
         return { kind: "none" };
       },
-      applyItem: (input) => gone(input.item),
-      applyAll: gone,
-      applyChanges: async (input) => ({
-        kind: "result",
-        result: {
-          status: "gone",
-          branchId: input.envelope.branchId as BranchId,
-          itemKey: input.itemKey,
-        },
-      }),
       discardItem: (input) => gone(input.item),
-      discardChanges: async (input) => ({
-        kind: "result",
-        result: {
-          status: "gone",
-          branchId: input.envelope.branchId as BranchId,
-          itemKey: input.itemKey,
-        },
-      }),
       discardAll: gone,
     },
   };

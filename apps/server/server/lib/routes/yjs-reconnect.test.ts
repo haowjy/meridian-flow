@@ -123,7 +123,6 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
     appendWriterUpdate: vi.fn(async () => ({
       status: "appended" as const,
       seq: 1,
-      joinedSettlement: false,
     })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");

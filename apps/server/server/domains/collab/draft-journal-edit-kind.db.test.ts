@@ -10,13 +10,13 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  resetSettlementFixture,
-} from "./test-support/branch-push-settlement-fixture.js";
-import { THREAD_ID } from "./test-support/change-trail-postgres-harness.js";
+  resetDatabase,
+  THREAD_ID,
+} from "./test-support/change-trail-postgres-harness.js";
 import { commitDraftEdit } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
-beforeEach(() => resetSettlementFixture(db));
+beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
 it("returns editKind from the pending part's origin, whatever its placement or text became", async () => {

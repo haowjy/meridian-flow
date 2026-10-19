@@ -6,11 +6,10 @@ import {
   type ReviewChangeItem,
   useChangeItems,
 } from "./draft-changes";
-import { adoptsGeneration } from "./draft-review-session";
 import { type ReviewChange, reviewChangesOfPreview } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
 
-const NO_ITEMS: readonly ReviewChangeItem[] = [];
+const _NO_ITEMS: readonly ReviewChangeItem[] = [];
 const NO_CHANGES: readonly ReviewChange[] = [];
 
 /** The open review's draft and its changes, derived once per preview. */
@@ -52,7 +51,6 @@ export function useOpenReviewChanges(
     preview,
     active,
     changes,
-    settling: false,
     status,
     items,
     unlisted: status === "ready" && !items.length,
