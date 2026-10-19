@@ -82,7 +82,8 @@ export function createWriterFrames(runtime: DraftRuntime) {
       validateTarget() {
         if (!admissible) throw new DraftStaleUpdateError(`Draft ${frame.draftId}`);
       },
-      isContained: () => runtime.containment.contains(replica.doc, frame.updateData),
+      isContained: () =>
+        runtime.acknowledgeContainedFrame(frame.draftId, replica.doc, frame.updateData),
       append: async () =>
         runtime.prepareAppend(base, [
           {

@@ -11,6 +11,7 @@ import {
   type LateTyping,
   NO_LATE_TYPING,
   recoverLatePeerEdits,
+  retainLateTypingDeletions,
 } from "@meridian/agent-edit/diff";
 import { captureEditParts, type EditFrontier } from "@meridian/agent-edit/integration";
 import {
@@ -44,7 +45,7 @@ export type FinalizeAppendInput = {
   work?: "active" | "any";
   authorServerRows?: AuthorServerRows;
   recovery?: {
-    memory: LateTyping;
+    memory(): LateTyping;
     serverDeletedBlocks(ids: readonly Y.ID[]): Promise<ReadonlySet<string>>;
   };
   /**
@@ -98,7 +99,7 @@ export async function finalizeAppend(
     if (input.work !== "any" && read.documentDraft.lifecycle !== "active")
       return done({ status: "refused" });
 
-    let lateTyping = input.recovery?.memory ?? NO_LATE_TYPING;
+    let lateTyping = input.recovery?.memory() ?? NO_LATE_TYPING;
     const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
     function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
       if (input.containment.contains(doc, row.updateData)) return;
@@ -160,7 +161,7 @@ export async function finalizeAppend(
               doc: authoring,
               update: row.updateData,
               lost: { ...lost, typed },
-              memory: lateTyping,
+              memory: retainLateTypingDeletions(lateTyping, input.recovery.memory()),
               schema: recoverySchema,
               fragmentName: PROSEMIRROR_FRAGMENT_NAME,
               clientId: DRAFT_SERVER_CLIENT_ID,

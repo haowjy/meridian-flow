@@ -86,7 +86,10 @@ export async function admitWriterUpdate<T>(input: {
  * replica; finalization judges the committed prefix again when that moved (design §2.2).
  */
 export function assertWriterAuthorship(targetDocument: Y.Doc, update: Uint8Array): void {
-  const admission = validateFreshAuthorship(targetDocument, update, { kind: "writer" });
+  // Reconnect snapshots include server-owned structs the prefix already holds. They
+  // author nothing twice; only novel structs and the incoming delete set need admission.
+  const novel = Y.diffUpdate(update, Y.encodeStateVector(targetDocument));
+  const admission = validateFreshAuthorship(targetDocument, novel, { kind: "writer" });
   if (admission.reservedClientId !== null) {
     throw new ReservedWriterClientIdError(admission.reservedClientId);
   }
@@ -132,7 +135,7 @@ function validateFreshAuthorship(
 
 /**
  * `source` replicated whole into `target` from a frozen copy: the identity replication every
- * draft seed, pull and reset uses. The candidate's provenance is validated before `target`
+ * thread-peer seed and pull uses. The candidate's provenance is validated before `target`
  * changes; persistence belongs to the draft store.
  */
 export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {

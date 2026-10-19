@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { captureReceiptRows } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
+import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import { seedModelLiveWrite, workGrant } from "./f1-inverse-grant.mts";
@@ -33,10 +34,12 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   });
   const read = await harness.store.readDraftAt(documentDraft.draftId);
   if (!read) throw new Error("The document draft was not created");
-  live.clientID = 941_002;
-  const before = Y.encodeStateAsUpdate(live);
-  const update = appendToFirstParagraph(live, " agent");
   live.destroy();
+  const draft = materializeDraftRead(read);
+  draft.clientID = 941_002;
+  const before = Y.encodeStateAsUpdate(draft);
+  const update = appendToFirstParagraph(draft, " agent");
+  draft.destroy();
   const wId = await harness.persistence.journal.reserveWriteOrdinal(documentId, work.threadId);
   const pre = new Y.Doc({ gc: false });
   Y.applyUpdate(pre, before);
@@ -77,6 +80,7 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
 
 function inverseService(harness: Harness, label: string) {
   return createDrizzleTurnInverseService({
+    onDraftCommitted: () => {},
     db: harness.db,
     journal: harness.persistence.journal,
     drafts: harness.store,

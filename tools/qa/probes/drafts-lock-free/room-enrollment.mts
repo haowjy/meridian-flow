@@ -14,6 +14,7 @@
  *   SyncStep1, run through Hocuspocus's own sync receiver, reconciles the room first (D27), so
  *   the tab receives the committed text with no keystroke anywhere.
  */
+
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createHocuspocusBinding } from "../../../../apps/server/server/domains/collab/adapters/hocuspocus-binding.ts";
@@ -34,6 +35,7 @@ import {
   settled,
   Y,
 } from "./harness.mts";
+import { rebaseLive } from "./phase4.mts";
 
 // Hocuspocus's sync receiver and lib0's codec, resolved as the server resolves them.
 const serverRequire = createRequire(
@@ -247,7 +249,7 @@ async function seedDraft(harness: Harness, label: string) {
     branchId,
     liveDoc: live,
   });
-  return { draftId: documentDraft.draftId, live };
+  return { draftId: documentDraft.draftId, documentId, live };
 }
 
 export const coldLoadCommit: Probe = {
@@ -255,14 +257,14 @@ export const coldLoadCommit: Probe = {
   decision: "D26",
   expected: `room after registration holds COMMITTED; next: {"ok":true,"closes":[]}; one enrollment repair`,
   async run(harness) {
-    const { draftId, live } = await seedDraft(harness, "cold-load-commit");
+    const { draftId, documentId, live } = await seedDraft(harness, "cold-load-commit");
     const pause = pausedRead(harness.store);
     const gateway = openGateway(harness, pause.paused);
     try {
       const loading = gateway.load(draftId, 1);
       await pause.entered.wait;
       appendToFirstParagraph(live, " COMMITTED");
-      const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
+      await rebaseLive(harness, gateway.coordinator, documentId, live);
       pause.release.open();
       const room = await loading;
       const registered = text(room);
@@ -270,13 +272,12 @@ export const coldLoadCommit: Probe = {
       const enrolled = text(room);
       const next = await gateway.type(room, draftId, 1, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
-      observe("load", { pulled, registered, enrolled, durable });
+      observe("load", { registered, enrolled, durable });
       observe("next", next);
       observe(
         "reconciled",
         gateway.reconciled.map(({ trigger }) => trigger),
       );
-      assert.equal(pulled, "pulled");
       assert.doesNotMatch(registered, /COMMITTED/, "the load read the older snapshot");
       assert.match(enrolled, /Base COMMITTED/);
       assert.deepEqual(next, { ok: true, closes: [] });
@@ -297,20 +298,19 @@ export const droppedDelivery: Probe = {
   decision: "D26",
   expected: `room lacks LIVE after the dropped delivery; next: {"ok":true,"closes":[]}; one frame repair`,
   async run(harness) {
-    const { draftId, live } = await seedDraft(harness, "dropped-delivery");
+    const { draftId, documentId, live } = await seedDraft(harness, "dropped-delivery");
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
     try {
       const room = await gateway.load(draftId, 1);
       await gateway.enrolled(draftId);
       appendToFirstParagraph(live, " LIVE");
-      const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
+      await rebaseLive(harness, gateway.coordinator, documentId, live);
       const behind = text(room);
       const next = await gateway.type(room, draftId, 1, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
-      observe("drop", { pulled, behind, durable });
+      observe("drop", { behind, durable });
       observe("next", { ...next, room: text(room) });
       observe("reconciled", gateway.reconciled);
-      assert.equal(pulled, "pulled");
       assert.doesNotMatch(behind, /LIVE/, "the pull's delivery was dropped");
       assert.deepEqual(next, { ok: true, closes: [] });
       // The tab typed NEXT without seeing LIVE: both land, in Yjs's order for concurrent inserts.
@@ -333,7 +333,7 @@ export const readOnlyHandshake: Probe = {
   decision: "D27",
   expected: `room and read-only tab lack LIVE after the dropped delivery; after the tab's handshake both hold it; one handshake repair`,
   async run(harness) {
-    const { draftId, live } = await seedDraft(harness, "read-only-handshake");
+    const { draftId, documentId, live } = await seedDraft(harness, "read-only-handshake");
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
     const tab = new Y.Doc({ gc: false });
     try {
@@ -341,15 +341,14 @@ export const readOnlyHandshake: Probe = {
       await gateway.enrolled(draftId);
       Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
       appendToFirstParagraph(live, " LIVE");
-      const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
+      await rebaseLive(harness, gateway.coordinator, documentId, live);
       const behind = { room: text(room), tab: text(tab) };
       await gateway.joinReadOnly(room, draftId, tab);
       const durable = (await harness.readDraft(draftId)).text;
       const triggers = gateway.reconciled.map(({ trigger }) => trigger);
-      observe("drop", { pulled, behind, durable });
+      observe("drop", { behind, durable });
       observe("joined", { room: text(room), tab: text(tab) });
       observe("reconciled", triggers);
-      assert.equal(pulled, "pulled");
       assert.doesNotMatch(behind.room, /LIVE/, "the pull's delivery was dropped");
       assert.doesNotMatch(behind.tab, /LIVE/);
       assert.match(durable, /Base LIVE/);

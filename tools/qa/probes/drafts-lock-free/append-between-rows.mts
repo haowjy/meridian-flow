@@ -6,7 +6,7 @@
  *
  * - Arm 1: B commits two frames. A's row lands at `r + 3`, its receipt's frontier holds B's
  *   clocks, A's room has B's rows from A's own install, and A's store saw one `appendRows`.
- * - Arm 2: B's pull moves the checkpoint. A's prefix is materialized under the lock; A's next
+ * - Arm 2: B's rebase appends a server row. A's prefix is materialized under the lock; A's next
  *   read holds the pulled text and A's token.
  *
  * Negative control on `586e58ae1e`: A's append misses `revision = r` and the frame judges again
@@ -30,6 +30,7 @@ import {
   nth,
   openProcess,
   pausedAppend,
+  rebaseLive,
   receipts,
   runArms,
   seedDraft,
@@ -131,17 +132,14 @@ export const appendBetweenRows: Probe = {
         }
       },
 
-      async "2-pull-moves-the-checkpoint"() {
+      async "2-rebase-appends-to-the-prefix"() {
         const f = await twoProcesses(harness, "between-pull");
         try {
           const key = keystroke(f.a.room, " A1", 910_002);
           const frame = independently(() => send(f.a, f.draft, key));
           await f.pause.entered;
           appendToFirstParagraph(f.draft.live, " LIVE");
-          const pulled = await f.b.coordinator.pullFromDoc({
-            draftId: f.draft.draftId,
-            upstream: f.draft.live,
-          });
+          await rebaseLive(f.other, f.b.coordinator, f.draft.documentId, f.draft.live);
           const movedTo = await harness.readDraft(f.draft.draftId);
           f.pause.release();
           const outcome = await frame;
@@ -150,14 +148,12 @@ export const appendBetweenRows: Probe = {
           );
           const durable = await harness.readDraft(f.draft.draftId);
           observe("arm 2", {
-            pulled,
             checkpointRevision: movedTo.checkpointRevision,
             outcome,
             appendRowsCalls: f.count.calls.appendRows,
             nextRead,
             durable: durable.text,
           });
-          assert.equal(pulled, "pulled");
           assert.equal(outcome, "appended");
           assert.equal(f.count.calls.appendRows, 1, "one sequence point, no retry");
           for (const doc of [nextRead, durable.text]) {

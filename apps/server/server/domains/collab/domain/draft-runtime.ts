@@ -1,7 +1,18 @@
-import { type LateTyping, NO_LATE_TYPING } from "@meridian/agent-edit/diff";
 /** Committed draft replicas, prepared append/rewrite lifetime, delivery and maintenance. */
+import {
+  DRAFT_SERVER_CLIENT_ID,
+  findLostEdits,
+  type LateTyping,
+  NO_LATE_TYPING,
+  recoverLatePeerEdits,
+  retainLateTypingDeletions,
+} from "@meridian/agent-edit/diff";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { createDocumentContainment } from "./document-containment.js";
 import { assertWriterAuthorship } from "./document-mutation-policy.js";
@@ -79,6 +90,8 @@ export type DraftRuntime = {
   cloneReplica(replica: CommittedReplica): Y.Doc;
   encodedOf(replica: CommittedReplica): Uint8Array;
   containment: ReturnType<typeof createDocumentContainment>;
+  /** A durable echo can still carry the late peer's view of deleted separators. */
+  acknowledgeContainedFrame(draftId: string, doc: Y.Doc, update: Uint8Array): boolean;
   /**
    * Brings `room` up to `replica` when it lacks any of the replica's content, reported as a
    * repair: a room misses committed content only through a delivery gap.
@@ -169,6 +182,33 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   const committed = new Map<string, CommittedReplica>();
   const compacting = new Set<string>();
   const lateTyping = new Map<string, LateTyping>();
+
+  function acknowledgeContainedFrame(draftId: string, doc: Y.Doc, update: Uint8Array): boolean {
+    if (!documentContainment.contains(doc, update)) return false;
+    if (!lateTyping.has(draftId)) return true;
+    const lost = findLostEdits(doc, update);
+    if (!lost.deleted.length) return true;
+    const remember = () => {
+      // An outer transaction can outlive another committed frame. Advance the latest
+      // memory here, never replace it with a snapshot taken before that frame.
+      const memory = lateTyping.get(draftId);
+      if (!memory) return;
+      lateTyping.set(
+        draftId,
+        recoverLatePeerEdits({
+          doc,
+          update,
+          lost: { typed: [], deleted: lost.deleted },
+          memory,
+          schema: buildDocumentSchema(),
+          fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+          clientId: DRAFT_SERVER_CLIENT_ID,
+        }).memory,
+      );
+    };
+    if (!input.store.deferUntilCommit(remember)) remember();
+    return true;
+  }
 
   /** One write as a whole attempt inside `scope`. */
   function commitOnce(
@@ -415,7 +455,15 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       appended: () => {
         const complete = () => {
           if (snapshot.kind === "work_draft") {
-            if (finalized?.lateTyping) lateTyping.set(snapshot.draftId, finalized.lateTyping);
+            if (finalized?.lateTyping && finalized.lateTyping !== NO_LATE_TYPING) {
+              lateTyping.set(
+                snapshot.draftId,
+                retainLateTypingDeletions(
+                  finalized.lateTyping,
+                  lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
+                ),
+              );
+            }
             input.onAppendCommitted(snapshot.draftId);
           }
           compactIfLong(snapshot.draftId);
@@ -440,7 +488,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               ...(snapshot.kind === "work_draft"
                 ? {
                     recovery: {
-                      memory: lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
+                      memory: () => lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
                       serverDeletedBlocks: (ids: readonly Y.ID[]) =>
                         input.store.serverDeletedBlocks(snapshot.draftId, ids),
                     },
@@ -559,6 +607,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     containment: documentContainment,
     reconcileRoom,
     prepareAppend,
+    acknowledgeContainedFrame,
     prepareRewrite,
     foldPolicy,
     commitOnce,

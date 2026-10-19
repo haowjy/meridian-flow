@@ -474,7 +474,10 @@ Only hidden typing under a top-level block whose deletion is certified by a
 server row's immutable receipt is recovered. Receipt reads happen only for
 hidden typing, selected by block id. Recovery authors another client-1 server row
 in the same append; its opaque per-draft `LateTyping` memory installs only after
-commit. Deletion-only frames advance memory without writing; stale backspaces
+commit. Deletion-only frames advance memory without writing; a contained echo with
+existing recovery observes its deleted separators without a row hold. Deferred
+observers read latest memory at commit, and finalizers retain observations made
+during receipt I/O (`retainLateTypingDeletions` keeps the kernel's memory bound). stale backspaces
 never remove recovered writing. Another writer's deleted block is not recovered.
 
 A thread-peer pull remains a folding rewrite in its own root transaction,

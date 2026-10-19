@@ -44,6 +44,7 @@ export const d22RetractedPeerPull: Probe = {
     const pulls = createDraftPullService({
       outsideTransaction: independently,
       drafts: harness.store,
+      liveJournal: harness.persistence.journal,
       draftCoordinator: coordinator,
       liveCoordinator: {
         withDocument: async (_id: string, run: (doc: typeof live) => unknown) => run(live),
