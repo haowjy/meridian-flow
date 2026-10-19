@@ -53,6 +53,11 @@ and says what it left out. The decision and its rejected alternatives are in the
   flight; `onContractFailure` lets the caller report a persisted record that
   misses a contract.
 
+Report extraction and tool visibility share paired delivery segments, including
+live results carried on `tool_use` and durable separate `tool_result` blocks.
+A notes-held `return_result` remains a neutral process row, never a report.
+Report arguments use the same input decoder as tool rendering.
+
 Turn-metadata readers (compaction, handoff seed, thread references) live in
 `@meridian/contracts/threads` because they mirror the server's metadata codecs.
 
