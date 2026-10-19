@@ -168,7 +168,6 @@ export function createDrizzleDraftJournalReadStore(db: Database): BranchPushRead
     },
 
     async listConcurrentJournalRows(draftId, generation, options) {
-      const floor = options.afterJournalId ?? 0;
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
       const rows = await currentDrizzleDb(db)
@@ -178,7 +177,6 @@ export function createDrizzleDraftJournalReadStore(db: Database): BranchPushRead
         .where(
           and(
             eq(documentDrafts.documentId, options.documentId),
-            sql`${draftWriteJournal.id} > ${floor}`,
             // Same-draft active rows and cross-draft pushed rows are both needed for
             // attribution. Cold-start scans are deliberately unbounded until we add a
             // push-ordered floor; max(journal.id) is unsound because journal ids can include

@@ -175,11 +175,6 @@ export class MemoryDraftStore implements DraftStore {
   }
 
   async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
-    if (input.upstream) {
-      const upstream = this.drafts.get(input.upstream.draftId);
-      if (upstream?.status !== "active" || upstream.generation !== input.upstream.generation)
-        return { status: "upstreamMoved" };
-    }
     const documentDraft = this.drafts.get(input.draftId);
     if (documentDraft?.status !== "active") return { status: "closed" };
     if (this.takeCasFailure()) return { status: "moved" };

@@ -10,7 +10,7 @@ import {
   subtractLineageRanges,
 } from "../lineage/range-set.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
-import type { DestructiveProvenanceRun, UpdateJournal } from "../ports/update-journal.js";
+import type { AgentEditJournal, DestructiveProvenanceRun } from "../ports/update-journal.js";
 import { type BlockSnapshot, snapshotBlocks } from "./echo.js";
 
 export type SafetyProvenance = "writer_protected" | "agent";
@@ -151,7 +151,7 @@ export interface DestructiveDocumentEffectInput {
  */
 export async function classifyDestructiveDocumentEffect(
   deps: {
-    journal: UpdateJournal;
+    journal: AgentEditJournal;
     model: AgentEditModel;
     codec: AgentEditCodec;
   },
@@ -237,7 +237,7 @@ function finalRenderingKey(block: BlockSnapshot): string {
 }
 
 async function reconstructConservativeProvenance(input: {
-  journal: UpdateJournal;
+  journal: AgentEditJournal;
   model: AgentEditModel;
   codec: AgentEditCodec;
   documentId: string;

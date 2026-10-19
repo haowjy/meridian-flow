@@ -14,6 +14,11 @@ import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  type RoomRead,
+  type SavePrecondition,
+  SavePreconditionRefused,
+  type StagedRoomEntries,
+  type StagedWriteSaveResult,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../../ports/document-links.js";
 import type { AgentEditModel } from "../../ports/model.js";
@@ -34,7 +39,6 @@ const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 export function harness(
   initialDocs: Record<string, string> = {},
   options: {
-    createRuntimeDoc?: () => Y.Doc;
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseLifecycleError"];
@@ -49,7 +53,6 @@ export function harness(
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
-    afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal;
     model?: AgentEditModel;
     semanticProvenance?: SemanticProvenanceWriter;
@@ -70,7 +73,6 @@ export function harness(
     links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
-    ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.onResponseLifecycleError
       ? { onResponseLifecycleError: options.onResponseLifecycleError }
       : {}),
@@ -86,9 +88,6 @@ export function harness(
       : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
-      : {}),
-    ...(options.afterResponsePreflight
-      ? { afterResponsePreflight: options.afterResponsePreflight }
       : {}),
     ...(options.onLinkSpliceFallback ? { onLinkSpliceFallback: options.onLinkSpliceFallback } : {}),
   });
@@ -172,30 +171,101 @@ export class MemoryCoordinator implements DocumentCoordinator {
     this.journal = journal;
   }
 
-  async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+  /** The armed failure for a save of `docId`, taken once when it is a next-failure. */
+  private takeFailure(docId: string): unknown {
     if (this.nextFailureByDoc.has(docId)) {
       const failure = this.nextFailureByDoc.get(docId);
       this.nextFailureByDoc.delete(docId);
-      throw failure;
+      return failure;
     }
     if (this.nextFailure) {
       const failure = this.nextFailure;
       this.nextFailure = undefined;
-      throw failure;
+      return failure;
     }
-    if (this.failure) throw this.failure;
-    return fn(this.require(docId));
+    return this.failure;
   }
 
-  async recover(docId: string): Promise<void> {
-    if (!this.journal) return;
-    const snapshot = await this.journal.read(docId);
-    if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
-    const doc = this.ensureEmpty(docId);
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint, { type: "system" });
-    for (const entry of snapshot.updates) {
-      Y.applyUpdate(doc, entry.update, { type: "system" });
+  /**
+   * A live save: every entry kept, appended to the journal as one batch by `persist` (which
+   * judges the precondition on, and resolves, the cut the append followed: the room as it is
+   * then), and delivered to the in-memory room at `transfer`. A missing document saves onto an
+   * empty one.
+   */
+  async prepareSave(
+    input: StagedRoomEntries & { docId: string; precondition?: SavePrecondition },
+  ): Promise<StagedWriteSaveResult> {
+    const failure = this.takeFailure(input.docId);
+    if (failure) throw failure;
+    const doc = this.docs.has(input.docId)
+      ? (await this.readRoom(input.docId, null)).doc
+      : new Y.Doc({ gc: false });
+    let prepared: Uint8Array;
+    try {
+      prepared = Y.encodeStateAsUpdate(doc);
+    } finally {
+      doc.destroy();
     }
+    const result = {
+      kept: input.entries.flatMap((entry) =>
+        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+      ),
+      rejected: [],
+      room: this.docs.has(input.docId) ? `memory:${input.docId}` : null,
+    };
+    if (!input.entries.length) return { ...result, write: { kind: "no-effect" } };
+    return {
+      ...result,
+      write: {
+        kind: "write",
+        persist: async () => {
+          const cut = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(cut, prepared);
+            const room = this.docs.get(input.docId);
+            if (room) Y.applyUpdate(cut, Y.encodeStateAsUpdate(room));
+            const beforeState = Y.encodeStateAsUpdate(cut);
+            if (input.precondition && !input.precondition(beforeState))
+              throw new SavePreconditionRefused(input.docId);
+            await this.journal?.appendBatch(input.entries);
+            for (const entry of input.entries) Y.applyUpdate(cut, entry.update);
+            return { beforeState, afterState: Y.encodeStateAsUpdate(cut) };
+          } finally {
+            cut.destroy();
+          }
+        },
+        // The room catches up in one apply, as a live room's recovery does.
+        transfer: () => {
+          Y.applyUpdate(
+            this.ensureEmpty(input.docId),
+            Y.mergeUpdates(input.entries.map((entry) => entry.update)),
+          );
+        },
+        dispose: () => {},
+      },
+    };
+  }
+
+  /**
+   * A copy of the in-memory document caught up from the journal (as a live room behind a
+   * failed projection is), with the staged entries applied in order.
+   */
+  async readRoom(docId: string, staged: StagedRoomEntries | null): Promise<RoomRead> {
+    if (this.failure) throw this.failure;
+    const doc = cloneDoc(this.require(docId));
+    const committed = await this.journal?.read(docId);
+    if (committed?.checkpoint) Y.applyUpdate(doc, committed.checkpoint);
+    for (const entry of committed?.updates ?? []) Y.applyUpdate(doc, entry.update);
+    for (const entry of staged?.entries ?? []) Y.applyUpdate(doc, entry.update);
+    return {
+      doc,
+      room: `memory:${docId}`,
+      generation: 0,
+      kept: (staged?.entries ?? []).flatMap((entry) =>
+        entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+      ),
+      rejected: [],
+    };
   }
 }
 

@@ -21,6 +21,7 @@ import {
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { readResolvedDraft } from "./test-support/draft-store-seam.js";
+import { commitDraftRows } from "./test-support/draft-update-writes.js";
 import { captureHistoricalDraftRow } from "./test-support/historical-draft-row.js";
 
 const db = createTestDatabase();
@@ -59,7 +60,7 @@ it.each([
     };
     ai.clientID = 731000;
     edit(ai, 0, 11, 11, " Proposed");
-    await f.draftCoordinator.commitSegmentRows({
+    await commitDraftRows(f.draftCoordinator, {
       draftId: documentDraft.draftId,
       sourceDoc: ai,
       expectedGeneration: documentDraft.generation,

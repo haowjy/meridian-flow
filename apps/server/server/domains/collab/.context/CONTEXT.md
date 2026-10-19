@@ -15,8 +15,8 @@ thread-peer core and names its Work. Scratch and uploads are always live.
 A reply may hold a live core and a thread core at once. Staged writes overlay
 only reads of the destination to which they were pinned. A live read never
 shows staged draft content. Rebinding is resolved again for each query; a
-read-only draft query without a peer may pull live into the shared Work draft,
-but does not create a peer.
+draft-mode read pulls live into the shared Work draft when one exists, and
+never creates a Work draft or a peer.
 
 The composition root wires required services and provider ports. It owns no
 business behavior, mutable runtime state, or optional capability matrix.
@@ -123,41 +123,58 @@ never applies a draft. Active unapplied rows do not delay a terminal receipt.
 
 A reply's save resolves exactly the peer each document was pinned to and
 refuses that document stale when the pin no longer holds (closed peer, reset or
-closed draft, closed branch). Peers are created only by pulls in an existing
-draft, never by a save.
+closed draft, closed branch). A peer is identity only until M4: a draft-mode
+write ensures it (an existing active peer, or a new one forked from the Work
+draft) before its room read, pins it, and binds the reply's lifetime to it;
+nothing reads peer content and no save writes it. The ensure snapshots live only
+when it has to make the branch's Work draft, which that snapshot seeds. A read never ensures a peer
+or a Work draft (S1): a draft-mode read of a document with no Work draft reads
+live. A drafted write with no reply runs as a one-entry reply through the
+save's fences and admission.
 
 Save confirms every grant used by the reply once, drops writes whose Work lost
 access, and marks the remaining writes for the journal's no-grant guard. A
-write against a different version from the thread's last read returns
-`read_required`. Model inverse commands use the current destination grant and
+write into a room where the model has no frontier (its last read was another
+version) is refused once with the passage's current text (`region_changed`):
+the frontier's room key replaces the old last-read destination check. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
-A call whose caller passes `recordingFrontier` (the read and write tools, and
-reference reads) records an observation frontier in its room: the pulled
-peer's upstream Work draft (`draft:<upstreamDraftId>`, never the peer id or the
-draft generation), or `live:<documentId>:<authorityGeneration>`. The pool
-resolves the room before the call (the generation through `FrontierRooms`,
-`adapters/drizzle-frontier-rooms.ts`, isolated from any ambient transaction, so
-a restore in between leaves the frontier on the old epoch and a failed read
-records none), looks up the model's previous frontier there, and passes
-agent-edit `observe: { room, prev }`; the outcome comes back with its
-`frontier`. An undo, redo or revert passes `observeInverse` instead: its room is
-the draft its result names it ran on (`DocumentEditResult.draftId`), or, when
-null, the live room whose generation the pool read before the call. A staged
-write does no frontier work. The reply's save, given `recordingFrontier`,
-derives each saved document's room from its pin (`draft:<upstreamDraftId>`) or
-its live core (the live room), looks up the previous frontier there before its
-transaction opens, and returns each saved document's `frontier` at the
-post-commit cut. `format: "edits"` reads record none.
-`roomKeyFor` and `FrontierRooms` are temporary: once writes plan on the
-frontier, results render from the room doc, whose authority identity is already
-bound to it, and these lookups go ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)). See
-[runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+Every model call reads its room fresh through agent-edit's `readRoom`. The
+draft adapter (`domain/draft-agent-edit.ts`) runs the live→Work rebase, copies
+the Work draft replica and reconciles the edit scope's staged entries against
+the scope's first-stage snapshot cut; entries an earlier, now closed peer of
+the scope accepted are refused with the Discard's reason. The live adapter
+(`adapters/hocuspocus-coordinator.ts` `liveRoomCopy`) reads the journal and
+the room without the document mutex. A room is named from what was read:
+`draft:<workDraftId>` (never the peer id or the generation) or
+`live:<documentId>:<authorityGeneration>` from the copy's bound authority
+(`domain/observation-rooms.ts`). The effective reader reads through the same
+door and the same route: the pool's `routeRead` serves the tool read and
+`readRoom` alike. The reply's pinned participant wins with its edit scope (so a
+live read keeps the reply's staged live writes); an explicit live read never
+takes a draft pin; otherwise a draft read goes to the thread's core when the
+thread has a Work draft of the document, else live.
+
+A call whose caller passes `frontiers` (the read and write tools, and
+reference reads, which pass `recording` only) records an observation frontier
+in the room its result rendered from; a write plans on the `planning` lookup.
+An undo, redo or revert records in the room its inverse committed into
+(`DocumentEditResult.room`). A staged write records nothing. The reply's save,
+given `recordingFrontier`, records each saved document in the room the save
+committed into (the draft adapter's `prepareSave` room, or the live room under
+the save's lock) at the save's after-state. `format: "edits"` reads record none.
+See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+
+A draft-mode access whose bound peer a Discard took is named, not failed:
+`peerLossReason` (`domain/draft-pulls.ts`) classifies it in the save fence's
+precedence (closed branch, then closed Work draft, then closed peer), and the
+draft adapter throws agent-edit's `DocumentAccessLostError(reason)`, which the
+write's result carries as the same refusal its save receipt would.
 
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
 Yjs peers. A planning-visible item disappearing is not by itself rollback
 evidence. Only retired-generation structs or immutable inverse removals after
-the helper cut revoke a staged write. Replay drops the rejected logical write
+the scope's cut revoke a staged write. Replay drops the rejected logical write
 and its later dependency closure, retains independent writes, and reports the
 typed refusal in notices and receipts.
 
@@ -382,23 +399,20 @@ lock, and a miss that leaves that scope before the next capture. The attempt
 owns its candidates: a completed attempt transfers them to installation, and any
 unwind disposes the rest, including a write whose own statement succeeded in a
 scope a later miss rolled back. An append (a frame, segment rows) is one
-attempt and never retries; only exact and fold rewrites (a reply save's peer
-checkpoints, an inverse, a pull, Apply staging, selective and item Discard)
-recapture on a miss. The bound's exhaustion outcome stays with each caller.
+attempt and never retries; only exact and fold rewrites (an inverse, a pull,
+Apply staging, selective and item Discard) recapture on a miss. The bound's exhaustion outcome stays with each caller.
 
-A reply save is an attempt across every participating core: prepare replays
-each staged document on a candidate, consume appends per upstream inside one
-savepoint, install delivers. A miss unwinds the savepoint and prepares again
-from the original staged buffer, up to four attempts; the reply's `confirm`
-runs once, and an attempt prepared before it is disposed if it throws. The
-save and a thread core's tool-time accesses hold no draft: they prepare
-through the coordinator's save operations (`withTransient`,
-`prepareStagedRows`, `prepareCatchUp`, `commitSegmentRows`), which read
-committed replicas and read the journal through one `DraftReplayJournalReads`
-port. The reply's rows reach each draft as a sequenced append, like a frame's,
-and never miss on a revision; a peer's catch-up checkpoint (`prepareCatchUp`) is
-an exact rewrite, so a moved peer is the draft miss that makes the save attempt
-again. The confirmation is
+A reply save is an attempt across every participating core: prepare
+reconciles each staged document on a candidate of its Work draft, consume
+appends per upstream inside one savepoint, install delivers. A miss unwinds the
+savepoint and prepares again from the original staged buffer, up to four
+attempts; the reply's `confirm` runs once, and an attempt prepared before it is
+disposed if it throws. The save and a thread core's tool-time reads hold no
+draft: they go through the coordinator's `copyDraft` and `prepareStagedRows`,
+which read committed replicas and read the journal through one
+`DraftReplayJournalReads` port. The reply's rows reach each Work draft as a
+sequenced append, like a frame's, and never miss on a revision; a peer takes
+no rows. The confirmation is
 the retained exception: it runs once, outside the save attempt, and holds
 its Work rows and branch-row and live advisory locks across attempts 2 to 4; only
 draft rows release on the savepoint rollback. Apply, selective Discard and
@@ -436,10 +450,8 @@ withdrawn and the next run commits, after which polling stops. That is the
 only re-arm: a terminally blocked settlement answers `blocked` and does not
 re-arm (nothing lifts it on its own, so polling would capture and merge
 forever on an idle document), and a closed draft leaves the active list. Live pulls
-snapshot before any transaction and re-read draft membership. A thread-peer
-pull reads its upstream with its generation and commits holding that row
-`FOR SHARE`: an upstream re-forked since the read (`upstreamMoved`), or a
-closed peer, abandons the capture as `ThreadPeerPullLost`. A shared pull
+snapshot before any transaction and re-read draft membership. No pull writes a
+thread peer: a peer is identity only. A shared pull
 promise resolves when its attempt finishes, which is not always a catch-up:
 `pulled` resolves after the commit, but a fenced live pull resolves once it has
 re-armed the debounce, with nothing written, and the draft catches up on a
@@ -516,11 +528,12 @@ therefore write no document bytes. Link extraction and revision hashing use
 the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
-Each concurrent-attribution preflight and final recheck uses its own upstream
-cut. Baseline containment compares struct clocks and the delete set: equal
+A save's concurrent attribution reads the upstream cut its save read (the
+save's before state); there is no preflight or second recheck. Baseline containment compares struct clocks and the delete set: equal
 state vectors alone do not establish equality, so delete-only writer edits are
-still attributed. The journal floor is a provisional, commit-bound cursor, never
-a global maximum.
+still attributed. There is no journal floor: each check reads the Work draft
+generation's rows and skips only those the view contains, so its cost grows with
+the generation's history (C11) until an epoch reset bounds it.
 
 `document_links` is a hint from a certified cut, never link authority. Changing
 the extractor bumps its version, and no second post-write writer exists.
@@ -579,13 +592,12 @@ undo client. Card actions and model undo/redo share immutable edit and
 placement targets but retain their own authorization and stack policy. Model
 revert is a new edit in the current destination.
 
-Response helpers are private to agent-edit's committer. Every tool and scoped
-read obtains a prepare lease; reporting uses disposable replicas. Rollback
-keeps the helper until transaction outcome is known. When a write cannot
-integrate, the helper is replaced with the current generation plus surviving
-stages before subsequent tool resolution; dropped writes are named once in the
-next result. Whole Discard retires only the addressed peer and does not roll
-back unrelated documents in the reply.
+Nothing response-scoped stays resident: every tool and scoped read reads a
+fresh room copy; reporting uses disposable replicas. Rollback keeps the staged
+buffer until the transaction outcome is known. A staged write the room read
+refuses leaves the scope and is named once in the next result. Whole Discard
+retires only the addressed peer and does not roll back unrelated documents in
+the reply.
 
 ## Focused references
 

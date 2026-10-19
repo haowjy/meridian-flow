@@ -86,7 +86,7 @@ export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
 const modelElisionsCodec = z.array(
   z.object({
     blockId: z.string(),
-    treatment: z.enum(["stale_read", "stale_write"]),
+    treatment: z.enum(["stale_read", "stale_write", "reshown"]),
     uris: z.array(z.string()),
     content: z.json(),
   }),

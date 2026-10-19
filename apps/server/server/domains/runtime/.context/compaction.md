@@ -37,6 +37,46 @@ rows supply a reusable token baseline. Prepared `elisions` and settled
 summarizer telemetry must both reach `beginPromptEpoch`; telemetry never enters
 model text.
 
+## Important files
+
+A summary cannot credit the model with having seen a document, so the successor
+re-shows the ones it most needs ([credit scope](document-text.md#observation-frontiers),
+owner ruling C10). `prepareCompactionSuccessor` picks them from the
+`documentRevisions` evidence of the **whole pre-compaction history**, not only
+the retained tail, most recently shown first: at most 5 documents and
+min(20,000 tokens, 10% of the usable window, the headroom the successor has
+under the auto-compaction trigger once its base is measured, less a margin) of
+rendered text at 3 bytes per token (`compaction/important-files.ts`). The
+headroom term keeps the successor under the trigger by construction, so the
+re-shown text never makes the next boundary compact again. Greedy: a document whose full text
+exceeds what is left is skipped, never truncated (a truncated copy would be a
+partial read with its own listing), and at most 10 are read to find five.
+
+Each is read in full through the reference reader (`readDocument`, an
+omitted-version read, so a draft-mode thread gets its Work draft and auto-apply
+gets live) and persisted as a reference-shaped text block with its `read` on the
+compaction turn, `sequence` 1 and up beside the summary at 0, oldest shown
+first (history order is recency order, which the next compaction's candidate
+ranking relies on). Its evidence is
+recorded like an @-mentioned document's, by `afterEvents` of the completing
+transaction: shown links, and a frontier chained from nothing (a fresh chain). A
+document that cannot be read is skipped with a warning
+(`important_file.read_failed`); it never fails the compaction. Assembly runs
+once without them to size the budget and fail early, then once with them: that
+second pass only measures `tokensAfter`.
+A retried successor preparation reads again; only the completing attempt's
+blocks and evidence persist.
+
+The projector puts these blocks on the synthetic summary turn right after the
+summary, each as a plain text block (the heading "Current text of <uri>,
+re-shown after the summary:" plus the read) that keeps the block's id, and
+credits their ids. The completion commit hands its persisted blocks (summary and
+re-shown) back on the adopted batch (`completedBlocks`), so the run's in-memory
+history holds them for every later request, like any other adopted block. The retained tail's copies of a re-shown document
+are elided as `reshown` (`compaction/elide.ts`), so a request carries each
+re-shown document once. A later compaction sees these blocks as ordinary
+pre-compaction history.
+
 ## Decisions and projection
 
 A decision is automatic, manual, or overflow. Pins preserve unanswered
@@ -47,6 +87,10 @@ not fit fails `context_too_large`. Instructions are stored on C and apply to
 both warm-branch and rolling prompts.
 
 `projectActiveHistoryWithBakes` is the only public active-history projector. It
+also returns `creditedBlockIds`: the blocks after the latest complete C plus the
+documents C re-showed, or every effective block with no C. Observation
+frontiers credit only those ids, so the retained tail before C credits nothing.
+It
 resolves C's own prompt bake before adding the history-read sentence, retains
 C's frozen elisions, and is used by request assembly, summary preparation, and
 handoff. `projectCompactedHistory` narrows it to the cut for rolling summaries.

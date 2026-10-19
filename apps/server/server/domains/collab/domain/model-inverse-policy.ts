@@ -14,6 +14,7 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
+import { draftRoom } from "./observation-rooms.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
 import type {
   InverseDocument,
@@ -410,8 +411,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         };
       const before = Y.encodeStateAsUpdate(policy.view),
         after = Y.encodeStateAsUpdate(scratch);
-      const writeHandles = preview
-        ? []
+      const committed = preview
+        ? { handles: [], updates: [] }
         : await store.commit({
             query,
             kind: command.command,
@@ -430,10 +431,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       return {
         status: "success",
         actionId,
-        draftId: query.draftId,
+        room: query.draftId ? draftRoom(query.draftId) : document.liveRoom,
         before,
         after,
-        ...(command.command === "revert" ? { writeId: writeHandles[0] } : {}),
+        updates: committed.updates,
+        ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
         message:
           command.command === "revert"
             ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
@@ -576,7 +578,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         return {
           status: "success",
           actionId: randomUUID(),
-          draftId: query.draftId,
+          room: null,
           message: [
             `your edits to ${document.uri}, newest first (version: ${policy.version(query.draftId)})`,
             ...lines,

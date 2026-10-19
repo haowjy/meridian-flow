@@ -109,7 +109,6 @@ function coordinator(docs: ReadonlyMap<DocumentId, Y.Doc>) {
       if (!doc) throw new Error(`missing ${documentId}`);
       return run(doc);
     },
-    async recover() {},
   };
 }
 

@@ -145,8 +145,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          afterJournalId: 0,
-          draftGeneration: 1,
           peerDraftId: "draft-peer",
         },
       },
@@ -171,8 +169,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-success-after-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          afterJournalId: 0,
-          draftGeneration: 1,
           peerDraftId: "draft-peer",
         },
       },
@@ -234,30 +230,28 @@ describe("write tool dispatch", () => {
     // admitted once the write's content exists in its runtime copy, before the write's own admission.
     // (A writer admitted after that admission copy is the accepted L35 window, not asserted here.)
     let writerLanded: Promise<void> | undefined;
-    const raced = harness(
-      {},
-      {
-        createRuntimeDoc() {
-          const runtime = new Y.Doc({ gc: false });
-          runtime.on("afterTransaction", () => {
-            if (writerLanded || model.getBlocks(runtime).length === 0) return;
-            const live = raced.liveDoc("chapter.md");
-            const vector = Y.encodeStateVector(live);
-            live.transact(
-              () => model.insertBlocks(live, null, codec.parse("Writer content.")),
-              "writer",
-            );
-            writerLanded = raced.journal
-              .append("chapter.md", Y.encodeStateAsUpdate(live, vector), {
-                origin: "human:writer",
-                seq: 0,
-              })
-              .then(() => undefined);
-          });
-          return runtime;
-        },
-      },
-    );
+    const raced = harness({});
+    const readRoom = raced.coordinator.readRoom.bind(raced.coordinator);
+    raced.coordinator.readRoom = async (docId, staged) => {
+      const read = await readRoom(docId, staged);
+      const runtime = read.doc;
+      runtime.on("afterTransaction", () => {
+        if (writerLanded || model.getBlocks(runtime).length === 0) return;
+        const live = raced.liveDoc("chapter.md");
+        const vector = Y.encodeStateVector(live);
+        live.transact(
+          () => model.insertBlocks(live, null, codec.parse("Writer content.")),
+          "writer",
+        );
+        writerLanded = raced.journal
+          .append("chapter.md", Y.encodeStateAsUpdate(live, vector), {
+            origin: "human:writer",
+            seq: 0,
+          })
+          .then(() => undefined);
+      });
+      return read;
+    };
     const fresh = await raced.core.write(
       { command: "create", file: "chapter.md", content: "Fresh bound." },
       {

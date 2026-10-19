@@ -28,8 +28,6 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createBranches } from "./domain/branches.js";
 import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
-import { createDraftCoordinator } from "./domain/draft-coordinator.js";
-import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
@@ -99,9 +97,7 @@ async function fixture(
   const effective = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts: f.draftStore,
-      draftCoordinator: f.draftCoordinator,
       draftPulls: f.draftPulls,
-      liveCoordinator: f.liveCoordinator,
       agentEdit: f.collab.agentEdit(),
       documents: f.runtime.markdownDocuments,
       model: f.runtime.model,
@@ -326,6 +322,7 @@ describe("document revisions (postgres and collab)", () => {
 
   it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {
     const f = await fixture(db, harnesses, "draft");
+    await f.provisionDraft();
     await f.read();
     await f.writerDelete();
     const originalPull = f.draftCoordinator.pullFromDoc.bind(f.draftCoordinator);
@@ -433,29 +430,21 @@ describe("document revisions (postgres and collab)", () => {
     );
   });
 
-  it("delivers a root-committed pull even when its caller response aborts", async () => {
+  it("keeps a root-committed ensure even when its caller response aborts", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
-    const broadcasts: string[] = [];
-    const coordinator = createDraftCoordinator({
-      onAppendCommitted: () => {},
-      store: f.draftStore,
-      onDraftUpdate: ({ draftId }) => broadcasts.push(draftId),
-    });
-    const pulls = createDraftPullService({
-      outsideTransaction: runOutsideDrizzleTransaction,
-      liveCoordinator: f.liveCoordinator,
-      draftCoordinator: coordinator,
-      drafts: f.draftStore,
+    const branch = await f.branches.ensureActiveForWrite({
+      workId: WORK_ID,
+      projectId: PROJECT_ID as never,
+      threadId: THREAD_ID,
+      userId: USER_ID as never,
     });
     await expect(
       runResponseTransaction(
         (operation) => runInDrizzleTransaction(db, operation),
         async () => {
-          const branch = await f.branches.activeForWork(WORK_ID);
-          if (!branch) throw new Error("the harness seeds the Work's branch");
-          await pulls.pullThreadPeer({
+          await f.draftPulls.ensureThreadPeer({
             documentId: ALPHA_ID,
             threadId: THREAD_ID,
             branchId: branch.id,
@@ -464,13 +453,13 @@ describe("document revisions (postgres and collab)", () => {
         },
       ),
     ).rejects.toThrow("response aborted");
+    // The ensure's peer and Work draft committed under their own root, seeded from live.
     const peer = await readResolvedDraft(
       f.draftStore,
       await f.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID),
     );
-    const draft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(1);
-    expect(broadcasts).toEqual(expect.arrayContaining([peer.draftId, draft.draftId]));
+    await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     peer.doc.destroy();
   });
 });

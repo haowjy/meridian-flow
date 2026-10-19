@@ -307,8 +307,6 @@ describe("response helper revocation (Postgres)", () => {
       expect(await fixture.draftStore.getDraft(oldPeer.draftId)).toMatchObject({
         status: "closed",
       });
-      // Model the old response entry's eviction by a refusal before its next write.
-      await core.invalidateThreadDocument(ALPHA_ID, THREAD_ID);
       expect(await write("green", "olive", "fresh-during-retirement")).toMatchObject({
         status: "success",
         phase: "staged",
@@ -355,17 +353,17 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.draftCoordinator.readDraft.bind(fixture.draftCoordinator);
+    // The write's room read: Discard lands just before it copies the draft, or just after.
+    const original = fixture.draftCoordinator.copyDraft.bind(fixture.draftCoordinator);
     let once = true;
-    fixture.draftCoordinator.readDraft = async (documentDraft, fn) => {
-      const targeted =
-        once && documentDraft === draftId && String(fn).includes("listConcurrentJournalRows");
+    fixture.draftCoordinator.copyDraft = async (documentDraft) => {
+      const targeted = once && documentDraft === draftId;
       if (targeted) once = false;
       if (targeted && !afterRead) {
         entered();
         await gate;
       }
-      const result = await original(documentDraft, fn);
+      const result = await original(documentDraft);
       if (targeted && afterRead) {
         entered();
         await gate;
@@ -396,7 +394,7 @@ describe("response helper revocation (Postgres)", () => {
       });
     } finally {
       release();
-      fixture.draftCoordinator.readDraft = original;
+      fixture.draftCoordinator.copyDraft = original;
     }
     expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite(fresh);
@@ -419,7 +417,12 @@ describe("response helper revocation (Postgres)", () => {
       }
     });
     try {
-      const pending = core.prepare(responseId, ALPHA_ID);
+      const pending = core.readRoom({
+        documentId: ALPHA_ID,
+        threadId: THREAD_ID,
+        responseId,
+        live: false,
+      });
       // Observe rejection before releasing the orphaned read.
       const settled = pending.then(
         (value) => ({ value }),
@@ -432,7 +435,7 @@ describe("response helper revocation (Postgres)", () => {
         release();
       }
       const outcome = await settled;
-      if ("value" in outcome) outcome.value?.dispose();
+      if ("value" in outcome) outcome.value.dispose();
       expect(outcome).toHaveProperty("error");
     } finally {
       release();

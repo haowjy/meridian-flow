@@ -32,16 +32,16 @@ export type ApplicationDraftStore = DraftStore &
       branchId: BranchId;
     }): Promise<"stands" | "retracted">;
     /**
-     * The thread's peer of the branch's draft on the document, with its content as it stands
-     * (the checkpoint just written for a new peer). Takes the branch it is given, never ensures
-     * one; a branch that is no longer active is `DraftStaleUpdateError`.
+     * The thread's peer of the branch's draft on the document. Takes the branch it is given,
+     * never ensures one; a branch that is no longer active is `DraftStaleUpdateError`.
+     * `liveDoc` is asked for only when the branch has no draft of the document to fork from.
      */
     ensureThreadPeerDraft(input: {
       documentId: DocumentId;
       threadId: ThreadId;
       branchId: BranchId;
-      liveDoc: Y.Doc;
-    }): Promise<{ documentDraft: DraftSnapshot; state: Uint8Array }>;
+      liveDoc: () => Promise<Y.Doc>;
+    }): Promise<{ documentDraft: DraftSnapshot }>;
     /**
      * Close the active thread peers of these drafts (a reset or a Discard moved their
      * upstream), in the caller's transaction, with the caller's `cause`.

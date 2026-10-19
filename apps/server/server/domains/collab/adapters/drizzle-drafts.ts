@@ -282,22 +282,22 @@ export function createDrizzleDraftStore(
    * The thread's peer in the given branch (contract §2.5): never ensures a branch. The branch
    * is held `FOR SHARE` while the peer is made, so a close either waits for this to commit or
    * has already closed it (then the peer is stale). Only creating the branch's draft locks
-   * the Work. Returns the peer's content as it stands.
+   * the Work, and only that asks for `liveDoc`.
    */
   async function ensureThreadPeerDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
     branchId: BranchId;
-    liveDoc: Y.Doc;
-  }): Promise<{ documentDraft: DraftSnapshot; state: Uint8Array }> {
-    type EnsuredPeer = { documentDraft: DraftSnapshot; state: Uint8Array };
+    liveDoc: () => Promise<Y.Doc>;
+  }): Promise<{ documentDraft: DraftSnapshot }> {
+    type EnsuredPeer = { documentDraft: DraftSnapshot };
     const currentPeer = async (): Promise<EnsuredPeer | null> => {
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId !== input.branchId) return null;
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
-      return { documentDraft: existing, state: await encodedDraft(existing.draftId) };
+      return { documentDraft: existing };
     };
     const createPeer = async (): Promise<EnsuredPeer> => {
       if (!(await branches.shareActive(input.branchId))) {
@@ -308,7 +308,7 @@ export function createDrizzleDraftStore(
       await testHook("draft.peer.afterDocumentLock");
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId === input.branchId) {
-        return { documentDraft: existing, state: await encodedDraft(existing.draftId) };
+        return { documentDraft: existing };
       }
       const workDraft = await activeDocumentDraft(input.documentId, input.branchId);
       if (!workDraft) throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
@@ -345,7 +345,7 @@ export function createDrizzleDraftStore(
         .returning({ id: documentDrafts.id });
       if (!row) throw new Error("Failed to create document draft");
       const documentDraft = await getDraftSnapshot(row.id);
-      return { documentDraft, state: seed.state };
+      return { documentDraft };
     };
     // Each step is one root transaction under the thread lock. Alone, the root takes the
     // thread lock itself: one connection, never a lock-holding connection waiting for a
@@ -366,26 +366,14 @@ export function createDrizzleDraftStore(
     if (current) return current;
     // The Work draft first, in its own Work-first transaction when it creates one (decision
     // D12), so no step holds the branch row or a draft row before the Work; the peer follows.
-    await runInRootDrizzleTransaction(db, () =>
-      ensureDocumentDraft({
-        documentId: input.documentId,
-        branchId: input.branchId,
-        liveDoc: input.liveDoc,
-      }),
-    );
-    return underThread(createPeer);
-  }
-
-  async function encodedDraft(draftId: string): Promise<Uint8Array> {
-    const read = await readDraftAt(currentDrizzleDb(db), draftId);
-    if (!read) throw new Error(`Draft ${draftId} does not exist`);
-    if (!read.tail.length && read.checkpoint) return read.checkpoint.state;
-    const doc = materializeDraftRead(read);
-    try {
-      return Y.encodeStateAsUpdate(doc);
-    } finally {
-      doc.destroy();
+    if (!(await activeDocumentDraft(input.documentId, input.branchId))) {
+      // Taken before the root transaction: the snapshot holds its own connection.
+      const liveDoc = await input.liveDoc();
+      await runInRootDrizzleTransaction(db, () =>
+        ensureDocumentDraft({ documentId: input.documentId, branchId: input.branchId, liveDoc }),
+      );
     }
+    return underThread(createPeer);
   }
 
   async function findActiveThreadPeer(
@@ -563,7 +551,6 @@ export function createDrizzleDraftStore(
         // computed the effect on the candidate; a peer has none, a compaction keeps the
         // content and a reset is effect-free by construction.
         ...(operation.kind === "pull" && operation.effect ? { effect: operation.effect } : {}),
-        ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
         ...(onRewriteCommitted
           ? {

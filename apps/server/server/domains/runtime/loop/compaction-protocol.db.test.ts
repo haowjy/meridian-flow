@@ -1573,6 +1573,26 @@ else
         },
       });
       rig = await fixture({ history: "brief history", gateway, summarizer });
+      // A document the history showed: the compaction re-shows it after the summary.
+      const [historyTurn] = await rig.repos.turns.listByThread(rig.threadId);
+      await rig.repos.blocks.create({
+        turnId: historyTurn.id,
+        blockType: "text",
+        sequence: 5,
+        status: "complete",
+        content: {
+          type: "reference",
+          text: "Notes",
+          documentId: "00000000-0000-4000-8000-000000000099",
+          uri: "kb://notes",
+          read: { result: "OLD NOTES TEXT", revision: "old" },
+        },
+      });
+      rig.deps.referenceReader.read = async () => ({
+        result: "RESHOWN NOTES TEXT",
+        revision: "new",
+        evidence: { shown: [] },
+      });
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -1629,6 +1649,9 @@ else
       expect(JSON.stringify(later.messages.slice(0, request.messages.length))).toBe(
         JSON.stringify(request.messages),
       );
+      // The re-shown document survives the successor's tool call: both requests carry it.
+      expect(promptBytes(request)).toContain("RESHOWN NOTES TEXT");
+      expect(promptBytes(later)).toContain("RESHOWN NOTES TEXT");
       expect(promptBytes({ ...request, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
         "compacted request bytes",
       );

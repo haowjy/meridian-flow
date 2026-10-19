@@ -847,6 +847,68 @@ restart smoke check.
   (the save derives its room; a live undo reads its generation before the call), on the branch
   worktree's own stack; evidence `work/concurrent-edit-design/m1/probe/r3-fix-cells-5-7.md`.
 
+## RP-20: A write into a changed passage is refused once, with its current text; every result lists what changed
+
+- **Protects:** the region check and the one listing ([write architecture](../../packages/agent-edit/.context/write-architecture.md#the-region-check)).
+  A write whose passage (targets ±1 block) changed by more than 10 words since the model saw it,
+  holds a block the model never saw in full, or lands in a room where the model has no frontier
+  is refused as `region_changed` with the passage's current text, records a frontier, and the
+  next attempt lands. Creating a document or filling an empty one is never refused. Every
+  result that shows document text lists, under `concurrent edits:`, blocks changed since the
+  model's frontier that it doesn't show; a full read lists nothing; past 8 KB the rest is a
+  count; removed blocks are one line of hashes. Compaction restarts credit unless the
+  document is re-shown; a fork cut before the compaction counts the earlier read again.
+- **Stack:** mock. The writer's concurrent edits need a Yjs client, so steps 1 to 3 are API
+  steps without a writer (compaction, draft first write); the writer-edit cases run in the
+  browser recipe [#871 cells](871-cells.md) and, at the API level, as the throwaway in-process
+  probe kept in the docs repository (`work/concurrent-edit-design/m2/probe/w2-inprocess/`).
+- **Seed:**
+
+  ```bash
+  printf '%s\n' '# C10 Chapter' '' 'Alpha stood at the gate.' '' 'Beta waited by the river.' '' \
+    'Gamma held the forest.' > "$E/ch.md"
+  for d in C10-Target C10-Reshown C10-Fork W2-Draft; do
+    ./mf doc put "manuscript://$d" --text @"$E/ch.md" --overwrite --json > /dev/null
+  done
+  for i in 1 2 3 4 5; do
+    printf 'Filler %s text.\n' $i > "$E/f$i.md"
+    ./mf doc put "manuscript://C10-Filler$i" --text @"$E/f$i.md" --overwrite --json > /dev/null
+  done
+  readmock() { echo "[{\"toolCalls\":[{\"name\":\"read\",\"args\":{\"path\":\"manuscript://$1\"}}]},{\"text\":\"Read.\"}]"; }
+  writemock() { echo "[{\"toolCalls\":[{\"name\":\"write\",\"args\":{\"command\":\"replace\",\"path\":\"manuscript://$1\",\"find\":\"Beta waited\",\"content\":\"Beta paced\"}}]},{\"text\":\"Wrote.\"}]"; }
+  ```
+
+  `compact <thread>` is the helper from [Setup](#setup-and-evidence), followed by
+  `./mf thread tail "$T" --until-idle --timeout 120s`.
+- **Steps:**
+
+  1. Compaction without a re-show: in a fresh No Work thread read `C10-Target`, then read
+     `C10-Filler1` to `C10-Filler5` in five sends (the target falls out of the five re-shown
+     files), compact, then send `writemock C10-Target` twice.
+  2. Compaction with a re-show: a fresh thread reads `C10-Reshown`, compacts, then sends
+     `writemock C10-Reshown` once.
+  3. Fork before the compaction: a fresh thread reads `C10-Fork` (keep the send's result
+     `turnId` as `CUT`), reads the five fillers, compacts, sends `writemock C10-Fork`; then
+     fork at `CUT` (`POST /api/threads/$T/fork` with `originTurnId`) and send `writemock C10-Fork`
+     on the fork.
+  4. First draft-mode write after a live read: a draft-mode thread on a new Work (body as in
+     RP-19 step 4) sends one reply that reads `W2-Draft`, then writes `Beta waited` →
+     `Beta paced` twice in two steps.
+- **Expect:**
+  1. The first write is `status: region_changed` with "Not applied: this passage changed since
+     you last saw it. Current text:" and the three paragraphs; the second lands (`write: w1`).
+  2. The write lands at once.
+  3. The write on the compacted thread is refused with current text; the same write on the fork
+     lands.
+  4. The read says `version: draft` with no Work draft yet (it read live); the first write is
+     `region_changed` with current text, the second `success` staged and settled as
+     `draft (@<work>)`; `./mf doc read` still shows live unchanged.
+- **Evidence:** each send NDJSON (`tool.completed` and `tool.settled` lines).
+- **Last run:** 2026-10-19 on `f8e5f62b94` (M2 W2; the tree that commit holds), the branch
+  worktree's own mock stack. All four passed. Evidence:
+  `work/concurrent-edit-design/m2/probe/w2-c10/` in the docs repository; the in-process
+  writer-edit exercises are in `m2/probe/w2-inprocess/results-raw.md`.
+
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments

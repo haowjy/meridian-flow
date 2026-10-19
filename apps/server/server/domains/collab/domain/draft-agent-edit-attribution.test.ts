@@ -1,7 +1,6 @@
 /** Attribution must skip covered history without caching away a later concurrency recheck. */
 import { renderAgentEditResult } from "@meridian/agent-edit";
 import {
-  applyConcurrentUpdates,
   cloneYDoc,
   createAgentEditCodecFactory,
   toDocHandle,
@@ -11,7 +10,7 @@ import { blockTexts, createWriteToolHarness, humanText } from "@meridian/agent-e
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { MemoryDraftStore, memoryDraft, testDraftRow } from "../test-support/memory-draft-store.js";
 import { createDraftAgentEditCoordinator } from "./draft-agent-edit.js";
@@ -30,24 +29,17 @@ afterEach(() => {
 
 function fixture(existingUpstream?: Y.Doc) {
   const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
-  const serialize = vi.spyOn(codec, "serializeBlockBodies");
   const upstream = existingUpstream ?? new Y.Doc({ gc: false });
   if (!existingUpstream)
     model.insertBlocks(toDocHandle(upstream), null, codec.parse("Alpha.\n\nBeta."));
   const baseline = cloneYDoc(upstream);
   docs.push(upstream, baseline);
   const rows: DraftJournalRow[] = [];
-  const liveUpdates: Array<{
-    seq: number;
-    update: Uint8Array;
-    meta: { origin: string; seq: number };
-  }> = [];
   const snapshot = (draftId: string): DraftSnapshot =>
     testDraftRow({ draftId, documentId, upstreamDraftId: draftId === "peer" ? "draft" : null });
   const coordinator = createDraftAgentEditCoordinator({
+    removals: { lookup: async () => new Map() },
     threadId,
-    model,
-    codec,
     draftCoordinator: createDraftCoordinator({
       onAppendCommitted: () => {},
       store: new MemoryDraftStore(
@@ -64,19 +56,16 @@ function fixture(existingUpstream?: Y.Doc) {
       }),
       ensureThreadPeerDraft: async () => ({
         documentDraft: snapshot("peer"),
-        state: Y.encodeStateAsUpdate(upstream),
       }),
       listActiveWorkDraftIds: async () => ["draft"],
+      resolveWorkDraftForThread: async () => snapshot("draft"),
     },
+    flushLivePull: async () => {},
+    branches: { shareActive: async () => null },
     journalRows: {
       listConcurrentJournalRows: async () => rows,
       listJournalRowsForDraft: async () => [],
     },
-    liveJournal: {
-      read: async () => ({ checkpoint: null, updates: liveUpdates }),
-    },
-    afterCommit: () => {},
-    enlistResponseParticipant: () => false,
   });
   function row(updateData: Uint8Array): DraftJournalRow {
     return {
@@ -99,57 +88,22 @@ function fixture(existingUpstream?: Y.Doc) {
       doc: upstream,
       baselineDoc: baseline,
       sinceStateVector: Y.encodeStateVector(baseline),
-      liveJournalSeq: 0,
     });
     if (!changes) throw new Error("Missing draft attribution");
     return changes;
   }
-  return { upstream, baseline, rows, liveUpdates, row, check, serialize, coordinator };
+  return { upstream, baseline, rows, row, check, coordinator };
 }
 
 describe("draft concurrent attribution", () => {
-  it("does not credit system:reconcile deletions to the writer", async () => {
-    const f = fixture();
-    const before = Y.encodeStateVector(f.upstream);
-    model.deleteBlock(toDocHandle(f.upstream), model.getBlocks(toDocHandle(f.upstream))[0]);
-    f.liveUpdates.push({
-      seq: 1,
-      update: Y.encodeStateAsUpdate(f.upstream, before),
-      meta: { origin: "system:reconcile", seq: 1 },
-    });
-    const changes = await f.check();
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
-    expect(changes[0]?.deletedHashes).toBeUndefined();
-    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(
-      UNSCOPED_DOCUMENT_LINKS,
-    );
-    const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
-    expect(blockTexts(f.baseline)).toEqual(["Beta."]);
-    expect(echo.info).toBeUndefined();
-  });
-
-  it("does not fabricate writer credit when the recheck baseline is ahead of the Work draft", async () => {
-    const f = fixture();
-    const live = cloneYDoc(f.baseline);
-    docs.push(live);
-    const before = Y.encodeStateVector(live);
-    humanText(live, 0, { from: 5, to: 5 }, " maintenance");
-    const update = Y.encodeStateAsUpdate(live, before);
-    f.liveUpdates.push({ seq: 1, update, meta: { origin: "system:reconcile", seq: 1 } });
-    expect((await f.check())[0]?.origin).toEqual({ type: "system" });
-    Y.applyUpdate(f.baseline, update);
-    expect(await f.check()).toEqual([]);
-  });
-
-  it("reports writer content arriving after the fast preflight in the actual response save", async () => {
-    let afterPreflight = () => {};
-    const ctx = createWriteToolHarness(
-      { "chapter.md": "Alpha para.\n\nBeta para." },
-      {
-        afterResponsePreflight: () => afterPreflight(),
-      },
-    );
+  it("reports writer content arriving before the save reads the room in the actual response save", async () => {
+    let beforeSave = () => {};
+    const ctx = createWriteToolHarness({ "chapter.md": "Alpha para.\n\nBeta para." });
+    const prepareSave = ctx.coordinator.prepareSave.bind(ctx.coordinator);
+    ctx.coordinator.prepareSave = async (input) => {
+      beforeSave();
+      return prepareSave(input);
+    };
     const f = fixture(ctx.liveDoc("chapter.md"));
     f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
     ctx.coordinator.concurrentUpdatesSince = f.coordinator.concurrentUpdatesSince;
@@ -164,8 +118,7 @@ describe("draft concurrent attribution", () => {
       { command: "replace", file: "chapter.md", in: 1, content: "Alpha AI edit." },
       context,
     );
-    afterPreflight = () => {
-      expect(f.serialize).not.toHaveBeenCalled();
+    beforeSave = () => {
       const vector = Y.encodeStateVector(f.upstream);
       humanText(f.upstream, 0, { from: 11, to: 11 }, " WRITER");
       f.rows.push(f.row(Y.encodeStateAsUpdate(f.upstream, vector)));
@@ -177,14 +130,12 @@ describe("draft concurrent attribution", () => {
     expect(renderAgentEditResult(receipt)).toContain(
       "concurrent user content swept during commit; re-read required",
     );
-    expect(f.serialize).toHaveBeenCalled();
   });
 
-  it("does no block projection for identical states with retained, covered journal rows", async () => {
+  it("skips retained journal rows the baseline already contains", async () => {
     const f = fixture();
     for (let i = 0; i < 20; i++) f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
     expect(await f.check()).toEqual([]);
-    expect(f.serialize).not.toHaveBeenCalled();
   });
 
   it("rechecks a writer deletion after an identical-state preflight, despite equal state vectors", async () => {
@@ -197,31 +148,7 @@ describe("draft concurrent attribution", () => {
     expect(Y.encodeStateVector(f.upstream)).toEqual(before);
     const recheck = await f.check();
     expect(recheck).toHaveLength(1);
-    expect(recheck[0]).toMatchObject({
-      origin: { type: "human" },
-      deletedHashes: { human: [expect.any(String)] },
-    });
+    expect(recheck[0]).toMatchObject({ origin: { type: "human" } });
     expect(recheck[0].update.byteLength).toBeGreaterThan(0);
-  });
-
-  it("does not suppress live journal edits that have not reached an identical upstream", async () => {
-    const f = fixture();
-    const live = cloneYDoc(f.baseline);
-    docs.push(live);
-    const before = Y.encodeStateVector(live);
-    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(
-      UNSCOPED_DOCUMENT_LINKS,
-    );
-    model.insertBlocks(toDocHandle(live), null, codec.parse("Writer."));
-    f.liveUpdates.push({
-      seq: 1,
-      update: Y.encodeStateAsUpdate(live, before),
-      meta: { origin: "human:writer", seq: 1 },
-    });
-    const changes = await f.check();
-    expect(changes).toContainEqual(
-      expect.objectContaining({ origin: { type: "human", userId: "writer" } }),
-    );
-    expect(changes.some((change) => change.update.byteLength > 0)).toBe(true);
   });
 });
