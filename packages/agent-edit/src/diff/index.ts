@@ -32,7 +32,8 @@ export {
   NO_LATE_TYPING,
   recoverLatePeerEdits,
 } from "./late-peer-recovery.js";
-export { type Conflict, type RebaseResult, rebase } from "./merge.js";
+export { type Conflict, type RebaseOptions, type RebaseResult, rebase } from "./merge.js";
+export { BASE, DRAFT, LIVE, type MergedTok } from "./merge-hunks.js";
 export {
   RESTORED_ROOT,
   type RestorationLink,

@@ -9,7 +9,7 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, makeDiff } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 
-export type Tok =
+export type Tok = (
   | { kind: "block"; key: string; node: PMNode } // start of a textblock; only type, attrs and marks are read
   | { kind: "atom"; key: string; node: PMNode } // a whole non-textblock block (list, table, figure, rule)
   | {
@@ -21,12 +21,15 @@ export type Tok =
       marks: readonly Mark[];
       wsMarks?: readonly Mark[]; // when the leading space came from a run with other marks
     }
-  | { kind: "inline"; key: string; node: PMNode }; // inline atom: image, hard_break
+  | { kind: "inline"; key: string; node: PMNode }
+) & { alignmentTag?: string }; // inline atom: image, hard_break
 
 export const isBlockTok = (t: Tok) => t.kind === "block" || t.kind === "atom";
 export const isWordTok = (t: Tok) => t.kind === "text" && t.word;
 /** Identity ignoring marks and whitespace: a word that only gained a mark stays paired with itself. */
-export const coreKey = (t: Tok) => (t.kind === "text" ? `T${t.core}` : t.key);
+export const tagOf = (t: Tok) => t.alignmentTag;
+export const coreKey = (t: Tok) =>
+  t.kind === "text" ? `T${t.core}${t.alignmentTag ?? ""}` : t.key;
 
 const keyCache = new WeakMap<PMNode, string>();
 const tokCache = new WeakMap<PMNode, Tok[]>();

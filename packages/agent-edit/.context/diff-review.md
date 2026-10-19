@@ -189,3 +189,17 @@ give a pre-`review_base` branch its base from its `live_cut` text, so the first 
 migration owns the CAS (`packages/database/src/migration-steps/`).
 
 [late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md
+
+### Identity-keyed inverse planning
+
+`rebase` optionally accepts `identity: { base, draft }`, one optional tag per
+plain token on those sides. Only base-to-draft alignment sees keyed copies;
+base-to-live, coalescing and emitted payload remain plain. Keyed alignment
+includes paragraph anchors and bypasses the content-only unit memo, without
+changing segmentation. Tags never become document text or marks.
+
+`merged` zips the settled tokens with their `MergedTok` origins; indices address
+the original input token arrays, including after paragraph-order reconciliation.
+`baseToLive` supplies the corresponding original live-token index outside live
+hunks (otherwise -1). Lowering must use these correspondences, not diff the
+merged block text again: another content match can select an earlier equal copy.

@@ -20,6 +20,7 @@ import {
   type Side,
   similarity,
   type Tok,
+  tagOf,
 } from "./tokens.js";
 
 export interface Alignment {
@@ -29,7 +30,7 @@ export interface Alignment {
   pos: Int32Array; // base token -> side token outside hunks, else -1
 }
 
-export function align(B: Side, S: Side): Alignment {
+export function align(B: Side, S: Side, keyed = false): Alignment {
   const baseToSide = new Int32Array(B.blocks.length).fill(-1);
   const sideToBase = new Int32Array(S.blocks.length).fill(-1);
   const units: UnitHunk[] = [];
@@ -41,10 +42,20 @@ export function align(B: Side, S: Side): Alignment {
     if (gb === bi && gs === si) return;
     for (const [b0, b1, s0, s1] of anchorGap(B, gb, bi, S, gs, si)) {
       if (b0 === b1 && s0 === s1) continue;
-      boundedGap(B, b0, b1, S, s0, s1, units);
+      if (keyed) {
+        const raw: Hunk[] = [];
+        tokenHunks(B, B.starts[b0], B.starts[b1], S, S.starts[s0], S.starts[s1], raw);
+        units.push(...raw.map((h) => ({ raw: h, refined: refine(B.toks, [h]) })));
+      } else boundedGap(B, b0, b1, S, s0, s1, units);
     }
   };
-  for (const [op, n] of diffKeys(B.blocks.map(blockKey), S.blocks.map(blockKey))) {
+  const keys = (side: Side) =>
+    side.blocks.map((node, i) =>
+      keyed
+        ? JSON.stringify(side.toks.slice(side.starts[i], side.starts[i + 1]).map((t) => t.key))
+        : blockKey(node),
+    );
+  for (const [op, n] of diffKeys(keys(B), keys(S))) {
     if (op === DIFF_EQUAL) {
       gap();
       for (let k = 0; k < n; k++) {
@@ -352,7 +363,12 @@ function tokenHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: nu
       while (k < matches.length && matches[k][0] < i) k++;
       if (k < matches.length && matches[k][0] < end) {
         const sp = S.starts[S.blockOf[matches[k][1]]];
-        if (sp > lastSide && sp >= s0 && st[sp].kind === "block") {
+        if (
+          sp > lastSide &&
+          sp >= s0 &&
+          st[sp].kind === "block" &&
+          tagOf(bt[i]) === tagOf(st[sp])
+        ) {
           all.push([i, sp]);
           lastSide = sp;
         }
