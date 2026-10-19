@@ -6,6 +6,7 @@ import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } fr
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
+import { getContextTabs } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import { useAccountResourceReplica } from "./account-feature-context";
+import { useAccountResourceReplica, useContextRemovalCoordinator } from "./account-feature-context";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -213,6 +214,15 @@ function DropdownActionItems({
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────
 
+/** The file, or the open tabs inside the folder, that this delete removes. */
+function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[] {
+  if (target.kind === "file") return [target.documentId];
+  const folder = `${target.path.replace(/^\/+|\/+$/g, "")}/`;
+  return getContextTabs(projectId).tabs.flatMap((tab) =>
+    tab.kind !== "new" && tab.path.replace(/^\/+/, "").startsWith(folder) ? [tab.documentId] : [],
+  );
+}
+
 export function useDeleteConfirmation({ projectId }: { projectId: string }) {
   const [target, setTarget] = useState<DeleteTarget | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -228,9 +238,16 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
     setTarget(null);
   }, []);
 
+  const removal = useContextRemovalCoordinator();
   const confirm = useCallback(async () => {
     if (!target) return;
     setError(null);
+    // This tab's own delete closes its tabs and says nothing about it, however the removal arrives.
+    const unmark = removal.markOwnRemoval(
+      projectId,
+      ownDeletedDocumentIds(projectId, target),
+      "deleted",
+    );
     try {
       setLocalPending(true);
       if (target.kind === "file") {
@@ -242,12 +259,13 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
       }
       setTarget(null);
     } catch (cause) {
+      unmark();
       // Keep the target visible so the writer can refresh and retry.
       setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
     } finally {
       setLocalPending(false);
     }
-  }, [projectId, resources, target]);
+  }, [projectId, removal, resources, target]);
 
   return {
     target,

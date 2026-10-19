@@ -225,7 +225,8 @@ export class DocumentSessionRegistry
     if (
       snapshot.schemaFence ||
       snapshot.status === "detached" ||
-      session.resetDisposition === "refused"
+      session.resetDisposition === "refused" ||
+      session.resetDisposition === "removed"
     )
       return false;
     if (

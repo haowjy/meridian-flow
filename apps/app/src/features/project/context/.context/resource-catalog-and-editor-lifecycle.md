@@ -200,6 +200,32 @@ reactivating a retained editor does not force a fresh request. Stale mounts,
 explicit refetch, wake hints, reconnect/focus, and interval polling still refresh
 catalogs through the same replica owner.
 
+### Removed-document notices
+
+A tab whose document something else deleted or discarded closes as before and
+says so: `ContextRemovalCoordinator` publishes `notices` on its project
+snapshot, and `RemovedDocumentNotices` floats them, dismissible, over the
+pane's foot ("<title> was deleted by <name>.", "… was deleted.", "… was
+discarded from the draft."). Three paths feed it. An availability
+`terminal-remove` carries the server's removal record. The catalog dropping a
+tab's document (`closeVanished`, which also covers another browser tab's
+delete arriving through the shared local replica before the server commits)
+waits for the record: from its own exact lookup, retried while the lookup
+still finds the document, or from any later command carrying it; an authority
+loss says nothing (a Work cascade keeps its own handling). A draft-only tab
+whose draft list says it went (`DraftOnlySettlement`) says it was discarded.
+The tab's own removal says nothing: the tree delete and every Discard command
+mark their documents (`markOwnRemoval`) before the request and unmark on
+failure. A review address whose document was removed says the same sentence
+in place of "This destination is unavailable" (`useRemovedDestination`).
+
+Unsent text is not kept: a removed document's tab closes even when its
+session holds unacknowledged edits. Keeping it bound would need more than the
+planner deferring this tab's removal and revoke: the catalog-vanished close
+must defer too, the route's path-based admission stops resolving the address
+(masking the tab as unavailable and dropping its selection to a candidate),
+and the session binding re-probes when the replica marks the resource terminal.
+
 ### Multi-Work review representations
 
 Review-only tabs are addressed by document, review Work and draft. A captured

@@ -128,6 +128,18 @@ which still holds the refused edits, is cleared. Editor hosts unbind at once
 loads the server's state. A drop that fails leaves the refused session bound
 read-only rather than reopening again.
 
+## 4208: the document was removed
+
+A `4208 document-deleted` close is terminal for live and draft rooms alike:
+the transport freezes the room (`read`), resets with disposition `removed`
+and never reconnects. Nothing rebuilds, replays or drops it: `restartTransport`
+and `restartUnavailableRoom` refuse a `removed` session, a draft review keeps
+the terminal session painted, and `SyncStatus` says nothing for it. The close
+only makes the tab ask availability at once (`ContextTabSession`, and
+`useReviewRoomOwner` for a draft room, which also refreshes the Work's drafts);
+the availability removal closes the tab and says who removed the document
+(`features/project/context/.context/resource-catalog-and-editor-lifecycle.md`).
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with

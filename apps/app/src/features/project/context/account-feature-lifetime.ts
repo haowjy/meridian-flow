@@ -35,7 +35,20 @@ export class AccountFeatureLifetime {
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
     this.registry = this.runtime.registry;
-    this.removal = new ContextRemovalCoordinator(accountId, { sessions: this.registry });
+    this.removal = new ContextRemovalCoordinator(accountId, {
+      sessions: this.registry,
+      // Constructed below; a removal is only noted once availability has applied it.
+      lookupRemoval: (projectId, documentId) =>
+        this.availability
+          .resolveForOpen(projectId, documentId)
+          .then((resolution) =>
+            resolution.kind === "deleted"
+              ? { removal: resolution.removal ?? null }
+              : resolution.kind === "authority-unavailable" || resolution.kind === "not-visible"
+                ? null
+                : undefined,
+          ),
+    });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {

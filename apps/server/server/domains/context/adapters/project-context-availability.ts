@@ -497,7 +497,12 @@ export function createDrizzleProjectContextAvailability(
               checkedGeneration,
               foldersById,
             });
-            if (classification.kind === "not-visible") {
+            // A discarded creation only answers its removal: one that cannot be placed
+            // (its draft folder went with it) stays not visible, never inconsistent.
+            if (
+              classification.kind === "not-visible" ||
+              (classification.kind === "inconsistent" && (document as { hidden?: boolean }).hidden)
+            ) {
               return { kind: "not-visible", documentId, checkedGeneration } as never;
             }
             if (classification.kind === "inconsistent") return indeterminate();
