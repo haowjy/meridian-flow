@@ -94,7 +94,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mutationStore,
         scheme: "kb",
         documentSync: {
-          ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
           bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),

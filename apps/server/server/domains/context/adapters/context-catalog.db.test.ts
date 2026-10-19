@@ -481,7 +481,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
         scheme: "manuscript",
         documentSync: {
-          ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
           bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
@@ -532,7 +531,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
         scheme: "kb",
         documentSync: {
-          ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
           bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
