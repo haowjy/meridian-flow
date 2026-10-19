@@ -21,7 +21,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import { removalPhrase } from "../../context/document-removal-copy.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
@@ -160,11 +159,6 @@ function prepare(
         reason,
       });
     for (const part of targets.sort((a, b) => (direction === "undo" ? b.id - a.id : a.id - b.id))) {
-      if (document.removal) {
-        // The removal explains every part, ahead of a part's own `discarded` placement.
-        skip(part, `This file was ${removalPhrase(document.removal)}`);
-        continue;
-      }
       if (rolledBack(part)) {
         skip(part, "Rolled back");
         continue;
