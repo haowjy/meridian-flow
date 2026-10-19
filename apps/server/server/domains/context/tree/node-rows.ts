@@ -3,7 +3,7 @@
  * inserts, tombstones with their storage release, and document locks in id order. Hidden
  * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
-import type { ContextSourceId, DocumentId, FolderId, ThreadId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, FolderId, ThreadId, UserId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
@@ -104,11 +104,25 @@ export async function insertFolder(
   return row.id;
 }
 
-export async function tombstoneDocuments(db: Database, ids: readonly DocumentId[]): Promise<void> {
+export type RemovalInitiator =
+  | { userId: UserId }
+  | { cause: "reply_rolled_back" | "create_failed" | "repair" };
+
+export async function tombstoneDocuments(
+  db: Database,
+  ids: readonly DocumentId[],
+  actor: RemovalInitiator,
+): Promise<void> {
   if (ids.length === 0) return;
   await currentDrizzleDb(db)
     .update(documents)
-    .set({ deletedAt: new Date() })
+    .set({
+      deletedAt: new Date(),
+      deletionReason: "discarded",
+      deletedByWorkId: null,
+      deletedByUserId: "userId" in actor ? actor.userId : null,
+      deletionCause: "cause" in actor ? actor.cause : null,
+    })
     .where(inArray(documents.id, [...ids]));
   await bumpLocationVersions(db, { documentIds: ids });
 }

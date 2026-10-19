@@ -47,11 +47,12 @@ export function createDrizzleBranchCreates(deps: {
         ...(deps.repair ? { repair: deps.repair } : {}),
       });
     },
-    async retractCreate({ branch, documentId }) {
+    async retractCreate({ branch, documentId, cause }) {
       await lockedSource();
       const retracted = await retractCreate(deps.db, {
         branchId: branch.id,
         documentId,
+        cause,
         retractDraft: () =>
           deps.drafts.retractCreatedDocumentDraft({ documentId, branchId: branch.id }),
       });

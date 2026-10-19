@@ -176,6 +176,7 @@ export interface ContextSchemeAdapter {
   retractCreate(
     path: string,
     documentId: string,
+    cause: "reply_rolled_back" | "create_failed",
   ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>>;
   writeBinary(
     path: string,

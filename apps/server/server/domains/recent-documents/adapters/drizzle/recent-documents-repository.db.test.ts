@@ -191,7 +191,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {
       const { db, repo } = await seed();
       await repo.record(userId(USER), documentId(DOOMED));
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOOMED));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOOMED));
       await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([]);
       await expect(repo.record(userId(USER), documentId(DOOMED))).rejects.toBeInstanceOf(
         RecentDocumentUnavailableError,

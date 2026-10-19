@@ -237,7 +237,7 @@ it("a tombstoned draft document with released storage does not stop another docu
     await harness.commit(responseId);
     // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
     await db.transaction(async (tx) => {
-      await tombstoneDocuments(tx as never, [BETA_ID]);
+      await tombstoneDocuments(tx as never, [BETA_ID], { cause: "repair" });
       await releaseDocumentStorage(tx as never, [BETA_ID]);
     });
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({

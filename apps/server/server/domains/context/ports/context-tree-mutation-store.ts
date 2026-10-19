@@ -36,6 +36,7 @@ export type ContextTargetExpectation =
   | { state: "occupied"; token: ContextLocationToken };
 
 interface PreparedContextMoveBase {
+  actorUserId?: string;
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
   /** Project whose holders the move note counts (contract §10); absent, the move counts nothing. */
@@ -100,6 +101,8 @@ export interface ContextTreeDeleteResult {
 }
 
 export type ContextTreeDeleteCommand = {
+  actorUserId?: string;
+  removal?: { reason: "discarded"; cause: "reply_rolled_back" | "create_failed" };
   root: ContextLocationToken;
   mode: "recursive";
 };

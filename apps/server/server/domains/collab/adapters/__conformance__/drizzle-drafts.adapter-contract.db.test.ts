@@ -713,7 +713,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // The Discard kernel closes the drafts first; the store closes only the row.
         await db
           .update(documentDrafts)
-          .set({ status: "closed" })
+          .set({ closedCause: "discarded", status: "closed" })
           .where(eq(documentDrafts.branchId, BRANCH_ID as never));
         await branchStore.close(BRANCH_ID as never, new Date());
       });

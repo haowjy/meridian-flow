@@ -85,7 +85,7 @@ export function createHiddenNodeRepair(deps: {
       try {
         const ended = await runInRootDrizzleTransaction(deps.db, async () => {
           await acquireEndUseScope(deps.db, { documentIds: ids });
-          return tombstoneUnused(deps.db, ids);
+          return tombstoneUnused(deps.db, ids, { actor: { cause: "repair" } });
         });
         await repaired(ended, "read");
         return ended;

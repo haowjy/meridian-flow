@@ -30,5 +30,6 @@ export interface BranchCreatePort {
   retractCreate(input: {
     branch: EnsuredBranch;
     documentId: DocumentId;
+    cause: "reply_rolled_back" | "create_failed";
   }): Promise<"retracted" | "stands">;
 }

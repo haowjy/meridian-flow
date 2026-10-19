@@ -72,7 +72,7 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
     // Reading the fixture creates an empty default draft. Retire it before observing the no-draft room.
     await db
       .update(schema.documentDrafts)
-      .set({ status: "closed" })
+      .set({ status: "closed", closedCause: "discarded" })
       .where(
         and(
           eq(schema.documentDrafts.documentId, ALPHA_ID),

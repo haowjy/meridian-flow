@@ -103,7 +103,7 @@ function joinPath(...parts: string[]): string {
 }
 
 type LocationChangePolicy =
-  | { target: "container"; overwrite: boolean }
+  | { target: "container"; overwrite: boolean; actorUserId?: string }
   | {
       target: "exact";
       overwrite: false;
@@ -140,6 +140,7 @@ export class ContextTreeMover {
     return this.changeLocation(source, destination, {
       target: "container",
       overwrite: options?.overwrite === true,
+      actorUserId: options?.origin?.type === "human" ? options.origin.userId : undefined,
     });
   }
 
@@ -251,6 +252,7 @@ export class ContextTreeMover {
             () =>
               destination.adapter.tree?.commitPreparedMove({
                 ...prepared.value,
+                actorUserId: policy.target === "container" ? policy.actorUserId : undefined,
                 linkNoteProjectId: this.moveLinks?.linkNoteProjectId,
               }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
           );
@@ -356,6 +358,8 @@ export class ContextTreeMover {
         target.adapter.tree?.commitRecursiveDelete({
           root: token.value as ContextLocationToken,
           mode: "recursive",
+          actorUserId: options.origin?.type === "human" ? options.origin.userId : undefined,
+          removal: options.removal,
         }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) {

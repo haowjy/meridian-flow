@@ -9,20 +9,10 @@
  * advisory locks. A branch's create never seeds live content: a new text row gets an empty
  * live Yjs document, and its text lives in the document's draft.
  */
-import type {
-  BranchId,
-  ContextSourceId,
-  DocumentId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-} from "@meridian/contracts";
+import type { BranchId, ContextSourceId, DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
-import { branchMayHold, loadProjectHolder } from "./branch-ownership.js";
 import { recordCreated } from "./branch-tree-store.js";
 import { tombstoneUnused } from "./end-use.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
@@ -32,7 +22,6 @@ import type {
   CreateFault,
   LiveClaim,
   LiveCreateCandidate,
-  RevealExpectation,
   TrackedNode,
 } from "./hidden-node-types.js";
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
@@ -312,7 +301,7 @@ async function pickHiddenCandidate(
   const repaired = await tombstoneUnused(
     db,
     valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
-    { keepFolders: true },
+    { keepFolders: true, actor: { cause: "repair" } },
   );
   options.repair?.report(repaired, "create");
   return firstUsed(valid);

@@ -14,7 +14,6 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   runInDrizzleTransaction,
-  runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
@@ -323,7 +322,7 @@ describe("document revisions (postgres and collab)", () => {
     expect((await f.read()).revision).toMatch(/^y2:/);
     await db
       .update(schema.documents)
-      .set({ deletedAt: new Date() })
+      .set({ deletionReason: "deleted", deletedAt: new Date() })
       .where(eq(schema.documents.id, ALPHA_ID));
     expect(f.hocuspocus.documents.has(ALPHA_ID)).toBe(true);
     expect(await f.current()).toBeNull();

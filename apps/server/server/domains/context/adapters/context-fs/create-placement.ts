@@ -61,6 +61,7 @@ export interface CreatePlacement {
   /** Reverse a create (§12.5): `live` asks the caller to delete; a branch create retracts here. */
   retract(
     documentId: string,
+    cause: "reply_rolled_back" | "create_failed",
   ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
 }
 
@@ -205,7 +206,7 @@ function draftPlacement(
         return Ok({ documentId: created.value.documentId, placement: "draft" as const });
       });
     },
-    retract(documentId) {
+    retract(documentId, cause) {
       return executor.run(
         async ({ branch }) => {
           // No active branch: a whole Discard already ended every use.
@@ -213,6 +214,7 @@ function draftPlacement(
             await placement.creates.retractCreate({
               branch: { id: branch.id, workId: placement.workId },
               documentId,
+              cause,
             });
           }
           return Ok({ placement: "draft" as const });

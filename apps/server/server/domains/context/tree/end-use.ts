@@ -15,6 +15,7 @@ import { dropDocumentRows } from "./branch-tree-store.js";
 import {
   lockDocuments,
   type ReleasedDraft,
+  type RemovalInitiator,
   releaseDocumentStorage,
   tombstoneDocuments,
   tombstoneFolders,
@@ -52,12 +53,12 @@ const NOTHING_ENDED: EndedUse = Object.freeze({
  */
 export async function endUse(
   db: Database,
-  input: { branchId: BranchId; documentIds: readonly DocumentId[] },
+  input: { branchId: BranchId; documentIds: readonly DocumentId[]; actor: RemovalInitiator },
 ): Promise<EndedUse> {
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
   await dropDocumentRows(db, { branchId: input.branchId, documentIds: ids });
-  return tombstoneUnused(db, ids);
+  return tombstoneUnused(db, ids, { actor: input.actor });
 }
 
 /**
@@ -71,7 +72,7 @@ export async function endUse(
 export async function tombstoneUnused(
   db: Database,
   documentIds: readonly DocumentId[],
-  options: { keepFolders?: boolean } = {},
+  options: { keepFolders?: boolean; actor: RemovalInitiator },
 ): Promise<EndedUse> {
   const ids = [...new Set(documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
@@ -83,7 +84,7 @@ export async function tombstoneUnused(
   await treeHook("endUse.afterRevalidate");
   if (ending.length === 0) return NOTHING_ENDED;
   const endingIds = ending.map((row) => row.id);
-  await tombstoneDocuments(db, endingIds);
+  await tombstoneDocuments(db, endingIds, options.actor);
   const releasedDrafts = await releaseDocumentStorage(db, endingIds);
   const tombstoned: NodeRef[] = endingIds.map((id) => ({ kind: "document" as const, id }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
@@ -206,6 +207,7 @@ export async function retractCreate(
   input: {
     branchId: BranchId;
     documentId: DocumentId;
+    cause: "reply_rolled_back" | "create_failed";
     retractDraft(): Promise<"retracted" | "stands">;
   },
 ): Promise<{ retracted: boolean; tombstoned: readonly NodeRef[] }> {
@@ -215,6 +217,10 @@ export async function retractCreate(
     return { retracted: false, tombstoned: [] };
   }
   if ((await input.retractDraft()) === "stands") return { retracted: false, tombstoned: [] };
-  const ended = await endUse(db, { branchId: input.branchId, documentIds: [input.documentId] });
+  const ended = await endUse(db, {
+    branchId: input.branchId,
+    documentIds: [input.documentId],
+    actor: { cause: input.cause },
+  });
   return { retracted: true, tombstoned: ended.tombstoned };
 }

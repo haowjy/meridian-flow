@@ -281,7 +281,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toBeNull();
       await database.current
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, local));
       expect(
         await r.resolve({
@@ -496,7 +496,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const deleted = await sibling("deleted");
       const discarded = await sibling("discarded");
       const secret = await sibling("secret");
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, deleted));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, deleted));
       const otherProject = crypto.randomUUID();
       const otherSource = crypto.randomUUID();
       const foreign = crypto.randomUUID();
@@ -538,7 +541,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       await db
         .update(documents)
-        .set({ hidden: true, deletedAt: new Date() })
+        .set({ hidden: true, deletionReason: "discarded", deletedAt: new Date() })
         .where(eq(documents.id, discarded));
       // A discarded branch create is a tombstone, never an address occupant.
       const provisioned: (string | null)[] = [];

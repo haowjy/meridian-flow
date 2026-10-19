@@ -1,6 +1,6 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 
-import type { ContextSourceId, FolderId } from "@meridian/contracts";
+import type { ContextSourceId, FolderId, UserId } from "@meridian/contracts";
 import {
   parseDocumentFilename,
   renderFilename as renderDocumentFilename,
@@ -275,7 +275,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       if (targetToken?.kind === "file") {
         const deletedTarget = await currentDrizzleDb(this.db)
           .update(documents)
-          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .set({
+            deletedAt: new Date(),
+            updatedAt: new Date(),
+            deletionReason: "deleted",
+            deletedByWorkId: null,
+            deletionCause: null,
+            deletedByUserId: (input.actorUserId as UserId) ?? null,
+          })
           .where(
             and(
               eq(documents.id, targetToken.nodeId),
@@ -370,7 +377,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         await this.runBeforeDestructiveWrite();
         const deleted = await currentDrizzleDb(this.db)
           .update(documents)
-          .set({ deletedAt: now, updatedAt: now })
+          .set({
+            deletedAt: now,
+            updatedAt: now,
+            deletionReason: command.removal?.reason ?? "deleted",
+            deletedByWorkId: null,
+            deletionCause: command.removal?.cause ?? null,
+            deletedByUserId: (command.actorUserId as UserId) ?? null,
+          })
           .where(
             and(
               eq(documents.id, token.nodeId),
@@ -423,7 +437,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       if (documentClosure.length > 0) {
         await currentDrizzleDb(this.db)
           .update(documents)
-          .set({ deletedAt: now, updatedAt: now })
+          .set({
+            deletedAt: now,
+            updatedAt: now,
+            deletionReason: command.removal?.reason ?? "deleted",
+            deletedByWorkId: null,
+            deletionCause: command.removal?.cause ?? null,
+            deletedByUserId: (command.actorUserId as UserId) ?? null,
+          })
           .where(
             inArray(
               documents.id,

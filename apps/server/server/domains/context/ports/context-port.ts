@@ -303,6 +303,7 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 }
 
 export interface ContextDeleteOptions extends ContextWriteOptions {
+  removal?: { reason: "discarded"; cause: "reply_rolled_back" | "create_failed" };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
 }
@@ -391,7 +392,10 @@ export interface ContextPort {
    * the document unless the document's draft already holds committed text. A draft-mode
    * port's `delete` never reverses a branch's create.
    */
-  retractCreate(uri: string, options: { documentId: string }): Promise<Result<void, ContextError>>;
+  retractCreate(
+    uri: string,
+    options: { documentId: string; cause: "reply_rolled_back" | "create_failed" },
+  ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

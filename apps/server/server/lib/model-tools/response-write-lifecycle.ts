@@ -66,8 +66,12 @@ export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
   path: string;
   documentId: string;
+  cause: "reply_rolled_back" | "create_failed";
 }): Promise<void> {
-  const retracted = await input.port.retractCreate(input.path, { documentId: input.documentId });
+  const retracted = await input.port.retractCreate(input.path, {
+    documentId: input.documentId,
+    cause: input.cause,
+  });
   if (!retracted.ok) throw new Error(contextErrorMessage(retracted.error));
 }
 
@@ -84,7 +88,7 @@ export function createAgentEditResponseWriteLifecycle(
     const discarded = new Set(discardedDocumentIds);
     for (const record of records) {
       if (!discarded.has(record.documentId)) continue;
-      await retractCreatedTrackedDocument(record);
+      await retractCreatedTrackedDocument({ ...record, cause: "reply_rolled_back" });
     }
   }
 

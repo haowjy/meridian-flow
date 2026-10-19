@@ -107,6 +107,7 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export { type DocumentRemovals, DocumentRemovedError } from "./ports/document-removals.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
 export {
   type AheadRegistration,
@@ -145,6 +146,7 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createDrizzleDocumentRemovals } from "./tree/document-removals.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export * from "./tree/tree-view.js";
 export {

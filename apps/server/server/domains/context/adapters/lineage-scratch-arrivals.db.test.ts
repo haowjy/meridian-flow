@@ -129,6 +129,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           contextSourceId: source,
           name: "deleted",
           extension: "toml",
+          deletionReason: "deleted",
           deletedAt: new Date(),
         },
         { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },
