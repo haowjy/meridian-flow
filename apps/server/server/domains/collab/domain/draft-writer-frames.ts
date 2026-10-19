@@ -14,7 +14,6 @@ import { DraftStaleUpdateError } from "./draft-store.js";
 
 export type WriterFrameInput = {
   draftId: string;
-  expectedGeneration: number;
   updateData: Uint8Array;
   actorUserId?: string;
   roomDocument: Y.Doc;
@@ -26,7 +25,6 @@ export type WriterFrameDiagnostics = {
   /** A room lacked committed content and was brought up to the replica (decision D26). */
   roomReconciled(input: {
     draftId: string;
-    generation: number;
     revision: number;
     trigger: RoomReconcileTrigger;
     bytes: number;
@@ -48,7 +46,7 @@ export function createWriterFrames(runtime: DraftRuntime) {
    * wait, never a second judgement: what landed meanwhile is folded into the committed prefix
    * under the lock. The room is checked against the replica first, and a room that lacks it
    * missed a delivery: it is reconciled and the frame goes on (decision D26). Only a closed
-   * draft, a frozen Work or a generation the draft has left refuses the frame; an update
+   * draft, a frozen Work refuses the frame; an update
    * whose prefix the journal lacks throws `DraftPrefixMissingError` for the gateway's resync.
    */
   async function commitWriterUpdate(frame: WriterFrameInput): Promise<{ admitted: boolean }> {
@@ -67,8 +65,7 @@ export function createWriterFrames(runtime: DraftRuntime) {
     const admissible =
       snapshot.kind === "work_draft" &&
       snapshot.status === "active" &&
-      snapshot.lifecycle === "active" &&
-      snapshot.generation === frame.expectedGeneration;
+      snapshot.lifecycle === "active";
     if (admissible)
       runtime.reconcileRoom({
         draftId: frame.draftId,
@@ -88,7 +85,6 @@ export function createWriterFrames(runtime: DraftRuntime) {
         runtime.prepareAppend(base, [
           {
             draftId: frame.draftId,
-            generation: snapshot.generation,
             updateData: frame.updateData,
             source: "writer",
             actorUserId: frame.actorUserId,

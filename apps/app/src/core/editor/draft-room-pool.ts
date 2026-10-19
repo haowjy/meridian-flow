@@ -1,5 +1,5 @@
 /**
- * The session registry's generation-fenced draft (review) rooms: retained per
+ * The session registry's stable-id draft (review) rooms: retained per
  * owner, torn down after a grace period once no owner holds them, retired when
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
@@ -10,27 +10,15 @@
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import * as Y from "yjs";
 
 import { type DocumentSession, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
 export type DraftRoomRef = Readonly<{
   roomKey: string;
-  currentRoom(): Promise<string | null>;
-  changed(): void | Promise<void>;
-  writerChanges?(generation: number | null): void;
-  writerLoss?(): void;
-}>;
-export type DraftRoomCarry = Readonly<{
-  ref: DraftRoomRef;
-  source: { roomKey: string; generation: number };
-  carry: Uint8Array;
-  sourceState: Uint8Array;
 }>;
 
 export class DraftRoomPool {
-  private readonly refs = new Map<string, DraftRoomRef>();
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
   private readonly retainedByOwner = new Map<string, Map<string, DraftRoomRef>>();
@@ -42,7 +30,6 @@ export class DraftRoomPool {
       openSession(roomKey: string): DocumentSession;
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
-      carry?(carry: DraftRoomCarry): void;
     },
   ) {}
 
@@ -57,7 +44,6 @@ export class DraftRoomPool {
         throw new Error(`Draft retention requires a draft room: ${roomKey}`);
       }
     }
-    for (const ref of refs) this.refs.set(ref.roomKey, ref);
     this.retainedByOwner.set(ownerId, new Map(refs.map((ref) => [ref.roomKey, ref])));
     for (const roomKey of keys) this.cancelTeardown(roomKey);
     this.reconcile();
@@ -87,13 +73,6 @@ export class DraftRoomPool {
     this.deps.teardownOwner.assertAvailable({ kind: "draft", roomKey });
     const existing = this.rooms.get(roomKey);
     if (existing) return existing;
-    for (const retained of this.retainedByOwner.values()) {
-      const ref = retained.get(roomKey);
-      if (ref) {
-        this.refs.set(roomKey, ref);
-        break;
-      }
-    }
     const session = this.deps.openSession(roomKey);
     this.rooms.set(roomKey, session);
     session.subscribe((snapshot) => {
@@ -120,8 +99,7 @@ export class DraftRoomPool {
     for (const timer of this.teardownTimers.values()) clearTimeout(timer);
     this.teardownTimers.clear();
     const rooms = [...this.rooms];
-    for (const [roomKey, session] of rooms) this.retire(roomKey, session, true);
-    this.refs.clear();
+    for (const [roomKey, session] of rooms) this.retire(roomKey, session);
   }
 
   private reconcile(): void {
@@ -169,29 +147,11 @@ export class DraftRoomPool {
     return false;
   }
 
-  private retire(roomKey: string, session: DocumentSession, closing = false): void {
+  private retire(roomKey: string, session: DocumentSession): void {
     if (this.rooms.get(roomKey) !== session) return;
-    const disposition = session.resetDisposition;
-    const ref = this.refs.get(roomKey);
-    const carry = closing ? null : session.unacknowledgedUpdates();
-    const room = parseYjsRoomName(roomKey);
-    const retirement: DraftRoomCarry | null =
-      carry &&
-      ref &&
-      room?.kind === "draft" &&
-      (disposition === "superseded" || disposition === "rebuild")
-        ? {
-            ref,
-            source: { roomKey, generation: room.generation },
-            carry,
-            sourceState: Y.encodeStateAsUpdate(session.document),
-          }
-        : null;
     this.rooms.delete(roomKey);
-    this.refs.delete(roomKey);
     this.cancelTeardown(roomKey);
     // Quarantine is installed before delivery can try to reopen the same room.
     void this.deps.teardownOwner.retire({ kind: "draft", roomKey }, session).catch(() => undefined);
-    if (retirement) this.deps.carry?.(retirement);
   }
 }

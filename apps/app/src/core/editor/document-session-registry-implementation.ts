@@ -1,6 +1,6 @@
 /**
- * Account-scoped owner of live document sessions and generation-fenced draft rooms.
- * Live acquisition is lease-required; draft rooms remain generation-qualified.
+ * Account-scoped owner of live document sessions and stable-id draft rooms.
+ * Live acquisition is lease-required; draft rooms remain keyed by draft id.
  */
 import type {
   AccountId,
@@ -39,7 +39,6 @@ import type {
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
-import { DraftWriterHandoff } from "./draft-writer-handoff";
 import { LocalDocumentSessionTransfers } from "./local-document-session-transfers";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
@@ -76,7 +75,6 @@ export class DocumentSessionRegistry
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
   private readonly draftRooms: DraftRoomPool;
-  private readonly writerHandoff: DraftWriterHandoff;
   private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
@@ -121,7 +119,7 @@ export class DocumentSessionRegistry
       document,
       awareness,
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    epochSignal: AbortSignal = new AbortController().signal,
+    _epochSignal: AbortSignal = new AbortController().signal,
   ) {
     this.draftRooms = new DraftRoomPool({
       openSession: (roomKey) => {
@@ -131,12 +129,6 @@ export class DocumentSessionRegistry
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
-      carry: (carry) => this.writerHandoff.carry(carry),
-    });
-    this.writerHandoff = new DraftWriterHandoff({
-      pool: this.draftRooms,
-      epochSignal,
-      retryDelaysMs: [100, 500, 1_000, 5_000],
     });
     if (!accountId) return;
     this.accountId = accountId;
@@ -341,7 +333,6 @@ export class DocumentSessionRegistry
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState !== "open") return;
     this.accountRuntimeState = "closing";
-    this.writerHandoff.dispose();
     this.localResources?.beginClose();
     this.coordination?.beginClose();
   }
@@ -376,7 +367,6 @@ export class DocumentSessionRegistry
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
-    this.writerHandoff.dispose();
     this.draftRooms.invalidate();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);

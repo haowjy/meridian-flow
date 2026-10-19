@@ -1,4 +1,4 @@
-// Revocable response helpers and accepted replay across draft generation changes.
+// Revocable response helpers and accepted replay across concurrent draft writes.
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -72,29 +72,6 @@ describe("response helper replay (Postgres)", () => {
     harness.destroyWarmState();
   });
   afterAll(() => closeDatabase(db));
-  async function _expectDroppedCommit(
-    draft: Awaited<ReturnType<typeof setupResponseDraft>>,
-    dropped: Awaited<ReturnType<typeof draft.write>>[],
-    updateCount: number,
-    markdown: string,
-    generation = 2,
-  ) {
-    const saved = await harness.commit(draft.responseId);
-    expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount }] });
-    const receipts = saved.documents.flatMap((doc) => doc.receipts);
-    expect(
-      receipts
-        .filter((receipt) => receipt.result.status !== "success")
-        .map((receipt) => ({ id: receipt.settlementId, message: receipt.result.message })),
-    ).toEqual(
-      dropped.map((entry) => ({
-        id: entry.settlementId,
-        message: "Write did not land: the user discarded the text it edited. Re-read and retry.",
-      })),
-    );
-    expect(await draft.fixture.draftMarkdown(draft.draftId)).toBe(markdown);
-    expect(await harness.draftGeneration(draft.draftId)).toBe(generation);
-  }
   it("a save whose second document moves between capture and commit folds the move and commits once", async () => {
     const { fixture, draftId, responseId, context, write } = await setupResponseDraft(db, harness);
     const core = fixture.collab.agentEdit();

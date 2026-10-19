@@ -7,7 +7,7 @@ the server boundary.
 
 - Rows carry `contextLocation: { scheme, path } | null`; preserve the scheme
   and the leading slash in the path.
-- `reviewRoomName` is an opaque, generation-fenced transport address, not an
+- `reviewRoomName` is an opaque, stable transport address, not an
   application identity.
 - The list contains current reviewable work only; completed review is not a
   durable draft-list receipt.

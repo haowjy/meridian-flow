@@ -9,10 +9,10 @@ draft ID, item key, or presented address interchangeably.
 | Term | Meaning | Wire identity |
 |---|---|---|
 | **branch** | One active Work branch; Apply leaves it open, whole Discard and purge close it. | `branchId` |
-| **draft** | One document's pending version: either a Work draft (`work_draft`) or a thread peer (`thread_peer`). Each is its own Y.Doc; generation fields remain until lane G. | opaque draft room plus generation |
+| **draft** | One document's pending version: either a Work draft (`work_draft`) or a thread peer (`thread_peer`). Each is its own Y.Doc with stable identity from seed to close. | opaque draft room |
 | **revision** | The draft row's counter: every append, rewrite and status or hold change moves it; rewrites are fenced by it, appends never check it; never reaches a client. | none |
 | **checkpoint** | The draft's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
-| **tail** | The current generation's journal rows past the checkpoint, replayed on every read. | none |
+| **tail** | The draft's journal rows past the checkpoint in id order, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${branchId}:${documentId}` |
 | **command** | One idempotent writer Apply or Discard action. | `commandId` |
 | **presented address** | The writer's Work/item/change selection; it names no draft storage ID. | review selector |
@@ -33,7 +33,7 @@ drafts and run end-use removal without re-forking text.
 
 Thread peers keep seed replication, pull and exact checkpoints until Track M.
 A parent that no longer contains its peer refuses `ThreadPeerPullLost`, never
-creates a new generation. Archived Works admit reads but no new writer edits.
+re-forks or redirects to another draft. Archived Works admit reads but no new writer edits.
 `DraftReplayJournalReads` lives in `drizzle-draft-journal-reads.ts`; both reads
 use the ambient transaction, including the reply's uncommitted receipts.
 
@@ -45,8 +45,9 @@ statement, and nothing else reads `state`. Every committed write moves
 `revision`: appends, checkpoint rewrites and closes. Rewrites and metadata changes are fenced by it; appends bump it
 without checking it. The projection job's `has_effect` write is the one
 exception: it writes at the judged revision and never bumps it, so it never
-makes an exact rewrite miss. `generation` still names rooms and groups journal rows; lane G2 removes
-that legacy state. No operation bumps it through reset.
+makes an exact rewrite miss. Draft room identity is `draft:<draftId>` for life; journal rows and receipt origins carry no epoch.
+The legacy draft column uses its default; the NOT NULL journal column has no default, so inserts
+write `1` until the migrations lane drops it. No production push-lineage writer remains.
 
 The contract (row, read and write types, the `DraftStore` port, the
 materialization of one read) is `domain/draft-store.ts`. Its Drizzle storage
@@ -62,8 +63,7 @@ append, the live advisory lock, the projection job's effect write, edit
 receipts). An append takes only its draft row. These draft writes stand outside the doors,
 by name: creation and its seeds insert the row (`ensureDocumentDraft`,
 `ensureThreadPeerDraft`); retraction and tree deletion delete it.
-Thread-peer and Work-draft resolution return metadata only (id, generation,
-status, lifecycle); content is read through the coordinator.
+Thread-peer and Work-draft resolution return metadata only (id, status, lifecycle); content is read through the coordinator.
 
 Writes go through two doors. `appendRows` adds rows past the checkpoint,
 sequenced by the draft row's lock rather than fenced by a revision: it bumps
@@ -83,12 +83,13 @@ blocks; a live commit rebases content through the same append finalizer.
 
 A draft's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its branch's origin Work with the row; anything but `active` is frozen. The
-append's `UPDATE` admits only while that Work is active, in the same statement,
+ordinary append's `UPDATE` admits only while that Work is active, in the same statement,
 so an append whose statement starts after an archive commits gets zero rows,
 and the post-lock read refuses one whose statement started earlier but took the
 row after the archive committed. A lifecycle transition touches no draft row:
 the one append it can miss is one whose post-lock read ran before it committed,
 which lands in the archived draft (the archive window, `CONTEXT.md`). The
+background content rebase explicitly admits archived Works to keep them current. The
 runtime holds one immutable replica per draft at a
 committed revision and catches it up from the tail; every write computes on a
 private copy, so a failed commit never changes what a reader holds.
@@ -114,7 +115,7 @@ captures a durable cut after the releasing transaction commits. A dropped or
 late checkpoint costs replay time, never data.
 
 Draft mutations are durable before Hocuspocus apply, broadcast, or ack. The
-awaited admission path checks the generation and the room, exits early on a
+awaited admission path checks active status and the room, exits early on a
 contained or reserved-authorship update, then appends once; containment,
 authorship and receipts are decided again under the row lock against what is
 committed. `onChange` does not

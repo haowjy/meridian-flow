@@ -562,7 +562,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   // the pooled cores' thread state.
   const closeDraftRoom = (draftId: string) => {
     for (const roomId of [...hocuspocus.documents.keys()]) {
-      if (!roomId.startsWith(`draft:${draftId}:gen:`)) continue;
+      if (roomId !== `draft:${draftId}`) continue;
       hocuspocus.documents.get(roomId)?.destroy();
       hocuspocus.documents.delete(roomId);
     }
@@ -704,7 +704,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       await draftCoordinator.commitSegmentRows({
         draftId: draft.draftId,
         sourceDoc: draft.doc,
-        expectedGeneration: draft.generation,
         rows: [
           {
             draftId: draft.draftId,
@@ -1462,19 +1461,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     },
     /** Waits for every draft-effect judgement the test's writes scheduled. */
     settleDraftEffects: () => draftEffects.flush(),
-    async draftGeneration(draftId: string) {
-      const [documentDraft] = await db
-        .select({ generation: schema.documentDrafts.generation })
-        .from(schema.documentDrafts)
-        .where(eq(schema.documentDrafts.id, draftId));
-      if (!documentDraft) throw new Error("missing draft");
-      return documentDraft.generation;
-    },
     async stageAnotherDestructiveEdit(draftId: string) {
-      const staged = await draftCoordinator.readDraft(draftId, async (doc, snapshot) => {
+      const staged = await draftCoordinator.readDraft(draftId, async (doc, _snapshot) => {
         const stagedDoc = new Y.Doc({ gc: false });
         Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
-        return { doc: stagedDoc, generation: snapshot.generation };
+        return { doc: stagedDoc };
       });
       try {
         const doc = staged.doc;
@@ -1484,7 +1475,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         await draftCoordinator.commitSegmentRows({
           draftId: draftId,
           sourceDoc: doc,
-          expectedGeneration: staged.generation,
           rows: [
             {
               draftId: draftId,
@@ -1564,8 +1554,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .where(eq(schema.draftWriteJournal.status, "active"));
       if (!owned) throw new Error("missing owned journal row");
       await db.insert(schema.draftWriteJournal).values({
+        generation: 1,
         draftId: owned.draftId,
-        generation: owned.generation,
         wId: owned.wId,
         source: owned.source,
         threadId: owned.threadId,

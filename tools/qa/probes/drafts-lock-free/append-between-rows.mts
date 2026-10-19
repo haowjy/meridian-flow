@@ -53,13 +53,12 @@ function counted(store: DraftStore) {
 
 async function send(
   process: Awaited<ReturnType<typeof openProcess>>,
-  draft: { draftId: string; generation: number },
+  draft: { draftId: string },
   update: Uint8Array,
 ) {
   const outcome = await frameOutcome(
     process.coordinator.commitWriterUpdate({
       draftId: draft.draftId,
-      expectedGeneration: draft.generation,
       updateData: update,
       roomDocument: process.room,
     }),

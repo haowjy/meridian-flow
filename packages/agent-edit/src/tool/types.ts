@@ -172,14 +172,13 @@ interface InteractionContextBase {
 
 export type InteractionContext =
   | (InteractionContextBase & {
-      /** Live writes have no draft-generation fence by type. */
+      /** Live writes carry no draft identity. */
       mode: "live";
     })
   | (InteractionContextBase & {
-      /** Thread-peer writes must carry the draft-generation fence captured with the baseline. */
+      /** Thread-peer writes retain their exact peer identity. */
       mode: "threadPeer";
-      draftGeneration: number;
-      /** Host peer identity, for exact retirement independently of generation replay. */
+      /** Host peer identity for exact retirement. */
       peerDraftId?: string;
       upstreamDraftId?: string;
     });
@@ -204,7 +203,7 @@ export interface WriteContext {
   responseIdentity?: ModelResponseIdentity;
   /**
    * Host-captured interaction identity: baseline, journal floor, draft
-   * generation, and optional attempt guard travel as one object.
+   * identity, and optional attempt guard travel as one object.
    */
   interactionContext?: InteractionContext;
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */

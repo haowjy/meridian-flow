@@ -213,7 +213,7 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * §12.5, O-11: a contribution is any journal row of the draft's current generation that
+   * §12.5, O-11: a contribution is any journal row of the draft that
    * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
   async function retractCreatedDocumentDraft(input: {
@@ -231,7 +231,6 @@ export function createDrizzleDraftStore(
         .where(
           and(
             eq(draftWriteJournal.draftId, documentDraft.id),
-            eq(draftWriteJournal.generation, documentDraft.generation),
             sql`${draftWriteJournal.status} <> 'discarded'`,
           ),
         )
@@ -441,7 +440,6 @@ export function createDrizzleDraftStore(
         let prefix = { rows: 0, moved: false };
         const committed = await appendRowsWithinTx(tx, {
           draftId: input.draftId,
-          expectedGeneration: input.expectedGeneration,
           work: input.work,
           base: input.base,
           async finalize(read) {
@@ -587,7 +585,6 @@ export function createDrizzleDraftStore(
         revision: outcome.revision,
         checkpointRevision: outcome.checkpointRevision,
         seq: outcome.seq,
-        generation: outcome.generation,
       };
     };
     return runInDrizzleTransaction(db, rewrite).catch((cause): RewriteOutcome => {
@@ -708,8 +705,8 @@ export function createDrizzleDraftStore(
   };
 }
 
-function resolved({ draftId, generation, status, lifecycle }: DraftSnapshot): ResolvedDraft {
-  return { draftId, generation, status, lifecycle };
+function resolved({ draftId, status, lifecycle }: DraftSnapshot): ResolvedDraft {
+  return { draftId, status, lifecycle };
 }
 
 class NoPrimaryWorkError extends Error {
@@ -737,7 +734,7 @@ function sqlState(cause: unknown): string | null {
 /** The receipts finalization captured, written with the row ids the append allocated. */
 async function recordAppendReceipts(
   db: Pick<Database, "select" | "insert" | "update">,
-  input: Pick<AppendRowsInput, "draftId" | "documentId" | "expectedGeneration">,
+  input: Pick<AppendRowsInput, "draftId" | "documentId">,
   finalized: { rows: readonly AppendDraftJournalInput[]; receipts: readonly AppendReceiptGroup[] },
   rowIds: readonly number[],
 ): Promise<void> {
@@ -765,7 +762,6 @@ async function recordAppendReceipts(
         origin: {
           kind: "pending" as const,
           draftId: input.draftId,
-          generation: input.expectedGeneration,
           rowId: rowIds[group.rowIndexes[i]],
         },
       })),

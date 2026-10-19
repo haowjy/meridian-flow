@@ -115,23 +115,16 @@ export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
   primeReservedNamespaceIndex(document: Y.Doc): void;
   headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
-  resolveDraftHocuspocusRoom(
-    draftId: string,
-    generation: number,
-  ): Promise<{
+  resolveDraftHocuspocusRoom(draftId: string): Promise<{
     draftId: string;
     documentId: DocumentId;
     /** The Work whose draft the room is; its lifecycle caps the room's access. */
     workId: WorkId;
-    generation: number;
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
-  loadHocuspocusDraftState(
-    draftId: string,
-    generation: number,
-  ): Promise<{ state: Uint8Array; generation: number } | undefined>;
+  loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
     documentId: DocumentId;
     document: Y.Doc;
@@ -154,33 +147,23 @@ export type CollabTransport = {
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
-    expectedGeneration: number;
   }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
   drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
-  /** Narrow close affordance for durable shadow-probe T6 and draft reset plumbing. */
+  /** Nonterminal disconnect affordance for the durable shadow-probe T6. */
   closeHocuspocusDraftRoom(draftId: string): void;
   /**
    * A tab's SyncStep1 on a draft room: reconciles `room` against the committed draft, then
-   * true when the tab still holds content a reset discarded (decision D27).
+   * true while the draft is active (decision D27).
    */
-  rejectStaleDraftSyncStep1(input: {
-    draftId: string;
-    generation: number;
-    clientStateVector: Uint8Array;
-    room: Y.Doc;
-  }): Promise<boolean>;
+  reconcileHocuspocusDraftRoom(input: { draftId: string; room: Y.Doc }): Promise<boolean>;
   /**
    * Called from a draft room's load hook: once Hocuspocus registers the room, brings it up to
-   * what committed while it loaded, or closes it when its generation is stale (decision D26).
+   * what committed while it loaded, or closes it when the draft ended (decision D26).
    */
-  enrollHocuspocusDraftRoom(input: {
-    draftId: string;
-    generation: number;
-    document: HocuspocusDocument;
-  }): void;
+  enrollHocuspocusDraftRoom(input: { draftId: string; document: HocuspocusDocument }): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 

@@ -9,19 +9,32 @@ import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "../domain/draft-journal.js";
 
+const journalColumns = {
+  id: draftWriteJournal.id,
+  draftId: draftWriteJournal.draftId,
+  wId: draftWriteJournal.wId,
+  toolCallId: draftWriteJournal.toolCallId,
+  source: draftWriteJournal.source,
+  threadId: draftWriteJournal.threadId,
+  turnId: draftWriteJournal.turnId,
+  actorUserId: draftWriteJournal.actorUserId,
+  updateData: draftWriteJournal.updateData,
+  draftBaseUpdateSeq: draftWriteJournal.draftBaseUpdateSeq,
+  status: draftWriteJournal.status,
+  updateMeta: draftWriteJournal.updateMeta,
+};
+type JournalRecord = Pick<typeof draftWriteJournal.$inferSelect, keyof typeof journalColumns>;
+
 export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJournalReads {
   return {
     async listJournalRowsForDraft(input) {
-      const conditions = [
-        eq(draftWriteJournal.draftId, input.draftId),
-        eq(draftWriteJournal.generation, input.generation),
-      ];
+      const conditions = [eq(draftWriteJournal.draftId, input.draftId)];
       if (input.throughJournalId !== undefined) {
         conditions.push(sql`${draftWriteJournal.id} <= ${input.throughJournalId}`);
       }
       const rows = await currentDrizzleDb(db)
         .select({
-          row: draftWriteJournal,
+          row: journalColumns,
           editKind: documentEdits.kind,
         })
         .from(draftWriteJournal)
@@ -30,7 +43,6 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
           sql`
           ${documentEditParts.origin}->>'kind' = 'pending'
           and ${documentEditParts.origin}->>'draftId' = ${draftWriteJournal.draftId}::text
-          and ${documentEditParts.origin}->>'generation' = ${draftWriteJournal.generation}::text
           and ${documentEditParts.origin}->>'rowId' = ${draftWriteJournal.id}::text
         `,
         )
@@ -48,12 +60,12 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
       return [...byRow.values()];
     },
 
-    async listConcurrentJournalRows(draftId, generation, options) {
+    async listConcurrentJournalRows(draftId, options) {
       const floor = options.afterJournalId ?? 0;
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
       const rows = await currentDrizzleDb(db)
-        .select({ row: draftWriteJournal })
+        .select({ row: journalColumns })
         .from(draftWriteJournal)
         .innerJoin(documentDrafts, eq(draftWriteJournal.draftId, documentDrafts.id))
         .where(
@@ -63,15 +75,11 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
             // Same-draft active rows and cross-draft pushed rows are both needed for
             // attribution. Cold-start scans are deliberately unbounded until we add a
             // push-ordered floor; max(journal.id) is unsound because journal ids can include
-            // unpushed sibling rows and do not encode push order. Each row remains bounded
-            // by its owning draft generation so reset/future-generation rows cannot leak
-            // backward.
+            // unpushed sibling rows and do not encode push order.
             sql`(
               (${draftWriteJournal.draftId} = ${draftId}
-                AND ${draftWriteJournal.generation} <= ${generation}
                 AND ${draftWriteJournal.status} IN ('active', 'pushed'))
               OR (${draftWriteJournal.draftId} <> ${draftId}
-                AND ${draftWriteJournal.generation} <= ${documentDrafts.generation}
                 AND ${draftWriteJournal.status} = 'pushed')
             )`,
           ),
@@ -82,11 +90,10 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
   };
 }
 
-function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {
+function mapJournalRow(row: JournalRecord): DraftJournalRow {
   return {
     id: row.id,
     draftId: row.draftId,
-    generation: row.generation,
     wId: row.wId,
     toolCallId: row.toolCallId,
     source: row.source,

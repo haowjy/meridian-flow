@@ -170,7 +170,6 @@ export async function finalizeAppend(
             if (recovery.update) {
               const refused = admit({
                 draftId: row.draftId,
-                generation: row.generation,
                 source: "server",
                 updateData: recovery.update,
               });
@@ -192,7 +191,6 @@ export async function finalizeAppend(
         for (const updateData of await input.authorServerRows(authoring)) {
           const refused = admit({
             draftId: read.documentDraft.draftId,
-            generation: read.documentDraft.generation,
             source: "server",
             updateData,
           });

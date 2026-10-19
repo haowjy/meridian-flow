@@ -44,7 +44,6 @@ export type CommittedReplica = {
   readonly revision: number;
   readonly checkpointRevision: number;
   readonly seq: number;
-  readonly generation: number;
   readonly doc: Y.Doc;
   readonly tail: TailSize;
   encoded?: Uint8Array;
@@ -267,7 +266,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           revision: documentDraft.revision,
           checkpointRevision: documentDraft.checkpointRevision,
           seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
-          generation: documentDraft.generation,
           doc,
           tail: grownTail(current.tail, rows),
           ...(rows.length ? {} : { encoded: current.encoded }),
@@ -279,7 +277,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         revision: documentDraft.revision,
         checkpointRevision: documentDraft.checkpointRevision,
         seq: Math.max(documentDraft.checkpointSeq, ...read.tail.map((row) => row.id)),
-        generation: documentDraft.generation,
         doc: materializeDraftRead(read),
         tail: grownTail(EMPTY_TAIL, rows),
       };
@@ -319,13 +316,13 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   }
 
   /**
-   * What `transition` adds to `previous` within one generation, which a rewrite only merges
+   * What `transition` adds to `previous` within one draft, which a rewrite only merges
    * into: its own rows when they cover everything past `previous` (design §2.4), otherwise the
    * difference of the two documents (a fold or checkpoint, whose rows this process never saw
    * one by one), or nothing when the rewrite changed no content. Rows built on `from` cover
    * `(from.seq, next.seq]`; with the checkpoint unmoved and `from` no newer than `previous`
    * that is a superset of `(previous.seq, next.seq]`, because commit order is id order within a
-   * generation. Yjs applies a repeat as a no-op, so a room that already holds part of it is
+   * draft. Yjs applies a repeat as a no-op, so a room that already holds part of it is
    * unharmed.
    */
   function deliveryFrom(previous: CommittedReplica, transition: Transition): Uint8Array | null {
@@ -333,7 +330,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     if (
       rows &&
       from &&
-      from.generation === previous.generation &&
       next.checkpointRevision === previous.checkpointRevision &&
       from.revision <= previous.revision
     )
@@ -360,7 +356,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     (input.applyToRoom ?? Y.applyUpdate)(room, update);
     input.diagnostics?.roomReconciled({
       draftId,
-      generation: replica.generation,
       revision: replica.revision,
       trigger,
       bytes: update.byteLength,
@@ -481,7 +476,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         const outcome = await input.store.appendRows({
           draftId: snapshot.draftId,
           documentId: snapshot.documentId,
-          expectedGeneration: snapshot.generation,
           work,
           base: { checkpointRevision: replica.checkpointRevision, seq: replica.seq },
           async finalize(read) {
@@ -531,7 +525,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               revision: outcome.revision,
               checkpointRevision: outcome.checkpointRevision,
               seq: Math.max(checkpointSeq, seq),
-              generation: snapshot.generation,
               doc,
               tail: grownTail(EMPTY_TAIL, rows),
             },
@@ -541,7 +534,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
             revision: outcome.revision,
             checkpointRevision: replica.checkpointRevision,
             seq: Math.max(replica.seq, seq),
-            generation: snapshot.generation,
             doc,
             tail: grownTail(replica.tail, rows),
           },

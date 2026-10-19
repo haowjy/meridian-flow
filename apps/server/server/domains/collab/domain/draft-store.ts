@@ -35,8 +35,6 @@ export type DraftSnapshot = {
   status: DraftStatus;
   /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
   closedCause: "discarded" | "document_removed" | null;
-  /** The re-fork epoch: room name, journal grouping, edit placement. A reset bumps it. */
-  generation: number;
   /** Bumped by every committed write to the draft; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
@@ -46,7 +44,6 @@ export type DraftSnapshot = {
   /** Derived from the origin Work as read, never stored: anything but `active` is frozen. */
   lifecycle: DraftWorkLifecycle;
   hasEffect: boolean;
-  discardedStateVector?: Uint8Array | null;
   schemaVersion: CollabSchemaVersion;
 };
 
@@ -82,7 +79,6 @@ export type AppendDraftJournalInput = {
   /** One logical tool write, shared by its segment rows. */
   documentEditKey?: string;
   draftId: string;
-  generation: number;
   updateData: Uint8Array;
   source: "agent" | "writer" | "server";
   wId?: number | null;
@@ -120,7 +116,6 @@ export type AppendFinalization =
 export type AppendRowsInput = {
   draftId: string;
   documentId: DocumentId;
-  expectedGeneration: number;
   /** Background rebases keep archived drafts current; incoming edits require active Work. */
   work?: "active" | "any";
   /** The checkpoint and highest row the caller's base replica holds. */
@@ -166,7 +161,7 @@ export type CommitRewriteInput = {
   draftId: string;
   policy: RewritePolicy;
   /** The peer's upstream as captured: locked `FOR SHARE` and checked before the peer row. */
-  upstream?: { draftId: string; generation: number };
+  upstream?: { draftId: string };
   /** The rewritten checkpoint. A `fold` pull applies the tail into it. */
   doc: Y.Doc;
   operation: RewriteOperation;
@@ -178,7 +173,6 @@ export type RewriteOutcome =
       revision: number;
       checkpointRevision: number;
       seq: number;
-      generation: number;
     }
   | { status: "moved" | "closed" | "upstreamMoved" };
 
@@ -229,7 +223,7 @@ export type DraftStore = {
 export class DraftStaleUpdateError extends Error {
   // `subject` names what went stale, "Draft <id>" or "Branch <id>"; no caller reads it.
   constructor(readonly subject: string) {
-    super(`${subject} update did not apply to the current generation`);
+    super(`${subject} update did not apply to the active draft`);
     this.name = "DraftStaleUpdateError";
   }
 }

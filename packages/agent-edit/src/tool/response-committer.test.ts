@@ -113,7 +113,7 @@ describe("response committer", () => {
         return {
           keptEntries: request.entries,
           helperState: state,
-          helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
+          helperCut: { state: Y.encodeStateAsUpdate(canonical) },
           beforeState: Y.encodeStateAsUpdate(canonical),
         };
       });
@@ -139,7 +139,7 @@ describe("response committer", () => {
       ...context,
       responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
       turnId: "prepared-turn",
-      interactionContext: { mode: "threadPeer" as const, draftGeneration: 1, afterJournalId: 0 },
+      interactionContext: { mode: "threadPeer" as const, afterJournalId: 0 },
     };
     await prepared.core.read({ file: "chapter.md" }, peer);
     expect(
@@ -251,7 +251,6 @@ describe("response committer", () => {
           turnId: `turn-${file}`,
           interactionContext: {
             mode: "threadPeer",
-            draftGeneration: 1,
             peerDraftId: "draft-peer",
           },
         },
@@ -504,7 +503,7 @@ describe("reasoned refusal of staged writes", () => {
     ...context,
     turnId: turn,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    interactionContext: { mode: "threadPeer" as const, draftGeneration: 1, peerDraftId },
+    interactionContext: { mode: "threadPeer" as const, peerDraftId },
   });
   const receiptTexts = (
     result: Awaited<ReturnType<ReturnType<typeof harness>["core"]["commitResponse"]>>,

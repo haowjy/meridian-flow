@@ -261,8 +261,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const close = () => scenario.discard(work, "all");
         const run =
           first === "write"
-            ? await interleave(db, write, "draft.beforeAccess", close, { waitMs: 300 })
-            : await interleave(db, close, "discard.beforeCommitScope", write, { waitMs: 300 });
+            ? await interleave(db, write, "draft.beforeAccess", close)
+            : await interleave(db, close, "discard.beforeCommitScope", write);
         const wrote = first === "write" ? run.a : run.b;
         const closed = first === "write" ? run.b : run.a;
         expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });

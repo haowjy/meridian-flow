@@ -9,7 +9,7 @@ The contracts name five things; never let one stand in for another.
 |---|---|---|
 | **branch** | The Work's one active branch (a `branches` row). Closes only on Discard all and purge. | `branchId` |
 | **item** | One document's reviewable change inside the branch, with or without a text draft (an empty create and a created image have none). | `itemKey` (`${branchId}:${documentId}`) |
-| **draft** | The server's per-document text draft in a branch. Never on the wire. | `draftGeneration` and the opaque `reviewRoomName` only |
+| **draft** | The server's per-document text draft in a branch. Never on the wire. | `hasDraft` and the opaque `reviewRoomName` only |
 | **command** | One writer action (Apply, Discard, per item, per change or for all). | a client-made `commandId` |
 | **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewWorkId` + `itemKey` |
 
@@ -24,18 +24,14 @@ The client never reads `branchId` as a document draft id. The server alone maps 
   candidates: a chat's writes may have been overwritten; previews confirm
   visible changes. Writer and threadless rows are excluded; applied/discarded
   journal rows no longer contribute.
-- Preview responses carry `branchId` and `itemKey`, the generation-fenced
+- Preview responses carry `branchId` and `itemKey`, the stable
   `reviewRoomName`, live markdown, draft markdown, review operations and
   hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the
   chat title at preview time); writer operations carry neither. A preview that
   cannot be read answers a refusal (`corrupt` carries the `branchId` so the
   writer can discard the whole branch).
-- `draftGeneration` (list row and preview) is the draft's generation; it is
-  null for an item with no draft. A reset keeps the draft and the item and
-  moves the generation up, so the number orders proposals of one item and never
-  decreases. The preview's `reviewRoomName` and tokens belong to its
-  generation. `draftRevisionToken` is only the stale-command fence and is not an
-  identity.
+- `hasDraft` reports text-draft existence only. A draft room keeps the same key until close;
+  a later proposal has a new draft id and room. Preview revisions do not order proposals.
 
 ## Commands
 
