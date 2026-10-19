@@ -790,7 +790,7 @@ export const observationFrontiers = pgTable(
   {
     sourceBlockId: uuid("source_block_id")
       .$type<TurnBlockId>()
-      .notNull()
+      .primaryKey()
       .references(() => turnBlocks.id, { onDelete: "cascade" }),
     roomKey: text("room_key").notNull(),
     snapshot: byteaColumn("snapshot").notNull(),
@@ -798,10 +798,6 @@ export const observationFrontiers = pgTable(
     recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
   },
   (table) => [
-    primaryKey({
-      name: "observation_frontiers_pk",
-      columns: [table.sourceBlockId, table.roomKey],
-    }),
     // The latest-row lookup walks a room's rows newest first and stops at the first in the conversation.
     index("observation_frontiers_room_latest").on(table.roomKey, table.recordedSeq.desc()),
   ],
