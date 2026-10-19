@@ -4,13 +4,11 @@ import {
   type DiscardedWriteReason,
   type DocumentCoordinator,
   DocumentNotFoundError,
-  type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { Branches } from "./branches.js";
-import type { DraftConcurrentJournalWatermarks } from "./draft-agent-edit.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
 import { DraftCasConflictError, type DraftSnapshot, DraftStaleUpdateError } from "./draft-store.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
@@ -53,8 +51,6 @@ export type DraftPullService = {
 export type EnsuredThreadPeer = {
   peerDraftId: string;
   upstreamDraftId: string;
-  afterJournalId?: number;
-  liveJournalSeq?: number;
 };
 
 /**
@@ -111,8 +107,6 @@ export function createDraftPullService(input: {
   drafts: WorkDraftLookup;
   debounceMs?: number;
   maxDebounceMs?: number;
-  concurrentJournalWatermarks?: DraftConcurrentJournalWatermarks;
-  liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: DraftPullDiagnostics;
 }): DraftPullService {
   const debounceMs = input.debounceMs ?? 2000;
@@ -289,19 +283,7 @@ export function createDraftPullService(input: {
         const upstreamDraftId = peer.upstreamDraftId;
         if (!upstreamDraftId)
           throw new Error(`Thread peer ${peer.draftId} has no upstream Work draft`);
-        const liveCut = await input.liveJournal?.read(inputPeer.documentId);
-        return {
-          peerDraftId: peer.draftId,
-          upstreamDraftId,
-          afterJournalId: input.concurrentJournalWatermarks?.current(
-            inputPeer.threadId,
-            inputPeer.documentId,
-          ),
-          liveJournalSeq: liveCut
-            ? (liveCut.persistenceWatermark ??
-              liveCut.updates.reduce((latest, update) => Math.max(latest, update.seq), 0))
-            : undefined,
-        };
+        return { peerDraftId: peer.draftId, upstreamDraftId };
       });
     },
   };

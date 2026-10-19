@@ -821,6 +821,10 @@ msgstr ""
 msgid "Caption"
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Caught up on changes in"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Center"
 msgstr ""
@@ -3212,8 +3216,8 @@ msgid "Paste"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Paused to reread"
-msgstr ""
+#~ msgid "Paused to reread"
+#~ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "PDF"

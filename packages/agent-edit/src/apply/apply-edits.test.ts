@@ -120,7 +120,6 @@ describe("mutation and echo composition", () => {
     const localBlocks = baseModel.getBlocks(local);
     const alphaHash = baseModel.getBlockId(localBlocks[0]);
     const betaHash = baseModel.getBlockId(localBlocks[1]);
-    const remoteHash = baseModel.getBlockId(localBlocks[3]);
     const remoteUpdate = remoteTextUpdate(live, 3, { from: 0, to: 5 }, "Omega", {
       type: "human",
       userId: "user-1",
@@ -135,13 +134,9 @@ describe("mutation and echo composition", () => {
     );
 
     expectOk(result);
-    const concurrent = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
-      origin,
-    );
+    applyConcurrentUpdates(local, baseModel, codec, [
+      { update: remoteUpdate, origin: { type: "human", userId: "user-1" } },
+    ]);
     const echo = computeEcho({
       before,
       after: snapshotBlocks(local, baseModel, codec),
@@ -150,7 +145,6 @@ describe("mutation and echo composition", () => {
       ),
       agentDeletedBlocks: before.filter((block) => result.deletedBlocks.includes(block.hash)),
     });
-    expect(concurrent.info?.human).toEqual([remoteHash]);
     expect(echo).toEqual([
       { mode: "full", blocks: [`${alphaHash}|Alpha blade.`] },
       { mode: "truncated", blocks: [`${betaHash}|Beta waits.`] },
@@ -162,111 +156,6 @@ describe("mutation and echo composition", () => {
       "Omega waits.",
     ]);
     expectNoOrphanedElements(local);
-  });
-});
-
-describe("applyConcurrentUpdates rendered concurrent blocks", () => {
-  it("places separated deletion tombstones at their own boundary windows", () => {
-    const live = createDoc(
-      Array.from({ length: 9 }, (_, index) => `Block ${index}.`).join("\n\n"),
-      1,
-    );
-    const local = cloneDoc(live, 2);
-    const first = remoteDeleteUpdate(live, 1, { type: "human", userId: "user-1" });
-    const second = remoteDeleteUpdate(live, 6, { type: "human", userId: "user-1" });
-
-    const result = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [first, second].map((update) => ({
-        update,
-        origin: { type: "human" as const, userId: "user-1" },
-      })),
-      origin,
-    );
-
-    expect(result.info?.runs).toHaveLength(2);
-    expect(result.info?.runs[0]?.tombstones[0]?.capturedBody).toBe("Block 1.");
-    expect(result.info?.runs[0]?.blocks.join("\n")).toContain("Block 0.");
-    expect(result.info?.runs[1]?.tombstones[0]?.capturedBody).toBe("Block 7.");
-    expect(result.info?.runs[1]?.blocks.join("\n")).toContain("Block 8.");
-  });
-
-  it("prefers stable hash matches when duplicate bodies surround a deletion", () => {
-    const live = createDoc("same\n\nsame", 1);
-    const local = cloneDoc(live, 2);
-    const deletedHash = baseModel.getBlockId(baseModel.getBlocks(local)[0]);
-    const survivorHash = baseModel.getBlockId(baseModel.getBlocks(local)[1]);
-    const update = remoteDeleteUpdate(live, 0, { type: "human", userId: "user-1" });
-
-    const result = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update, origin: { type: "human", userId: "user-1" } }],
-      origin,
-    );
-
-    expect(result.info?.human).toEqual([deletedHash]);
-    expect(result.info?.human).not.toContain(survivorHash);
-    expect(result.info?.runs.flatMap((run) => run.tombstones)).toEqual([
-      { hash: deletedHash, capturedBody: "same" },
-    ]);
-  });
-
-  it("ignores the acting agent's own updates", () => {
-    const live = createDoc("Alpha sword.", 1);
-    const local = cloneDoc(live, 2);
-    const update = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", origin);
-
-    const result = applyConcurrentUpdates(local, baseModel, codec, [{ update, origin }], origin);
-
-    expect(result.info).toBeUndefined();
-    expect(result.touchedHashes).toEqual(new Set());
-  });
-
-  it("does not smear a deletion-bearing no-op agent origin onto the next human change", () => {
-    const live = createDoc("Alpha.\n\nDelete me.\n\nBeta waits.", 1);
-    const local = cloneDoc(live, 2);
-    const deleteUpdate = remoteDeleteUpdate(live, 1, { type: "agent", actorTurnId: "turn-2" });
-    Y.applyUpdate(local, deleteUpdate);
-    const humanUpdate = remoteTextUpdate(live, 1, { from: 0, to: 4 }, "Gamma", {
-      type: "human",
-      userId: "user-1",
-    });
-
-    const result = applyConcurrentUpdates(local, baseModel, codec, [
-      { update: deleteUpdate, origin: { type: "agent", actorTurnId: "turn-2" } },
-      { update: humanUpdate, origin: { type: "human", userId: "user-1" } },
-    ]);
-
-    expect(result.info?.human).toHaveLength(1);
-    expect(result.info?.agent).toEqual([]);
-    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain("Gamma waits.");
-  });
-
-  it("matches unchanged blocks across a deletion-bearing whole-document rewrite", () => {
-    const live = createDoc("R6 block one.\n\nR6 block two old.\n\nR6 block three.", 1);
-    const local = cloneDoc(live, 2);
-    const update = remoteWholeDocumentReplace(
-      live,
-      "R6 block one.\n\nR6 block two changed.\n\nR6 block three.",
-      { type: "agent", actorTurnId: "turn-2" },
-    );
-
-    const result = applyConcurrentUpdates(local, baseModel, codec, [
-      { update, origin: { type: "agent", actorTurnId: "turn-2" } },
-    ]);
-
-    expect(result.info?.human).toEqual([]);
-    expect(result.humanTouchedHashes).toEqual(new Set());
-    expect(result.touchedHashes.size).toBeGreaterThan(0);
-    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain(
-      "R6 block two changed.",
-    );
-    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain("R6 block one.");
-    expect(result.info?.runs.flatMap((run) => run.blocks).join("\n")).toContain("R6 block three.");
   });
 });
 
@@ -362,30 +251,6 @@ function remoteTextUpdate(
   const before = Y.encodeStateVector(doc);
   const block = baseModel.getBlocks(doc)[blockIndex];
   doc.transact(() => baseModel.applyTextEdit(doc, block, span, newText), transactionOrigin);
-  return Y.encodeStateAsUpdate(doc, before);
-}
-
-function remoteDeleteUpdate(
-  doc: Y.Doc,
-  blockIndex: number,
-  transactionOrigin: unknown,
-): Uint8Array {
-  const before = Y.encodeStateVector(doc);
-  const block = baseModel.getBlocks(doc)[blockIndex];
-  doc.transact(() => baseModel.deleteBlock(doc, block), transactionOrigin);
-  return Y.encodeStateAsUpdate(doc, before);
-}
-
-function remoteWholeDocumentReplace(
-  doc: Y.Doc,
-  markdown: string,
-  transactionOrigin: unknown,
-): Uint8Array {
-  const before = Y.encodeStateVector(doc);
-  doc.transact(() => {
-    for (const block of [...baseModel.getBlocks(doc)].reverse()) baseModel.deleteBlock(doc, block);
-    baseModel.insertBlocks(doc, null, codec.parse(markdown));
-  }, transactionOrigin);
   return Y.encodeStateAsUpdate(doc, before);
 }
 

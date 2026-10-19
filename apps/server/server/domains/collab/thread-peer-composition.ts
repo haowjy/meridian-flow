@@ -14,7 +14,6 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import type { FileAccess } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
@@ -23,8 +22,6 @@ import {
   createDraftAgentEditCoordinator,
   createDraftAgentEditJournal,
   type DraftAgentEditDiagnostics,
-  type DraftConcurrentJournalWatermarks,
-  type EnlistResponseParticipant,
 } from "./domain/draft-agent-edit.js";
 import type { DraftCoordinator } from "./domain/draft-coordinator.js";
 import type { DraftReplayJournalReads } from "./domain/draft-journal.js";
@@ -62,10 +59,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   draftCoordinator: DraftCoordinator;
   draftPulls: DraftPullService;
   draftJournal: DraftReplayJournalReads;
-  concurrentJournalWatermarks: DraftConcurrentJournalWatermarks;
   diagnostics: DraftAgentEditDiagnostics;
-  afterCommit(callback: () => void | Promise<void>): void;
-  enlistResponseParticipant: EnlistResponseParticipant;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
@@ -116,15 +110,8 @@ export function createDraftThreadPeerAgentEditCore(input: {
           draftCoordinator: input.draftCoordinator,
           drafts: input.drafts,
           journalRows: input.draftJournal,
-          liveJournal: input.journal,
           flushLivePull: (documentId) => input.draftPulls.flushLivePull(documentId),
           branches: input.branches,
-          afterCommit: input.afterCommit,
-          enlistResponseParticipant: input.enlistResponseParticipant,
-          model: input.model,
-          // Attribution compares blocks as stored: a linked document's move is no one's edit.
-          codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
-          concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
         documentEdits: input.documentEdits,
         lifecycle: input.lifecycle,

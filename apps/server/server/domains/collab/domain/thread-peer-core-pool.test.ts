@@ -68,7 +68,6 @@ const context = (destination: FileDestination, responseId?: string) => ({
     ? { responseIdentity: { providerResponseId: responseId, editScopeId: responseId } }
     : {}),
 });
-const readCh12 = { file: "ch12.md", documentId: "ch12" };
 const insertCh12 = {
   command: "insert",
   file: "ch12.md",
@@ -77,21 +76,6 @@ const insertCh12 = {
 } as const;
 
 describe("thread-peer pool", () => {
-  it("refuses a write in a version other than the last read until a re-read (D41)", async () => {
-    const { pool, liveCore, threadCore } = createPool();
-    await pool.read(readCh12, context(live));
-
-    const refused = await pool.write(insertCh12, context(draftA));
-    expect(refused).toMatchObject({ status: "read_required", isError: true });
-    expect(threadCore.write).not.toHaveBeenCalled();
-
-    await pool.read(readCh12, context(draftA));
-    await expect(pool.write(insertCh12, context(draftA))).resolves.toMatchObject({
-      status: "success",
-    });
-    expect(liveCore.write).not.toHaveBeenCalled();
-  });
-
   // History cannot silently move an inverse command to a different destination.
   it("routes model undo to the current destination, even after a peer ensure", async () => {
     const { pool, liveCore, threadCore, ensureThreadPeer } = createPool();
@@ -205,7 +189,7 @@ describe("reasoned refusal and retirement through the pool", () => {
     expect(pool.responseDestination("reply-1", "ch12")).toMatchObject({ kind: "draft" });
   });
 
-  it("retires one peer without touching the replacement peer's entry or lastSeen (U6)", async () => {
+  it("retires one peer without touching the replacement peer's entry (U6)", async () => {
     const { pool, threadCore } = createPool();
     // Reply 1 stages on peer-1; reply 2, in the same thread, on its replacement peer-2.
     await pool.write(insertCh12, replyContext("reply-1"));
@@ -223,11 +207,6 @@ describe("reasoned refusal and retirement through the pool", () => {
     });
     expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
     expect(pool.responseDestination("reply-2", "ch12")).toMatchObject({ kind: "draft" });
-    // The replacement peer's read still stands: a write to another version needs a re-read.
-    await expect(pool.write(insertCh12, context(live))).resolves.toMatchObject({
-      status: "read_required",
-    });
-
     await pool.retireThreadPeers("ch12", [
       { threadId: THREAD_ID, peerDraftId: "peer-2", reason: "discarded_edit" },
     ]);

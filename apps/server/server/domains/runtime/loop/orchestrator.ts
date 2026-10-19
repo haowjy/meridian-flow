@@ -47,12 +47,9 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 
 import {
   type AgentEditResultV1,
-  applyConcurrentRenderBudget,
-  type ConcurrentEditInfo,
   type FrontierLookup,
   isAgentEditResultEnvelope,
   type LinkShowing,
-  modelConcurrentResult,
   modelResult,
   type ObservationFrontier,
   type ResponseCommitWriteReceipt,
@@ -269,9 +266,7 @@ export interface OrchestratorDeps {
   runClaim: RunClaim;
   activeDocuments: ActiveDocumentResolver;
   imageAssets: ImageAssetPort;
-  /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
-  concurrentRenderBudgetBytes?(request: GenerateRequest): number;
-  /** Shown-link evidence: tool results, reference reads, settled receipts and backfilled concurrent runs record here. */
+  /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
   /** What each tool result, settled receipt and reference read showed of a document, per room. */
   observationFrontiers: ObservationFrontiers;
@@ -294,7 +289,6 @@ type ResponseWriteCommitOutcome =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       /** The saved documents' frontiers at the post-commit cut, for those that recorded one. */
       frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
-      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out; their writes did not land (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
@@ -1534,7 +1528,7 @@ function createResponseScope(input: {
       uri: string | null;
     }>
   >();
-  /** Records what a settled receipt or a backfilled concurrent run showed the model, from the binding that rendered it. */
+  /** Records what a settled receipt showed the model, from the binding that rendered it. */
   const recordShown = async (documentId: string, shown: { showing?: LinkShowing }) => {
     if (!shown.showing) return;
     await deps.shownLinks.record({ threadId, turnId, documentId, ...shown.showing });
@@ -1667,48 +1661,6 @@ function createResponseScope(input: {
         if (index >= 0) allBlocks[index] = block;
       }
       return outcome;
-    },
-    async backfill(
-      editsByDocument: Extract<
-        ResponseWriteCommitOutcome,
-        { status: "committed" }
-      >["concurrentEdits"],
-      remainingBytes: number,
-    ) {
-      const renderBudget = { remainingBytes };
-      // Backfill body-complete concurrent runs into the last write result per document.
-      for (const { documentId, concurrentEdits: edits } of editsByDocument) {
-        const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-        const last = writes.get(documentId)?.at(-1);
-        if (!last) continue;
-        const block = last.block;
-        const content = block.content as JsonObject | null;
-        const staged = stagedWriteResult(block);
-        if (!content || !staged) continue;
-
-        const updatedContent = {
-          ...content,
-          ...writeResultContent({ ...staged, concurrent: modelConcurrentResult(boundedEdits) }),
-        };
-        const updatedBlockRow = contentForBlockInput({
-          id: block.id,
-          turnId: block.turnId,
-          responseId: block.responseId,
-          blockType: "tool_result",
-          sequence: block.sequence,
-          content: toJsonValue(updatedContent),
-          provider: block.provider,
-          status: "complete",
-        });
-        const persistedBackfill = await persistAndAppendEvents(deps, input.threadId, async () => ({
-          result: localBlockFromEvent(updatedBlockRow),
-          events: [{ type: "block.upserted", block: updatedBlockRow }],
-        }));
-        const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
-        if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-        // Only runs that fit the render budget were shown.
-        for (const run of boundedEdits.runs) await recordShown(documentId, run);
-      }
     },
     async rollback() {
       if (!active) return;
@@ -2554,17 +2506,12 @@ async function executeLoop({
           if (isCancelled()) {
             return cancelExit();
           }
-          const concurrentEdits = await scope.commit();
+          const saved = await scope.commit();
           responseScope = undefined;
 
-          if (concurrentEdits.status === "branch_closed") {
+          if (saved.status === "branch_closed") {
             return exitRun(true, abortTerminal());
           }
-
-          await scope.backfill(
-            concurrentEdits.concurrentEdits,
-            deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
-          );
 
           if (endTurnRequested) {
             // A child called return_result: the report is captured and persisted,

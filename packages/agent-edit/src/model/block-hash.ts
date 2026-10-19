@@ -80,12 +80,20 @@ function uniqueHashFor(target: Y.XmlElement, blocks: readonly Y.XmlElement[]): s
 
 /** Compute unique hashes for a set of blocks in one sorted pass. */
 function uniqueHashesForBlocks(blocks: readonly Y.XmlElement[]): string[] {
-  if (blocks.length === 0) return [];
-  const byFullHash = blocks
-    .map((block, i) => ({ i, fullHash: fullHashForItemId(getBlockItemId(block)) }))
+  return uniqueHashesForIds(blocks.map(getBlockItemId));
+}
+
+/**
+ * Display hashes for item ids, each the shortest prefix (at least the default width) unique
+ * among them. Blocks that no longer exist have ids but no element.
+ */
+export function uniqueHashesForIds(ids: readonly BlockItemId[]): string[] {
+  if (ids.length === 0) return [];
+  const byFullHash = ids
+    .map((id, i) => ({ i, fullHash: fullHashForItemId(id) }))
     .sort((a, b) => (a.fullHash < b.fullHash ? -1 : a.fullHash > b.fullHash ? 1 : 0));
 
-  const hashes: string[] = new Array(blocks.length);
+  const hashes: string[] = new Array(ids.length);
   for (let sortedIndex = 0; sortedIndex < byFullHash.length; sortedIndex += 1) {
     const current = byFullHash[sortedIndex];
     const previous = byFullHash[sortedIndex - 1];

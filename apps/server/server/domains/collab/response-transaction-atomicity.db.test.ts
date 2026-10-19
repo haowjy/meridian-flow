@@ -66,20 +66,18 @@ describe("change trail (postgres)", () => {
     expect(await harness.responseJournalRows()).not.toEqual([]);
   });
 
-  it("rolls back all ten state surfaces and commits the retained response on retry", async () => {
+  it("rolls back every state surface and commits the retained response on retry", async () => {
     const harness = createHarness(db);
     await harness.seedAndStage("retry-response");
     const before = await harness.captureState();
     const staged = harness.stagedUpdates("retry-response");
-    // Staging captured the writer rows its view lacked; the failed attempt must add none.
-    const pending = harness.pendingWatermarkDocuments();
 
     harness.failSecondJournalInsert = true;
     await expect(harness.commit("retry-response")).rejects.toThrow(
       "injected second-document journal failure",
     );
 
-    // Amendment-2 §F's ten rollback surfaces, kept explicit so a regression names its leak.
+    // Amendment-2 §F's rollback surfaces, kept explicit so a regression names its leak.
     expect(await harness.responseJournalRows()).toEqual([]); // 1. Postgres journal
     expect(await harness.databaseDraftHashes()).toEqual(before.databaseDraftHashes); // 2. snapshots
     expect(await harness.threadPeerMarkdown()).toEqual(before.threadPeerMarkdown); // 3. peer cache
@@ -88,17 +86,15 @@ describe("change trail (postgres)", () => {
       1, 1,
     ]); // 5. facade still owns the response
     expect(harness.stagedUpdates("retry-response")).toEqual(staged); // 6. raw staged updates retained
-    expect(harness.pendingWatermarkDocuments()).toEqual(pending); // 7. no pending watermark added
     expect(harness.responseEvents("retry-response")).not.toContainEqual(
       expect.objectContaining({ transition: "closed" }),
-    ); // 8. lifecycle not closed (retained buffers prove buffered ownership)
+    ); // 7. lifecycle not closed (retained buffers prove buffered ownership)
     expect(harness.afterCommitEffects()).toEqual({
       draftBroadcasts: [],
-      watermarkCommits: [],
-    }); // 9. callbacks not dispatched
+    }); // 8. callbacks not dispatched
     expect(harness.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
     expect(harness.liveRoomBroadcasts()).toEqual([]);
-    // 10. No notices persisted; this scenario does not engage the producer. The
+    // 9. No notices persisted; this scenario does not engage the producer. The
     // late-sweep ambient-rollback differential below verifies its transaction binding.
     expect(await harness.noticeRows()).toEqual([]);
 
@@ -283,13 +279,11 @@ describe("change trail (postgres)", () => {
     expect(harness.stagedUpdates("outer-rollback-response").map((rows) => rows.length)).toEqual([
       1, 1,
     ]);
-    expect(harness.pendingWatermarkDocuments()).toEqual([]);
     expect(harness.responseEvents("outer-rollback-response")).not.toContainEqual(
       expect.objectContaining({ transition: "closed" }),
     );
     expect(harness.afterCommitEffects()).toEqual({
       draftBroadcasts: [],
-      watermarkCommits: [],
     });
   });
 

@@ -2,7 +2,6 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
-import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
@@ -159,26 +158,15 @@ export interface ResponseCommitterTransitionDetail {
 
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
-interface InteractionContextBase {
-  /** Host-specific journal floor for retry-safe attribution. */
-  afterJournalId?: number;
-  /** Live Yjs journal sequence captured with the floor for reconstruction receipts. */
-  liveJournalSeq?: number;
-  /** Durable write attempt id used to exclude this write from concurrent attribution. */
-  attemptId?: string;
-}
-
 export type InteractionContext =
-  | (InteractionContextBase & {
-      mode: "live";
-    })
-  | (InteractionContextBase & {
+  | { mode: "live" }
+  | {
       /** A draft-mode write, bound to its thread peer's identity before its room read. */
       mode: "threadPeer";
       /** Host peer identity, for exact retirement independently of generation replay. */
       peerDraftId?: string;
       upstreamDraftId?: string;
-    });
+    };
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
@@ -258,11 +246,11 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
   /**
    * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
-   * the frontier at the post-commit cut, crediting every accepted receipt.
+   * the frontier at the post-commit cut, crediting every accepted receipt and what the last
+   * one lists.
    */
   frontier?: ObservationFrontier;
 }

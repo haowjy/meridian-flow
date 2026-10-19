@@ -27,7 +27,6 @@ import {
   type RoutedReadContext,
   type RoutedWriteContext,
   type RoutedWriteOutcome,
-  sameDestination,
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
 import { runBoundedAttempts } from "./draft-attempts.js";
@@ -112,9 +111,6 @@ export function createThreadPeerCorePool(input: {
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const responses = new Map<string, ResponseRecord>();
-  // D41: the version of each document the model last read or wrote, per thread.
-  // Process-local like the runtime docs it guards; a restart forgets it.
-  const lastSeen = new Map<string, { destination: FileDestination; peerDraftId?: string }>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   /**
@@ -196,10 +192,6 @@ export function createThreadPeerCorePool(input: {
     return owners;
   }
 
-  function seenKey(threadId: string, documentId: DocumentId): string {
-    return `${threadId}\0${documentId}`;
-  }
-
   function coreForDestination(destination: FileDestination, threadId: string | undefined) {
     return destination.kind === "live" ? input.liveUtilityCore : lookupCore(threadId);
   }
@@ -225,8 +217,6 @@ export function createThreadPeerCorePool(input: {
         mode: "threadPeer" as const,
         peerDraftId: peer.peerDraftId,
         upstreamDraftId: peer.upstreamDraftId,
-        afterJournalId: peer.afterJournalId ?? 0,
-        liveJournalSeq: peer.liveJournalSeq,
       },
     };
   }
@@ -284,12 +274,6 @@ export function createThreadPeerCorePool(input: {
       command.format === "edits" ? { ...routedContext, frontiers: undefined } : routedContext,
     );
     if (outcome.isError) return outcome;
-    if (documentId && context.threadId) {
-      lastSeen.set(seenKey(context.threadId, documentId), {
-        destination,
-        peerDraftId: pinned?.pin?.peerDraftId,
-      });
-    }
     const read = outcome.result.read;
     // Results name the version actually read, which a reply's pin can choose.
     return read
@@ -325,13 +309,6 @@ export function createThreadPeerCorePool(input: {
     // mid-reply rebind or branch regeneration never splits it across two saves.
     // The chat's mode can't change mid-reply: it changes only between replies (D62).
     const destination = pinned?.grant.destination ?? grant.destination;
-    if (documentId && context.threadId) {
-      const seen = lastSeen.get(seenKey(context.threadId, documentId));
-      if (seen && !sameDestination(seen.destination, destination)) {
-        if (oneEntry) untrackResponse(oneEntry.editScopeId);
-        return readRequired(command, seen.destination, destination);
-      }
-    }
     const core = pinned?.core ?? coreForDestination(destination, context.threadId);
     // Lookup and enrollment are synchronous: close must see the first owner
     // before cache maintenance yields, so that owner's lifecycle rejects late staging.
@@ -393,18 +370,13 @@ export function createThreadPeerCorePool(input: {
     const settled = oneEntry
       ? await settleOneEntry(command, documentId, outcome, oneEntry.editScopeId, given.frontiers)
       : outcome;
-    if (!settled.isError && documentId) {
-      if (context.threadId)
-        lastSeen.set(seenKey(context.threadId, documentId), {
-          destination,
-          peerDraftId:
-            callContext.interactionContext?.mode === "threadPeer"
-              ? callContext.interactionContext.peerDraftId
-              : undefined,
-        });
-      if (!context.responseIdentity?.editScopeId && destination.kind === "live")
-        input.afterLiveCommit?.(documentId);
-    }
+    if (
+      !settled.isError &&
+      documentId &&
+      !context.responseIdentity?.editScopeId &&
+      destination.kind === "live"
+    )
+      input.afterLiveCommit?.(documentId);
     return settled;
   }
 
@@ -512,8 +484,6 @@ export function createThreadPeerCorePool(input: {
       if (!docId || !threadId || !peerDraftId)
         throw new Error("Retirement names one document, thread and peer draft");
       const id = threadId as ThreadId;
-      const key = seenKey(id, docId as DocumentId);
-      if (lastSeen.get(key)?.peerDraftId === peerDraftId) lastSeen.delete(key);
       for (const record of responses.values()) {
         if (record.threadId !== id) continue;
         for (const core of record.participants) record.receipting.add(core);
@@ -735,7 +705,6 @@ export function createThreadPeerCorePool(input: {
     retireThreadPeers,
     dropStaged(docId, threadId) {
       if (!docId || !threadId) throw new Error("dropStaged names one document and one thread");
-      lastSeen.delete(seenKey(threadId, docId as DocumentId));
       for (const core of new Set([...ownersForThread(threadId as ThreadId), input.liveUtilityCore]))
         core.dropStaged(docId, threadId);
     },
@@ -779,44 +748,6 @@ function mergeRollbackResults(
   };
 }
 
-/** D41: the write targets a different version than the model last read. */
-function readRequired(
-  command: WriteCommand,
-  seen: FileDestination,
-  destination: FileDestination,
-): WriteOutcome {
-  const path = splitDocumentFile(command.file).filePath;
-  const message = `You last read ${path} ${versionPhrase(seen, "in")}, but your writes now go ${versionPhrase(destination, "to")}. Read it again before editing.`;
-  return {
-    status: "read_required",
-    isError: true,
-    revision: null,
-    command: command.command,
-    result: modelResult({
-      command: command.command,
-      status: "read_required",
-      payload: { path, message },
-    }),
-  };
-}
-
-/** The Work's branch this write ensured closed before the write landed. */
-function _branchClosed(command: WriteCommand): WriteOutcome {
-  const path = splitDocumentFile(command.file).filePath;
-  const message = `This file's draft changed before your write landed (it was applied or discarded), so this change wasn't kept. Read ${path} again before editing.`;
-  return {
-    status: "invalid_write",
-    isError: true,
-    revision: null,
-    command: command.command,
-    result: modelResult({
-      command: command.command,
-      status: "invalid_write",
-      payload: { path, message },
-    }),
-  };
-}
-
 /** A write the Work's Discard retired before it could be staged; the copy a save receipt uses. */
 function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
@@ -832,16 +763,6 @@ function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): Wr
       payload: { path, message, rejected: reason },
     }),
   };
-}
-
-function _sameView(a: { kind: string; branchId?: string }, b: LinkView): boolean {
-  return a.kind === "branch" && b.kind === "branch" ? a.branchId === b.branchId : a.kind === b.kind;
-}
-
-function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {
-  return destination.kind === "live"
-    ? "live"
-    : `${preposition} @${destination.workSlug ?? "/"}'s draft`;
 }
 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {

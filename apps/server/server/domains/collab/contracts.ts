@@ -1,7 +1,6 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
-  ConcurrentEditInfo,
   FrontierLookup,
   ObservationFrontier,
   ResponseCommitWriteReceipt,
@@ -281,7 +280,6 @@ export type ResponseWriteCommitDocument = {
   documentId: DocumentId;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
   /** Host-only, when the save recorded one: the document's frontier at the post-commit cut. */
   frontier?: ObservationFrontier;

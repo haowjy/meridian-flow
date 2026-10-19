@@ -10,27 +10,6 @@ export function mutationMode(
     : { mode: "live" };
 }
 
-/**
- * Per-attempt interaction context for immediate (non-staged) writes: always
- * stamps the durable attempt ID without changing interaction mode.
- */
-export function interactionContextForAttempt(
-  context: InteractionContext | undefined,
-  attemptId: string,
-): InteractionContext | undefined {
-  if (!context) return { mode: "live", attemptId };
-  if (context?.mode === "threadPeer") {
-    return {
-      ...context,
-      attemptId,
-    };
-  }
-  return {
-    ...context,
-    attemptId,
-  };
-}
-
 type ResponseDocumentInteraction = {
   interactionContext?: InteractionContext;
 };

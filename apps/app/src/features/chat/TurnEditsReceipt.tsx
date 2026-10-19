@@ -392,7 +392,7 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "permission_denied":
       return t`This file's Work is archived. Unarchive the Work to reverse this change.`;
     case "internal_error":
-    case "read_required":
+    case "region_changed":
     case "request_failed":
       return reversalRetryCopy(refusal.direction);
     default: {

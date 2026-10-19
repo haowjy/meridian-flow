@@ -145,7 +145,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          afterJournalId: 0,
           peerDraftId: "draft-peer",
         },
       },
@@ -170,7 +169,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-success-after-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          afterJournalId: 0,
           peerDraftId: "draft-peer",
         },
       },

@@ -79,7 +79,7 @@ export { documentNotFoundMessage } from "./tool/internal-result.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
-  AgentEditConcurrentRun,
+  AgentEditConcurrentListing,
   AgentEditResultCommand,
   AgentEditResultV1,
 } from "./tool/model-result.js";
@@ -88,7 +88,6 @@ export {
   agentEditResultCommand,
   isAgentEditResultEnvelope,
   modelBlockItem,
-  modelConcurrentResult,
   modelResult,
   type WriteRejection,
 } from "./tool/model-result.js";

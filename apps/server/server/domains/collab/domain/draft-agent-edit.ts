@@ -5,8 +5,8 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  type AgentEditCodec,
   bytesEqual,
+  type ConcurrentUpdate,
   type ConcurrentUpdateOrigin,
   cloneYDoc,
   type DocumentAccess,
@@ -15,12 +15,10 @@ import {
   type JournalBatchAppendEntry,
   type JournalReadOptions,
   type JournalSnapshot,
-  type PersistedUpdate,
   type StagedReconcile,
   type StagedRoomEntries,
   type StagedWriteSaveResult,
   type UpdateJournal,
-  type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
@@ -40,105 +38,22 @@ import {
   type DraftSnapshot,
   DraftStaleUpdateError,
 } from "./draft-store.js";
-import {
-  type AttributionRow,
-  docFromState,
-  partitionByBlockCoverage,
-  touchedHashesForCoverage,
-} from "./draft-update-attribution.js";
 import { draftRoom } from "./observation-rooms.js";
 import type { ReplyPin } from "./reply-save-fences.js";
-import type { ResponseCommitParticipant } from "./response-transaction.js";
-
-export type DraftConcurrentJournalWatermarks = {
-  current(threadId: ThreadId, documentId: DocumentId): number | undefined;
-  capturePending(
-    threadId: ThreadId,
-    documentId: DocumentId,
-    journalId: number,
-    attemptId?: string,
-  ): void;
-  commitPending(threadId: ThreadId, documentId: DocumentId, attemptId?: string): void;
-  clearPending(threadId: ThreadId, documentId: DocumentId): void;
-};
 
 export type DraftAgentEditDiagnostics = {
   replyPinMismatch(payload: { documentId: DocumentId; threadId?: ThreadId; pin: ReplyPin }): void;
 };
-
-export type AfterCommit = (callback: () => void | Promise<void>) => void;
-export type EnlistResponseParticipant = (participant: ResponseCommitParticipant) => boolean;
-
-export function createDraftConcurrentJournalWatermarks(): DraftConcurrentJournalWatermarks {
-  const currentByThreadDocument = new Map<string, number>();
-  const pendingByThreadDocument = new Map<string, { journalId: number; attemptId?: string }>();
-  const key = (threadId: ThreadId, documentId: DocumentId) => `${threadId}:${documentId}`;
-  return {
-    current(threadId, documentId) {
-      return currentByThreadDocument.get(key(threadId, documentId));
-    },
-    capturePending(threadId, documentId, journalId, attemptId) {
-      pendingByThreadDocument.set(key(threadId, documentId), { journalId, attemptId });
-    },
-    commitPending(threadId, documentId, attemptId) {
-      const mapKey = key(threadId, documentId);
-      const pending = pendingByThreadDocument.get(mapKey);
-      if (pending === undefined) return;
-      if (pending.attemptId !== attemptId) return;
-      const current = currentByThreadDocument.get(mapKey) ?? 0;
-      if (pending.journalId > current) currentByThreadDocument.set(mapKey, pending.journalId);
-      pendingByThreadDocument.delete(mapKey);
-    },
-    clearPending(threadId, documentId) {
-      pendingByThreadDocument.delete(key(threadId, documentId));
-    },
-  };
-}
-
-type ConcurrentAttributionBasis = {
-  baselineSnapshot: Y.Snapshot;
-  baselineState: Uint8Array | null;
-  currentUpstreamState?: Uint8Array;
-  fallbackCurrentUpstream: Y.Doc;
-  journalRows: readonly AttributionRow[];
-  model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
-};
-
-type PartitionedConcurrentUpdate =
-  | {
-      type: "journal";
-      rowId: number;
-      origin: ConcurrentUpdateOrigin;
-      effectiveUpdate: Uint8Array;
-      touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-      deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-    }
-  | {
-      type: "human";
-      origin: { type: "human"; userId: string };
-      residualUpdate: Uint8Array;
-      touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-      deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-    };
 
 export function createDraftAgentEditCoordinator(input: {
   threadId: ThreadId;
   draftCoordinator: DraftCoordinator;
   drafts: DraftLookupWithSnapshots;
   journalRows: DraftReplayJournalReads;
-  liveJournal?: Pick<UpdateJournal, "read">;
   /** The live→Work rebase at the tool boundary: every room read runs it first. */
   flushLivePull(documentId: DocumentId): Promise<void>;
   branches: Pick<Branches, "shareActive">;
-  afterCommit: AfterCommit;
-  enlistResponseParticipant: EnlistResponseParticipant;
-  model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
-  concurrentJournalWatermarks?: DraftConcurrentJournalWatermarks;
 }): DocumentCoordinator {
-  const concurrentJournalWatermarks =
-    input.concurrentJournalWatermarks ?? createDraftConcurrentJournalWatermarks();
   function draftRows(draftId: string, entries: readonly JournalBatchAppendEntry[]) {
     return entries.flatMap((entry) => {
       const mutation = entry.mutation;
@@ -365,22 +280,14 @@ export function createDraftAgentEditCoordinator(input: {
     // A Work draft's committed replica is its truth: there is nothing to recover into.
     async recover(): Promise<void> {},
 
-    async concurrentUpdatesSince({
-      docId,
-      doc,
-      baselineDoc,
-      afterJournalId,
-      liveJournalSeq,
-      attemptId,
-      reportingCut,
-      access,
-    }) {
-      const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
-      const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
+    /**
+     * The Work draft's rows (and anything the journal can't explain, as the writer's) that the
+     * baseline, the view the writes planned on, doesn't contain: containment is the only skip.
+     */
+    async concurrentUpdatesSince({ docId, doc, baselineDoc, reportingCut, access }) {
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
-        afterJournalId,
         access,
         accessedPeer.getStore(),
       );
@@ -391,78 +298,14 @@ export function createDraftAgentEditCoordinator(input: {
         );
         concurrent.upstreamState = reportingCut;
       }
-      // Durable upstream work-draft rows are never suppressed as "self" merely
-      // because they came from this thread; the journal watermark is the fence.
-      const liveRows = input.liveJournal
-        ? liveAttributionRows(
-            (
-              await input.liveJournal.read(docId, {
-                since: (liveJournalSeq ?? Number.MAX_SAFE_INTEGER) + 1,
-              })
-            ).updates.filter((update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER)),
-          )
-        : [];
-      const partitioned = partitionConcurrentUpdates({
-        baselineSnapshot,
-        baselineState,
-        journalRows: [
-          ...concurrent.rows.map((row) => ({
-            id: row.id,
-            origin: originForJournalRow(row),
-            update: row.updateData,
-          })),
-          ...liveRows,
-        ],
-        currentUpstreamState: concurrent.upstreamState,
-        fallbackCurrentUpstream: doc,
-        model: input.model,
-        codec: input.codec,
-      });
-      const maxRowId = partitioned.reduce(
-        (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
-        0,
-      );
-      if (maxRowId > 0) {
-        // Load-bearing: this is only a captured candidate. Advancing the floor here would
-        // skip rows if the surrounding draft write later fails or CAS-exhausts.
-        concurrentJournalWatermarks.capturePending(
-          input.threadId,
-          docId as DocumentId,
-          maxRowId,
-          attemptId,
-        );
-        if (reportingCut)
-          advanceConcurrentJournalWatermark(
-            concurrentJournalWatermarks,
-            input.threadId,
-            docId as DocumentId,
-            input.afterCommit,
-            input.enlistResponseParticipant,
-            attemptId,
-          );
-        // Capture itself is provisional: failures before draft persistence must
-        // clear the candidate even though no watermark-advance participant exists yet.
-        input.enlistResponseParticipant({
-          commit() {},
-          abort() {
-            concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
-          },
-        });
-      }
-      return partitioned.map((item) =>
-        item.type === "journal"
-          ? {
-              update: item.effectiveUpdate,
-              origin: item.origin,
-              touchedHashes: item.touchedHashes,
-              deletedHashes: item.deletedHashes,
-            }
-          : {
-              update: item.residualUpdate,
-              origin: item.origin,
-              touchedHashes: item.touchedHashes,
-              deletedHashes: item.deletedHashes,
-            },
+      return partitionConcurrentUpdates(
+        baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null,
+        baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot,
+        concurrent.rows.map((row) => ({
+          origin: originForJournalRow(row),
+          update: row.updateData,
+        })),
+        concurrent.upstreamState ?? Y.encodeStateAsUpdate(doc),
       );
     },
   };
@@ -535,7 +378,7 @@ async function resolveThreadDraftId(
   return (await input.drafts.resolveThreadDraft(documentId, input.threadId)).draftId;
 }
 
-/** The upstream draft's rows since `afterJournalId`, and its state they were read at. */
+/** The upstream draft's rows, and its state they were read at. */
 async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
@@ -544,7 +387,6 @@ async function concurrentUpstreamJournalRows(
     journalRows: DraftReplayJournalReads;
   },
   documentId: DocumentId,
-  afterJournalId?: number,
   access?: DocumentAccess,
   accessedPeer?: string,
 ): Promise<{ rows: DraftJournalRow[]; upstreamState?: Uint8Array }> {
@@ -559,7 +401,7 @@ async function concurrentUpstreamJournalRows(
     const rows = await input.journalRows.listConcurrentJournalRows(
       upstreamDraftId,
       snapshot.generation,
-      { afterJournalId, documentId },
+      { documentId },
     );
     return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
   });
@@ -572,92 +414,36 @@ function originForJournalRow(row: DraftJournalRow): ConcurrentUpdateOrigin {
   return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
 }
 
-function liveAttributionRows(updates: readonly PersistedUpdate[]): AttributionRow[] {
-  return updates.map(({ seq, update, meta }) => {
-    let origin: ConcurrentUpdateOrigin;
-    if (meta.origin === "system:reconcile") {
-      origin = { type: "system" };
-    } else if (meta.origin.startsWith("agent:")) {
-      origin = { type: "agent", actorTurnId: meta.actorTurnId ?? "unknown-agent" };
-    } else {
-      origin = {
-        type: "human",
-        userId: meta.origin.startsWith("human:") ? meta.origin.slice("human:".length) : "unknown",
-      };
-    }
-    return { id: -seq, origin, update };
-  });
-}
-
+/**
+ * Each row's effect on the baseline in order, then the residual the journal can't explain,
+ * attributed to the writer.
+ */
 function partitionConcurrentUpdates(
-  input: ConcurrentAttributionBasis,
-): PartitionedConcurrentUpdate[] {
-  const upstreamState =
-    input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
-  // A state vector alone misses delete-only edits. Capture structs and tombstones
-  // before journal reads yield, so both checks use the same baseline cut.
-  const rows = input.journalRows.filter(
-    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.update),
-  );
-  if (rows.length === 0 && input.baselineState && bytesEqual(input.baselineState, upstreamState)) {
-    return [];
-  }
-  const scratch = docFromState(input.baselineState);
+  baselineState: Uint8Array | null,
+  baselineSnapshot: Y.Snapshot,
+  journalRows: readonly ConcurrentUpdate[],
+  upstreamState: Uint8Array,
+): ConcurrentUpdate[] {
+  // A state vector alone misses delete-only edits: compare structs and tombstones.
+  const rows = journalRows.filter((row) => !Y.snapshotContainsUpdate(baselineSnapshot, row.update));
+  if (rows.length === 0 && baselineState && bytesEqual(baselineState, upstreamState)) return [];
+  const scratch = new Y.Doc({ gc: false });
+  if (baselineState && baselineState.byteLength > 0) Y.applyUpdate(scratch, baselineState);
   try {
-    const coverage = partitionByBlockCoverage({
-      baselineState: input.baselineState,
-      upstreamState,
-      rows,
-      model: input.model,
-      codec: input.codec,
-    });
-
-    const partitioned: PartitionedConcurrentUpdate[] = [];
+    const updates: ConcurrentUpdate[] = [];
     for (const row of rows) {
-      const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.update);
-      if (!effectiveUpdate) Y.applyUpdate(scratch, row.update);
-      const touchedHashes = touchedHashesForCoverage(coverage.coverage, row.origin);
-      const deletedHashes = touchedHashesForCoverage(coverage.deletedCoverage, row.origin);
-      if (effectiveUpdate || touchedHashes || deletedHashes) {
-        partitioned.push({
-          type: "journal",
-          rowId: row.id,
-          origin: row.origin,
-          effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
-          touchedHashes: touchedHashes ?? (effectiveUpdate ? {} : undefined),
-          deletedHashes,
-        });
-      }
+      const update = effectiveUpdateFromApplyingToScratch(scratch, row.update);
+      if (update) updates.push({ update, origin: row.origin });
     }
-
     const target = yjsUpdateFromState(upstreamState);
     try {
-      const residualUpdate = yjsDeltaUpdate(target, scratch) ?? new Uint8Array();
-      if (
-        residualUpdate.length > 0 ||
-        coverage.humanResidualHashes.size > 0 ||
-        coverage.humanDeletedHashes.size > 0
-      ) {
-        partitioned.push({
-          type: "human",
-          origin: { type: "human", userId: "unknown" },
-          residualUpdate,
-          touchedHashes:
-            coverage.humanResidualHashes.size > 0
-              ? { human: [...coverage.humanResidualHashes] }
-              : residualUpdate.length > 0
-                ? {}
-                : undefined,
-          deletedHashes:
-            coverage.humanDeletedHashes.size > 0
-              ? { human: [...coverage.humanDeletedHashes] }
-              : undefined,
-        });
-      }
+      const residual = yjsDeltaUpdate(target, scratch);
+      if (residual)
+        updates.push({ update: residual, origin: { type: "human", userId: "unknown" } });
     } finally {
       target.destroy();
     }
-    return partitioned;
+    return updates;
   } finally {
     scratch.destroy();
   }
@@ -677,29 +463,4 @@ function effectiveUpdateFromApplyingToScratch(
   } finally {
     probe.destroy();
   }
-}
-
-function advanceConcurrentJournalWatermark(
-  watermarks: DraftConcurrentJournalWatermarks,
-  threadId: ThreadId,
-  documentId: DocumentId,
-  afterCommit: AfterCommit,
-  enlistResponseParticipant: EnlistResponseParticipant,
-  attemptId?: string,
-): void {
-  if (
-    enlistResponseParticipant({
-      commit() {
-        watermarks.commitPending(threadId, documentId, attemptId);
-      },
-      abort() {
-        watermarks.clearPending(threadId, documentId);
-      },
-    })
-  ) {
-    return;
-  }
-  afterCommit(() => {
-    watermarks.commitPending(threadId, documentId, attemptId);
-  });
 }

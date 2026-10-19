@@ -7,11 +7,7 @@ import {
   type ConcurrentDetectionResult,
   snapshotBlocks,
 } from "../apply/echo.js";
-import type {
-  ConcurrentEditInfo,
-  ConcurrentUpdate,
-  ConcurrentUpdateOrigin,
-} from "../apply/types.js";
+import type { ConcurrentUpdate, ConcurrentUpdateOrigin } from "../apply/types.js";
 import { toDocHandle } from "../handles.js";
 import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
 import type { DocumentAccess, DocumentCoordinator } from "../ports/document-coordinator.js";
@@ -85,7 +81,6 @@ export interface CommitPreflightInput {
   /** Frozen host cut before the checked commit, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
   access?: DocumentAccess;
-  ownTurnId?: string;
   actor: MutationActor;
   /**
    * The writes being committed, each against what the actor saw. What they
@@ -105,7 +100,6 @@ export interface DestructiveSweepReport {
   affectedBlockHashes: string[];
   capturedDeletedBodies?: { hash: string; body: string }[];
   sweptContent: true;
-  beforeContentRef: number | null;
 }
 
 export interface ApplyWithRecheckResult {
@@ -125,7 +119,6 @@ type MutationSubmissionResult = (
   | {
       ok: true;
       revision: string | null;
-      concurrentEdits?: ConcurrentEditInfo;
       journalCommitKind: JournalCommitKind;
       lateSweep?: DestructiveSweepReport;
     }
@@ -145,7 +138,6 @@ export class AcceptedMutationSubmissionError extends Error {
 export interface MutationCommit {
   submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
-  detectConcurrentEdits(input: DetectConcurrentInput): Promise<ConcurrentDetectionResult>;
   captureCommitPreflight(
     liveDoc: Y.Doc,
     input: CommitPreflightInput,
@@ -167,16 +159,6 @@ export interface MutationCommit {
   ): Promise<ApplyWithRecheckResult>;
 }
 
-interface DetectConcurrentInput {
-  docId: string;
-  links: CommandLinks;
-  interactionContext?: InteractionContext;
-  /** The view the write planned on: what the listing takes as seen. */
-  preOwnSnapshot: Uint8Array;
-  access?: DocumentAccess;
-  ownTurnId?: string;
-}
-
 export function createMutationCommit(deps: {
   links: DocumentLinksPort;
   journal: UpdateJournal;
@@ -188,43 +170,11 @@ export function createMutationCommit(deps: {
   return {
     submitMutation,
     commitJournalBatch,
-    detectConcurrentEdits,
     captureCommitPreflight,
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
     reportAcceptedMutation,
   };
-
-  async function detectConcurrentEdits(
-    input: DetectConcurrentInput,
-  ): Promise<ConcurrentDetectionResult> {
-    const detectionDoc = docFromSnapshot(input.preOwnSnapshot);
-    const preOwnDoc = docFromSnapshot(input.preOwnSnapshot);
-    try {
-      const updates = await concurrentUpdatesSince(
-        coordinator,
-        input.docId,
-        preOwnDoc,
-        detectionDoc,
-        Y.encodeStateVector(detectionDoc),
-        input.interactionContext?.afterJournalId,
-        input.interactionContext?.liveJournalSeq,
-        input.interactionContext?.attemptId,
-        undefined,
-        input.access,
-      );
-      return applyConcurrentUpdates(
-        toDocHandle(detectionDoc),
-        model,
-        input.links.codec,
-        updates,
-        input.ownTurnId ? agentUpdateOrigin(input.ownTurnId) : undefined,
-      );
-    } finally {
-      preOwnDoc.destroy();
-      detectionDoc.destroy();
-    }
-  }
 
   async function submitMutation(input: PreparedMutation): Promise<MutationSubmissionResult> {
     let revision: string | null = null;
@@ -244,7 +194,6 @@ export function createMutationCommit(deps: {
           }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
-            ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
             ownWrites: [
               {
@@ -274,7 +223,6 @@ export function createMutationCommit(deps: {
       ok: true,
       ...(awarenessDegraded ? { awarenessDegraded } : {}),
       revision,
-      concurrentEdits: captured?.detection.info,
       journalCommitKind: journalCommitKind ?? "durable",
       ...(lateSweep ? { lateSweep } : {}),
     };
@@ -442,9 +390,6 @@ export function createMutationCommit(deps: {
         liveDoc,
         detectionDoc,
         baselineVector,
-        input.interactionContext?.afterJournalId,
-        input.interactionContext?.liveJournalSeq,
-        input.interactionContext?.attemptId,
         input.reportingCut,
         input.access,
       );
@@ -453,7 +398,6 @@ export function createMutationCommit(deps: {
         model,
         input.links.codec,
         updates,
-        ownUpdateOrigin(input.actor),
       );
       return {
         updates: [...(previous?.updates ?? []), ...updates],
@@ -504,7 +448,6 @@ export function createMutationCommit(deps: {
         affectedBlockHashes,
       ),
       sweptContent: true,
-      beforeContentRef: input.interactionContext?.afterJournalId ?? null,
     };
   }
 
@@ -545,12 +488,6 @@ export function createMutationCommit(deps: {
   }
 }
 
-function ownUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrigin | undefined {
-  if (actor.kind === "agent") return agentUpdateOrigin(actor.turnId);
-  if (actor.kind === "human") return { type: "human", userId: actor.userId };
-  return undefined;
-}
-
 function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, snapshot, { type: "system" });
@@ -563,9 +500,6 @@ async function concurrentUpdatesSince(
   doc: Y.Doc,
   baselineDoc: Y.Doc | undefined,
   sinceStateVector: Uint8Array,
-  afterJournalId?: number,
-  liveJournalSeq?: number,
-  attemptId?: string,
   reportingCut?: Uint8Array,
   access?: DocumentAccess,
 ): Promise<ConcurrentUpdate[]> {
@@ -575,9 +509,6 @@ async function concurrentUpdatesSince(
       doc,
       baselineDoc,
       sinceStateVector,
-      afterJournalId,
-      liveJournalSeq,
-      attemptId,
       reportingCut,
       access,
     });
@@ -606,42 +537,10 @@ function journalEntries(input: LiveUpdateCommitInput): JournalBatchAppendEntry[]
   }));
 }
 
-function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
-  return { type: "agent", actorTurnId: turnId };
-}
-
 function mergeConcurrentDetection(
   previous: ConcurrentDetectionResult | undefined,
   incremental: ConcurrentDetectionResult,
 ): ConcurrentDetectionResult {
   if (!previous) return incremental;
-  const human = new Set([...(previous.info?.human ?? []), ...(incremental.info?.human ?? [])]);
-  const agent = new Set([...(previous.info?.agent ?? []), ...(incremental.info?.agent ?? [])]);
-  const humanTouchedHashes = new Set([
-    ...previous.humanTouchedHashes,
-    ...incremental.humanTouchedHashes,
-  ]);
-  const touchedHashes = new Set([...previous.touchedHashes, ...incremental.touchedHashes]);
-  const lineageOrigins = [...previous.lineageOrigins, ...incremental.lineageOrigins];
-  if (!previous.info && !incremental.info)
-    return {
-      humanTouchedHashes,
-      touchedHashes,
-      baselineBlocks: previous.baselineBlocks,
-      lineageOrigins,
-    };
-  return {
-    humanTouchedHashes,
-    touchedHashes,
-    baselineBlocks: previous.baselineBlocks,
-    lineageOrigins,
-    info: {
-      human: [...human],
-      agent: [...agent],
-      runs: [...(previous.info?.runs ?? []), ...(incremental.info?.runs ?? [])],
-      ...(previous.info?.syncOverflow || incremental.info?.syncOverflow
-        ? { syncOverflow: true }
-        : {}),
-    },
-  };
+  return { lineageOrigins: [...previous.lineageOrigins, ...incremental.lineageOrigins] };
 }
