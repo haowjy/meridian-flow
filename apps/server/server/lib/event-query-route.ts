@@ -42,7 +42,6 @@ const correlationParsers = {
   gatewayCallId: parseStringCorrelation,
   documentId: parseStringCorrelation,
   draftId: parseStringCorrelation,
-  draftGeneration: parseNumberCorrelation,
   yjsClient: parseNumberCorrelation,
   yjsSpans: parseStringCorrelation,
   batchId: parseStringCorrelation,

@@ -59,7 +59,7 @@ barrier that drains that open.
   and `buildDocumentSchema()` are built separately, so adding a node or
   attribute requires parity in both. Collaboration uses one
   `PROSEMIRROR_FRAGMENT_NAME` fragment and one sync path.
-- `EditorMountIdentity` distinguishes live and generation-fenced review rooms
+- `EditorMountIdentity` distinguishes live and stable-id review rooms
   and includes every construction fact. `editorMountKey()` becomes the React
   key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
   TipTap. Review identity includes both `itemKey` and `roomName`.
@@ -68,9 +68,9 @@ barrier that drains that open.
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
 - Live sessions may use a qualified, generation-aware IndexedDB key. Review
-  draft sessions use no local cache because a cache can recover into the wrong
-  review generation. Unacknowledged draft edits survive retirement only through
-  the transport outbox and its handoff path.
+  draft sessions still use no local cache in this lane; B2 owns IndexedDB and terminal
+  cache drop. The reset-era cross-generation writer handoff is deleted: a terminal
+  draft close never transfers updates into a replacement draft.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -214,7 +214,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   document-scoped ref, and released.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement, `refused` rejects pending edits,
-  `schema` fences the room, and `removed` (4208) ends it: nothing restarts it
+  `schema` fences the room, and `removed` (4205 discarded or 4208 document-deleted) ends it: nothing restarts it
   unless a lookup after the close proves the document present (a restore won
   the race).
 - A draft room's update refusal (`1008`) is bounded in the transport: after
@@ -223,6 +223,6 @@ keyboard, pointer, drop, or draft-recovery answer.
   It keeps its outbox, and `DraftRoomPool` does not retire it while an owner
   retains it: the review editor stays mounted read-only with the unsent text,
   and the save pill offers Reopen draft, which rebuilds the room from the
-  server (a re-forked draft answers that reconnect as superseded). Live rooms
+  server (a closed draft answers with its terminal close). Live rooms
   never count refusals. A `4207 draft-prefix-missing` close is a plain reconnect,
   never a refusal: the next handshake's SyncStep2 uploads the missing bytes.

@@ -66,7 +66,6 @@ async function main(): Promise<void> {
       revision: documentDraft.revision,
       checkpointRevision: documentDraft.checkpointRevision,
       checkpointSeq: documentDraft.checkpointSeq,
-      generation: documentDraft.generation,
       hasEffect: documentDraft.hasEffect,
       tail: read.tail.map((row) => ({
         id: row.id,

@@ -90,7 +90,6 @@ function fakePulls() {
     async (_input: { documentId: DocumentId; threadId: ThreadId; branchId?: BranchId }) => ({
       peerDraftId: `peer-${++pulled}`,
       upstreamDraftId: FAKE_UPSTREAM_ID,
-      draftGeneration: 1,
       attributionBaseline: new Uint8Array(),
     }),
   );

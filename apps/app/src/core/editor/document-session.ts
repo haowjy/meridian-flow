@@ -91,7 +91,7 @@ export type DocumentSessionStatus =
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a draft room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>` for a draft room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -116,10 +116,9 @@ export type DocumentSessionAccess = "edit" | "read";
 export type DocumentSessionResetReason =
   /** The room's access changed while local edits were pending; the server refused them. */
   | typeof WS_CLOSE.ACCESS_CHANGED.reason
-  | typeof WS_CLOSE.DRAFT_STALE.reason
+  | typeof WS_CLOSE.DRAFT_CLOSED.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason
   /** The document was deleted or discarded; its rooms never reopen. */
   | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
 
@@ -198,7 +197,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a draft room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>` for a draft room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };

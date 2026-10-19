@@ -18,6 +18,8 @@ change-trail persistence, and Hocuspocus admission. It composes
 - A Work draft is shared by every thread editing that document in that Work.
   Review is computed in the browser from the draft room (lane B2). The old server
   review, settlement and reset services are deleted; lane A builds atomic Apply.
+- A draft keeps `draft:<draftId>` from seed to close; it has no generation.
+  After commit, ordinary closes send `4205` with `discarded`; removals send `4208`.
 - Authority identity and generation fence every live connection and mutation.
   The domain owns authorization, persistence, coordination and
   trail projection around the agent-edit core.

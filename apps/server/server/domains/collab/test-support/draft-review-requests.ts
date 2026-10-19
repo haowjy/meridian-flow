@@ -27,10 +27,10 @@ export async function commitDraftEdit(
   },
   mutate: (doc: Y.Doc) => void,
 ) {
-  const staged = await fixture.draftCoordinator.readDraft(draftId, async (doc, snapshot) => {
+  const staged = await fixture.draftCoordinator.readDraft(draftId, async (doc, _snapshot) => {
     const clone = createCollabYDoc({ gc: false });
     Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    return { clone, generation: snapshot.generation };
+    return { clone };
   });
   try {
     if (author.clientId !== undefined) staged.clone.clientID = author.clientId;
@@ -38,7 +38,6 @@ export async function commitDraftEdit(
     await fixture.draftCoordinator.commitSegmentRows({
       draftId: draftId,
       sourceDoc: staged.clone,
-      expectedGeneration: staged.generation,
       rows: [
         {
           draftId: draftId,

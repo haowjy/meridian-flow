@@ -245,8 +245,7 @@ export async function seedDraft(harness: Harness, label: string, text = "Base") 
     branchId: work.branchId,
     liveDoc: live,
   });
-  const { generation } = await harness.readDraft(documentDraft.draftId);
-  return { ...work, documentId, live, draftId: documentDraft.draftId, generation };
+  return { ...work, documentId, live, draftId: documentDraft.draftId };
 }
 
 /** Persist live's delta, then run the production committed-live content rebase. */
@@ -285,11 +284,7 @@ type Frames = {
  * One tab's room in one process: frames go through `coordinator` as the gateway sends them,
  * and an admitted one is applied to the room as Hocuspocus applies it.
  */
-export async function openRoom(
-  harness: Harness,
-  coordinator: Frames,
-  draft: { draftId: string; generation: number },
-) {
+export async function openRoom(harness: Harness, coordinator: Frames, draft: { draftId: string }) {
   const room = await durableDoc(harness, draft.draftId);
   return {
     room,
@@ -297,7 +292,6 @@ export async function openRoom(
       const outcome = await frameOutcome(
         coordinator.commitWriterUpdate({
           draftId: draft.draftId,
-          expectedGeneration: draft.generation,
           updateData: update,
           roomDocument: room,
         }),

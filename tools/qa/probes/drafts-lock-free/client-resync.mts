@@ -322,11 +322,8 @@ function openServer(harness: Harness, workId: string) {
 type Server = ReturnType<typeof openServer>;
 
 /** A writing tab on `draft`, driven by a 50 ms typing loop the arms start and stop. */
-async function openWriter(
-  client: { openTab(roomName: string): Tab },
-  draft: { draftId: string; generation: number },
-) {
-  const tab = client.openTab(`draft:${draft.draftId}:gen:${draft.generation}`);
+async function openWriter(client: { openTab(roomName: string): Tab }, draft: { draftId: string }) {
+  const tab = client.openTab(`draft:${draft.draftId}`);
   await within(5_000, async () => tab.loaded(), Boolean).catch((cause) => {
     const socket = PipeSocket.all.at(-1);
     throw new Error(
@@ -580,7 +577,7 @@ export const clientResync: Probe = {
           const draft = await seedDraft(harness, "resync-raw");
           const server = openServer(harness, draft.workId);
           PipeSocket.connector = (socket) => server.accept(socket);
-          const room = `draft:${draft.draftId}:gen:${draft.generation}`;
+          const room = `draft:${draft.draftId}`;
           const peer = new Y.Doc({ gc: false });
           peer.clientID = 970_001;
           Y.applyUpdate(peer, Y.encodeStateAsUpdate(draft.live));

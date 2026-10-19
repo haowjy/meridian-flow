@@ -255,7 +255,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? {
                     kind: "pending",
                     draftId: query.draftId,
-                    generation: policy.draft?.documentDraft.generation ?? 0,
                     rowId: 0,
                   }
                 : { kind: "live", seq: 0 },

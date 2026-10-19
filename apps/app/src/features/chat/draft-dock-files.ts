@@ -50,7 +50,7 @@ export function dockFile(
     changes: NO_CHANGES,
     actionable: NO_CHANGES,
   } satisfies Omit<DockFile, "status">;
-  if (row.draft.draftGeneration === null) {
+  if (!row.draft.hasDraft) {
     const changes = [wholeItemChange(row.draft)].filter((change) =>
       change.threadIds.includes(threadId),
     );

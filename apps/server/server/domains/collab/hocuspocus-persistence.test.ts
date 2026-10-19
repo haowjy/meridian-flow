@@ -10,7 +10,6 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
-import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterAppend, LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
@@ -95,7 +94,6 @@ describe("createHocuspocusPersistenceService draft room storage", () => {
 
     const admission = persistence.admitDraftWriterUpdate({
       draftId: DRAFT_ID,
-      expectedGeneration: 2,
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" as never },
       document: boundDoc({ gc: false }),
@@ -219,7 +217,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     await expect(
       persistence.admitDraftWriterUpdate({
         draftId: DRAFT_ID,
-        expectedGeneration: 2,
         update: humanUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: roomDoc,
@@ -253,7 +250,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     await expect(
       persistence.admitDraftWriterUpdate({
         draftId: DRAFT_ID,
-        expectedGeneration: 2,
         update: staleUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: staleRoomDoc,
@@ -261,44 +257,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     ).rejects.toThrow(DraftStaleUpdateError);
   });
 
-  it("fences a retained stale client at the draft SyncStep1 handshake", async () => {
-    const discardedDoc = tombstoneBearingDoc();
-    discardedDoc.getText("content").insert(discardedDoc.getText("content").length, " stale");
-    const currentDoc = docWithText("current generation");
-    const current = draftSnapshot(currentDoc);
-    const snapshot = {
-      ...current,
-      documentDraft: {
-        ...current.documentDraft,
-        generation: 3,
-        discardedStateVector: Y.encodeStateVector(discardedDoc),
-      },
-    };
-    const draftStore = new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]);
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftStore,
-      draftCoordinator: createDraftCoordinator({
-        onAppendCommitted: () => {},
-        store: draftStore,
-      }),
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await expect(
-      persistence.rejectStaleDraftSyncStep1({
-        draftId: DRAFT_ID,
-        generation: 3,
-        clientStateVector: Y.encodeStateVector(discardedDoc),
-        room: docWithText("current generation"),
-      }),
-    ).resolves.toBe(true);
-  });
-});
-
-describe("createHocuspocusPersistenceService writer ingress", () => {
   it("admits novel insertion and delete-only updates", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
@@ -628,7 +586,6 @@ function draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8
       draftId: DRAFT_ID,
       documentId: DOCUMENT_ID,
       workId: "work-1" as never,
-      generation: 2,
     }),
     state: Y.encodeStateAsUpdate(doc),
   };

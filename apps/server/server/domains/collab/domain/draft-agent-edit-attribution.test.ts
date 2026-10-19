@@ -58,7 +58,6 @@ function fixture(existingUpstream?: Y.Doc) {
       getDraft: async (id) => snapshot(id),
       resolveThreadDraft: async () => ({
         draftId: "peer",
-        generation: 1,
         status: "active",
         lifecycle: "active",
       }),
@@ -82,7 +81,6 @@ function fixture(existingUpstream?: Y.Doc) {
     return {
       id: rows.length + 1,
       draftId: "draft",
-      generation: 1,
       wId: null,
       source: "writer",
       threadId: null,

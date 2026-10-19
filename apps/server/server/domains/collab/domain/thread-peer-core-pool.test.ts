@@ -156,7 +156,6 @@ describe("thread-peer pool", () => {
             : {
                 peerDraftId: "peer-1",
                 upstreamDraftId: "upstream-1",
-                draftGeneration: 1,
                 attributionBaseline: new Uint8Array(),
               },
         commitThreadResponseAtomically: (operation) => operation(),

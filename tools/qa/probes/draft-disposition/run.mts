@@ -89,7 +89,7 @@ try {
       actor: "agent",
       wId,
       receipts: captureReceiptRows(before, [
-        { update, origin: { kind: "pending", draftId, generation: 0, rowId: Number(row.id) } },
+        { update, origin: { kind: "pending", draftId, rowId: Number(row.id) } },
       ]),
     });
     before.destroy();

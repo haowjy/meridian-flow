@@ -25,7 +25,7 @@ import {
   type DraftHandshakeState,
 } from "../yjs-ws-handler.js";
 
-const documentName = "draft:draft_1:gen:3";
+const documentName = "draft:draft_1";
 
 const payload = new Uint8Array([1, 2, 3]);
 
@@ -40,7 +40,7 @@ function services(stale: boolean) {
     documentSync: {
       roomRemoval: vi.fn(async () => null),
       repairDocumentAuthority: vi.fn(async () => {}),
-      rejectStaleDraftSyncStep1: vi.fn(async () => stale),
+      reconcileHocuspocusDraftRoom: vi.fn(async () => !stale),
       admitDraftWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
@@ -82,7 +82,6 @@ describe("Yjs draft handshake route guard", () => {
           draftId: "draft_1",
           documentId: "document-1" as never,
           workId: "work-1" as never,
-          generation: 3,
         }),
         new Y.Doc({ gc: false }),
       ),
@@ -129,7 +128,6 @@ describe("Yjs draft handshake route guard", () => {
             draftId: "draft_1",
             documentId: "document-1",
             workId: "work-1",
-            generation: 3,
             schemaVersion: COLLAB_SCHEMA_VERSION,
             status: "active",
           })),
@@ -190,13 +188,12 @@ describe("Yjs draft handshake route guard", () => {
         payload,
         userId: "user-1" as never,
         context: {
-          draftSyncState: new Map([["draft_1:3", "passed"]]),
+          draftSyncState: new Map([["draft_1", "passed"]]),
         },
       }),
     ).rejects.toMatchObject({ reason: "draft-update-admission-failed", code: 1008 });
     expect(admitDraftWriterUpdate).toHaveBeenCalledWith({
       draftId: "draft_1",
-      expectedGeneration: 3,
       update: new Uint8Array([1, 2, 3]),
       origin: { type: "user", userId: "user-1" },
       document,
@@ -222,7 +219,7 @@ describe("Yjs draft handshake route guard", () => {
       payload,
       userId: "user-1" as never,
       context: {
-        draftSyncState: new Map([["draft_1:3", "passed"]]),
+        draftSyncState: new Map([["draft_1", "passed"]]),
       },
     });
 
@@ -251,8 +248,8 @@ describe("Yjs draft handshake route guard", () => {
         userId: "user-1" as never,
         context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-stale-doc", code: 4205 });
-    expect(state.get("draft_1:3")).toBe("rejected");
+    ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
+    expect(state.get("draft_1")).toBe("rejected");
   });
 
   it("keeps a rejected room rejected when a later step1 would pass", async () => {
@@ -267,7 +264,7 @@ describe("Yjs draft handshake route guard", () => {
         userId: "user-1" as never,
         context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-stale-doc" });
+    ).rejects.toMatchObject({ reason: "draft-prefix-missing" });
     await expect(
       admitWriterSync({
         services: services(false),
@@ -278,12 +275,12 @@ describe("Yjs draft handshake route guard", () => {
         userId: "user-1" as never,
         context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-stale-doc", code: 4205 });
-    expect(state.get("draft_1:3")).toBe("rejected");
+    ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
+    expect(state.get("draft_1")).toBe("rejected");
   });
 
   it("clears draft sync state through the route close handler", async () => {
-    const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
+    const state = new Map<string, DraftHandshakeState>([["draft_1", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
@@ -299,7 +296,7 @@ describe("Yjs draft handshake route guard", () => {
   });
 
   it("clears draft sync state through the route error handler", async () => {
-    const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
+    const state = new Map<string, DraftHandshakeState>([["draft_1", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
@@ -499,7 +496,6 @@ describe("Yjs room access", () => {
         draftId: "draft_1",
         documentId: liveRoom,
         workId: "work-1",
-        generation: 3,
         schemaVersion: COLLAB_SCHEMA_VERSION,
         status: "active",
       })),

@@ -90,7 +90,6 @@ type Seed = Awaited<ReturnType<typeof seed>>;
 async function writer(s: Seed, update: Uint8Array) {
   return coordinator.commitWriterUpdate({
     draftId: s.draftId,
-    expectedGeneration: s.generation,
     updateData: update,
     actorUserId: h.ids.user,
     roomDocument: s.room,
@@ -100,7 +99,6 @@ async function agent(s: Seed, update: Uint8Array, peer: Y.Doc) {
   const wId = await h.persistence.journal.reserveWriteOrdinal(s.documentId, s.threadId);
   return coordinator.commitSegmentRows({
     draftId: s.draftId,
-    expectedGeneration: s.generation,
     sourceDoc: peer,
     rows: [
       {

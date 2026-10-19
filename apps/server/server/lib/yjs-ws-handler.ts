@@ -15,6 +15,7 @@ import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
   DraftPrefixMissingError,
+  DraftStaleUpdateError,
   isDocumentSchemaMajorMismatchError,
 } from "../domains/collab/index.js";
 import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
@@ -80,7 +81,6 @@ type YjsAdmissionTarget =
       kind: "draft";
       draftId: Extract<ParsedYjsRoom, { kind: "draft" }>["draftId"];
       documentId: DocumentId;
-      generation: number;
     };
 
 /**
@@ -310,11 +310,8 @@ async function classifyYjsConnectionAdmission(input: {
     await services.documentSync.repairDocumentAuthority(documentId);
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
-    const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(
-      room.draftId,
-      room.generation,
-    );
-    if (!documentDraft) throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+    const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
+    if (!documentDraft) refuse(WS_CLOSE.DRAFT_CLOSED);
     documentId = documentDraft.documentId;
     headSchemaVersion = documentDraft.schemaVersion;
     fileTarget = { kind: "draft", documentId, workId: documentDraft.workId };
@@ -364,7 +361,6 @@ async function classifyYjsConnectionAdmission(input: {
       kind: "draft",
       draftId: room.draftId,
       documentId,
-      generation: room.generation,
     },
   };
 }
@@ -377,20 +373,18 @@ async function enforceDraftHandshake(input: {
   payload: Uint8Array;
   context?: { draftSyncState?: Map<string, DraftHandshakeState> };
 }): Promise<void> {
-  const key = `${input.room.draftId}:${input.room.generation}`;
+  const key = input.room.draftId;
   if (input.syncType === messageYjsSyncStep1) {
-    const stale = await input.services.documentSync.rejectStaleDraftSyncStep1({
+    const active = await input.services.documentSync.reconcileHocuspocusDraftRoom({
       draftId: input.room.draftId,
-      generation: input.room.generation,
-      clientStateVector: input.payload,
       room: input.document,
     });
     if (input.context?.draftSyncState?.get(key) === "rejected") {
-      throw permissionDenied(WS_CLOSE.DRAFT_STALE.reason, WS_CLOSE.DRAFT_STALE.code);
+      refuse(WS_CLOSE.DRAFT_PREFIX_MISSING);
     }
-    if (stale) {
+    if (!active) {
       input.context?.draftSyncState?.set(key, "rejected");
-      throw permissionDenied(WS_CLOSE.DRAFT_STALE.reason, WS_CLOSE.DRAFT_STALE.code);
+      refuse(WS_CLOSE.DRAFT_CLOSED);
     }
     input.context?.draftSyncState?.set(key, "passed");
     return;
@@ -399,7 +393,7 @@ async function enforceDraftHandshake(input: {
   const state = input.context?.draftSyncState?.get(key) ?? "pending";
   if (state === "passed") return;
   input.context?.draftSyncState?.set(key, "rejected");
-  throw permissionDenied(WS_CLOSE.DRAFT_STALE.reason, WS_CLOSE.DRAFT_STALE.code);
+  refuse(WS_CLOSE.DRAFT_PREFIX_MISSING);
 }
 
 export async function admitWriterSync(input: {
@@ -446,7 +440,6 @@ async function admitDraftSync(
   try {
     await input.services.documentSync.admitDraftWriterUpdate({
       draftId: room.draftId,
-      expectedGeneration: room.generation,
       update: input.payload,
       origin: { type: "user", userId: input.userId },
       document: input.document,
@@ -457,6 +450,11 @@ async function admitDraftSync(
     if (cause instanceof FileEditRefusedError) throw cause;
     // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
     if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
+    if (cause instanceof DraftStaleUpdateError) {
+      if (!(await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
+        refuse(WS_CLOSE.DRAFT_CLOSED, cause);
+      refuse(WS_CLOSE.ACCESS_CHANGED, cause);
+    }
     refuse({ code: 1008, reason: "draft-update-admission-failed" }, cause);
   }
 }
@@ -494,10 +492,7 @@ function admittedTargetForSync(
   if (
     !target ||
     (room.kind === "live" && (target.kind !== "live" || target.documentId !== room.documentId)) ||
-    (room.kind === "draft" &&
-      (target.kind !== "draft" ||
-        target.draftId !== room.draftId ||
-        target.generation !== room.generation))
+    (room.kind === "draft" && (target.kind !== "draft" || target.draftId !== room.draftId))
   ) {
     throw permissionDenied("permission-denied");
   }
@@ -616,12 +611,7 @@ export function createHocuspocus(
             state =
               room.kind === "live"
                 ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
-                : (
-                    await services.documentSync.loadHocuspocusDraftState(
-                      room.draftId,
-                      room.generation,
-                    )
-                  )?.state;
+                : (await services.documentSync.loadHocuspocusDraftState(room.draftId))?.state;
           } catch (cause) {
             if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
             refuseSchemaAdmission({
@@ -634,8 +624,7 @@ export function createHocuspocus(
               serverSchemaVersion: cause.expectedVersion,
             });
           }
-          if (!state && room.kind === "draft")
-            throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_CLOSED);
           if (state) Y.applyUpdate(document, state);
           if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
         });
@@ -650,7 +639,6 @@ export function createHocuspocus(
       // Not awaited: Hocuspocus registers the room only after this hook returns.
       services.documentSync.enrollHocuspocusDraftRoom({
         draftId: room.draftId,
-        generation: room.generation,
         document,
       });
     },
@@ -665,12 +653,10 @@ export function createHocuspocus(
       };
       await withRemovalRefusal(services, room, context.userId, closing, async () => {
         if (room.kind === "draft") {
-          // As for a live room: a reset can commit between this connection's admission and
-          // its room's registration, and the old generation's room must not take the tab.
-          if (
-            !(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId, room.generation))
-          )
-            refuse(WS_CLOSE.DRAFT_GENERATION_STALE);
+          // A close can commit between admission and registration; the ended draft
+          // must not take a late connection.
+          if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
+            refuse(WS_CLOSE.DRAFT_CLOSED);
           return;
         }
         try {

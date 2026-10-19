@@ -48,7 +48,7 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
     parts = captureReceiptRows(pre, [
       {
         update,
-        origin: { kind: "pending", draftId: documentDraft.draftId, generation: 0, rowId: 0 },
+        origin: { kind: "pending", draftId: documentDraft.draftId, rowId: 0 },
       },
     ]);
   } finally {
@@ -56,7 +56,6 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   }
   const row = {
     draftId: documentDraft.draftId,
-    generation: read.documentDraft.generation,
     updateData: update,
     source: "agent" as const,
     threadId: work.threadId as ThreadId,
@@ -67,7 +66,6 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   const appended = await harness.store.appendRows({
     draftId: documentDraft.draftId,
     documentId,
-    expectedGeneration: read.documentDraft.generation,
     base: {
       checkpointRevision: read.documentDraft.checkpointRevision,
       seq: read.documentDraft.checkpointSeq,

@@ -1,6 +1,6 @@
 /** Immutable receipt placement shared by host policies and persistence adapters. */
 export type EditPlacement =
-  | { kind: "pending"; draftId: string; generation: number; rowId: number }
+  | { kind: "pending"; draftId: string; rowId: number }
   | { kind: "live"; seq: number }
   | { kind: "discarded" }
   | { kind: "retired" };

@@ -49,19 +49,18 @@ export type StagedDraftView = DraftSnapshot & {
 
 export type SegmentRowsInput = {
   draftId: string;
-  expectedGeneration: number;
   sourceDoc: Y.Doc;
-  rows: readonly Omit<AppendDraftJournalInput, "generation">[];
+  rows: readonly AppendDraftJournalInput[];
 };
 
 /**
- * A pull merges `upstream` into the draft. A peer's pull names the upstream epoch it read
- * `upstream` at: the commit locks that row `FOR SHARE` and loses if it closed or moved.
+ * A pull merges `upstream` into the draft. A peer names its captured upstream id:
+ * the commit locks that row `FOR SHARE` and loses if it closed.
  */
 export type PullInput = {
   draftId: string;
   upstream: Y.Doc;
-  upstreamEpoch?: { draftId: string; generation: number };
+  upstreamDraftId?: string;
 };
 
 /**
@@ -95,7 +94,7 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
     run: (
       doc: Y.Doc,
       snapshot: StagedDraftView,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
+    ) => Promise<{ result: T; rows: readonly AppendDraftJournalInput[] }>,
     commit: boolean,
   ): Promise<{ result: T; write: PreparedDraftWrite | null }>;
   /** `source` merged into the draft as a checkpoint write; null when it holds `source` already. */
@@ -106,15 +105,14 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
   /** Brings this process's rooms up to what is committed now: a read, installed as any other. */
   deliverCommitted(draftId: string): Promise<void>;
   /**
-   * Brings a registered room up to what is committed on its generation (decisions D26, D27):
+   * Brings a registered room up to what is committed on its stable identity (decisions D26, D27):
    * at its enrollment, from which on every installed transition reaches it, and at each tab's
    * handshake, so a room that missed a delivery heals on the next exchange whether or not the
    * tab may write. Returns the base it reconciled against, or null when the draft closed or
-   * left the room's generation.
+   * was removed.
    */
   reconcileRegisteredRoom(input: {
     draftId: string;
-    generation: number;
     room: Y.Doc;
     trigger: Exclude<RoomReconcileTrigger, "frame">;
   }): Promise<DraftBase | null>;
@@ -150,15 +148,14 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
         }),
     });
   }
-  async function reconcileRegisteredRoom({
-    generation,
-    ...room
-  }: Parameters<DraftCoordinator["reconcileRegisteredRoom"]>[0]): Promise<DraftBase | null> {
+  async function reconcileRegisteredRoom(
+    room: Parameters<DraftCoordinator["reconcileRegisteredRoom"]>[0],
+  ): Promise<DraftBase | null> {
     const base = await loadBase(room.draftId).catch((cause: unknown) => {
       if (cause instanceof DraftMissingError) return null;
       throw cause;
     });
-    if (base?.snapshot.status !== "active" || base.snapshot.generation !== generation) return null;
+    if (base?.snapshot.status !== "active") return null;
     reconcileRoom({ ...room, replica: base.replica });
     return base;
   }
@@ -181,7 +178,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     return prepareRewrite(snapshot.draftId, candidate, {
       policy: foldPolicy(base.replica),
       operation: { kind: "pull" },
-      ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
+      ...(pull.upstreamDraftId ? { upstream: { draftId: pull.upstreamDraftId } } : {}),
     });
   }
 
@@ -269,7 +266,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     run: (
       doc: Y.Doc,
       snapshot: StagedDraftView,
-    ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
+    ) => Promise<{ result: T; rows: readonly AppendDraftJournalInput[] }>,
     commit: boolean,
   ): Promise<{ result: T; write: PreparedDraftWrite | null }> {
     const base = await loadBase(draftId);
@@ -279,10 +276,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     try {
       const { result, rows } = await run(replay, { ...snapshot, encoded: encodedOf(base.replica) });
       if (!commit || !rows.length) return { result, write: null };
-      const write = prepareRows(
-        base,
-        rows.map((row) => ({ ...row, generation: snapshot.generation })),
-      );
+      const write = prepareRows(base, rows);
       if (!bytesEqual(Y.encodeStateAsUpdate(write.candidate), Y.encodeStateAsUpdate(replay))) {
         write.dispose();
         throw new Error("Response replay differs from its admitted segment rows");
@@ -312,9 +306,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     const base = await loadBase(batch.draftId);
     const { snapshot } = base;
     assertWritableDraft(snapshot);
-    if (snapshot.generation !== batch.expectedGeneration)
-      throw new DraftStaleUpdateError(`Draft ${batch.draftId}`);
-    const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
+    const journals = batch.rows;
     const write = journals.length ? attempt.own(prepareRows(base, journals)) : null;
     assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
     if (!write) return false;
@@ -331,7 +323,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     withTransient: transient,
     prepareStagedRows,
     prepareCatchUp,
-    // An append is sequenced, never fenced: one attempt; a generation change refuses it.
+    // An append is sequenced, never fenced: one attempt; a close refuses it.
     commitSegmentRows: (batch) =>
       commitAttempts((attempt) => segmentRowsAttempt(attempt, batch), { bound: 1 }),
 

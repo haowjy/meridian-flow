@@ -7,7 +7,6 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 export type DraftJournalRow = {
   id: number;
   draftId: string;
-  generation: number;
   wId: number | null;
   /** The model's tool call that made this write; null for writer rows and legacy rows. */
   toolCallId?: string | null;
@@ -27,12 +26,10 @@ export type DraftJournalRow = {
 export type DraftReplayJournalReads = {
   listConcurrentJournalRows(
     draftId: string,
-    generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<DraftJournalRow[]>;
   listJournalRowsForDraft(input: {
     draftId: string;
-    generation: number;
     throughJournalId?: number;
   }): Promise<DraftJournalRow[]>;
 };

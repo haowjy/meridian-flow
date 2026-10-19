@@ -274,7 +274,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         source.getText("content").insert(source.getText("content").length, String(index));
         return {
           draftId: documentDraft.draftId,
-          generation: snapshot.generation,
           source: "agent" as const,
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -293,7 +292,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(
           await coordinator.commitSegmentRows({
             draftId: documentDraft.draftId,
-            expectedGeneration: snapshot.generation,
             sourceDoc: source,
             rows,
           }),
@@ -366,7 +364,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const persistence = draftRoomPersistence();
 
       await expect(
-        persistence.loadHocuspocusDraftState("draft_corrupt_review_entry", 1),
+        persistence.loadHocuspocusDraftState("draft_corrupt_review_entry"),
       ).rejects.toThrow(DraftCorruptError);
     });
 
@@ -421,17 +419,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { parseYjsRoomName } = await import("@meridian/contracts/protocol");
       const persistence = draftRoomPersistence();
 
-      expect(parseYjsRoomName("draft:missing-review-draft:gen:1")).toEqual({
+      expect(parseYjsRoomName("draft:missing-review-draft")).toEqual({
         kind: "draft",
         draftId: "missing-review-draft",
-        generation: 1,
       });
-      expect(parseYjsRoomName("draft:missing-review-draft")).toBeNull();
+      expect(parseYjsRoomName("draft:missing-review-draft:gen:1")).toBeNull();
       await expect(
-        persistence.resolveDraftHocuspocusRoom("missing-review-draft", 1),
+        persistence.resolveDraftHocuspocusRoom("missing-review-draft"),
       ).resolves.toBeNull();
       await expect(
-        persistence.loadHocuspocusDraftState("missing-review-draft", 1),
+        persistence.loadHocuspocusDraftState("missing-review-draft"),
       ).resolves.toBeUndefined();
     });
     // Risk: an append is sequenced by the row lock, not fenced by the revision (design §2):
@@ -445,7 +442,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const row = (updateData: Uint8Array) => ({
         draftId: documentDraft.draftId,
-        generation: documentDraft.generation,
         updateData,
         source: "agent" as const,
       });
@@ -456,7 +452,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         store.appendRows({
           draftId: documentDraft.draftId,
           documentId: DOC_ID as never,
-          expectedGeneration: documentDraft.generation,
           base: { checkpointRevision: 0, seq: 0 },
           finalize: () =>
             status === "contained"
@@ -485,7 +480,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       await db
         .update(documentDrafts)
-        .set({ generation: documentDraft.generation + 1 })
+        .set({ status: "closed", closedCause: "discarded" })
         .where(eq(documentDrafts.id, documentDraft.draftId));
       await expect(append(null)).resolves.toEqual({ status: "refused" });
       const journalRows = await db

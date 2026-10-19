@@ -611,7 +611,6 @@ export function createResponseCommitter(deps: {
     // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
     const unchanged =
       !rejected.length &&
-      view.cut.generation === accepted.helperCut.generation &&
       sameBytes(view.cut.state, accepted.helperCut.state) &&
       sameBytes(Y.encodeStateAsUpdate(view.doc), accepted.helperState);
     let helper: ReplayOutcome["helper"] = null;
@@ -1687,7 +1686,6 @@ export function createResponseCommitter(deps: {
                 doc: yjsUpdateFromState(input.preOwnSnapshot),
                 staged: coordinator.stagedWrites,
                 cut: {
-                  generation: input.interactionContext.draftGeneration,
                   state: input.preOwnSnapshot.slice(),
                 },
               },

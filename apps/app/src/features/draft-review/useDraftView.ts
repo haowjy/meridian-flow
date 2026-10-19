@@ -39,7 +39,7 @@ export function useDraftView(
     open?.documentId === draft.documentId &&
     open.itemKey === draft.itemKey;
   const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const withoutDocumentDraft = item?.draftGeneration === null;
+  const withoutDocumentDraft = item?.hasDraft === false;
   const entry = useDraftPreviews(enabled && !sharing && !withoutDocumentDraft ? [draft] : [], {
     openReview: open,
   })[0];
