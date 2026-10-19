@@ -150,12 +150,13 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered
   // as a quiet floating pill by EditorView. A removed room says nothing while
-  // availability is asked; a tab that stays open says why in place.
+  // availability is asked or has said it is still there (a restart follows);
+  // a tab that stays open says why in place.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
   const label = removed ? (
-    removal === undefined ? null : removal.kind === "removed" ? (
+    removal === undefined || removal.kind === "available" ? null : removal.kind === "removed" ? (
       <RemovedDocumentSentence documents={[{ title: null, record: removal.record }]} />
     ) : (
       <Trans>Access lost (not saving to the server)</Trans>
