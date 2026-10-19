@@ -278,6 +278,11 @@ no `results://` scheme. Neither Recent list lives here: chat Recent reads
 
 ## Thread-folder presentation
 
+`adapters/catalog-reader.ts` owns source selection and authoritative live-tree
+projection, including labels. `context-catalog.ts` owns transaction fences,
+scope locks, versions, delta persistence and replay. Readers take their caller’s
+transaction; publication never opens a competing reader transaction.
+
 Catalog folder `name` and `path` are placement coordinates. Associated roots
 add `displayName`, batch-joined from chat metadata (a subagent uses its spawning
 parent's title; missing metadata uses `Untitled chat`). Replica locations never

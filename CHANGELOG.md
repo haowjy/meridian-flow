@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Separate authoritative catalog reading and label projection from transactional publication, retaining one locking, versioning and commit path.
+
 - Chat links wait for refreshed notes scope after own or parent Work rebind, then resume without a second click.
 
 - Files ancestry, document breadcrumbs, tab tooltips and move feedback use catalog folder display names instead of reserved chat-folder basenames.
