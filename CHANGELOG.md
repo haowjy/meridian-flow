@@ -2,119 +2,15 @@
 
 ## [Unreleased]
 
-- Keep draft typing independent of unchanged sibling drafts, paint Discard feedback without rebuilding the project, and classify attribution by item intervals rather than individual characters.
-- Keep repeated large draft Discard and Undo saved without socket timeouts.
-
-- Keep draft-review bursts proportional to current text and queued clicks: retain base nodes and clean frames, subscribe controls to their own state, and map peer edits without inflating review paint.
-
-- Subscribe the document toolbar to its control state so unchanged review metadata does not rerender its ten controls.
-- Keep undoable draft Discard out of schema-repair notices while preserving genuine repair reports.
-- Paint dock and Work Discard notices and remove selected rows before large draft write-backs, preserving one-transaction Undo.
-
-- Scroll draft-review Next, Previous and list selection to the focused passage.
-
-- Keep draft-review room identity checks independent of the focused document, removing whole-draft serialization while typing.
-
-- Share equal blocks' immutable merge tokens without replacing editor nodes or arrays.
-
-- Take Apply's draft hold only at the append door; a late close rolls back both document halves and the command claim.
-
-- Compile already-current Apply snapshots without duplicating the draft document.
-
-- Reuse immutable draft encodings across append cuts and replicas, keeping unused serialization out of row holds.
-
-- Capture draft edit receipts by retained item ranges instead of expanding every review-base character.
-
-- End dock Discard notices when their room session retires, so Undo never targets a replaced document.
-- Hide the empty-paragraph placeholder while removed review prose occupies its line, preventing overlapping glyphs.
-
-- Name a removed paragraph from its proven block deleter when rebased words have no character witness, withholding ambiguous bylines.
-
-- Scope draft-review focus to its projection so successive identical changes cannot apply the wrong occurrence.
-
-- Correct draft collaboration references for the completed cutover and frontier-compaction probe.
-
-- Remove obsolete server-preview contracts, legacy restoration claims, dead review helpers and unreachable trail notices; the append probe uses the same restoration recorder as the editor.
-
-- Take the Work lock before claiming Discard commands, matching Apply and preventing conflicting-delivery deadlocks.
-
-- Resolve draft addresses from metadata only; classify receipt membership only for review lists and frozen Apply cuts.
-
-- Stop computing and shipping unused live fingerprints on draft review lists.
-
-- Bind frozen Apply clicks to their original draft so delayed delivery cannot apply a replacement after Discard.
-- Reuse draft attribution receipt and room-root indexes across text projections without caching change membership or bylines.
-
-- Refuse unsent Apply clicks when their session retires, while keeping sent command settlement and rebinding review ownership to the replacement session.
-
-- Consolidate draft review cutover into one ordered migration series with shared receipt-origin indexes; preserve frontier-planned saves and atomic Apply through retirement.
-
-- Leave draft review for the exact live document when another tab discards all, even when metadata arrives before the room close; preserve document-removal handling and drop the retired room cache.
-
-- Integrated text-based draft review with stable server rooms, addressed draft metadata, and Apply for empty or image creations.
-- Integrate frontier-planned model writes with fresh-seeded draft review and atomic Apply; thread peers retain identity only, and draft saves report their locked committed cut.
-- Existing Work drafts retain their text and historical Apply evidence when upgrading to text-derived review. Cutover refuses unrepaired drafts and unfinished Apply, converts restartably under row locks, builds replacement indexes online, then retires draft generations, placement and settlement storage.
-
-- Database migrations can run digest-pinned TypeScript conversions in ledger order, on the migration runner's locked session, before their SQL completion barriers.
-
-- Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.
-
-- Align the peer-retraction probe with the upstream-first refusal check.
-
-- Read committed live authority and tail atomically without repeating checkpoint bytes for each journal row.
-
-- Reset the draft runtime's late-typing cache when the kernel reaches its memory bound.
-
-- Preserve incremental late-frame recovery across contained deletion echoes and reconnect snapshots; verify the content-rebase cutover with production-store probes.
-
-- Seed Work drafts with independent review content, rebase live through server appends, recover late typing deleted by rebases, and derive badges from the room's two fragments. Turn inverses no longer merge live identity into drafts.
-- Draft rooms keep one identity until close. Removed draft generations and reset replay; Discard all and Work purge close other tabs after commit with a terminal discarded reason. Live restore epochs and removal closes are unchanged.
-- Apply records each conversation’s own changed passages rather than attributing every selected paragraph to every conversation.
-
-- The text merge reports original block correspondence through moves and deletions, plus the live words replaced by contested draft edits.
-
-- Preserve removal records when a document closes during Apply admission; retries keep their recorded result.
-
-- Apply freezes the clicked draft text, commits live and review-base changes atomically, and records exactly-once command outcomes and committed change trails.
-
-- Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
-- Removed inverse holds and their refusal statuses. Revert keeps applied changes in the draft until the writer applies them.
-
-- Turn and model inverses use text-derived draft dispositions and immutable origins, keeping applied draft reverts out of live text.
-
-- Work Discard all closes drafts without rewriting receipts; pending lists and counts follow active text effects, with conversation membership derived from the shared review.
-
-- Text Discard now edits the same draft locally in one undoable step. Dock and Work notices have isolated Undo history; terminal closes leave review and clear the room cache. Removed the server-preview client.
-
-- Apply clicks now keep their frozen meaning in a per-draft browser FIFO, retry the same command after a lost answer, and wait only for the edits captured by the click to be acknowledged.
-### Changed
-- Review bylines now classify the room's item identities, name writer edits as “You”, and link AI changes to their conversation (subagent changes reveal the spawn card). Evidence reads are shared per room and refreshed by unresolved ranges and provenance roots, not keystrokes.
-- Draft review reads snapshot-bounded receipt provenance through an authenticated endpoint, with indexed AI receipt reads independent of writer history. Model attribution exposes current-item birth and deleter readers.
-
-- Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.
-- Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
-
-- Isolated reply replay journal reads from the retiring Apply settlement store.
-
-- Removed the settlement-era draft-review command client in preparation for the per-draft command owner.
-### Changed
-- Protect draft review's server-owned roots at writer and agent admission, admit server journal rows,
-  and replace Apply requests with frozen snapshot clicks (execution follows in the Apply lane).
-
-- Draft receipt readers derive pending, applied and discarded status from one captured text review, including retained closed drafts.
-
-- Draft Apply evidence recognizes Undo-restored AI items and preserves unnamed receipt membership after a conversation or turn is deleted.
-
-- Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
-
-- Shared frozen Apply merging and optimistic base deltas now use the draft review kernel; low-similarity flat rewrites retain their paragraph identity.
-
-- Ported the browser-safe draft review text kernel for shared review, Apply, Discard and rebase.
-
-- Removed document stays removed (W52, #854). Live keystroke, reply save, Apply, checkpoint, compaction or version restore that reaches it after removal changes nothing. Only a create makes a document. Apply holds a removed file with its record and applies the rest.
-- Model hears who removed the file, no retry: "This file was deleted by Ana Ruiz before this reply was saved, so this change wasn't made." and "File not found. This file was deleted by Ana Ruiz." (status `document_not_found`). Peer path and save path read the same. Draft closed by a removal stays the removal's after Work Restore, never "the user discarded". Chat card: "You deleted Chapter 3 before this reply saved its change."
-- Editor on a removed document closes `4208 document-deleted`, no reconnect, only for someone who may read it; others get plain denial or unknown draft. A stale `4208` on a document that still exists reconnects in place; while availability can't answer, the tab says "Access lost (not saving to the server)". The space a closed tab or dock slot leaves says "You deleted Chapter 3 elsewhere.", "You deleted 3 documents elsewhere (Chapter 1, Chapter 2, and Chapter 3).", "You discarded Note from the draft elsewhere."; never over text; silent in the tab that removed it. A reopened review link says the same.
-- Removal records reason, actor (writer, Work or system) and time. Migrations 0072–0074 classify old tombstones, close their active drafts as removed (safe against a racing Work Restore), retire stale tree uses and fix Work counts.
+- Draft review reads the text (#862 re-landed on the lock-free store). Review is the difference between the live text a draft is reviewed against (`review_base`, server-written) and the draft, computed in the browser. Only red (removed) and green (added), writer typing and formatting included; no olive. Moves, cut and paste, Ctrl+Z and concurrent edits never corrupt it. A paragraph the draft removed and live then edited shows its byline, Apply and Discard (#945).
+- Discard on one document is an edit of its draft, one undoable step: Ctrl+Z in the editor, or Undo on the "Discarded" notice in the dock or Work page. The row leaves and the notice paints at the click, before the write-back. Discard all and document removal still close drafts; other tabs leave review on close (`4205`).
+- Apply sends the frozen click (the text the writer saw and the changes clicked), merges it into current live, and never answers "stale". Clicks on one document apply in order, one at a time; a lost answer retries the same command. The trail credits each conversation with only its own changed passages.
+- A draft keeps one identity from seed to close: seeded fresh from live, newer live arrives as a server rebase written inside the append that commits it, and typing a rebase deleted is recovered. Removed draft generations, reset, close code `4206`, inverse holds, settlement batches and server-computed review.
+- Bylines come from Yjs item identity and AI receipts: writer edits say "You", AI changes link to their conversation, subagent changes reveal the spawn card.
+- Next, Previous and list selection scroll to the change (#973).
+- Draft rooms keep unsent typing in IndexedDB like live documents (#940, online reload and offline typing).
+- Model Undo, Redo and Revert, turn receipts and pending lists read each AI write's fate (applied, pending, discarded) from the text; stored `placement` removed.
+- Migrations 0075–0081 convert existing Work drafts to text-derived review, restartable under row locks with online indexes, then retire draft generations, placement and settlement storage. Cutover refuses unrepaired drafts and unfinished Apply. The migration runner can run digest-pinned TypeScript conversions in ledger order.
 - An AI write plans on what the model was shown, and isn't applied where that passage changed since (M2, #871). Every model read and write reads its document fresh (a copy of the live document or the Work draft, plus the reply's kept staged writes), and a write plans on the view its request showed plus the reply's own writes, so text the writer typed after the model's read is no longer swept by a write that never saw it, in draft mode as in auto-apply. Where more than 10 words of the passage (the targeted blocks and one neighbour each side) changed since the model saw it, the model gets "Not applied: this passage changed since you last saw it. Current text:"; where it hasn't seen all of the passage (part was never shown, or it has no view of that version), "Not applied: you haven't seen all of this passage yet. Current text:". Either way its next attempt lands unless the passage changes again, a passage over 16 KB asks for a read of that range, and the chat shows the step as "Got the latest text of" the document. Creating a document or filling an empty one is never refused. The check still runs on the next edit of a paragraph only the AI's own write holds, and on a later edit in the same reply of a document that reply created; those pass because the model has that text from its own call. Every result that shows document text lists, under `concurrent edits:`, the paragraphs changed since the model last saw them that it doesn't show, up to 8 KB then by count. A save's receipt names writer text its write swept, including text typed after the save was prepared and before its rows were stored, and write echoes and receipts find touched blocks by Yjs item identity, so a concurrent sibling that lengthens a block's hash no longer hides its echo. A reply keeps one ordered record of what it wrote, saved and undid, so a write after its own save or undo no longer duplicates or drops its text. Every write, in a reply or not, live or draft, saves through one path: a live save appends to the journal and reaches open editors only after it commits, a save that only removes text included, so a failed transaction never shows in an open editor. Delivery to an open editor is retried with backoff (then every 30 seconds) until the editor catches up or the document is unloaded; it never closes the editor, and a save never waits on a stalled delivery, since a new save delivers at once. Once a write is stored, a failure while reporting it returns the write as landed (with less detail), so retrying the same tool call doesn't write it twice. Also fixed: Markdown reads and search inside a reply see its staged live writes; an immediate draft write that changes nothing answers "unchanged"; a write whose draft the writer discarded mid-call is refused with that Discard's reason.
 
 - The server records what each document view the model receives showed it, and writes plan on it (M2, #871): an observation frontier (a Yjs snapshot plus the blocks changed and not shown in full) per read, write echo, undo/redo/revert echo, settled save receipt and @-mention read, keyed by the transcript block and the room (Work draft, or live document at its restore epoch). It survives restart; forks inherit it, retries don't (migrations 0070-0071). The model is credited with a document only when its request carries the text: a read that compaction summarized away no longer counts, and the chain restarts at each compaction; a fork cut before the compaction counts the earlier reads again. To keep the model's footing, compaction re-shows the documents the conversation showed most recently, in full and current, after its summary: at most 5, within the least of 20,000 tokens, 10% of the usable window and the room under the auto-compaction trigger. Each records a fresh frontier like an @-mentioned document, and the retained tail's older copies of it are cleared. Removed: the `read_required` last-read check, the labelled human/agent write listing with its backfill and `sync_overflow`, the per-thread journal watermarks, resident runtime documents, and every read of a thread peer's content.
