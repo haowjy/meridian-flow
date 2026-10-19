@@ -30,7 +30,7 @@ export function useReviewRoomOwner(input: {
     review ? { projectId: input.projectId, workId: input.workId, ...review } : null,
   );
   useEffect(() => {
-    if (!review) return;
+    if (!review || command.closed) return;
     if (read.roomName)
       dispatch({
         type: "roomResolved",
@@ -38,9 +38,9 @@ export function useReviewRoomOwner(input: {
         itemKey: review.itemKey,
         roomName: read.roomName,
       });
-    else if (read.status === "error" || read.status === "gone")
+    else if (read.status === "error")
       dispatch({ type: "roomFailed", documentId: review.documentId, itemKey: review.itemKey });
-  }, [read.roomName, read.status, review?.documentId, review?.itemKey, dispatch]);
+  }, [read.roomName, read.status, command.closed, review?.documentId, review?.itemKey, dispatch]);
   return {
     session: read.session,
     roomName: read.roomName,

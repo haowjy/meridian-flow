@@ -297,6 +297,10 @@ export class DocumentSessionRegistry
     return this.draftRooms.rebuild(roomKey);
   }
 
+  closeDraftRoom(roomKey: string): Promise<void> {
+    return this.draftRooms.close(roomKey);
+  }
+
   getDraftRoom(roomKey: string): DocumentSession {
     return this.draftRooms.get(roomKey);
   }

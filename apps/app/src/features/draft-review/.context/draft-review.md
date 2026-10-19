@@ -98,9 +98,18 @@ text-group hiding. Discard all includes bound empty drafts as well as listed
 items. Removed rooms ask the existing availability owner for the record;
 there is no second removal cache. `4205` maps to terminal `closed` (including
 in-band code-1000 delivery), `4208` to `removed`; session teardown clears
-the exact IndexedDB cache. One-document text Discard clears neither.
+the exact IndexedDB cache. The command owner handles a terminal room frame and
+an authoritative metadata `gone` as two arrivals of the same fact. For `gone`,
+it resolves the exact document through the availability owner: available goes
+to that document's current live URI; deleted uses the existing removal flow.
+Failed/unknown reads never prove closure. The owner deduplicates the disposition,
+retains an open room during that lookup for unsent-text recovery, and asks the
+pool to retire it and drop its exact cache. One-document text Discard clears neither.
 
 Addressed room lookup is `useDraftMetadata`, never a server text preview.
-The metadata GET and no-text creation Apply capability are integration
+The route retains this read above editor address admission, so catalog
+invalidation cannot strand a review after unmounting its room readers. A gone
+room is a lifecycle transition, not a room-opening error. The metadata GET and
+no-text creation Apply capability are integration
 requirements: the browser cannot derive a draft id from the list item key,
 nor manufacture a text snapshot for an image. Such an Apply is not offered.

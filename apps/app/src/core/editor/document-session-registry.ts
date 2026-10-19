@@ -48,6 +48,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
    * room's current session or no longer removed.
    */
   restartRemovedRoom(session: DocumentSession): Promise<boolean>;
+  closeDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(

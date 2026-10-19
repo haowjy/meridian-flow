@@ -17,7 +17,9 @@ Local document peers are scoped to the exact persistence incarnation and schema,
 not a path or unqualified document ID. They exchange Yjs updates and ephemeral
 presence; replay is a remote transaction and local convergence is not server
 acknowledgement. Teardown removes local awareness and drains reads before
-destroying persistence. The replay adapter uses y-indexeddb's public stores and
+destroying persistence. A cross-tab cache deletion also fences peers on IndexedDB
+`versionchange`, before a lifecycle wake can replay from the closing connection.
+The replay adapter uses y-indexeddb's public stores and
 does not create a second content journal.
 
 ### Adoption protocol
@@ -70,7 +72,9 @@ barrier that drains that open.
 - Live sessions use a qualified, generation-aware IndexedDB key. Draft sessions
   use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
   draft recovers unsent text. Terminal `closed`/`removed` session teardown clears that exact cache; the
-  painter and local Discard never do.
+  painter and local Discard never do. `closeDraftRoom` also retires and drops
+  the exact cache when the review owner learns closure through authoritative
+  metadata before the socket frame. The pool refuses to reopen that closed id.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
