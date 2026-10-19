@@ -4,7 +4,7 @@ import { documentEditParts, documentEdits, draftWriteJournal } from "@meridian/d
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { createDrizzleDraftJournalReadStore } from "./adapters/drizzle-branch-push.js";
+import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -56,7 +56,7 @@ it("returns editKind from the pending part's origin, whatever its placement or t
     await db
       .delete(documentEditParts)
       .where(sql`${documentEditParts.origin}->>'rowId' = ${String(partless.id)}`);
-    const read = createDrizzleDraftJournalReadStore(db);
+    const read = createDrizzleDraftReplayJournalReads(db);
     const kinds = (found: Awaited<ReturnType<typeof read.listJournalRowsForDraft>>) =>
       found.map((row) => [row.id, row.editKind]);
     const input = { draftId: documentDraft.draftId, generation: documentDraft.generation };

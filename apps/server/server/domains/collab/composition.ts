@@ -1,3 +1,4 @@
+import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 /** Production dependency graph for the server collab domain. */
 
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -224,6 +225,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const writerFrameDiagnostics = createWriterFrameDiagnostics(deps.eventSink);
   const draftJournal = createDrizzleDraftJournalReadStore(deps.db);
+  const replayJournal = createDrizzleDraftReplayJournalReads(deps.db);
   const draftCoordinator = createDraftCoordinator({
     store: drafts,
     attemptScope,
@@ -423,7 +425,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       drafts,
       draftCoordinator,
       draftPulls,
-      draftJournal,
+      draftJournal: replayJournal,
       concurrentJournalWatermarks,
       diagnostics: createDraftAgentEditDiagnostics(deps.eventSink),
       afterCommit: runAfterDrizzleCommit,
