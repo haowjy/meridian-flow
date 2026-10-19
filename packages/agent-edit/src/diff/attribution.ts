@@ -6,7 +6,7 @@
  *   for gives that author part of the edit. Under doubt it names fewer, down to none.
  * - Membership: a change belongs to a conversation when any alignment of any of its edits puts one of
  *   that conversation's AI writes in it. Under doubt it includes.
- * - Status: an AI part reads applied only when no change has it as a member.
+ * - Membership is independent of disposition: Apply evidence and draft lifecycle decide status.
  *
  * An alignment is one place the text allows an edit to sit (a repeated word or a boundary space can
  * slide). The footprint uses raw word/structural boundaries; only names use character edits. It reads
@@ -33,8 +33,9 @@ export type Author =
 
 /** One AI write: the item ranges it inserted and deleted. Parts are listed latest first. */
 export interface AttributionPart {
-  threadId: string;
-  turnId: string;
+  /** Receipt evidence survives deletion of its conversation or turn. Such parts remain members but have no byline. */
+  threadId: string | null;
+  turnId: string | null;
   toolCallId?: string;
   inserted: readonly ItemRange[];
   deleted: readonly ItemRange[];
@@ -1046,7 +1047,8 @@ class Classifier {
       if (acc.names.has("user")) byline.push({ kind: "user", userId: this.provenance.userId });
       for (const who of [...acc.names.values()].filter((w) => w >= 0).sort((x, y) => x - y)) {
         const { threadId, turnId, toolCallId } = this.parts[who];
-        byline.push({ kind: "thread", threadId, turnId, ...(toolCallId ? { toolCallId } : {}) });
+        if (threadId && turnId)
+          byline.push({ kind: "thread", threadId, turnId, ...(toolCallId ? { toolCallId } : {}) });
       }
       out.set(group.id, {
         byline,
