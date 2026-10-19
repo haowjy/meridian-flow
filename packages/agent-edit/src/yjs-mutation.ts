@@ -248,6 +248,47 @@ export function textInRanges(
     .join("");
 }
 
+/**
+ * Plain text of the visible top-level blocks that hold these items now, one line per block in
+ * document order. A removed block reads as the nearest visible block to its left (else right):
+ * Yjs inserts after the last visible item, before trailing tombstones, so a block rebuilt in
+ * place (a paragraph turned into a heading) lands there.
+ */
+export function blockTextAt(
+  fragment: Y.XmlFragment,
+  ranges: readonly { client: number; clock: number; len: number }[],
+): string {
+  const doc = fragment.doc;
+  if (!doc) return "";
+  const blocks = new Set<Y.Item>();
+  for (const range of ranges)
+    for (let clock = range.clock; clock < range.clock + range.len; ) {
+      const item = findItem(doc, Y.createID(range.client, clock));
+      if (!item) break;
+      clock = item.id.clock + item.length;
+      let top: Y.Item | null = item;
+      while (top && top.parent !== fragment)
+        top = top.parent instanceof Y.AbstractType ? top.parent._item : null;
+      let block = top;
+      while (block?.deleted) block = block.left;
+      if (!block) for (block = top?.right ?? null; block?.deleted; block = block.right);
+      if (block) blocks.add(block);
+    }
+  const text = (type: unknown): string =>
+    type instanceof Y.XmlText
+      ? type
+          .toDelta()
+          .map((op: { insert: unknown }) => (typeof op.insert === "string" ? op.insert : ""))
+          .join("")
+      : type instanceof Y.XmlElement
+        ? type.toArray().map(text).join("")
+        : "";
+  const lines: string[] = [];
+  for (let item = fragment._start; item; item = item.right)
+    if (blocks.has(item)) lines.push(text(item.content.getContent()[0]));
+  return lines.join("\n");
+}
+
 /** Transaction deltas only; state-vector encoding would repeat old tombstones. */
 export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Array[] {
   const updates: Uint8Array[] = [];
