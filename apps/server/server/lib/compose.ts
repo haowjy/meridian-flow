@@ -616,6 +616,7 @@ export async function createProductionAppPorts(input: {
   });
   const notesCopy = createThreadNotesCopy({
     db,
+    links: documentLinks,
     documents: documentSync,
     objectStore,
     objects: objectRelease,

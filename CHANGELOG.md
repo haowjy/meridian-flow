@@ -35,6 +35,10 @@
 - Notes inheritance has one 12-second deadline covering reads, installation and cleanup. Stop cancels handoff copying before the brief starts. Cancellation rolls back installation before releasing the destination; copy timeout leaves the handoff seed interrupted with its original-notes address.
 
 - Forks and handoffs copy the originating chat’s notes before creation returns, including named Work and No Work chats. Copying is best-effort and create-only, with both chat ids retained in failure diagnostics; the seed names the originals even if copying fails. Handoff briefs launch after copying, subagents do not copy, and replay never retries copying.
+- Create-only notes-root allocation stays inside the shared live-tree placement boundary.
+
+- Notes inheritance shares link-spelling scopes across each preparation/install phase instead of reopening them for every note.
+
 - Forks and handoffs register a detached, best-effort notes copy after creation commits. Creation, replay, handoff briefs and first turns never wait for the copy. Seeds name the originals while the copy arrives; a destination root created first wins. Copies retain their own 12-second cancellation bound and drain rollback on deadline or shutdown. Replays never retry copying.
 
 - Scratch notes can be copied as one create-only subtree with fresh document and block identities, independent history and binary storage. Document `write copy` and inherited notes share the same node materializer.

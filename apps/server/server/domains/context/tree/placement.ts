@@ -92,6 +92,28 @@ export async function walkFolders(
  */
 export type AssociatedRoot = { name: string; threadId: ThreadId };
 
+/** Allocate, never adopt, a proven chat root. Caller holds its namespace. */
+export async function createLiveAssociatedRoot(
+  db: Database,
+  contextSourceId: ContextSourceId,
+  association: AssociatedRoot,
+): Promise<FolderId | null> {
+  const [created] = await currentDrizzleDb(db)
+    .insert(folders)
+    .values({
+      contextSourceId,
+      parentId: null,
+      name: association.name,
+      threadId: association.threadId,
+      hidden: false,
+    })
+    .onConflictDoNothing()
+    .returning({ id: folders.id });
+  if (!created) return null;
+  await claimDocumentLocation(db, contextSourceId, null, association.name);
+  return created.id;
+}
+
 export async function ensureLiveFolderPath(
   db: Database,
   input: {

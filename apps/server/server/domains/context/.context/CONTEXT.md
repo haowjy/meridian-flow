@@ -300,7 +300,9 @@ before the app drains its tracked tasks; rollback drains before a task settles. 
 transaction-local lock and statement timeouts from the remaining budget.
 Content and tree install together;
 arrivals settle once against the complete tree and the destination catalog
-publishes once. No per-file ContextPort writes or catalog publications.
+publishes once. No per-file ContextPort writes or catalog publications. Preparation and installation
+each share one link-spelling scope across their known document ids, avoiding
+per-note project/reader resolution while keeping the two phases independent.
 
 ## Thread-folder presentation
 
