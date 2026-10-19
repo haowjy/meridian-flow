@@ -70,10 +70,7 @@ import {
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
-import {
-  createDrizzleAuthorityGenerationReader,
-  createDrizzleDocumentAuthorityHeads,
-} from "./adapters/drizzle-document-authority-head.js";
+import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
@@ -189,7 +186,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const persistence = createDrizzleCollabPersistence(deps.db);
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
-    ensureDocument: persistence.lifecycle.ensureDocument,
     onArrival: (id) => deps.arrivals?.settle([id]) ?? Promise.resolve(0),
   });
   const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
@@ -207,7 +203,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     removals: createDrizzleDocumentRemovals(deps.db),
     live: {
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
     },
     workProjection: deps.workProjectionMutation,
     branches: workBranches,
@@ -325,8 +320,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         afterCommit: deferUntilDrizzleCommit,
       },
     }),
-    lifecycle: documentCreation,
-    initialDocumentSeeds: persistence.lifecycle,
+    initialDocumentSeeds: persistence.seeds,
     deferUntilCommit: deferUntilDrizzleCommit,
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
@@ -415,7 +409,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
       },
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
       drafts,
       draftCoordinator,
       draftPulls,
@@ -479,6 +472,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       runAfterDrizzleCommit(callback);
     },
     readAuthorityHeadGeneration: authorityGeneration,
+    removals: createDrizzleDocumentRemovals(deps.db),
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
     onLiveUpdatePersisted: (documentId) => {
       draftPulls.scheduleLivePull(documentId);
@@ -667,6 +661,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      roomRemoval: hocuspocusPersistence.roomRemoval,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
@@ -680,13 +675,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
-    authorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),
     agentEdit: {
       agentEdit: () => agentEdit,
     },
     reversal: turnReversal,
     documents: {
-      ensureDocument: persistence.lifecycle.ensureDocument,
+      initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
+      repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,

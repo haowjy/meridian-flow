@@ -2,7 +2,7 @@
  * Test-only injection points on collab's production code (contract §16.1), so the DB
  * suites can interleave a reply's save with a draft's close, or a change with a staged
  * Apply, and the crash-and-resend probes can stop a server at one
- * (`adapters/collab-crash-controller.ts`). Production installs none; every point is a
+ * (`adapters/collab-hook-controller.ts`). Production installs none; every point is a
  * no-op then.
  */
 
@@ -10,7 +10,11 @@ const COLLAB_HOOK_POINTS = [
   "draft.ensure.afterDocumentLock",
   "draft.peer.afterDocumentLock",
   "removal.afterClose",
+  /** A reply's save has opened its transaction and taken no Work lock yet. */
+  "save.beforeWorkLock",
   "save.afterWorkLock",
+  /** A reply's save holds its live document locks and has not confirmed its grants. */
+  "save.afterDocumentLock",
   "checkpoint.afterAuthorityRead",
   /** A Discard attempt has not entered its commit scope. */
   "discard.beforeCommitScope",

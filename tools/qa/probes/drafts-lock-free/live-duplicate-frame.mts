@@ -11,7 +11,7 @@ time bound (any client can send such a frame, and admission blocks the process).
  * human edit and no admission sequence.
  */
 import assert from "node:assert/strict";
-import { ensureAndReadDocumentAuthorityHead } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-authority-head.ts";
+import { readDocumentAuthorityHead } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-authority-head.ts";
 import {
   bindDocumentAuthority,
   documentAuthority,
@@ -36,7 +36,7 @@ export const liveDuplicateFrame: Probe = {
     const { documentId, live: seed } = await harness.seedDocument("dup");
     const room = new Y.Doc({ gc: false });
     Y.applyUpdate(room, Y.encodeStateAsUpdate(seed));
-    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(harness.db, documentId));
+    bindDocumentAuthority(room, await readDocumentAuthorityHead(harness.db, documentId));
     const transport = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,

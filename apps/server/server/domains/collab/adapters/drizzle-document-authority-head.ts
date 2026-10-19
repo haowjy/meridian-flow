@@ -1,12 +1,14 @@
-/** Allocates ordered journal admissions from the durable document authority head. */
+/** The durable document authority head: admission allocation, require-existing reads, replacement. */
 
+import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
-import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
-import { asc, eq, inArray, sql } from "drizzle-orm";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import type { DocumentAuthorityHeads } from "../domain/ports/document-authority-heads.js";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { DocumentRemovedError } from "../../context/ports/document-removals.js";
+import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
+import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
 
@@ -15,24 +17,34 @@ export type DocumentAuthorityHeadGeneration = {
   generation: bigint;
 };
 
+/**
+ * The one allocation every live write passes (the journal and settlement's direct writer),
+ * under the caller's document mutation lock: it requires an existing head on a living
+ * document in the same statement, so a removal that won the lock refuses here at no extra
+ * query on the admitted path.
+ */
 export async function allocateDocumentAdmission(
   db: AuthorityHeadDb,
   documentId: string,
 ): Promise<DocumentAuthorityHeadGeneration & { admissionSequence: bigint }> {
-  await ensureDocumentAuthorityHead(db, documentId);
   const [row] = await db
     .update(documentYjsHeads)
     .set({
       nextAdmissionSequence: sql`${documentYjsHeads.nextAdmissionSequence} + 1`,
       updatedAt: sql`now()`,
     })
-    .where(eq(documentYjsHeads.documentId, documentId as DocumentId))
+    .where(
+      and(
+        eq(documentYjsHeads.documentId, documentId as DocumentId),
+        documentNotDeletedSql(documentYjsHeads.documentId),
+      ),
+    )
     .returning({
       authorityId: documentYjsHeads.authorityId,
       generation: documentYjsHeads.authorityGeneration,
       nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
     });
-  if (!row) throw new Error("Failed to allocate an admission from the durable authority head");
+  if (!row) throw await refusedAuthority(db, documentId);
   return {
     authorityId: row.authorityId,
     generation: row.generation,
@@ -41,19 +53,15 @@ export async function allocateDocumentAdmission(
 }
 
 /**
- * Reads the authority head, creating it first.
- *
- * Only use this where the document is known to exist. Missing-document reads
- * must use `findDocumentAuthorityHead` so they do not turn a read into a
- * foreign-key-failing insert.
+ * The authority head of a document that must already have one. Only materialization (the
+ * create's transaction, or explicit repair) makes a head; every other reader fails here.
  */
-export async function ensureAndReadDocumentAuthorityHead(
+export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
 ): Promise<DocumentAuthorityHeadGeneration> {
-  await ensureDocumentAuthorityHead(db, documentId);
   const row = await findDocumentAuthorityHead(db, documentId);
-  if (!row) throw new Error("Failed to read the durable document authority head");
+  if (!row) throw await refusedAuthority(db, documentId);
   return row;
 }
 
@@ -73,45 +81,17 @@ export async function findDocumentAuthorityHead(
   return row ?? null;
 }
 
-async function ensureDocumentAuthorityHead(db: AuthorityHeadDb, documentId: string): Promise<void> {
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId: documentId as DocumentId,
-      schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-    })
-    .onConflictDoNothing({ target: documentYjsHeads.documentId });
-}
-
-export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAuthorityHeads {
-  return {
-    async ensureAndReadAuthorityHeads(documentIds) {
-      const uniqueIds = [...new Set(documentIds)].sort() as DocumentId[];
-      if (uniqueIds.length === 0) return [];
-
-      const existing = await readAuthorityHeads(db, uniqueIds);
-      if (existing.length === uniqueIds.length) return existing;
-
-      return runInDrizzleTransaction(db, async () => {
-        const tx = currentDrizzleDb(db);
-        await tx
-          .insert(documentYjsHeads)
-          .values(
-            uniqueIds.map((documentId) => ({
-              documentId,
-              schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-            })),
-          )
-          .onConflictDoNothing({ target: documentYjsHeads.documentId });
-
-        const rows = await readAuthorityHeads(tx, uniqueIds);
-        if (rows.length !== uniqueIds.length) {
-          throw new Error("Failed to read initialized durable document authority heads");
-        }
-        return rows;
-      });
-    },
-  };
+/** Why a document has no authority to write or read: its removal, else no head at all. */
+export async function refusedAuthority(
+  db: AuthorityHeadDb,
+  documentId: string,
+): Promise<DocumentRemovedError | DocumentNotFoundError> {
+  const removal = (
+    await createDrizzleDocumentRemovals(db as Database).lookup([documentId as DocumentId])
+  ).get(documentId as DocumentId);
+  return removal
+    ? new DocumentRemovedError(documentId as DocumentId, removal)
+    : new DocumentNotFoundError(documentId, `Document ${documentId} has no authority head`);
 }
 
 /**
@@ -121,26 +101,7 @@ export function createDrizzleDocumentAuthorityHeads(db: Database): DocumentAutho
  */
 export function createDrizzleAuthorityGenerationReader(db: Database) {
   return async (documentId: DocumentId): Promise<bigint> =>
-    (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
-}
-
-async function readAuthorityHeads(db: AuthorityHeadDb, documentIds: DocumentId[]) {
-  const rows = await db
-    .select({
-      documentId: documentYjsHeads.documentId,
-      authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
-      nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
-    })
-    .from(documentYjsHeads)
-    .where(inArray(documentYjsHeads.documentId, documentIds))
-    .orderBy(asc(documentYjsHeads.documentId));
-  return rows.map((row) => ({
-    documentId: row.documentId,
-    authorityId: row.authorityId,
-    generation: row.generation,
-    admittedThrough: row.nextAdmissionSequence - 1n,
-  }));
+    (await readDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
 }
 
 /**
@@ -155,7 +116,6 @@ export async function replaceDocumentAuthorityHeadGeneration(
   | { ok: true; generation: bigint; checkpointId: number }
   | { ok: false; code: "authority_head_busy" | "checkpoint_incomplete" | "stale_generation" }
 > {
-  const { and } = await import("drizzle-orm");
   const { branchPushSettlementBatches, branchPushSettlementOutbox, documentYjsCheckpoints } =
     await import("@meridian/database");
   const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");

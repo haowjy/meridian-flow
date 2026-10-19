@@ -3,7 +3,6 @@
 import {
   type DocumentAccess,
   type DocumentCoordinator,
-  type DocumentLifecycle,
   DocumentNotFoundError,
   type PersistedUpdate,
   type UpdateJournal,
@@ -214,16 +213,6 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
         const doc = ensureEmpty(docId);
         if (state) await applyPersisted(docId, doc);
       });
-    },
-  };
-}
-
-export function createInMemoryDocumentLifecycle(coordinator: {
-  ensureEmpty(docId: string): Y.Doc;
-}): DocumentLifecycle {
-  return {
-    async ensureDocument(docId) {
-      coordinator.ensureEmpty(docId);
     },
   };
 }

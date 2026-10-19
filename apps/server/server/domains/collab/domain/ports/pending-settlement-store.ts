@@ -11,12 +11,7 @@ import type {
   CommittedChangeTrailProjection,
   DurableTrailRecord,
 } from "./change-trail-persistence.js";
-import type {
-  ApplyItemHold,
-  ApplyItemOutcome,
-  ApplyMember,
-  ApplyRefusal,
-} from "./settlement-apply.js";
+import type { ApplyItemHold, ApplyMember, ApplyRefusal } from "./settlement-apply.js";
 
 export type SettlementAdmission = {
   documentId: DocumentId;
@@ -74,8 +69,6 @@ export type BatchCompletionResult =
       projections: readonly CommittedChangeTrailProjection[];
       /** Every item held for the batch, at the check or in completion, as staged durably. */
       held: readonly ApplyItemHold[];
-      /** What the steps did per item, decided under the completion's locks. */
-      outcomes: readonly ApplyItemOutcome[];
     }
   /** A step refused: the staged batch is abandoned and its journal rows are reviewable again. */
   | { status: "refused"; reason: ApplyRefusal }

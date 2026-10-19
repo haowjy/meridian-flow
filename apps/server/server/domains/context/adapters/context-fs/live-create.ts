@@ -470,9 +470,12 @@ export class LiveCreate {
     switch (plan.kind) {
       case "empty":
       case "mint":
+        await this.deps.documentSync.initializeEmptyDocument(documentId);
+        return "";
       case "reveal":
-        // A revealed document's live Yjs is already empty: a draft never seeds it.
-        await this.deps.documentCreation.ensureDocument(documentId);
+        // A revealed document's live Yjs exists (empty: a draft never seeds it); an old
+        // anomaly missing it is repaired on this explicit touch.
+        await this.deps.documentSync.repairDocumentAuthority(documentId);
         return "";
       case "reveal-with-content": {
         // The claim confirmed exactly `plan.reveal`, so the held lease is this document's.

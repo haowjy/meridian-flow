@@ -113,12 +113,12 @@ export const applied = (itemClosed: boolean, id = "2") => ({
   itemClosed,
 });
 
-/** Item Apply's 200: the item settled with no notes. */
+/** Item Apply's 200: the item settled. */
 export const itemApplied = (itemKey = "draft-a") => ({
   branchId: listed.branchId,
   status: "applied" as const,
   itemKey,
-  item: { itemKey, status: "applied" as const, notes: [] },
+  item: { itemKey, status: "applied" as const },
 });
 
 export const discarded = (itemClosed: boolean) => ({

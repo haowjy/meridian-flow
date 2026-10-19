@@ -15,7 +15,6 @@ import {
   type DocumentCoordinator,
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
-import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
 import type { DocumentLinksPort } from "../../ports/document-links.js";
 import type { AgentEditModel } from "../../ports/model.js";
 import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
@@ -35,7 +34,6 @@ const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 export function harness(
   initialDocs: Record<string, string> = {},
   options: {
-    lifecycle?: boolean;
     createRuntimeDoc?: () => Y.Doc;
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
@@ -61,7 +59,6 @@ export function harness(
 ) {
   const agentEditModel = options.model ?? model;
   const coordinator = new MemoryCoordinator(initialDocs);
-  const lifecycle = new MemoryDocumentLifecycle(coordinator);
   const journal = new MemoryJournal();
   coordinator.useJournal(journal);
   for (const [docId, doc] of coordinator.docs)
@@ -69,7 +66,6 @@ export function harness(
   const rawCore = createAgentEditCore({
     journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
-    ...(options.lifecycle === false ? {} : { lifecycle }),
     codec: codecFactory,
     links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
@@ -113,24 +109,18 @@ export function harness(
           },
         });
       }
+      // The host materializes a create's document before the command runs (`ensureTrackedDocument`).
+      if (command.command === "create" || command.command === "copy")
+        coordinator.ensureEmpty(command.documentId ?? command.file);
       return rawCore.write(command, writeContext);
     },
   };
   return {
     core,
     coordinator,
-    lifecycle,
     journal,
     liveDoc: (docId: string) => coordinator.require(docId),
   };
-}
-
-export class MemoryDocumentLifecycle implements DocumentLifecycle {
-  constructor(private readonly coordinator: MemoryCoordinator) {}
-
-  async ensureDocument(docId: string): Promise<void> {
-    this.coordinator.ensureEmpty(docId);
-  }
 }
 
 export class MemoryCoordinator implements DocumentCoordinator {

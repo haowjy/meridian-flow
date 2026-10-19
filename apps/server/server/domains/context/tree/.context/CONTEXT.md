@@ -83,5 +83,5 @@ namespace lock while holding a document lock.
 
 Location claims and history use location-only CAS tokens. A move snapshots the
 subtree, checks the final path, handles hidden splits/absorbs, and then records
-history and versions. Apply reveals/restores through placement; it does not
-move nodes. Tree code never refreshes the catalog independently of its caller.
+history and versions. Apply reveals through placement and never restores a
+removed document (W52); it does not move nodes. Tree code never refreshes the catalog independently of its caller.

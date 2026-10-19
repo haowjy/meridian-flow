@@ -7,7 +7,6 @@ import {
   type AgentEditCodecFactory,
   createAgentEditCore,
   type DocumentEdits,
-  type DocumentLifecycle,
   type SemanticProvenanceWriter,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
@@ -57,7 +56,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   drafts: ApplicationDraftStore;
   draftCoordinator: DraftCoordinator;
   draftPulls: DraftPullService;
@@ -134,7 +132,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
         documentEdits: input.documentEdits,
-        lifecycle: input.lifecycle,
         codec: input.codec,
         model: input.model,
         semanticProvenance: input.semanticProvenance,

@@ -444,6 +444,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "live-created",
         extension: "",
       });
+      // The host's create materializes the document before the model's command runs.
+      await collab.initializeEmptyDocument(LIVE_CREATED_ID as never);
       await db.insert(modelResponses).values({
         id: LIVE_RESPONSE_ID as never,
         turnId: TURN_ID as never,

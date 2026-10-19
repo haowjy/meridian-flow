@@ -18,13 +18,11 @@ import type {
   TurnReversalAccess,
 } from "./contracts.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
-import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 
 export type CollabFacadeServices = {
   removal: { documentRemoval: DocumentRemoval };
   transport: CollabTransport;
   lifecycle: CollabLifecycle;
-  authorityHeads: DocumentAuthorityHeads;
   agentEdit: AgentEditAccess;
   reversal: TurnReversalAccess;
   documents: MarkdownDocumentStore;
@@ -45,7 +43,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.removal,
     ...services.transport,
     ...services.lifecycle,
-    ...services.authorityHeads,
     ...services.agentEdit,
     ...services.reversal,
     ...services.documents,

@@ -59,8 +59,18 @@ export function createReplySaveFences(deps: {
       const entries = [...record.documents];
       if (!entries.length) return [];
       const grants = entries.map(([, entry]) => entry.grant);
+      await collabHook("save.beforeWorkLock");
       await deps.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
       await collabHook("save.afterWorkLock");
+      // Works first, then the sorted live documents, never a Work after them. A removal takes
+      // the same document locks, so the confirmation below sees it or holds it off until commit.
+      await deps.lockLiveDocuments(
+        entries
+          .filter(([, entry]) => entry.core === deps.liveUtilityCore)
+          .map(([id]) => id)
+          .sort(),
+      );
+      await collabHook("save.afterDocumentLock");
       const refusals = new Map<DocumentId, RefusedResponseDocument>();
       for (const denial of await deps.fileAccess.confirmEdit(grants)) {
         const documentId = targetDocumentId(denial.target);
@@ -121,12 +131,6 @@ export function createReplySaveFences(deps: {
       }
       // Refused participants still own per-write receipts and must save them.
       markReplyConfirmed([...record.documents.keys()]);
-      await deps.lockLiveDocuments(
-        [...record.documents]
-          .filter(([, entry]) => entry.core === deps.liveUtilityCore)
-          .map(([id]) => id)
-          .sort(),
-      );
       return [...refusals.values()];
     },
   };

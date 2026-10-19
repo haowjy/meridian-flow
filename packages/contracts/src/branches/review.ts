@@ -10,6 +10,7 @@
 import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchCommandId, BranchId, DraftItemKey } from "../ids.js";
+import type { DocumentRemovalRecord } from "../protocol/document-removal.js";
 
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
 export const BranchCommandIdSchema = z.string().uuid();
@@ -247,11 +248,16 @@ export const BRANCH_COMMAND_CONFLICT_CODE = "command_conflict";
 /** HTTP 404 code on observation: nothing committed under this `commandId`, so the client resends. */
 export const BRANCH_COMMAND_UNKNOWN_CODE = "unknown_command";
 
-/** Why a drafted item stays in review after Apply (5a). */
-export type DraftHeldReason = { code: "path_taken"; path: string };
-export type DraftApplyNote = { code: "restored"; path: string };
+/**
+ * Why Apply landed nothing for an item: its live path is taken (5a), or its live document
+ * was removed, which Apply never revives (the removal closed the draft; `removal` is its
+ * record, null if it could not be read).
+ */
+export type DraftHeldReason =
+  | { code: "path_taken"; path: string }
+  | { code: "deleted_live"; removal: DocumentRemovalRecord | null };
 export type DraftApplyItemResult =
-  | { itemKey: DraftItemKey; status: "applied"; notes: DraftApplyNote[] }
+  | { itemKey: DraftItemKey; status: "applied" }
   | { itemKey: DraftItemKey; status: "held"; reason: DraftHeldReason };
 
 /** 202 before the Apply has a client command to observe. */

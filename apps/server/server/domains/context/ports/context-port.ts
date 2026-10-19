@@ -331,7 +331,7 @@ export interface ContextPort {
   /** Read a text file by URI. `not_found` if it does not exist. */
   read(uri: string): Promise<Result<ContextReadResult, ContextError>>;
 
-  /** Write text content to a URI, creating parent folders as needed. */
+  /** Overwrite the document at a URI with text. `not_found` when none lives there: it never creates. */
   write(
     uri: string,
     content: string,

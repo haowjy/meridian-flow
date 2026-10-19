@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Removing a document now closes its drafts, settles pending edits and closes live and draft connections after commit. Draft creation cannot race a removal, and discarded creations release content without deleting their closed draft records (#854).
+- Nothing writes a removed document back into being (W52, #854). A live keystroke, a reply's save or an Apply that reaches a document after its removal is refused under the document's lock and journals nothing; the editor closes with `4208 document-deleted` instead of reconnecting. Only a create (or explicit repair of a living document missing its Yjs state, now rebuilt from its stored text) makes a document's Yjs authority: compaction, checkpoints and room loads on a released document create nothing. Apply no longer revives a deleted document: the item answers "deleted live" with its removal record while the batch's other documents apply. A whole-file write to an empty path now answers not found instead of creating.
 
 - Removed documents record whether they were deleted or discarded, who acted (a writer, Work, or system cleanup), and when. Existing tombstones are classified on upgrade; their active drafts close with a removal cause and obsolete pending tree uses retire (#854).
 

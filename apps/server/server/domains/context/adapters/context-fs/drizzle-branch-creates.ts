@@ -18,7 +18,7 @@ export function createDrizzleBranchCreates(deps: {
   removal: DocumentRemoval;
   /** The source, provisioned when the first create needs it. */
   sourceId(): Promise<string>;
-  documents: Pick<MarkdownDocumentStore, "ensureDocument">;
+  documents: Pick<MarkdownDocumentStore, "initializeEmptyDocument" | "repairDocumentAuthority">;
   drafts: Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
   /** Repair on touch: the candidate picker reports what it repaired (§12.4). */
   repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
@@ -44,7 +44,8 @@ export function createDrizzleBranchCreates(deps: {
         extension,
         node,
         ...(createdBy ? { createdBy } : {}),
-        ensureEmptyContent: (documentId) => deps.documents.ensureDocument(documentId),
+        initializeEmptyContent: (documentId) => deps.documents.initializeEmptyDocument(documentId),
+        repairContent: (documentId) => deps.documents.repairDocumentAuthority(documentId),
         ensureDocumentDraft: (documentId) =>
           deps.drafts.ensureCreatedDocumentDraft({ documentId, branchId: branch.id }),
         ...(deps.repair ? { repair: deps.repair } : {}),

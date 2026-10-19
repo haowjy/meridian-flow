@@ -150,8 +150,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("enforces cross-schema and tracked/storage rename rejection in Postgres", async () => {
       const { context, move } = createContextHarness();
-      await context.write("chapter", "Chapter");
-      await context.write("script.py", "print('hello')");
+      await context.createTrackedDocument("chapter", "Chapter");
+      await context.createTrackedDocument("script.py", "print('hello')");
       await context.writeBinary("cover.png", {
         fileType: "image",
         storageUrl: "s3://bucket/cover.png",
@@ -178,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps one Postgres document identity when write and rename overlap", async () => {
       const { context, move, pauseNextWrite } = createContextHarness();
-      const initial = await context.write("chapter", "Chapter");
+      const initial = await context.createTrackedDocument("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let releaseWrite = () => {};
       const writeReleased = new Promise<void>((resolve) => {
@@ -222,7 +222,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps alias-only Postgres renames in place", async () => {
       const { context, move } = createContextHarness();
-      const initial = await context.write("Alias", "Unchanged");
+      const initial = await context.createTrackedDocument("Alias", "Unchanged");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       expect(await move("Alias", "Alias.txt")).toMatchObject({ ok: true });
       expect(
@@ -238,7 +238,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("allows a Postgres rename while projection activity changes mid-flight", async () => {
       const { context, move, mutationStore } = createContextHarness();
-      const initial = await context.write("chapter", "Chapter");
+      const initial = await context.createTrackedDocument("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let concurrentWrite: Awaited<ReturnType<ContextFS["write"]>> | null = null;
       mutationStore.setBeforeDestructiveWrite(async () => {

@@ -147,7 +147,10 @@ describe("change trail (postgres)", () => {
       })),
     );
     for (const [index, documentId] of created.entries()) {
-      await fixture.persistence.lifecycle.ensureDocument(documentId as never);
+      await fixture.persistence.seeds.seedInitialDocument(
+        documentId as never,
+        Y.encodeStateAsUpdate(new Y.Doc()),
+      );
       const emptyLive = new Y.Doc({ gc: false });
       const documentDraft = await fixture.draftStore.ensureDocumentDraft({
         documentId: documentId as never,
