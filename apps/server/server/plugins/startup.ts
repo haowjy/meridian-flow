@@ -1,9 +1,8 @@
 /**
  * Nitro startup plugin: installs the process crash policy (and, outside production, the
- * collab hook controller the crash and race probes arm) and runs config validation at
+ * test hook controller the crash and race probes arm) and runs config validation at
  * boot, logging warnings through the process EventSink.
  */
-import { installCollabHookController } from "../domains/collab";
 import { emitEvent } from "../domains/observability";
 import { getApp } from "../lib/app";
 import { validateAuthConfiguration } from "../lib/auth";
@@ -16,12 +15,13 @@ import {
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
 import { assertApiStartupGuards } from "../lib/startup-guards";
 import { getYjsGateway } from "../routes/ws/yjs";
+import { installTestHookController } from "../shared/test-hook-controller";
 
 const eventSink = getOrBindProcessObservability(createEventSinkFromEnv).sink;
 let yjsGateway: ReturnType<typeof getYjsGateway> | undefined;
 
 installApiProcessCrashPolicy({ eventSink });
-installCollabHookController();
+installTestHookController();
 installObservabilityShutdownHooks();
 
 export default async function startupPlugin() {

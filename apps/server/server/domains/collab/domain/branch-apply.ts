@@ -10,6 +10,7 @@
  */
 import type { BranchId, DraftItemKey, UserId, WorkId } from "@meridian/contracts";
 import type { BranchApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/branches";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type {
   BranchPushService,
@@ -28,7 +29,6 @@ import {
   readBranchTreeRefusal,
 } from "./branch-tree-payload.js";
 import type { Branches } from "./branches.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { DraftJournalRow } from "./draft-journal.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { ApplyRefusal } from "./ports/settlement-apply.js";
@@ -164,7 +164,7 @@ export function createBranchApply(deps: {
     for (;;) {
       const plan = await input.plan();
       if ("status" in plan) return plan;
-      await collabHook("applyItems.beforeStaging");
+      await testHook("applyItems.beforeStaging");
       const pushed = await deps.push
         .pushDraftsToLive({
           draftIds: plan.draftIds,

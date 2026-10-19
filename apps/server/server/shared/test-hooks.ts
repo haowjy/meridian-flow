@@ -1,12 +1,21 @@
 /**
- * Test-only injection points on collab's production code (contract §16.1), so the DB
- * suites can interleave a reply's save with a draft's close, or a change with a staged
- * Apply, and the crash-and-resend probes can stop a server at one
- * (`adapters/collab-hook-controller.ts`). Production installs none; every point is a
- * no-op then.
+ * Test-only injection points on the server's production code (contract §16.1), so the DB
+ * suites can interleave fences (`test-support/lock-interleave.ts`) and the running-stack
+ * probes can pause or crash a server at one (`test-hook-controller.ts`). Production
+ * installs none; every point is a no-op then.
  */
 
-const COLLAB_HOOK_POINTS = [
+const TEST_HOOK_POINTS = [
+  // Tree lifecycle.
+  "absorb.beforeRepoint",
+  "createInBranch.afterCandidateLock",
+  "createLive.afterLease",
+  "createLive.afterCandidateLock",
+  "endUse.afterRevalidate",
+  "moves.beforeInstall",
+  "place.afterRevalidate",
+  "split.beforeRepoint",
+  // Collab.
   "draft.ensure.afterDocumentLock",
   "draft.peer.afterDocumentLock",
   "removal.afterClose",
@@ -39,16 +48,16 @@ const COLLAB_HOOK_POINTS = [
   /** A draft rewrite wrote its checkpoint; the transaction has not committed. */
   "draft.rewrite.beforeCommit",
 ] as const;
-export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
+export type TestHookPoint = (typeof TEST_HOOK_POINTS)[number];
 
-export function isCollabHookPoint(point: string): point is CollabHookPoint {
-  return (COLLAB_HOOK_POINTS as readonly string[]).includes(point);
+export function isTestHookPoint(point: string): point is TestHookPoint {
+  return (TEST_HOOK_POINTS as readonly string[]).includes(point);
 }
 
-const hooks = new Map<CollabHookPoint, () => Promise<void>>();
+const hooks = new Map<TestHookPoint, () => Promise<void>>();
 
 /** Installs a hook; the returned function removes it. */
-export function setCollabHook(point: CollabHookPoint, hook: () => Promise<void>): () => void {
+export function setTestHook(point: TestHookPoint, hook: () => Promise<void>): () => void {
   hooks.set(point, hook);
   return () => {
     if (hooks.get(point) === hook) hooks.delete(point);
@@ -56,6 +65,6 @@ export function setCollabHook(point: CollabHookPoint, hook: () => Promise<void>)
 }
 
 /** Runs the hook installed at `point`, if any. */
-export async function collabHook(point: CollabHookPoint): Promise<void> {
+export async function testHook(point: TestHookPoint): Promise<void> {
   await hooks.get(point)?.();
 }

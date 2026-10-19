@@ -8,9 +8,9 @@ Apply revives nothing. Run on an owned mock stack
 subprotocol; durable state is read with `psql` on this checkout's database.
 
 Pauses use the dev-only hook controller: start the stack with
-`COLLAB_PAUSE_AT=<point>` and `COLLAB_PAUSE_FILE=<file>`, create the file, and
+`HOOK_PAUSE_AT=<point>` and `HOOK_PAUSE_FILE=<file>`, create the file, and
 the operation that reaches the point waits, with its locks, until the file is
-deleted (`collab-hook-controller.ts`; points in `collab-test-hooks.ts`).
+deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
 
 1. **Removal against a live frame.** Sync a tab on a document. In a SQL
    session, take `pg_advisory_xact_lock(hashtextextended('document-mutation:' ||
@@ -37,7 +37,7 @@ deleted (`collab-hook-controller.ts`; points in `collab-test-hooks.ts`).
    the head has one `seed` checkpoint; typing journals.
 6. **Apply against a removal.** A draft-mode chat edits documents A and B;
    Apply all. Warm: pause at `applyItems.afterStaging`, `./mf doc rm` A, resume.
-   Recovered: `COLLAB_CRASH_AT=applyItems.afterStaging` with an arm file, delete
+   Recovered: `HOOK_CRASH_AT=applyItems.afterStaging` with an arm file, delete
    A while the worker restarts, wait out the 30 s claim. PASS, both: A is
    `held` with `deleted_live` and its removal record, B `applied`; A's
    `deleted_at` is unchanged, it has no outbox member and no AI live row.
@@ -45,7 +45,7 @@ deleted (`collab-hook-controller.ts`; points in `collab-test-hooks.ts`).
    (an active draft left on a tombstone). PASS: `held`, `deleted_live`, nothing
    staged or revived.
 8. **The receipt names who removed it.** Start the stack with
-   `COLLAB_PAUSE_AT=save.beforeWorkLock` (the save must not hold the Work lock the
+   `HOOK_PAUSE_AT=save.beforeWorkLock` (the save must not hold the Work lock the
    delete needs). A draft-mode chat replaces a line; pause, `./mf doc rm` the document,
    resume. PASS: the write's result reads "This file was deleted by <name> before this
    reply was saved, so this change wasn't made." (a name appears only when the user row

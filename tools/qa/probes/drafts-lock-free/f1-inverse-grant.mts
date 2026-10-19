@@ -17,7 +17,6 @@ import {
   recordDocumentEdit,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
-import { setCollabHook } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
 import { createDrizzleDocumentRemovals } from "../../../../apps/server/server/domains/context/tree/document-removals.ts";
 import {
   currentDrizzleDb,
@@ -27,6 +26,7 @@ import {
   type EditConfirmation,
   runWithEditConfirmation,
 } from "../../../../apps/server/server/shared/edit-confirmation.ts";
+import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import {
   appendToFirstParagraph,
   type Harness,
@@ -143,7 +143,7 @@ export const f1InverseGrant: Probe = {
     {
       const seeded = await seedModelLiveWrite(harness, "grant-lifecycle-first");
       const grant = workGrant(harness, seeded.workId);
-      const remove = setCollabHook("inverse.beforeCommitScope", async () => {
+      const remove = setTestHook("inverse.beforeCommitScope", async () => {
         await independently(() => harness.works.archive(seeded.workId));
       });
       const outcome = await settled(
