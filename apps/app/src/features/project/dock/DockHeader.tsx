@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
+import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
@@ -59,9 +60,15 @@ export function DockHeader({
       <div className="relative flex min-w-0 flex-1 items-center gap-1 pr-1">
         {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
         {screen === "chat" ? (
-          <PaneTitle>
-            <Trans>Recent</Trans>
-          </PaneTitle>
+          <>
+            <PaneTitle>
+              <Trans>Recent</Trans>
+            </PaneTitle>
+            {/* The header's free end holds the notice for a document the dock closed. */}
+            <RemovedNoticeSlot>
+              <RemovedDocumentChip projectId={projectId} surface="dock" />
+            </RemovedNoticeSlot>
+          </>
         ) : null}
         {screen !== "chat" ? threadSelect : null}
         {screen !== "chat" && threadId ? (

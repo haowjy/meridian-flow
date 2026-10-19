@@ -1,11 +1,7 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import type {
-  DocumentRemovalRecord,
-  LiveDocumentSessionAuthority,
-  WorkingSetRoute,
-} from "@meridian/contracts/protocol";
+import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
   commitContextAvailability,
@@ -70,6 +66,7 @@ import {
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
+import type { RemovedNoticeStore } from "./removed-notice-store";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
@@ -129,35 +126,8 @@ export type ContextRouteActivation = {
   owner: { kind: "workspace"; tab: ContextTab } | { kind: "route-only" };
 };
 
-/** A document something other than this tab removed, and the server's record of it. */
-export type RemovedDocument = Readonly<{
-  documentId: string;
-  title: string;
-  /** The address its tab showed, so the notice knows when the pane has left it. */
-  route: Readonly<{ scheme: string; path: string }>;
-  /** Null when the removal carries no record (a legacy removal). */
-  record: DocumentRemovalRecord | null;
-}>;
-
-/**
- * The one notice for documents that closed under the writer. A later removal
- * joins it until the writer moves on: dismissing it, or navigating once the
- * pane has left the removed documents (`useRemovedNoticeLifetime`). The tab's
- * own delete or Discard marks its documents first and says nothing.
- */
-export type RemovedDocumentNotice = Readonly<{ documents: readonly RemovedDocument[] }>;
-
-type AwaitedRecord = Pick<RemovedDocument, "title" | "route">;
-
-/** A delete or Discard this tab sent: its removals say nothing (`markOwnRemoval`). */
-type OwnRemovalMark = {
-  reason: DocumentRemovalRecord["reason"];
-  /** Documents still covered, by `ownKey`. */
-  keys: Set<string>;
-  /** Covered documents whose removal was seen while the request was in flight. */
-  seen: Set<string>;
-  settled: boolean;
-};
+/** Where the Editor's tabs report documents that closed because they vanished (`RemovedNoticeStore`). */
+export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved">;
 
 type CoordinatorProjectState = {
   activeWorkId: string | null;
@@ -166,13 +136,6 @@ type CoordinatorProjectState = {
   removalFence: RemovalFence | null;
   transitionRevision: number;
   terminalRemovals: Map<string, TerminalRouteRemoval>;
-  notice: RemovedDocumentNotice | null;
-  /**
-   * Closed tabs whose removal was learned without its record, title by
-   * document. The project view watches them; any availability command that
-   * carries the record, or an authority loss, settles them.
-   */
-  awaitingRecords: Map<string, AwaitedRecord>;
   live: boolean;
   listeners: Set<() => void>;
   snapshot: ContextRemovalProjectSnapshot;
@@ -180,14 +143,8 @@ type CoordinatorProjectState = {
 
 export type ContextRemovalProjectSnapshot = Pick<
   CoordinatorProjectState,
-  | "activeWorkId"
-  | "selection"
-  | "admitted"
-  | "removalFence"
-  | "transitionRevision"
-  | "live"
-  | "notice"
-> & { awaitingRecordIds: readonly string[] };
+  "activeWorkId" | "selection" | "admitted" | "removalFence" | "transitionRevision" | "live"
+>;
 
 export type AppliedAvailabilityCommand = Readonly<{
   generation: string;
@@ -231,8 +188,6 @@ const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   removalFence: null,
   transitionRevision: 0,
   live: false,
-  notice: null,
-  awaitingRecordIds: [],
 };
 
 const productionWorkspace: EditorWorkspacePort = {
@@ -255,8 +210,7 @@ export class ContextRemovalCoordinator {
   private readonly workspace: EditorWorkspacePort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
-  /** Deletes and Discards this tab sent, by covered document (`ownKey`). */
-  private readonly ownRemovals = new Map<string, Set<OwnRemovalMark>>();
+  private readonly notices: RemovedPresentationPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
   private readonly sessionEffectRuns = new Map<
@@ -276,6 +230,7 @@ export class ContextRemovalCoordinator {
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
+          notices?: RemovedPresentationPort;
         }
       | null = null,
     explicitDependencies: {
@@ -283,6 +238,7 @@ export class ContextRemovalCoordinator {
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
+      notices?: RemovedPresentationPort;
     } = {},
   ) {
     const dependencies =
@@ -294,6 +250,7 @@ export class ContextRemovalCoordinator {
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;
+    this.notices = dependencies.notices ?? null;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -558,27 +515,6 @@ export class ContextRemovalCoordinator {
 
     const projectId = normalized[0]?.projectId as string;
     const state = this.project(projectId);
-    // `available` settles nothing: another tab's delete can close this tab
-    // through the shared local replica before the server has committed it.
-    const recorded: RemovedDocument[] = [];
-    let settledAwaiting = false;
-    for (const command of normalized) {
-      const id = availabilityDocumentId(command);
-      const awaited = state.awaitingRecords.get(id);
-      if (awaited === undefined) continue;
-      if (command.kind === "authority-revoke") {
-        state.awaitingRecords.delete(id);
-        settledAwaiting = true;
-      } else if (command.kind === "terminal-remove" && command.removal) {
-        state.awaitingRecords.delete(id);
-        settledAwaiting = true;
-        recorded.push({ documentId: id, ...awaited, record: command.removal });
-      }
-    }
-    if (settledAwaiting) {
-      this.showRemovals(state, recorded);
-      this.publish(state);
-    }
     let plan: ContextAvailabilityLocalBatchPlan | null = null;
     if (committed.length > 0) {
       const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
@@ -621,7 +557,7 @@ export class ContextRemovalCoordinator {
               : undefined,
           );
         }
-        this.noteRemovals(
+        this.presentedRemoved(
           projectId,
           committed.flatMap((command) => {
             if (command.kind !== "terminal-remove") return [];
@@ -630,16 +566,9 @@ export class ContextRemovalCoordinator {
               (candidate): candidate is ServerContextTab =>
                 candidate.kind !== "new" && candidate.documentId === id,
             );
-            if (!tab || settledPlan.tabs.some((candidate) => candidate.documentId === id))
-              return [];
-            return [
-              {
-                documentId: id,
-                title: tab.name,
-                route: { scheme: tab.scheme, path: tab.path },
-                record: command.removal,
-              },
-            ];
+            return tab && !settledPlan.tabs.some((candidate) => candidate.documentId === id)
+              ? [tab]
+              : [];
           }),
         );
         this.publish(state);
@@ -868,141 +797,30 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The tab is removing these documents itself (a tree delete or Discard), so
-   * their removal says nothing. Call before the request and settle the
-   * returned mark in a `finally`: "kept" when nothing was removed releases it;
-   * "removed" keeps each document covered until its removal is seen once.
-   */
-  markOwnRemoval(
-    projectId: string,
-    documentIds: readonly string[],
-    reason: DocumentRemovalRecord["reason"],
-  ): (outcome: "removed" | "kept") => void {
-    const mark: OwnRemovalMark = {
-      reason,
-      keys: new Set(documentIds.map((documentId) => ownKey(projectId, documentId))),
-      seen: new Set(),
-      settled: false,
-    };
-    for (const key of mark.keys) {
-      const marks = this.ownRemovals.get(key) ?? new Set();
-      marks.add(mark);
-      this.ownRemovals.set(key, marks);
-    }
-    return (outcome) => {
-      if (mark.settled) return;
-      mark.settled = true;
-      for (const key of outcome === "kept" ? [...mark.keys] : [...mark.seen])
-        this.dropOwnRemovalMark(key, mark);
-    };
-  }
-
-  /**
    * The catalog no longer places this tab's document. Its tab closes as the
-   * writer's own close would, and says why once availability brings the
-   * removal's record (the project view watches the awaited documents).
+   * writer's own close would; the notice says why once availability proves
+   * a removal.
    */
   closeVanished(
     projectId: string,
     tab: ContextTab,
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
-    if (tab.kind !== "new")
-      this.noteRemovals(projectId, [
-        {
-          documentId: tab.documentId,
-          title: tab.name,
-          route: { scheme: tab.scheme, path: tab.path },
-          record: undefined,
-        },
-      ]);
+    if (tab.kind !== "new") this.presentedRemoved(projectId, [tab]);
     return this.writerClose(projectId, tab);
   }
 
-  /** The catalog places an awaited document again: it was not removed after all. */
-  releaseAwaitedRecord(projectId: string, documentId: string): void {
-    const state = this.projects.get(projectId);
-    if (!state?.awaitingRecords.delete(documentId)) return;
-    this.publish(state);
-  }
-
-  dismissRemovedNotice(projectId: string): void {
-    const state = this.projects.get(projectId);
-    if (!state?.notice) return;
-    state.notice = null;
-    this.publish(state);
-  }
-
-  /**
-   * Removals this tab did not make. A `record` of undefined means the removal
-   * was learned without its record: the document waits for it, and says
-   * nothing unless availability proves a removal. Callers publish.
-   */
-  private noteRemovals(
-    projectId: string,
-    removals: ReadonlyArray<
-      Omit<RemovedDocument, "record"> & { record: DocumentRemovalRecord | null | undefined }
-    >,
-  ): void {
-    const state = this.project(projectId);
-    const shown: RemovedDocument[] = [];
-    for (const { record, ...removed } of removals) {
-      const documentId = removed.documentId;
-      if (
-        state.awaitingRecords.has(documentId) ||
-        state.notice?.documents.some((document) => document.documentId === documentId) ||
-        this.coveredByOwnRemoval(projectId, documentId, record?.reason ?? null)
-      )
-        continue;
-      if (record === undefined)
-        state.awaitingRecords.set(documentId, { title: removed.title, route: removed.route });
-      else shown.push({ ...removed, record });
-    }
-    this.showRemovals(state, shown);
-  }
-
-  /** A Work's removal keeps its authority-loss handling: the notice names only documents. */
-  private showRemovals(
-    state: CoordinatorProjectState,
-    documents: readonly RemovedDocument[],
-  ): void {
-    const shown = documents.filter((document) => document.record?.actor?.kind !== "work");
-    if (shown.length === 0) return;
-    const ids = new Set(shown.map((document) => document.documentId));
-    state.notice = {
-      documents: [
-        ...(state.notice?.documents.filter((document) => !ids.has(document.documentId)) ?? []),
-        ...shown,
-      ],
-    };
-  }
-
-  /**
-   * Whether this tab's own request covers the removal (`reason` null: not yet
-   * known). In flight, every sighting is silent; once the request settled as
-   * a removal, the first sighting uses the mark up.
-   */
-  private coveredByOwnRemoval(
-    projectId: string,
-    documentId: string,
-    reason: DocumentRemovalRecord["reason"] | null,
-  ): boolean {
-    const key = ownKey(projectId, documentId);
-    const mark = [...(this.ownRemovals.get(key) ?? [])].find(
-      (candidate) => reason === null || candidate.reason === reason,
+  private presentedRemoved(projectId: string, tabs: readonly ServerContextTab[]): void {
+    if (tabs.length === 0) return;
+    this.notices?.presentedRemoved(
+      projectId,
+      "editor",
+      tabs.map((tab) => ({
+        documentId: tab.documentId,
+        title: tab.name,
+        route: { scheme: tab.scheme, path: tab.path },
+      })),
     );
-    if (!mark) return false;
-    if (mark.settled) this.dropOwnRemovalMark(key, mark);
-    else mark.seen.add(key);
-    return true;
-  }
-
-  private dropOwnRemovalMark(key: string, mark: OwnRemovalMark): void {
-    mark.keys.delete(key);
-    mark.seen.delete(key);
-    const marks = this.ownRemovals.get(key);
-    marks?.delete(mark);
-    if (marks?.size === 0) this.ownRemovals.delete(key);
   }
 
   /** Owns the synchronous old-Work prune and next-Work route transition. */
@@ -1122,15 +940,8 @@ export class ContextRemovalCoordinator {
       reviewWorkId,
     });
     state.selection = transition.selection;
-    // This tab's own Discard is marked; any other discard says so once the record arrives.
-    this.noteRemovals(projectId, [
-      {
-        documentId: tab.documentId,
-        title: tab.name,
-        route: { scheme: tab.scheme, path: tab.path },
-        record: undefined,
-      },
-    ]);
+    // This tab's own Discard is marked; any other discard says so once availability proves it.
+    this.presentedRemoved(projectId, [tab]);
     const outcome = this.executePlanning(projectId, transition.planning);
     this.publish(state);
     return outcome;
@@ -1175,8 +986,6 @@ export class ContextRemovalCoordinator {
     state?.listeners.clear();
     this.projects.delete(projectId);
     this.routePorts.delete(projectId);
-    for (const key of [...this.ownRemovals.keys()])
-      if (key.startsWith(ownKey(projectId, ""))) this.ownRemovals.delete(key);
   }
 
   private readWorkPruneEvidence(
@@ -1454,8 +1263,6 @@ export class ContextRemovalCoordinator {
         removalFence: null,
         transitionRevision: 0,
         terminalRemovals: new Map(),
-        notice: null,
-        awaitingRecords: new Map(),
         live: false,
         listeners: new Set(),
         snapshot: EMPTY_PROJECT_SNAPSHOT,
@@ -1473,15 +1280,9 @@ export class ContextRemovalCoordinator {
       removalFence: state.removalFence,
       transitionRevision: state.transitionRevision,
       live: state.live,
-      notice: state.notice,
-      awaitingRecordIds: [...state.awaitingRecords.keys()],
     };
     for (const listener of state.listeners) listener();
   }
-}
-
-function ownKey(projectId: string, documentId: string): string {
-  return `${projectId}/${documentId}`;
 }
 
 function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): string | null {

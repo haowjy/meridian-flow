@@ -32,7 +32,7 @@ import type { ContextPaneState } from "./context-pane-state";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
-import { RemovedDocumentTabNotice } from "./RemovedDocumentNotice";
+import { RemovedDocumentChip } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
@@ -178,7 +178,9 @@ export function ContextViewer({
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
         // With no tab left the landing's top margin holds it instead.
-        notice={tabs.length > 0 ? <RemovedDocumentTabNotice projectId={projectId} /> : null}
+        notice={
+          tabs.length > 0 ? <RemovedDocumentChip projectId={projectId} surface="editor" /> : null
+        }
       />
       {masked && route ? (
         <PendingDocumentPath

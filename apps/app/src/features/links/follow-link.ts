@@ -8,6 +8,7 @@
  * own destination and host rather than by writing a second follow.
  */
 
+import { draftItemKey } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
   type DocumentAnswer as DocumentEntry,
@@ -158,8 +159,7 @@ function documentRef(found: DocumentEntry): LinkDocumentRef {
     documentId: document.documentId,
     review: {
       workId,
-      // The review's identity: `${branchId}:${documentId}` (contract rev 5.1, vocabulary).
-      itemKey: `${branch.branchId}:${document.documentId}`,
+      itemKey: draftItemKey(branch.branchId, document.documentId),
       // Draft list rows and review launches spell the path with a leading slash.
       contextLocation: {
         scheme: document.scheme,
