@@ -42,7 +42,7 @@ model text.
 A summary cannot credit the model with having seen a document, so the successor
 re-shows the ones it most needs ([credit scope](document-text.md#observation-frontiers),
 owner rulings C10, C12 and C13). The summarizer ends its output with
-`## Documents to keep open`, one context URI per line, most important first. `compaction/important-files.ts` owns the instruction and parser.
+`## Documents to keep open`, one context URI per line, working-notes files first, then documents most important to the task. `compaction/important-files.ts` owns the instruction and parser.
 `prepareCompactionSuccessor` strips that section and any model-emitted
 `## Documents not re-shown` section from the stored summary. Both reserved
 headings accept any Markdown heading level, case differences, a trailing colon
