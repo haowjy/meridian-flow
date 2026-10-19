@@ -3,9 +3,10 @@
  * journal entry in an isolated scratch database, so rows can be seeded in that shape before
  * the rest run, as a deploy at that point would, without mutating the worker's database.
  */
-import { cp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import postgres from "postgres";
+import { migrationCompanion } from "../../../../tools/dev/lib/migration-sql.js";
 
 export const MIGRATIONS = path.resolve(
   import.meta.dirname,
@@ -33,6 +34,16 @@ export async function stageThrough(
   n: number,
 ) {
   await cp(migrations, directory, { recursive: true });
+  // Companions resolve their package dependencies from the owning package, not /tmp.
+  for (const entry of journal.entries.slice(0, n)) {
+    const code = migrationCompanion(
+      await readFile(path.join(migrations, `${entry.tag}.sql`), "utf8"),
+    );
+    if (code) {
+      await rm(path.join(directory, code.file), { force: true });
+      await symlink(path.join(migrations, code.file), path.join(directory, code.file));
+    }
+  }
   for (const entry of journal.entries.slice(n)) await rm(path.join(directory, `${entry.tag}.sql`));
   await writeFile(
     path.join(directory, "meta/_journal.json"),

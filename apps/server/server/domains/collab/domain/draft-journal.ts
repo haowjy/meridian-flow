@@ -15,9 +15,7 @@ export type DraftJournalRow = {
   turnId: TurnId | null;
   actorUserId: UserId | null;
   updateData: Uint8Array;
-  /** Immutable live-journal watermark captured with this draft mutation. */
-  draftBaseUpdateSeq: number;
-  status: "active" | "pushed" | "discarded" | "rollback_pending";
+  status: "active" | "rollback_pending";
   updateMeta?: unknown;
   /** Immutable edit evidence, never inferred from actor or missing text. */
   editKind?: "write" | "undo" | "redo" | "revert" | "rollback";

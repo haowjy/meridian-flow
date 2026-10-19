@@ -1,4 +1,5 @@
 /** Programmatic Drizzle migration runner with file-aware PostgreSQL failures. */
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import postgres from "postgres";
@@ -160,7 +161,7 @@ export async function runMigrations(input: {
           const companion = migrationCompanion(content);
           if (companion) {
             const code = await import(
-              pathToFileURL(path.join(input.migrationsDirectory, companion.file)).href
+              pathToFileURL(realpathSync(path.join(input.migrationsDirectory, companion.file))).href
             );
             await code.migrate(session);
           }

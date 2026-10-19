@@ -46,12 +46,11 @@ describe("change trail dirty signals (postgres)", () => {
       frontier: {},
       targets: target ? [{ editId: target, ordinal: 0, direction: "invert" }] : [],
       origin: { kind: "live", seq: 1 },
-      placement: { kind: "live", seq: 1 },
     });
     return edit.id;
   };
 
-  it("captures receipt and recursively targeted inverse owners, ignoring placement-only writes", async () => {
+  it("captures receipt and recursively targeted inverse owners, ignoring receipt metadata backfills", async () => {
     await clear();
     const original = await receipt();
     expect(await signals()).toEqual(
@@ -69,7 +68,7 @@ describe("change trail dirty signals (postgres)", () => {
     await clear();
     await db
       .update(schema.documentEditParts)
-      .set({ placement: { kind: "discarded" } })
+      .set({ frontier: { "99": 1 } })
       .where(eq(schema.documentEditParts.editId, rollback));
     expect(await signals()).toEqual([]);
     expect(

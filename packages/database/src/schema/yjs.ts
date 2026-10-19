@@ -39,10 +39,7 @@ import { users } from "./users";
 type DocumentDraftKind = "work_draft" | "thread_peer";
 type DocumentDraftStatus = "active" | "closed";
 type DraftWriteJournalSource = "agent" | "writer" | "server";
-type DraftWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
-type BranchPushSettlementState = "pending" | "blocked" | "completed" | "abandoned";
-type BranchPushSettlementClaimKind = "warm" | "recovery";
-type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
+type DraftWriteJournalStatus = "active" | "rollback_pending";
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
@@ -74,20 +71,16 @@ export const documentDrafts = pgTable(
     closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
-    /** Current visible effect against the durable last-pulled live cut. */
+    /** Current visible effect against the review base in the retained text. */
     hasEffect: boolean("has_effect").notNull().default(true),
     /**
      * The `revision` `has_effect` was judged at: equal is fresh, lower is stale and re-judged by
      * the projection sweep. `-1` (the default) is stale whatever the revision.
      */
     hasEffectRevision: bigint("has_effect_revision", { mode: "number" }).notNull().default(-1),
-    blocking: boolean("blocking").notNull().default(false),
-    liveCut: byteaColumn("live_cut"),
-    discardedStateVector: byteaColumn("discarded_state_vector"),
     schemaVersion: integer("schema_version")
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-    generation: integer("generation").notNull().default(1),
     /**
      * Bumped by every committed write to the draft: appends, checkpoint rewrites, closes, holds
      * and row status changes. Rewrites are fenced by it; appends bump it without checking it, and
@@ -106,7 +99,7 @@ export const documentDrafts = pgTable(
       .on(table.documentId, table.branchId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
     index("document_drafts_active_work_draft_by_branch")
-      .on(table.branchId, table.id, table.generation)
+      .on(table.branchId, table.id)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
     uniqueIndex("document_drafts_active_thread_peer")
       .on(table.documentId, table.threadId)
@@ -135,7 +128,6 @@ export const draftWriteJournal = pgTable(
     draftId: text("draft_id")
       .notNull()
       .references(() => documentDrafts.id, { onDelete: "cascade" }),
-    generation: integer("generation").notNull(),
     wId: integer("w_id"),
     /** The model's tool call that made this write; the chat transcript row to jump to. */
     toolCallId: text("tool_call_id"),
@@ -150,22 +142,15 @@ export const draftWriteJournal = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     updateData: byteaColumn("update_data").notNull(),
-    /** Immutable live-journal head captured when this draft mutation row is created. */
-    draftBaseUpdateSeq: bigint("draft_base_update_seq", { mode: "number" }).notNull(),
     updateMeta: jsonb("update_meta"),
     status: text("status").$type<DraftWriteJournalStatus>().notNull().default("active"),
-    pushedAt: timestamp("pushed_at", { withTimezone: true }),
-    reviewedBy: uuid("reviewed_by")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
-    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
-    index("draft_write_journal_draft").on(table.draftId, table.generation, table.id),
+    index("draft_write_journal_draft").on(table.draftId, table.id),
     index("draft_write_journal_thread_turn").on(table.draftId, table.threadId, table.turnId),
     index("draft_write_journal_active")
-      .on(table.draftId, table.generation, table.status)
+      .on(table.draftId, table.status)
       .where(sql`${table.status} = 'active'`),
     check(
       "draft_write_journal_source_valid",
@@ -173,7 +158,7 @@ export const draftWriteJournal = pgTable(
     ),
     check(
       "draft_write_journal_status_valid",
-      sql`${table.status} IN ('active', 'pushed', 'discarded', 'rollback_pending')`,
+      sql`${table.status} IN ('active', 'rollback_pending')`,
     ),
   ],
 );
@@ -183,12 +168,10 @@ export const pushLineage = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     draftId: text("draft_id").references(() => documentDrafts.id, { onDelete: "set null" }),
-    draftGeneration: integer("draft_generation").notNull(),
     documentId: uuid("document_id")
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    journalIds: bigint("journal_ids", { mode: "number" }).array().notNull(),
     upstreamUpdateSeq: bigint("upstream_update_seq", { mode: "number" }),
     pushedByUserId: uuid("pushed_by_user_id")
       .$type<UserId>()
@@ -206,170 +189,9 @@ export const pushLineage = pgTable(
   (table) => [
     uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
     index("push_lineage_document").on(table.documentId),
-    index("push_lineage_draft").on(table.draftId, table.draftGeneration),
+    index("push_lineage_draft").on(table.draftId),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
-  ],
-);
-
-/**
- * One settlement identity for a batch of staged pushes: recovery claims the batch
- * whole, and one completion transaction settles every member.
- */
-export const branchPushSettlementBatches = pgTable(
-  "branch_push_settlement_batches",
-  {
-    id: uuid("id").primaryKey(),
-    state: text("state").$type<BranchPushSettlementState>().notNull().default("pending"),
-    claimToken: uuid("claim_token"),
-    claimEpoch: bigint("claim_epoch", { mode: "number" }).notNull().default(1),
-    claimKind: text("claim_kind").$type<BranchPushSettlementClaimKind>(),
-    claimedAt: timestamp("claimed_at", { withTimezone: true }),
-    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
-    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
-    attemptCount: integer("attempt_count").notNull().default(0),
-    lastErrorCode: text("last_error_code"),
-    lastError: text("last_error"),
-    blockedAt: timestamp("blocked_at", { withTimezone: true }),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
-    /** An Apply step refused the staged batch; nothing of it reached live. */
-    abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    index("branch_push_settlement_batches_recovery")
-      .on(table.availableAt, table.leaseExpiresAt, table.createdAt)
-      .where(sql`${table.state} = 'pending'`),
-    // Writer admissions join unresolved members; few batches are ever unresolved.
-    index("branch_push_settlement_batches_unresolved")
-      .on(table.id)
-      .where(sql`${table.state} IN ('pending', 'blocked')`),
-    check(
-      "branch_push_settlement_batches_state_valid",
-      sql`${table.state} IN ('pending', 'blocked', 'completed', 'abandoned')`,
-    ),
-    check(
-      "branch_push_settlement_batches_terminal_shape",
-      sql`(
-        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.abandonedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.abandonedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'abandoned' AND ${table.abandonedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.abandonedAt} IS NULL)
-      )`,
-    ),
-    check(
-      "branch_push_settlement_batches_claim_shape",
-      sql`${table.state} <> 'pending' OR (
-        (${table.claimToken} IS NOT NULL AND ${table.claimKind} IS NOT NULL AND ${table.claimedAt} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)
-        OR (${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-      )`,
-    ),
-    check(
-      "branch_push_settlement_batches_claim_kind_valid",
-      sql`${table.claimKind} IS NULL OR ${table.claimKind} IN ('warm', 'recovery')`,
-    ),
-    check(
-      "branch_push_settlement_batches_counters_valid",
-      sql`${table.attemptCount} >= 0 AND ${table.claimEpoch} >= 0`,
-    ),
-  ],
-);
-
-/** An Apply step's durable input, staged with its batch and read on claim and recovery. */
-export const branchPushSettlementPayloads = pgTable(
-  "branch_push_settlement_payloads",
-  {
-    batchId: uuid("batch_id")
-      .notNull()
-      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
-    stepKind: text("step_kind").notNull(),
-    payload: jsonb("payload").$type<unknown>().notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.batchId, table.stepKind] })],
-);
-
-/**
- * An item an Apply step kept out of a batch, and why: staged with the batch
- * when the pre-staging check decided it, written in completion otherwise.
- */
-export const branchPushSettlementHolds = pgTable(
-  "branch_push_settlement_holds",
-  {
-    batchId: uuid("batch_id")
-      .notNull()
-      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
-    itemKey: text("item_key").notNull(),
-    /** The text member held with the item; null for an item without a text draft. */
-    documentId: uuid("document_id").$type<DocumentId>(),
-    reason: jsonb("reason").$type<unknown>().notNull(),
-    decidedIn: text("decided_in").$type<"check" | "completion">().notNull(),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.batchId, table.itemKey] }),
-    check(
-      "branch_push_settlement_holds_decided_in_valid",
-      sql`${table.decidedIn} IN ('check', 'completion')`,
-    ),
-  ],
-);
-
-/** One staged push of a settlement batch: its lock cut, update, trail and joins. */
-export const branchPushSettlementOutbox = pgTable(
-  "branch_push_settlement_outbox",
-  {
-    pushId: bigint("push_id", { mode: "number" })
-      .primaryKey()
-      .references(() => pushLineage.id, { onDelete: "cascade" }),
-    batchId: uuid("batch_id")
-      .notNull()
-      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    documentTitle: text("document_title").notNull(),
-    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
-    pushUpdate: byteaColumn("push_update").notNull(),
-    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
-    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
-    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
-      .notNull()
-      .default(0),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    index("branch_push_settlement_outbox_document").on(table.documentId),
-    uniqueIndex("branch_push_settlement_outbox_batch_document").on(table.batchId, table.documentId),
-    check(
-      "branch_push_settlement_outbox_counters_valid",
-      sql`${table.joinVersion} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion}`,
-    ),
-  ],
-);
-
-/** Exact admitted updates joined to a not-yet-completed staged push. */
-export const branchPushOutboxUpdates = pgTable(
-  "branch_push_outbox_updates",
-  {
-    pushId: bigint("push_id", { mode: "number" })
-      .notNull()
-      .references(() => branchPushSettlementOutbox.pushId, { onDelete: "cascade" }),
-    ordinal: bigint("ordinal", { mode: "number" }).notNull(),
-    sourceKind: text("source_kind").$type<BranchPushSettlementUpdateSource>().notNull(),
-    sourceId: bigint("source_id", { mode: "number" }).notNull(),
-    update: byteaColumn("update").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.pushId, table.sourceKind, table.sourceId] }),
-    uniqueIndex("branch_push_outbox_updates_ordinal").on(table.pushId, table.ordinal),
-    check("branch_push_outbox_updates_ordinal_valid", sql`${table.ordinal} >= 0`),
-    check(
-      "branch_push_outbox_updates_source_kind_valid",
-      sql`${table.sourceKind} IN ('journal', 'staged_push', 'initial_reconcile')`,
-    ),
   ],
 );
 
@@ -659,8 +481,7 @@ export const changeTrailDirtyLog = pgTable(
 
 /**
  * The record of one writer Apply or Discard, keyed by the client's command id so a resend
- * answers the first command's outcome. It lives beside the batches it points at, which keeps
- * `branches.ts` free of an import cycle.
+ * answers the first command's outcome.
  */
 export const branchCommands = pgTable(
   "branch_commands",
@@ -680,11 +501,6 @@ export const branchCommands = pgTable(
     kind: text("kind").$type<BranchCommandKind>().notNull(),
     /** Hash of the canonical command envelope; another digest under this id is a conflict. */
     requestDigest: text("request_digest").notNull(),
-    /** Set when an Apply stages; completion or withdrawal settles the row with the batch. */
-    settlementBatchId: uuid("settlement_batch_id").references(
-      () => branchPushSettlementBatches.id,
-      { onDelete: "set null" },
-    ),
     state: text("state").$type<"pending" | "done">().notNull().default("pending"),
     result: jsonb("result").$type<StoredBranchCommandResult>(),
     createdAt: createdAt(),
@@ -692,9 +508,6 @@ export const branchCommands = pgTable(
   },
   (table) => [
     index("branch_commands_work").on(table.workId),
-    index("branch_commands_settlement_batch")
-      .on(table.settlementBatchId)
-      .where(sql`${table.settlementBatchId} IS NOT NULL`),
     check(
       "branch_commands_kind_valid",
       sql`${table.kind} IN ('apply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,

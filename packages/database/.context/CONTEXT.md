@@ -20,6 +20,13 @@ in its own breakpoint, and makes every statement re-runnable. The runner drops
 only INVALID remnants named by concurrent builds; it never drops a valid index.
 `lock_timeout` brackets only statements that need an ACCESS EXCLUSIVE lock.
 
+A no-transaction SQL file may declare a colocated TypeScript companion with
+`-- migration: code <file>.ts sha256:<digest>`. History validation checks its
+bytes against the SQL's frozen digest, and the runner awaits its `migrate(session)`
+before SQL assertions and the ledger write. The companion owns bounded transactions
+on the same reserved session. Every deploy path uses this runner, not Drizzle's
+SQL-only migrator. Runtime kernel imports remain outside `tools/dev`.
+
 The runner holds one session advisory lock for the run. Ordinary migrations
 commit their history row with the file; no-transaction files record history
 only after every statement succeeds. It validates journal identity and applied
@@ -58,8 +65,16 @@ an interrupted cutover must finish before serving traffic.
 
 A `branches` row is a Work's pending file tree. `document_drafts` stores each
 document version, with writes in `draft_write_journal`; `branch_tree_changes`
-and `branch_commands` belong to the whole branch. The `branch_push_*` tables
-retain their batch-level names. Migration `0068` renames metadata and replaces
+and `branch_commands` belong to the whole branch. Migration 0077 refuses legacy
+NULL cuts and unfinished Apply; the previous release
+repairs/drains those before stopping. 0078 folds retained Work drafts and records
+every generation's applied ranges in their Yjs Apply root. It clears active cuts
+under row locks; exact closed-row entries make restart and parallel conversion
+idempotent. Released content stays released. 0079 builds replacement indexes and
+pages value cleanup; 0080 retires placement, draft generations and settlement tables;
+0081 validates journal status. No server starts partway through this cutover.
+
+Migration `0068` renames metadata and replaces
 both trail functions atomically. `0069` preserves opaque document-draft IDs and
 rewrites JSON in native-primary-key pages of at most 500 rows, committing each
 receipt's origin/placement and each settlement's payload/tag together. Link views
