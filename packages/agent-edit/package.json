@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./diff": "./src/diff/index.ts",
     "./integration": "./src/integration.ts",
     "./yjs-mutation": "./src/yjs-mutation.ts",
     "./test-support": "./src/test-support/index.ts"
