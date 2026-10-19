@@ -1,6 +1,5 @@
 /**
- * Wire contracts for reviewing AI document drafts: the one list row, the preview, the operations a
- * change is made of, and every Apply and Discard command with its outcome.
+ * Wire contracts for draft review metadata, lists and frozen Apply/Discard commands.
  *
  * Vocabulary (D68): `branchId` is a `branches` row (the Work's whole branch), `itemKey`
  * (`${branchId}:${documentId}`) is the client's only identity for one reviewed document, and a
@@ -53,7 +52,7 @@ export type ApplyClickObservation =
   | ApplyClickAnswer
   | { status: "none"; commandId: BranchCommandId };
 
-/** The journal also retains historical commands until the settlement paths are removed. */
+/** Stored writer-command outcomes. */
 export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
 
 /** Why an item cannot be applied as-is: another live change collided with it. */
@@ -112,144 +111,6 @@ export interface ThreadDraftListResponse {
 export type DraftMetadataResponse =
   | { status: "active"; draftId: string; reviewRoomName: string; item: ThreadDraftListItem }
   | { status: "gone" };
-
-type ActiveDraftPreviewBase = {
-  status: "active";
-  branchId: BranchId;
-  itemKey: DraftItemKey;
-  /** Hocuspocus room name for inline draft review; stable for the draft lifetime. Opaque to the client. */
-  reviewRoomName: string;
-  liveRevisionToken: string;
-  draftRevisionToken: string;
-  /** The item as the server resolved it for this preview, whether or not it is listed. */
-  item: ThreadDraftListItem;
-};
-
-export type DraftPreviewRefusal =
-  | { status: "gone"; itemKey: DraftItemKey }
-  /** `branchId` lets a corrupt item missing from the list still build its whole-item Discard. */
-  | { status: "corrupt"; branchId: BranchId; itemKey: DraftItemKey };
-
-export type DraftPreviewResponse =
-  | (ActiveDraftPreviewBase & {
-      operations: ReviewOperation[];
-      hunks: ReviewHunk[];
-    })
-  | DraftPreviewRefusal;
-
-/**
- * The immutable receipt identity of a change: its part key. An operation with no
- * part key is only the row it is.
- */
-export function operationKey(operation: Pick<ReviewOperation, "operationId" | "partKey">): string {
-  return operation.partKey ?? `row:${operation.operationId}`;
-}
-
-export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
-
-export interface ReviewOperation {
-  /** The journal row carrying this change in the item's draft. Admission names rows; it is not continuity. */
-  operationId: string;
-  /**
-   * The change's immutable identity: `<editId>:<ordinal>` of the
-   * recorded edit part the row carries. A re-fork re-journals surviving rows
-   * under new `operationId`s with the same part key, so this is what a queued
-   * click, a focus or a held failure finds its change by. Absent for a row that
-   * records no edit part (manifest and reversal rows): it only matches itself.
-   */
-  partKey?: string;
-  actorTurnId?: string;
-  /** Originating chat and its title at preview time. Agent operations only. */
-  actorThreadId?: string;
-  actorThreadTitle?: string;
-  /** The tool call in that chat's turn that made the write. Absent for older writes. */
-  actorToolCallId?: string;
-  /**
-   * Server-vended closure-class id. Every operation in one journal-backed
-   * dependency-closed review class carries the same id; the review surface renders
-   * one change per distinct id.
-   */
-  closureClassId: string;
-  /** Server evidence for this class's complete closed journal membership and rich effect. */
-  admissionToken: string;
-  /** False when this class contains incomplete attribution; omit per-change actions. */
-  canApplyOrDiscard?: boolean;
-  kind: "agent" | "writer";
-  classification: ReviewOperationClassification;
-  beforeExcerpt?: string;
-  afterExcerpt?: string;
-  /** Writer responsible for a writer-origin operation. */
-  actorUserId?: string;
-}
-
-export interface ReviewHunkSpan {
-  anchorFrom: string;
-  anchorTo: string;
-  operationId: string;
-}
-
-type ReviewHunkBase = {
-  hunkId: string;
-  operationIds: string[];
-  /** Render without inventing an author; only document-level disposition is available. */
-  unclassified?: boolean;
-  anchor: {
-    relStart: string;
-    relEnd: string;
-  };
-  /** True when surviving inserted text has both insertion boundaries in context removed by the other author. Mixed author spans alone are not a merge artifact. */
-  mergeArtifact?: boolean;
-};
-
-/** UTF-16 offsets into deletedText; ordered, disjoint spans cover that text. */
-export type ReviewDeletedSpan = {
-  from: number;
-  to: number;
-  deletedBy: "agent" | "writer";
-};
-
-export type ReviewTextHunk = ReviewHunkBase & {
-  kind: "text";
-  spans: ReviewHunkSpan[];
-  /**
-   * The hunk's full insertion, including when it sits beside a removal; never only the part an
-   * author is attributed. List excerpts render it whether attributed or unclassified.
-   */
-  insertedText?: string;
-  deletedText?: string;
-  deletedSpans?: ReviewDeletedSpan[];
-  /** Set when `deletedText` is a whole live block taken out: that block's `blockItemKey`. */
-  deletedBlockId?: string;
-};
-
-export type ReviewFormattingChange =
-  | { kind: "mark"; mark: string; change: "added" | "removed" | "changed"; text: string }
-  | { kind: "heading"; before: number; after: number }
-  | { kind: "block"; before: string; after: string }
-  | { kind: "attributes" }
-  | { kind: "structure" };
-
-/**
- * A block as the review shows it. `blockId` (a `blockItemKey`) is set on a
- * deleted block: the live block's own Yjs item, which later versions of
- * the draft still has when the deletion is discarded.
- */
-export type ReviewBlockDisplay = { type: string; display: string; blockId?: string };
-
-/** The Yjs item identity of a top-level block, as the wire and the page's copies of it write it. */
-export function blockItemKey(id: { clientID: number; clock: number }): string {
-  return `${id.clientID}:${id.clock}`;
-}
-
-export type ReviewBlockHunk = ReviewHunkBase & {
-  kind: "block";
-  /** Semantic formatting facts; clients own localized change-list wording. */
-  formatting?: ReviewFormattingChange[];
-  insertedBlock?: ReviewBlockDisplay;
-  deletedBlock?: ReviewBlockDisplay;
-};
-
-export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
 // --- Commands and outcomes (contract §4.5, §4.6) ---------------------------------------------
 //

@@ -66,65 +66,6 @@ export const listed = {
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
 
-export const operation = (id: string) => ({
-  operationId: id,
-  closureClassId: `class-${id}`,
-  admissionToken: `class-${id}`,
-  kind: "agent" as const,
-  classification: "addition" as const,
-});
-
-export const preview = {
-  branchId: listed.branchId,
-  item: listed,
-  status: "active" as const,
-  itemKey: "draft-a",
-  hasDraft: true,
-
-  reviewRoomName: "review-room-a",
-  liveRevisionToken: "live-1",
-  draftRevisionToken: "draft-1",
-  operations: [operation("1"), operation("2")],
-  hunks: [],
-};
-
-/** A preview holding only these changes. */
-export const previewOf = (...ids: string[]) => ({ ...preview, operations: ids.map(operation) });
-
-/** The reviewed draft's identity, as a command names it. */
-export const draftA = { documentId: "document-a", itemKey: "draft-a" };
-
-/** A selection of these changes (one class each). */
-export const change = (...ids: string[]) => ({
-  classIds: ids.map((id) => `class-${id}`),
-  admissionTokens: ids.map((id) => `class-${id}`),
-  operationIds: ids,
-});
-
-export const applied = (itemClosed: boolean, id = "2") => ({
-  branchId: listed.branchId,
-  status: "applied" as const,
-  itemKey: "draft-a",
-  operationIds: [id],
-  closureClassIds: [`class-${id}`],
-  itemClosed,
-});
-
-/** Item Apply's 200: the item settled. */
-export const itemApplied = (itemKey = "draft-a") => ({
-  branchId: listed.branchId,
-  status: "applied" as const,
-  itemKey,
-  item: { itemKey, status: "applied" as const },
-});
-
-export const discarded = (itemClosed: boolean) => ({
-  branchId: listed.branchId,
-  status: "discarded" as const,
-  itemKey: "draft-a",
-  itemClosed,
-});
-
 export type ScopeProbe = {
   queryClient: QueryClient;
   presented: DraftReviewContextValue;

@@ -16,14 +16,12 @@ The contracts name five things; never let one stand in for another.
 The client never reads `branchId` as a document draft id. The server alone maps an
 `itemKey` to a draft (collab `domain/branch-review-identity.ts`).
 
-## Rows and previews
+## Metadata and lists
 
 - `ThreadDraftListItem` rows describe reviewable items of the Work branch.
-  Required `actorThreads` lists chats with pending agent journal writes, latest
-  journal id per chat first, with current titles (or null). These are
-  candidates: a chat's writes may have been overwritten; previews confirm
-  visible changes. Writer and threadless rows are excluded; applied/discarded
-  journal rows no longer contribute.
+  `actorThreads` lists chats whose receipt parts belong to current changes,
+  newest first, followed by the creating chat if absent. Identity resolution
+  reads metadata and tree facts only; list enrichment classifies membership.
 - `DraftProvenanceResponse` carries encoded snapshot bytes, the project user,
   AI receipt ranges and nullable owner/reveal metadata. A provenance read
   addresses an already admitted room, not a new room lookup. It accepts only
@@ -45,19 +43,13 @@ The authenticated scope and whole body are part of the request digest.
 
 There is one per-document Apply route, no separate per-change or Work Apply-all
 route. Item-form Discard takes `{ branchId, itemKey, commandId }`; Discard all
-takes `{ branchId, commandId }`. Legacy request types remain for the client
-command-layer deletion only, not as accepted request forms. Legacy results
-remain persisted until the settlement services are retired; observation of
-those results retains their original body.
+takes `{ branchId, commandId }`. 
 
-## Reading a preview
+## Room review
 
-Incomplete attribution retains an explicit `unclassified: true` hunk; empty
-`operationIds` means there is no attributable author, not no difference. Render
-its complete removal or insertion (text insertions supply `insertedText` as a
-fallback). Do not invent an author. `canApplyOrDiscard: false` disables actions
-for every operation of a class touching that hunk; absence means eligible under
-the ordinary class rules. Such effects need item-level Apply or Discard.
+The browser projects text groups and attribution from the draft and review base.
+No server preview, journal-operation selection, closure class, admission token,
+or presentation-hunk contract remains.
 
 Trail evidence and peer marks are read-only. Undo of an AI change is the model's
 `write undo` or the receipt's Undo, never a review command.

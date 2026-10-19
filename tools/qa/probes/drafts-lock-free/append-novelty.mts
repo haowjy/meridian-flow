@@ -9,7 +9,7 @@
  *     with its own clock; (c) an exact resend overlapping the commit is contained; (d) a merged
  *     partial resend is trimmed to its novel struct; (e) a re-sent delete is not this row's
  *     effect; (f) a delete of a reserved fact committed before the lock is refused; (g) a
- *     restoration claim is certified on the row's before-view; (h) one logical write across two
+ *     restoration link survives a concurrent committed row; (h) one logical write across two
  *     rows nets to one receipt; (i) delete ranges at and past the frontier.
  *
  * Negative controls on `586e58ae1e`: (a) admits U2 alone with an empty receipt and no close;
@@ -22,7 +22,10 @@ import {
   PROVENANCE_TARGETS_TYPE,
 } from "../../../../apps/server/server/domains/collab/domain/provenance.ts";
 import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
-import { captureUndoRestorationClaims } from "../../../../packages/prosemirror-schema/src/restoration-claims.ts";
+import {
+  RESTORED_ROOT,
+  recordRestorations,
+} from "../../../../packages/agent-edit/src/diff/index.ts";
 import {
   appendToFirstParagraph,
   type Harness,
@@ -44,13 +47,20 @@ import {
   phase4Coordinator,
   receipts,
   runArms,
-  seedDraft,
+  seedDraft as seedLiveDraft,
   structsOf,
   tabOn,
 } from "./phase4.mts";
 import { openGateway } from "./room-enrollment.mts";
 
 const WRITER = 900_001;
+
+/** Writer frames start from the fresh draft identity, never the unrelated live clocks. */
+async function seedDraft(harness: Harness, label: string, text = "Base") {
+  const { live, ...draft } = await seedLiveDraft(harness, label, text);
+  live.destroy();
+  return { ...draft, roomSeed: await durableDoc(harness, draft.draftId) };
+}
 
 /** The clocks of `client` an update's structs cover. */
 function clocksOf(update: Uint8Array, client: number): number[] {
@@ -77,8 +87,8 @@ const expanded = (ranges: readonly { client: number; clock: number; len: number 
   ranges.flatMap((r) => Array.from({ length: r.len }, (_, n) => `${r.client}:${r.clock + n}`));
 
 /** Two keystrokes from one writer tab on `draft`'s base: U1 types A, U2 types B after it. */
-function twoKeys(draft: { live: Y.Doc }) {
-  const tab = tabOn(draft.live, WRITER);
+function twoKeys(draft: { roomSeed: Y.Doc }) {
+  const tab = tabOn(draft.roomSeed, WRITER);
   const u1 = appendToFirstParagraph(tab, "A");
   const u2 = appendToFirstParagraph(tab, "B");
   tab.destroy();
@@ -138,7 +148,7 @@ export const appendNovelty: Probe = {
           assert.match(after.text, /BaseAB/);
           assert.deepEqual(close, { code: 4207, reason: "draft-prefix-missing" });
         } finally {
-          draft.live.destroy();
+          draft.roomSeed.destroy();
           await gateway.close();
         }
       },
@@ -169,7 +179,7 @@ export const appendNovelty: Probe = {
         } finally {
           pause.remove();
           tab.room.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
@@ -196,7 +206,7 @@ export const appendNovelty: Probe = {
         } finally {
           pause.remove();
           tab.room.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
@@ -224,13 +234,13 @@ export const appendNovelty: Probe = {
           assert.deepEqual(expanded(last?.flatMap((p) => p.inserted) ?? []), [`${WRITER}:1`]);
         } finally {
           tab.room.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
       async "e-resent-delete-with-insert"() {
         const draft = await seedDraft(harness, "novelty-e");
-        const writer = tabOn(draft.live, WRITER);
+        const writer = tabOn(draft.roomSeed, WRITER);
         const tab = await openRoom(harness, coordinator, draft);
         try {
           const del = captureUpdate(writer, () => firstText(writer).delete(0, 1));
@@ -250,20 +260,21 @@ export const appendNovelty: Probe = {
         } finally {
           writer.destroy();
           tab.room.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
       async "f-reserved-target-committed-between"() {
         const draft = await seedDraft(harness, "novelty-f");
-        // Another connection's agent row carries a provenance fact the frame's base lacks.
-        const browser = tabOn(draft.live, 17);
-        const prose = Y.decodeUpdate(Y.encodeStateAsUpdate(draft.live)).structs.find(
+        // A server row carries reserved state the frame's base lacks.
+        const browser = tabOn(draft.roomSeed, 17);
+        browser.clientID = 1;
+        const prose = Y.decodeUpdate(Y.encodeStateAsUpdate(draft.roomSeed)).structs.find(
           (s) => s instanceof Y.Item && s.content instanceof Y.ContentString,
         );
         if (!prose) throw new Error("no prose struct");
         const range = { clientID: prose.id.client, clock: prose.id.clock, length: prose.length };
-        const fact = appendProvenanceFacts(browser, {
+        appendProvenanceFacts(browser, {
           targets: [{ version: 1, target: range, root: range }],
         });
         browser.clientID = 900_777;
@@ -276,16 +287,25 @@ export const appendNovelty: Probe = {
         try {
           const frame = independently(() => tab.send(deletion));
           await pause.entered;
-          const source = tabOn(draft.live, 900_778);
-          Y.applyUpdate(source, fact);
-          const committed = await independently(() =>
-            commitDraftRows(harness.coordinator, {
-              draftId: draft.draftId,
-              sourceDoc: source,
-              rows: [{ draftId: draft.draftId, source: "agent", updateData: fact }],
-            }),
-          );
-          source.destroy();
+          const committed = await independently(async () => {
+            const base = await harness.coordinator.loadBase(draft.draftId);
+            const write = harness.coordinator.prepareAppend(base, [], {
+              authorServerRows(prefix) {
+                return [
+                  appendProvenanceFacts(prefix, {
+                    targets: [{ version: 1, target: range, root: range }],
+                  }),
+                ];
+              },
+            });
+            try {
+              await write.persist();
+              write.transfer();
+              return true;
+            } finally {
+              write.dispose();
+            }
+          });
           pause.release();
           const outcome = await frame;
           const rows = await journalRows(harness, draft.draftId);
@@ -297,23 +317,23 @@ export const appendNovelty: Probe = {
           assert.ok(typeof outcome === "object" && "refused" in outcome, "the frame is refused");
           assert.deepEqual(
             rows.map((r) => r.source),
-            ["agent"],
+            ["server"],
             "no writer row",
           );
           assert.equal(facts, 1, "the fact survives");
         } finally {
           browser.destroy();
           tab.room.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
       async "g-restoration-under-concurrent-row"() {
         const draft = await seedDraft(harness, "novelty-g", "The serpent waits.");
-        const browser = tabOn(draft.live, WRITER);
-        const detach = captureUndoRestorationClaims(browser);
+        const browser = tabOn(draft.roomSeed, WRITER);
         const text = firstText(browser);
         const undo = new Y.UndoManager(text);
+        recordRestorations(undo);
         const pause = pausedAppend(harness.store);
         const frames = phase4Coordinator(harness, { store: pause.paused });
         const tab = await openRoom(harness, frames, draft);
@@ -326,7 +346,7 @@ export const appendNovelty: Probe = {
           const restored = captureUpdate(browser, () => undo.undo());
           const frame = independently(() => tab.send(restored));
           await pause.entered;
-          const other = tabOn(draft.live, 900_779);
+          const other = tabOn(draft.roomSeed, 900_779);
           Y.applyUpdate(other, deleted);
           const concurrent = await independently(async () => {
             const room = await openRoom(harness, coordinator, draft);
@@ -339,8 +359,12 @@ export const appendNovelty: Probe = {
           other.destroy();
           pause.release();
           const outcome = await frame;
-          const rows = await journalRows(harness, draft.draftId);
-          const aliases = rows.at(-1)?.meta.restorationAliases ?? [];
+          const aliases = await harness.coordinator.readDraft(draft.draftId, async (doc) =>
+            doc
+              .getArray(RESTORED_ROOT)
+              .toArray()
+              .filter((entry: unknown) => Array.isArray(entry) && entry.length === 5),
+          );
           observe("g", {
             concurrent,
             outcome,
@@ -349,19 +373,18 @@ export const appendNovelty: Probe = {
           });
           assert.equal(concurrent, "appended");
           assert.equal(outcome, "appended");
-          assert.equal(aliases.length, 1, "one certified alias");
+          assert.equal(aliases.length, 1, "one durable kernel restoration link");
         } finally {
-          detach();
           undo.destroy();
           browser.destroy();
           tab.room.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
       async "h-one-logical-write-two-rows"() {
         const draft = await seedDraft(harness, "novelty-h");
-        const source = tabOn(draft.live, 900_333);
+        const source = tabOn(draft.roomSeed, 900_333);
         try {
           const insert = appendToFirstParagraph(source, "X");
           const remove = captureUpdate(source, () => {
@@ -395,7 +418,7 @@ export const appendNovelty: Probe = {
             assert.deepEqual([part.inserted, part.deleted], [[], []]);
         } finally {
           source.destroy();
-          draft.live.destroy();
+          draft.roomSeed.destroy();
         }
       },
 
@@ -403,7 +426,7 @@ export const appendNovelty: Probe = {
         // A fresh client inserting X and deleting it in one merged update.
         {
           const draft = await seedDraft(harness, "novelty-i1");
-          const writer = tabOn(draft.live, 900_303);
+          const writer = tabOn(draft.roomSeed, 900_303);
           const tab = await openRoom(harness, coordinator, draft);
           try {
             const ins = appendToFirstParagraph(writer, "X");
@@ -421,13 +444,13 @@ export const appendNovelty: Probe = {
           } finally {
             writer.destroy();
             tab.room.destroy();
-            draft.live.destroy();
+            draft.roomSeed.destroy();
           }
         }
         // A delete range straddling the client's frontier: clock 0 committed and deleted, 1 new.
         {
           const draft = await seedDraft(harness, "novelty-i2");
-          const writer = tabOn(draft.live, 900_304);
+          const writer = tabOn(draft.roomSeed, 900_304);
           const tab = await openRoom(harness, coordinator, draft);
           try {
             const t = firstText(writer);
@@ -454,13 +477,13 @@ export const appendNovelty: Probe = {
           } finally {
             writer.destroy();
             tab.room.destroy();
-            draft.live.destroy();
+            draft.roomSeed.destroy();
           }
         }
         // A delete-only update naming a clock the server never saw: not sequenced, 4207.
         {
           const draft = await seedDraft(harness, "novelty-i3");
-          const writer = tabOn(draft.live, 900_305);
+          const writer = tabOn(draft.roomSeed, 900_305);
           const gateway = openGateway(harness, harness.store);
           try {
             appendToFirstParagraph(writer, "W");
@@ -478,7 +501,7 @@ export const appendNovelty: Probe = {
           } finally {
             writer.destroy();
             await gateway.close();
-            draft.live.destroy();
+            draft.roomSeed.destroy();
           }
         }
       },

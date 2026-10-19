@@ -2,7 +2,6 @@
 import type { CanonicalBlockIdentity } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
-import type { NoticePort } from "../../notices/index.js";
 
 import type {
   ChangeTrailPersistence,
@@ -187,10 +186,9 @@ export function preparedTrailChanges(input: {
 export async function persistDurableTrailRecords(
   committed: readonly {
     record: DurableTrailRecord;
-    push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null };
+    push: { id: number };
   }[],
   persistence: Pick<ChangeTrailPersistence, "record">,
-  notices?: NoticePort,
 ): Promise<void> {
   const normalized = normalizeTrailPushes(
     committed.flatMap(({ record, push }) => {
@@ -211,18 +209,6 @@ export async function persistDurableTrailRecords(
       committed.map(({ record }) => [record.documentId, record.documentTitle]),
     ),
   });
-  for (const { record, push } of committed) {
-    if (!record.transactionalNotice) continue;
-    await notices?.record({
-      ...record.transactionalNotice,
-      data: {
-        ...record.transactionalNotice.data,
-        pushId: String(push.id),
-        threadId: push.threadId ?? null,
-        turnId: push.turnId ?? null,
-      },
-    });
-  }
 }
 
 type ApplyBlockChange = {

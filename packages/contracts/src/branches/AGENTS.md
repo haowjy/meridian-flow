@@ -14,9 +14,8 @@ action. A draft is one document's pending version; addressed metadata supplies i
 - The server maps an `itemKey` to its current document draft; text Apply instead
   binds the captured `draftId` to its Work and document and never retargets it.
 - Apply is a frozen snapshot click with a command-id outcome, never a revision
-  fence. Preview and persisted settlement results retain their older vocabulary
-  until those paths are retired.
+  fence. Text groups and attribution come from the diff kernel in the room,
+  not a server preview or closure-class contract.
 - Apply and discard remain writer commands, not draft-storage operations.
 
-See [`.context/CONTEXT.md`](.context/CONTEXT.md) for command, preview, and
-closure contracts.
+See [`.context/CONTEXT.md`](.context/CONTEXT.md) for identity and command contracts.

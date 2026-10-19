@@ -198,7 +198,6 @@
     "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts": 19,
     "apps/server/server/domains/collab/adapters/drizzle-trail-signals.db.test.ts": 4,
     "apps/server/server/domains/collab/adapters/hocuspocus-coordinator.test.ts": 2,
-    "apps/server/server/domains/collab/adapters/live-fingerprint-reader.test.ts": 2,
     "apps/server/server/domains/collab/adapters/response-helper-replay.db.test.ts": 1,
     "apps/server/server/domains/collab/branch-commands.db.test.ts": 2,
     "apps/server/server/domains/collab/branch-tree.apply-placement.db.test.ts": 1,
