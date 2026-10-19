@@ -229,7 +229,6 @@ describe("ContextFS rename filetype invariant", () => {
       mutationStore,
       scheme: "kb",
       documentSync: {
-        ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
         bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
         seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {

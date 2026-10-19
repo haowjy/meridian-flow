@@ -34,6 +34,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { DocumentRemovedError } from "../../context/ports/document-removals.js";
 import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
@@ -57,6 +58,7 @@ import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   allocateDocumentAdmission,
   findDocumentAuthorityHead,
+  findLivingDocumentAuthorityHead,
   readDocumentAuthorityHead,
   refusedAuthority,
 } from "./drizzle-document-authority-head.js";
@@ -272,7 +274,11 @@ async function assertReadableHead(db: JournalDb, docId: string): Promise<void> {
   assertHeadSchemaCurrent(docId, await readHeadSchemaVersion(db, docId));
 }
 
-/** Moves an existing head to a checkpoint it just installed; a missing head is refused. */
+/**
+ * Moves a living document's head to a checkpoint it just installed; a missing head or a
+ * removed document is refused, rolling the checkpoint back with it. Every checkpoint insert
+ * passes here, so this is the backstop behind each door's own liveness read.
+ */
 async function advanceHeadToCheckpoint(
   db: JournalDb,
   documentId: string,
@@ -288,7 +294,12 @@ async function advanceHeadToCheckpoint(
       latestCheckpointId: checkpoint.id,
       updatedAt: sql`now()`,
     })
-    .where(eq(documentYjsHeads.documentId, asDocumentId(documentId)))
+    .where(
+      and(
+        eq(documentYjsHeads.documentId, asDocumentId(documentId)),
+        documentNotDeletedSql(documentYjsHeads.documentId),
+      ),
+    )
     .returning({ documentId: documentYjsHeads.documentId });
   if (!updated) throw await refusedAuthority(db, documentId);
 }
@@ -849,7 +860,8 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const current = await findDocumentAuthorityHead(txDb, docId);
+        // A checkpoint captured before a removal stores nothing after it.
+        const current = await findLivingDocumentAuthorityHead(txDb, docId);
         if (
           !current ||
           current.authorityId !== captured.authorityId ||
@@ -873,7 +885,13 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const authorityHead = await readDocumentAuthorityHead(txDb, docId);
+        const authorityHead = await findLivingDocumentAuthorityHead(txDb, docId);
+        if (!authorityHead) {
+          // A removed document keeps its history as the removal left it.
+          const refused = await refusedAuthority(txDb, docId);
+          if (refused instanceof DocumentRemovedError) return { updatesFolded: 0 };
+          throw refused;
+        }
         const [checkpoint] = await txDb
           .select()
           .from(documentYjsCheckpoints)
@@ -1026,9 +1044,9 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
       return runInDrizzleTransaction(db as Database, async () => {
         const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
-        const current = await findDocumentAuthorityHead(tx, docId);
+        const current = await findLivingDocumentAuthorityHead(tx, docId);
+        if (!current) throw await refusedAuthority(tx, docId);
         if (
-          !current ||
           current.authorityId !== captured.authorityId ||
           current.generation !== captured.generation
         )

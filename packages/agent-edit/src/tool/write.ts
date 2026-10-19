@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
@@ -170,23 +171,25 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     try {
       result = await run(validCommand, session);
     } catch (cause) {
+      // A file gone under the write is an answer, not a failure to diagnose.
       try {
-        options.onUnexpectedWriteError?.({
-          cause,
-          command: commandName,
-          ...(validCommand.documentId ? { documentId: validCommand.documentId } : {}),
-          sessionId: session.id,
-          threadId: session.threadId,
-          ...(context.turnId ? { turnId: context.turnId } : {}),
-          ...(context.responseIdentity?.editScopeId
-            ? { responseId: context.responseIdentity?.editScopeId }
-            : {}),
-          ...(toolUseId ? { toolUseId } : {}),
-        });
+        if (!isDocumentNotFoundError(cause))
+          options.onUnexpectedWriteError?.({
+            cause,
+            command: commandName,
+            ...(validCommand.documentId ? { documentId: validCommand.documentId } : {}),
+            sessionId: session.id,
+            threadId: session.threadId,
+            ...(context.turnId ? { turnId: context.turnId } : {}),
+            ...(context.responseIdentity?.editScopeId
+              ? { responseId: context.responseIdentity?.editScopeId }
+              : {}),
+            ...(toolUseId ? { toolUseId } : {}),
+          });
       } catch {
         // Host diagnostics must never change the model-facing write outcome.
       }
-      result = writeError(cause);
+      result = writeError(cause, commandName);
     }
     const outcome = toOutcome(commandName, result, validCommand.file);
     if (

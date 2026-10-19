@@ -48,7 +48,7 @@ export {
 export * from "./corpus-import/index.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
-export { removalPhrase } from "./document-removal-copy.js";
+export { removalPhrase, removedFileSentence } from "./document-removal-copy.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
 export type {
