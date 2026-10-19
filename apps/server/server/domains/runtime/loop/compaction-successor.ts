@@ -8,6 +8,7 @@ import {
   turnFailedCopy,
 } from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
+import type { TokenizerFamily } from "../gateway/index.js";
 import type { SummaryOutcome } from "../ports/conversation-summarizer.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import type { DocumentTextPolicy } from "../tools/document-text.js";
@@ -26,6 +27,7 @@ import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.
 import {
   chooseImportantFiles,
   importantFileCandidates,
+  NOT_RESHOWN_HEADING,
   parseImportantFiles,
   reshowBudgetTokens,
 } from "./compaction/important-files.js";
@@ -80,7 +82,7 @@ const NO_RESHOWN: ReshownDocuments = {
   notReshownUris: [],
 };
 
-function fittingTokens(context: AssembledNextTurnContext) {
+function fittingEstimate(context: AssembledNextTurnContext) {
   const tokenizer = context.resolvedModel?.tokenizer;
   if (!tokenizer)
     throw new CompactionFailureError({ reason: "compaction_failed", phase: "initial_prepare" });
@@ -99,7 +101,7 @@ function fittingTokens(context: AssembledNextTurnContext) {
       estimatedTokens: tokens,
       fitLimitTokens,
     });
-  return tokens;
+  return { tokens, tokenizer };
 }
 
 /**
@@ -116,7 +118,8 @@ async function reshowImportantFiles(args: {
   allBlocks: Block[];
   policies: (name: string) => DocumentTextPolicy | undefined;
   budgetTokens: number;
-  listedUris: readonly string[];
+  tokenizer: TokenizerFamily;
+  listedLines: readonly string[];
 }): Promise<ReshownDocuments> {
   const { deps, input, placeholder, allBlocks } = args;
   const blocksByTurn = new Map<string, Block[]>();
@@ -131,7 +134,7 @@ async function reshowImportantFiles(args: {
   }));
   const { candidates, unknownUriCount } = importantFileCandidates(
     collectRecordedDocuments(history, args.policies),
-    args.listedUris,
+    args.listedLines,
   );
   if (unknownUriCount > 0) {
     emitEvent(deps.eventSink, {
@@ -145,6 +148,7 @@ async function reshowImportantFiles(args: {
   const priorityFirst = await chooseImportantFiles({
     candidates,
     budgetTokens: args.budgetTokens,
+    tokenizer: args.tokenizer,
     read: async (reference) => {
       args.assertNoResponseScope();
       input.signal?.throwIfAborted();
@@ -193,9 +197,13 @@ async function reshowImportantFiles(args: {
       ),
     },
     documentIds,
-    notReshownUris: candidates
-      .filter((candidate) => !documentIds.has(candidate.documentId))
-      .map((candidate) => candidate.uri as string),
+    notReshownUris: [
+      ...new Set(
+        candidates
+          .filter((candidate) => !documentIds.has(candidate.documentId))
+          .map((candidate) => candidate.uri as string),
+      ),
+    ],
   };
 }
 
@@ -282,7 +290,7 @@ export async function prepareCompactionSuccessor(args: {
         ...(reshown.notReshownUris.length
           ? [
               [
-                "## Documents not re-shown",
+                NOT_RESHOWN_HEADING,
                 "These documents were not re-shown after the summary. Read them again before writing in them.",
                 ...reshown.notReshownUris.map((uri) => `- ${uri}`),
               ].join("\n"),
@@ -362,12 +370,14 @@ export async function prepareCompactionSuccessor(args: {
     };
     let staged = stage(NO_RESHOWN);
     const base = await staged.assemble([], []);
-    let tokensAfter = fittingTokens(base.assembled);
+    const baseEstimate = fittingEstimate(base.assembled);
+    let tokensAfter = baseEstimate.tokens;
     // Sized from the headroom under the trigger, so the documents cannot push the successor over it.
     const reshown = await reshowImportantFiles({
       ...args,
       policies,
-      listedUris: parsed.uris,
+      listedLines: parsed.listedLines,
+      tokenizer: baseEstimate.tokenizer,
       budgetTokens: reshowBudgetTokens({
         usableWindowTokens: base.assembled.compactionUsableWindowTokens ?? 0,
         triggerTokens: base.assembled.compactionTriggerTokens,
@@ -377,7 +387,7 @@ export async function prepareCompactionSuccessor(args: {
     if (reshown.blocks.length > 0 || reshown.notReshownUris.length > 0) {
       staged = stage(reshown);
       // Measurement: the recorded `tokensAfter` is what the successor really carries.
-      tokensAfter = fittingTokens((await staged.assemble([], [])).assembled);
+      tokensAfter = fittingEstimate((await staged.assemble([], [])).assembled).tokens;
     }
     const summaryBlock = contentForBlockInput({
       ...blockInput,

@@ -44,8 +44,11 @@ re-shows the ones it most needs ([credit scope](document-text.md#observation-fro
 owner rulings C10 and C12). The summarizer ends its output with
 `## Documents to keep open`, one context URI per line, most important first
 (at most 10). `compaction/important-files.ts` owns the instruction and parser.
-`prepareCompactionSuccessor` strips that section from the stored summary and
-matches listed URIs exactly against `documentRevisions` evidence from the
+`prepareCompactionSuccessor` strips that section and any model-emitted
+`## Documents not re-shown` section from the stored summary. It cleans list markers, backticks and angle brackets,
+then matches each line to the longest shown URI it starts with at an end,
+whitespace or punctuation boundary. Shown URIs preserve spaces, for example
+`manuscript://Chapter 1.md`. Matching uses `documentRevisions` evidence from the
 **whole pre-compaction history**, not only the retained tail. Unknown URIs are
 dropped with `important_file.unknown_uris` (count). Candidates are the first 10
 matched entries, then the 3 most recently shown documents, deduplicated by
@@ -54,14 +57,18 @@ document id. Missing or malformed lists naturally leave only the 3 recent.
 The full text is selected greedily in that order, within
 min(20,000 tokens, 10% of the usable window, the headroom the successor has
 under the auto-compaction trigger once its base is measured, less a margin) of
-rendered text at 3 bytes per token. The headroom term keeps the successor under
-the trigger by construction. A document whose full text exceeds what is left
-is skipped, never truncated (a truncated copy would be a partial read with its
+rendered text using the successor model's tokenizer and shared part estimator,
+including the exact projected heading plus read. The headroom term keeps admitted
+text under the trigger by construction; the 1,000-token margin covers the short
+not-re-shown note and request-envelope overhead. A document whose full text
+exceeds what is left is skipped, never truncated (a truncated copy would be a partial read with its
 own listing). There is no kept-document count cap; reads are bounded by the
 candidate list (at most 13). Candidates that do not fit or cannot be read are
 named in a trailing summary section as not re-shown, with an instruction to
 read them again before writing in them. That note is visible in the writer's
-compaction divider too.
+compaction divider too. Its URI list is deduplicated. The server regenerates
+this note from the current preparation attempt only, replacing any old note
+the summarizer carried forward.
 
 Each is read in full through the reference reader (`readDocument`, an
 omitted-version read, so a draft-mode thread gets its Work draft and auto-apply
