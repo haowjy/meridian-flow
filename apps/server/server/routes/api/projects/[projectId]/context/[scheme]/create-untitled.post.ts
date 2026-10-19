@@ -28,7 +28,6 @@ import {
   parseContextMutationName,
   parseContextMutationPath,
 } from "../../../../../../lib/context-mutation-validation.js";
-import { containerTarget } from "../../../../../../lib/file-access-http.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateUntitledBody {
@@ -37,7 +36,10 @@ interface CreateUntitledBody {
   destination?: CreateUntitledDestination;
 }
 
-export function parseCreateUntitledBody(raw: unknown): CreateUntitledBody {
+export function parseCreateUntitledBody(
+  raw: unknown,
+  scheme: Parameters<typeof toUri>[0] = "manuscript",
+): CreateUntitledBody {
   if (!raw || typeof raw !== "object") {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
@@ -51,7 +53,7 @@ export function parseCreateUntitledBody(raw: unknown): CreateUntitledBody {
   const folderPath =
     body.folderPath === undefined
       ? undefined
-      : parseContextMutationPath(body.folderPath, "folderPath", { allowRoot: true });
+      : parseContextMutationPath(body.folderPath, "folderPath", { allowRoot: true, scheme });
   let destination: CreateUntitledDestination | undefined;
   if (body.destination !== undefined) {
     if (!body.destination || typeof body.destination !== "object") {
@@ -190,7 +192,7 @@ export async function createUntitledContextDocument(input: {
 export default defineEventHandler(async (event) => {
   const { app, userId, projectId, scheme, workId, authority, port, container, edit } =
     await resolveContextRoute(event, { recoverAcrossProject: true });
-  const body = parseCreateUntitledBody(await readBody(event));
+  const body = parseCreateUntitledBody(await readBody(event), scheme);
   const parent = body.destination?.parent;
   const rootUri =
     parent?.kind === "root" ? await destinationRootUri(app, projectId, parent) : undefined;

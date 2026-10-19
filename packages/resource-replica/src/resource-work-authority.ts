@@ -1,8 +1,8 @@
 /** Checked owner construction at command boundaries and one durable URI authority rule. */
 import {
-  formatParsedContextUri,
   isOwnedContextScheme,
   type ParsedContextAuthority,
+  parsedContextUriFromSourceLocation,
 } from "@meridian/contracts/context-uri";
 import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
@@ -85,10 +85,12 @@ export function resourceContextUri(
   switch (authority.kind) {
     case "work": {
       const workSlug = decodeWorkSlug(authority.workSlug);
-      return workSlug ? formatParsedContextUri(scheme, bare, { kind: "work", workSlug }) : null;
+      return workSlug
+        ? parsedContextUriFromSourceLocation(scheme, bare, { kind: "work", workSlug })
+        : null;
     }
     case "chat":
-      return formatParsedContextUri(
+      return parsedContextUriFromSourceLocation(
         scheme,
         bare,
         authority.chatRef === null
@@ -96,7 +98,7 @@ export function resourceContextUri(
           : { kind: "chat", chatRef: authority.chatRef },
       );
     default:
-      return formatParsedContextUri(scheme, bare, authority);
+      return parsedContextUriFromSourceLocation(scheme, bare, authority);
   }
 }
 

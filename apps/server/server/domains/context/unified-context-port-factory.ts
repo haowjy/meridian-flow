@@ -9,8 +9,10 @@
 
 import type { BranchId, CanonicalContextAuthority } from "@meridian/contracts";
 import {
-  canonicalContextUri,
+  contextUriFromSourceLocation,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+  parseContextUri,
+  parsedContextUriFromSourceLocation,
 } from "@meridian/contracts/context-uri";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
@@ -539,14 +541,14 @@ export function createInMemoryUnifiedContextPortFactory(
       for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
         sourceUris.set(
           scheme === "user" ? `user:${userId}` : `project:${projectId}:${scheme}`,
-          canonicalContextUri(scheme, ""),
+          contextUriFromSourceLocation(scheme, ""),
         );
       }
       for (const authority of [...authorities.values(), ...(primary ? [primary] : [])])
         for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES)
           sourceUris.set(
             `work:${authority.workId}:${scheme}`,
-            canonicalContextUri(scheme, "", authority),
+            contextUriFromSourceLocation(scheme, "", authority),
           );
       const folder = registry.backing.folders.get(folderId);
       if (!folder || folder.deletedAt) return null;
@@ -569,7 +571,14 @@ export function createInMemoryUnifiedContextPortFactory(
         current = registry.backing.folders.get(parentId);
         if (!current) return null;
       }
-      return root + parts.join("/");
+      const parsedRoot = parseContextUri(root);
+      return parsedRoot.ok
+        ? parsedContextUriFromSourceLocation(
+            parsedRoot.value.scheme,
+            parts.join("/"),
+            parsedRoot.value.authority,
+          )
+        : null;
     };
 
   return {

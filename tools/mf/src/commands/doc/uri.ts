@@ -1,5 +1,9 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
-import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  parseContextUri,
+  parsedContextUriFromSourceLocation,
+  sourceLocationFromContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
   type ContextOwner,
@@ -40,7 +44,8 @@ export async function resolveUri(
 ): Promise<ResolvedUri> {
   const parsed = parseContextUri(raw);
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
-  const { scheme, authority, path } = parsed.value;
+  const { scheme, authority } = parsed.value;
+  const path = sourceLocationFromContextUri(parsed.value);
   if (!path) throw usageError(`URI ${raw} has no path`);
   let workId: string | null = null;
   let chatRef: string | null = null;
@@ -76,7 +81,7 @@ export async function resolveUri(
   return {
     scheme,
     path: canonicalPath,
-    uri: formatParsedContextUri(
+    uri: parsedContextUriFromSourceLocation(
       scheme,
       canonicalPath,
       chatRef !== null ? { kind: "chat", chatRef } : authority,

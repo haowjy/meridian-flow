@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
-  canonicalContextUri,
+  contextUriFromSourceLocation,
   isContextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type {
@@ -650,7 +650,7 @@ export function createDrizzleProjectContextAvailability(
                 scope,
                 name: row.folder.name,
                 path,
-                uri: canonicalContextUri(
+                uri: contextUriFromSourceLocation(
                   scheme,
                   path.join("/"),
                   catalogSourceAuthority(
@@ -729,7 +729,7 @@ export async function resolveActiveFolderUri(
     foldersById: new Map(ancestors.map((folder) => [folder.id, folder])),
   });
   if (classification.kind !== "valid") return null;
-  return canonicalContextUri(
+  return contextUriFromSourceLocation(
     classification.identity.scheme,
     [...classification.identity.parentPath, row.folder.name].join("/"),
     catalogSourceAuthority(

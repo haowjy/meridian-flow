@@ -43,6 +43,14 @@ contract owns a rule and where it is consumed.
 
 ## Context ownership and URIs
 
+`context-source-location.ts` owns source-relative transport decoding and URI
+spelling. Browser/HTTP paths are storage coordinates, not URI tails. Validate
+writer-created names with entry validation; decode transport paths with the
+scheme-aware source-location decoder. It recognizes only an exact Scratch
+reserved root (`@c15` or `@p7`), and validates every remaining segment normally.
+It does not prove association or grant access. Public URI intake remains strict.
+
+
 `context-uri.ts` owns scheme classification and address syntax. Draft-mode
 Works own manuscript, KB, user, and unfiled content; Scratch and uploads are
 not drafted. A leading `@` in each path segment is reserved for Work authority;

@@ -8,7 +8,7 @@ import { resolveContextRoute } from "./_helpers.js";
 export default defineEventHandler(async (event) => {
   const { app, projectId, userId, scheme, workId } = await resolveContextRoute(event);
   const query = getQuery(event);
-  const path = parseContextMutationPath(query.path, "path");
+  const path = parseContextMutationPath(query.path, "path", { scheme });
   // A request still carrying the retired `draftId` selector is a review request that answers unavailable.
   const hasReview =
     query.reviewWorkId !== undefined || query.itemKey !== undefined || query.draftId !== undefined;

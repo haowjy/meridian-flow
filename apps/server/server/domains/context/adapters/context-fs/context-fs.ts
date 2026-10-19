@@ -5,7 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
+import { type CanonicalContextAuthority, contextUriFromSourceLocation } from "@meridian/contracts";
 import {
   classifyFiletype,
   type Filetype,
@@ -400,7 +400,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const canonicalPath = parsed.ok
       ? joinPath(dir.join("/"), renderFilename(parsed.value.name, parsed.value.extension))
       : path;
-    return canonicalContextUri(this.scheme, canonicalPath, this.holder.authority);
+    return contextUriFromSourceLocation(this.scheme, canonicalPath, this.holder.authority);
   }
 
   private async overwriteInTransaction(

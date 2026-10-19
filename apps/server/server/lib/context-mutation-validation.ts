@@ -3,8 +3,8 @@
 import {
   type ContextEntryValidationError,
   validateContextEntryName,
-  validateContextEntryPath,
 } from "@meridian/contracts/context-entry-validation";
+import { type ContextUriScheme, decodeContextSourcePath } from "@meridian/contracts/context-uri";
 import { createError } from "nitro/h3";
 
 function validationError(field: string, error: ContextEntryValidationError): never {
@@ -22,7 +22,7 @@ function validationError(field: string, error: ContextEntryValidationError): nev
 export function parseContextMutationPath(
   raw: unknown,
   field: string,
-  options: { allowRoot?: boolean } = {},
+  options: { allowRoot?: boolean; scheme?: ContextUriScheme } = {},
 ): string {
   if (typeof raw !== "string") {
     throw createError({ statusCode: 400, message: `\`${field}\` is required` });
@@ -30,7 +30,9 @@ export function parseContextMutationPath(
   // Context locations are rooted in client state, while the shared validator
   // returns the scheme-relative form consumed by ContextPort URIs.
   const relativePath = raw.startsWith("/") ? raw.slice(1) : raw;
-  const result = validateContextEntryPath(relativePath, { allowRoot: options.allowRoot });
+  const result = decodeContextSourcePath(options.scheme ?? "manuscript", relativePath, {
+    allowRoot: options.allowRoot,
+  });
   if (!result.ok) validationError(field, result);
   return result.value;
 }

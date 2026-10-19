@@ -5,7 +5,11 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
-import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  contextUriFromSourceLocation,
+  sourceLocationFromContextUri,
+} from "@meridian/contracts/context-uri";
 import {
   type DeleteContextEntryResult,
   filenameForBinary,
@@ -158,7 +162,7 @@ type SourceLocation = {
 };
 
 function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContextAuthority): string {
-  return toCanonical(scheme, path, authority);
+  return contextUriFromSourceLocation(scheme, path, authority);
 }
 
 function toSearchResult(
@@ -396,7 +400,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         ? Err({ ...error, reason: `Another chat's uploads are at ${files.uploads}…` })
         : parsed;
     }
-    const { scheme, authority, path } = parsed.value;
+    const { scheme, authority } = parsed.value;
+    const path = sourceLocationFromContextUri(parsed.value);
 
     const contextual = authority.kind === "contextual" ? sources.get(scheme) : undefined;
     const binding = typeof contextual === "function" ? await contextual() : contextual;
@@ -517,7 +522,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   ): Promise<Result<MutationDispatch, ContextError>> {
     const resolved = await resolve(uri);
     if (!resolved.ok) return resolved;
-    const validation = validateContextEntryPath(resolved.value.path, { allowRoot: true });
+    const parsedTail = parseContextUri(uri, parseOptions);
+    if (!parsedTail.ok) return parsedTail;
+    const validation = validateContextEntryPath(parsedTail.value.path, { allowRoot: true });
     if (validation.ok) return Ok(mutationDispatch(resolved.value, origin));
     return Err({
       code: "invalid_uri",

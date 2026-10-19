@@ -2,7 +2,7 @@
  * Browser project addresses. After `/p/<projectId>` the path names the screen and what
  * is open on it; the query holds context and overlays.
  */
-import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
+import { decodeContextSourcePath } from "@meridian/contracts/context-uri";
 import {
   isProjectContextTreeScheme,
   type ProjectContextTreeScheme,
@@ -124,7 +124,7 @@ function parseDestination(parts: string[]): ProjectDestination | null {
   if (browse && scheme === undefined) return { kind: "browse", scheme: null, path: "" };
   if (!isProjectContextTreeScheme(scheme)) return null;
   const path = segments.join("/");
-  const validated = validateContextEntryPath(path, { allowRoot: browse });
+  const validated = decodeContextSourcePath(scheme, path, { allowRoot: browse });
   // Browser addresses must not silently trim a different filename into existence.
   if (!validated.ok || validated.value !== path) return null;
   return { kind: browse ? "browse" : "document", scheme, path };

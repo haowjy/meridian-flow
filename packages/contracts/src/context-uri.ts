@@ -413,3 +413,10 @@ const uploadsBelongToChat =
   "Uploads belong to a chat. Use uploads://x for this chat’s files, or uploads://@/c12/x for another chat’s.";
 const missingScratchHandle =
   "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";
+
+export {
+  contextUriFromSourceLocation,
+  decodeContextSourcePath,
+  parsedContextUriFromSourceLocation,
+  sourceLocationFromContextUri,
+} from "./context-source-location.js";

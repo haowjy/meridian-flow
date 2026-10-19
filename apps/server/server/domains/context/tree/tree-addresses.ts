@@ -17,7 +17,7 @@ import type {
 } from "@meridian/contracts";
 import {
   type ContextUriScheme,
-  canonicalContextUri,
+  contextUriFromSourceLocation,
   isContextUriScheme,
   isProjectScopedScheme,
 } from "@meridian/contracts/context-uri";
@@ -130,7 +130,7 @@ export async function loadDocumentAddresses(
     const scheme = row.scheme;
     let uri: string;
     try {
-      uri = canonicalContextUri(
+      uri = contextUriFromSourceLocation(
         scheme,
         row.path,
         catalogSourceAuthority(
@@ -384,7 +384,7 @@ export async function spellNodeAddresses(
     const workSlug = source.is_no_work ? null : source.work_slug;
     let uri: string;
     try {
-      uri = canonicalContextUri(
+      uri = contextUriFromSourceLocation(
         scheme,
         path,
         catalogSourceAuthority(

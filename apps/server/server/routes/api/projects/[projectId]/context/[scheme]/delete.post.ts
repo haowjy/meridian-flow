@@ -11,7 +11,7 @@ import { parseContextMutationPath } from "../../../../../../lib/context-mutation
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 import { contextErrorToHttp, documentTarget, resolveContextRoute, toUri } from "./_helpers.js";
 
-function parseBody(raw: unknown): DeleteContextEntryRequest {
+function parseBody(raw: unknown, scheme: Parameters<typeof toUri>[0]): DeleteContextEntryRequest {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   const body = raw as { operationId?: unknown; path?: unknown; expected?: unknown };
@@ -23,7 +23,7 @@ function parseBody(raw: unknown): DeleteContextEntryRequest {
   if (expected.kind === "folder") {
     return {
       operationId,
-      path: parseContextMutationPath(body.path, "path"),
+      path: parseContextMutationPath(body.path, "path", { scheme }),
       expected: { kind: "folder", nodeId: requireRequestId(expected.nodeId, "expected.nodeId") },
     };
   }
@@ -32,7 +32,7 @@ function parseBody(raw: unknown): DeleteContextEntryRequest {
   }
   return {
     operationId,
-    path: parseContextMutationPath(body.path, "path"),
+    path: parseContextMutationPath(body.path, "path", { scheme }),
     expected: {
       kind: "file",
       documentId: requireRequestId(expected.documentId, "expected.documentId"),
@@ -42,7 +42,7 @@ function parseBody(raw: unknown): DeleteContextEntryRequest {
 
 export default defineEventHandler(async (event) => {
   const { userId, scheme, authority, port, container, edit } = await resolveContextRoute(event);
-  const body = parseBody(await readBody(event));
+  const body = parseBody(await readBody(event), scheme);
   const uri = toUri(scheme, body.path, authority);
   const target =
     body.expected.kind === "file" ? documentTarget(body.expected.documentId) : container;

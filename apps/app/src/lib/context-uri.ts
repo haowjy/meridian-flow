@@ -6,6 +6,7 @@ import {
   isWorkScopedScheme,
   type ParsedContextUri,
   parseUnifiedContextUri,
+  sourceLocationFromContextUri,
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -48,7 +49,7 @@ export type ChatUploadOwners = {
  */
 export function chatIdForUploadsUri(uri: string, chats: ChatUploadOwners): string | null {
   const parsed = parseContextUri(uri);
-  if (!parsed || parsed.scheme !== "uploads") return null;
+  if (parsed?.scheme !== "uploads") return null;
   if (parsed.authority.kind === "chat") return chats.idForRef(parsed.authority.chatRef);
   return parsed.authority.kind === "contextual" ? chats.own : null;
 }
@@ -56,7 +57,7 @@ export function chatIdForUploadsUri(uri: string, chats: ChatUploadOwners): strin
 export function parseContextUri(uri: string): ContextUri | null {
   const parsed = parseUnifiedContextUri(uri);
   if (!parsed.ok) return null;
-  return { ...parsed.value, path: formatContextPath(parsed.value.path) };
+  return { ...parsed.value, path: formatContextPath(sourceLocationFromContextUri(parsed.value)) };
 }
 
 /**

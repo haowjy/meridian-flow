@@ -4,7 +4,7 @@ import type { DocumentId } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
-  canonicalContextUri,
+  contextUriFromSourceLocation,
 } from "@meridian/contracts/context-uri";
 import type { CatalogFileEntry, CatalogScope, Filetype } from "@meridian/contracts/protocol";
 import { classifyFiletype } from "@meridian/contracts/protocol";
@@ -115,7 +115,7 @@ export function mapAuthoritativeFile(input: {
     name: filename,
     aliases: documentAliases(document.metadata as never),
     path,
-    uri: canonicalContextUri(
+    uri: contextUriFromSourceLocation(
       scheme,
       path.join("/"),
       catalogSourceAuthority(

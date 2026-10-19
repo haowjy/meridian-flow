@@ -9,7 +9,10 @@ interface CreateContextEntryBody {
   path: string;
   content?: string;
 }
-export function parseCreateContextEntryBody(raw: unknown): CreateContextEntryBody {
+export function parseCreateContextEntryBody(
+  raw: unknown,
+  scheme: Parameters<typeof toUri>[0] = "manuscript",
+): CreateContextEntryBody {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   const body = raw as Partial<CreateContextEntryBody>;
@@ -19,7 +22,7 @@ export function parseCreateContextEntryBody(raw: unknown): CreateContextEntryBod
     throw createError({ statusCode: 400, message: "`content` must be a string" });
   return {
     type: body.type,
-    path: parseContextMutationPath(body.path, "path"),
+    path: parseContextMutationPath(body.path, "path", { scheme }),
     content: body.content,
   };
 }
@@ -53,7 +56,7 @@ export async function createContextEntry(input: {
 
 export default defineEventHandler(async (event) => {
   const { userId, scheme, authority, port, container, edit } = await resolveContextRoute(event);
-  const body = parseCreateContextEntryBody(await readBody(event));
+  const body = parseCreateContextEntryBody(await readBody(event), scheme);
   const result = await edit([container], () =>
     createContextEntry({ port, userId, scheme, authority, body }),
   );

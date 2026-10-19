@@ -24,6 +24,12 @@ Work row never owns Scratch. A fork and its subagents share a lineage; a
 handoff starts a new one. Writer routes may read, edit, rename, or move notes
 out of a lineage, but may not create notes or move files into one.
 
+Source-relative browser/HTTP paths cross the contracts source-location decoder;
+source-path results cross its URI speller, including catalog, tree and move
+results. Writer-tail validation runs before source-location mapping. Never feed
+a storage path to the public URI parser or treat a reserved system root as a
+writer-created name.
+
 URI paths reject `..`, normalize slash segments, and reserve a leading `@` in
 writer-created names for authority qualifiers. Canonical filename parsing is
 owned by `@meridian/contracts/protocol`; exact parsed names win before any

@@ -4,7 +4,7 @@
  */
 import {
   type CanonicalContextAuthority,
-  canonicalContextUri,
+  contextUriFromSourceLocation,
   isOwnedContextScheme,
   type OwnedContextUriScheme,
 } from "@meridian/contracts/context-uri";
@@ -33,8 +33,8 @@ export function projectBrowseContextUri(
 ): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
   return isOwnedContextScheme(scheme)
-    ? canonicalContextUri(scheme, normalized, authority)
-    : canonicalContextUri(scheme, normalized);
+    ? contextUriFromSourceLocation(scheme, normalized, authority)
+    : contextUriFromSourceLocation(scheme, normalized);
 }
 
 export function ownedBrowseUri(

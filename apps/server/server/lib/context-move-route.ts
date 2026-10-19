@@ -231,11 +231,18 @@ export function parseContextMove(input: {
         throw createError({ statusCode: 400, message: "Destination root owner does not match" });
     }
   }
-  const sourcePath = parseContextMutationPath(body.path, "path");
+  if (
+    !isProjectContextTreeScheme(input.sourceScheme) ||
+    !isProjectContextTreeScheme(body.destinationScheme)
+  )
+    throw createError({ statusCode: 400, message: "Context scheme is invalid" });
+  const sourceScheme = input.sourceScheme;
+  const destinationScheme = body.destinationScheme;
+  const sourcePath = parseContextMutationPath(body.path, "path", { scheme: sourceScheme });
   const destinationFolderPath = parseContextMutationPath(
     body.destinationFolderPath,
     "destinationFolderPath",
-    { allowRoot: true },
+    { allowRoot: true, scheme: destinationScheme },
   );
   let name: string | undefined;
   if (body.newName !== undefined) {

@@ -1,7 +1,10 @@
 /** Drizzle adapter for authoritative catalog snapshots, replay, and mutation reconciliation. */
 import { randomUUID } from "node:crypto";
 import type { ContextSourceId, DocumentId } from "@meridian/contracts";
-import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
+import {
+  type ContextUriScheme,
+  contextUriFromSourceLocation,
+} from "@meridian/contracts/context-uri";
 import type {
   CatalogChange,
   CatalogChanges,
@@ -349,7 +352,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       scope,
       scheme,
       name: source.name,
-      uri: canonicalContextUri(scheme, "", authority),
+      uri: contextUriFromSourceLocation(scheme, "", authority),
     });
     for (const folder of folderRows.filter((item) => item.contextSourceId === source.id)) {
       const path = pathForFolder(folder.id, source.id);
@@ -363,7 +366,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         parentId: folder.parentId ?? source.id,
         name: folder.name,
         path,
-        uri: canonicalContextUri(scheme, path.join("/"), authority),
+        uri: contextUriFromSourceLocation(scheme, path.join("/"), authority),
         hasChildren: (childCounts.get(folder.id) ?? 0) > 0,
       });
     }

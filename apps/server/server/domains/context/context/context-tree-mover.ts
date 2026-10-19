@@ -8,9 +8,9 @@
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import {
-  formatParsedContextUri,
   isWorkScopedScheme,
   parseContextUri,
+  parsedContextUriFromSourceLocation,
 } from "@meridian/contracts/context-uri";
 import {
   type ContextDestinationParent,
@@ -265,7 +265,7 @@ export class ContextTreeMover {
             destinationPath: prepared.value.destinationPath,
             ...(policy.target === "exact" && policy.destinationParent
               ? {
-                  destinationUri: formatParsedContextUri(
+                  destinationUri: parsedContextUriFromSourceLocation(
                     destination.scheme,
                     prepared.value.destinationPath,
                     parsedDestination.value.authority,
