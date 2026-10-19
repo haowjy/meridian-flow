@@ -130,6 +130,9 @@ export function composeHunks(
       }
     }
     copy(r.b);
+    const target = mode === "apply" ? B : D;
+    const targetFrom = blockIndex(target, mode === "apply" ? l.b : l.d);
+    const targetTo = blockIndex(target, mode === "apply" ? r.b : r.d);
     const effectBlocks = new Map<Hunk, number[]>();
     const effectsAt = new Map<number, Hunk[]>();
     for (const [h, positions] of effects)
@@ -140,17 +143,19 @@ export function composeHunks(
       }
     const blocks = buildBlocks(schema, out, {
       allowEmpty: true,
-      onBlock(index, tokens) {
-        const touched = new Set(tokens.flatMap((position) => effectsAt.get(position) ?? []));
-        for (const h of touched) {
-          const indices = effectBlocks.get(h) ?? [];
-          indices.push(blockIndex(B, l.b) + blockDelta + index);
-          effectBlocks.set(h, indices);
-        }
-      },
+      onBlock: onEffect
+        ? (index, tokens) => {
+            const touched = new Set(tokens.flatMap((position) => effectsAt.get(position) ?? []));
+            for (const h of touched) {
+              const indices = effectBlocks.get(h) ?? [];
+              indices.push(targetFrom + blockDelta + index);
+              effectBlocks.set(h, indices);
+            }
+          }
+        : undefined,
     }).blocks;
     for (const h of effects.keys()) onEffect?.(h, effectBlocks.get(h) ?? []);
-    blockDelta += blocks.length - (blockIndex(B, r.b) - blockIndex(B, l.b));
+    blockDelta += blocks.length - (targetTo - targetFrom);
     patches.push({
       base: { from: blockIndex(B, l.b), to: blockIndex(B, r.b) },
       draft: { from: blockIndex(D, l.d), to: blockIndex(D, r.d) },

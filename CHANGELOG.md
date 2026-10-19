@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Apply records each conversation’s own changed passages rather than attributing every selected paragraph to every conversation.
+
 - The text merge reports original block correspondence through moves and deletions, plus the live words replaced by contested draft edits.
 
 - Preserve removal records when a document closes during Apply admission; retries keep their recorded result.

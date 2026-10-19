@@ -333,6 +333,7 @@ export interface MovedText {
   source: number[];
   /** The pasted tokens. */
   dropped: Tok[];
+  destination: number[]; // side token indices of the dropped paste
 }
 
 /**
@@ -414,7 +415,11 @@ export function dropMovedText(
     );
     if (draftPastedIt) continue;
     const droppedAt = new Set(run.map(([, k]) => k));
-    out.push({ source, dropped: run.map(([t]) => t) });
+    out.push({
+      source,
+      dropped: run.map(([t]) => t),
+      destination: run.map(([, k]) => h.sidx?.[k] ?? h.sfrom + k),
+    });
     if (reportOnly) continue;
     // Keep any paragraph start that only held the pasted text from becoming an empty paragraph.
     const keep = h.ins.map((_, k) => k).filter((k) => !droppedAt.has(k));

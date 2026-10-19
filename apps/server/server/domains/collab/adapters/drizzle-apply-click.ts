@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import {
   appendApplyRecord,
   applyBase,
-  countWords,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   rebase,
@@ -314,6 +313,37 @@ export function createDrizzleApplyClick(
                       if (!push) throw new Error("Missing Apply lineage");
                       const owners = click.owners;
                       const changes = trailBlockChanges(before.before, before.after);
+                      const ownersByBlock = new Map<string, typeof owners>();
+                      const effectOwners = new Map<string, typeof owners>();
+                      for (const effect of click.effects) {
+                        const key = `${effect.side}:${effect.index}`;
+                        effectOwners.set(key, [...(effectOwners.get(key) ?? []), ...effect.owners]);
+                      }
+                      for (const entry of merged.correspondence) {
+                        const reached = entry.sources.flatMap(
+                          (source) => effectOwners.get(`${source.side}:${source.index}`) ?? [],
+                        );
+                        const ids =
+                          entry.output === null
+                            ? entry.sources
+                                .filter((source) => source.side === "live")
+                                .map((source) => before.before[source.index]?.id)
+                            : [
+                                before.after[entry.output]?.id,
+                                ...entry.sources
+                                  .filter((source) => source.side === "live")
+                                  .map((source) => before.before[source.index]?.id),
+                              ];
+                        for (const id of ids)
+                          if (id)
+                            ownersByBlock.set(id, [...(ownersByBlock.get(id) ?? []), ...reached]);
+                      }
+                      for (const [id, owners] of ownersByBlock)
+                        ownersByBlock.set(id, [
+                          ...new Map(
+                            owners.map((owner) => [`${owner.threadId}:${owner.turnId}`, owner]),
+                          ).values(),
+                        ]);
                       await persistDurableTrailRecords(
                         [
                           {
@@ -328,9 +358,7 @@ export function createDrizzleApplyClick(
                                 documentId: command.documentId,
                                 changedBlocks: changes,
                                 receiptId,
-                                ownersByBlock: new Map(
-                                  changes.map((block) => [block.blockId, owners]),
-                                ),
+                                ownersByBlock,
                                 before: before.before.map((block) => ({
                                   hash: block.id,
                                   serialized: block.serialized,
@@ -360,17 +388,7 @@ export function createDrizzleApplyClick(
                             { threadId: owner.threadId, turnId: null },
                           ]),
                         );
-                      const overrode = merged.conflicts.reduce(
-                        (sum, conflict) =>
-                          sum +
-                          countWords(
-                            conflict.live
-                              .filter((token) => token.kind === "text")
-                              .map((token) => (token.kind === "text" ? token.ws + token.core : ""))
-                              .join(""),
-                          ),
-                        0,
-                      );
+                      const overrode = merged.overrode;
                       const answer: ApplyClickResult = {
                         status: "applied",
                         commandId: command.envelope.commandId,

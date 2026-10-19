@@ -25,7 +25,7 @@ function carrySources(kept: MergedTok[], other: MergedTok[]): MergedTok[] {
   ];
 }
 
-function subsequenceSources(kept: MergedTok[], other: MergedTok[]): MergedTok[] {
+export function subsequenceSources(kept: MergedTok[], other: MergedTok[]): MergedTok[] {
   let j = 0;
   return kept.map((token) => {
     if (j >= other.length || token.tok.key !== other[j].tok.key) return token;

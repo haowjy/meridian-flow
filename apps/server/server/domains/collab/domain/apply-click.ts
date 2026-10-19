@@ -4,7 +4,7 @@ import {
   applyRecordOf,
   applySpanPatches,
   classifyChanges,
-  composeGroups,
+  composeHunks,
   diffBlocks,
   projectReview,
   REVIEW_BASE_FRAGMENT,
@@ -36,6 +36,7 @@ export type CompiledClick = {
   patched: readonly PMNode[];
   record: ApplyEntry;
   owners: readonly TrailOwner[];
+  effects: { side: "base" | "draft"; index: number; owners: readonly TrailOwner[] }[];
 };
 export interface ApplyClickStore {
   closed(command: ApplyClickCommand): Promise<ApplyClickResult>;
@@ -120,14 +121,44 @@ export function compileClick(
           turnId: part.turnId,
         });
     }
+    const effects: CompiledClick["effects"] = [];
+    const selectedHunks = new Map<import("@meridian/agent-edit/diff").Hunk, TrailOwner[]>();
+    for (const group of projection.groups) {
+      if (!request.groupIds.includes(group.id)) continue;
+      const groupOwners = (classifications.get(group.id)?.members ?? []).flatMap((index) => {
+        const part = provenance.parts[index];
+        return part?.threadId && part.turnId
+          ? [{ threadId: part.threadId, turnId: part.turnId }]
+          : [];
+      });
+      for (const h of group.hunks) selectedHunks.set(projection.diff.hunks[h.index], groupOwners);
+    }
+    const selectedPatches = composeHunks(
+      schema,
+      projection.diff,
+      selectedHunks.keys(),
+      "apply",
+      (h, blocks) => {
+        const owners = selectedHunks.get(h) ?? [];
+        for (const index of blocks) effects.push({ side: "draft", index, owners });
+        const baseSide = projection.diff.base;
+        const deleted = new Set<number>();
+        for (let i = h.from; i < h.to; i++) {
+          const index = baseSide.blockOf[i];
+          if (
+            !blocks.length ||
+            (h.from <= baseSide.starts[index] && h.to >= baseSide.starts[index + 1])
+          )
+            deleted.add(index);
+        }
+        for (const index of deleted) effects.push({ side: "base", index, owners });
+      },
+    );
     return {
       schema,
       optimistic,
-      patched: applySpanPatches(
-        optimistic,
-        composeGroups(schema, projection, request.groupIds, "apply"),
-        "base",
-      ),
+      effects,
+      patched: applySpanPatches(optimistic, selectedPatches, "base"),
       record: { ...applyRecordOf(classifications, request.groupIds), commandId: request.commandId },
       owners: [...owners.values()],
     };

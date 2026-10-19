@@ -188,14 +188,14 @@ export function buildBlocks(
       if (t.kind === "text") {
         if (t.wsMarks && t.ws) {
           cur.inline.push(schema.text(t.ws, t.wsMarks), schema.text(t.core, t.marks));
-          cur.sources.push(index, index);
+          if (opts.onBlock) cur.sources.push(index, index);
         } else {
           cur.inline.push(schema.text(t.ws + t.core, t.marks));
-          cur.sources.push(index);
+          if (opts.onBlock) cur.sources.push(index);
         }
       } else {
         cur.inline.push(t.node);
-        cur.sources.push(index);
+        if (opts.onBlock) cur.sources.push(index);
       }
     }
   }

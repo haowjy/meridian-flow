@@ -37,6 +37,11 @@ kernel; they do not certify the replacement rebase scheduler.
   revealed in the transaction without replacing its identity.
 - Ordinary text Apply completes while another transaction holds the source
   namespace. Only hidden-create reveal needs that tree lock.
+- Two AI conversations applied in one click each retain only their own passage
+  in durable owning-turn receipts. Rows cover independent paragraphs, a live
+  move, a selected draft move, shared-paragraph authorship, deletion and an
+  unrelated multi-paragraph replacement. Every recorded change has navigation;
+  the other author's unrelated prose is absent.
 - An AI receipt's membership supplies committed live before/after trail text,
   navigation and explicit owner dirty signals.
 
