@@ -21,6 +21,26 @@ export function findItem(document: Y.Doc, id: Y.ID): Y.Item | null {
   return item instanceof Y.Item ? item : null;
 }
 
+/** Retained item spans intersecting a clock range; GC and unknown clocks are omitted. */
+export function* itemsInRange(
+  document: Y.Doc,
+  range: { client: number; clock: number; len: number },
+): Generator<{ item: Y.Item; clock: number; len: number }> {
+  const structs = document.store.clients.get(range.client);
+  const last = structs?.at(-1);
+  if (!structs || !last) return;
+  const end = Math.min(range.clock + range.len, last.id.clock + last.length);
+  const clock = Math.max(range.clock, structs[0].id.clock);
+  if (clock >= end) return;
+  for (let i = Y.findIndexSS(structs, clock); i < structs.length; i++) {
+    const item = structs[i];
+    if (item.id.clock >= end) break;
+    const from = Math.max(clock, item.id.clock);
+    const to = Math.min(end, item.id.clock + item.length);
+    if (item instanceof Y.Item && from < to) yield { item, clock: from, len: to - from };
+  }
+}
+
 /** Visible text-run edges, by item identity, for a host's nearest-survivor fallback. */
 export function textItemBoundaryPositions(text: Y.XmlText): Y.RelativePosition[] {
   const positions: Y.RelativePosition[] = [];
