@@ -82,21 +82,19 @@ export function createDocumentEditCommands(deps: {
       });
       const beforeBlocks = snapshotBlocks(toDocHandle(before), deps.options.model, links.codec);
       const afterBlocks = snapshotBlocks(toDocHandle(after), deps.options.model, links.codec);
-      const beforeByHash = new Map(beforeBlocks.map((block) => [block.hash, block.serialized]));
-      const afterHashes = new Set(afterBlocks.map((block) => block.hash));
+      const blockId = (block: { clientID: number; clock: number }) =>
+        `${block.clientID}:${block.clock}`;
+      const beforeById = new Map(beforeBlocks.map((block) => [blockId(block), block.body]));
+      const afterIds = new Set(afterBlocks.map(blockId));
       const receipt = renderReceipt(
         {
           commandName: command.command,
           writeId: result.writeId ?? "",
           durableWriteId: result.actionId,
-          touchedHashes: new Set(
-            afterBlocks
-              .filter((block) => beforeByHash.get(block.hash) !== block.serialized)
-              .map((block) => block.hash),
+          touchedBlocks: afterBlocks.filter(
+            (block) => beforeById.get(blockId(block)) !== block.body,
           ),
-          deletedHashes: new Set(
-            beforeBlocks.filter((block) => !afterHashes.has(block.hash)).map((block) => block.hash),
-          ),
+          deletedBlocks: beforeBlocks.filter((block) => !afterIds.has(blockId(block))),
         },
         beforeBlocks,
         afterBlocks,

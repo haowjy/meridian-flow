@@ -1,6 +1,7 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
+import type { BlockItemId } from "../model/block-hash.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
 import { weightedOrderedMatches } from "../ordered-matching.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
@@ -59,8 +60,8 @@ export interface ConcurrentDetectionResult {
 export interface EchoInput {
   before: readonly BlockSnapshot[];
   after: readonly BlockSnapshot[];
-  agentTouchedHashes: ReadonlySet<string>;
-  agentDeletedHashes: ReadonlySet<string>;
+  agentTouchedBlocks: readonly BlockItemId[];
+  agentDeletedBlocks: readonly BlockItemId[];
 }
 
 /** Nearby concurrent hunks are joined so the prose between them is visible too. */
@@ -470,12 +471,12 @@ export function computeEcho(input: EchoInput): ApplyEchoHunk[] {
   const echoIndexes = uniqueEchoIndexes(input);
   if (echoIndexes.length === 0) return [];
 
-  const beforeByHash = new Map(input.before.map((block) => [block.hash, block]));
+  const beforeById = new Map(input.before.map((block) => [blockIdentity(block), block]));
   const hunks = echoIndexes.flatMap((index): ApplyEchoHunk[] => {
     const block = input.after[index];
     if (!block) return [];
-    const previous = beforeByHash.get(block.hash);
-    const mode = !previous || previous.serialized !== block.serialized ? "full" : "truncated";
+    const previous = beforeById.get(blockIdentity(block));
+    const mode = !previous || previous.body !== block.body ? "full" : "truncated";
     return [
       {
         mode,
@@ -495,16 +496,16 @@ function uniqueEchoIndexes(input: EchoInput): number[] {
 }
 
 function changedBlockWindows(input: EchoInput): number[][] {
-  const afterIndex = new Map(input.after.map((block, index) => [block.hash, index]));
-  const beforeIndex = new Map(input.before.map((block, index) => [block.hash, index]));
+  const afterIndex = new Map(input.after.map((block, index) => [blockIdentity(block), index]));
+  const beforeIndex = new Map(input.before.map((block, index) => [blockIdentity(block), index]));
   const candidateIndexes = new Set<number>();
 
-  for (const hash of input.agentTouchedHashes) {
-    const index = afterIndex.get(hash);
+  for (const block of input.agentTouchedBlocks) {
+    const index = afterIndex.get(blockIdentity(block));
     if (index !== undefined) candidateIndexes.add(index);
   }
-  for (const hash of input.agentDeletedHashes) {
-    const deletedIndex = beforeIndex.get(hash);
+  for (const block of input.agentDeletedBlocks) {
+    const deletedIndex = beforeIndex.get(blockIdentity(block));
     if (deletedIndex === undefined) continue;
     for (const index of adjacentSurvivorIndexes(input.before, afterIndex, deletedIndex)) {
       candidateIndexes.add(index);
@@ -524,14 +525,14 @@ function adjacentSurvivorIndexes(
 ): number[] {
   const indexes: number[] = [];
   for (let index = deletedIndex - 1; index >= 0; index -= 1) {
-    const survivor = afterIndex.get(before[index]?.hash ?? "");
+    const survivor = afterIndex.get(blockIdentity(before[index]));
     if (survivor !== undefined) {
       indexes.push(survivor);
       break;
     }
   }
   for (let index = deletedIndex + 1; index < before.length; index += 1) {
-    const survivor = afterIndex.get(before[index]?.hash ?? "");
+    const survivor = afterIndex.get(blockIdentity(before[index]));
     if (survivor !== undefined) {
       indexes.push(survivor);
       break;
@@ -606,4 +607,8 @@ function isOwnUpdate(
   return (
     origin.type === "human" && ownOrigin?.type === "human" && origin.userId === ownOrigin.userId
   );
+}
+
+function blockIdentity(block: BlockItemId): string {
+  return `${block.clientID}:${block.clock}`;
 }

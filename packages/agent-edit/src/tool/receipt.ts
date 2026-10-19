@@ -2,6 +2,7 @@
 
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
+import type { BlockItemId } from "../model/block-hash.js";
 import type { StagedWriteRejectionReason } from "../ports/document-coordinator.js";
 import type { CommandLinks } from "./command-links.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
@@ -18,8 +19,8 @@ interface ReceiptIdentity {
   rejectionReason?: StagedWriteRejectionReason;
 }
 interface AcceptedEdit extends ReceiptIdentity {
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
+  touchedBlocks: readonly BlockItemId[];
+  deletedBlocks: readonly BlockItemId[];
   copied?: CopySummary;
 }
 interface ReceiptCut {
@@ -56,11 +57,12 @@ export function renderReceipt(
   after: readonly BlockSnapshot[],
   outcome: Omit<ApplySuccessResponseInput, "echo" | "deletedBlocks" | "copied">,
 ): InternalWriteResult {
+  const deletedIds = new Set(edit.deletedBlocks.map((id) => `${id.clientID}:${id.clock}`));
   const echo = computeEcho({
     before,
     after,
-    agentTouchedHashes: edit.touchedHashes,
-    agentDeletedHashes: edit.deletedHashes,
+    agentTouchedBlocks: edit.touchedBlocks,
+    agentDeletedBlocks: edit.deletedBlocks,
   });
   return formatApplySuccess({
     ...outcome,
@@ -73,7 +75,9 @@ export function renderReceipt(
               blocks: after.map((block) => truncateSerializedBlock(block.serialized)),
             },
           ],
-    deletedBlocks: [...edit.deletedHashes],
+    deletedBlocks: before
+      .filter((block) => deletedIds.has(`${block.clientID}:${block.clock}`))
+      .map((block) => block.hash),
     ...(after.length <= 1 && after.every((block) => !block.body.trim())
       ? { documentEmpty: true }
       : {}),

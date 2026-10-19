@@ -6,6 +6,7 @@ import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { ObservationRequest } from "../frontier.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
+import type { BlockItemId } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type {
   DiscardedWriteReason,
@@ -219,6 +220,8 @@ export interface ResponseStageUpdateInput {
   createdDocumentBeforeCommit: boolean;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
+  touchedBlocks: readonly BlockItemId[];
+  deletedBlocks: readonly BlockItemId[];
   /** Runtime state immediately before this staged update was applied. */
   preOwnSnapshot: Uint8Array;
   interactionContext?: InteractionContext;
@@ -240,6 +243,8 @@ interface StagedResponseUpdate extends JournaledUpdate {
   stageSeq: number;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
+  touchedBlocks: readonly BlockItemId[];
+  deletedBlocks: readonly BlockItemId[];
   preOwnSnapshot: Uint8Array;
   copied?: CopySummary;
 }
@@ -1779,6 +1784,8 @@ export function createResponseCommitter(deps: {
       turnId: input.turnId,
       actor: input.actor,
       stageSeq: buffer.nextStageSeq,
+      touchedBlocks: input.touchedBlocks.map(({ clientID, clock }) => ({ clientID, clock })),
+      deletedBlocks: input.deletedBlocks.map(({ clientID, clock }) => ({ clientID, clock })),
       touchedHashes: new Set(input.touchedHashes),
       deletedHashes: new Set(input.deletedHashes),
       preOwnSnapshot: input.preOwnSnapshot,

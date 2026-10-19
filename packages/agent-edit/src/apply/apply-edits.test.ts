@@ -145,8 +145,10 @@ describe("mutation and echo composition", () => {
     const echo = computeEcho({
       before,
       after: snapshotBlocks(local, baseModel, codec),
-      agentTouchedHashes: new Set(result.changedBlocks),
-      agentDeletedHashes: new Set(result.deletedBlocks),
+      agentTouchedBlocks: snapshotBlocks(local, baseModel, codec).filter((block) =>
+        result.changedBlocks.includes(block.hash),
+      ),
+      agentDeletedBlocks: before.filter((block) => result.deletedBlocks.includes(block.hash)),
     });
     expect(concurrent.info?.human).toEqual([remoteHash]);
     expect(echo).toEqual([
@@ -269,7 +271,7 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
 });
 
 describe("computeEcho", () => {
-  it("deduplicates overlapping windows in document order before rendering", () => {
+  it("uses item identity across display-prefix changes and deduplicates overlapping windows", () => {
     const before = [
       block("A", "ctx0"),
       block("B", "old1"),
@@ -280,8 +282,8 @@ describe("computeEcho", () => {
     ];
     const after = [
       block("A", "ctx0"),
-      block("B", "new1"),
-      block("C", "ctx2"),
+      { ...block("B", "new1"), hash: "B2", serialized: "B2|new1" },
+      { ...block("C", "ctx2"), hash: "C2", serialized: "C2|ctx2" },
       block("D", "new3"),
       block("E", "ctx4"),
     ];
@@ -289,13 +291,13 @@ describe("computeEcho", () => {
     const echo = computeEcho({
       before,
       after,
-      agentTouchedHashes: new Set(["B", "D"]),
-      agentDeletedHashes: new Set(["X"]),
+      agentTouchedBlocks: before.filter((block) => ["B", "D"].includes(block.hash)),
+      agentDeletedBlocks: before.filter((block) => block.hash === "X"),
     });
     const lines = echo.flatMap((hunk) => hunk.blocks);
 
-    expect(lines).toEqual(["A|ctx0", "B|new1", "C|ctx2", "D|new3", "E|ctx4"]);
-    expect(lines.map((line) => line.split("|")[0])).toEqual(["A", "B", "C", "D", "E"]);
+    expect(lines).toEqual(["A|ctx0", "B2|new1", "C2|ctx2", "D|new3", "E|ctx4"]);
+    expect(lines.map((line) => line.split("|")[0])).toEqual(["A", "B2", "C2", "D", "E"]);
     expect(new Set(lines.map((line) => line.split("|")[0])).size).toBe(lines.length);
     expect(echo.map((hunk) => hunk.mode)).toEqual([
       "truncated",

@@ -32,7 +32,10 @@ handle or journal row exists.
 
 `applyEdits` mutates from typed nodes and returns ordered touched, deleted, and
 inserted identities. It never parses or serializes. The write owner snapshots,
-merges concurrent updates, and renders the echo. Preflight validates the full
+merges concurrent updates, and renders the echo. Echo targeting and deletion
+anchors carry Yjs item identities, not display hashes: the same block can have
+a different unique prefix among the room's siblings. Only the rendered cut
+chooses the display hash. Preflight validates the full
 IR and each block reference before a transaction changes Yjs. Deleting the only
 remaining block clears its text while preserving the required ProseMirror
 container.
@@ -70,6 +73,12 @@ visible, so the fold visits only those structs plus one `Y.snapshot` walk
 every deleted range of the snapshot: a delete-only staged update allocates no
 clock, so the state vector alone accepts a refused staged deletion. An absent,
 undecodable or uncontained previous frontier is the empty snapshot.
+
+`planningSnapshot` validates the room and snapshot containment. `createPlanningView`
+constructs an explicit gc-off snapshot target and replays the supplied reply updates;
+either pending structs or pending delete ranges invalidates the view. These primitives
+are not yet connected to the write door. `changedSince` and `changedWords` share the
+same flipped-range walk; word counts clip each string item to the flipped clock range.
 
 The host names rooms; agent-edit carries the label. When the host passes
 `WriteContext.observe = { room, prev }`, read results and write receipts carry
