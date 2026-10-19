@@ -120,6 +120,10 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
+        derivationLock: (
+          await import("../adapters/drizzle-derivation-lock.js")
+        ).createDrizzleDerivationLock(db),
+        holdDestination: (id: string) => runtime.runClaim.hold(id),
         inheritNotes: async () => "ready" as const,
         effectiveWriteMode: (id: string) => runtime.delivery.effectiveWriteMode(id as never),
       };
@@ -371,7 +375,7 @@ else
       ).resolves.toMatchObject({ thread: { id }, created: false });
     });
 
-    it("returns the row when competing sources hit the same ID insert", async () => {
+    it("serializes competing sources creating the same destination ID", async () => {
       const fixture = await setupSource();
       const otherSource = await repos.threads.create({
         aiWriteMode: "direct",
@@ -393,27 +397,10 @@ else
         status: "complete",
       });
 
-      let waitingCreators = 0;
-      let releaseCreators: (() => void) | undefined;
-      const bothCreating = new Promise<void>((resolve) => {
-        releaseCreators = resolve;
-      });
-      const threads = {
-        ...fixture.deps.threads,
-        async createDerivedPrimary(
-          input: Parameters<typeof fixture.deps.threads.createDerivedPrimary>[0],
-        ) {
-          waitingCreators += 1;
-          if (waitingCreators === 2) releaseCreators?.();
-          await bothCreating;
-          return fixture.deps.threads.createDerivedPrimary(input);
-        },
-      };
-      const deps = { ...fixture.deps, threads };
       const id = crypto.randomUUID();
       const results = await Promise.all([
-        createFork(fixture.source, deps, { id, originTurnId: fixture.firstTurn.id }),
-        createFork(otherSource, deps, { id, originTurnId: otherTurn.id }),
+        createFork(fixture.source, fixture.deps, { id, originTurnId: fixture.firstTurn.id }),
+        createFork(otherSource, fixture.deps, { id, originTurnId: otherTurn.id }),
       ]);
 
       expect(results.map((result) => result.thread.id)).toEqual([id, id]);

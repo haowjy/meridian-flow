@@ -24,7 +24,7 @@ Returns the destination Thread (201 new, 200 existing). Reusing an id is a
 no-op when the row belongs to the same owner/project and is a primary handoff.
 Changed selection arguments do not overwrite it. Other reuse returns 409.
 
-Creation uses this order: idempotent destination lookup; acquire the
+Creation/replay first acquires a cross-process lock keyed by the destination, held through notes copying. Under that lock: idempotent destination lookup; acquire the
 destination's `RunClaim.hold`; create the destination, pending system seed S,
 and source `agent.handoff` event in one transaction; after commit, await
 best-effort notes copying inside the brief service’s registered cancellation lifecycle; then generate the detached brief. The

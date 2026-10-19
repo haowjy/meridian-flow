@@ -1,5 +1,4 @@
 import { createNotesStepAddresses } from "./model-tools/notes-step-addresses.js";
-import { createThreadNotesCopy } from "../domains/context/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -66,6 +65,7 @@ import {
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createRemovalRecords,
+  createThreadNotesCopy,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
@@ -240,8 +240,10 @@ import { readThreadActivity } from "../domains/threads/domain/thread-activity.js
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  createDrizzleDerivationLock,
   createDrizzleTopPrimaryChatResolver,
   createInMemoryEventJournalWriter,
+  type DerivationLock,
   requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
@@ -263,6 +265,7 @@ import {
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
+import { KeyedMutex } from "../shared/keyed-mutex.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
@@ -322,6 +325,8 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   handoffBriefs: HandoffBriefs;
+  derivationLock: DerivationLock;
+  holdDerivationDestination: HandoffBriefs["hold"];
   inheritThreadNotes(
     sourceId: ThreadId,
     destinationId: ThreadId,
@@ -361,6 +366,7 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 }
 
 export type ProductionAppPorts = {
+  derivationLock: DerivationLock;
   inheritThreadNotes: AppServices["inheritThreadNotes"];
   db: Database;
   /** Detached work any port started; the composed app drains it at shutdown. */
@@ -630,8 +636,9 @@ export async function createProductionAppPorts(input: {
     destinationId: ThreadId,
     cancellation?: AbortSignal,
   ): Promise<"ready" | "cancelled"> {
-    const deadline = Date.now() + 12_000;
-    const timeout = AbortSignal.timeout(12_000);
+    const timeoutMs = 12_000;
+    const deadline = Date.now() + timeoutMs;
+    const timeout = AbortSignal.timeout(timeoutMs);
     const signal = cancellation ? AbortSignal.any([cancellation, timeout]) : timeout;
     try {
       await withDatabaseSignal(signal, async () => {
@@ -730,6 +737,7 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
+    derivationLock: createDrizzleDerivationLock(db),
     inheritThreadNotes,
     backgroundTasks,
     runClaim,
@@ -1228,6 +1236,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     recovery,
     handoffBriefs,
+    derivationLock: ports.derivationLock,
+    holdDerivationDestination: handoffBriefs.hold,
     inheritThreadNotes: ports.inheritThreadNotes,
     userTurnAdmission,
     runClaim: runClaim,
@@ -1268,6 +1278,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 }
 
 export function createInMemoryAppServices(): AppServices {
+  const derivations = new KeyedMutex();
   const backgroundTasks = createDetachedWorkTracker();
   const transactionOwner = new InMemoryTransactionOwner();
   const threadRepos = createInMemoryRepositories({
@@ -1727,6 +1738,11 @@ export function createInMemoryAppServices(): AppServices {
     delivery,
     recovery,
     handoffBriefs,
+    derivationLock: {
+      withDestination: (id, operation) =>
+        derivations.run(id, () => operation(new AbortController().signal)),
+    },
+    holdDerivationDestination: (id) => runClaim.hold(id),
     inheritThreadNotes: async () => "ready",
     userTurnAdmission: {
       async admit(input) {

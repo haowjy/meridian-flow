@@ -16,6 +16,7 @@ import {
   type WorkContextNotices,
   type WorkRepository,
 } from "../../projects/index.js";
+import type { DerivationLock } from "../ports/derivation-lock.js";
 import type { EventJournalWriter } from "../ports/event-journal.js";
 import type { HandoffBriefLauncher } from "../ports/handoff-brief-launcher.js";
 import type { InternalThreadRepositories, ThreadImageInclusion } from "../ports/repositories.js";
@@ -26,6 +27,8 @@ import { loadThreadConversationContext } from "./thread-conversation-context.js"
 import { derivationSeedMetadata, handoffSeedMetadata } from "./turn-metadata.js";
 
 export interface ThreadAgentSwapDeps {
+  derivationLock: DerivationLock;
+  holdDestination: HandoffBriefLauncher["hold"];
   threads: InternalThreadRepositories["threads"];
   threadWorks: InternalThreadRepositories["threadWorks"];
   turns: InternalThreadRepositories["turns"];
@@ -115,109 +118,114 @@ export async function handoffThreadAgent(
     agentSelection: AgentSelection;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
-  const existing = await findExistingDerivationBeforeSourceLoad(deps, input, "handoff");
-  if (existing) return { thread: existing, created: false };
-  const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
-  if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "handoff");
-  const claim = await deps.handoffBriefs.hold(input.id as ThreadId);
-  if (!claim) throw new HandoffInProgressError();
-  try {
-    let seedTurnId: TurnId | null = null;
-    const result = await deps.transaction(async () => {
-      const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
-      if (!lockedSource || lockedSource.deletedAt) throw new DerivedSourceNotFoundError();
-      const existing = await findIdempotentDerivation(
-        deps,
-        lockedSource.projectId,
-        input,
-        "handoff",
-      );
-      if (existing) return { thread: existing, created: false };
-      const cutoff = await requireDerivationCutoff(
-        deps,
-        lockedSource,
-        input.originTurnId,
-        "handoff",
-      );
-      const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
-      if (!owner) throw new DerivedSourceNotFoundError();
-      const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
-      const binding = await resolveDerivedBinding(
-        deps,
-        lockedSource,
-        input.userId,
-        input.agentSelection,
-      );
-      const sameRevision =
-        (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId;
-      const inheritedBake = sameRevision ? await bakeInEffect(deps, lockedSource) : null;
-      const result = await deps.threads.createDerivedPrimary({
-        id: input.id as ThreadId,
-        userId: lockedSource.userId,
-        projectId: lockedSource.projectId,
-        workId,
-        aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
-        source: owner,
-        initialPromptBakeId: inheritedBake?.id ?? null,
-        derivationSourceThreadId: lockedSource.id as ThreadId,
-        originType: "handoff",
-        originTurnId: cutoff.turn.id as TurnId,
-        title: `Handoff from ${lockedSource.title ?? "thread"}`,
-      });
-      if (!result.created)
-        return {
-          thread: requireIdempotentDerivation(
-            result.thread,
-            lockedSource.projectId,
-            input,
-            "handoff",
-          ),
-          created: false,
-        };
-      const target = await bindDerivedPrimary(deps, result.thread, workId, binding);
-      await inheritEditingDocuments(deps, lockedSource, target);
-      const seedId = crypto.randomUUID();
-      const seed = await deps.turns.create({
-        id: seedId,
-        threadId: target.id,
-        role: "system",
-        origin: "system",
-        status: "pending",
-        metadata: handoffSeedMetadata({
+  return deps.derivationLock.withDestination(input.id as ThreadId, async (derivationSignal) => {
+    const existing = await findExistingDerivationBeforeSourceLoad(deps, input, "handoff");
+    if (existing) return { thread: existing, created: false };
+    const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
+    if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "handoff");
+    const claim = await deps.handoffBriefs.hold(input.id as ThreadId);
+    if (!claim) throw new HandoffInProgressError();
+    try {
+      let seedTurnId: TurnId | null = null;
+      const result = await deps.transaction(async () => {
+        const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
+        if (!lockedSource || lockedSource.deletedAt) throw new DerivedSourceNotFoundError();
+        const existing = await findIdempotentDerivation(
+          deps,
+          lockedSource.projectId,
+          input,
+          "handoff",
+        );
+        if (existing) return { thread: existing, created: false };
+        const cutoff = await requireDerivationCutoff(
+          deps,
+          lockedSource,
+          input.originTurnId,
+          "handoff",
+        );
+        const owner = await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId);
+        if (!owner) throw new DerivedSourceNotFoundError();
+        const workId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
+        const binding = await resolveDerivedBinding(
+          deps,
+          lockedSource,
+          input.userId,
+          input.agentSelection,
+        );
+        const sameRevision =
+          (binding.revision?.id ?? null) === lockedSource.agentDefinitionRevisionId;
+        const inheritedBake = sameRevision ? await bakeInEffect(deps, lockedSource) : null;
+        const result = await deps.threads.createDerivedPrimary({
+          id: input.id as ThreadId,
+          userId: lockedSource.userId,
+          projectId: lockedSource.projectId,
+          workId,
+          aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
+          source: owner,
+          initialPromptBakeId: inheritedBake?.id ?? null,
+          derivationSourceThreadId: lockedSource.id as ThreadId,
+          originType: "handoff",
+          originTurnId: cutoff.turn.id as TurnId,
+          title: `Handoff from ${lockedSource.title ?? "thread"}`,
+        });
+        if (!result.created)
+          return {
+            thread: requireIdempotentDerivation(
+              result.thread,
+              lockedSource.projectId,
+              input,
+              "handoff",
+            ),
+            created: false,
+          };
+        const target = await bindDerivedPrimary(deps, result.thread, workId, binding);
+        await inheritEditingDocuments(deps, lockedSource, target);
+        const seedId = crypto.randomUUID();
+        const seed = await deps.turns.create({
+          id: seedId,
+          threadId: target.id,
+          role: "system",
+          origin: "system",
+          status: "pending",
+          metadata: handoffSeedMetadata({
+            sourceThreadId: owner.id,
+            sourceRef: owner.ref ?? owner.id,
+            sourceTitle: owner.title,
+            cutoffTurnId: cutoff.turn.id,
+            sourceNotesUri: notesRootUri(lockedSource),
+          }),
+        });
+        await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
+        seedTurnId = seed.id;
+        await deps.eventWriter.appendEvent(lockedSource.id, {
+          type: "agent.handoff",
           sourceThreadId: owner.id,
-          sourceRef: owner.ref ?? owner.id,
-          sourceTitle: owner.title,
-          cutoffTurnId: cutoff.turn.id,
-          sourceNotesUri: notesRootUri(lockedSource),
-        }),
+          targetThreadId: target.id,
+          targetAgentSlug: binding.revision?.slug ?? null,
+          originTurnId: cutoff.turn.id,
+        });
+        return { thread: target, created: true };
       });
-      await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
-      seedTurnId = seed.id;
-      await deps.eventWriter.appendEvent(lockedSource.id, {
-        type: "agent.handoff",
-        sourceThreadId: owner.id,
-        targetThreadId: target.id,
-        targetAgentSlug: binding.revision?.slug ?? null,
-        originTurnId: cutoff.turn.id,
-      });
-      return { thread: target, created: true };
-    });
-    if (result.created && seedTurnId) {
-      // After-commit callbacks run concurrently. Launch only after copying finishes,
-      // outside the creation transaction, so the brief and first run see the new notes.
-      await deps.handoffBriefs.launchAfterCommit({
-        threadId: result.thread.id as ThreadId,
-        seedTurnId,
-        claim,
-        prepare: (signal) =>
-          deps.inheritNotes(source.id as ThreadId, result.thread.id as ThreadId, signal),
-      });
-    } else await claim.release();
-    return result;
-  } catch (error) {
-    await claim.release();
-    throw error;
-  }
+      if (result.created && seedTurnId) {
+        // Register cancellation before preparation; generation starts after copying settles.
+        await deps.handoffBriefs.launchAfterCommit({
+          threadId: result.thread.id as ThreadId,
+          seedTurnId,
+          claim,
+          prepare: (signal) =>
+            deps.inheritNotes(
+              source.id as ThreadId,
+              result.thread.id as ThreadId,
+              AbortSignal.any([signal, derivationSignal]),
+            ),
+        });
+      } else await claim.release();
+      return result;
+    } catch (error) {
+      await claim.release();
+      throw error;
+    }
+  });
 }
 
 export async function forkThreadAgent(
@@ -229,91 +237,116 @@ export async function forkThreadAgent(
     originTurnId: string;
   },
 ): Promise<{ thread: Thread; created: boolean }> {
-  const existing = await findExistingDerivationBeforeSourceLoad(deps, input);
-  if (existing) return { thread: existing, created: false };
-
-  const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
-  if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "fork");
-  const derived = await deps.transaction(async () => {
-    // The source journal is mutated after the new thread acquires its Work membership.
-    const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
-    if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
-
-    const existing = await findIdempotentDerivation(deps, lockedSource.projectId, input);
+  return deps.derivationLock.withDestination(input.id as ThreadId, async (derivationSignal) => {
+    const existing = await findExistingDerivationBeforeSourceLoad(deps, input);
     if (existing) return { thread: existing, created: false };
 
-    const cutoff = await requireDerivationCutoff(deps, lockedSource, input.originTurnId, "fork");
-    const inheritedBake = await bakeAt(deps, cutoff.turn);
-    const sourceWorkId = await requirePrimaryWorkId(deps, lockedSource.id, lockedSource.projectId);
-    const binding = await resolveDerivedBinding(deps, lockedSource, input.userId);
-    const result = await deps.threads.createDerivedPrimary({
-      id: input.id as ThreadId,
-      userId: lockedSource.userId,
-      projectId: lockedSource.projectId,
-      workId: sourceWorkId,
-      aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
-      source: lockedSource,
-      derivationSourceThreadId: lockedSource.id as ThreadId,
-      originType: "fork",
-      originTurnId: cutoff.turn.id as TurnId,
-      title: `Fork from ${lockedSource.title ?? "thread"}`,
-      initialPromptBakeId: inheritedBake?.id ?? null,
-    });
-    if (!result.created) {
-      return {
-        thread: requireIdempotentDerivation(result.thread, lockedSource.projectId, input),
-        created: false,
-      };
+    const claim = await deps.holdDestination(input.id as ThreadId);
+    if (!claim) throw new DerivedThreadConflictError();
+    const controller = new AbortController();
+    const lost = claim.onLost(() => controller.abort(new Error("Destination claim lost")));
+    const signal = AbortSignal.any([derivationSignal, controller.signal]);
+    try {
+      const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
+      if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "fork");
+      const derived = await deps.transaction(async () => {
+        // The source journal is mutated after the new thread acquires its Work membership.
+        const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
+        if (!lockedSource || lockedSource.deletedAt)
+          throw new Error("Source thread no longer exists");
+
+        const existing = await findIdempotentDerivation(deps, lockedSource.projectId, input);
+        if (existing) return { thread: existing, created: false };
+
+        const cutoff = await requireDerivationCutoff(
+          deps,
+          lockedSource,
+          input.originTurnId,
+          "fork",
+        );
+        const inheritedBake = await bakeAt(deps, cutoff.turn);
+        const sourceWorkId = await requirePrimaryWorkId(
+          deps,
+          lockedSource.id,
+          lockedSource.projectId,
+        );
+        const binding = await resolveDerivedBinding(deps, lockedSource, input.userId);
+        const result = await deps.threads.createDerivedPrimary({
+          id: input.id as ThreadId,
+          userId: lockedSource.userId,
+          projectId: lockedSource.projectId,
+          workId: sourceWorkId,
+          aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
+          source: lockedSource,
+          derivationSourceThreadId: lockedSource.id as ThreadId,
+          originType: "fork",
+          originTurnId: cutoff.turn.id as TurnId,
+          title: `Fork from ${lockedSource.title ?? "thread"}`,
+          initialPromptBakeId: inheritedBake?.id ?? null,
+        });
+        if (!result.created) {
+          return {
+            thread: requireIdempotentDerivation(result.thread, lockedSource.projectId, input),
+            created: false,
+          };
+        }
+        const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
+        // The fork copies the turns that invoked these skills, `skills://` headers included (D64).
+        for (const [slug, reference] of Object.entries(binding.invokedSkills)) {
+          await deps.agentRevisions.recordInvokedSkill(target.id, slug, reference);
+        }
+        const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
+        const turnOrder = new Map(cutoff.turns.map((turn, index) => [turn.id, index]));
+        const decisionsAtCutoff: ThreadImageInclusion[] = [];
+        for (const decision of await deps.imageInclusions.listByThread(
+          lockedSource.id as ThreadId,
+        )) {
+          const rank = turnOrder.get(decision.decisionTurnId);
+          if (!inheritedBlockIds.has(decision.blockId) || rank === undefined) continue;
+          decisionsAtCutoff.push(decision);
+        }
+        decisionsAtCutoff.sort(
+          (left, right) =>
+            (turnOrder.get(left.decisionTurnId) ?? -1) -
+            (turnOrder.get(right.decisionTurnId) ?? -1),
+        );
+        for (const decision of decisionsAtCutoff) {
+          const event = {
+            type: "image.inclusion_decided" as const,
+            threadId: target.id,
+            blockId: decision.blockId,
+            decisionTurnId: decision.decisionTurnId,
+            included: decision.included,
+          };
+          await projectImageInclusionDecision(deps, event);
+          await deps.eventWriter.appendEvent(target.id as ThreadId, event);
+        }
+        await inheritEditingDocuments(deps, lockedSource, target);
+        // Inherited uploads stay with the cutoff owner; copied notes come from the acted-on chat.
+        const owner =
+          (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
+        await seedSystemTurn(
+          deps,
+          target,
+          `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id, notesRootUri(lockedSource))}`,
+        );
+        await deps.eventWriter.appendEvent(source.id as ThreadId, {
+          type: "agent.fork",
+          sourceThreadId: source.id,
+          targetThreadId: target.id,
+          targetAgentSlug: binding.revision?.slug ?? null,
+          originTurnId: cutoff.turn.id,
+        });
+        return { thread: target, created: true };
+      });
+      if (derived.created)
+        await deps.inheritNotes(source.id as ThreadId, derived.thread.id as ThreadId, signal);
+      return derived;
+    } finally {
+      lost();
+      await claim.release();
     }
-    const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
-    // The fork copies the turns that invoked these skills, `skills://` headers included (D64).
-    for (const [slug, reference] of Object.entries(binding.invokedSkills)) {
-      await deps.agentRevisions.recordInvokedSkill(target.id, slug, reference);
-    }
-    const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
-    const turnOrder = new Map(cutoff.turns.map((turn, index) => [turn.id, index]));
-    const decisionsAtCutoff: ThreadImageInclusion[] = [];
-    for (const decision of await deps.imageInclusions.listByThread(lockedSource.id as ThreadId)) {
-      const rank = turnOrder.get(decision.decisionTurnId);
-      if (!inheritedBlockIds.has(decision.blockId) || rank === undefined) continue;
-      decisionsAtCutoff.push(decision);
-    }
-    decisionsAtCutoff.sort(
-      (left, right) =>
-        (turnOrder.get(left.decisionTurnId) ?? -1) - (turnOrder.get(right.decisionTurnId) ?? -1),
-    );
-    for (const decision of decisionsAtCutoff) {
-      const event = {
-        type: "image.inclusion_decided" as const,
-        threadId: target.id,
-        blockId: decision.blockId,
-        decisionTurnId: decision.decisionTurnId,
-        included: decision.included,
-      };
-      await projectImageInclusionDecision(deps, event);
-      await deps.eventWriter.appendEvent(target.id as ThreadId, event);
-    }
-    await inheritEditingDocuments(deps, lockedSource, target);
-    // Inherited uploads stay with the cutoff owner; copied notes come from the acted-on chat.
-    const owner =
-      (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
-    await seedSystemTurn(
-      deps,
-      target,
-      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id, notesRootUri(lockedSource))}`,
-    );
-    await deps.eventWriter.appendEvent(source.id as ThreadId, {
-      type: "agent.fork",
-      sourceThreadId: source.id,
-      targetThreadId: target.id,
-      targetAgentSlug: binding.revision?.slug ?? null,
-      originTurnId: cutoff.turn.id,
-    });
-    return { thread: target, created: true };
   });
-  if (derived.created)
-    await deps.inheritNotes(source.id as ThreadId, derived.thread.id as ThreadId);
-  return derived;
 }
 
 /** Same-revision derivations retain configuration even if the catalog has moved on. */

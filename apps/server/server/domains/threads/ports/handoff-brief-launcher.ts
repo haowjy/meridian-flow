@@ -8,6 +8,7 @@ export interface HandoffBriefHold {
 
 export interface HandoffBriefLauncher {
   hold(threadId: ThreadId): Promise<HandoffBriefHold | null>;
+  /** Resolves after preparation; model generation stays detached. */
   launchAfterCommit(input: {
     threadId: ThreadId;
     seedTurnId: TurnId;

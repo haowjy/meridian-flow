@@ -1,3 +1,5 @@
+export { createDrizzleDerivationLock } from "./adapters/drizzle-derivation-lock.js";
+export type { DerivationLock } from "./ports/derivation-lock.js";
 /** Barrel: re-exports the threads domain's public surface — drizzle + in-memory repositories and event journals, the thread event hub, snapshot builder, access gate, and port types. */
 
 export type { DrizzleDatabase } from "../../shared/drizzle-transaction.js";

@@ -18,6 +18,12 @@ the claim without generation. It remains detached (creation does not
 wait for a model-generated brief). After-commit callbacks run concurrently,
 so registering copy and launch callbacks in order would not sequence them.
 
+Same-destination create/get holds a session advisory lock through the post-commit
+copy phase, before any existing-row return. Replays wait for settlement and never
+retry copying. Forks also hold the ordinary destination run claim until copying
+settles, so an early send cannot start the first model run. The derivation lock
+is distinct from the run claim: handoff generation retains only the latter.
+
 - A fork keeps the source's retained revision, resolved configuration,
   invocation overlay, and bake at its cutoff. It has no Agent selection of its
   own. Same owner/project plus the client id, `originType = fork`, and

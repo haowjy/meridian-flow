@@ -7,7 +7,7 @@ brief is not a run or inbox item. Creation and HTTP contracts live in the
 
 ## Claim and seed lifecycle
 
-Handoff first performs an idempotent destination lookup. If absent, it holds
+Handoff holds the destination derivation lock through lookup, creation and notes preparation, independently of the run claim. It first performs an idempotent destination lookup. If absent, it holds
 the destination `RunClaim` before creating the thread, S, and source event in
 one transaction. The held claim has no lease. A competing holder creates
 neither seed nor thread and returns `handoff_in_progress`; Retry uses the same

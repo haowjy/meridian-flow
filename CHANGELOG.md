@@ -30,6 +30,8 @@
 
 - Editor link identity, wikilink ranking, namespace availability and recent-document routes retain complete thread-folder locations.
 - Forks and handoffs copy the originating chat’s notes before creation returns, including named Work and No Work chats. Copying is best-effort and create-only; the seed names the originals even if copying fails. Handoff briefs launch after copying, subagents do not copy, and replay never retries copying.
+- Concurrent fork and handoff creation replays wait for the creating request’s notes copy to settle across server processes. Forks hold the normal run claim during copying, so their first reply cannot run early. Settled failures remain no-retry.
+
 - Notes inheritance has one 12-second deadline covering reads, installation and cleanup. Stop cancels handoff copying before the brief starts. Cancellation rolls back installation before releasing the destination; copy timeout leaves the handoff seed interrupted with its original-notes address.
 
 - Forks and handoffs copy the originating chat’s notes before creation returns, including named Work and No Work chats. Copying is best-effort and create-only, with both chat ids retained in failure diagnostics; the seed names the originals even if copying fails. Handoff briefs launch after copying, subagents do not copy, and replay never retries copying.

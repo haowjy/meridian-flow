@@ -231,7 +231,25 @@ UUIDs and retain each request body unchanged for replay:
    Observe one committed destination catalog publication for the complete
    tree, not one per file. Reconnect and reload see the same tree and title
    labels. No source document is moved or relabelled.
-10. **Populated migration.** Apply migrations 0079–0080 to populated derivation
+10. **Copy lifecycle and replay.** In a separate SQL session, hold
+    `document_yjs_checkpoints` with `ACCESS EXCLUSIVE`. Start creation using a
+    client UUID, then replay that body once the destination row commits. Both
+    requests must remain pending; a fork send accepted during copying has no
+    execution lease yet. Release the lock before the 12-second deadline:
+    creation/replay settle, and the first model read sees copied notes. Hold
+    it past the deadline instead: no partial root survives, copying never
+    resumes after unlock, and a settled replay does not retry. Repeat with a
+    40-second document-insert trigger to exercise installation rollback.
+    For handoff, start replay asynchronously and Stop the known pending seed
+    before awaiting replay (replay now deliberately waits for copying). Both
+    requests settle and a new message completes while the source lock is still
+    held. Without Stop, deadline releases ownership and the seed is reported
+    interrupted with its original-notes pointer. A separate process holding
+    the destination's advisory key must also delay replay until it releases.
+    Exercise tracked/binary reads and failed-object cleanup against the same
+    signal. Native cancellation must drain rollback, including a deferred
+    constraint waiting in COMMIT, before installation returns.
+11. **Populated migration.** Apply migrations 0079–0080 to populated derivation
     fixtures exceeding the 500-row page size. Every historical fork/handoff
     gets its origin turn's owner, organic rows stay null, explicit recorded
     provenance is preserved, and replay changes no settled row. New creates

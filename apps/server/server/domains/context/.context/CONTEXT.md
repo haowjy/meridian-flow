@@ -290,7 +290,7 @@ fresh node rows and collab's initialize-only authority seeding. Tracked nodes
 retain stable link refs but no source CRDT history, frontiers, drafts or undo
 receipts. Binary object preparation is shared with single-file copy and its
 uncommitted objects are released on failure within the same cancellation budget;
-keys left when it expires are logged for cleanup, not awaited indefinitely.
+cleanup left when it expires is skipped and reported, not awaited indefinitely.
 The composition root supplies one 12-second deadline and database cancellation
 scope, including scope lookups and live-document reads. Installation also sets
 transaction-local lock and statement timeouts from the remaining budget.
