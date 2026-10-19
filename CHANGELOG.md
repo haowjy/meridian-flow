@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Name a removed paragraph from its proven block deleter when rebased words have no character witness, withholding ambiguous bylines.
+
 - Scope draft-review focus to its projection so successive identical changes cannot apply the wrong occurrence.
 
 - Correct draft collaboration references for the completed cutover and frontier-compaction probe.
