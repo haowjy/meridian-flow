@@ -1967,7 +1967,7 @@ async function executeLoop({
       retriedContextOverflow = false;
     skillBodies.committed(result.drain.turns);
     allTurns.push(...result.drain.turns);
-    for (const block of result.drain.blocks) {
+    for (const block of [...(result.completedBlocks ?? []), ...result.drain.blocks]) {
       credited.add(block.id);
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
@@ -2035,7 +2035,6 @@ async function executeLoop({
     pendingSummaryResponses = [];
     pendingSummary = undefined;
     preparedContext = result.preparedContext;
-    if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
     return acceptBoundary(result.successor);
   }
 

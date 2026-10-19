@@ -28,7 +28,7 @@ export interface BoundaryCompletion {
   modelResponses?: ModelResponseReceivedRow[];
   /** Caller-owned visible history event, such as `context.compacted`. */
   events?: (bakeId: PromptBakeId) => OrchestratorEvent[];
-  /** Runs in the same transaction, after `blocks` are projected. */
+  /** Runs in the same transaction, after the events are projected. */
   afterEvents?: () => Promise<void>;
 }
 
@@ -48,48 +48,46 @@ export async function beginPromptEpoch(
   deps: BeginPromptEpochDeps,
   input: BeginPromptEpochInput,
 ): Promise<{ bakeId: PromptBakeId }> {
-  const { result } = await persistAndAppendEvents(
-    deps,
-    input.threadId,
-    async () => {
-      const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
-      if (!thread || thread.deletedAt) throw new Error(`Thread not found: ${input.threadId}`);
+  const persist = async () => {
+    const thread = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
+    if (!thread || thread.deletedAt) throw new Error(`Thread not found: ${input.threadId}`);
 
-      const boundary = await deps.repos.turns.findById(input.boundaryTurnId);
-      if (!boundary || boundary.threadId !== input.threadId)
-        throw new Error(`Boundary turn is not in thread ${input.threadId}`);
-      if (boundary.status !== "pending")
-        throw new Error(`Boundary turn ${input.boundaryTurnId} is not pending`);
-      if (boundary.promptBakeId != null)
-        throw new Error(`Boundary turn ${input.boundaryTurnId} already has a prompt bake`);
+    const boundary = await deps.repos.turns.findById(input.boundaryTurnId);
+    if (!boundary || boundary.threadId !== input.threadId)
+      throw new Error(`Boundary turn is not in thread ${input.threadId}`);
+    if (boundary.status !== "pending")
+      throw new Error(`Boundary turn ${input.boundaryTurnId} is not pending`);
+    if (boundary.promptBakeId != null)
+      throw new Error(`Boundary turn ${input.boundaryTurnId} already has a prompt bake`);
 
-      const bake = await resolveBake(deps, input, thread);
-      const completionMetadata =
-        input.completion.metadata === undefined ? boundary.metadata : input.completion.metadata;
-      const completedTurn: Turn = {
-        ...boundary,
-        status: "complete",
-        finishReason: "end_turn",
-        completedAt: new Date().toISOString(),
-        error: null,
-        promptBakeId: bake.id,
-        compactionModel: input.completion.compactionModel ?? null,
-        metadata: promptEpochMetadata(completionMetadata),
-      };
-      const events: OrchestratorEvent[] = [
-        ...input.completion.blocks.map(
-          (block): OrchestratorEvent => ({ type: "block.upserted", block }),
-        ),
-        { type: "turn.completed", turn: completedTurn },
-        ...(input.completion.modelResponses ?? []).map(
-          (response): OrchestratorEvent => ({ type: "model.response_received", response }),
-        ),
-        ...(input.completion.events?.(bake.id) ?? []),
-      ];
-      return { result: { bakeId: bake.id }, events };
-    },
-    input.completion.afterEvents ? { afterEvents: input.completion.afterEvents } : undefined,
-  );
+    const bake = await resolveBake(deps, input, thread);
+    const completionMetadata =
+      input.completion.metadata === undefined ? boundary.metadata : input.completion.metadata;
+    const completedTurn: Turn = {
+      ...boundary,
+      status: "complete",
+      finishReason: "end_turn",
+      completedAt: new Date().toISOString(),
+      error: null,
+      promptBakeId: bake.id,
+      compactionModel: input.completion.compactionModel ?? null,
+      metadata: promptEpochMetadata(completionMetadata),
+    };
+    const events: OrchestratorEvent[] = [
+      ...input.completion.blocks.map(
+        (block): OrchestratorEvent => ({ type: "block.upserted", block }),
+      ),
+      { type: "turn.completed", turn: completedTurn },
+      ...(input.completion.modelResponses ?? []).map(
+        (response): OrchestratorEvent => ({ type: "model.response_received", response }),
+      ),
+      ...(input.completion.events?.(bake.id) ?? []),
+    ];
+    return { result: { bakeId: bake.id }, events };
+  };
+  const { result } = await persistAndAppendEvents(deps, input.threadId, persist, {
+    afterEvents: input.completion.afterEvents,
+  });
   return result;
 }
 

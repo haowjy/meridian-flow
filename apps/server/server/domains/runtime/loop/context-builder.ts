@@ -8,7 +8,6 @@ import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
   ChildCompletionMetadataCodec,
   ChildCompletionMetadataTagCodec,
-  isCompactionSummaryTurn,
 } from "../../threads/index.js";
 import { orderTurnsByPosition } from "../../threads/order-turns.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
@@ -74,7 +73,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
   const messages: Message[] = [];
   const turnBlocks = [...blocks].sort((a, b) => a.sequence - b.sequence);
   if (turn.role === "user") {
-    const parts = userTurnContentParts(turnBlocks, isCompactionSummaryTurn(turn));
+    const parts = userTurnContentParts(turnBlocks);
     if (parts.length > 0) {
       messages.push({ role: "user", content: parts });
     }
@@ -242,16 +241,9 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
   return parts;
 }
 
-/**
- * Projects a user turn's allowed blocks and reference results; images arrive pre-projected.
- * On a compaction's summary turn the reference blocks are the documents it re-shows: their
- * reads follow the summary and no mention text precedes them.
- */
-function userTurnContentParts(blocks: readonly Block[], reshown: boolean): ContentPart[] {
-  const parts = turnBlocksToContentParts(
-    blocks.filter((block) => !(reshown && referenceOccurrenceContent(block))),
-    ["text", "image", "file"],
-  );
+/** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
+function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
+  const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -266,10 +258,11 @@ function userTurnContentParts(blocks: readonly Block[], reshown: boolean): Conte
     const key = `${reference.documentId}\0${reference.uri}`;
     if (included.has(key)) continue;
     included.add(key);
-    const heading = reshown
-      ? `Current text of ${reference.uri}, re-shown after the summary:`
-      : `Reference read result for ${reference.uri}:`;
-    parts.push(text(`\n\n${heading}\n${referenceReadText(reference.read.result)}`));
+    parts.push(
+      text(
+        `\n\nReference read result for ${reference.uri}:\n${referenceReadText(reference.read.result)}`,
+      ),
+    );
   }
   return parts;
 }

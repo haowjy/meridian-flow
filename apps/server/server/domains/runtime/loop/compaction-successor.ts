@@ -23,7 +23,11 @@ import {
   summaryCompactionFailure,
 } from "./compaction/decision.js";
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
-import { chooseImportantFiles, importantFileCandidates } from "./compaction/important-files.js";
+import {
+  chooseImportantFiles,
+  importantFileCandidates,
+  reshowBudgetTokens,
+} from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
 import { queryCompactionRevisions } from "./compaction-revisions.js";
 import type { InboxDrain } from "./inbox-context.js";
@@ -108,7 +112,7 @@ async function reshowImportantFiles(args: {
   allTurns: Turn[];
   allBlocks: Block[];
   policies: (name: string) => DocumentTextPolicy | undefined;
-  usableWindowTokens: number;
+  budgetTokens: number;
 }): Promise<ReshownDocuments> {
   const { deps, input, placeholder, allBlocks } = args;
   const blocksByTurn = new Map<string, Block[]>();
@@ -121,9 +125,9 @@ async function reshowImportantFiles(args: {
     turn,
     blocks: blocksByTurn.get(turn.id) ?? [],
   }));
-  const kept = await chooseImportantFiles({
+  const newestFirst = await chooseImportantFiles({
     candidates: importantFileCandidates(collectRecordedDocuments(history, args.policies)),
-    usableWindowTokens: args.usableWindowTokens,
+    budgetTokens: args.budgetTokens,
     read: async (reference) => {
       args.assertNoResponseScope();
       input.signal?.throwIfAborted();
@@ -149,6 +153,8 @@ async function reshowImportantFiles(args: {
       }
     },
   });
+  // Oldest first: history order is recency order, so a later compaction ranks these correctly.
+  const kept = newestFirst.reverse();
   const blocks = kept.map(({ reference, read }, index) =>
     contentForBlockInput({
       turnId: placeholder.id,
@@ -323,24 +329,22 @@ export async function prepareCompactionSuccessor(args: {
       return { metadata, reshown, assemble };
     };
     let staged = stage(NO_RESHOWN);
-    let base = await staged.assemble([], []);
+    const base = await staged.assemble([], []);
     let tokensAfter = fittingTokens(base.assembled);
-    // Counted in the successor's fit: when the documents push it over, the compaction goes without them.
+    // Sized from the headroom under the trigger, so the documents cannot push the successor over it.
     const reshown = await reshowImportantFiles({
       ...args,
       policies,
-      usableWindowTokens: base.assembled.compactionUsableWindowTokens ?? 0,
+      budgetTokens: reshowBudgetTokens({
+        usableWindowTokens: base.assembled.compactionUsableWindowTokens ?? 0,
+        triggerTokens: base.assembled.compactionTriggerTokens,
+        baseTokens: tokensAfter,
+      }),
     });
     if (reshown.blocks.length > 0) {
-      const withReshown = stage(reshown);
-      try {
-        const next = await withReshown.assemble([], []);
-        tokensAfter = fittingTokens(next.assembled);
-        staged = withReshown;
-        base = next;
-      } catch (error) {
-        if (!(error instanceof CompactionFailureError)) throw error;
-      }
+      staged = stage(reshown);
+      // Measurement: the recorded `tokensAfter` is what the successor really carries.
+      tokensAfter = fittingTokens((await staged.assemble([], [])).assembled);
     }
     const summaryBlock = contentForBlockInput({
       ...blockInput,
@@ -389,7 +393,7 @@ export async function completeCompactionCurrent(input: {
   prepared: PreparedCompaction | undefined;
   failure: unknown;
   settleResponses: () => Promise<void>;
-}): Promise<Turn> {
+}): Promise<{ turn: Turn; blocks: Block[] }> {
   const { deps, threadId, placeholder, prepared } = input;
   await input.settleResponses();
   const settled = await deps.repos.turns.findById(placeholder.id);
@@ -402,13 +406,16 @@ export async function completeCompactionCurrent(input: {
       : prepared?.kind === "usable" && deliveryFailure?.phase === "delivery"
         ? undefined
         : deliveryFailure;
+  let blocks: Block[] = [];
   if (prepared?.kind === "usable" && failure === undefined) {
+    const persisted = [prepared.summaryBlock, ...prepared.reshown.blocks];
+    blocks = persisted.map(localBlockFromEvent);
     await beginPromptEpoch(deps, {
       threadId,
       boundaryTurnId: placeholder.id,
       bake: { compose: prepared.composition.bakeContent },
       completion: {
-        blocks: [prepared.summaryBlock, ...prepared.reshown.blocks],
+        blocks: persisted,
         compactionModel: prepared.model,
         metadata: { ...(settled.metadata as JsonObject), ...prepared.metadata },
         afterEvents: () =>
@@ -453,7 +460,7 @@ export async function completeCompactionCurrent(input: {
   }
   const turn = await deps.repos.turns.findById(placeholder.id);
   if (!turn) throw new Error("Compaction placeholder disappeared");
-  return turn;
+  return { turn, blocks };
 }
 
 /** One live failure landing; caller can reuse it without running a summary phase. */

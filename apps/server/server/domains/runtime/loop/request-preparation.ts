@@ -73,19 +73,18 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
   };
 }
 
-async function requestCreditedIds(input: PrepareRequestInput): Promise<string[]> {
-  const projection = await projectActiveHistoryWithBakes(
-    input.turns,
-    input.blocks,
-    input.thread.ref,
-    input.promptBakes ?? input.deps.repos.promptBakes,
-  );
-  return [...projection.creditedBlockIds];
-}
-
 async function prepareBaseRequest(
   input: PrepareRequestInput,
 ): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
+  // Projected on first use and shared by every lookup: most runs read no reference at all.
+  let creditedIds: Promise<string[]> | undefined;
+  const requestCreditedIds = () =>
+    (creditedIds ??= projectActiveHistoryWithBakes(
+      input.turns,
+      input.blocks,
+      input.thread.ref,
+      input.promptBakes ?? input.deps.repos.promptBakes,
+    ).then((projection) => [...projection.creditedBlockIds]));
   const references: LoadedReferenceReads =
     input.readReferences === false
       ? { blocks: [], evidence: NO_REFERENCE_EVIDENCE }
@@ -97,7 +96,7 @@ async function prepareBaseRequest(
           reader: input.deps.referenceReader,
           signal: input.signal,
           // The read is shown beside what this request carries, so only that credits it (C10).
-          recordingFrontier: frontierLookup(input.deps, () => requestCreditedIds(input), {
+          recordingFrontier: frontierLookup(input.deps, requestCreditedIds, {
             threadId: input.threadId,
             turnId: input.currentTurnId,
           }),
