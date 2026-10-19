@@ -34,9 +34,10 @@ reply's save, else by the append), and `appendBatch` returns, from inside that
 operation, the document as it found it under the lock; the save's cut is that
 state merged with the prepared copy. A writer frame that landed between
 preparing and appending is in that cut, so the receipt names what the rows
-swept of it. A frame that races the append waits on the lock and journals
-after. No storage read runs between the append committing and the save
-learning it did.
+swept of it, and a save's precondition (a create only into an empty document)
+is judged on it before anything is written. A frame that races the append waits
+on the lock and journals after. No storage read runs between the append
+committing and the save learning it did.
 
 **Delivery** of committed rows to the open room is `deliver`, an owned
 obligation that only retries: one chain per document coalesces requests made
@@ -47,11 +48,15 @@ Hocuspocus unloads or replaces the room (a load reads the journal); a retry
 never delivers into a replacement. Room lifetime is Hocuspocus's alone:
 delivery never closes connections, removes a room from the registry or retires
 a handle. A delivery that keeps failing means the journal can't be read, and a
-writer's frames are journal-first, so they fail too: the stale-editing window
-is the database outage itself. An outage is logged once at each end
+writer's frames are journal-first, so they fail too. A request made during a
+retry's wait (a save, a transactional door's commit) ends the wait: its pass
+runs at once into whatever room is open, so a save never waits on a stalled
+delivery. Without one, a room stays behind the journal after the database
+recovers until the next retry, up to 30 s; the writer can type into it
+meanwhile and catches up on that pass. An outage is logged once at each end
 (`collab.room_delivery` `delivery.failing` warn, `delivery.recovered` info).
-`deliver` resolves after its first attempt and never rejects; `recover` is one
-pass into whatever room is open.
+`deliver` resolves after the pass that served it and never rejects; it is the
+live door's only catch-up.
 
 Push settlement rechecks inside its completion transaction under document locks
 and applies to warm rooms only after commit. A writer admitted after the

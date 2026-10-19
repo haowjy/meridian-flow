@@ -49,7 +49,7 @@ type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      /** Host-only: the saved documents' frontiers at the post-commit cut, for those that recorded one. */
+      /** Host-only: the saved documents' frontiers at the save's after-state, for those that recorded one. */
       frontiers: Array<{ documentId: string; frontier: ObservationFrontier }>;
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;

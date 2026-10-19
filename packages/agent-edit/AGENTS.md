@@ -18,9 +18,9 @@ Meridian Project/Work concepts.
 `ResponseCommitter` is the explicit response durability lifecycle: it stages
 writes and accepts or rolls them back according to host settlement. Every write
 lands through one save per document (`tool/document-save.ts` over
-`DocumentCoordinator.prepareSave`), a reply's and a one-entry write's alike, on
-either host; detection, receipts and the recorded frontier read that save's
-before and after states. The reply's
+`DocumentCoordinator.prepareSave`), a reply's and an immediate save's
+(`saveNow`, a write outside a reply) alike, on either host; detection, receipts
+and the recorded frontier read the one cut that save's `persist` returns. The reply's
 own accepted mutations live in `ReplyMutations`, which the host's reply owns and
 passes in `WriteContext.frontiers.reply`: the committer appends a save's entries
 there at its root commit, an inverse and an immediate write append their bytes,

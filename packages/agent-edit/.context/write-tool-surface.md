@@ -20,8 +20,9 @@ later response reusing a provider ID is a new attempt.
 
 With `responseId`, create/insert/replace/remove plan on the view, echo on the
 call's room copy and buffer the exact captured update and metadata in the
-committer. Without it, the command appends and projects immediately (a drafted
-host runs such a write as a one-entry reply). Undo and redo are save boundaries: the host
+committer. Without it, the command is an immediate save (`saveNow`): it appends
+and projects at once. The draft host instead runs such a write as a one-entry
+reply, through the reply's save. Undo and redo are save boundaries: the host
 settles buffered writes before executing an inverse.
 
 Lifecycle ownership is exclusive:

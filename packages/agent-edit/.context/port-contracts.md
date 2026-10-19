@@ -35,32 +35,39 @@ document's mutex; a draft host rebases live into the Work draft first, then
 copies the Work draft replica. A bound call whose draft a Discard took throws
 `DocumentAccessLostError(reason)`.
 
-`prepareSave` is the one way any write lands, a reply's save and a write
-outside a reply (`saveNow`, a one-entry save) alike, for both hosts: the same
+`prepareSave` is the one way any write lands, a reply's save and an immediate
+save (`saveNow`, a write outside a reply) alike, for both hosts: the same
 reconcile as `readRoom` against the scope's cut (a live host keeps every
 entry), the `room` it saves into (null for a document the save creates, which
-records no frontier), the before and after states, and a required `write`:
-either a `StagedWriteCommit` the caller owns (`persist` inside the commit
-scope, `transfer` once that scope completed, `dispose` on any unwind; the host
-installs the write at root commit, never at `transfer`, or at once outside a
-transaction), or an explicit `{ kind: "no-effect" }`, which the committer
-refuses when it kept entries. The result's before and after states are the
-prepared candidate's, read before any lock; only a check that must refuse
-before anything persists reads them (a create that lands only in an empty
-document). `persist` resolves the append's actual cut (`SaveCut`), captured
-inside the append where the host serializes it, before its transaction
-commits, for every outcome (appended, contained, or nothing new): someone
-else's rows that landed after preparing are in its before state. Nothing
-fallible runs between the rows becoming durable and `persist` resolving, so a
-stored write is never reported as a failed one. Receipts, commit-time
-detection, revision and frontier read that cut, for both hosts; the rows are
-Yjs updates and land the same either way, so a moved base refreshes the report
-rather than the write. A live host's `persist` appends the kept entries as one
-journal batch, and `appendBatch` returns each document's state as it found it
+records no frontier), and a required `write`: either a `StagedWriteCommit` the
+caller owns (`persist` inside the commit scope, `transfer` once that scope
+completed, `dispose` on any unwind; the host installs the write at root commit,
+never at `transfer`, or at once outside a transaction), or an explicit
+`{ kind: "no-effect" }`, which the committer refuses when it kept entries.
+Preparing reads no cut. `persist` resolves the save's only cut (`SaveCut`),
+captured inside the append where the host serializes it, before its
+transaction commits, for every outcome (appended, contained, or nothing new):
+someone else's rows that landed after preparing are in its before state.
+Nothing fallible runs between the rows becoming durable and `persist`
+resolving, so a stored write is never reported as a failed one. Receipts,
+commit-time detection, revision and frontier read that cut, for both hosts; the
+rows are Yjs updates and land the same either way, so a moved base refreshes
+the report rather than the write.
+
+A save that must refuse on the document's state passes a `SavePrecondition`
+(a create without overwrite lands only in a document with no blocks). The host
+judges it inside the append, under the document's lock, on the state the rows
+would follow, before anything is written; a failure rejects `persist` with
+`SavePreconditionRefused` and nothing is appended, even inside an ambient
+transaction. Nothing judges it earlier: a check before the lock lets two
+concurrent creates, or a create and a writer's frame, both land. A live host's
+`persist` appends the kept entries as one journal batch, and `appendBatch`
+judges the precondition on, and returns, each document's state as it found it
 under the lock (`beforeState`); its install is delivery to open editors,
 whenever entries were kept. A draft host's append is finalized under the draft
-row lock against the committed prefix, which is its cut; a fully contained
-append's before and after are both that prefix. Neither host fences a WebSocket transport from
+row lock against the committed prefix, which is its cut and what
+`finalizeAppend` judges the precondition on; a fully contained append's before
+and after are both that prefix. Neither host fences a WebSocket transport from
 this port: nothing applies to a live room inside a transaction (LOCK-WS, collab
 `websocket-concurrency.md`). An ordinary CRDT write commits as an unfenced
 append. Whole Discard

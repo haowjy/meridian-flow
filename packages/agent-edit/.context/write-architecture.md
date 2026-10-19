@@ -151,7 +151,7 @@ from the doc they rendered, chained from `recording(room)`; `planning(room)` is
 the view a write plans on. An undo, redo or revert names the room its inverse
 committed into (`DocumentEditResult.room`) and the echo records there from the
 inverse's `after` cut. With `ResponseCommitOptions.recordingFrontier` each
-saved document's result carries one at the post-commit cut, in the room the
+saved document's result carries one at the save's after-state, in the room the
 save committed into, crediting what its accepted receipts show. A write outside
 a reply records from its save's after state, merged into its room copy. A staged result records
 nothing: its save does. Shown in full: a read's rendered blocks (an outline

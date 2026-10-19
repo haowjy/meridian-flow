@@ -174,7 +174,7 @@ export interface RoomCopy {
 
 export interface ResponseCommitOptions {
   /**
-   * Host-only: record each saved document's frontier at the post-commit cut, in the room the
+   * Host-only: record each saved document's frontier at the save's after-state, in the room the
    * save committed into, chained from the model's latest frontier there (this lookup).
    */
   recordingFrontier?: FrontierLookup;
