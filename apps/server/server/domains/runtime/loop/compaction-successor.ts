@@ -27,7 +27,7 @@ import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.
 import {
   chooseImportantFiles,
   importantFileCandidates,
-  NOT_RESHOWN_HEADING,
+  notReshownNote,
   parseImportantFiles,
   reshowBudgetTokens,
 } from "./compaction/important-files.js";
@@ -243,6 +243,8 @@ export async function prepareCompactionSuccessor(args: {
           ? summaryCompactionFailure(outcome.rejectionReason)
           : summaryCompactionFailure(undefined),
     };
+  const parsed = parseImportantFiles(outcome.text);
+  if (!parsed.summary) return { kind: "failed", failure: summaryCompactionFailure("empty_text") };
   try {
     const policies = (name: string) => deps.toolRegistry.getRegistration(name)?.documentText;
     const recorded = collectRecordedDocuments(decision.plan.retainedSuffix, policies);
@@ -272,7 +274,6 @@ export async function prepareCompactionSuccessor(args: {
       sequence: 0,
       status: "complete" as const,
     };
-    const parsed = parseImportantFiles(outcome.text);
     const props = {
       model: outcome.model,
       excludedTurnCount: projection.turns.filter(
@@ -285,18 +286,9 @@ export async function prepareCompactionSuccessor(args: {
     };
     // The request this compaction would hand the successor, including its final summary text.
     const stage = (reshown: ReshownDocuments) => {
-      const summary = [
-        parsed.summary,
-        ...(reshown.notReshownUris.length
-          ? [
-              [
-                NOT_RESHOWN_HEADING,
-                "These documents were not re-shown after the summary. Read them again before writing in them.",
-                ...reshown.notReshownUris.map((uri) => `- ${uri}`),
-              ].join("\n"),
-            ]
-          : []),
-      ].join("\n\n");
+      const summary = [parsed.summary, notReshownNote(reshown.notReshownUris)]
+        .filter(Boolean)
+        .join("\n\n");
       // Projection reads only the summary text; its provisional block is not persisted.
       const projectedSummary = localBlockFromEvent(
         contentForBlockInput({
@@ -372,7 +364,7 @@ export async function prepareCompactionSuccessor(args: {
     const base = await staged.assemble([], []);
     const baseEstimate = fittingEstimate(base.assembled);
     let tokensAfter = baseEstimate.tokens;
-    // Sized from the headroom under the trigger, so the documents cannot push the successor over it.
+    // The picker reserves the mandatory omission note before admitting document text.
     const reshown = await reshowImportantFiles({
       ...args,
       policies,
