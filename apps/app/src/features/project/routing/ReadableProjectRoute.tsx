@@ -1,5 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
+import { parseDraftItemKey } from "@meridian/contracts";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -30,6 +31,7 @@ import { useContextRemovalCoordinator } from "../context/account-feature-context
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { useRemovalRecord } from "../context/use-removal-record";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -462,6 +464,15 @@ function ReadableProjectDestination({
         : documentResult.kind === "unavailable"
           ? "unavailable"
           : undefined));
+  // A review address names its document: when it is unavailable because the
+  // document was removed, it says so instead. A plain path names no document
+  // once nothing lives there, so it stays "unavailable".
+  const removedDocumentId =
+    documentIssue === "unavailable" && address.itemKey
+      ? (parseDraftItemKey(address.itemKey)?.documentId ?? null)
+      : null;
+  const removedDestination = useRemovalRecord(projectId, removedDocumentId);
+  const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const switchFailure = useDocumentSwitchFailures();
   const failedDestination = destinationFailure(
     switchFailure.failures,
@@ -784,7 +795,17 @@ function ReadableProjectDestination({
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{
               main: failedDestination ? "error" : mainIssue,
-              editor: failedDestination ? "error" : editorIssue,
+              // Loading until the removal lookup answers, so the destination
+              // never says "unavailable", then who removed it.
+              editor: failedDestination
+                ? "error"
+                : removedDocumentId !== null && removedDestination === undefined
+                  ? "loading"
+                  : editorIssue,
+              removed:
+                removedDestination?.kind === "removed"
+                  ? { title: removedTitle, record: removedDestination.record }
+                  : undefined,
             }}
             onRetryEditorRoute={retryEditorAddress}
             onDisplayedSelection={reportSelection}

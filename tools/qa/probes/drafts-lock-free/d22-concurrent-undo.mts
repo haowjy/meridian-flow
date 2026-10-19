@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { captureReceiptRows } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
-import { setCollabHook } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
+import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import { seedModelLiveWrite, workGrant } from "./f1-inverse-grant.mts";
 import {
   appendToFirstParagraph,
@@ -121,7 +121,7 @@ async function twoUndos(
   const barrier = new Promise<void>((done) => {
     release = done;
   });
-  const remove = setCollabHook("inverse.beforeCommitScope", async () => {
+  const remove = setTestHook("inverse.beforeCommitScope", async () => {
     arrived += 1;
     if (arrived === 2) release();
     if (arrived <= 2) await barrier;

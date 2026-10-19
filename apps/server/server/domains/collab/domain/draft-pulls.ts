@@ -1,10 +1,12 @@
 /** Live→Work draft pulls (debounced and at tool boundaries), and a thread peer's identity step. */
 
-import { type DiscardedWriteReason, DocumentNotFoundError } from "@meridian/agent-edit/integration";
+import { isDocumentNotFoundError, type RetiredWriteReason } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import type { Branches } from "./branches.js";
+import { closedPinReason } from "./closed-pin-reason.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
 import { DraftCasConflictError, type DraftSnapshot, DraftStaleUpdateError } from "./draft-store.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
@@ -72,22 +74,35 @@ export class ThreadPeerPullLost extends Error {
 export async function peerLossReason(
   deps: {
     branches: Pick<Branches, "shareActive">;
-    drafts: { getDraft(draftId: string): Promise<Pick<DraftSnapshot, "status"> | null> };
+    drafts: {
+      getDraft(
+        draftId: string,
+      ): Promise<Pick<DraftSnapshot, "status" | "closedCause" | "documentId"> | null>;
+    };
+    removals: DocumentRemovals;
   },
   cause: unknown,
   branchId: BranchId | undefined,
-): Promise<DiscardedWriteReason | undefined> {
+  documentId?: string | null,
+): Promise<RetiredWriteReason | undefined> {
+  if (isDocumentNotFoundError(cause) && cause.removal) return { removed: cause.removal };
   const lost = cause instanceof ThreadPeerPullLost;
   if (!lost && !(cause instanceof DraftStaleUpdateError || cause instanceof DraftCasConflictError))
     return undefined;
-  if (branchId && !(await deps.branches.shareActive(branchId))) return "discarded_draft";
-  if (!lost) return undefined;
-  const gone = async (draftId: string) => {
-    const documentDraft = await deps.drafts.getDraft(draftId);
-    return !documentDraft || documentDraft.status === "closed";
-  };
-  if (await gone(cause.upstreamDraftId)) return "discarded_document";
-  return (await gone(cause.peerDraftId)) ? "discarded_edit" : undefined;
+  const branchActive = !branchId || Boolean(await deps.branches.shareActive(branchId));
+  if (!lost) return branchActive ? undefined : "discarded_draft";
+  const [upstream, peer] = await Promise.all([
+    deps.drafts.getDraft(cause.upstreamDraftId),
+    deps.drafts.getDraft(cause.peerDraftId),
+  ]);
+  const id = documentId ?? upstream?.documentId ?? peer?.documentId;
+  const removals = id ? await deps.removals.lookup([id as DocumentId]) : undefined;
+  return closedPinReason({
+    branchActive,
+    upstream,
+    peer,
+    removal: removals?.get(id as DocumentId),
+  });
 }
 
 export type DraftPullDiagnostics = {
@@ -130,7 +145,9 @@ export function createDraftPullService(input: {
         ),
       )
       .catch((cause: unknown) => {
-        if (cause instanceof DocumentNotFoundError)
+        // A live side with no state yet (a hidden creation) is an empty upstream; a removed
+        // document is not, and its pull fails by name.
+        if (isDocumentNotFoundError(cause) && !cause.removal)
           return Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
         throw cause;
       });

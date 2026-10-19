@@ -969,8 +969,8 @@ it is listed.
 3. **Work page Apply all during the reply.** Work page, Files tab, "All changes" menu, Apply all changes. PASS: live
    has the text saved before the click, and the document is still under Changes to review for the late writes.
 4. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at 390x844 too: the question
-   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "You discarded
-   this draft, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
+   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "This draft
+   was discarded, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
 5. **Live-edit staleness.** Not covered here: an Apply with tokens from before a live edit refuses as `stale`, tested
    by the DB suite (`branch-tree.apply-staleness.db.test.ts`).
 

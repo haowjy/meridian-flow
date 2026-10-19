@@ -9,7 +9,6 @@
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCodecFactory,
-  type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
@@ -24,7 +23,7 @@ import {
 import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
+import type { DocumentLinkScope, MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -87,8 +86,9 @@ type MarkdownDocumentEngineDeps = {
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
   coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "deliver">;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
+  /** A stored projection read with its links unbound, in its filetype's shape (repair only). */
+  parseStored(markdown: string, filetype: string | null): { blocks: readonly PMNode[] };
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
@@ -149,6 +149,13 @@ export type MarkdownDocumentEngine = {
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
+  /** The create's own step for an empty create: the document's authority, empty. */
+  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  /**
+   * Explicit repair of a living document whose authority is absent (an old anomaly), from its
+   * stored projection. A no-op when any checkpoint or update exists; refuses a removed one.
+   */
+  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
@@ -403,9 +410,8 @@ export function createMarkdownDocumentEngine(
     mutate: DraftMutation,
     format: { schemaType: YjsTrackedSchemaType },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
-    await deps.lifecycle.ensureDocument(input.documentId);
-
     try {
+      await repairDocumentAuthority(input.documentId);
       const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
         replaceLiveDocumentMarkdown(
           input.documentId,
@@ -429,6 +435,43 @@ export function createMarkdownDocumentEngine(
       }
       throw cause;
     }
+  }
+
+  /**
+   * The one initializer both materialization callers share: the create's transaction and
+   * explicit repair. Rooms recover after the boundary that makes the state durable.
+   */
+  async function initializeAuthority(
+    documentId: DocumentId,
+    blocks: readonly PMNode[],
+  ): Promise<void> {
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      if (blocks.length > 0)
+        deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...blocks] });
+      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
+        documentId,
+        Y.encodeStateAsUpdate(doc),
+      );
+      if (!seeded) return;
+    } finally {
+      doc.destroy();
+    }
+    const deliver = () => deps.coordinator.deliver(documentId);
+    if (!deps.deferUntilCommit?.(deliver)) await deliver();
+  }
+
+  async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
+    const projection = await deps.initialDocumentSeeds.missingAuthorityProjection(documentId);
+    if (projection === null) return;
+    // An empty projection is an empty document, not the empty paragraph a parse would give.
+    if (projection.length === 0) return initializeAuthority(documentId, []);
+    const format = await documentFormat(documentId);
+    if (!format.ok) throwSyncError(format.error);
+    await initializeAuthority(
+      documentId,
+      deps.parseStored(projection, format.value.filetype).blocks,
+    );
   }
 
   const engine: MarkdownDocumentEngine = {
@@ -494,6 +537,10 @@ export function createMarkdownDocumentEngine(
 
     setMarkdown,
 
+    initializeEmptyDocument: (documentId) => initializeAuthority(documentId, []),
+
+    repairDocumentAuthority,
+
     async seedFromMarkdown(documentId, content, origin) {
       const typedDocumentId = documentId as DocumentId;
       const format = await documentFormat(typedDocumentId);
@@ -534,7 +581,7 @@ export function createMarkdownDocumentEngine(
     },
 
     async withLiveDocument(documentId, operation) {
-      await deps.lifecycle.ensureDocument(documentId);
+      await repairDocumentAuthority(documentId as DocumentId);
       return deps.coordinator.withDocument(documentId, (doc) =>
         operation({ documentId: documentId as DocumentId, doc }),
       );
@@ -587,6 +634,7 @@ export function createMarkdownDocumentEngine(
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const shaped = checkBound(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
+    await repairDocumentAuthority(input.documentId);
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,

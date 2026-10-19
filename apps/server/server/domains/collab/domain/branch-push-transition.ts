@@ -9,6 +9,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import {
   type ApplyPayloads,
@@ -22,7 +23,6 @@ import {
   type SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { Attempt } from "./draft-attempts.js";
 import { trailContributionReplacement } from "./draft-trail-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
@@ -30,7 +30,7 @@ import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
-import type { ApplyItemHold, ApplyItemOutcome, ApplyRefusal } from "./ports/settlement-apply.js";
+import type { ApplyItemHold, ApplyRefusal } from "./ports/settlement-apply.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
@@ -53,8 +53,6 @@ export type ApplyOutcome =
       pushes: readonly PushLineageRow[];
       /** Every held item, at the check or in completion, items without text drafts included. */
       held: readonly ApplyItemHold[];
-      /** What the steps did per applied item, decided in completion. */
-      outcomes: readonly ApplyItemOutcome[];
     }
   | { kind: "refused"; reason: ApplyRefusal }
   /** Another request holds the writer's `commandId`; nothing was staged. */
@@ -65,7 +63,6 @@ type SettleResult =
   | {
       kind: "completed";
       held: readonly ApplyItemHold[];
-      outcomes: readonly ApplyItemOutcome[];
     }
   | { kind: "refused"; reason: ApplyRefusal };
 
@@ -151,7 +148,7 @@ export function createBranchPushTransition(input: {
         const staging = pushes.length > 0 || check.payloads.size > 0;
         if (!staging) {
           return prepared.finish({
-            outcome: { kind: "settled", pushes: [], held: check.hold, outcomes: [] },
+            outcome: { kind: "settled", pushes: [], held: check.hold },
             docs,
           });
         }
@@ -171,7 +168,7 @@ export function createBranchPushTransition(input: {
         }
         await prepared.afterDurableCommit?.(pushes.map((push) => push.documentDraft.documentId));
         // Staged and durable, not yet settled: where a test races a change with the batch.
-        await collabHook("applyItems.afterStaging");
+        await testHook("applyItems.afterStaging");
         // The committer holds the batch's first claim; it never adopts a later one.
         const batch = await input.settlementStore.loadSettlementBatch({
           batchId: settlement.batchId,
@@ -333,7 +330,7 @@ export function createBranchPushTransition(input: {
             // and the trail must never be reported as failed because it missed.
           }
         }
-        return { kind: "completed", held: completion.held, outcomes: completion.outcomes };
+        return { kind: "completed", held: completion.held };
       }
     }
     await input.settlementStore.recordFailure({
@@ -435,7 +432,6 @@ function outcomeOf(
     kind: "settled",
     pushes: staged.pushes.filter((push) => !heldDocuments.has(push.documentId)),
     held: settled.held,
-    outcomes: settled.outcomes,
   };
 }
 

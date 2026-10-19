@@ -119,10 +119,17 @@ export type DocumentSessionResetReason =
   | typeof WS_CLOSE.DRAFT_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason;
+  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason
+  /** The document was deleted or discarded; its rooms never reopen. */
+  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
 
-/** How a terminal room reset treats its unacknowledged writer updates. */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
+/**
+ * How a terminal room reset treats its unacknowledged writer updates.
+ * `removed`: the server says the document is gone, so nothing reconnects,
+ * rebuilds or replays on its own; the session stays read-only until its owner
+ * closes it, or an exact open proves the document present and restarts it.
+ */
+export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema" | "removed";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>

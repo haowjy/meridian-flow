@@ -13,6 +13,7 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import { type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import { testHook } from "../../../../shared/test-hooks.js";
 import type {
   BoundWrite,
   DocumentCreationAggregate,
@@ -37,7 +38,6 @@ import type {
   LiveCreateCandidate,
   RevealExpectation,
 } from "../../tree/hidden-node-types.js";
-import { treeHook } from "../../tree/test-hooks.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import {
   type BoundWrites,
@@ -215,7 +215,7 @@ export class LiveCreate {
         const { reveal } = found;
         return withContent
           ? await this.deps.documentSync.withLiveDocument(reveal.documentId, async (held) => {
-              await treeHook("createLive.afterLease");
+              await testHook("createLive.afterLease");
               return run({
                 kind: "reveal-with-content",
                 content: withContent,
@@ -470,9 +470,12 @@ export class LiveCreate {
     switch (plan.kind) {
       case "empty":
       case "mint":
+        await this.deps.documentSync.initializeEmptyDocument(documentId);
+        return "";
       case "reveal":
-        // A revealed document's live Yjs is already empty: a draft never seeds it.
-        await this.deps.documentCreation.ensureDocument(documentId);
+        // A revealed document's live Yjs exists (empty: a draft never seeds it); an old
+        // anomaly missing it is repaired on this explicit touch.
+        await this.deps.documentSync.repairDocumentAuthority(documentId);
         return "";
       case "reveal-with-content": {
         // The claim confirmed exactly `plan.reveal`, so the held lease is this document's.

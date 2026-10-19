@@ -170,7 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const port = contextPortForThread(fixture.contextPorts, resolution, { liveWrites: true });
       const created = await settlesWithin(
         `seed ${path}`,
-        port.write(`manuscript://${path}`, `Existing ${path}.\n`),
+        port.createTrackedDocument(`manuscript://${path}`, `Existing ${path}.\n`),
       );
       if (!created.ok || !created.value.documentId) throw new Error(`could not seed ${path}`);
       await fixture.collab.drainHocuspocusPersistence();

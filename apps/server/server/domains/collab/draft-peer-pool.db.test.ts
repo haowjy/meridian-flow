@@ -13,11 +13,13 @@ import {
 } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, expect, it } from "vitest";
+import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
+import { createDraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createBranches } from "./domain/branches.js";
@@ -35,8 +37,9 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const store = createDrizzleDraftStore(db, {
+    close: createDraftClose(),
     workProjection: createTestWorkProjectionMutation(db),
-    live: { journal: persistence.journal, lifecycle: persistence.lifecycle },
+    live: { journal: persistence.journal },
     branches,
   });
   const userId = randomUUID();
@@ -83,7 +86,10 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
       status: "idle",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
-    await persistence.lifecycle.ensureDocument(documentId as never);
+    await persistence.seeds.seedInitialDocument(
+      documentId as never,
+      Y.encodeStateAsUpdate(new Y.Doc()),
+    );
     await store.ensureDocumentDraft({
       documentId: documentId as never,
       branchId: branch.id,

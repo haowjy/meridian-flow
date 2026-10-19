@@ -4,6 +4,7 @@ import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { BranchCommandFailure, ServerRefusal } from "@/client/query/branch-command-record";
+import { RemovedDocumentApplyRefusal } from "@/features/project/context/RemovedDocumentNotice";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {
@@ -14,11 +15,9 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This Work no longer exists.`;
     case "draft_not_found":
     case "not_found":
-      return msg`This draft is no longer here. It may have been applied or discarded elsewhere.`;
+      return msg`This draft is no longer here. It may have been applied or discarded already.`;
     case "path_taken":
       return msg`Another document is already at this name. Rename or remove it, then apply again.`;
-    case "deleted_live":
-      return msg`This document was deleted from your project after the draft started. Check it, then apply again.`;
     case "stale":
       return msg`This document changed since you opened the review. The review now shows the latest, so look again before you apply.`;
     case "whole_item":
@@ -34,7 +33,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** Holds and stale answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "path_taken" || serverCode === "stale";
+  return serverCode === "path_taken" || serverCode === "stale" || serverCode === "deleted_live";
 }
 
 /**
@@ -44,8 +43,16 @@ function answersAlone(serverCode: string | undefined): boolean {
  * comes from the failure's code. The one renderer for a whole-draft and a
  * per-change refusal.
  */
-export function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
+export function RefusalReason({ serverCode, serverReason, removal }: Partial<ServerRefusal>) {
   const { i18n } = useLingui();
+  // Apply never revives a removed document: the record says who removed it, and nothing to retry.
+  if (serverCode === "deleted_live")
+    return (
+      <>
+        {" "}
+        <RemovedDocumentApplyRefusal record={removal ?? null} />
+      </>
+    );
   const known = serverCode ? knownRefusal(serverCode) : undefined;
   const reason = known
     ? i18n._(known)
@@ -54,7 +61,7 @@ export function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusa
 }
 
 export function ReviewMessageText({
-  failure: { code, serverCode, serverReason },
+  failure: { code, serverCode, serverReason, removal },
 }: {
   failure: BranchCommandFailure;
 }) {
@@ -65,7 +72,7 @@ export function ReviewMessageText({
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={removal} />
         </>
       );
     case "apply-server-error":

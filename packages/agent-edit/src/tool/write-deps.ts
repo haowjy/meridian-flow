@@ -4,7 +4,6 @@ import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { SpliceFallback } from "../links/find-splice.js";
 import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
-import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
@@ -32,7 +31,6 @@ export interface CreateWriteToolOptions {
   journal: AgentEditJournal;
   documentEdits?: import("../ports/document-edits.js").DocumentEdits;
   coordinator: DocumentCoordinator;
-  lifecycle?: DocumentLifecycle;
   /** Parses purely; each command takes its codec for its prepared holder scope. */
   codec: AgentEditCodecFactory;
   /** The host's link scope: prepare, holder scope, ahead registration and view revision. */

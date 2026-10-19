@@ -1,5 +1,5 @@
 // Versioned JSON result contract presented to editing models.
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type { DocumentRemovalRecord, PermissionDeniedReason } from "@meridian/contracts/protocol";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
 
@@ -77,8 +77,13 @@ export interface AgentEditConcurrentListing {
   more?: number;
 }
 
-/** A staged write the host refused: the writer discarded what it edited, or it could not integrate. */
+/**
+ * A staged write the host refused: the writer discarded what it edited, its document was removed
+ * before the reply saved (`removed`, with the record in `removal` when one exists), or it could
+ * not integrate.
+ */
 export type WriteRejection =
+  | "removed"
   | "discarded_draft"
   | "discarded_document"
   | "discarded_edit"
@@ -95,6 +100,8 @@ export interface AgentEditModelPayload {
   message?: string;
   /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
   rejected?: WriteRejection;
+  /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
+  removal?: DocumentRemovalRecord;
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {

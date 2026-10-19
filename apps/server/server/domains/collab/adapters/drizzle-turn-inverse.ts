@@ -27,8 +27,9 @@ import {
   runInDrizzleSavepoint,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
+import { readRemovalRecords } from "../../context/tree/removal.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -139,9 +140,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const draftIds = inverseDraftIds(query, parts);
       const documents: InverseDocument[] = [];
       const heads = new Map<DocumentId, number>();
+      const removals = await readRemovalRecords(db(), ids);
       try {
         for (const documentId of ids) {
-          const { doc: live, room: liveRoomName } = await materialize(documentId);
+          const removal = removals.get(documentId) ?? null;
+          const { doc: live, room: liveRoomName } = removal
+            ? { doc: new Y.Doc({ gc: false }), room: null }
+            : await materialize(documentId);
           const [head] = await db()
             .select({ id: sql<number>`coalesce(max(${documentYjsUpdates.id}), 0)::bigint` })
             .from(documentYjsUpdates)
@@ -152,6 +157,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
             live,
             liveRoom: liveRoomName,
+            removal,
             history: parts.filter((part) => part.documentId === documentId),
             drafts: new Map(),
           };
@@ -160,7 +166,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             string,
             InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
           >();
-          for (const draftId of draftIds) {
+          for (const draftId of removal ? [] : draftIds) {
             const read = await input.drafts.readDraftAt(draftId);
             const documentDraft = read?.documentDraft;
             if (
@@ -278,7 +284,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (!attempt) throw new Error("An inverse commits only inside its captured attempt");
       if (!attempt.attempt) throw new ReversalConflictError();
       const scope = attempt.attempt;
-      await collabHook("inverse.beforeCommitScope");
+      await testHook("inverse.beforeCommitScope");
       // Off every lock: each plan's parts with their provenance on its attempt-local view,
       // and a draft destination's effect against the captured live state.
       const planned = plans.map((plan) => planDocument(plan, query));

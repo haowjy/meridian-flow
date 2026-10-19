@@ -18,6 +18,60 @@ it. Persistence revalidates both under the document mutation lock and drops
 stale bytes instead of relabeling them. Restore retires warm handles and
 rooms; late load and connection completion revalidate before use.
 
+## Only materialization makes a head (W52)
+
+`adapters/drizzle-document-authority-head.ts` is the one writer of
+`document_yjs_heads`: `initializeHead`, `allocateAdmission`, `advanceHead`
+(with `checkpointId` when a checkpoint insert moves it), `retireThrough` and
+`replaceGeneration`. Each write that moves a head joins the living `documents`
+row in its own statement (`livingDocumentSql`, exported by context's
+`tree/living-document.ts`), so a removal that won the document mutation lock
+refuses it at no extra query. Purge in context's `node-rows.ts` deletes the
+heads of documents already removed.
+
+A head and its first checkpoint are written by one initialize-only primitive,
+`InitialDocumentSeeds.seedInitialDocument`: under the document mutation lock it
+proves the document is living (`requireLivingDocument`), writes nothing when any
+checkpoint or update exists, and otherwise calls `initializeHead` and installs
+the first checkpoint. Two kinds of caller reach it: the create's own
+transaction (live create, a branch's new hidden row, bootstrap and seeds
+through `seedFromMarkdown`, or `initializeEmptyDocument` for an empty create),
+and explicit repair of a living document whose authority is absent
+(`repairDocumentAuthority`, from its stored projection with links unbound).
+Repair runs only on an explicit touch: the occupant `create-placement` returns,
+a joined hidden candidate before its draft seeds, live overwrite and the held
+live lease, and Hocuspocus room admission before its first generation read.
+Everything else requires an existing head and creates nothing. Draft creation
+(a Work draft or a thread peer) passes `requireLivingDocument` under the same
+lock. A miss answers `DocumentNotFoundError`, carrying the removal record
+(`removal`) when the document was removed.
+
+`allocateAdmission` is the one live-write boundary (journal and settlement): a
+removal that won the mutation lock refuses every later frame, staged save
+install and Apply member there.
+
+A deleted document keeps its head and history for Restore, so an existing head
+is not a document that may change. Head reads say which they mean:
+`findDocumentAuthorityHead` / `readDocumentAuthorityHead` (nullable / required)
+read a retained head for history; with `{ living: true }`, read under the
+mutation lock, they gate every other door that mutates retained history:
+version replacement and an explicit checkpoint refuse with the record; a
+background checkpoint store and compaction do nothing. `advanceHead`, which
+every checkpoint insert passes, is the backstop. `readHeadRevision` is the live
+text's revision the review list's fingerprints and the review action fence
+compare. Journal-row edit links (`document_yjs_updates.edit_id`) are written
+only beside the admission that inserted the row. Reads of a deleted document's
+history stay open; only purge deletes it.
+
+A removal refuses as a `DocumentNotFoundError` carrying the removal record, so
+every not-found mapping, the model's included, answers a removal as
+`document_not_found` with who removed it (status and words once, agent-edit's
+`removedFile` in `removal-copy.ts`) until the model gets its own `document_deleted` answer. A
+reply's write the removal stopped, refused when staged or at the save, is one
+`invalid_write` with `rejected: "removed"` and the record in `removal`
+(agent-edit's `removedWriteRefusal`), which the chat's card words. Its sentence
+stands alone on both paths: the save path adds no "Write did not land." prefix.
+
 ## Schema-aware document engine
 
 `domain/markdown-document.ts` is the sole read/write and Y.Doc projection

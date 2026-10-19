@@ -1,15 +1,16 @@
 // Shared parsing, identity, and error helpers for the write command pipeline.
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
+import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { writeCommandName } from "./command-schema.js";
 import type { RenderedRead } from "./document-renderer.js";
-import type { InternalWriteResult } from "./internal-result.js";
+import { documentNotFound, type InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { status } from "./response-format.js";
 import { readCall } from "./result-text.js";
-import type { MutationActor, WriteErrorStatus } from "./types.js";
+import type { DocumentCommandName, MutationActor, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
 
@@ -71,7 +72,9 @@ export function readSuccess(read: RenderedRead): InternalWriteResult {
   };
 }
 
-export function writeError(cause: unknown): InternalWriteResult {
+/** A write that threw, as the model's answer: a file gone under it is `document_not_found`. */
+export function writeError(cause: unknown, commandName: DocumentCommandName): InternalWriteResult {
+  if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, cause);
   if (isResponseLifecycleError(cause)) {
     return status("invalid_write", cause.message, { error: cause.detail });
   }

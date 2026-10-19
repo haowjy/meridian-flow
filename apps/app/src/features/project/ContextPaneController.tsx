@@ -310,7 +310,7 @@ export function ContextViewerSurfaceController({
         continue;
       }
       if (projection.kind === "removed") {
-        settleWriterClose(contextRemoval.writerClose(projectId, tab));
+        settleWriterClose(contextRemoval.closeVanished(projectId, tab));
         continue;
       }
       const routeFollowsTab =

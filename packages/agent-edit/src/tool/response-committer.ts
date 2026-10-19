@@ -1,14 +1,14 @@
 // Response committer: the one door to a document (`openRoom`), staged-write buffering and lifecycle.
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { FrontierLookup, ReplyMutations } from "../frontier.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
-  type DiscardedWriteReason,
   DocumentAccessLostError,
   type DocumentCoordinator,
   isDocumentNotFoundError,
+  type RetiredWriteReason,
   type SaveCut,
   type StagedCut,
   type StagedWriteRejectionReason,
@@ -102,7 +102,7 @@ export interface ResponseCommitter {
     documentId: string;
     threadId: string;
     peerDraftId: string;
-    reason: DiscardedWriteReason;
+    reason: RetiredWriteReason;
   }): void;
   /** Drops one thread's staged writes to a document, for a save-fence denial. */
   dropStaged(docId: string, threadId: string): void;
@@ -141,7 +141,7 @@ interface DocumentEpoch {
   peerDraftId?: string;
   epoch: number;
   /** Why the last retirement revoked this binding, so a revoked call names it. */
-  revoked?: DiscardedWriteReason;
+  revoked?: RetiredWriteReason;
 }
 
 export interface RoomCallInput {
@@ -153,8 +153,6 @@ export interface RoomCallInput {
   interactionContext?: InteractionContext;
   /** The Work draft a draft read bound to no peer reads, as the host routed it. */
   workDraftId?: string;
-  /** A staged create of a new document reads an empty copy when the room doesn't exist yet. */
-  missing?: "empty";
 }
 
 /**
@@ -212,7 +210,6 @@ export interface ResponseStageUpdateInput {
   writeOrdinal?: number;
   durableWriteId?: string;
   toolCallId?: string;
-  ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   touchedBlocks: readonly BlockItemId[];
   deletedBlocks: readonly BlockItemId[];
@@ -236,7 +233,6 @@ interface ResponseDocumentBuffer {
   commandName: DocumentCommandName;
   updates: StagedResponseUpdate[];
   rejectedUpdates?: StagedResponseUpdate[];
-  ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
   interactionContext?: InteractionContext;
@@ -299,7 +295,6 @@ export function createResponseCommitter(deps: {
   model: AgentEditModel;
   codec: AgentEditCodecFactory;
   links: import("../ports/document-links.js").DocumentLinksPort;
-  ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onTransition?: (event: ResponseCommitterTransitionDetail) => void;
@@ -346,7 +341,7 @@ export function createResponseCommitter(deps: {
     docId: string,
     threadId: string,
     peerDraftId?: string,
-    reason?: DiscardedWriteReason,
+    reason?: RetiredWriteReason,
   ): void {
     for (const docs of documentEpochs.values()) {
       const entry = docs.get(docId);
@@ -465,7 +460,9 @@ export function createResponseCommitter(deps: {
         const explanation = writes.every((entry) => entry.rejectionReason === "discard")
           ? "was discarded with the text it edited"
           : `did not land: ${[...new Set(writes.map((entry) => rejectedWriteExplanation(entry.rejectionReason)))].join("; ")}`;
-        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
+        // A removed file has nothing to re-read.
+        const removed = writes.every((entry) => typeof entry.rejectionReason === "object");
+        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}.${removed ? "" : " Re-read and retry."}`;
       });
     },
   };
@@ -508,9 +505,7 @@ export function createResponseCommitter(deps: {
         if (token && !ownsLifetime(token)) return revokedWrite(token);
         if (cause instanceof DocumentAccessLostError) return discardedWrite(cause.reason);
         if (!isDocumentNotFoundError(cause)) throw cause;
-        if (input.missing !== "empty") return documentNotFound(input.commandName);
-        const doc = new Y.Doc({ gc: false });
-        return { doc, room: null, generation: 0, lifetime: token, dispose: () => doc.destroy() };
+        return documentNotFound(input.commandName, cause);
       }
       const current = responseId ? activeBuffer(responseId)?.docs.get(docId) : undefined;
       if (
@@ -671,7 +666,7 @@ export function createResponseCommitter(deps: {
         for (const [docId, outcome] of outcomes) {
           const doc = buffer.docs.get(docId);
           if (!doc) throw new Error(`Response document ${docId} was not prepared`);
-          cuts.set(docId, await documentSave.persist(doc, outcome));
+          cuts.set(docId, await documentSave.persist(outcome));
         }
         if (!outcomes.size) return;
         const threadId = bufferThreadId(buffer);
@@ -883,7 +878,6 @@ export function createResponseCommitter(deps: {
         session: input.session,
         commandName: input.commandName,
         updates: [],
-        ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
         createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
         cut: input.cut,
@@ -892,8 +886,6 @@ export function createResponseCommitter(deps: {
       buffer.docs.set(input.docId, docBuffer);
     }
     docBuffer.commandName = input.commandName;
-    docBuffer.ensureDocumentBeforeCommit =
-      docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
     docBuffer.createdDocumentBeforeCommit =
       docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;

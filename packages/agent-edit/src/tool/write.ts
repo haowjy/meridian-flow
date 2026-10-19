@@ -1,7 +1,7 @@
 import type * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { DocumentNotFoundError } from "../ports/document-coordinator.js";
+import { DocumentNotFoundError, isDocumentNotFoundError } from "../ports/document-coordinator.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createCommitDetection } from "./commit-detection.js";
 import { createDocumentEditCommands } from "./document-edits.js";
@@ -67,7 +67,7 @@ export interface WriteTool {
     documentId: string;
     threadId: string;
     peerDraftId: string;
-    reason: import("../ports/document-coordinator.js").DiscardedWriteReason;
+    reason: import("../ports/document-coordinator.js").RetiredWriteReason;
   }): void;
   /** Drop one thread's staged writes to a document: a save fence denied them. */
   dropStaged(docId: string, threadId: string): void;
@@ -86,14 +86,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
   });
-  const lifecyclePort = options.lifecycle;
   const responseCommitter = createResponseCommitter({
     detection,
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
     links: options.links,
-    ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
     onTransition: options.onResponseCommitterTransition,
@@ -105,7 +103,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       model: options.model,
       codec: options.codec,
       coordinator: options.coordinator,
-      lifecycle: options.lifecycle,
       links: options.links,
       semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
@@ -168,23 +165,25 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     try {
       result = await run(validCommand, session);
     } catch (cause) {
+      // A file gone under the write is an answer, not a failure to diagnose.
       try {
-        options.onUnexpectedWriteError?.({
-          cause,
-          command: commandName,
-          ...(validCommand.documentId ? { documentId: validCommand.documentId } : {}),
-          sessionId: session.id,
-          threadId: session.threadId,
-          ...(context.turnId ? { turnId: context.turnId } : {}),
-          ...(context.responseIdentity?.editScopeId
-            ? { responseId: context.responseIdentity?.editScopeId }
-            : {}),
-          ...(toolUseId ? { toolUseId } : {}),
-        });
+        if (!isDocumentNotFoundError(cause))
+          options.onUnexpectedWriteError?.({
+            cause,
+            command: commandName,
+            ...(validCommand.documentId ? { documentId: validCommand.documentId } : {}),
+            sessionId: session.id,
+            threadId: session.threadId,
+            ...(context.turnId ? { turnId: context.turnId } : {}),
+            ...(context.responseIdentity?.editScopeId
+              ? { responseId: context.responseIdentity?.editScopeId }
+              : {}),
+            ...(toolUseId ? { toolUseId } : {}),
+          });
       } catch {
         // Host diagnostics must never change the model-facing write outcome.
       }
-      result = writeError(cause);
+      result = writeError(cause, commandName);
     }
     const outcome = toOutcome(commandName, result, validCommand.file);
     if (

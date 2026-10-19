@@ -116,6 +116,7 @@ const draftColumns = {
   workId: draftBranchWork.workId,
   threadId: documentDrafts.threadId,
   status: documentDrafts.status,
+  closedCause: documentDrafts.closedCause,
   generation: documentDrafts.generation,
   revision: documentDrafts.revision,
   checkpointRevision: documentDrafts.checkpointRevision,
@@ -162,6 +163,7 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     workId: (row.workId as WorkId | null) ?? null,
     threadId: row.threadId,
     status: row.status,
+    closedCause: row.closedCause,
     generation: row.generation,
     revision: Number(row.revision),
     checkpointRevision: Number(row.checkpointRevision),
@@ -219,7 +221,7 @@ export async function readDraftAt(
   return {
     documentDraft: mapDraft(row),
     checkpoint:
-      row.state && row.stateVector
+      row.state?.length && row.stateVector?.length
         ? { state: new Uint8Array(row.state), stateVector: new Uint8Array(row.stateVector) }
         : null,
     tail,

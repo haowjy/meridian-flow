@@ -306,7 +306,7 @@ it.each([
         {
           ...draftTab!,
           reviews: Object.fromEntries(
-            Object.entries(draftTab!.reviews ?? {}).map(([workId, entry]) => [
+            Object.entries(draftTab?.reviews ?? {}).map(([workId, entry]) => [
               workId,
               { ...entry, tabInstanceToken: "new-account-instance" },
             ]),
@@ -332,8 +332,8 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
     status: "completed",
     branchId: listed.branchId,
     items: [
-      { itemKey: "draft-a", status: "applied", notes: [] },
-      { itemKey: "draft-b", status: "applied", notes: [] },
+      { itemKey: "draft-a", status: "applied" },
+      { itemKey: "draft-b", status: "applied" },
     ],
   });
   await fixture.render(

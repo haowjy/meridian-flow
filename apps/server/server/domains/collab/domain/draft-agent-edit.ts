@@ -26,8 +26,9 @@ import {
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
+import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import type { Branches } from "./branches.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "./draft-journal.js";
 import { peerLossReason, ThreadPeerPullLost, type WorkDraftLookup } from "./draft-pulls.js";
@@ -47,6 +48,7 @@ export type DraftAgentEditDiagnostics = {
 };
 
 export function createDraftAgentEditCoordinator(input: {
+  removals: DocumentRemovals;
   threadId: ThreadId;
   draftCoordinator: DraftCoordinator;
   drafts: DraftLookupWithSnapshots;
@@ -163,7 +165,7 @@ export function createDraftAgentEditCoordinator(input: {
     peerDraftId: string,
     run: (workDraftId: string) => Promise<T>,
   ): Promise<T> {
-    await collabHook("draft.beforeAccess");
+    await testHook("draft.beforeAccess");
     let upstreamDraftId = "";
     let branchId: BranchId | undefined;
     try {
@@ -343,7 +345,7 @@ export type DraftLookupWithSnapshots = WorkDraftLookup &
       draftId: string,
     ): Promise<Pick<
       DraftSnapshot,
-      "upstreamDraftId" | "branchId" | "generation" | "status"
+      "upstreamDraftId" | "branchId" | "generation" | "status" | "closedCause" | "documentId"
     > | null>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;

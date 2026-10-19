@@ -13,8 +13,8 @@
 import type { BranchId, ContextSourceId, DocumentId, FolderId, WorkId } from "@meridian/contracts";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
-import { documents, folders } from "@meridian/database/schema";
-import { type AnyColumn, getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
+import { branchTreeChanges, documents, folders } from "@meridian/database/schema";
+import { and, eq, getTableColumns, inArray, isNull, type SQL, Subquery, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -28,7 +28,6 @@ import {
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { BINARY_FILE_TYPES } from "../adapters/catalog-file-mapper.js";
-import { loadSourceOwners, type SourceOwner } from "./branch-ownership.js";
 import type { NodeRef, TreeView } from "./tree-view.js";
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries
@@ -357,8 +356,9 @@ export async function loadActiveBranchUses(
       r.origin_work_id::text AS origin_work_id,
       (extract(epoch FROM r.created_at) * 1000)::float8 AS branch_created_ms
     FROM branch_tree_changes c JOIN branches r ON r.id = c.branch_id
+    JOIN documents d ON d.id = c.node_id
     WHERE c.node_kind = 'document' AND c.node_id IN (${uuidList(documentIds)})
-      AND c.created AND r.status = 'active'
+      AND c.created AND r.status = 'active' AND d.deleted_at IS NULL
     ORDER BY c.node_id, r.created_at, r.id`);
   return rows.map((row) => ({
     documentId: row.document_id as DocumentId,
@@ -424,14 +424,6 @@ export function documentHiddenSql(alias: string): SQL {
   return sql.raw(`${alias}.hidden`);
 }
 
-/**
- * Predicate on a document-id expression: the document exists and is not tombstoned.
- * For readers that hold ids from another table and compose one query, not a second round trip.
- */
-export function documentNotDeletedSql(documentId: SQL | AnyColumn): SQL {
-  return sql`exists (select 1 from documents d where d.id = ${documentId} and d.deleted_at is null)`;
-}
-
 function uuidList(ids: readonly string[]): SQL {
   return sql.join(
     ids.map((id) => sql`${id}::uuid`),
@@ -441,13 +433,15 @@ function uuidList(ids: readonly string[]): SQL {
 
 /**
  * Diagnostics extend the canonical selection with formerly live lifecycle/malformed
- * identities only. Placement comes from the same SQL UNION branches as visibleDocuments;
- * hidden tombstones never enter either arm, even with a stale branch change row.
+ * identities, plus discarded creations so their removal can answer. Placement comes from
+ * the same SQL UNION branches as visibleDocuments; no other hidden tombstone enters
+ * either arm, even with a stale branch change row.
  */
 export function identityDocuments(view: TreeView) {
   const columns = getTableColumns(documents);
   const query = sql`SELECT d.* FROM (${documentsQuery(view)}) shown JOIN documents d ON d.id = shown.id
-    UNION ALL SELECT d.* FROM documents d WHERE NOT d.hidden AND d.deleted_at IS NOT NULL`;
+    UNION ALL SELECT d.* FROM documents d WHERE d.deleted_at IS NOT NULL
+      AND (NOT d.hidden OR d.deletion_reason = 'discarded')`;
   return subquery(query, columns, "document_identities");
 }
 
@@ -695,4 +689,27 @@ export async function loadSubtreeNodes(
     extension: row.extension,
     hidden: row.hidden,
   }));
+}
+
+/** Complete living identity set for a Work-source cascade under its source namespace locks. */
+export async function loadLivingSourceDocumentIds(
+  db: DrizzleDb,
+  sourceIds: readonly ContextSourceId[],
+): Promise<DocumentId[]> {
+  if (!sourceIds.length) return [];
+  const rows = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(inArray(documents.contextSourceId, [...sourceIds]), isNull(documents.deletedAt)));
+  return rows.map((row) => row.id as DocumentId);
+}
+
+/** Creation membership survives cascade removal but is inactive until Restore. */
+export function livingDocumentUses(db: DrizzleDb) {
+  return db
+    .select(getTableColumns(branchTreeChanges))
+    .from(branchTreeChanges)
+    .innerJoin(documents, eq(documents.id, branchTreeChanges.nodeId))
+    .where(and(eq(branchTreeChanges.nodeKind, "document"), isNull(documents.deletedAt)))
+    .as("living_document_uses");
 }

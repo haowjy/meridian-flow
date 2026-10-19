@@ -66,6 +66,7 @@ import {
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
+import type { RemovedNoticeStore } from "./removed-notice-store";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
@@ -124,6 +125,9 @@ export type ContextRouteActivation = {
   identity: ContextRouteIdentity;
   owner: { kind: "workspace"; tab: ContextTab } | { kind: "route-only" };
 };
+
+/** Where the Editor's tabs report documents that closed because they vanished (`RemovedNoticeStore`). */
+export type RemovedPresentationPort = Pick<RemovedNoticeStore, "presentedRemoved">;
 
 type CoordinatorProjectState = {
   activeWorkId: string | null;
@@ -206,6 +210,7 @@ export class ContextRemovalCoordinator {
   private readonly workspace: EditorWorkspacePort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
+  private readonly notices: RemovedPresentationPort | null;
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
   private readonly sessionEffectRuns = new Map<
@@ -225,6 +230,7 @@ export class ContextRemovalCoordinator {
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
+          notices?: RemovedPresentationPort;
         }
       | null = null,
     explicitDependencies: {
@@ -232,6 +238,7 @@ export class ContextRemovalCoordinator {
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
+      notices?: RemovedPresentationPort;
     } = {},
   ) {
     const dependencies =
@@ -243,6 +250,7 @@ export class ContextRemovalCoordinator {
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;
+    this.notices = dependencies.notices ?? null;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -549,6 +557,21 @@ export class ContextRemovalCoordinator {
               : undefined,
           );
         }
+        this.notices?.presentedRemoved(
+          projectId,
+          "editor",
+          committed.flatMap((command) => {
+            if (command.kind !== "terminal-remove") return [];
+            const id = command.documentId;
+            const tab = priorWorkspace.tabs.find(
+              (candidate): candidate is ServerContextTab =>
+                candidate.kind !== "new" && candidate.documentId === id,
+            );
+            return tab && !settledPlan.tabs.some((candidate) => candidate.documentId === id)
+              ? [tab]
+              : [];
+          }),
+        );
         this.publish(state);
         return settledPlan.sessionEffects;
       };
@@ -772,6 +795,20 @@ export class ContextRemovalCoordinator {
     const outcome = this.executePlanning(projectId, { ...transition.planning, repair });
     this.publish(state);
     return outcome;
+  }
+
+  /**
+   * The catalog no longer places this tab's document. Its tab closes as the
+   * writer's own close would; the notice says why once availability proves
+   * a removal.
+   */
+  closeVanished(
+    projectId: string,
+    tab: ContextTab,
+  ): ContextRemovalOutcome | Promise<NavigationSettlement> {
+    if (this.unavailable()) return { kind: "noop" };
+    this.notices?.presentedRemoved(projectId, "editor", [tab]);
+    return this.writerClose(projectId, tab);
   }
 
   /** Owns the synchronous old-Work prune and next-Work route transition. */

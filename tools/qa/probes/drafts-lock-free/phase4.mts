@@ -4,10 +4,6 @@
  * it, and the pauses that order two writers by a hook or a held call rather than by a sleep.
  */
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import {
-  type CollabHookPoint,
-  setCollabHook,
-} from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
 import { documentEffectsEqual } from "../../../../apps/server/server/domains/collab/domain/document-content.ts";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import {
@@ -21,6 +17,10 @@ import {
 } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-writer-frames.ts";
 import { runOutsideWrite } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
+import {
+  setTestHook,
+  type TestHookPoint,
+} from "../../../../apps/server/server/shared/test-hooks.ts";
 import { gate, type Harness, settled, Y } from "./harness.mts";
 
 /** The resync close: not a refusal, never counted by the client (design §2.7, D30). */
@@ -148,11 +148,11 @@ export function structsOf(update: Uint8Array): string[] {
  * A paused point: the first caller to reach it (for which `when` holds, if given) waits for
  * `release`; every other caller passes.
  */
-export function pauseAt(point: CollabHookPoint, when: () => boolean = () => true) {
+export function pauseAt(point: TestHookPoint, when: () => boolean = () => true) {
   const entered = gate();
   const release = gate();
   let held = false;
-  const remove = setCollabHook(point, async () => {
+  const remove = setTestHook(point, async () => {
     if (held || !when()) return;
     held = true;
     entered.open();

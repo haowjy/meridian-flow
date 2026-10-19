@@ -27,7 +27,9 @@ level = min(person term, lifecycle term, agent term)
 `domain/policy.ts` is pure. `SOURCE_RULES` decides whether a source is drafted
 (Scratch and Uploads are never drafted) and the agent cap. File facts use the
 canonical branch resolver and the selected tree view; hidden identities outside
-that view have no facts, and neither does a Work's draft of a document it may
+that view have no facts unless they are discarded tombstones. Those retain
+deleted facts for person-authorized removal history, never readable content.
+Neither does a Work's draft of a document it may
 not hold (`branchMayHold`: its project's, or its account's `user://`).
 
 ## Grants and service boundary

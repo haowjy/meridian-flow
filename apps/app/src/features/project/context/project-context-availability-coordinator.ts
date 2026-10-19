@@ -3,6 +3,7 @@ import type {
   AvailabilityCommandId,
   AvailabilityGeneration,
   CatalogFileEntry,
+  DocumentRemovalRecord,
   ProjectContextAuthority,
   ProjectContextIdentityLookupResult,
   ProjectContextIdentityResolution,
@@ -25,6 +26,8 @@ export type ProjectDocumentAvailabilityCommand =
       /** Namespace version that proved the deletion; the local terminal keeps it. */
       deletionVersion: string | null;
       cause: "document-deleted";
+      /** Who removed it and why; absent when the deletion was learned without a lookup. */
+      removal?: DocumentRemovalRecord;
     }
   | {
       kind: "authority-revoke";
@@ -35,12 +38,6 @@ export type ProjectDocumentAvailabilityCommand =
       authority: ProjectContextAuthority;
       cause: "authority-unavailable" | "no-longer-visible";
     };
-
-export type InstalledCatalogObservation = {
-  projectId: string;
-  vanishedDocumentIds: readonly string[];
-  changedWatchedDocumentIds: readonly string[];
-};
 
 type Lookup = (
   projectId: string,
@@ -81,6 +78,32 @@ export type ProjectAvailabilityLease = {
   release(): void;
 };
 
+/**
+ * What the server last said about one document, for explaining a removal.
+ * `removed` carries its record (null: the server keeps none, e.g. its source
+ * or Work went rather than the document itself). `available` can precede the
+ * commit of a delete the shared local replica already applied, so it is not
+ * final while someone asks. `lost`: an authority loss, explained elsewhere.
+ * `unresolved`: the last lookup failed; focus, online and the poll retry it.
+ */
+export type RemovalAnswer =
+  | { kind: "removed"; record: DocumentRemovalRecord | null }
+  | { kind: "available" | "lost" | "unresolved" };
+
+/** One document's subscribable answer; subscribing asks for it (`removalRecord`). */
+export type RemovalRecordHandle = {
+  get(): RemovalAnswer | undefined;
+  subscribe(listener: () => void): () => void;
+};
+
+type RemovalAsks = {
+  lease: ProjectAvailabilityLease;
+  counts: Map<string, number>;
+  /** Asked documents not yet looked up for this ask. */
+  unasked: Set<string>;
+  scheduled: boolean;
+};
+
 export type ProjectDocumentOpenResolution =
   | ProjectContextIdentityResolution
   | { kind: "failed" | "malformed" };
@@ -92,6 +115,10 @@ function authorityGeneration(resolution: ProjectContextIdentityResolution): stri
   return resolution.kind === "not-visible" || resolution.kind === "indeterminate"
     ? resolution.checkedGeneration
     : resolution.generation;
+}
+
+function removalKey(projectId: string, documentId: string): string {
+  return JSON.stringify([projectId, documentId]);
 }
 
 function commandId(
@@ -107,6 +134,14 @@ export class ProjectContextAvailabilityCoordinator {
   private readonly projects = new Map<string, ProjectState>();
   private nextLeaseId = 0;
   private readonly pendingOpens = new Map<string, Promise<ProjectDocumentOpenResolution>>();
+  /**
+   * Removal answers by `[projectId, documentId]`: every `removed` one, and any
+   * answer for an asked document. A later resolution of the same document
+   * replaces it, whichever watch, open or poll brought it.
+   */
+  private readonly removalAnswers = new Map<string, RemovalAnswer>();
+  private readonly removalListeners = new Map<string, Set<() => void>>();
+  private readonly removalAsks = new Map<string, RemovalAsks>();
 
   constructor(
     private readonly dependencies: {
@@ -165,11 +200,6 @@ export class ProjectContextAvailabilityCoordinator {
         if (state.leases === 0) this.projects.delete(projectId);
       },
     };
-  }
-
-  async observe(observation: InstalledCatalogObservation): Promise<void> {
-    const ids = [...observation.vanishedDocumentIds, ...observation.changedWatchedDocumentIds];
-    await this.recheck(observation.projectId, ids);
   }
 
   async coldScopeHint(projectId: string, workId: string): Promise<void> {
@@ -260,6 +290,7 @@ export class ProjectContextAvailabilityCoordinator {
           this.dependencies.lookup(projectId, [documentId]),
         );
       } catch {
+        this.learnUnresolved(projectId, [documentId]);
         return { kind: "failed" };
       }
       if (
@@ -273,6 +304,8 @@ export class ProjectContextAvailabilityCoordinator {
       const generation = BigInt(authorityGeneration(resolution));
       if (generation < (state.highestAuthorityGeneration.get(documentId) ?? -1n))
         return { kind: "malformed" };
+      // Learned before the commands apply, so whatever they close reads the answer at once.
+      this.learnRemoval(projectId, resolution);
       const command = this.classify(projectId, resolution, state);
       if (command) await this.dependencies.apply([command]);
       if (state.requestGeneration.get(documentId) !== requestGeneration)
@@ -346,6 +379,7 @@ export class ProjectContextAvailabilityCoordinator {
     const isCurrent = (documentId: string) =>
       liveWatched.has(documentId) &&
       state.requestGeneration.get(documentId) === localGenerations.get(documentId);
+    this.learnUnresolved(projectId, [...unresolved].filter(isCurrent));
     if ([...unresolved].some(isCurrent)) return;
 
     const committed: Array<{
@@ -360,6 +394,7 @@ export class ProjectContextAvailabilityCoordinator {
       if (!resolution) continue;
       const generation = BigInt(authorityGeneration(resolution));
       if (generation < (state.highestAuthorityGeneration.get(documentId) ?? -1n)) continue;
+      this.learnRemoval(projectId, resolution);
       committed.push({
         documentId,
         resolution,
@@ -390,6 +425,160 @@ export class ProjectContextAvailabilityCoordinator {
       }
       this.emitAuthorizationLoss(projectId, state, candidate.resolution);
     }
+  }
+
+  /**
+   * One document's removal answer. While subscribed and not yet `removed` or
+   * `lost`, the document is watched, so focus, online and the poll keep asking;
+   * the first subscription asks at once unless an answer or an open is pending.
+   */
+  removalRecord(projectId: string, documentId: string): RemovalRecordHandle {
+    const key = removalKey(projectId, documentId);
+    return {
+      get: () => this.removalAnswers.get(key),
+      subscribe: (listener) => {
+        const listeners = this.removalListeners.get(key) ?? new Set();
+        listeners.add(listener);
+        this.removalListeners.set(key, listeners);
+        this.ask(projectId, documentId);
+        let held = true;
+        return () => {
+          if (!held) return;
+          held = false;
+          listeners.delete(listener);
+          if (listeners.size === 0) this.removalListeners.delete(key);
+          this.unask(projectId, documentId);
+        };
+      },
+    };
+  }
+
+  /**
+   * The server closed this document's room as removed (4208). That outdates
+   * any answer but `removed`, so it is forgotten and, while asked, looked up
+   * again: whatever answers next was learned after the close.
+   */
+  roomRemoved(projectId: string, documentId: string): void {
+    const key = removalKey(projectId, documentId);
+    const answer = this.removalAnswers.get(key);
+    if (answer?.kind === "removed") return;
+    const asks = this.removalAsks.get(projectId);
+    if (asks?.counts.has(documentId)) {
+      asks.unasked.add(documentId);
+      this.watchAsked(projectId, asks);
+    }
+    if (!answer) return;
+    this.removalAnswers.delete(key);
+    this.notifyRemoval(key);
+  }
+
+  private ask(projectId: string, documentId: string): void {
+    let asks = this.removalAsks.get(projectId);
+    if (!asks) {
+      asks = {
+        lease: this.attachProject(projectId),
+        counts: new Map(),
+        unasked: new Set(),
+        scheduled: false,
+      };
+      this.removalAsks.set(projectId, asks);
+    }
+    const count = asks.counts.get(documentId) ?? 0;
+    asks.counts.set(documentId, count + 1);
+    if (count > 0) return;
+    if (!this.removalAnswers.has(removalKey(projectId, documentId))) asks.unasked.add(documentId);
+    this.watchAsked(projectId, asks);
+  }
+
+  private unask(projectId: string, documentId: string): void {
+    const asks = this.removalAsks.get(projectId);
+    const count = asks?.counts.get(documentId);
+    if (!asks || count === undefined) return;
+    if (count > 1) {
+      asks.counts.set(documentId, count - 1);
+      return;
+    }
+    asks.counts.delete(documentId);
+    asks.unasked.delete(documentId);
+    const key = removalKey(projectId, documentId);
+    // Only `removed` outlives its asks; anything else is stale once no one waits on it.
+    if (this.removalAnswers.get(key)?.kind !== "removed") this.removalAnswers.delete(key);
+    if (asks.counts.size > 0) {
+      this.watchAsked(projectId, asks);
+      return;
+    }
+    this.removalAsks.delete(projectId);
+    asks.lease.release();
+  }
+
+  /** Watches asked documents still waiting, and looks up new asks once, batched. */
+  private watchAsked(projectId: string, asks: RemovalAsks): void {
+    if (asks.scheduled) return;
+    asks.scheduled = true;
+    queueMicrotask(() => {
+      asks.scheduled = false;
+      if (this.removalAsks.get(projectId) !== asks) return;
+      asks.lease.watch(
+        "removal-records",
+        [...asks.counts.keys()].flatMap((documentId) => {
+          const answer = this.removalAnswers.get(removalKey(projectId, documentId));
+          return answer?.kind === "removed" || answer?.kind === "lost" ? [] : [{ documentId }];
+        }),
+      );
+      // An open in flight answers for itself; a second lookup would fence it.
+      const lookup = [...asks.unasked].filter(
+        (documentId) =>
+          !this.removalAnswers.has(removalKey(projectId, documentId)) &&
+          !this.pendingOpens.has(JSON.stringify([projectId, documentId])),
+      );
+      asks.unasked.clear();
+      if (lookup.length === 0) return;
+      // A lookup that answered nothing (still indeterminate after repair, or
+      // fenced by a newer one) leaves the asker unresolved, not loading.
+      const unanswered = () =>
+        this.learnUnresolved(
+          projectId,
+          lookup.filter(
+            (documentId) => !this.pendingOpens.has(JSON.stringify([projectId, documentId])),
+          ),
+        );
+      void this.recheck(projectId, lookup).then(unanswered, unanswered);
+    });
+  }
+
+  private learnRemoval(projectId: string, resolution: ProjectContextIdentityResolution): void {
+    if (resolution.kind === "indeterminate") return;
+    const answer: RemovalAnswer =
+      resolution.kind === "deleted"
+        ? { kind: "removed", record: resolution.removal ?? null }
+        : { kind: resolution.kind === "available" ? "available" : "lost" };
+    this.setRemovalAnswer(projectId, resolution.documentId, answer);
+  }
+
+  private learnUnresolved(projectId: string, documentIds: readonly string[]): void {
+    for (const documentId of documentIds)
+      if (!this.removalAnswers.has(removalKey(projectId, documentId)))
+        this.setRemovalAnswer(projectId, documentId, { kind: "unresolved" });
+  }
+
+  private setRemovalAnswer(projectId: string, documentId: string, answer: RemovalAnswer): void {
+    const key = removalKey(projectId, documentId);
+    const asks = this.removalAsks.get(projectId);
+    const asked = asks?.counts.has(documentId) ?? false;
+    const prior = this.removalAnswers.get(key);
+    if (!asked && answer.kind !== "removed") {
+      if (!prior) return;
+      this.removalAnswers.delete(key);
+    } else {
+      if (prior && JSON.stringify(prior) === JSON.stringify(answer)) return;
+      this.removalAnswers.set(key, answer);
+    }
+    if (asks && asked) this.watchAsked(projectId, asks);
+    this.notifyRemoval(key);
+  }
+
+  private notifyRemoval(key: string): void {
+    for (const listener of [...(this.removalListeners.get(key) ?? [])]) listener();
   }
 
   private emitAuthorizationLoss(
@@ -482,6 +671,7 @@ export class ProjectContextAvailabilityCoordinator {
         generation: resolution.generation,
         deletionVersion: resolution.observationVersion,
         cause: "document-deleted",
+        ...(resolution.removal ? { removal: resolution.removal } : {}),
         commandId: commandId("terminal-remove", projectId, documentId, resolution.generation),
       };
     }

@@ -32,6 +32,7 @@ function scenario() {
     branches,
     diagnostics,
     fileAccess,
+    removals: { lookup: async () => new Map() },
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });

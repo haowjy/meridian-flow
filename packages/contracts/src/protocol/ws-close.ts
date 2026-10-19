@@ -11,6 +11,8 @@ export const WS_CLOSE = {
    * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.
    */
   DRAFT_PREFIX_MISSING: { code: 4207, reason: "draft-prefix-missing" },
+  /** Terminal: the document was removed. Never reconnect. */
+  DOCUMENT_DELETED: { code: 4208, reason: "document-deleted" },
   CLIENT_SCHEMA_SUPERSEDED: { code: 4406, reason: "client-schema-superseded" },
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**

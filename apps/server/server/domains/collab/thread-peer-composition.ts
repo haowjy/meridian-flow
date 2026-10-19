@@ -8,12 +8,12 @@ import {
   type AgentEditCodecFactory,
   createAgentEditCore,
   type DocumentEdits,
-  type DocumentLifecycle,
   type SemanticProvenanceWriter,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentRemovals } from "../context/ports/document-removal.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
@@ -54,7 +54,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   drafts: ApplicationDraftStore;
   draftCoordinator: DraftCoordinator;
   draftPulls: DraftPullService;
@@ -72,6 +71,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  removals: DocumentRemovals;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
@@ -79,12 +79,14 @@ export function createDraftThreadPeerAgentEditCore(input: {
   return createThreadPeerCorePool({
     branches: input.branches,
     drafts: input.drafts,
+    removals: input.removals,
     fences: createReplySaveFences({
       liveUtilityCore: input.liveUtilityCore,
       drafts: input.drafts,
       branches: input.branches,
       diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,
+      removals: input.removals,
       lockWorks: input.lockWorks,
       lockLiveDocuments: input.lockLiveDocuments,
     }),
@@ -107,6 +109,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
         journal: createDraftAgentEditJournal({ liveJournal: input.journal }),
         coordinator: createDraftAgentEditCoordinator({
           threadId,
+          removals: input.removals,
           draftCoordinator: input.draftCoordinator,
           drafts: input.drafts,
           journalRows: input.draftJournal,
@@ -114,7 +117,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
           branches: input.branches,
         }),
         documentEdits: input.documentEdits,
-        lifecycle: input.lifecycle,
         codec: input.codec,
         model: input.model,
         semanticProvenance: input.semanticProvenance,

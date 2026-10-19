@@ -7,6 +7,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../../domains/file-policy/index.js";
 import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../../../test-support/document-removal.js";
+import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
@@ -62,6 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
       });
@@ -78,7 +83,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         documentSync: collab,
         scheme: "manuscript",
       });

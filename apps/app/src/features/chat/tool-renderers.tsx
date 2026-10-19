@@ -297,7 +297,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
     case "cant_undo_applied":
       return t`That change can't be undone here because it was already applied to your manuscript.`;
     case "cant_undo_discarded":
-      return t`That change can't be undone because you discarded it.`;
+      return t`That change can't be undone because it was discarded.`;
     case "cant_undo_changed":
       return t`That change can't be undone because the text changed afterwards.`;
     case "cant_undo_held":
@@ -307,7 +307,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
     case "cant_redo_applied":
       return t`That change can't be redone here because it was already applied to your manuscript.`;
     case "cant_redo_discarded":
-      return t`That change can't be redone because you discarded it.`;
+      return t`That change can't be redone because it was discarded.`;
     case "cant_redo_changed":
       return t`That change can't be redone because the text changed afterwards.`;
     case "cant_redo_held":
@@ -331,7 +331,10 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "invalid_write": {
-      const reason = rejectionCopy(documentFailureRejected(tool));
+      const reason =
+        documentFailureRejected(tool) === "removed"
+          ? removedWriteCopy(name, documentFailureRemoval(tool))
+          : rejectionCopy(documentFailureRejected(tool));
       if (reason) return reason;
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
     }
@@ -349,14 +352,80 @@ function documentFailureRejected(tool: ToolView): string | null {
   return asString(result.rejected) ?? null;
 }
 
+/**
+ * Who removed a refused write's document and how, when the host sent the
+ * record with a `removed` rejection. A named person or Work is named; anyone
+ * else reads passively.
+ */
+function documentFailureRemoval(tool: ToolView): {
+  by: { kind: "person" | "work"; name: string } | { kind: "unfinished-reply" } | null;
+  reason: "deleted" | "discarded";
+} {
+  const result = tool.result;
+  const removal =
+    result && typeof result === "object" && !Array.isArray(result) ? result.removal : null;
+  if (!removal || typeof removal !== "object" || Array.isArray(removal))
+    return { by: null, reason: "deleted" };
+  const actor = removal.actor;
+  const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
+  const name = (value: unknown) => (typeof value === "string" && value ? value : null);
+  const person = record?.kind === "user" ? name(record.displayName) : null;
+  const work = record?.kind === "work" ? name(record.name) : null;
+  return {
+    by: person
+      ? { kind: "person", name: person }
+      : work
+        ? { kind: "work", name: work }
+        : record?.kind === "system" && record.cause !== "repair"
+          ? { kind: "unfinished-reply" }
+          : null,
+    reason: removal.reason === "discarded" ? "discarded" : "deleted",
+  };
+}
+
+/** A write refused because its document was removed before the reply saved it. */
+function removedWriteCopy(
+  name: string | null,
+  removal: ReturnType<typeof documentFailureRemoval>,
+): string {
+  const { by } = removal;
+  if (by?.kind === "unfinished-reply")
+    return name
+      ? t`${name} was removed when the reply that created it didn't finish, so this change wasn't made.`
+      : t`This document was removed when the reply that created it didn't finish, so this change wasn't made.`;
+  if (by?.kind === "person") {
+    const who = by.name;
+    return removal.reason === "discarded"
+      ? name
+        ? t`${who} discarded ${name} from the draft before this reply saved its change.`
+        : t`${who} discarded this document from the draft before this reply saved its change.`
+      : name
+        ? t`${who} deleted ${name} before this reply saved its change.`
+        : t`${who} deleted this document before this reply saved its change.`;
+  }
+  if (by?.kind === "work") {
+    const work = by.name;
+    return name
+      ? t`${name} was deleted with the Work ${work} before this reply saved its change.`
+      : t`This document was deleted with the Work ${work} before this reply saved its change.`;
+  }
+  return removal.reason === "discarded"
+    ? name
+      ? t`${name} was discarded from the draft before this reply saved its change.`
+      : t`This document was discarded from the draft before this reply saved its change.`
+    : name
+      ? t`${name} was deleted before this reply saved its change.`
+      : t`This document was deleted before this reply saved its change.`;
+}
+
 function rejectionCopy(rejected: string | null): string | null {
   switch (rejected) {
     case "discarded_draft":
-      return t`You discarded this draft, so the change wasn't kept. The AI will read it again.`;
+      return t`This draft was discarded, so the change wasn't kept. The AI will read it again.`;
     case "discarded_document":
-      return t`You discarded this new document, so the change wasn't kept. The AI will read it again.`;
+      return t`This new document was discarded, so the change wasn't kept. The AI will read it again.`;
     case "discarded_edit":
-      return t`You discarded the text it edited, so the change wasn't kept. The AI will read it again.`;
+      return t`The text it edited was discarded, so the change wasn't kept. The AI will read it again.`;
     case "inverse":
       return t`The text it edited was undone, so the change wasn't kept. The AI will read it again.`;
     case "integration":

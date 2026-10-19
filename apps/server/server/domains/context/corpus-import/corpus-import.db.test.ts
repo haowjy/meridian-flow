@@ -1,8 +1,10 @@
 /** Corpus intake preserves writer titles and allocates against live KB names. */
+
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { documents, projects, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
@@ -32,6 +34,7 @@ else
       const contextPorts = createProductionUnifiedContextPortFactory({
         pendingBranch: createTestWorkProjectionMutation(db),
         db,
+        removal: createTestDocumentRemoval(db),
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
         branches: collab.branches,
@@ -121,6 +124,7 @@ else
         const contextPorts = createProductionUnifiedContextPortFactory({
           pendingBranch: createTestWorkProjectionMutation(db),
           db,
+          removal: createTestDocumentRemoval(db),
           links: createTestDocumentLinkScopes(db),
           documentSync: collab,
           branches: collab.branches,

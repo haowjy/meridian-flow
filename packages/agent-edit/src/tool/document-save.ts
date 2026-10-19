@@ -8,9 +8,9 @@ import { toDocHandle } from "../handles.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import {
-  type DiscardedWriteReason,
   type DocumentAccess,
   type DocumentCoordinator,
+  type RetiredWriteReason,
   type SaveCut,
   SavePreconditionRefused,
   type StagedCut,
@@ -30,7 +30,7 @@ import type {
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { observeRendered } from "./observation.js";
-import { rejectedWriteExplanation, renderSettledReceipts } from "./receipt.js";
+import { rejectedWriteResult, renderSettledReceipts } from "./receipt.js";
 import type {
   DocumentCommandName,
   InteractionContext,
@@ -63,7 +63,6 @@ export interface SavedDocument {
   providerResponseId: string;
   session: { threadId: string };
   interactionContext?: InteractionContext;
-  ensureDocumentBeforeCommit: boolean;
   /** The room copy's cut at the scope's first stage of the document (amendment 2). */
   cut: StagedCut;
   updates: StagedResponseUpdate[];
@@ -112,7 +111,7 @@ export interface DocumentSave {
    * resolves the cut the append actually followed (null when nothing was written); a created
    * document is ensured.
    */
-  persist(doc: SavedDocument, save: SaveOutcome): Promise<SaveCut | null>;
+  persist(save: SaveOutcome): Promise<SaveCut | null>;
   /**
    * The saved document's receipts, after its save handed its write to the host: the save's
    * verdict on `doc` (the commit's snapshot), then detection on `cut` (what `persist`
@@ -141,7 +140,6 @@ export function createDocumentSave(deps: {
   model: AgentEditModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinksPort;
-  ensureDocument?: (docId: string) => Promise<void>;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
 }): DocumentSave {
   const { coordinator, detection } = deps;
@@ -174,10 +172,8 @@ export function createDocumentSave(deps: {
       return outcome;
     },
 
-    async persist(doc, save) {
+    async persist(save) {
       const cut = save.write.kind === "write" ? await save.write.persist() : null;
-      if (save.updates.length && doc.ensureDocumentBeforeCommit)
-        await deps.ensureDocument?.(doc.docId);
       return cut;
     },
 
@@ -446,28 +442,13 @@ export function journalEntries(
   }));
 }
 
-/** A write a Discard refused, named by which Discard. */
-export function discardedWrite(
-  reason: DiscardedWriteReason = "discarded_edit",
-): InternalWriteResult {
-  return {
-    status: "invalid_write",
-    model: {
-      message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
-      rejected: reason,
-    },
-  };
+/** A retirement refusal uses the same record and copy as a settled receipt. */
+export function discardedWrite(reason: RetiredWriteReason = "discarded_edit"): InternalWriteResult {
+  return rejectedWriteResult(reason);
 }
 
-/** A save that refused a write outside a reply: a Discard's named refusal, else the reason. */
 function refusedWrite(reason: StagedWriteRejectionReason): InternalWriteResult {
-  if (reason.startsWith("discarded_")) return discardedWrite(reason as DiscardedWriteReason);
-  return {
-    status: "invalid_write",
-    model: {
-      message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
-    },
-  };
+  return rejectedWriteResult(reason);
 }
 
 function docFromState(state: Uint8Array): Y.Doc {

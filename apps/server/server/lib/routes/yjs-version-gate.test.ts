@@ -36,6 +36,8 @@ function versionGateServices(
   } = {},
 ) {
   const documentSync = {
+    roomRemoval: vi.fn(async () => null),
+    repairDocumentAuthority: vi.fn(async () => {}),
     bindHocuspocus: vi.fn(),
     headSchemaVersion: vi.fn(async () => (input.liveHead === undefined ? null : input.liveHead)),
     resolveDraftHocuspocusRoom: vi.fn(async (draftId: string, generation: number) => ({

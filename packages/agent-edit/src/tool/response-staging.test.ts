@@ -46,7 +46,7 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Must persist."]);
   });
 
-  it("rolls back staged create without leaving an empty live document", async () => {
+  it("rolls back a staged create without writing its host-created document", async () => {
     const ctx = harness();
     const responseContext = {
       ...context,
@@ -65,16 +65,13 @@ describe("response staging", () => {
 
     expectOutcome(result, "success");
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
-    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
     const rollback = await ctx.core.rollbackResponse("response-staged-create-rollback");
 
+    // Retracting the created document is the host's (its end-use kernel), not the core's.
     expect(rollback.stagedCreates).toEqual({ committed: [], discarded: ["new.md"] });
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
-    expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-    expect(outcomeText(await ctx.core.read({ file: "new.md" }, context))).toBe(
-      "status: document_not_found; path: new.md\n\nFile not found. Check the path with `ls`.",
-    );
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual([]);
   });
 
   it("stages multiple response writes and commits journal plus live doc once", async () => {

@@ -291,7 +291,7 @@ if (!RUN) {
       // Delete and recreate the address: the compare-and-set must not move the target.
       await database
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DOCUMENT));
       await insertDocument(database, "manuscript", DOCUMENT_2);
       expect(await registry.settleArrivals([DOCUMENT_2 as never])).toBe(0);
