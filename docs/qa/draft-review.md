@@ -67,6 +67,14 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
 | Navigate away immediately after Discard | Notice ends, but the retained operation still writes once. Retiring the binding or replacing the account before it starts instead prevents stale writes and releases its lease. |
 | Type or receive a peer write before the deferred transaction | Changed prose/base refuses the stale Discard with its item failure; intervening text survives and the row returns. |
 
+On the all-changed 50k-word file, repeat dock Discard and notice Undo **five times**.
+Wait for the Discard transaction to finish before Undo (not the early-cancel path);
+capture the bound session before each Undo and await its current-changes
+acknowledgement. Each action emits one prose transaction and update, every Undo
+restores the exact pre-Discard ProseMirror document, and all five barriers resolve.
+Record socket closes: `4207` is not an acknowledgement. Reload after the fifth
+barrier and compare the same text; local restoration alone does not prove durability.
+
 After Apply, type an extra word outside a replacement, then Discard that
 insertion and Undo. Repeat with the document's Discard draft while only
 insertions remain. Neither action nor Undo raises a schema-repair notice;

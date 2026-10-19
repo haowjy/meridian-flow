@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep repeated large draft Discard and Undo saved without socket timeouts.
+
 - Keep draft-review bursts proportional to current text and queued clicks: retain base nodes and clean frames, subscribe controls to their own state, and map peer edits without inflating review paint.
 
 - Subscribe the document toolbar to its control state so unchanged review metadata does not rerender its ten controls.
