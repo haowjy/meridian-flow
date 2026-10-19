@@ -17,12 +17,13 @@ text matches; the seam is `src/model/markdown-text-view.ts` and
   host at composition, with required host capabilities
   ([#938](https://github.com/haowjy/meridian-flow/issues/938)).
 
-## Observation frontiers (track M, M2)
+## Observation frontiers
 
 - `src/tool/observation.ts` credits only `extent: full` blocks, so a write echo's
   context line shown whole (a paragraph shorter than the truncation) still lands
-  in `unshown`. Decide when M2 sets the region rule (C3): credit an untruncated
-  context line as shown in full, or accept the one refusal it causes.
+  in `unshown`. Decide when the region refusal lands ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)):
+  credit an untruncated context line as shown in full, or accept that the next
+  write touching that paragraph is refused once with its current text.
 
 ## Deferred until earned
 

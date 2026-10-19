@@ -81,7 +81,7 @@ passes `observeInverse(draftId)` and the echo records from the inverse's
 document's result carries one at the post-commit cut (`saveObservation`),
 crediting what its accepted receipts show; journal-replay recovery leaves the
 cut unknown and records none. Shown in full: a read's rendered blocks (an
-outline none) and `extent: full` changed blocks (never prefix context, copy
+outline read credits none) and `extent: full` changed blocks (never prefix context, copy
 edges or swept bodies). A result reported with `awarenessDegraded` still
 records, crediting nothing. A failure is reported through
 `onObservationFailed` and the result goes out without one; `frontier` never
