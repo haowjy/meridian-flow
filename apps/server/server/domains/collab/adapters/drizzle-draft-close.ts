@@ -13,8 +13,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { BranchId, DocumentId, ThreadId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { documentDrafts } from "@meridian/database/schema";
-import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
-import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
+import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import {
   type DrizzleDb,
   type DrizzleTransactionParticipant,
@@ -28,7 +27,6 @@ import type {
   DraftRetirement,
   DraftRetirementBatch,
 } from "../domain/draft-retirement.js";
-import { settleDraftGeneration } from "./drizzle-document-edits.js";
 
 /** Which drafts a close takes: by document (optionally one branch's), branch, id or upstream. */
 export type DraftSelection =
@@ -79,9 +77,8 @@ type Batch = { closed: ClosedDraft[]; removed: Map<DocumentId, DocumentRemovalRe
 
 export type DraftClose = {
   /**
-   * Close exactly the selection's active drafts, settle the current generation of each Work
-   * draft, and retire them after the root transaction commits. Already-closed rows keep their
-   * cause. A removal's selection names its documents, whose rooms close even with no draft.
+   * Close exactly the selection's active drafts and retire them after the root transaction
+   * commits. Already-closed rows keep their cause. A removal's selection names its documents, whose rooms close even with no draft.
    */
   closeDrafts(
     db: DrizzleDb,
@@ -142,18 +139,28 @@ export function createDraftClose(): DraftClose {
         for (const id of selection.documentIds) batch.removed.set(id, cause.documentRemoved);
       }
       const rows = await lockActiveDrafts(db, selection);
-      const closed = await bumpDraftRevisions(
-        db,
-        rows.map((row) => row.id),
-        {
-          status: "closed",
-          closedCause: typeof cause === "object" ? "document_removed" : "discarded",
-        },
-      );
-      for (const row of closed) {
-        if (row.kind === "work_draft")
-          await settleDraftGeneration(db, row.draftId, row.generation, "discarded");
-      }
+      const closed = rows.length
+        ? await db
+            .update(documentDrafts)
+            .set({
+              status: "closed",
+              closedCause: typeof cause === "object" ? "document_removed" : "discarded",
+              updatedAt: new Date(),
+              revision: sql`${documentDrafts.revision} + 1`,
+            })
+            .where(
+              inArray(
+                documentDrafts.id,
+                rows.map((row) => row.id),
+              ),
+            )
+            .returning({
+              draftId: documentDrafts.id,
+              documentId: documentDrafts.documentId,
+              threadId: documentDrafts.threadId,
+              branchId: documentDrafts.branchId,
+            })
+        : [];
       const ended = closed.map((row) => ({
         draftId: row.draftId,
         documentId: row.documentId as DocumentId,

@@ -4151,10 +4151,6 @@ msgid "That change can't be made because this Work's drafts are archived."
 msgstr "此工作中的草稿已归档，无法进行该修改。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because it is held for review."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be redone because it was discarded."
 msgstr ""
 
@@ -4172,10 +4168,6 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be redone here because the chat now writes somewhere else."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone because it is held for review."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

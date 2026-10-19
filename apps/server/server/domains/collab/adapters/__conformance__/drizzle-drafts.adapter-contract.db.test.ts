@@ -36,9 +36,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/drizzle-reset.js"
     );
     const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
-    const { appendDraftRows, proseDraftUpdate, readDraftContent } = await import(
-      "../../test-support/draft-store-seam.js"
-    );
+    const { readDraftContent } = await import("../../test-support/draft-store-seam.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const { createDrizzleWorkBranchPendingStore } = await import(
@@ -435,40 +433,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         persistence.loadHocuspocusDraftState("missing-review-draft", 1),
       ).resolves.toBeUndefined();
-    });
-    it("captures an immutable live journal draftBase for each new draft row", async () => {
-      const live = docWithText("base");
-      await livePersistence.seeds.seedInitialDocument(DOC_ID, Y.encodeStateAsUpdate(new Y.Doc()));
-      const firstSeq = await livePersistence.journal.append(DOC_ID, Y.encodeStateAsUpdate(live), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      const documentDraft = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: live,
-      });
-      await appendDraftRows(store, documentDraft.draftId, [
-        { updateData: proseDraftUpdate(), source: "agent" },
-      ]);
-
-      const beforeSecond = Y.encodeStateVector(live);
-      live.getText("content").insert(live.getText("content").length, " later");
-      const secondSeq = await livePersistence.journal.append(
-        DOC_ID,
-        Y.encodeStateAsUpdate(live, beforeSecond),
-        { origin: `human:${USER_ID}`, seq: 0 },
-      );
-      await appendDraftRows(store, documentDraft.draftId, [
-        { updateData: proseDraftUpdate(), source: "agent" },
-      ]);
-
-      const rows = await db
-        .select({ draftBaseUpdateSeq: draftWriteJournal.draftBaseUpdateSeq })
-        .from(draftWriteJournal)
-        .where(eq(draftWriteJournal.draftId, documentDraft.draftId))
-        .orderBy(draftWriteJournal.id);
-      expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
     });
     // Risk: an append is sequenced by the row lock, not fenced by the revision (design §2):
     // it lands at any revision, refuses only a closed, re-forked or frozen draft, and an

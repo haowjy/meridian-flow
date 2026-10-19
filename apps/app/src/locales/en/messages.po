@@ -4151,10 +4151,6 @@ msgid "That change can't be made because this Work's drafts are archived."
 msgstr "That change can't be made because this Work's drafts are archived."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because it is held for review."
-msgstr "That change can't be redone because it is held for review."
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be redone because it was discarded."
 msgstr "That change can't be redone because it was discarded."
 
@@ -4173,10 +4169,6 @@ msgstr "That change can't be redone here because it was already applied to your 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be redone here because the chat now writes somewhere else."
 msgstr "That change can't be redone here because the chat now writes somewhere else."
-
-#: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone because it is held for review."
-msgstr "That change can't be undone because it is held for review."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."

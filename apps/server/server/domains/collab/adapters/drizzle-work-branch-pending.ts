@@ -1,34 +1,29 @@
 /** Drizzle store for what is pending review in a Work: counts, the branches changing a document, creators and evidence. */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, documentDrafts, draftWriteJournal, works } from "@meridian/database/schema";
+import { branches, documentDrafts, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
 import { livingDocumentUses } from "../../context/tree/tree-view.js";
-import type {
-  WorkBranchPendingEvidence,
-  WorkBranchPendingStore,
-} from "../domain/ports/work-branch-pending-store.js";
+import { createDraftDispositionReader } from "../domain/draft-disposition.js";
+import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
+import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
 /**
  * The one SQL membership rule for a draft to count as a pending document, twin of
- * `branch-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
+ * `branch-review-items.ts` (active with `hasEffect`). The Work count and the
  * document hint both filter by it; the Works boundary reconciles each Work's stored count
- * through that count (migration 0067's backfill spells it in SQL too).
+ * through that count.
  */
 const reviewableWorkDraft = and(
   eq(documentDrafts.kind, "work_draft"),
   eq(documentDrafts.status, "active"),
-  sql`(${documentDrafts.hasEffect} OR ${documentDrafts.blocking})`,
-  sql`exists (
-    select 1 from ${draftWriteJournal}
-    where ${draftWriteJournal.draftId} = ${documentDrafts.id}
-      and ${draftWriteJournal.generation} = ${documentDrafts.generation}
-      and ${draftWriteJournal.status} in ('active', 'rollback_pending'))`,
+  eq(documentDrafts.hasEffect, true),
 );
 
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
+  const readDisposition = createDraftDispositionReader(createDrizzleDraftDispositionStore(db));
   return {
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
@@ -130,10 +125,6 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       );
     },
     async listBranchDraftEvidence(branchId, documentIds) {
-      // One row per draft and writing chat: the journal is aggregated here, not shipped.
-      const writer = sql<
-        string | null
-      >`case when ${draftWriteJournal.source} = 'agent' then ${draftWriteJournal.threadId} end`;
       const rows = await currentDrizzleDb(db)
         .select({
           draftId: documentDrafts.id,
@@ -141,20 +132,8 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           generation: documentDrafts.generation,
           updatedAt: documentDrafts.updatedAt,
           hasEffect: documentDrafts.hasEffect,
-          blocking: documentDrafts.blocking,
-          writer,
-          writes: sql<number>`count(${draftWriteJournal.id})::int`,
-          lastWrite: sql<number | null>`max(${draftWriteJournal.id})`,
         })
         .from(documentDrafts)
-        .leftJoin(
-          draftWriteJournal,
-          and(
-            eq(draftWriteJournal.draftId, documentDrafts.id),
-            eq(draftWriteJournal.generation, documentDrafts.generation),
-            inArray(draftWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        )
         .where(
           and(
             eq(documentDrafts.branchId, branchId),
@@ -163,29 +142,24 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
             documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
           ),
         )
-        .groupBy(documentDrafts.id, writer)
-        .orderBy(asc(documentDrafts.id), sql`max(${draftWriteJournal.id}) desc nulls last`);
+        .orderBy(asc(documentDrafts.id));
 
-      const evidence = new Map<string, WorkBranchPendingEvidence>();
-      for (const row of rows) {
-        const documentDraft = evidence.get(row.draftId) ?? {
-          documentDraft: {
-            draftId: row.draftId,
-            documentId: row.documentId,
-            branchId,
-            generation: row.generation,
-            updatedAt: row.updatedAt,
-            hasEffect: row.hasEffect,
-            blocking: row.blocking,
-          },
-          hasRows: false,
-          agentThreadIds: [],
-        };
-        if (row.writes > 0) documentDraft.hasRows = true;
-        if (row.writer) documentDraft.agentThreadIds.push(row.writer);
-        evidence.set(row.draftId, documentDraft);
-      }
-      return [...evidence.values()];
+      return Promise.all(
+        rows.map(async (row) => {
+          const view = await readDisposition(row.draftId);
+          const members = new Set<number>();
+          for (const classification of view?.classifications.values() ?? [])
+            for (const member of classification.members) members.add(member);
+          const agentThreadIds = new Set<string>();
+          // Receipt order is newest first; classification member order need not be.
+          for (const [index, part] of (view?.parts ?? []).entries())
+            if (members.has(index) && part.owner) agentThreadIds.add(part.owner.threadId);
+          return {
+            documentDraft: { ...row, branchId },
+            agentThreadIds: [...agentThreadIds],
+          };
+        }),
+      );
     },
   };
 }

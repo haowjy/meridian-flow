@@ -23,7 +23,6 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -36,6 +35,10 @@ import type { WorkProjectionMutation } from "../../projects/index.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
+import {
+  createDraftDispositionReader,
+  type DraftDispositionView,
+} from "../domain/draft-disposition.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { ReversalConflictError } from "../domain/reversal-conflict.js";
@@ -48,6 +51,7 @@ import {
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
+import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { commitRewriteWithinTx, insertJournalRows } from "./drizzle-draft-storage.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 
@@ -61,21 +65,37 @@ type Dependencies = {
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
-  /** Revert, rollback and mark-blocking change pending membership, so they reconcile the Works' counts through it. */
+  /** Revert and rollback change pending membership, so they reconcile the Works' counts through it. */
   workProjection: Pick<WorkProjectionMutation, "mutate">;
 };
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
+  const readDisposition = createDraftDispositionReader(
+    createDrizzleDraftDispositionStore(input.db),
+  );
   async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
     if (query.model) return [...new Set(query.documentIds ?? [])].sort();
     return [
       ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
     ].sort();
   }
-  async function history(documentIds: DocumentId[]): Promise<StoredInversePart[]> {
+  async function history(documentIds: DocumentId[]) {
     if (!documentIds.length) return [];
     const rows = await db()
-      .select({ part: documentEditParts, edit: documentEdits })
+      .select({
+        part: {
+          id: documentEditParts.id,
+          editId: documentEditParts.editId,
+          ordinal: documentEditParts.ordinal,
+          update: documentEditParts.update,
+          effect: documentEditParts.effect,
+          targets: documentEditParts.targets,
+          frontier: documentEditParts.frontier,
+          aliases: documentEditParts.aliases,
+          origin: documentEditParts.origin,
+        },
+        edit: documentEdits,
+      })
       .from(documentEditParts)
       .innerJoin(documentEdits, eq(documentEditParts.editId, documentEdits.id))
       .where(inArray(documentEdits.documentId, documentIds))
@@ -102,26 +122,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
     return doc;
   }
-  /** The drafts an inverse of `query` may read or write: its own and every pending hold. */
-  function inverseDraftIds(query: TurnInverseQuery, parts: StoredInversePart[]): string[] {
+  /** Historical origin drafts supply disposition; only active drafts below admit writes. */
+  function inverseDraftIds(
+    query: TurnInverseQuery,
+    parts: readonly { origin: EditOrigin }[],
+  ): string[] {
     return [
       ...new Set([
         ...(query.draftId ? [query.draftId] : []),
-        ...parts
-          .filter(
-            (part) =>
-              (part.threadId === query.threadId &&
-                (query.model || !query.turnId || part.turnId === query.turnId) &&
-                (query.model ||
-                  !query.responseIdentity ||
-                  part.editScopeId === query.responseIdentity.editScopeId)) ||
-              (part.kind !== "write" && part.placement.kind === "pending"),
-          )
-          .flatMap((part) =>
-            [part.origin, part.placement].flatMap((placement) =>
-              placement.kind === "pending" ? [placement.draftId] : [],
-            ),
-          ),
+        ...parts.flatMap((part) => (part.origin.kind === "pending" ? [part.origin.draftId] : [])),
       ]),
     ].sort();
   }
@@ -132,10 +141,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    * and each draft's Work lifecycle from its row. No lock of any kind.
    */
   async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
-    return runInRootDrizzleReadSnapshot(input.db, async () => {
+    const captured = await runInRootDrizzleReadSnapshot(input.db, async () => {
       const ids = await selectedDocuments(query);
-      const parts = await history(ids);
-      const draftIds = inverseDraftIds(query, parts);
+      const rows = await history(ids);
+      const draftIds = inverseDraftIds(query, rows);
+      const parts: StoredInversePart[] = rows.map((part) => ({
+        ...part,
+        disposition: "pending",
+      }));
       const documents: InverseDocument[] = [];
       const heads = new Map<DocumentId, number>();
       const removals = await readRemovalRecords(db(), ids);
@@ -196,6 +209,37 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
       return { ids, draftIds, documents, heads };
     });
+    // The reader owns its own root snapshot. Do not nest it inside the capture above:
+    // a single-connection caller would wait forever for its own read connection.
+    try {
+      const views = new Map<string, DraftDispositionView | null>();
+      for (const draftId of captured.draftIds) views.set(draftId, await readDisposition(draftId));
+      const byPart = new Map<string, StoredInversePart["disposition"]>();
+      for (const view of views.values())
+        for (const part of view?.parts ?? [])
+          byPart.set(`${part.editId}:${part.ordinal}`, part.disposition);
+      for (const document of captured.documents) {
+        for (const [draftId, draft] of document.drafts) {
+          const evidence = views.get(draftId);
+          if (!evidence || evidence.draft.revision !== draft.documentDraft.revision)
+            throw new InverseAttemptMiss();
+        }
+        document.history = document.history.map((part) => ({
+          ...part,
+          disposition:
+            part.origin.kind === "live"
+              ? "pending"
+              : (byPart.get(`${part.editId}:${part.ordinal}`) ??
+                (part.actor !== "agent" && views.get(part.origin.draftId)?.draft.status === "active"
+                  ? "pending"
+                  : "discarded")),
+        }));
+      }
+      return captured;
+    } catch (cause) {
+      destroyDocuments(captured.documents);
+      throw cause;
+    }
   }
 
   /**
@@ -238,7 +282,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     });
     // Nothing is held: a rewrite that lands between this capture and the commit moves a captured
     // revision or live head, which the commit scope finds and turns into a whole-attempt miss.
-    const captured = await capture(query);
+    let captured: InverseCapture;
+    try {
+      captured = await capture(query);
+    } catch (cause) {
+      if (!attempt && cause instanceof InverseAttemptMiss) throw new ReversalConflictError();
+      throw cause;
+    }
     try {
       return await attemptStorage.run({ ...captured, attempt, deliveries }, () =>
         run(captured.documents),
@@ -250,15 +300,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   const store: TurnInverseStore = {
     withCapturedDocuments: attempts,
-    async markBlocking(draftIds) {
-      if (!draftIds.length) return;
-      // Its own short write after the capture: Work rows, then the held rows, then the bump.
-      await runInDrizzleSavepoint(input.db, () =>
-        input.workProjection.mutate({ drafts: draftIds }, () =>
-          bumpDraftRevisions(db(), draftIds, { blocking: true }),
-        ),
-      );
-    },
     describePart(document, part) {
       const doc =
         part.origin.kind === "pending"
@@ -511,7 +552,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             part.kind === "undo" ||
             part.kind === "redo") &&
           part.editScopeId === query.responseIdentity?.editScopeId &&
-          part.placement.kind === "pending" &&
+          part.origin.kind === "pending" &&
+          part.disposition === "pending" &&
           !accepted.has(`${part.editId}:${part.ordinal}`) &&
           !document.history.some(
             (transition) =>
@@ -522,19 +564,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           ),
       );
       const rowIds = unresolved.flatMap((part) =>
-        part.placement.kind === "pending" ? [part.placement.rowId] : [],
+        part.origin.kind === "pending" ? [part.origin.rowId] : [],
       );
       if (rowIds.length) {
-        const flipping = await db()
-          .select({ draftId: draftWriteJournal.draftId })
-          .from(draftWriteJournal)
-          .where(
-            and(inArray(draftWriteJournal.id, rowIds), eq(draftWriteJournal.status, "active")),
-          );
-        await bumpDraftRevisions(
-          db(),
-          flipping.map((row) => row.draftId),
-        );
         await db()
           .update(draftWriteJournal)
           .set({ status: "rollback_pending" })

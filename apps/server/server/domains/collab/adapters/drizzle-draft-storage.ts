@@ -2,17 +2,12 @@
  * The Drizzle storage half of the draft store: the draft row and its derived Work lifecycle,
  * the one read (`readDraftAt`), and the transactional journal and checkpoint primitives every
  * draft content write commits through (`appendRowsWithinTx`, `commitRewriteWithinTx`;
- * metadata writes use `shared/draft-revisions.ts`). Runs inside the caller's transaction and
+ * closes use `drizzle-draft-close.ts`). Runs inside the caller's transaction and
  * takes no lock but the draft rows'; Work admission, receipts and effect policy belong to the
  * callers.
  */
 import type { WorkId } from "@meridian/contracts/runtime";
-import {
-  documentDrafts,
-  documentYjsUpdates,
-  draftWriteJournal,
-  works,
-} from "@meridian/database/schema";
+import { documentDrafts, draftWriteJournal, works } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
@@ -63,18 +58,6 @@ export function monotonicSchemaStamp(version = COLLAB_SCHEMA_VERSION) {
   )`;
 }
 
-function draftBaseForDraft(draftId: string) {
-  return sql<number>`coalesce((
-    select max(${documentYjsUpdates.id})
-    from ${documentYjsUpdates}
-    where ${documentYjsUpdates.documentId} = (
-      select ${documentDrafts.documentId}
-      from ${documentDrafts}
-      where ${documentDrafts.id} = ${draftId}
-    )
-  ), 0)`;
-}
-
 export async function insertJournalRows(
   db: DrizzleDb,
   rows: readonly AppendDraftJournalInput[],
@@ -87,7 +70,8 @@ export async function insertJournalRows(
         draftId: journal.draftId,
         generation: journal.generation,
         updateData: Buffer.from(journal.updateData),
-        draftBaseUpdateSeq: draftBaseForDraft(journal.draftId),
+        // Required by the legacy NOT NULL column until the migrations lane drops it.
+        draftBaseUpdateSeq: 0,
         source: journal.source,
         wId: journal.wId ?? null,
         toolCallId: journal.toolCallId ?? null,
@@ -123,7 +107,6 @@ const draftColumns = {
     when ${works.archivedAt} is not null then 'archived'
     else 'active' end`,
   hasEffect: documentDrafts.hasEffect,
-  blocking: documentDrafts.blocking,
   discardedStateVector: documentDrafts.discardedStateVector,
   schemaVersion: documentDrafts.schemaVersion,
 };
@@ -166,7 +149,6 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     checkpointSeq: Number(row.checkpointSeq),
     lifecycle: row.lifecycle,
     hasEffect: row.hasEffect,
-    blocking: row.blocking,
     discardedStateVector: row.discardedStateVector,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
   };
