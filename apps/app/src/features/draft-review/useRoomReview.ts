@@ -32,7 +32,14 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
   );
   const namesKey = JSON.stringify(names);
   const metadataKey = JSON.stringify(
-    metadata.map((result, index) => [drafts[index], result.dataUpdatedAt, result.data?.status]),
+    metadata.map((result, index) => [
+      drafts[index].projectId,
+      drafts[index].workId,
+      drafts[index].documentId,
+      drafts[index].itemKey,
+      result.dataUpdatedAt,
+      result.data?.status,
+    ]),
   );
   useEffect(() => {
     for (const [index, result] of metadata.entries())

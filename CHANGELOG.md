@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep draft-review room identity checks independent of the focused document, removing whole-draft serialization while typing.
+
 - Share equal blocks' immutable merge tokens without replacing editor nodes or arrays.
 
 - Take Apply's draft hold only at the append door; a late close rolls back both document halves and the command claim.

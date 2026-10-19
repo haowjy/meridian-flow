@@ -9,8 +9,11 @@ owns diffing, grouping, move pairing and formatting context.
 `useRoomReviews` retains the rooms of the rows on screen through
 `readDraftRoom`. Open reviews and headless dock/Work readers share the runtime
 by session object; a replacement account/session cannot inherit another
-room's frame. The final holder destroys its runtime. The pool keeps room
-sessions through its normal release grace and drains unacknowledged edits;
+room's frame. Metadata effect keys contain only the four draft-address strings and
+metadata revision/status, never the caller's object: presentation focus carries
+a whole projection, and structural typing does not strip those extra fields.
+The final holder destroys its runtime. The pool keeps room sessions through its
+normal release grace and drains unacknowledged edits;
 IndexedDB keeps the local text across reloads.
 
 `review-frame.ts` reads the projection and its snapshot. Headless reads retain unchanged
