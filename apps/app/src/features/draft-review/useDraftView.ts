@@ -1,12 +1,7 @@
 /** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import {
-  type DraftRef,
-  useChangeCommandRecords,
-  wholeDraftDisposition,
-  wholeDraftPending,
-} from "@/client/query/branch-command-record";
+import type { DraftRef } from "./review-command-types";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { usePresentedDraftReview } from "./DraftReviewProvider";
 import {
@@ -34,8 +29,7 @@ export function useDraftView(
     item?: ThreadDraftListItem;
   },
 ): DraftChangesView {
-  const records = useChangeCommandRecords();
-  const locked = controller.changesLocked || wholeDraftPending(records, draft);
+  const locked = controller.changesLocked;
   const presented = usePresentedDraftReview().controller;
   const open = presented.inlineReview;
   const sharing =
@@ -53,9 +47,7 @@ export function useDraftView(
   const { items, hiding } = useChangeItems(
     draft,
     withoutDocumentDraft && item && enabled
-      ? wholeDraftDisposition(records, draft, undefined, item) === null
-        ? [wholeItemChange(item)]
-        : EMPTY
+      ? [wholeItemChange(item)]
       : preview
         ? reviewChangesOfPreview(preview)
         : EMPTY,

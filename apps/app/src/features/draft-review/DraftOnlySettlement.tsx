@@ -4,13 +4,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { resourceIdentityIndex } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { DraftRef } from "@/client/query/branch-command-record";
-import {
-  branchCommandFailure,
-  currentBranchCommandRecords,
-  pendingBranchCommand,
-  useBranchCommandRecords,
-} from "@/client/query/branch-command-record";
+import type { DraftRef } from "./review-command-types";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
@@ -71,7 +65,6 @@ function WorkSettlement({
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const drafts = useWorkBranchDrafts(projectId, workId);
-  const records = useBranchCommandRecords();
   const projection = useObservedResourceProjection(resources, projectId);
   // A draft-only tab whose draft left the active list was disposed of
   // elsewhere. The list cannot say how, so the catalog decides: a document
@@ -80,10 +73,7 @@ function WorkSettlement({
     if (!resources || !projectId || !workId) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
-      draft.workId === workId &&
-      !pendingBranchCommand(currentBranchCommandRecords(), draft) &&
-      !branchCommandFailure(currentBranchCommandRecords(), draft) &&
-      !activeDrafts.some((row) => row.itemKey === draft.itemKey);
+      draft.workId === workId && !activeDrafts.some((row) => row.itemKey === draft.itemKey);
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 
@@ -124,7 +114,6 @@ function WorkSettlement({
     return () => attempt.abort();
   }, [
     lifecycle,
-    records,
     membership,
     drafts.drafts,
     drafts.status,

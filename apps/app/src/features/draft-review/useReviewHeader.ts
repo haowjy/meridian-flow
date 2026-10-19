@@ -11,11 +11,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import {
-  type BranchCommandFailure,
-  branchCommandFailure,
-  useBranchCommandRecords,
-} from "@/client/query/branch-command-record";
+import type { BranchCommandFailure } from "./review-command-types";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftReview } from "./DraftReviewProvider";
@@ -68,34 +64,11 @@ export type ReviewHeaderModel = {
  * the other drafts' separately. Pure reads of the command records, so the
  * identity row's notices can read them beside the header model.
  */
-export function useReviewFailures({
-  documentId,
-  itemKey,
-}: {
-  documentId: string;
-  itemKey: string;
-}) {
-  const { controller, files } = useDraftReview();
-  const commandRecords = useBranchCommandRecords();
-  const draftOf = (row: { documentId: string; draft: { itemKey: string } }) => ({
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId: row.documentId,
-    itemKey: row.draft.itemKey,
-  });
-  const commandError = branchCommandFailure(commandRecords, {
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId,
-    itemKey,
-  });
-  const failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[] = [];
-  for (const row of files) {
-    const failure = branchCommandFailure(commandRecords, draftOf(row));
-    if (!failure) continue;
-    if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
-  }
-  return { commandError, failedElsewhere };
+export function useReviewFailures(_input: { documentId: string; itemKey: string }) {
+  return {
+    commandError: null,
+    failedElsewhere: [] as { row: ReviewFileTarget; failure: BranchCommandFailure }[],
+  };
 }
 
 export function useReviewHeader({

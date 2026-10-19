@@ -3,10 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
 
-import type {
-  BranchCommandFailure,
-  ChangeCommandState,
-} from "@/client/query/branch-command-record";
+import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";

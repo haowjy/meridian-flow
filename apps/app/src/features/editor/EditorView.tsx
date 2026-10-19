@@ -5,12 +5,6 @@ import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protoco
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  branchCommandKey,
-  intentKeys,
-  selectionKeys,
-  useChangeCommandRecords,
-} from "@/client/query/branch-command-record";
-import {
   PaintCapture,
   PaintScope,
   useAfterPaintRelease,
@@ -219,35 +213,10 @@ export function EditorView(props: EditorViewProps) {
   const shownModels = useRef(new Map<string, readonly ReviewOperation[]>());
   const lastShownKey = useRef<string | null>(null);
   if (reviewOnScreen) lastShownKey.current = reviewKey;
-  const commandRecords = useChangeCommandRecords();
-  const draftRef = review
-    ? {
-        projectId: controller.projectId,
-        workId: controller.workId,
-        documentId: review.documentId,
-        itemKey: review.itemKey,
-      }
-    : null;
-  // The Discards this cover's review has had since it was on screen. A Discard
-  // that went through leaves the intents once the server has answered, but the
-  // review it was made in is still what the cover shows until the next generation
-  // paints; one the server refused is withdrawn.
   const discarded = useRef<{ review: string | null; keys: Set<string> }>({
     review: null,
     keys: new Set(),
   });
-  if (discarded.current.review !== lastShownKey.current)
-    discarded.current = { review: lastShownKey.current, keys: new Set() };
-  if (draftRef) {
-    const { restoring } = intentKeys(commandRecords, draftRef);
-    for (const key of restoring) discarded.current.keys.add(key);
-    for (const record of Object.values(
-      commandRecords.drafts[branchCommandKey(draftRef)]?.outcomes ?? {},
-    ))
-      if (record.phase === "failed")
-        for (const key of selectionKeys(record))
-          if (!restoring.has(key)) discarded.current.keys.delete(key);
-  }
   const discardedKey = [...discarded.current.keys].sort().join("|");
   const projectCover = usePaintCoverProjection();
   const projectIntents = useCallback((cover: HTMLElement) => {

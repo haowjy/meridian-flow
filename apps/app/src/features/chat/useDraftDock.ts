@@ -1,16 +1,12 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
 import { useCallback, useMemo, useState } from "react";
-import {
-  type BranchCommandFailure,
-  branchCommandFailure,
-  type ChangeCommandState,
-  changeCommandState,
-  useChangeCommandRecords,
-} from "@/client/query/branch-command-record";
+import type {
+  BranchCommandFailure,
+  ChangeCommandState,
+} from "@/features/draft-review/review-command-types";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
-import { selectionOf } from "@/features/draft-review/change-selection";
 import {
   type DraftImagePreviewTarget,
   isDraftImagePath,
@@ -35,7 +31,6 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const presented = usePresentedDraftReview().controller;
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
-  const records = useChangeCommandRecords();
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
   const { projectId, workId } = controller;
 
@@ -107,20 +102,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     [actionableFiles, runner],
   );
 
-  const fileFailures = (file: DockFile): DockFileFailure[] => {
-    const ref = {
-      projectId,
-      workId,
-      documentId: file.row.documentId,
-      itemKey: file.row.draft.itemKey,
-    };
-    const state = changeCommandState(records, ref, selectionOf(file.changes));
-    const held = branchCommandFailure(records.drafts, ref);
-    return [
-      ...(state?.phase === "failed" ? [{ kind: "changes" as const, failure: state }] : []),
-      ...(held ? [{ kind: "draft" as const, failure: held }] : []),
-    ];
-  };
+  const fileFailures = (_file: DockFile): DockFileFailure[] => [];
 
   return {
     generating,

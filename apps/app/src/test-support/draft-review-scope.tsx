@@ -5,7 +5,7 @@ import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import * as branchesApi from "@/client/api/branches-api";
-import type { DraftRef } from "@/client/query/branch-command-record";
+type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { ThreadStoreProvider } from "@/client/stores";
@@ -323,12 +323,6 @@ export function createReviewScopeFixture(
   const network = {
     listWorkBranchDrafts: vi.spyOn(branchesApi, "listWorkBranchDrafts"),
     getDraftPreview: vi.spyOn(branchesApi, "getDraftPreview"),
-    applyBranchDrafts: vi.spyOn(branchesApi, "applyBranchDrafts"),
-    discardBranch: vi.spyOn(branchesApi, "discardBranch"),
-    observeBranchCommand: vi.spyOn(branchesApi, "observeBranchCommand"),
-    applyDraft: vi.spyOn(branchesApi, "applyDraft"),
-    applyDraftChanges: vi.spyOn(branchesApi, "applyDraftChanges"),
-    discardDraft: vi.spyOn(branchesApi, "discardDraft"),
   };
   // Unconfigured requests stay pending, never accidentally reach a real server.
   for (const endpoint of Object.values(network))

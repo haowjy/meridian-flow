@@ -2,15 +2,7 @@
 import type { DraftPreviewResponse } from "@meridian/contracts/branches";
 import { useMemo } from "react";
 
-import {
-  type BranchCommandFailure,
-  branchCommandFailure,
-  branchCommandKey,
-  type ChangeCommandState,
-  changeCommandState,
-  pendingBranchCommand,
-  useChangeCommandRecords,
-} from "@/client/query/branch-command-record";
+import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 import { selectionOf } from "./change-selection";
 import type { ReviewChange } from "./review-changes";
 
@@ -73,27 +65,8 @@ export function listablePreview(preview: DraftPreviewResponse | null): ActivePre
  * whether a command of ours is hiding changes from the read.
  */
 export function useChangeItems(
-  draft: DraftRef | null,
+  _draft: DraftRef | null,
   changes: readonly ReviewChange[],
 ): { items: readonly ReviewChangeItem[]; hiding: boolean } {
-  const records = useChangeCommandRecords();
-  const items = useMemo<ReviewChangeItem[]>(
-    () =>
-      changes.map((change) => {
-        const state = draft ? changeCommandState(records, draft, selectionOf([change])) : null;
-        return {
-          change,
-          failure: state?.phase === "failed" ? state : null,
-          ...(change.target.kind === "draft" && draft
-            ? { draftFailure: branchCommandFailure(records.drafts, draft) }
-            : {}),
-        };
-      }),
-    [changes, records, draft],
-  );
-  const hiding = draft
-    ? Object.values(records.queued).some((entry) => entry.prefix === branchCommandKey(draft)) ||
-      pendingBranchCommand(records.drafts, draft) !== null
-    : false;
-  return { items, hiding };
+  return { items: changes.map((change) => ({ change, failure: null })), hiding: false };
 }
