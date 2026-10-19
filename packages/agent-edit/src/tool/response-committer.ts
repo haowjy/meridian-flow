@@ -213,6 +213,7 @@ export interface ResponseStageUpdateInput {
   createdDocumentBeforeCommit: boolean;
   touchedBlocks: readonly BlockItemId[];
   deletedBlocks: readonly BlockItemId[];
+  refusedPassages?: readonly (readonly BlockItemId[])[];
   /** The view this write planned on, immediately before it was applied. */
   preOwnSnapshot: Uint8Array;
   interactionContext?: InteractionContext;
@@ -921,6 +922,9 @@ export function createResponseCommitter(deps: {
       stageSeq: buffer.nextStageSeq,
       touchedBlocks: input.touchedBlocks.map(({ clientID, clock }) => ({ clientID, clock })),
       deletedBlocks: input.deletedBlocks.map(({ clientID, clock }) => ({ clientID, clock })),
+      refusedPassages: input.refusedPassages?.map((passage) =>
+        passage.map(({ clientID, clock }) => ({ clientID, clock })),
+      ),
       preOwnSnapshot: input.preOwnSnapshot,
       ...(input.copied ? { copied: input.copied } : {}),
     });

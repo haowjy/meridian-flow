@@ -51,6 +51,29 @@ submits merged `editParts`; host storage chooses journal row expansion. Receipt
 rendering runs outside mutation certification and preserves settlement identity
 when reporting degrades.
 
+A prepared edit plan carries `groups: [{ edits, targets }]` and one semantic IR.
+Targets are the unwidened block indexes on the planning document. Ordinary
+mutations and overwrites supply one group; independent revert passages supply
+several (no overlapping passage windows). Acceptance prepares the view/room
+indexes and snapshots once, checks each group's window once, and applies all
+accepted edits in one update capture. Certification and the stored IR omit
+refused edits and their deleted lineage. Empty-document `blocks` creation
+remains unchecked. No edits means unchanged-success; all groups refused means
+one observed `region_changed` result with their current text in document order.
+The ordinary single-group refusal's 16 KB read-instead limit is unchanged;
+a grouped all-refused result shows every refused passage.
+
+A partially accepted write carries `refusedPassages` as arrays of Yjs block
+identities on its staged entry. `receipt.ts` renders those blocks from the
+save's after-cut, after the accepted echo, in full `not_reverted` groups;
+`result-text.ts` supplies the fixed “Not reverted” heading. Observation and
+shown-link evidence use those same groups, so a refused passage shown at save
+credits exactly its saved text. An immediate write renders the same groups
+from its saved room cut. No staging-time body is carried into settlement.
+If a save cannot render, it keeps the refusal but says current text is
+unavailable; a rejected write includes that note in its refusal message
+(the runtime preserves rejection messages, not rejected block groups).
+
 The forward-inverse primitive computes a new edit from immutable target parts,
 certified restoration aliases, and the current view. Hosts persist parts under
 an action ID and choose policy and destination. Card actions, model stack

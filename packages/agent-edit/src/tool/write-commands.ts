@@ -368,14 +368,14 @@ export function createWriteCommands(deps: {
       room,
       planDoc,
       planned,
-      // Replacing a document's content targets all of it.
-      targets: "all",
       assigner,
       links,
       actor,
       docId: address.documentId,
       filePath: address.filePath,
-      plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
+      plan: overwrite
+        ? { groups: [{ edits: overwrite.edits, targets: "all" }], ir: overwrite.ir }
+        : { blocks: written.blocks },
       creation: {
         createdDocument: context.createdDocument === true,
         ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
@@ -470,13 +470,15 @@ export function createWriteCommands(deps: {
             room,
             planDoc,
             planned,
-            targets: targetIndexes(planDoc, resolved.edits),
             assigner,
             links,
             actor,
             docId: address.documentId,
             filePath: address.filePath,
-            plan: { edits: resolved.edits, ir: resolved.ir },
+            plan: {
+              groups: [{ edits: resolved.edits, targets: targetIndexes(planDoc, resolved.edits) }],
+              ir: resolved.ir,
+            },
             ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
           });
         }),

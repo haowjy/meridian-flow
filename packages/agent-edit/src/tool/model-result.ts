@@ -57,7 +57,7 @@ export interface AgentEditBlockItem {
 export type AgentEditBlockGroup =
   | {
       extent: "full";
-      relation: "document" | "changed" | "swept";
+      relation: "document" | "changed" | "swept" | "not_reverted";
       items: AgentEditBlockItem[];
     }
   | {

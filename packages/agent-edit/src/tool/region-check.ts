@@ -31,48 +31,56 @@ export interface RegionCheckInput {
 export type RegionRefusalReason = "unseen" | "changed";
 
 /**
- * The room blocks a refusal shows and why, or null when the write may proceed. The region is
+ * Prepare shared cuts and indexes once; the returned check widens each group's targets once.
+ * It returns the room blocks a refusal shows and why, or null when it may proceed. The region is
  * the targets' window on the plan doc; in the room it spans each window's surviving blocks and
  * whatever top-level blocks were inserted between them. Refused with no valid frontier, a
  * region block F left unshown, or more than the budget of changed words in the region between
  * the view's cut and the room's (clipped to the flipped ranges, so text typed and deleted in
  * between counts nothing, nor do the reply's own updates, which both cuts hold).
  */
-export function regionRefusal(
-  input: RegionCheckInput,
-): { blocks: Y.XmlElement[]; reason: RegionRefusalReason } | null {
+export function createRegionCheck(input: Omit<RegionCheckInput, "targets">) {
   const viewBlocks = getTopLevelXmlBlocks(input.planDoc);
   const roomBlocks = getTopLevelXmlBlocks(input.room);
   const roomIndex = new Map(roomBlocks.map((block, index) => [blockId(block), index]));
-  const indexes =
-    input.targets === "all"
-      ? viewBlocks.map((_, index) => index)
-      : windowOf(input.targets, viewBlocks.length);
-  const viewRegion = new Set(indexes.map((index) => blockId(viewBlocks[index])));
-  const region = new Set(viewRegion);
-  const shown = new Set<number>();
-  for (const run of contiguousRuns(indexes)) {
-    const positions = run.flatMap((index) => {
-      const position = roomIndex.get(blockId(viewBlocks[index]));
-      return position === undefined ? [] : [position];
-    });
-    if (positions.length === 0) continue;
-    for (let position = Math.min(...positions); position <= Math.max(...positions); position += 1) {
-      shown.add(position);
-      region.add(blockId(roomBlocks[position]));
+  const viewSnapshot = Y.snapshot(input.planDoc);
+  const roomSnapshot = Y.snapshot(input.room);
+  return function regionRefusal(
+    targets: RegionCheckInput["targets"],
+  ): { blocks: Y.XmlElement[]; reason: RegionRefusalReason } | null {
+    const indexes =
+      targets === "all"
+        ? viewBlocks.map((_, index) => index)
+        : windowOf(targets, viewBlocks.length);
+    const viewRegion = new Set(indexes.map((index) => blockId(viewBlocks[index])));
+    const region = new Set(viewRegion);
+    const shown = new Set<number>();
+    for (const run of contiguousRuns(indexes)) {
+      const positions = run.flatMap((index) => {
+        const position = roomIndex.get(blockId(viewBlocks[index]));
+        return position === undefined ? [] : [position];
+      });
+      if (positions.length === 0) continue;
+      for (
+        let position = Math.min(...positions);
+        position <= Math.max(...positions);
+        position += 1
+      ) {
+        shown.add(position);
+        region.add(blockId(roomBlocks[position]));
+      }
     }
-  }
-  const reason: RegionRefusalReason | null =
-    !input.planned || input.planned.unshown.some((id) => viewRegion.has(id))
-      ? "unseen"
-      : changedWords(input.room, Y.snapshot(input.planDoc), Y.snapshot(input.room), region) >
-          REGION_CHANGE_BUDGET_WORDS
-        ? "changed"
-        : null;
-  if (!reason) return null;
-  return {
-    blocks: [...shown].sort((a, b) => a - b).map((position) => roomBlocks[position]),
-    reason,
+    const reason: RegionRefusalReason | null =
+      !input.planned || input.planned.unshown.some((id) => viewRegion.has(id))
+        ? "unseen"
+        : changedWords(input.room, viewSnapshot, roomSnapshot, region) > REGION_CHANGE_BUDGET_WORDS
+          ? "changed"
+          : null;
+    if (!reason) return null;
+    return {
+      blocks: [...shown].sort((a, b) => a - b).map((position) => roomBlocks[position]),
+      reason,
+    };
   };
 }
 
