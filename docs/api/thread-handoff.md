@@ -24,16 +24,20 @@ Returns the destination Thread (201 new, 200 existing). Reusing an id is a
 no-op when the row belongs to the same owner/project and is a primary handoff.
 Changed selection arguments do not overwrite it. Other reuse returns 409.
 
-Creation/replay first acquires a cross-process lock keyed by the destination, held through notes copying. Under that lock: idempotent destination lookup; acquire the
-destination's `RunClaim.hold`; create the destination, pending system seed S,
-and source `agent.handoff` event in one transaction; after commit, await
-best-effort notes copying inside the brief service’s registered cancellation lifecycle; then generate the detached brief. The
-request returns after the copy attempt, not after brief generation. Copy
-failure is logged and never fails creation. One 12-second deadline covers copy reads, installation and cleanup. Stop cancels copying; timeout settles S as interrupted without generating a brief. Both release the claim only after installation has settled. The seed names the originals'
-canonical notes address, and creation replay never retries copying. A rollback or other path that does not launch releases the
-claim. If the lookup found nothing and the claim is held, the server creates
-nothing and returns 409 `handoff_in_progress`; retrying after the creating
-request commits replays the destination.
+Creation first checks for an idempotent destination. If absent, it acquires
+`RunClaim.hold` and creates the destination, pending system seed S, and source
+`agent.handoff` event in one transaction. After commit, it registers independent
+detached tasks for notes copying and brief generation, then returns. Neither
+creation/replay nor the brief waits for copying. A rollback or untransferred
+path releases the claim. A competing claim holder creates nothing and returns
+409 `handoff_in_progress`; replay after creation commits returns the destination.
+
+The optional notes copy has its own 12-second deadline covering reads,
+installation and cleanup, and is aborted on server shutdown. Rollback drains
+before the task ends. Copy failure never fails creation or the brief; Stop
+cancels only the brief. The seed names the originals' canonical notes address
+and says the copy may still be arriving. A root created by the writer or model
+first wins, and creation replay never retries copying.
 
 The brief holds the same destination run claim a reply uses, with no lease or
 running-turn id. A run wake cannot start while it holds the claim. Writer

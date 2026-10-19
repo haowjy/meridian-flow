@@ -240,6 +240,9 @@ UUIDs and retain each request body unchanged for replay:
     and replay never retries. Handoff briefs and subsequent turns complete
     while the copy remains blocked; its deadline does not fail the brief.
     Stop the server mid-copy and confirm no partial tree after restart.
+    Under Nitro dev, exercise the API worker's registered shutdown handler
+    (not only the supervisor process) to prove prompt abort before the copy
+    deadline; verify that no copy transaction remains active.
     Repeat with a 40-second INSERT delay and a deferred COMMIT trigger:
     native cancellation drains rollback before the detached task settles.
     Exercise tracked/binary reads and failed-object cleanup with the same

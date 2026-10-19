@@ -39,7 +39,7 @@
 
 - Notes inheritance shares link-spelling scopes across each preparation/install phase instead of reopening them for every note.
 
-- Forks and handoffs register a detached, best-effort notes copy after creation commits. Creation, replay, handoff briefs and first turns never wait for the copy. Seeds name the originals while the copy arrives; a destination root created first wins. Copies retain their own 12-second cancellation bound and drain rollback on deadline or shutdown. Replays never retry copying.
+- Forks and handoffs register a detached, best-effort notes copy after creation commits. Creation, replay, handoff briefs and first turns never wait for the copy. Seeds and API contracts name the originals while the copy arrives; a destination root created first wins. Copies retain their own 12-second cancellation bound and drain rollback on deadline or shutdown. Replays never retry copying.
 
 - Scratch notes can be copied as one create-only subtree with fresh document and block identities, independent history and binary storage. Document `write copy` and inherited notes share the same node materializer.
 
