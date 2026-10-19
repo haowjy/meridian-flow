@@ -12,7 +12,7 @@ import {
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
 import type { ApplyClick, ThreadDraftListItem } from "@meridian/contracts/branches";
-import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { ySyncPluginKey, yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
@@ -41,8 +41,10 @@ export type DraftCommandState = {
   hidden: boolean;
   failure: BranchCommandFailure | null;
   closed: boolean;
+  checkingClose: boolean;
   removed: boolean;
   unsentText: string | null;
+  liveUri: string | null;
 };
 const EMPTY: DraftCommandState = {
   applying: false,
@@ -51,8 +53,10 @@ const EMPTY: DraftCommandState = {
   hidden: false,
   failure: null,
   closed: false,
+  checkingClose: false,
   removed: false,
   unsentText: null,
+  liveUri: null,
 };
 export type CommandOutcome =
   | { kind: "blocked" }
@@ -93,11 +97,17 @@ export class DraftCommandOwner {
   private readonly records = new Map<string, DraftCommandState>();
   private readonly listeners = new Set<() => void>();
   private readonly closingWorks = new Set<string>();
+  private readonly resolvingGone = new Map<string, Promise<void>>();
   private active = true;
   private revision = 0;
   constructor(
-    private readonly registry: DraftRoomRegistry,
+    private readonly registry: DraftRoomRegistry & {
+      closeDraftRoom(roomKey: string): Promise<void>;
+    },
     private readonly lifecycle: {
+      resolveGone?(
+        ref: DraftRef,
+      ): Promise<{ disposition: "closed" | "removed"; liveUri?: string } | null>;
       removed?(ref: DraftRef): void;
       closeCreated?(ref: DraftRef): void;
       markOwnRemoval?(ref: DraftRef): (outcome: "removed" | "kept") => void;
@@ -229,28 +239,10 @@ export class DraftCommandOwner {
           return;
         }
         if (
-          connection?.kind !== "reset" ||
-          (connection.disposition !== "closed" && connection.disposition !== "removed") ||
-          this.records.get(address.draftId)?.closed
+          connection?.kind === "reset" &&
+          (connection.disposition === "closed" || connection.disposition === "removed")
         )
-          return;
-        if (connection.disposition === "removed") this.lifecycle.removed?.(ref);
-        const frame = owned.runtime.projectNow();
-        this.setState(
-          ref.itemKey,
-          {
-            closed: true,
-            removed: connection.disposition === "removed",
-            unsentText:
-              connection.disposition === "closed" &&
-              !this.records.get(address.draftId)?.hidden &&
-              session.hasUnacknowledgedEdits()
-                ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
-                : null,
-          },
-          address.draftId,
-        );
-        owned.queue.close();
+          this.finishClose(ref, connection.disposition);
       });
       owned.stop = () => {
         stopSession();
@@ -265,6 +257,58 @@ export class DraftCommandOwner {
       this.releaseIdle(address.draftId, held);
     };
   }
+  /** Only the typed metadata `gone` answer enters here, never a failed read or list omission. */
+  metadataGone(ref: DraftRef): Promise<void> {
+    if (!this.active || this.state(ref.itemKey).closed) return Promise.resolve();
+    const pending = this.resolvingGone.get(ref.itemKey);
+    if (pending) return pending;
+    const entry = this.byItem.get(ref.itemKey);
+    const lease = entry ? readDraftRoom(this.registry, entry.session.roomKey) : null;
+    if (entry) entry.users++;
+    this.setState(ref.itemKey, { checkingClose: true });
+    const resolving = (async () => {
+      const disposition = await this.lifecycle.resolveGone?.(ref);
+      if (this.active && disposition)
+        this.finishClose(ref, disposition.disposition, disposition.liveUri);
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        this.resolvingGone.delete(ref.itemKey);
+        if (this.active) this.setState(ref.itemKey, { checkingClose: false });
+        lease?.dispose();
+        const id = this.identities.get(ref.itemKey);
+        if (entry) {
+          entry.users--;
+          if (id) this.releaseIdle(id, entry);
+        }
+      });
+    this.resolvingGone.set(ref.itemKey, resolving);
+    return resolving;
+  }
+
+  private finishClose(ref: DraftRef, disposition: "closed" | "removed", liveUri?: string) {
+    if (!this.active || this.state(ref.itemKey).closed) return;
+    const entry = this.byItem.get(ref.itemKey);
+    const frame = entry?.runtime.projectNow();
+    const unsentText =
+      disposition === "closed" &&
+      !this.state(ref.itemKey).hidden &&
+      entry?.session.hasUnacknowledgedEdits()
+        ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
+        : null;
+    if (disposition === "removed") this.lifecycle.removed?.(ref);
+    this.setState(ref.itemKey, {
+      closed: true,
+      checkingClose: false,
+      removed: disposition === "removed",
+      unsentText,
+      liveUri: liveUri ?? null,
+    });
+    entry?.queue.close();
+    const id = this.identities.get(ref.itemKey);
+    if (id) void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
+  }
+
   private releaseIdle(id: string, entry: Entry) {
     if (entry.users || entry.queue.clicks.length || this.entries.get(id) !== entry) return;
     entry.stop();

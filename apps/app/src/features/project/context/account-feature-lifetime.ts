@@ -45,6 +45,14 @@ export class AccountFeatureLifetime {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
     this.registry = this.runtime.registry;
     this.draftCommands = new DraftCommandOwner(this.registry, {
+      resolveGone: async (ref) => {
+        const answer = await this.availability.resolveForOpen(ref.projectId, ref.documentId);
+        return answer.kind === "available"
+          ? { disposition: "closed", liveUri: answer.entry.uri }
+          : answer.kind === "deleted"
+            ? { disposition: "removed" }
+            : null;
+      },
       removed: (ref) => {
         this.availability.roomRemoved(ref.projectId, ref.documentId);
         const record = this.availability.removalRecord(ref.projectId, ref.documentId);

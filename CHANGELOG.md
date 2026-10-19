@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Leave draft review for the exact live document when another tab discards all, even when metadata arrives before the room close; preserve document-removal handling and drop the retired room cache.
+
 - Integrated text-based draft review with stable server rooms, addressed draft metadata, and Apply for empty or image creations.
 
 - Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.

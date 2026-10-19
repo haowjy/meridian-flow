@@ -31,6 +31,13 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
     entry.data?.status === "active" ? entry.data.reviewRoomName : null,
   );
   const namesKey = JSON.stringify(names);
+  const metadataKey = JSON.stringify(
+    metadata.map((result, index) => [drafts[index], result.dataUpdatedAt, result.data?.status]),
+  );
+  useEffect(() => {
+    for (const [index, result] of metadata.entries())
+      if (result.data?.status === "gone") void owner.metadataGone(drafts[index]);
+  }, [metadataKey, owner]);
   const [held, setHeld] = useState<ReadonlyMap<string, HeldReview>>(new Map());
   const leases = useRef(new Map<string, () => void>());
   useEffect(
@@ -109,10 +116,10 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
     const state = current?.state ?? EMPTY_REVIEW_STATE;
     const fault = current?.read.state().kind;
     const status =
-      meta?.isError || fault === "error" || fault === "unavailable"
-        ? "error"
-        : meta?.data?.status === "gone"
-          ? "gone"
+      meta?.data?.status === "gone"
+        ? "gone"
+        : meta?.isError || fault === "error" || fault === "unavailable"
+          ? "error"
           : state.ready
             ? "ready"
             : "loading";

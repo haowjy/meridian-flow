@@ -10,11 +10,13 @@
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import { clearDocument } from "y-indexeddb";
 
 import { type DocumentSession, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 
 export class DraftRoomPool {
+  private readonly closed = new Set<string>();
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
   private readonly retainedByOwner = new Map<string, Set<string>>();
@@ -63,6 +65,7 @@ export class DraftRoomPool {
   }
 
   get(roomKey: string): DocumentSession {
+    if (this.closed.has(roomKey)) throw new Error(`Draft room closed: ${roomKey}`);
     const room = parseYjsRoomName(roomKey);
     if (room?.kind !== "draft") throw new Error(`Draft session requires a draft room: ${roomKey}`);
     this.cancelTeardown(roomKey);
@@ -87,6 +90,15 @@ export class DraftRoomPool {
       }
     });
     return session;
+  }
+
+  /** An authoritative close can arrive by metadata before the socket's terminal frame. */
+  async close(roomKey: string): Promise<void> {
+    this.closed.add(roomKey);
+    const session = this.rooms.get(roomKey);
+    if (session) this.retire(roomKey, session);
+    await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
+    await clearDocument(roomKey);
   }
 
   /** The account runtime is closing: forget every owner and retire every room. */

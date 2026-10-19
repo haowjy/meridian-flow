@@ -89,6 +89,17 @@ not replayed per key. Record phone handshake costs for twenty Work drafts.
   gives a new document id. Reveal before the server lock: refuse with the
   applicable-state reason and re-offer an existing-document row, no false
   Removed notice. A per-change Discard never takes this route.
+- Three-tab close race: A reviews an existing draft, B shows its Work Files,
+  C keeps the same document open live. B confirms Discard all. A's URL loses
+  `item` and `change` and shows the exact document live, without a review-opening
+  error or unavailable page, even if metadata `gone` beats the socket close.
+  B has an empty pending list and no refusal; C's live prose is unchanged.
+  Read live independently and check that the retired `draft:<id>` IndexedDB
+  database disappears after all holders release. Repeat with B deleting the
+  document: A and C use the existing removal presentation, never another live
+  occupant. Failed/unknown metadata or availability reads must not redirect to
+  live; restore connectivity and Retry. Reopening an old selector after its
+  path is reused must still follow the old document's removal.
 - Work Discard all: every item leaves and every bound editor, including an
   empty active draft absent from the pending list, leaves review for live at
   the click. Failure returns the item with its reason, no success notice.
