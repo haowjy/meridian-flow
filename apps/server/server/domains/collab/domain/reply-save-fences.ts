@@ -6,13 +6,13 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovals } from "../../context/ports/document-removals.js";
 import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
 import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { DraftAgentEditDiagnostics } from "./draft-agent-edit.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 
@@ -61,9 +61,9 @@ export function createReplySaveFences(deps: {
       const entries = [...record.documents];
       if (!entries.length) return [];
       const grants = entries.map(([, entry]) => entry.grant);
-      await collabHook("save.beforeWorkLock");
+      await testHook("save.beforeWorkLock");
       await deps.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
-      await collabHook("save.afterWorkLock");
+      await testHook("save.afterWorkLock");
       // Works first, then the sorted live documents, never a Work after them. A removal takes
       // the same document locks, so the confirmation below sees it or holds it off until commit.
       await deps.lockLiveDocuments(
@@ -72,7 +72,7 @@ export function createReplySaveFences(deps: {
           .map(([id]) => id)
           .sort(),
       );
-      await collabHook("save.afterDocumentLock");
+      await testHook("save.afterDocumentLock");
       const refusals = new Map<DocumentId, RefusedResponseDocument>();
       const denials = await deps.fileAccess.confirmEdit(grants);
       // A deleted document answers `not_found`; the record says who deleted it.

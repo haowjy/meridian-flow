@@ -35,6 +35,7 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import {
   type DocumentRemovals,
@@ -49,7 +50,6 @@ import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
 import { DraftNotFoundError, type ResolvedDraft } from "../domain/draft-resolver.js";
 import {
@@ -200,7 +200,7 @@ export function createDrizzleDraftStore(
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       await admitLivingDocument(input.documentId);
-      await collabHook("draft.ensure.afterDocumentLock");
+      await testHook("draft.ensure.afterDocumentLock");
       const existing = await activeDocumentDraft(input.documentId, input.branchId);
       if (existing) return existing;
       await assertDraftableInBranch(input.documentId, input.branchId);
@@ -245,7 +245,7 @@ export function createDrizzleDraftStore(
     | { outcome: "retracted"; closed: readonly { draftId: string; threadId: ThreadId | null }[] }
   > {
     const tx = currentDrizzleDb(db);
-    await collabHook("retract.beforeLocks");
+    await testHook("retract.beforeLocks");
     const drafts = await lockActiveDrafts(
       tx,
       and(
@@ -267,7 +267,7 @@ export function createDrizzleDraftStore(
         .limit(1);
       if (contribution) return { outcome: "stands" };
     }
-    await collabHook("retract.afterRecheck");
+    await testHook("retract.afterRecheck");
     await closeDrafts(
       tx,
       and(
@@ -350,7 +350,7 @@ export function createDrizzleDraftStore(
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
       await admitLivingDocument(input.documentId);
-      await collabHook("draft.peer.afterDocumentLock");
+      await testHook("draft.peer.afterDocumentLock");
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId === input.branchId) {
         return { documentDraft: existing, state: await encodedDraft(existing.draftId) };
@@ -501,7 +501,7 @@ export function createDrizzleDraftStore(
         });
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
-        await collabHook("draft.append.beforeCommit");
+        await testHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
           deferUntilDrizzleCommit(() =>
@@ -646,7 +646,7 @@ export function createDrizzleDraftStore(
           outcome.generation - 1,
           operation.editDisposition,
         );
-      await collabHook("draft.rewrite.beforeCommit");
+      await testHook("draft.rewrite.beforeCommit");
       return {
         status: "committed",
         revision: outcome.revision,

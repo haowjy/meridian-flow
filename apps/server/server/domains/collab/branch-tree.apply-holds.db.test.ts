@@ -6,9 +6,9 @@
  */
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
   it("holds the second branch's picture at a path the first's took, a payload-only Apply (E-5)", async () => {
@@ -224,7 +224,7 @@ describeBranchTreeDb("Apply all and holds (postgres)", (start) => {
     const live = s.view("live");
     /** At staging, a second chat of the Work adds a document to the branch (F22). */
     const growAtStaging = (path: string) => {
-      const remove = setCollabHook("applyItems.afterStaging", async () => {
+      const remove = setTestHook("applyItems.afterStaging", async () => {
         remove();
         await s.model(second).create(path, "Late, drafted.");
       });

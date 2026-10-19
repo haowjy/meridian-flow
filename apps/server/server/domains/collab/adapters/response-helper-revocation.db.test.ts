@@ -4,8 +4,8 @@ import { draftRoomName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runInRootDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { setTestHook } from "../../../shared/test-hooks.js";
 import { testFileGrant } from "../../../test-support/file-grants.js";
-import { setCollabHook } from "../domain/collab-test-hooks.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -411,7 +411,7 @@ describe("response helper revocation (Postgres)", () => {
     });
     // Pause the read before it reads any draft, so Discard commits ahead of it.
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();

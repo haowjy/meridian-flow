@@ -9,8 +9,8 @@ import {
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
 import { DocumentRemovedError } from "../../context/ports/document-removals.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { DraftConcurrentJournalWatermarks } from "./draft-agent-edit.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
 import {
@@ -289,7 +289,7 @@ export function createDraftPullService(input: {
           // capture is abandoned, never merged back. The pull's attempts are root
           // transactions of their own: it commits even when the caller's transaction aborts.
           const upstream = await input.outsideTransaction(async () => {
-            await collabHook("draft.beforeAccess");
+            await testHook("draft.beforeAccess");
             const read = await input.draftCoordinator.readDraft(upstreamDraftId, (doc, snapshot) =>
               Promise.resolve({
                 generation: snapshot.generation,

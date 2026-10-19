@@ -7,7 +7,7 @@
  * module owns only what a frame decides before the lock.
  */
 import type * as Y from "yjs";
-import { collabHook } from "./collab-test-hooks.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { admitWriterUpdate } from "./document-mutation-policy.js";
 import type { CommittedReplica, DraftRuntime, RoomReconcileTrigger } from "./draft-coordinator.js";
 import { DraftStaleUpdateError } from "./draft-store.js";
@@ -65,7 +65,7 @@ export function createWriterFrames(
     if (!write) return { admitted: false };
     const wrote = await runtime.commitOnce(write, {});
     if (!wrote) return { admitted: false };
-    await collabHook("draft.append.afterCommit");
+    await testHook("draft.append.afterCommit");
     compactIfLong(frame.draftId);
     return { admitted: true };
   }

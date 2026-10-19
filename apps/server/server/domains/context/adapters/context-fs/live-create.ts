@@ -13,6 +13,7 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import { type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import { testHook } from "../../../../shared/test-hooks.js";
 import type {
   BoundWrite,
   DocumentCreationAggregate,
@@ -37,7 +38,6 @@ import type {
   LiveCreateCandidate,
   RevealExpectation,
 } from "../../tree/hidden-node-types.js";
-import { treeHook } from "../../tree/test-hooks.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import {
   type BoundWrites,
@@ -215,7 +215,7 @@ export class LiveCreate {
         const { reveal } = found;
         return withContent
           ? await this.deps.documentSync.withLiveDocument(reveal.documentId, async (held) => {
-              await treeHook("createLive.afterLease");
+              await testHook("createLive.afterLease");
               return run({
                 kind: "reveal-with-content",
                 content: withContent,

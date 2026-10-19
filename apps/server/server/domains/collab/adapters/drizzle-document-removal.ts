@@ -8,9 +8,9 @@ import {
   runAfterDrizzleCommit,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovalCollab } from "../../context/ports/document-removal.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import type { PeerRetirement } from "../domain/peer-retirement.js";
 import { closeDrafts } from "./drizzle-draft-close.js";
 
@@ -85,7 +85,7 @@ export function createDrizzleDocumentRemovalCollab(
         }
       });
       recount(affected);
-      await collabHook("removal.afterClose");
+      await testHook("removal.afterClose");
       return closed;
     },
   };

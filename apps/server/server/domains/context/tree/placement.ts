@@ -15,12 +15,12 @@ import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { renderFilename } from "../context/paths.js";
 import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type { CreateFault } from "./hidden-node-types.js";
 import { bumpLocationVersions, claimDocumentLocation } from "./node-locations.js";
 import { insertFolder } from "./node-rows.js";
-import { treeHook } from "./test-hooks.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import {
   createTreeReader,
@@ -162,7 +162,7 @@ export async function place(
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
     if (stale) return Err(stale);
-    await treeHook("place.afterRevalidate");
+    await testHook("place.afterRevalidate");
     const ancestors = await placeAncestors(db, tree, target);
     if (!ancestors.ok) return ancestors;
     placed.push(...ancestors.value.placed);

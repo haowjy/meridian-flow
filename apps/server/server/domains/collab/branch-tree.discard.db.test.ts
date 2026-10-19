@@ -29,6 +29,7 @@ import {
   currentDrizzleDb,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { typeLink } from "../../test-support/branch-tree-commands.js";
 import {
   type BranchTreeScenario,
@@ -38,7 +39,6 @@ import {
 import { useComposedRuntimes } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
-import { setTreeHook } from "../context/tree/test-hooks.js";
 import { createInMemoryEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 
@@ -520,12 +520,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const createGate = new Promise<void>((resolve) => {
         releaseCreate = resolve;
       });
-      const removeCreateHook = setTreeHook("createInBranch.afterCandidateLock", async () => {
+      const removeCreateHook = setTestHook("createInBranch.afterCandidateLock", async () => {
         removeCreateHook();
         reachedCreate = true;
         await createGate;
       });
-      const removeEndHook = setTreeHook("endUse.afterRevalidate", async () => {
+      const removeEndHook = setTestHook("endUse.afterRevalidate", async () => {
         removeEndHook();
         const [self] = await currentDrizzleDb(db).execute<{ pid: number }>(
           sql`SELECT pg_backend_pid() AS pid`,

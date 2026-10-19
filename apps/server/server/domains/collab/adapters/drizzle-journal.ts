@@ -33,11 +33,11 @@ import {
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { DocumentRemovedError } from "../../context/ports/document-removals.js";
 import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import { documentContainsUpdate } from "../domain/document-containment.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
@@ -868,7 +868,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           current.generation !== captured.generation
         )
           return;
-        await collabHook("checkpoint.afterAuthorityRead");
+        await testHook("checkpoint.afterAuthorityRead");
         await payload.validateInputs();
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
