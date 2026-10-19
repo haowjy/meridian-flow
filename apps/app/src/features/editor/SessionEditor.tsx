@@ -388,11 +388,7 @@ function ActiveSessionEditorView({
         {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10">
-          <SyncStatus
-            session={session}
-            onReopen={onReopen}
-            removal={removal?.kind === "removed" ? removal.record : undefined}
-          />
+          <SyncStatus session={session} onReopen={onReopen} removal={removal} />
         </div>
         {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}
         {snapshot.schemaRepairs.length > 0 ? (

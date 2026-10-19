@@ -472,7 +472,7 @@ function ReadableProjectDestination({
       ? (parseDraftItemKey(address.itemKey)?.documentId ?? null)
       : null;
   const removedDestination = useRemovalRecord(projectId, removedDocumentId);
-  const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? "";
+  const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const switchFailure = useDocumentSwitchFailures();
   const failedDestination = destinationFailure(
     switchFailure.failures,
