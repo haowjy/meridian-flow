@@ -127,8 +127,12 @@ changed since you last saw it." for changed words; both end "Current text:".
 Exempt (`Planned = "exempt"`, never `undefined`): creating a document,
 initializing an empty one, and every write when the host passes no lookups at
 all (a host that keeps no frontiers; utility, seed and import writes). A reply's
-model write whose lookups lack `planning` is a host bug and throws. Undo and
-redo are never refused. The
+model write whose lookups lack `planning` is a host bug and throws. A document
+this reply created (`ReplyMutations.created`, noted when a create lands in a
+missing or empty document) plans from the empty snapshot plus the reply's own
+mutations when the planning lookup has no usable frontier: the model knows it
+began empty, so create-then-edit in one reply lands, and anyone else's text in
+it still counts in the region check. Undo and redo are never refused. The
 refusal shows the region's blocks in full from the room copy and goes through
 the same recording as a read, so the next attempt proceeds unless the passage
 changes again. Past

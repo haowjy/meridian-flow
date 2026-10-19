@@ -165,7 +165,8 @@ export function createWriteCommands(deps: {
    * `use` with the doc a write plans on and what its region check reads: the model's view (the
    * room copy at the planning frontier, then the reply's own surviving updates) and that
    * frontier; the room copy and null when the room has no valid frontier or the view is
-   * incomplete. A host that keeps no
+   * incomplete. A document this reply created plans from the empty snapshot instead, since the
+   * model knows it began empty; the region check still runs (lead ruling). A host that keeps no
    * frontiers passes no lookups at all: its writes, and any write that is no model reply's
    * (utility, seed, import), plan on the room copy, exempt.
    */
@@ -185,7 +186,9 @@ export function createWriteCommands(deps: {
       return use(room.doc, "exempt");
     }
     const frontier = room.room ? await lookups.planning(room.room) : null;
-    const snapshot = room.room ? planningSnapshot(room.doc, room.room, frontier) : null;
+    const usable = room.room ? planningSnapshot(room.doc, room.room, frontier) : null;
+    const created = !usable && Boolean(lookups.reply?.created(docId));
+    const snapshot = usable ?? (created ? Y.emptySnapshot : null);
     const view =
       snapshot &&
       createPlanningView(room.doc, snapshot, [
@@ -193,7 +196,7 @@ export function createWriteCommands(deps: {
         ...responseCommitter.stagedUpdates(context.responseIdentity?.editScopeId, docId),
       ]);
     try {
-      return await use(view ?? room.doc, view ? frontier : null);
+      return await use(view ?? room.doc, view ? (usable && frontier) || { unshown: [] } : null);
     } finally {
       view?.destroy();
     }
@@ -304,7 +307,10 @@ export function createWriteCommands(deps: {
           });
         if (existing && hasText(room.doc))
           return withPlanDoc(room, address.documentId, context, actor, plan);
-        return plan(room.doc, "exempt");
+        const created = await plan(room.doc, "exempt");
+        // The document began empty for the model: its later writes in this reply plan from that.
+        if (created.status === "success") context.frontiers?.reply?.noteCreated(address.documentId);
+        return created;
       },
     );
   }

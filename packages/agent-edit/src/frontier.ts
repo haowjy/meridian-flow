@@ -39,23 +39,32 @@ export interface FrontierLookups {
 /**
  * One provider reply's own accepted mutations per document, in execution order: its writes
  * once their save's root commit settled them, its immediate writes and its undo, redo and
- * revert, each as the exact bytes it committed. The reply owns it from its first tool call to
- * its terminal boundary, which clears it; nothing caps or evicts it before then.
+ * revert, each as the exact bytes it committed; and the documents it created (a create into
+ * a missing or empty document), which began empty for the model. The reply owns it from its
+ * first tool call to its terminal boundary, which clears it; nothing caps or evicts it before.
  */
 export interface ReplyMutations {
   updates(docId: string): readonly Uint8Array[];
   append(docId: string, updates: readonly Uint8Array[]): void;
+  created(docId: string): boolean;
+  noteCreated(docId: string): void;
   clear(): void;
 }
 
 export function createReplyMutations(): ReplyMutations {
   const docs = new Map<string, Uint8Array[]>();
+  const created = new Set<string>();
   return {
     updates: (docId) => docs.get(docId) ?? [],
     append(docId, updates) {
       if (updates.length) docs.set(docId, [...(docs.get(docId) ?? []), ...updates]);
     },
-    clear: () => docs.clear(),
+    created: (docId) => created.has(docId),
+    noteCreated: (docId) => created.add(docId),
+    clear() {
+      docs.clear();
+      created.clear();
+    },
   };
 }
 
