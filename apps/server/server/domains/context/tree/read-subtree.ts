@@ -14,7 +14,7 @@ export async function readLiveSubtree(db: Database, sourceId: ContextSourceId, r
     name: string;
     depth: number;
   }>(sql`
-    WITH RECURSIVE live_folders AS (SELECT * FROM ${folders}), subtree AS (
+    WITH RECURSIVE live_folders AS (SELECT * FROM ${folders} WHERE context_source_id = ${sourceId}), subtree AS (
       SELECT id, parent_id, name, 0 AS depth FROM live_folders
       WHERE id = ${rootId} AND context_source_id = ${sourceId}
       UNION ALL

@@ -122,6 +122,7 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
+        inheritNotes: async () => {},
         effectiveWriteMode: (id: string) => runtime.delivery.effectiveWriteMode(id as never),
       };
       const firstTurn = await repos.turns.create({

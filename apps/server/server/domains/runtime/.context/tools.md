@@ -72,7 +72,12 @@ Both policy and the ContextPort receive the same variable map. Editor holders,
 admission references and keep-open lines are canonical-only.
 
 The model uses `scratch://$THREAD/` for its own notes and `$PARENT` for the
-originating chat's notes (no parent on an ordinary root). Permissions remain
+originating chat's notes (the acted-on source for fork/handoff, even when its
+cutoff turn was inherited; no parent on an ordinary root). Forks and handoffs
+best-effort copy that source folder into their own folder before creation
+returns. Copies have independent identity/history and grant no read credit.
+Subagents start without a copy. A creation seed names the originals' canonical
+address, which remains usable if copying failed. Permissions remain
 owner-wide. Bare Scratch remains owner-wide and rebinding moves nothing.
 Results carry canonical addresses; model prose, note links and keep-open lines
 should reuse them. AI-written link preparation and assignment share the same

@@ -118,6 +118,7 @@ async function fixture(
     agentCatalog,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
+    inheritNotes: async () => {},
     effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
     handoffBriefs: {
       async hold() {

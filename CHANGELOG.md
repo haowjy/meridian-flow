@@ -29,6 +29,8 @@
 - AI-written scoped links expand before identity correspondence, preserving links when a writer moves a target and reuses its old path.
 
 - Editor link identity, wikilink ranking, namespace availability and recent-document routes retain complete thread-folder locations.
+- Forks and handoffs copy the originating chat’s notes before creation returns, including named Work and No Work chats. Copying is best-effort and create-only; the seed names the originals even if copying fails. Handoff briefs launch after copying, subagents do not copy, and replay never retries copying.
+
 - Scratch notes can be copied as one create-only subtree with fresh document and block identities, independent history and binary storage. Document `write copy` and inherited notes share the same node materializer.
 
 - Forks and handoffs retain the chat they were derived from, so `$PARENT` names that chat even when the selected turn was inherited. Existing derivations are backfilled from their cutoff owner.

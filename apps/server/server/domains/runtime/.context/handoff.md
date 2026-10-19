@@ -13,7 +13,8 @@ one transaction. The held claim has no lease. A competing holder creates
 neither seed nor thread and returns `handoff_in_progress`; Retry uses the same
 sequence and returns `handoff_retry_unavailable` when unavailable.
 
-After commit the claim transfers to detached brief work. The brief keeps it
+After commit creation awaits best-effort notes copying, then transfers the
+claim to detached brief work before returning. The brief never races copying. The brief keeps it
 through its ending transaction; a destination wake cannot start while S is
 pending. Release calls the shared `wakeIfRunnable`, which rereads the queue so
 messages, controls, and Work notices run after S without a seed-specific gate.
@@ -42,5 +43,7 @@ appends `threadReferenceText` only when its bake advertises `thread_history`;
 source history is never copied.
 
 A handoff starts a new `rootThreadId` while retaining `originTurnId`. Its No Work
-Scratch starts empty; source lineage remains reachable through its first-chat
-handle. Forks do not re-root, and credits/results use the new root.
+Scratch belongs to its new lineage; its associated thread folder receives a
+best-effort independent copy of the acted-on chat’s notes. The seed names the
+original canonical notes address even on copy failure. Source lineage remains
+reachable through its first-chat handle. Forks do not re-root, and credits/results use the new root.

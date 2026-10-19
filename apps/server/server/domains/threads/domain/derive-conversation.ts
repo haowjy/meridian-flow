@@ -40,6 +40,8 @@ export interface ThreadAgentSwapDeps {
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
+  /** Best-effort notes inheritance, after creation commits; never rejects. */
+  inheritNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void>;
   /** The mode the writer sees on the source chat: a derived chat starts in it. */
   effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
 }
@@ -116,6 +118,7 @@ export async function handoffThreadAgent(
   const claim = await deps.handoffBriefs.hold(input.id as ThreadId);
   if (!claim) throw new HandoffInProgressError();
   try {
+    let seedTurnId: TurnId | null = null;
     const result = await deps.transaction(async () => {
       const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
       if (!lockedSource || lockedSource.deletedAt) throw new DerivedSourceNotFoundError();
@@ -181,10 +184,11 @@ export async function handoffThreadAgent(
           sourceRef: owner.ref ?? owner.id,
           sourceTitle: owner.title,
           cutoffTurnId: cutoff.turn.id,
+          sourceNotesUri: notesRootUri(lockedSource),
         }),
       });
       await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
-      deps.handoffBriefs.launchAfterCommit({ threadId: target.id, seedTurnId: seed.id, claim });
+      seedTurnId = seed.id;
       await deps.eventWriter.appendEvent(lockedSource.id, {
         type: "agent.handoff",
         sourceThreadId: owner.id,
@@ -194,7 +198,16 @@ export async function handoffThreadAgent(
       });
       return { thread: target, created: true };
     });
-    if (!result.created) await claim.release();
+    if (result.created && seedTurnId) {
+      // After-commit callbacks run concurrently. Launch only after copying finishes,
+      // outside the creation transaction, so the brief and first run see the new notes.
+      await deps.inheritNotes(source.id as ThreadId, result.thread.id as ThreadId);
+      deps.handoffBriefs.launchAfterCommit({
+        threadId: result.thread.id as ThreadId,
+        seedTurnId,
+        claim,
+      });
+    } else await claim.release();
     return result;
   } catch (error) {
     await claim.release();
@@ -216,7 +229,7 @@ export async function forkThreadAgent(
 
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   if (source.kind === "subagent") throw new SubagentDerivationError(source.id, "fork");
-  return deps.transaction(async () => {
+  const derived = await deps.transaction(async () => {
     // The source journal is mutated after the new thread acquires its Work membership.
     const lockedSource = await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     if (!lockedSource || lockedSource.deletedAt) throw new Error("Source thread no longer exists");
@@ -276,14 +289,13 @@ export async function forkThreadAgent(
       await deps.eventWriter.appendEvent(target.id as ThreadId, event);
     }
     await inheritEditingDocuments(deps, lockedSource, target);
-    // The files of the inherited turns sit with the chat that owns the cutoff turn, which is
-    // the source's ancestor when the fork was cut inside inherited history.
+    // Inherited uploads stay with the cutoff owner; copied notes come from the acted-on chat.
     const owner =
       (await deps.threads.findByIdIncludingDeleted(cutoff.turn.threadId)) ?? lockedSource;
     await seedSystemTurn(
       deps,
       target,
-      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id)}`,
+      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id, notesRootUri(lockedSource))}`,
     );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
@@ -294,6 +306,9 @@ export async function forkThreadAgent(
     });
     return { thread: target, created: true };
   });
+  if (derived.created)
+    await deps.inheritNotes(source.id as ThreadId, derived.thread.id as ThreadId);
+  return derived;
 }
 
 /** Same-revision derivations retain configuration even if the catalog has moved on. */
@@ -425,7 +440,7 @@ async function bindDerivedPrimary(
   });
   // The inherited bake may predate the current Work or the chosen fork point.
   if (target.initialPromptBakeId != null) await deps.workContextNotices.threadChanged(target.id);
-  return target;
+  return (await deps.threads.findById(target.id as ThreadId)) ?? target;
 }
 
 async function requirePrimaryWorkId(
@@ -470,9 +485,14 @@ async function inheritEditingDocuments(
 }
 
 /** Tells a derived chat which chat it continues and where that chat's files are. */
-export function continuesFromLine(sourceRef: string): string {
+export function continuesFromLine(sourceRef: string, sourceNotesUri?: string): string {
   const uploads = formatParsedContextUri("uploads", "", { kind: "chat", chatRef: sourceRef });
-  return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}.`;
+  return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}.${sourceNotesUri ? ` Original notes remain at ${sourceNotesUri}. Read this chat's notes at scratch://$THREAD/; if absent, read the originals.` : ""}`;
+}
+
+function notesRootUri(thread: Thread): string | undefined {
+  const location = thread.notesScope?.current;
+  return location ? formatParsedContextUri("scratch", "", location.owner, location) : undefined;
 }
 
 async function seedSystemTurn(deps: ThreadAgentSwapDeps, thread: Thread, text: string) {

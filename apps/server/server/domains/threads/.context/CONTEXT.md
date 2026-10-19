@@ -10,8 +10,11 @@ and No Work is a real Work row.
 `domain/bound-conversation.ts` is the atomic creation boundary for root and
 child conversations. It retains Agent configuration and optional Work
 membership. `derive-conversation.ts` owns fork and handoff creation; required
-history and provenance are written in the outer transaction, and child
-execution starts only after commit.
+history and provenance are written in the outer transaction. After commit,
+creation awaits best-effort notes copying before returning; handoff brief work
+launches only after copying finishes. It remains detached (creation does not
+wait for a model-generated brief). After-commit callbacks run concurrently,
+so registering copy and launch callbacks in order would not sequence them.
 
 - A fork keeps the source's retained revision, resolved configuration,
   invocation overlay, and bake at its cutoff. It has no Agent selection of its
@@ -342,3 +345,18 @@ is received, not only when a tool or assistant turn ends. A text-only notes
 response may continue to another model request on the same assistant if fresh
 compaction planning generates instead; its next stream must use the next durable
 block position, never append to the previous response's positional message id.
+
+Fork/handoff creation copies the acted-on chat's notes root, not the cutoff
+owner's, into the destination's current Scratch owner. This includes a new
+lineage for a No Work handoff. Missing notes allocate nothing; subagents do
+not copy. Failures log both thread ids, never fail creation, and never retry
+on create-or-get replay. The creation seed names the source's canonical notes
+address so the model can read the originals if no copy exists. There are no
+copy jobs, status projection or Retry operation. Existing destination roots
+are untouched. See [context copying](../../context/.context/CONTEXT.md#thread-notes-copying).
+
+`derivation_source_thread_id` is nullable, with no cascading thread FK; notes
+retention does not become a new thread-deletion dependency. Historical rows
+are backfilled in committed PK pages from their origin turn's owner (the
+acted-on thread was not previously recorded). New creates store the explicit
+source, independently of transcript lineage and the cutoff turn.

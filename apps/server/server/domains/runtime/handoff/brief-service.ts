@@ -459,6 +459,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
             sourceThreadId: metadata.sourceThreadId,
             sourceRef: metadata.sourceRef,
             sourceTitle: metadata.sourceTitle,
+            sourceNotesUri: metadata.sourceNotesUri,
             cutoffTurnId: metadata.cutoffTurnId,
           }),
         });

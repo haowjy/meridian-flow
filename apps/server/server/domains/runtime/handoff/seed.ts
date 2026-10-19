@@ -26,7 +26,7 @@ export function handoffSeedBlock(
   const history = historyReadable
     ? `${brief ? "\n" : " "}Read ${brief ? "the full conversation" : "it"} with thread_history(${JSON.stringify({ ref: sourceRef })}).`
     : "";
-  const continues = continuesFromLine(sourceRef);
+  const continues = continuesFromLine(sourceRef, metadata.sourceNotesUri);
   const modelText = brief
     ? `<system_update>\n<prior-session-context source="${sourceRef}">\n${brief.text}\n</prior-session-context>\n${continues}${history}\n</system_update>`
     : `<system_update>\nThis conversation was handed off from ${sourceRef} with no brief. ${continues}${history}\n</system_update>`;

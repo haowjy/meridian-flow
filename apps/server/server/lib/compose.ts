@@ -1,4 +1,5 @@
 import { createNotesStepAddresses } from "./model-tools/notes-step-addresses.js";
+import { createThreadNotesCopy } from "../domains/context/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -321,6 +322,7 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   handoffBriefs: HandoffBriefs;
+  inheritThreadNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void>;
   shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
@@ -355,6 +357,7 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 }
 
 export type ProductionAppPorts = {
+  inheritThreadNotes: AppServices["inheritThreadNotes"];
   db: Database;
   /** Detached work any port started; the composed app drains it at shutdown. */
   backgroundTasks: DetachedWorkTracker;
@@ -610,6 +613,39 @@ export async function createProductionAppPorts(input: {
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
   });
+  const notesCopy = createThreadNotesCopy({
+    db,
+    documents: documentSync,
+    objectStore,
+    objects: objectRelease,
+    arrivals,
+    catalog: contextCatalog,
+  });
+  async function inheritThreadNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void> {
+    try {
+      const source = await threadRepos.threads.findById(sourceId);
+      const destination = await threadRepos.threads.findById(destinationId);
+      if (!source?.notesScope?.current || !destination?.notesScope?.current) return;
+      await notesCopy.copy({
+        projectId: source.projectId,
+        userId: source.userId,
+        source: source.notesScope.current,
+        destination: destination.notesScope.current,
+      });
+    } catch (error) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "context.thread-notes",
+        name: "copy.failed",
+        correlation: { threadId: destinationId },
+        payload: {
+          sourceThreadId: sourceId,
+          destinationThreadId: destinationId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),
     content: createContextUploadContentPort(contextPorts),
@@ -677,6 +713,7 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
+    inheritThreadNotes,
     backgroundTasks,
     runClaim,
     statusReader,
@@ -1174,6 +1211,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     delivery,
     recovery,
     handoffBriefs,
+    inheritThreadNotes: ports.inheritThreadNotes,
     userTurnAdmission,
     runClaim: runClaim,
     toolRegistry,
@@ -1672,6 +1710,7 @@ export function createInMemoryAppServices(): AppServices {
     delivery,
     recovery,
     handoffBriefs,
+    inheritThreadNotes: async () => {},
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };
