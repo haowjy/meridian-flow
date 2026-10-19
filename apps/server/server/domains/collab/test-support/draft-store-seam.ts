@@ -66,8 +66,7 @@ export async function appendDraftRows(
 }
 
 /**
- * A resolved draft with its content: generation and document come from one read, so a test
- * never pairs one generation's identity with another's content.
+ * A resolved draft with its content, read together through the draft store.
  */
 export async function readResolvedDraft(
   store: Pick<DraftStore, "readDraftAt">,

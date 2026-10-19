@@ -56,13 +56,13 @@ export type SegmentRowsInput = {
 };
 
 /**
- * A pull merges `upstream` into the draft. A peer's pull names the upstream epoch it read
- * `upstream` at: the commit locks that row `FOR SHARE` and loses if it closed or moved.
+ * A pull merges `upstream` into the draft. A peer names its captured upstream id:
+ * the commit locks that row `FOR SHARE` and loses if it closed.
  */
 export type PullInput = {
   draftId: string;
   upstream: Y.Doc;
-  upstreamEpoch?: { draftId: string };
+  upstreamDraftId?: string;
 };
 
 /**
@@ -194,7 +194,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     return prepareRewrite(snapshot.draftId, candidate, {
       policy: foldPolicy(base.replica),
       operation,
-      ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
+      ...(pull.upstreamDraftId ? { upstream: { draftId: pull.upstreamDraftId } } : {}),
     });
   }
 

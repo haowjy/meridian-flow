@@ -16,14 +16,9 @@ import type { DocumentSessionTeardownOwner } from "./document-session-teardown-o
 
 export type DraftRoomRef = Readonly<{
   roomKey: string;
-  currentRoom(): Promise<string | null>;
-  changed(): void | Promise<void>;
-  writerChanges?(generation: number | null): void;
-  writerLoss?(): void;
 }>;
 
 export class DraftRoomPool {
-  private readonly refs = new Map<string, DraftRoomRef>();
   private readonly draining = new Set<string>();
   private readonly rooms = new Map<string, DocumentSession>();
   private readonly retainedByOwner = new Map<string, Map<string, DraftRoomRef>>();
@@ -49,7 +44,6 @@ export class DraftRoomPool {
         throw new Error(`Draft retention requires a draft room: ${roomKey}`);
       }
     }
-    for (const ref of refs) this.refs.set(ref.roomKey, ref);
     this.retainedByOwner.set(ownerId, new Map(refs.map((ref) => [ref.roomKey, ref])));
     for (const roomKey of keys) this.cancelTeardown(roomKey);
     this.reconcile();
@@ -79,13 +73,6 @@ export class DraftRoomPool {
     this.deps.teardownOwner.assertAvailable({ kind: "draft", roomKey });
     const existing = this.rooms.get(roomKey);
     if (existing) return existing;
-    for (const retained of this.retainedByOwner.values()) {
-      const ref = retained.get(roomKey);
-      if (ref) {
-        this.refs.set(roomKey, ref);
-        break;
-      }
-    }
     const session = this.deps.openSession(roomKey);
     this.rooms.set(roomKey, session);
     session.subscribe((snapshot) => {
@@ -113,7 +100,6 @@ export class DraftRoomPool {
     this.teardownTimers.clear();
     const rooms = [...this.rooms];
     for (const [roomKey, session] of rooms) this.retire(roomKey, session);
-    this.refs.clear();
   }
 
   private reconcile(): void {
@@ -164,7 +150,6 @@ export class DraftRoomPool {
   private retire(roomKey: string, session: DocumentSession): void {
     if (this.rooms.get(roomKey) !== session) return;
     this.rooms.delete(roomKey);
-    this.refs.delete(roomKey);
     this.cancelTeardown(roomKey);
     // Quarantine is installed before delivery can try to reopen the same room.
     void this.deps.teardownOwner.retire({ kind: "draft", roomKey }, session).catch(() => undefined);

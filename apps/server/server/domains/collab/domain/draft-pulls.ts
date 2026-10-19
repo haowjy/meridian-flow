@@ -59,7 +59,7 @@ export type DraftPullService = {
 
 /**
  * A thread-peer pull whose draft operations lost to a Discard (stale, CAS-lost, closed or missing
- * draft, or an upstream re-forked after its read), carrying the peer and upstream it had
+ * draft, or an upstream closed after its read), carrying the peer and upstream it had
  * captured so a caller can say which one went. Any other failure of the pull is not wrapped.
  */
 export class ThreadPeerPullLost extends Error {
@@ -330,7 +330,7 @@ export function createDraftPullService(input: {
       return await input.draftCoordinator.pullFromDoc({
         draftId: peerDraftId,
         upstream: upstreamDoc,
-        upstreamEpoch: { draftId: upstream.draftId },
+        upstreamDraftId: upstream.draftId,
       });
     } finally {
       upstreamDoc.destroy();
@@ -338,7 +338,7 @@ export function createDraftPullService(input: {
   }
 }
 
-/** A peer pull the store refused: its peer closed, or its upstream re-forked since the read. */
+/** A peer pull the store refused: its peer closed, or its upstream closed since the read. */
 class PeerPullRefused extends Error {
   constructor(
     readonly peerDraftId: string,

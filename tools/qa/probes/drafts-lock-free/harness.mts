@@ -178,7 +178,6 @@ export async function openHarness(url: string) {
           lifecycle: read.documentDraft.lifecycle,
           revision: read.documentDraft.revision,
           checkpointRevision: read.documentDraft.checkpointRevision,
-          generation: read.documentDraft.generation,
           tail: read.tail.length,
           text: doc.getXmlFragment("prosemirror").toString(),
         };

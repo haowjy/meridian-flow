@@ -653,8 +653,8 @@ export function createHocuspocus(
       };
       await withRemovalRefusal(services, room, context.userId, closing, async () => {
         if (room.kind === "draft") {
-          // As for a live room: a reset can commit between this connection's admission and
-          // its room's registration, and the old generation's room must not take the tab.
+          // A close can commit between admission and registration; the ended draft
+          // must not take a late connection.
           if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
             refuse(WS_CLOSE.DRAFT_CLOSED);
           return;

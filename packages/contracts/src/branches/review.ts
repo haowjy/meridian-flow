@@ -149,10 +149,10 @@ export function operationKey(operation: Pick<ReviewOperation, "operationId" | "p
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
-  /** The journal row carrying this change in the item's current draft generation. Admission names rows; it is not continuity. */
+  /** The journal row carrying this change in the item's draft. Admission names rows; it is not continuity. */
   operationId: string;
   /**
-   * The change's identity across draft generations: `<editId>:<ordinal>` of the
+   * The change's immutable identity: `<editId>:<ordinal>` of the
    * recorded edit part the row carries. A re-fork re-journals surviving rows
    * under new `operationId`s with the same part key, so this is what a queued
    * click, a focus or a held failure finds its change by. Absent for a row that
@@ -232,7 +232,7 @@ export type ReviewFormattingChange =
 
 /**
  * A block as the review shows it. `blockId` (a `blockItemKey`) is set on a
- * deleted block: the live block's own Yjs item, which the next generation of
+ * deleted block: the live block's own Yjs item, which later versions of
  * the draft still has when the deletion is discarded.
  */
 export type ReviewBlockDisplay = { type: string; display: string; blockId?: string };

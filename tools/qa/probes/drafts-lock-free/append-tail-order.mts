@@ -52,7 +52,6 @@ export const appendTailOrder: Probe = {
         const warm = keystroke(a.room, " warm", 930_000);
         await a.coordinator.commitWriterUpdate({
           draftId: draft.draftId,
-          expectedGeneration: draft.generation,
           updateData: warm,
           roomDocument: a.room,
         });
@@ -63,7 +62,6 @@ export const appendTailOrder: Probe = {
             frameOutcome(
               a.coordinator.commitWriterUpdate({
                 draftId: draft.draftId,
-                expectedGeneration: draft.generation,
                 updateData: keystroke(a.room, " HELD", 930_001),
                 roomDocument: a.room,
               }),
@@ -107,7 +105,7 @@ export const appendTailOrder: Probe = {
 
       async "2-unlocked-insert-hazard"() {
         const draft = await seedDraft(harness, "tail-hazard");
-        const { draftId, generation } = draft;
+        const { draftId } = draft;
         const low = appendToFirstParagraph(tabOn(draft.live, 940_001), " LOW");
         const high = appendToFirstParagraph(tabOn(draft.live, 940_002), " HIGH");
         const inserted = gate();
@@ -117,7 +115,7 @@ export const appendTailOrder: Probe = {
         const lowWriter = harness.raw.begin(async (tx) => {
           const [row] =
             await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
-            values (${draftId}, ${generation}, ${Buffer.from(low)}, 'writer', 0) returning id`;
+            values (${draftId}, 1, ${Buffer.from(low)}, 'writer', 0) returning id`;
           lowId = Number(row?.id);
           inserted.open();
           await finish.wait;
@@ -129,7 +127,7 @@ export const appendTailOrder: Probe = {
             await tx`update document_drafts set revision = revision + 1 where id = ${draftId}`;
             const [row] =
               await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
-              values (${draftId}, ${generation}, ${Buffer.from(high)}, 'writer', 0) returning id`;
+              values (${draftId}, 1, ${Buffer.from(high)}, 'writer', 0) returning id`;
             highId = Number(row?.id);
           });
           const read = await harness.store.readDraftAt(draftId);

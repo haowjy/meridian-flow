@@ -6,8 +6,6 @@
  *
  * - `cold-load-commit`: a pull commits while the room's load read is paused, so the room
  *   registers holding the older snapshot; its enrollment brings the commit in.
- * - `cold-load-reset`: a reset commits while the generation-1 room loads; its enrollment closes
- *   it, and the generation-2 room loads and takes frames.
  * - `dropped-delivery`: the delivery of a pull is dropped on purpose; the next frame finds its
  *   room behind, reconciles it, and is admitted with no `1008`.
  * - `read-only-handshake`: the same dropped delivery, then a tab that may only read joins; its
@@ -117,9 +115,9 @@ export function openGateway(
   binding.bind(hocuspocus);
 
   /** The room loaded as a socket's `ClientConnection` loads it; resolves once registered. */
-  function load(draftId: string, generation: number): Promise<Document> {
+  function load(draftId: string): Promise<Document> {
     return hocuspocus.createDocument(
-      `draft:${draftId}:gen:${generation}`,
+      `draft:${draftId}`,
       { headers: {}, url: "/" } as never,
       "probe-socket",
       { readOnly: false, isAuthenticated: true } as never,
@@ -128,25 +126,19 @@ export function openGateway(
   }
 
   /** A tab's keystroke on `room`, admitted as the gateway admits a socket's frame. */
-  async function type(room: Document, draftId: string, generation: number, token: string) {
+  async function type(room: Document, draftId: string, token: string) {
     const tab = new Y.Doc({ gc: false });
     Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
     const update = appendToFirstParagraph(tab, token);
     tab.destroy();
-    return send(room, draftId, generation, update);
+    return send(room, draftId, update);
   }
 
   /**
    * `payload` as a socket's Update (`syncType` 2) or SyncStep2 (1) on `room`, through the
    * gateway's admission: the close a refusal carries, and the room applies it when admitted.
    */
-  async function send(
-    room: Document,
-    draftId: string,
-    generation: number,
-    payload: Uint8Array,
-    syncType = 2,
-  ) {
+  async function send(room: Document, draftId: string, payload: Uint8Array, syncType = 2) {
     const result = await settled(
       admitWriterSync({
         services,
@@ -155,13 +147,18 @@ export function openGateway(
         syncType,
         payload,
         userId: harness.ids.user as never,
-        context: { draftSyncState: new Map([[`${draftId}:${generation}`, "passed"]]) },
+        context: { draftSyncState: new Map([[draftId, "passed"]]) },
       }),
     );
     // Hocuspocus applies an admitted frame to the room.
     if (result.ok) Y.applyUpdate(room, payload, "client");
     // A refusal carries the close the gateway's removal wrapper would send.
-    return { ok: result.ok, closes: result.ok ? [] : [result.message] };
+    return {
+      ok: result.ok,
+      closes: result.ok
+        ? []
+        : [result.code ? { code: Number(result.code), reason: result.message } : result.message],
+    };
   }
 
   /**
@@ -174,7 +171,7 @@ export function openGateway(
       traceId: "read-only-handshake",
       userId: harness.ids.user,
       draftSyncState: new Map(),
-      admissionTarget: { kind: "draft", draftId, generation: 1, documentId: room.name },
+      admissionTarget: { kind: "draft", draftId, documentId: room.name },
       access: { level: "read" },
     };
     let serverVector: Uint8Array | undefined;
@@ -259,7 +256,7 @@ export const coldLoadCommit: Probe = {
     const pause = pausedRead(harness.store);
     const gateway = openGateway(harness, pause.paused);
     try {
-      const loading = gateway.load(draftId, 1);
+      const loading = gateway.load(draftId);
       await pause.entered.wait;
       appendToFirstParagraph(live, " COMMITTED");
       const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
@@ -268,7 +265,7 @@ export const coldLoadCommit: Probe = {
       const registered = text(room);
       await gateway.enrolled(draftId);
       const enrolled = text(room);
-      const next = await gateway.type(room, draftId, 1, " NEXT");
+      const next = await gateway.type(room, draftId, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
       observe("load", { pulled, registered, enrolled, durable });
       observe("next", next);
@@ -300,12 +297,12 @@ export const droppedDelivery: Probe = {
     const { draftId, live } = await seedDraft(harness, "dropped-delivery");
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
     try {
-      const room = await gateway.load(draftId, 1);
+      const room = await gateway.load(draftId);
       await gateway.enrolled(draftId);
       appendToFirstParagraph(live, " LIVE");
       const pulled = await gateway.coordinator.pullFromDoc({ draftId, upstream: live });
       const behind = text(room);
-      const next = await gateway.type(room, draftId, 1, " NEXT");
+      const next = await gateway.type(room, draftId, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
       observe("drop", { pulled, behind, durable });
       observe("next", { ...next, room: text(room) });
@@ -337,7 +334,7 @@ export const readOnlyHandshake: Probe = {
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
     const tab = new Y.Doc({ gc: false });
     try {
-      const room = await gateway.load(draftId, 1);
+      const room = await gateway.load(draftId);
       await gateway.enrolled(draftId);
       Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
       appendToFirstParagraph(live, " LIVE");

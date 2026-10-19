@@ -9,6 +9,22 @@ import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "../domain/draft-journal.js";
 
+const journalColumns = {
+  id: draftWriteJournal.id,
+  draftId: draftWriteJournal.draftId,
+  wId: draftWriteJournal.wId,
+  toolCallId: draftWriteJournal.toolCallId,
+  source: draftWriteJournal.source,
+  threadId: draftWriteJournal.threadId,
+  turnId: draftWriteJournal.turnId,
+  actorUserId: draftWriteJournal.actorUserId,
+  updateData: draftWriteJournal.updateData,
+  draftBaseUpdateSeq: draftWriteJournal.draftBaseUpdateSeq,
+  status: draftWriteJournal.status,
+  updateMeta: draftWriteJournal.updateMeta,
+};
+type JournalRecord = Pick<typeof draftWriteJournal.$inferSelect, keyof typeof journalColumns>;
+
 export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJournalReads {
   return {
     async listJournalRowsForDraft(input) {
@@ -18,7 +34,7 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
       }
       const rows = await currentDrizzleDb(db)
         .select({
-          row: draftWriteJournal,
+          row: journalColumns,
           editKind: documentEdits.kind,
         })
         .from(draftWriteJournal)
@@ -49,7 +65,7 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
       const rows = await currentDrizzleDb(db)
-        .select({ row: draftWriteJournal })
+        .select({ row: journalColumns })
         .from(draftWriteJournal)
         .innerJoin(documentDrafts, eq(draftWriteJournal.draftId, documentDrafts.id))
         .where(
@@ -74,7 +90,7 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
   };
 }
 
-function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {
+function mapJournalRow(row: JournalRecord): DraftJournalRow {
   return {
     id: row.id,
     draftId: row.draftId,

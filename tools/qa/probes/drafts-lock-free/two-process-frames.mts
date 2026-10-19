@@ -63,8 +63,7 @@ async function twoProcesses(
       Y.applyUpdate(process.room, Y.encodeStateAsUpdate(doc));
     });
   }
-  const generation = (await harness.readDraft(documentDraft.draftId)).generation;
-  return { draftId: documentDraft.draftId, generation, live, a, b, other };
+  return { draftId: documentDraft.draftId, live, a, b, other };
 }
 
 /** The tab's keystroke on its room's state: a fresh client inserting `token` at the end. */
@@ -78,19 +77,12 @@ function keystroke(room: Y.Doc, token: string): Uint8Array {
   }
 }
 
-async function type(
-  process: Process,
-  draftId: string,
-  generation: number,
-  token: string,
-  wall?: number[],
-) {
+async function type(process: Process, draftId: string, token: string, wall?: number[]) {
   const update = keystroke(process.room, token);
   const started = performance.now();
   const result = await settled(
     process.coordinator.commitWriterUpdate({
       draftId,
-      expectedGeneration: generation,
       updateData: update,
       roomDocument: process.room,
     }),
@@ -126,7 +118,7 @@ export const twoProcessFrames: Probe = {
         return store.appendRows(input);
       },
     });
-    const { draftId, generation, live, a, b, other } = await twoProcesses(
+    const { draftId, live, a, b, other } = await twoProcesses(
       harness,
       "two-process",
       undefined,
@@ -138,8 +130,8 @@ export const twoProcessFrames: Probe = {
     let admitted = 0;
     for (let key = 0; key < KEYS; key += 1) {
       const results = await Promise.all([
-        type(a, draftId, generation, ` A${key}`, wall),
-        type(b, draftId, generation, ` B${key}`, wall),
+        type(a, draftId, ` A${key}`, wall),
+        type(b, draftId, ` B${key}`, wall),
       ]);
       for (const result of results) {
         if (result.ok) admitted += 1;
@@ -217,12 +209,12 @@ export const twoProcessFold: Probe = {
       // so the rewrite folds B's row in under the draft lock.
       const pull = f.a.coordinator.pullFromDoc({ draftId: f.draftId, upstream: f.live });
       await pause.entered.wait;
-      const foreign = await type(f.b, f.draftId, f.generation, " FOREIGN");
+      const foreign = await type(f.b, f.draftId, " FOREIGN");
       pause.release.open();
       const pulled = await pull;
       const durable = (await harness.readDraft(f.draftId)).text;
       const room = roomText(f.a);
-      const next = await type(f.a, f.draftId, f.generation, " NEXT");
+      const next = await type(f.a, f.draftId, " NEXT");
       observe("pull", { foreign: foreign.ok, pulled, durable, room });
       observe("next", next);
       assert.equal(pulled, "pulled");
@@ -257,22 +249,21 @@ export const twoProcessCompaction: Probe = {
       }));
       await f.a.coordinator.commitSegmentRows({
         draftId: f.draftId,
-        expectedGeneration: f.generation,
         sourceDoc: source,
         rows,
       });
       source.destroy();
       await f.a.coordinator.readDraft(f.draftId, async () => {});
-      await type(f.a, f.draftId, f.generation, " TRIGGER");
+      await type(f.a, f.draftId, " TRIGGER");
       await pause.entered.wait;
-      const foreign = await type(f.b, f.draftId, f.generation, " FOREIGN");
+      const foreign = await type(f.b, f.draftId, " FOREIGN");
       pause.release.open();
       await pause.done.wait;
       // The compaction delivers after its own commit returns.
       await new Promise((resolve) => setTimeout(resolve, 10));
       const durable = await harness.readDraft(f.draftId);
       const room = roomText(f.a);
-      const next = await type(f.a, f.draftId, f.generation, " NEXT");
+      const next = await type(f.a, f.draftId, " NEXT");
       observe("compaction", {
         foreign: foreign.ok,
         tail: durable.tail,
