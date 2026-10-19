@@ -10,7 +10,6 @@ import type {
   DraftReadSince,
   DraftSnapshot,
   DraftStore,
-  EffectBaseline,
   RewriteOutcome,
   StaleEffectCursor,
 } from "../domain/draft-store.js";
@@ -116,17 +115,18 @@ export class MemoryDraftStore implements DraftStore {
     };
   }
 
-  async readEffectBaseline(draftId: string): Promise<EffectBaseline | null> {
-    const documentDraft = this.drafts.get(draftId);
-    if (documentDraft?.kind !== "work_draft") return null;
-    return { state: documentDraft.liveCut ?? null };
+  async serverDeletedBlocks(
+    _draftId: string,
+    _ids: readonly { client: number; clock: number }[],
+  ): Promise<ReadonlySet<string>> {
+    return new Set();
   }
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
     if (
       documentDraft?.status !== "active" ||
-      documentDraft.lifecycle !== "active" ||
+      (input.work !== "any" && documentDraft.lifecycle !== "active") ||
       documentDraft.generation !== input.expectedGeneration
     )
       return { status: "refused" };
@@ -196,28 +196,19 @@ export class MemoryDraftStore implements DraftStore {
     const tail = documentDraft.rows.filter(
       (row) => row.generation === documentDraft.generation && row.id > documentDraft.checkpointSeq,
     );
-    const { operation } = input;
     // A fold applies what landed after its cursor; a reset discards it.
-    let folded = 0;
     if (input.policy.kind === "fold") {
       const after = input.policy.seq;
       for (const row of tail) {
         if (row.id <= after) continue;
         Y.applyUpdate(input.doc, row.update);
-        folded += 1;
       }
     }
     documentDraft.checkpoint = {
       state: Y.encodeStateAsUpdate(input.doc),
       stateVector: Y.encodeStateVector(input.doc),
     };
-    if (operation.kind === "pull" && operation.effect) {
-      const { effect } = operation;
-      documentDraft.liveCut = effect.liveCut;
-      documentDraft.hasEffect =
-        folded && effect.refolded ? effect.refolded(input.doc) : effect.hasEffect;
-      documentDraft.hasEffectRevision = documentDraft.revision + 1;
-    }
+
     documentDraft.checkpointSeq = Math.max(0, ...documentDraft.rows.map((row) => row.id));
     documentDraft.revision += 1;
     documentDraft.checkpointRevision = documentDraft.revision;

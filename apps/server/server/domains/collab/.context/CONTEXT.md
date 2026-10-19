@@ -319,9 +319,8 @@ badge) is a projection, not part of the append. Every committed
 append marks the draft dirty (`onAppendCommitted`, a required coordinator
 input); the projection job (`domain/draft-projection.ts`) coalesces marks
 (250 ms after the last, at most 1 s after the first), runs at most four
-judgements at a time, fingerprints the committed replica against the stored
-baseline (`live_cut`, frozen at creation and replaced only under a revision
-bump), and writes `has_effect` with its watermark `has_effect_revision` through
+judgements at a time, compares `review_base` and `prosemirror` with the kernel's
+`blocksEqual` (empty fragment equals one default empty paragraph), and writes `has_effect` with its watermark `has_effect_revision` through
 `writeEffect` at exactly that revision, inside `mutate` (which reconciles the
 Work's stored badge count and notifies only if it moved), under
 `SET LOCAL lock_timeout = '100ms'`. That bound applies to each lock
@@ -329,29 +328,19 @@ acquisition (the Work, the draft row, the Works-notice participants), not to
 the transaction; `55P03` is `contended` and retried on backoff, a moved revision
 is re-judged at once, so the badge converges within the max wait once typing
 pauses and eventually while typing. That is the contract, not a bound to
-tighten: the job's write must never bump `revision`, and the badge must not move back onto the append. Every writer of `has_effect` (the job or a pull's
-rewrite) writes the watermark with it; `-1` is stale
+tighten: the job's write must never bump `revision`, and the badge must not move back onto the append. Every writer of `has_effect` (the seed or projection job) writes the watermark with it; `-1` is stale
 whatever the revision. A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
-crash inside the debounce converges without another key. A legacy draft with
-no stored baseline is established once by the draft-scoped `pullWorkDraft`; the effect job retains its baseline-repair refusal handling until lane R
-replaces the baseline. Review readers
+crash inside the debounce converges without another key. Review readers
 (`isEdited` and the Works badge) may lag a key by that second;
 the draft editor and Undo read the replica and receipts, never `has_effect`.
 Tests that assert membership right after a write read through
 `test-support/converged-review.ts`, which flushes the job first.
 
-Migration 0064 added the watermark (migrate, then deploy): a server without the
-baseline-writing creator makes rows with null `live_cut` and the default `-1`,
-which the sweep finds and the pull repairs. The contract step comes in a later
-deploy, once every server runs that creator: the gate query
-`SELECT id, document_id FROM document_drafts WHERE kind = 'work_draft' AND
-status = 'active' AND live_cut IS NULL` returns nothing,
-then the next free migration adds `CHECK (kind <> 'work_draft' OR status <>
-'active' OR live_cut IS NOT NULL) NOT VALID` and the one after it
-(no-transaction) validates it (0065 is the change-trail cost fix, not this
-step); the contract step also deletes the job's null-baseline arm and
-`pullWorkDraft`, whose only caller that arm is.
+New drafts use `seedDraftState`: live's blocks written twice as fresh client-1
+items into `prosemirror` and `review_base`, equal at revision 0, with no
+`live_cut`. Existing draft conversion belongs to the migration lane; there is
+no null-baseline repair arm or fingerprint cache in the runtime.
 
 A writer frame takes no lease, mutex or document lock. It is judged once on the
 committed replica (admissible, its room, the echo exit, authorship as an early
@@ -411,7 +400,7 @@ rewrite attempts; `domain/draft-writer-frames.ts` owns writer admission.
 
 The shared `prepareAppend(base, rows, { admitted?, authorServerRows? })` prepares
 no server bytes before the lock. `finalizeAppend` first materializes the committed
-prefix and admits incoming rows. The optional synchronous author receives a
+prefix and admits incoming rows. The optional async-capable author receives a
 private gc-off copy of that post-row prefix, with client 1 set, and returns its
 captured transaction updates in order. Each is admitted on the receipt before-view
 as a separate `source: server` journal row and receipt. The authoring copy is
@@ -470,17 +459,28 @@ writing, so a plan that still applies is a `ReversalConflictError`, never a
 semantic refusal. `markBlocking` (a held draft found by the plan) is its own short write
 after the capture (Works, then the held rows, then the bump).
 
-Each pull attempt is its own root transaction, outside a caller's response
-and database transactions, and holds nothing between attempts: its candidate
-and `has_effect` are computed before the scope, and it commits as a fold over the replica's
-cursor, applying any rows appended since into the checkpoint under the row
-lock (re-judging `has_effect` there only when it applied some). Frames never
-make a pull retry; only another rewrite does. Live pulls snapshot before a
-transaction and re-read draft membership; settlement fencing is gone. A peer
-pull holds its captured upstream `FOR SHARE` and refuses a closed/moved upstream
-or a no-longer-contained peer through `ThreadPeerPullLost`. Peer replication,
-pull and exact checkpoints remain until Track M. Lane R owns the Work pull,
-`live_cut` and effect-baseline replacement.
+A live commit schedules a content rebase (2 s debounce, 10 s maximum). Off-lock,
+the service reads committed live and skips drafts whose base already matches.
+Under the draft row hold its async append author re-reads committed live through
+the live journal's single-statement authority/checkpoint/tail read, rematerializing
+it fully rather than caching an incremental cut. It calls `rebase(base, live, draft)`
+and writes both fragments in one client-1 transaction, one `source: server` row.
+It takes neither a live lock nor a Work boundary, capture or revision predicate;
+background rebases keep archived drafts current. Server append events include
+`holdMs` and `serverRows` for the separate hold-time measurement lane.
+
+Writer and agent admission runs `findLostEdits` against the committed prefix.
+Only hidden typing under a top-level block whose deletion is certified by a
+server row's immutable receipt is recovered. Receipt reads happen only for
+hidden typing, selected by block id. Recovery authors another client-1 server row
+in the same append; its opaque per-draft `LateTyping` memory installs only after
+commit. Deletion-only frames advance memory without writing; stale backspaces
+never remove recovered writing. Another writer's deleted block is not recovered.
+
+A thread-peer pull remains a folding rewrite in its own root transaction,
+outside the caller's transaction. It holds its captured upstream `FOR SHARE`
+and refuses a closed/moved upstream or a no-longer-contained peer through
+`ThreadPeerPullLost`. Peer replication, pull and exact checkpoints remain until Track M.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row

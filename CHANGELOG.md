@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Seed Work drafts with independent review content, rebase live through server appends, recover late typing deleted by rebases, and derive badges from the room's two fragments. Turn inverses no longer merge live identity into drafts.
+
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
 
 - Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.

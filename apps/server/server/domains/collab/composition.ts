@@ -225,7 +225,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftEffects = createDraftProjection({
     coordinator: draftCoordinator,
     store: drafts,
-    pulls: draftPulls,
     diagnostics: createDraftProjectionDiagnostics(deps.eventSink),
     outsideTransaction: runOutsideWrite,
   });
@@ -399,6 +398,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       })
     : SILENT_POST_DURABILITY_NOTICES;
   const turnInverse = createDrizzleTurnInverseService({
+    onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db: deps.db,
     journal: persistence.journal,
     drafts,

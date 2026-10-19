@@ -1,3 +1,4 @@
+import { type LateTyping, NO_LATE_TYPING } from "@meridian/agent-edit/diff";
 /** Committed draft replicas, prepared append/rewrite lifetime, delivery and maintenance. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -96,7 +97,7 @@ export type DraftRuntime = {
   prepareAppend(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
-    options?: { admitted?: Y.Doc; authorServerRows?: AuthorServerRows },
+    options?: { admitted?: Y.Doc; authorServerRows?: AuthorServerRows; work?: "active" | "any" },
   ): PreparedDraftWrite;
   prepareRewrite(
     draftId: string,
@@ -139,7 +140,7 @@ export type PreparedDraftWrite = {
 export class DraftRewriteRefused extends Error {
   constructor(
     readonly draftId: string,
-    readonly status: Extract<RewriteOutcome["status"], "fenced" | "blocked" | "upstreamMoved">,
+    readonly status: Extract<RewriteOutcome["status"], "upstreamMoved">,
   ) {
     super(`Draft ${draftId} rewrite was refused: ${status}`);
     this.name = "DraftRewriteRefused";
@@ -167,6 +168,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   const documentContainment = createDocumentContainment();
   const committed = new Map<string, CommittedReplica>();
   const compacting = new Set<string>();
+  const lateTyping = new Map<string, LateTyping>();
 
   /** One write as a whole attempt inside `scope`. */
   function commitOnce(
@@ -393,10 +395,10 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   function prepareAppend(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
-    options?: { admitted?: Y.Doc; authorServerRows?: AuthorServerRows },
+    options?: { admitted?: Y.Doc; authorServerRows?: AuthorServerRows; work?: "active" | "any" },
   ): PreparedDraftWrite {
     const { snapshot, replica } = base;
-    const { admitted, authorServerRows } = options ?? {};
+    const { admitted, authorServerRows, work = "active" } = options ?? {};
     let prefix: Y.Doc;
     try {
       prefix = cloneReplica(replica);
@@ -412,7 +414,10 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       owned: () => [prefix, ...(committedDoc ? [committedDoc] : [])],
       appended: () => {
         const complete = () => {
-          if (snapshot.kind === "work_draft") input.onAppendCommitted(snapshot.draftId);
+          if (snapshot.kind === "work_draft") {
+            if (finalized?.lateTyping) lateTyping.set(snapshot.draftId, finalized.lateTyping);
+            input.onAppendCommitted(snapshot.draftId);
+          }
           compactIfLong(snapshot.draftId);
         };
         if (!input.store.deferUntilCommit(complete)) complete();
@@ -422,14 +427,25 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           draftId: snapshot.draftId,
           documentId: snapshot.documentId,
           expectedGeneration: snapshot.generation,
+          work,
           base: { checkpointRevision: replica.checkpointRevision, seq: replica.seq },
-          finalize(read) {
-            const judged = finalizeAppend(read, {
+          async finalize(read) {
+            const judged = await finalizeAppend(read, {
               candidate: prefix,
+              work,
               rows: journals,
               containment: documentContainment,
               validateWriter: assertWriterAuthorship,
               authorServerRows,
+              ...(snapshot.kind === "work_draft"
+                ? {
+                    recovery: {
+                      memory: lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
+                      serverDeletedBlocks: (ids: readonly Y.ID[]) =>
+                        input.store.serverDeletedBlocks(snapshot.draftId, ids),
+                    },
+                  }
+                : {}),
             });
             committedDoc = judged.doc;
             finalized = judged.result;
@@ -492,11 +508,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       candidate,
       async persist() {
         const outcome = await input.store.commitRewrite({ draftId, doc: candidate, ...rewrite });
-        if (
-          outcome.status === "fenced" ||
-          outcome.status === "blocked" ||
-          outcome.status === "upstreamMoved"
-        )
+        if (outcome.status === "upstreamMoved")
           throw new DraftRewriteRefused(draftId, outcome.status);
         if (outcome.status !== "committed") throw new DraftCasConflictError(draftId);
         // The fold may have applied rows this process never installed: delivery diffs the
