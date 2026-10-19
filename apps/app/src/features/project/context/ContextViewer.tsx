@@ -32,6 +32,7 @@ import type { ContextPaneState } from "./context-pane-state";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
+import { RemovedDocumentNotices } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
@@ -251,6 +252,7 @@ export function ContextViewer({
           {controller.inlineReview?.shown ? (
             <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
           ) : null}
+          <RemovedDocumentNotices projectId={projectId} />
         </PaintHold>
       </ProjectRouteBoundary>
     </div>

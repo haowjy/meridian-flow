@@ -29,6 +29,7 @@ import { originalBrowserSearch } from "@/router-search";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
+import { useRemovedDestination } from "../context/RemovedDocumentNotice";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
@@ -462,6 +463,15 @@ function ReadableProjectDestination({
         : documentResult.kind === "unavailable"
           ? "unavailable"
           : undefined));
+  // A review address names its document (`branchId:documentId`): when it is
+  // unavailable because the document was removed, it says so instead.
+  const removedDestination = useRemovedDestination(
+    projectId,
+    documentIssue === "unavailable" && address.itemKey
+      ? address.itemKey.slice(address.itemKey.lastIndexOf(":") + 1)
+      : null,
+    documentDestination?.path.split("/").filter(Boolean).at(-1) ?? "",
+  );
   const switchFailure = useDocumentSwitchFailures();
   const failedDestination = destinationFailure(
     switchFailure.failures,
@@ -784,7 +794,13 @@ function ReadableProjectDestination({
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{
               main: failedDestination ? "error" : mainIssue,
-              editor: failedDestination ? "error" : editorIssue,
+              editor: failedDestination
+                ? "error"
+                : editorIssue === "unavailable" && removedDestination.status === "checking"
+                  ? "loading"
+                  : editorIssue,
+              removed:
+                removedDestination.status === "removed" ? removedDestination.removal : undefined,
             }}
             onRetryEditorRoute={retryEditorAddress}
             onDisplayedSelection={reportSelection}

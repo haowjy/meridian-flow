@@ -16,6 +16,7 @@ const resourceReplica = vi.hoisted(() => ({
 }));
 
 vi.mock("./account-feature-context", () => ({
+  useOptionalProjectContextAvailabilityCoordinator: () => null,
   useContextRemovalCoordinator: () => ({ writerClose: vi.fn() }),
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),

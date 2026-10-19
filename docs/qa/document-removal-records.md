@@ -50,8 +50,9 @@ Read removal records through `DocumentRemovals.lookup`: only tombstones
 appear, actor names are current, unknown historical actors remain null.
 Instantiate `DocumentRemovedError` with one result and check it retains the
 same document ID and record. The optional availability `removal` is filled
-only on identities its existing view exposes: hidden tombstones are currently
-not visible, even to the branch view after its tree-use row is gone.
+on every tombstone availability answers `deleted`: visible tombstones, and a
+discarded creation that still places (a hidden one in a discarded draft folder,
+any other hidden tombstone, and a living hidden document stay not visible).
 
 ## Removal protocol
 
@@ -102,5 +103,26 @@ while holding the removed documents or drafts.
 
 Sign in, create/open a document, delete it using its Files menu, and confirm
 the tab/tree update without an error. Capture a screenshot outside this repo.
-The removal notice and terminal client presentation belong to E2's client
-lane; the server close code is covered above.
+
+## Removal notices in the browser
+
+Two tabs of one signed-in browser (A and B). The dev user has no display name
+(dev login re-provisions it on every request), so a named actor needs a
+throwaway name on this worktree's database; drop it afterwards. The server closes the
+removed document's live and draft rooms with `4208` after the removal commits.
+
+- A shows a document; B deletes it from Files. A's tab closes and the pane's
+  foot says "<title> was deleted by <name>." B says nothing. One `/ws/yjs`
+  close in A, no new opens after.
+- Same with another tab open in A: A lands on that tab with the same notice.
+- Socket first: `./mf doc rm` the document A shows (no browser tab of B
+  refreshes A's catalog first). The 4208 closes A's tab with the notice; no reconnect.
+- A reviews a document's Work draft; B deletes the document. Same notice;
+  both rooms close once. Reopen it from the Work's Files: the pane says the
+  sentence in place of "This destination is unavailable".
+- A deletes from its own Files menu, or Discards a created document from its
+  dock: nothing is said.
+- A reviews a created document; B Discards it from its dock: A says
+  "<title> was discarded from the draft." Reopen its review address: same.
+- A holds unsent text (block its `/ws/yjs` sockets, type), B deletes: A closes
+  with the notice and the unsent text is lost (not yet kept).

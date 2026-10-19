@@ -1,7 +1,11 @@
 /** Account-lifetime effect shell for exact context removal transitions. */
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
-import type { LiveDocumentSessionAuthority, WorkingSetRoute } from "@meridian/contracts/protocol";
+import type {
+  DocumentRemovalRecord,
+  LiveDocumentSessionAuthority,
+  WorkingSetRoute,
+} from "@meridian/contracts/protocol";
 import {
   type ContextTab,
   commitContextAvailability,
@@ -125,6 +129,41 @@ export type ContextRouteActivation = {
   owner: { kind: "workspace"; tab: ContextTab } | { kind: "route-only" };
 };
 
+/**
+ * What the Editor says about a document something other than this tab removed.
+ * The tab's own delete or Discard marks the document first and says nothing.
+ */
+export type RemovedDocumentNotice = Readonly<{
+  documentId: string;
+  title: string;
+  reason: DocumentRemovalRecord["reason"];
+  /** The person who removed it; null when the record names none (legacy, cleanup). */
+  actorName: string | null;
+}>;
+
+/** The words a removal needs: only a person is named; a Work or cleanup names no one. */
+export function describeRemoval(
+  title: string,
+  record: DocumentRemovalRecord | null,
+): Pick<RemovedDocumentNotice, "title" | "reason" | "actorName"> {
+  return {
+    title,
+    reason: record?.reason ?? "deleted",
+    actorName: record?.actor?.kind === "user" ? (record.actor.displayName ?? null) : null,
+  };
+}
+
+/**
+ * Whether a document was removed, and its record when it has one; null when it
+ * lost its authority instead; undefined when the lookup proved nothing (it is
+ * still there, the lookup failed, or it raced a newer one). The lookup applies what it
+ * learns to availability, so a removal it finds takes the ordinary removal path.
+ */
+export type RemovalRecordLookup = (
+  projectId: string,
+  documentId: string,
+) => Promise<{ removal: DocumentRemovalRecord | null } | null | undefined>;
+
 type CoordinatorProjectState = {
   activeWorkId: string | null;
   selection: ContextRouteSelection;
@@ -132,6 +171,9 @@ type CoordinatorProjectState = {
   removalFence: RemovalFence | null;
   transitionRevision: number;
   terminalRemovals: Map<string, TerminalRouteRemoval>;
+  notices: readonly RemovedDocumentNotice[];
+  /** Closed tabs whose removal was learned without its record, by document. */
+  awaitingRecords: Map<string, string>;
   live: boolean;
   listeners: Set<() => void>;
   snapshot: ContextRemovalProjectSnapshot;
@@ -139,7 +181,13 @@ type CoordinatorProjectState = {
 
 export type ContextRemovalProjectSnapshot = Pick<
   CoordinatorProjectState,
-  "activeWorkId" | "selection" | "admitted" | "removalFence" | "transitionRevision" | "live"
+  | "activeWorkId"
+  | "selection"
+  | "admitted"
+  | "removalFence"
+  | "transitionRevision"
+  | "live"
+  | "notices"
 >;
 
 export type AppliedAvailabilityCommand = Readonly<{
@@ -184,6 +232,7 @@ const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   removalFence: null,
   transitionRevision: 0,
   live: false,
+  notices: [],
 };
 
 const productionWorkspace: EditorWorkspacePort = {
@@ -206,6 +255,9 @@ export class ContextRemovalCoordinator {
   private readonly workspace: EditorWorkspacePort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
+  private readonly lookupRemoval: RemovalRecordLookup | null;
+  /** Documents this tab is removing itself, by reason; their removal says nothing. */
+  private readonly ownRemovals = new Map<string, Set<DocumentRemovalRecord["reason"]>>();
   private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
   private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
   private readonly sessionEffectRuns = new Map<
@@ -225,6 +277,7 @@ export class ContextRemovalCoordinator {
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
+          lookupRemoval?: RemovalRecordLookup;
         }
       | null = null,
     explicitDependencies: {
@@ -232,6 +285,7 @@ export class ContextRemovalCoordinator {
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
+      lookupRemoval?: RemovalRecordLookup;
     } = {},
   ) {
     const dependencies =
@@ -243,6 +297,7 @@ export class ContextRemovalCoordinator {
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;
+    this.lookupRemoval = dependencies.lookupRemoval ?? null;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -507,6 +562,15 @@ export class ContextRemovalCoordinator {
 
     const projectId = normalized[0]?.projectId as string;
     const state = this.project(projectId);
+    // `available` settles nothing: another tab's delete can close this tab
+    // through the shared local replica before the server has committed it.
+    for (const command of normalized) {
+      const id = availabilityDocumentId(command);
+      if (!state.awaitingRecords.has(id)) continue;
+      if (command.kind === "authority-revoke") this.settleAwaitedRecord(projectId, id, null);
+      else if (command.kind === "terminal-remove" && command.removal)
+        this.settleAwaitedRecord(projectId, id, { removal: command.removal });
+    }
     let plan: ContextAvailabilityLocalBatchPlan | null = null;
     if (committed.length > 0) {
       const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
@@ -548,6 +612,15 @@ export class ContextRemovalCoordinator {
               ? { documentId: settledPlan.relocatedRouteDocumentId }
               : undefined,
           );
+        }
+        for (const command of committed) {
+          if (command.kind !== "terminal-remove") continue;
+          const id = command.documentId;
+          const tab = priorWorkspace.tabs.find(
+            (candidate) => candidate.kind !== "new" && candidate.documentId === id,
+          );
+          if (!tab || settledPlan.tabs.some((candidate) => candidate.documentId === id)) continue;
+          this.noteRemoval(projectId, id, tab.name, command.removal);
         }
         this.publish(state);
         return settledPlan.sessionEffects;
@@ -774,6 +847,131 @@ export class ContextRemovalCoordinator {
     return outcome;
   }
 
+  /**
+   * The tab is removing this document itself (a tree delete or Discard): its
+   * removal says nothing. Call before the request; cancel when it fails.
+   */
+  markOwnRemoval(
+    projectId: string,
+    documentIds: readonly string[],
+    reason: DocumentRemovalRecord["reason"],
+  ): () => void {
+    const added = documentIds.flatMap((documentId) => {
+      const key = ownKey(projectId, documentId);
+      const reasons = this.ownRemovals.get(key) ?? new Set();
+      this.ownRemovals.set(key, reasons);
+      if (reasons.has(reason)) return [];
+      reasons.add(reason);
+      return [key];
+    });
+    return () => {
+      for (const key of added) {
+        const reasons = this.ownRemovals.get(key);
+        reasons?.delete(reason);
+        if (reasons?.size === 0) this.ownRemovals.delete(key);
+      }
+    };
+  }
+
+  /**
+   * The catalog no longer places this tab's document. Its tab closes as the
+   * writer's own close would, and says why if an exact lookup proves the
+   * document was removed by something else.
+   */
+  closeVanished(
+    projectId: string,
+    tab: ContextTab,
+  ): ContextRemovalOutcome | Promise<NavigationSettlement> {
+    if (this.unavailable()) return { kind: "noop" };
+    if (tab.kind !== "new") this.noteRemoval(projectId, tab.documentId, tab.name, undefined);
+    return this.writerClose(projectId, tab);
+  }
+
+  dismissRemovedNotice(projectId: string, documentId: string): void {
+    const state = this.projects.get(projectId);
+    if (!state) return;
+    state.notices = state.notices.filter((notice) => notice.documentId !== documentId);
+    this.publish(state);
+  }
+
+  /**
+   * Publish a removal this tab did not make. `record` undefined means the
+   * removal was learned without its record: the tab waits for it, from its
+   * own lookup or from any later availability command that carries it, and
+   * says nothing unless that proves a removal.
+   */
+  private noteRemoval(
+    projectId: string,
+    documentId: string,
+    title: string,
+    record: DocumentRemovalRecord | null | undefined,
+  ): void {
+    if (this.ownRemovals.get(ownKey(projectId, documentId))?.has("deleted")) return;
+    const state = this.project(projectId);
+    if (record !== undefined) {
+      state.awaitingRecords.delete(documentId);
+      this.showRemoval(state, projectId, documentId, title, record);
+      return;
+    }
+    state.awaitingRecords.set(documentId, title);
+    this.askForRecord(projectId, documentId, [500, 2_000, 10_000]);
+  }
+
+  /**
+   * A removal not committed yet, or a lookup that raced another, proves
+   * nothing: ask again, and meanwhile any command carrying the record settles
+   * it. A document still there after the last ask was not removed.
+   */
+  private askForRecord(projectId: string, documentId: string, retryDelays: number[]): void {
+    const settleNothing = () => {
+      if (retryDelays.length === 0)
+        this.projects.get(projectId)?.awaitingRecords.delete(documentId);
+      else if (this.projects.get(projectId)?.awaitingRecords.has(documentId))
+        setTimeout(
+          () => this.askForRecord(projectId, documentId, retryDelays.slice(1)),
+          retryDelays[0],
+        );
+    };
+    if (!this.lookupRemoval) {
+      settleNothing();
+      return;
+    }
+    void this.lookupRemoval(projectId, documentId).then((found) => {
+      if (found !== undefined) this.settleAwaitedRecord(projectId, documentId, found);
+      else settleNothing();
+    }, settleNothing);
+  }
+
+  /** `found` null: not removed but no longer reachable (an authority loss), so nothing is said. */
+  private settleAwaitedRecord(
+    projectId: string,
+    documentId: string,
+    found: { removal: DocumentRemovalRecord | null } | null,
+  ): void {
+    const state = this.projects.get(projectId);
+    const title = state?.awaitingRecords.get(documentId);
+    if (!state || title === undefined) return;
+    state.awaitingRecords.delete(documentId);
+    if (found) this.showRemoval(state, projectId, documentId, title, found.removal);
+  }
+
+  private showRemoval(
+    state: CoordinatorProjectState,
+    projectId: string,
+    documentId: string,
+    title: string,
+    record: DocumentRemovalRecord | null,
+  ): void {
+    if (this.unavailable() || this.projects.get(projectId) !== state) return;
+    const marks = this.ownRemovals.get(ownKey(projectId, documentId));
+    if (record ? marks?.has(record.reason) : marks) return;
+    state.notices = [
+      ...state.notices.filter((existing) => existing.documentId !== documentId),
+      { documentId, ...describeRemoval(title, record) },
+    ];
+    this.publish(state);
+  }
+
   /** Owns the synchronous old-Work prune and next-Work route transition. */
   changeWorkSelection(
     projectId: string,
@@ -875,6 +1073,8 @@ export class ContextRemovalCoordinator {
     projectId: string,
     reviewWorkId: string,
     reviewItemKey: string,
+    /** The discard happened elsewhere: the tab says so unless this tab discarded it. */
+    elsewhere = false,
   ): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
@@ -893,6 +1093,8 @@ export class ContextRemovalCoordinator {
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning);
     this.publish(state);
+    if (elsewhere && outcome.kind !== "noop")
+      this.noteRemoval(projectId, tab.documentId, tab.name, DISCARDED_ELSEWHERE);
     return outcome;
   }
 
@@ -1212,6 +1414,8 @@ export class ContextRemovalCoordinator {
         removalFence: null,
         transitionRevision: 0,
         terminalRemovals: new Map(),
+        notices: [],
+        awaitingRecords: new Map(),
         live: false,
         listeners: new Set(),
         snapshot: EMPTY_PROJECT_SNAPSHOT,
@@ -1229,9 +1433,17 @@ export class ContextRemovalCoordinator {
       removalFence: state.removalFence,
       transitionRevision: state.transitionRevision,
       live: state.live,
+      notices: state.notices,
     };
     for (const listener of state.listeners) listener();
   }
+}
+
+/** A discard seen from its draft list: the list says it went, not who sent it. */
+const DISCARDED_ELSEWHERE: DocumentRemovalRecord = { reason: "discarded", actor: null, time: "" };
+
+function ownKey(projectId: string, documentId: string): string {
+  return `${projectId}/${documentId}`;
 }
 
 function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): string | null {

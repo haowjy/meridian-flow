@@ -136,6 +136,7 @@ export function MobileProject(props: MobileProjectProps) {
           destinationKey={props.routeLocationKey}
           retainWhileLoading={props.retainEditorWhileLoading}
           onRetry={props.routeIssues?.main ? undefined : props.onRetryEditorRoute}
+          removed={props.routeIssues?.main ? undefined : props.routeIssues?.removed}
           issue={
             props.routeIssues?.main ??
             (props.activeScreen === "context" && props.editorScope.status === "ready"

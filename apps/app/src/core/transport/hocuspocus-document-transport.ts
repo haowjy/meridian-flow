@@ -255,6 +255,7 @@ const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDispo
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
+  [WS_CLOSE.DOCUMENT_DELETED.reason]: "removed",
 };
 
 export function classifyDocumentTransportClose(
@@ -388,8 +389,12 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (event.reason === WS_CLOSE.ACCESS_CHANGED.reason) {
-      // Frozen until the reconnect's authenticated message names the new scope.
+    if (
+      event.reason === WS_CLOSE.ACCESS_CHANGED.reason ||
+      event.reason === WS_CLOSE.DOCUMENT_DELETED.reason
+    ) {
+      // Frozen until the reconnect's authenticated message names the new scope;
+      // a removed document has no reconnect, so it stays read-only.
       publishAccess("read");
     }
     const state = classifyDocumentTransportClose(roomName, event, outbox !== null);

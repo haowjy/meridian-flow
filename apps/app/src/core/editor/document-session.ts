@@ -119,10 +119,16 @@ export type DocumentSessionResetReason =
   | typeof WS_CLOSE.DRAFT_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason;
+  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason
+  /** The document was deleted or discarded; its rooms never reopen. */
+  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
 
-/** How a terminal room reset treats its unacknowledged writer updates. */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
+/**
+ * How a terminal room reset treats its unacknowledged writer updates.
+ * `removed`: the document is gone, so nothing reconnects, rebuilds or replays;
+ * the session stays as it is until its owner closes it.
+ */
+export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema" | "removed";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -369,9 +375,9 @@ export class DocumentSession {
     if (this.destroyed) {
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
     }
-    if (this.resetDisposition === "refused") {
-      // A reconnect would replay the refused edits from this Y.Doc.
-      throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
+    if (this.resetDisposition === "refused" || this.resetDisposition === "removed") {
+      // A reconnect would replay the refused edits from this Y.Doc, or reopen a removed document.
+      throw new Error(`Cannot restart a refused or removed room: ${this.roomKey}`);
     }
     const previous = this.transportProvider;
     this.unsubscribeTransportStatus?.();
