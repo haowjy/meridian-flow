@@ -92,8 +92,6 @@ export type ThreadPeerAgentEditCore = Omit<
     documentId: string,
     peers: readonly { threadId: string; peerDraftId: string; reason: DiscardedWriteReason }[],
   ): Promise<void>;
-  /** Where this reply's writes to a document go, once it has written there. */
-  responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(
     responseId: string,
     options?: ResponseTransactionOptions,
