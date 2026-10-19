@@ -1,12 +1,14 @@
 /**
  * Loads explicit references for a turn the run will send; history replays
- * saved results. Shown-link candidates travel beside the updated blocks,
- * never inside their content, until the commit that persists those blocks.
+ * saved results. What the reads showed (shown-link candidates and observation
+ * frontiers) travels beside the updated blocks, never inside their content,
+ * until the commit that persists those blocks.
  */
 
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
+import type { FrontierLookups, RoomFrontier } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { historyReadStub, staleReadStub } from "../tools/document-text.js";
 
@@ -19,14 +21,42 @@ export interface ReferenceReader {
       threadId: string;
       turnId: string;
       signal?: AbortSignal;
+      /** The read records its frontier, chained from this lookup. */
+      recordingFrontier?: FrontierLookups["recording"];
     },
-  ): Promise<ReferenceRead & { shown?: readonly ShownLinkShowing[] }>;
+  ): Promise<
+    ReferenceRead & { shown?: readonly ShownLinkShowing[]; frontiers?: readonly RoomFrontier[] }
+  >;
+}
+
+/**
+ * Host-only: what reference reads showed the model, recorded only by the
+ * commit that persists their blocks; a discarded or retried preparation records nothing.
+ */
+export interface ReferenceEvidence {
+  shown: ShownLinkShowing[];
+  /** Each reference block's frontiers: the block whose materialized read the model is sent. */
+  frontiers: { sourceBlockId: string; frontiers: readonly RoomFrontier[] }[];
+}
+
+export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [] };
+
+export function mergeReferenceEvidence(
+  ...all: readonly (ReferenceEvidence | undefined)[]
+): ReferenceEvidence {
+  return {
+    shown: all.flatMap((evidence) => evidence?.shown ?? []),
+    frontiers: all.flatMap((evidence) => evidence?.frontiers ?? []),
+  };
+}
+
+export function hasReferenceEvidence(evidence: ReferenceEvidence | undefined): boolean {
+  return !!evidence && (evidence.shown.length > 0 || evidence.frontiers.length > 0);
 }
 
 export interface LoadedReferenceReads {
   blocks: Block[];
-  /** Host-only: what the reads showed, for the commit that persists `blocks`. */
-  shown: ShownLinkShowing[];
+  evidence: ReferenceEvidence;
 }
 
 export async function loadReferenceReads(input: {
@@ -36,6 +66,7 @@ export async function loadReferenceReads(input: {
   assistantTurnId: string;
   reader: ReferenceReader;
   signal?: AbortSignal;
+  recordingFrontier?: FrontierLookups["recording"];
 }): Promise<LoadedReferenceReads> {
   const images = new Set(
     input.blocks
@@ -50,9 +81,9 @@ export async function loadReferenceReads(input: {
           : [];
       }),
   );
-  const reads = new Map<string, ReferenceRead>();
+  const reads = new Map<string, ReferenceRead & { frontiers: readonly RoomFrontier[] }>();
   const updated: Block[] = [];
-  const shown: ShownLinkShowing[] = [];
+  const evidence: ReferenceEvidence = { shown: [], frontiers: [] };
   for (const block of input.blocks) {
     if (block.turnId !== input.userTurnId) continue;
     const reference = referenceOccurrenceContent(block);
@@ -65,15 +96,22 @@ export async function loadReferenceReads(input: {
         threadId: input.threadId,
         turnId: input.assistantTurnId,
         ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.recordingFrontier ? { recordingFrontier: input.recordingFrontier } : {}),
       });
-      result = { result: read.result, revision: read.revision };
+      result = { result: read.result, revision: read.revision, frontiers: read.frontiers ?? [] };
       reads.set(key, result);
-      shown.push(...(read.shown ?? []));
+      evidence.shown.push(...(read.shown ?? []));
     }
     input.signal?.throwIfAborted();
-    updated.push({ ...block, content: { ...reference, read: result } });
+    // A repeated mention shows the same read, so its block records the same frontier.
+    if (result.frontiers.length > 0)
+      evidence.frontiers.push({ sourceBlockId: block.id, frontiers: result.frontiers });
+    updated.push({
+      ...block,
+      content: { ...reference, read: { result: result.result, revision: result.revision } },
+    });
   }
-  return { blocks: updated, shown };
+  return { blocks: updated, evidence };
 }
 
 /** Only the materialized document read changes; writer wording and the mention remain intact. */

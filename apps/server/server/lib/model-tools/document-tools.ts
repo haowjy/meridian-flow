@@ -17,7 +17,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
+import type { RoomObservation, RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -203,7 +203,11 @@ async function writeUnderGrant(
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
 ): Promise<
-  | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
+  | (WriteOutcome & {
+      isError: false;
+      shown: ShownLinkShowing[];
+      frontiers?: RoomObservation[];
+    })
   | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
 > {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
@@ -222,6 +226,7 @@ async function writeUnderGrant(
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
+        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
@@ -231,12 +236,18 @@ async function writeUnderGrant(
   // The echo, staged or immediate, and an undo or redo result were shown; so
   // was a partial failure's echo. An error without echo text carries no facts.
   const shown = showingOf(address.documentId, written);
+  // A refusal shows no document text and records no frontier.
   if (written.isError) return { isError: true, output: written.result, shown };
-  // The showing is host-only evidence: it leaves here only as `shown`.
-  const { showing: _showing, ...outcome } = written;
-  return { ...withDestination(outcome, grant.destination), shown } as WriteOutcome & {
+  // Showing and frontiers are host-only evidence: they leave here only beside the outcome.
+  const { showing: _showing, frontiers, ...outcome } = written;
+  return {
+    ...withDestination(outcome, grant.destination),
+    shown,
+    ...(frontiers ? { frontiers } : {}),
+  } as WriteOutcome & {
     isError: false;
     shown: ShownLinkShowing[];
+    frontiers?: RoomObservation[];
   };
 }
 
@@ -258,7 +269,12 @@ export function createReadHandler(deps: ToolWiringDeps) {
       deps,
       grant,
       address,
-      { selection, format, ...(version ? { version } : {}) },
+      {
+        selection,
+        format,
+        ...(version ? { version } : {}),
+        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+      },
       ctx,
     );
     if (outcome.isError) return { isError: true, output: outcome.result };
@@ -267,6 +283,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
       output: outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
       shown: showingOf(address.documentId, outcome),
+      ...(outcome.frontiers ? { frontiers: outcome.frontiers } : {}),
     };
   };
 }
@@ -419,6 +436,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           : {}),
       },
       shown: outcome.shown,
+      ...(outcome.frontiers ? { frontiers: outcome.frontiers } : {}),
     };
   };
 }

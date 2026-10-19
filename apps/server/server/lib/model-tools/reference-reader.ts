@@ -1,8 +1,8 @@
 /**
  * Reference loading resolves the mention and calls `readDocument`, as the
- * `read` tool does (D18). The read returns its shown-link candidates beside
- * the result; run preparation carries them to the commit that persists the
- * reference block, so only an accepted attempt leaves evidence.
+ * `read` tool does (D18). The read returns its shown-link candidates and
+ * observation frontiers beside the result; run preparation carries them to the
+ * commit that persists the reference block, so only an accepted attempt leaves evidence.
  */
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ReferenceReader } from "../../domains/runtime/index.js";
@@ -44,7 +44,13 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
       }
       const grant = await documentGrant(deps, call.principal, "read", address, "read");
       if (isToolError(grant)) return { result: asJson(grant.output), revision: null };
-      const outcome = await readDocument(deps, grant, address, {}, ctx);
+      const outcome = await readDocument(
+        deps,
+        grant,
+        address,
+        ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {},
+        ctx,
+      );
       if (outcome.isError) return { result: asJson(outcome.result), revision: outcome.revision };
       recordTouchInBackground(deps, address.documentId, ctx);
       return {
@@ -52,6 +58,7 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
         revision: outcome.revision,
         // The attachment's read text goes to the model as the reference block.
         shown: showingOf(address.documentId, outcome),
+        ...(outcome.frontiers ? { frontiers: outcome.frontiers } : {}),
       };
     },
   };

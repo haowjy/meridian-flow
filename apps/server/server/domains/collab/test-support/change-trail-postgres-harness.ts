@@ -685,6 +685,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
+      liveAuthorityGeneration: async () => null,
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,

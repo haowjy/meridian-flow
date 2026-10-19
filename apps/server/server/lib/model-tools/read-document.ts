@@ -3,12 +3,9 @@
  * reference loading all call `readDocument`; nothing builds tool arguments to
  * reach it.
  */
-import type {
-  DocumentVersion,
-  ReadToolInput,
-  WriteOutcome,
-} from "@meridian/agent-edit/integration";
+import type { DocumentVersion, ReadToolInput } from "@meridian/agent-edit/integration";
 import { formatDocumentFile } from "@meridian/agent-edit/integration";
+import type { FrontierLookup, RoutedOutcome } from "../../domains/collab/index.js";
 import type { FileGrant } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import type { ResolvedDocumentAddress, ToolWiringDeps } from "./tool-context.js";
@@ -30,9 +27,14 @@ export async function readDocument(
     version?: DocumentVersion;
     /** A copy's source read also returns the selected blocks as nodes. */
     includeNodes?: boolean;
+    /**
+     * A read whose text goes to the model records its frontier, chained from
+     * this lookup; a copy's private source read passes none.
+     */
+    recordingFrontier?: FrontierLookup;
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
-): Promise<WriteOutcome> {
+): Promise<RoutedOutcome> {
   return deps.documentSync.agentEdit().read(
     {
       ...options.selection,
@@ -47,6 +49,7 @@ export async function readDocument(
       grant,
       ...(options.version === "live" ? { liveVersion: true } : {}),
       ...(options.includeNodes ? { includeNodes: true } : {}),
+      ...(options.recordingFrontier ? { recordingFrontier: options.recordingFrontier } : {}),
       ...(ctx.responseIdentity?.editScopeId ? { responseIdentity: ctx.responseIdentity } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },

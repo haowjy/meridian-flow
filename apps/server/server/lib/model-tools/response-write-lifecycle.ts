@@ -11,7 +11,11 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
-import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import type {
+  FrontierLookups,
+  RoomFrontier,
+  ToolHandlerContext,
+} from "../../domains/runtime/index.js";
 import {
   deletedFileMessage,
   isPermissionDenial,
@@ -30,7 +34,7 @@ export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
   commitResponse(
     responseIdentity: ModelResponseIdentity,
-    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    ctx: SaveContext,
     beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
@@ -39,10 +43,17 @@ export interface AgentEditResponseWriteLifecycle {
   ): Promise<void>;
 }
 
+/** A save records each document's frontier, chained from the run's latest for its room. */
+type SaveContext = Pick<ToolHandlerContext, "threadId" | "turnId"> & {
+  recordingFrontier?: FrontierLookups["recording"];
+};
+
 type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
+      /** Host-only: each saved document's frontier at the post-commit cut. */
+      frontiers: Array<{ documentId: string; frontiers: RoomFrontier[] }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
@@ -103,7 +114,7 @@ export function createAgentEditResponseWriteLifecycle(
 
     async commitResponse(
       responseIdentity: ModelResponseIdentity,
-      ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+      ctx: SaveContext,
       beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
       const responseId = responseIdentity.editScopeId;
@@ -117,6 +128,11 @@ export function createAgentEditResponseWriteLifecycle(
           status: "committed",
           receipts: result.documents.flatMap((document) =>
             document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
+          ),
+          frontiers: result.documents.flatMap((document) =>
+            document.frontiers?.length
+              ? [{ documentId: document.documentId, frontiers: document.frontiers }]
+              : [],
           ),
           concurrentEdits: result.documents.flatMap((document) =>
             document.concurrentEdits

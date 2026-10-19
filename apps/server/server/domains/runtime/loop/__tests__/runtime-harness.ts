@@ -34,6 +34,7 @@ import {
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
+import { createInMemoryObservationFrontiers } from "../../adapters/in-memory/observation-frontiers.js";
 import { createInMemoryShownLinkStore } from "../../adapters/in-memory/shown-links.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
@@ -223,6 +224,10 @@ export function createRuntimeHarness(
         transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
       threads: repos.threads,
       turns: repos.turns,
+    }),
+    observationFrontiers: createInMemoryObservationFrontiers({
+      transactionOwner:
+        transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
     }),
     ...dependencies,
     backgroundTasks,

@@ -4,7 +4,6 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "../contracts.js";
 import type { ResponseSaveResult, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
-import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
 import type { PostDurabilityNoticeService } from "./reversal-notices.js";
 
@@ -26,6 +25,7 @@ export function createResponseWriteFinalizer(input: {
     /** One save step for every reply, live and drafted documents together (D42). */
     async finalizeResponseCommit(responseIdentity, ctx, beforeTransactionCommit) {
       const result = await input.agentEdit.commitResponse(responseIdentity.editScopeId, {
+        ...(ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {}),
         beforeTransactionCommit: async (saved) => {
           await beforeTransactionCommit?.(mapResult(saved));
           // These effects belong to a committed response, never to its save attempt.

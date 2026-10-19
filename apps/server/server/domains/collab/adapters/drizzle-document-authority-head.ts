@@ -124,6 +124,15 @@ export function createDrizzleAuthorityGenerationReader(db: Database) {
     (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
 }
 
+/**
+ * A live document's authority generation for an observation frontier's room
+ * key; null for a document with no head. Never materializes one.
+ */
+export function createDrizzleLiveAuthorityGenerationReader(db: Database) {
+  return async (documentId: DocumentId): Promise<bigint | null> =>
+    (await findDocumentAuthorityHead(currentDrizzleDb(db), documentId))?.generation ?? null;
+}
+
 async function readAuthorityHeads(db: AuthorityHeadDb, documentIds: DocumentId[]) {
   const rows = await db
     .select({

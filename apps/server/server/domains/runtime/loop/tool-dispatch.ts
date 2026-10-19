@@ -22,6 +22,7 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
@@ -35,6 +36,7 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { frontierLookups, recordFrontiers } from "./frontier-recording.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
@@ -49,6 +51,7 @@ export interface ToolDispatchDeps {
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
   shownLinks: Pick<ShownLinkStore, "record">;
+  observationFrontiers: ObservationFrontiers;
 }
 
 export interface ToolDispatchContext {
@@ -64,6 +67,8 @@ export interface ToolDispatchContext {
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   allTurns: Turn[];
+  /** The blocks the request that produced this call was built from (C4's planning cut). */
+  planningBlockIds: readonly string[];
 }
 
 export type ToolDispatchResult =
@@ -275,6 +280,10 @@ export async function dispatchToolCall(
       threadMessage,
       threadReport,
       returnResult,
+      frontiers: frontierLookups(deps, () => ctx.state.allBlocks, ctx.planningBlockIds, {
+        threadId: ctx.state.threadId,
+        turnId: ctx.state.currentTurn.id,
+      }),
     },
   );
   await outputDeltaAppendChain;
@@ -341,6 +350,16 @@ export async function dispatchToolCall(
           },
         ],
       };
+    },
+    {
+      // After the block row exists: frontiers reference it.
+      afterEvents: async (block) => {
+        if (!execResult.frontiers?.length) return;
+        await recordFrontiers(deps, block.id, execResult.frontiers, {
+          threadId: ctx.state.threadId,
+          turnId: ctx.state.currentTurn.id,
+        });
+      },
     },
   );
   ctx.state.allBlocks.push(persistedToolResult.result);

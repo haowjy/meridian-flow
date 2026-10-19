@@ -125,6 +125,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
     fileAccess,
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
+    // No version restores in memory: every live document stays in its first epoch.
+    liveAuthorityGeneration: async () => 1n,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
