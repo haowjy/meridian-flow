@@ -798,13 +798,31 @@ restart smoke check.
        --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Write"}},{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write","in":4,"content":"Gamma paragraph, rewritten."}}]},{"text":"Rewrote gamma."}]' \
        --json > "$E/cell5-send.ndjson"
      tools/qa/probes/observation-frontiers.sh "$WT"
+     printf '%s\n' '# Write Reverse' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-reverse.md"
+     ./mf doc put 'manuscript://M1 Write Reverse' --text @"$E/write-reverse.md" --json > "$E/cell5b-doc.json"
+     ./mf thread create --work @/ --title 'M1 frontier staged write reverse' --json > "$E/cell5b-thread.json"
+     WTB=$(jq -r .threadId "$E/cell5b-thread.json")
+     ./mf thread send "$WTB" 'Rewrite the last paragraph then read the chapter.' \
+       --mock '[{"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write Reverse","in":4,"content":"Gamma paragraph, rewritten first."}},{"name":"read","args":{"path":"manuscript://M1 Write Reverse"}}]},{"text":"Wrote then read."}]' \
+       --json > "$E/cell5b-send.ndjson"
+     tools/qa/probes/observation-frontiers.sh "$WTB"
      ```
 
   6. No model-visible change: inspect `$E/cell6-context-raw.json` (captured in step 1). The second
      request is the step after the read.
 
-  7. Undo: on `$WT` (live) and `$DT` (draft), one step with
-     `{"name":"write","args":{"command":"undo","path":"<the document>"}}`.
+  7. Undo: on `$WT` (live, `manuscript://M1 Write`) and `$DT` (draft, `manuscript://M1 Chapter`).
+
+     ```bash
+     ./mf thread send "$WT" 'Undo the last write.' \
+       --mock '[{"toolCalls":[{"name":"write","args":{"command":"undo","path":"manuscript://M1 Write"}}]},{"text":"Undid the live write."}]' \
+       --json > "$E/cell7-live-send.ndjson"
+     ./mf thread send "$DT" 'Undo the last write.' \
+       --mock '[{"toolCalls":[{"name":"write","args":{"command":"undo","path":"manuscript://M1 Chapter"}}]},{"text":"Undid the draft write."}]' \
+       --json > "$E/cell7-draft-send.ndjson"
+     tools/qa/probes/observation-frontiers.sh "$WT"
+     tools/qa/probes/observation-frontiers.sh "$DT"
+     ```
 
 - **Expect:**
   1. One `live:<documentId>:1` row, `unshown: []`, `blocks: 4` in the read result.
@@ -820,11 +838,12 @@ restart smoke check.
      `draft:<work_draft.id>` (the draft the inverse ran on), never the thread peer.
 - **Evidence:** each send NDJSON, the SQL dumps, the fork body, `document_drafts` ids next to
   `room_key`, seq occupancy 1..last_value, and the captured model requests.
-- **Last run:** 2026-10-19 on `404c09761b` (`feat/m1-frontier`), mock, detached checkout
-  `p13624-m1-probe`, all six cells passed. Evidence:
-  `work/concurrent-edit-design/m1/probe/` in the docs repository. Browser: none (no writer-visible change).
-  Cells 5 (both orders), 6 and 7 re-run 2026-10-19 on `84adf97603` (revision 4), mock, the
-  worktree's own stack: all passed.
+- **Last run:** 2026-10-19 on `689678a032` (`feat/m1-frontier` revision 4), mock, detached checkout
+  `p13652-m1-probe` (prefix `detached-689678a032-p13652-m1-probe-17a578e6`, database
+  `meridian_detached-689678a032-p13652-m1-probe`), all seven cells passed. Evidence:
+  `work/concurrent-edit-design/m1/probe/p13652/` in the docs repository. Browser: none
+  (no writer-visible change). Recipe change this run: step 5 now includes the write-then-read
+  commands; step 7 has the undo send commands.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
