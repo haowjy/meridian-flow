@@ -164,6 +164,8 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
   let remaining = Math.max(0, input.budgetTokens - noteTokens);
   const kept: { reference: ReferenceOccurrence; read: T }[] = [];
   for (const candidate of input.candidates) {
+    // Nothing more can fit; the unread candidates are named in the omission note.
+    if (remaining <= 0) break;
     const uri = candidate.uri as string;
     const reference: ReferenceOccurrence = {
       type: "reference",
