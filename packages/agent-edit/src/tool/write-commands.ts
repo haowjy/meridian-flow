@@ -24,6 +24,7 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
+import { observeRendered } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
@@ -62,6 +63,7 @@ export function createWriteCommands(deps: {
     | "semanticProvenance"
     | "links"
     | "onLinkSpliceFallback"
+    | "onObservationFailed"
   >;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
@@ -149,7 +151,7 @@ export function createWriteCommands(deps: {
         address.filePath,
         selection.documentBlocks,
       );
-    return withShown(links, {
+    return withEvidence(links, runtime.doc, address.documentId, context, {
       ...readSuccess(
         renderer.renderRead(
           toDocHandle(runtime.doc),
@@ -582,8 +584,11 @@ export function createWriteCommands(deps: {
       awarenessDegraded,
     };
     try {
-      return withShown(
+      return withEvidence(
         links,
+        runtime.doc,
+        docId,
+        context,
         renderReceipt(
           {
             commandName: command.command,
@@ -632,9 +637,26 @@ export function createWriteCommands(deps: {
     return { ...result, awarenessDegraded: true };
   }
 
-  /** Attach the links the result's rendered blocks showed, spelled with the command's links. */
-  function withShown(links: CommandLinks, result: InternalWriteResult) {
-    return { ...result, ...shownEvidence(renderedItems(result.model), links) };
+  /**
+   * Attach what the rendered result showed: its links, spelled with the
+   * command's links, and, when the host asked, its observation frontier on the
+   * doc it was rendered from. A failed frontier is reported and left off.
+   */
+  function withEvidence(
+    links: CommandLinks,
+    doc: Y.Doc,
+    documentId: string,
+    context: WriteContext,
+    result: InternalWriteResult,
+  ): InternalWriteResult {
+    const shown = { ...result, ...shownEvidence(renderedItems(result.model), links) };
+    if (!context.observe) return shown;
+    try {
+      return { ...shown, observation: observeRendered(doc, context.observe.prev, [result.model]) };
+    } catch (cause) {
+      options.onObservationFailed?.({ documentId, cause });
+      return shown;
+    }
   }
 
   /** Host-only showing evidence for this document; none for utility, seed and import writes. */
