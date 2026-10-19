@@ -96,6 +96,14 @@ export class BranchApplyPendingError extends Error {
   }
 }
 
+/** Staging is switched off while settlement drains; nothing was staged, so the writer may retry. */
+export class BranchApplyDrainingError extends Error {
+  constructor() {
+    super("Apply is paused while the server finishes pending work. Try again in a moment.");
+    this.name = "BranchApplyDrainingError";
+  }
+}
+
 export interface BranchApply {
   applyItems(input: {
     workId: WorkId;
@@ -120,6 +128,8 @@ export function createBranchApply(deps: {
   branches: Pick<Branches, "byIds">;
   reviewItems: Pick<BranchReviewItems, "list" | "withLiveTextTokens">;
   push: Pick<BranchPushService, "pushDraftsToLive">;
+  /** Refuse new Applies while settlement drains; a staged Apply still completes. */
+  drainSettlement?: boolean;
 }): BranchApply {
   async function activeBranch(branchId: BranchId, workId: WorkId) {
     const [branch] = await deps.branches.byIds([branchId]);
@@ -172,6 +182,7 @@ export function createBranchApply(deps: {
     for (;;) {
       const plan = await input.plan();
       if ("status" in plan) return plan;
+      if (deps.drainSettlement) throw new BranchApplyDrainingError();
       await collabHook("applyItems.beforeStaging");
       const pushed = await deps.push
         .pushDraftsToLive({
