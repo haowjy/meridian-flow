@@ -10,6 +10,29 @@ import { coreKey, isBlockTok, isWordTok, type Tok } from "./tokens.js";
 /** Share of the larger word set two inserted paragraphs must have in common to be one paragraph. */
 const SAME_PARAGRAPH_SHARE = 0.5;
 
+/** Equivalent text kept once still represents both inputs. */
+function carrySources(kept: MergedTok[], other: MergedTok[]): MergedTok[] {
+  if (!kept.length) return kept;
+  return [
+    {
+      ...kept[0],
+      sources: [
+        ...(kept[0].sources ?? []),
+        ...other.map(({ origin, index }) => ({ origin, index })),
+      ],
+    },
+    ...kept.slice(1),
+  ];
+}
+
+export function subsequenceSources(kept: MergedTok[], other: MergedTok[]): MergedTok[] {
+  let j = 0;
+  return kept.map((token) => {
+    if (j >= other.length || token.tok.key !== other[j].tok.key) return token;
+    return carrySources([token], [other[j++]])[0];
+  });
+}
+
 /** Word-by-word union of two token runs; a shared word is kept once, in the draft's form. */
 function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
   const matches = equalOrderedMatches(
@@ -21,7 +44,7 @@ function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
   let j = 0;
   for (const [mi, mj] of [...matches, [live.length, draft.length] as const]) {
     out.push(...live.slice(i, mi), ...draft.slice(j, mj));
-    if (mi < live.length) out.push(draft[mj]);
+    if (mi < live.length) out.push(...carrySources([draft[mj]], [live[mi]]));
     i = mi + 1;
     j = mj + 1;
   }
@@ -52,8 +75,8 @@ export function unionInsertions(
   live: MergedTok[],
   draft: MergedTok[],
 ): { out: MergedTok[]; chose: boolean } {
-  if (isSubsequence(live, draft)) return { out: draft, chose: false };
-  if (isSubsequence(draft, live)) return { out: live, chose: false };
+  if (isSubsequence(live, draft)) return { out: subsequenceSources(draft, live), chose: false };
+  if (isSubsequence(draft, live)) return { out: subsequenceSources(live, draft), chose: false };
   const { inline: liveInline, paragraphs: liveParagraphs } = splitParagraphs(live);
   const { inline: draftInline, paragraphs: draftParagraphs } = splitParagraphs(draft);
   const inline = isSubsequence(liveInline, draftInline)
@@ -82,22 +105,24 @@ export function unionInsertions(
   // the draft put it); unpaired live paragraphs go first.
   const flush = (liveRun: MergedTok[][], draftRun: MergedTok[][]) => {
     const used = new Set<number>();
+    const paired = new Map<number, MergedTok[]>();
     const unpaired: MergedTok[][] = [];
     for (const l of liveRun) {
       const k = draftRun.findIndex((d, j) => !used.has(j) && sameParagraph(l, d));
       if (k >= 0) {
         used.add(k);
+        paired.set(k, l);
         chose = true;
       } else unpaired.push(l);
     }
     for (const l of unpaired) out.push(...l);
-    for (const d of draftRun) out.push(...d);
+    for (const [k, d] of draftRun.entries()) out.push(...carrySources(d, paired.get(k) ?? []));
   };
   let i = 0;
   let j = 0;
   for (const [mi, mj] of equalOrderedMatches(liveKeys, draftKeys)) {
     flush(liveParagraphs.slice(i, mi), draftParagraphs.slice(j, mj));
-    out.push(...draftParagraphs[mj]);
+    out.push(...carrySources(draftParagraphs[mj], liveParagraphs[mi]));
     i = mi + 1;
     j = mj + 1;
   }

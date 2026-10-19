@@ -231,3 +231,19 @@ give a pre-`review_base` branch its base from its `live_cut` text, so the first 
 migration owns the CAS (`packages/database/src/migration-steps/`).
 
 [late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md
+
+## Merge correspondence
+
+`rebase` returns `correspondence` alongside blocks/conflicts/orderConflict and
+numeric `overrode` (live words actually replaced in contested text, excluding
+retained words). Each correspondence entry names one output block and its
+original `base`/`live`/`draft` block indices. `output: null` records removed
+inputs. Order layout retains original indices; correspondence follows token
+origins and the merge's block partners through the actual block builder,
+including normalization. Equivalent collapsed insertions retain both sources.
+No caller should rediff the result to recover the merge's pairing.
+
+`composeHunks` optionally reports each selected hunk's block support in the
+final composed side. A whole-block deletion has empty output support; callers
+retain its removed base support separately. This callback is for joining host
+ownership, not a second merge or a provenance mark on the document.

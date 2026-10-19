@@ -63,6 +63,32 @@ const isSafety = (f: string) =>
   !/^(order|blocks|block type|em on|strong on|conflict on blocks)/.test(f);
 
 describe("rebase", () => {
+  it("keeps original source coordinates when a live move carries a draft edit", () => {
+    const base = parseDoc(
+      schema,
+      "p:Alpha stands here. | p:The knight guards the dark castle. | p:Omega waits here.",
+    );
+    const live = [base[1], base[0], base[2]];
+    const draft = [base[0], paragraph("The knight guards the bright castle."), base[2]];
+    function paragraph(text: string) {
+      return schema.nodes.paragraph.create(null, schema.text(text));
+    }
+    const merged = rebase(schema, base, live, draft);
+    expect(merged.blocks.map((b) => b.textContent)).toEqual([
+      draft[1].textContent,
+      base[0].textContent,
+      base[2].textContent,
+    ]);
+    expect(merged.correspondence.find((entry) => entry.output === 0)?.sources).toEqual(
+      expect.arrayContaining([
+        { side: "base", index: 1 },
+        { side: "live", index: 0 },
+        { side: "draft", index: 1 },
+      ]),
+    );
+    expect(merged.correspondence.find((entry) => entry.output === 1)?.sources).toHaveLength(3);
+    expect(merged.overrode).toBe(0);
+  });
   it("coalesces a shared insertion beside a replacement, then preserves a dependent deletion", () => {
     const base = parseDoc(schema, "p:The cat sat on the mat.");
     const live = parseDoc(schema, "p:A big black cat sat on the mat.");

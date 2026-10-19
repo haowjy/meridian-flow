@@ -189,7 +189,13 @@ function predecessorOf(block: number, blocks: number[], partner: Int32Array): nu
 }
 
 export type OrderMerge =
-  | { reordered: false; cyclic: false; contested: number[] }
+  | {
+      reordered: false;
+      cyclic: false;
+      contested: number[];
+      inLive: Int32Array;
+      inDraft: Int32Array;
+    }
   | {
       reordered: true;
       cyclic: boolean;
@@ -198,6 +204,10 @@ export type OrderMerge =
       baseOrder: number[];
       /** Live's and the draft's blocks laid out in `baseOrder`. */
       live: PMNode[];
+      liveOrder: number[];
+      draftOrder: number[];
+      inLive: Int32Array;
+      inDraft: Int32Array;
       draft: PMNode[];
     };
 
@@ -281,7 +291,7 @@ function withRemovedBlocks(
  * Lay a side's blocks out in `order`. New blocks stay attached to the paired block before them, or
  * to the one after if they are a split-off piece of it.
  */
-function layOut(base: Side, side: Side, partner: Int32Array, order: number[]): PMNode[] {
+function layOut(base: Side, side: Side, partner: Int32Array, order: number[]): number[] {
   const owner = new Int32Array(side.blocks.length).fill(-1);
   for (const i of order) if (partner[i] >= 0) owner[partner[i]] = i;
 
@@ -313,11 +323,11 @@ function layOut(base: Side, side: Side, partner: Int32Array, order: number[]): P
     j = runEnd;
   }
 
-  const out: PMNode[] = leading.map((x) => side.blocks[x]);
+  const out: number[] = [...leading];
   for (const i of order) {
-    for (const x of attachedBefore.get(i) ?? []) out.push(side.blocks[x]);
-    if (partner[i] >= 0) out.push(side.blocks[partner[i]]);
-    for (const x of attachedAfter.get(i) ?? []) out.push(side.blocks[x]);
+    for (const x of attachedBefore.get(i) ?? []) out.push(x);
+    if (partner[i] >= 0) out.push(partner[i]);
+    for (const x of attachedAfter.get(i) ?? []) out.push(x);
   }
   return out;
 }
@@ -349,16 +359,22 @@ export function mergeOrder(sides: {
     return true;
   };
   if (keepsBaseOrder(inLive) && keepsBaseOrder(inDraft))
-    return { reordered: false, cyclic: false, contested: [] };
+    return { reordered: false, cyclic: false, contested: [], inLive, inDraft };
 
   const placement = placeBlocks(kept, inLive, inDraft);
   const baseOrder = withRemovedBlocks(placement.order, base.blocks.length, inLive, inDraft);
+  const liveOrder = layOut(base, live, inLive, baseOrder);
+  const draftOrder = layOut(base, draft, inDraft, baseOrder);
   return {
+    inLive,
+    inDraft,
+    liveOrder,
+    draftOrder,
     reordered: true,
     cyclic: placement.cyclic,
     contested: placement.contested,
     baseOrder,
-    live: layOut(base, live, inLive, baseOrder),
-    draft: layOut(base, draft, inDraft, baseOrder),
+    live: liveOrder.map((i) => live.blocks[i]),
+    draft: draftOrder.map((i) => draft.blocks[i]),
   };
 }
