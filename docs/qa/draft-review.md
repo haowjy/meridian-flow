@@ -174,3 +174,16 @@ and sends empty `groupIds` and `baseViewDelta`. Verify that it reveals the same
 document id, removes the pending item, and a same-id replay returns `applied`.
 The same empty click on a text draft or an already revealed item is malformed.
 A creation with a text room continues through the ordinary frozen text click.
+
+## Quiet native typing at 50k words
+
+Open a 50,000-word draft with Show changes on and a focused change (so the
+controller holds its frame). At the document end, dispatch 40 native `x` keys
+at 200 ms intervals. Record CDP frame-sent → applied `SyncStatus` p50/p95;
+require 40 applied acks, zero refusals/unacked frames/page errors and +40
+characters. Interleave at least three pairs against main with the same
+corpus/configuration; record host load and each run, not just a pooled average.
+Profile a separate run if the tail regresses: room metadata identity must never
+serialize `focus.frame` or any other caller-supplied presentation fields.
+Undo the typing, navigate changes, toggle Show changes and Discard a change,
+then Ctrl+Z: all must preserve exact prose and restore the review from text.

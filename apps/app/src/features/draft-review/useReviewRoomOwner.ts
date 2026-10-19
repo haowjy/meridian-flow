@@ -27,7 +27,14 @@ export function useReviewRoomOwner(input: {
       });
   }, [command.hidden, command.closed, review?.itemKey, dispatch]);
   const read = useRoomReview(
-    review ? { projectId: input.projectId, workId: input.workId, ...review } : null,
+    review
+      ? {
+          projectId: input.projectId,
+          workId: input.workId,
+          documentId: review.documentId,
+          itemKey: review.itemKey,
+        }
+      : null,
   );
   useEffect(() => {
     if (!review || command.closed) return;
