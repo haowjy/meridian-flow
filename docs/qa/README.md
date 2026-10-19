@@ -22,7 +22,7 @@ stack.
 - [Atomic frozen Apply](atomic-apply.md): production API-core command, merge, rollback, lifecycle and trail probes over a scratch database.
 - [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
-- [Runtime protocols](runtime-probes.md): RP-1 through RP-19, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
+- [Runtime protocols](runtime-probes.md): RP-1 through RP-20, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
 - [Stop and hand-back](stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
 - [Failure cards](failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
@@ -36,6 +36,9 @@ stack.
 - [Draft content rebase](draft-review-rebase.md): fresh client-1 seeds, the server append rebase, late typing recovery, badge convergence and inverse cutover through PostgreSQL.
 - [Stable draft identity and terminal closes](draft-generations.md): draft rooms through Discard all, a fresh server instance and live restore; `4205`, `4207` and removal `4208`.
 - [Lock-free drafts seam probes](drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, sampled Discard, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
+- [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
+- [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
+- [#871 cells](871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is swept, and the region refusal.
 - [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the branch store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.

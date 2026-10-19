@@ -225,7 +225,7 @@ async function writeUnderGrant(
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
-        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
@@ -245,11 +245,10 @@ async function writeUnderGrant(
     );
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
-  // was a partial failure's echo. An error without echo text carries no facts,
-  // and a refusal records no frontier.
+  // was a partial failure's echo and a region refusal's current text. Whatever
+  // frontier a result carries records, error or not.
   const evidence = evidenceOf(address.documentId, written);
-  if (written.isError)
-    return { isError: true, output: written.result, evidence: { shown: evidence.shown } };
+  if (written.isError) return { isError: true, output: written.result, evidence };
   // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
   return { ...withDestination(outcome, grant.destination), evidence } as WriteOutcome & {

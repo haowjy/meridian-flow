@@ -41,6 +41,7 @@ import {
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
   createRewriteCommittedEvent,
+  createRoomDeliveryDiagnostics,
   createWriterFrameDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import {
@@ -71,7 +72,6 @@ import type { DraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
-import { createDrizzleFrontierRooms } from "./adapters/drizzle-frontier-rooms.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -104,7 +104,6 @@ import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
-import { createDraftConcurrentJournalWatermarks } from "./domain/draft-agent-edit.js";
 import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
@@ -181,6 +180,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: hocuspocusBinding.require,
     journal: persistence.journal,
+    transactions: { inTransaction: isInDrizzleTransaction, afterCommit: deferUntilDrizzleCommit },
+    diagnostics: createRoomDeliveryDiagnostics(deps.eventSink),
   });
   // Every bounded draft-store attempt's rollback boundary (decision D13).
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
@@ -218,15 +219,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     // The projection is composed below, over the coordinator; a mark only fires after a commit.
     onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
   });
-  const concurrentJournalWatermarks = createDraftConcurrentJournalWatermarks();
   const draftPulls = createDraftPullService({
     // A pull isn't the write that scheduled it: it leaves that write's grants too.
     outsideTransaction: runOutsideWrite,
     liveCoordinator,
+    liveJournal: persistence.journal,
     draftCoordinator,
     drafts,
-    concurrentJournalWatermarks,
-    liveJournal: persistence.journal,
     diagnostics: createDraftPullDiagnostics(deps.eventSink),
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
@@ -337,16 +336,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         const tx = currentDrizzleDb(deps.db);
         for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
       },
-      frontierRooms: createDrizzleFrontierRooms(deps.db, deps.eventSink),
       journal: persistence.journal,
       drafts,
       draftCoordinator,
       draftPulls,
       draftJournal: replayJournal,
-      concurrentJournalWatermarks,
       diagnostics: createDraftAgentEditDiagnostics(deps.eventSink),
-      afterCommit: runAfterDrizzleCommit,
-      enlistResponseParticipant,
       model: runtime.model,
       codec: runtime.codec,
       links: deps.links,
@@ -530,9 +525,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftPeers = scopeDraftPeer(
     createEffectiveDocumentReader({
       drafts,
-      draftCoordinator,
       draftPulls,
-      liveCoordinator,
       agentEdit,
       documents: runtime.markdownDocuments,
       model: runtime.model,

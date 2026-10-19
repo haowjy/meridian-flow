@@ -28,6 +28,7 @@ import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
+import { DraftNotFoundError } from "../../domain/draft-resolver.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createReplySaveFences } from "../../domain/reply-save-fences.js";
@@ -76,6 +77,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     inTransaction: () => false,
     journal,
     coordinator,
+    agentCoordinator: coordinator,
     initialDocumentSeeds: {
       seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
       async missingAuthorityProjection(documentId) {
@@ -97,11 +99,16 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const removals = { lookup: async () => new Map() };
   const agentEdit = createThreadPeerCorePool({
     branches,
-    drafts: { getDraft: async () => null },
     removals,
+    drafts: {
+      getDraft: async () => null,
+      resolveWorkDraftForThread: (documentId, threadId) =>
+        Promise.reject(new DraftNotFoundError(documentId, threadId)),
+    },
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    pullThreadPeer: async () => undefined,
+    // Thread cores are the live core here: no write asks for a thread peer.
+    ensureThreadPeer: () => Promise.reject(new Error("In-memory collab has no thread peers")),
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
     fences: createReplySaveFences({
       liveUtilityCore: runtime.liveUtilityCore,
@@ -122,10 +129,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     fileAccess,
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
-    frontierRooms: {
-      // No version restores in memory: every live document stays in its first epoch.
-      liveGeneration: async () => 1n,
-    },
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({

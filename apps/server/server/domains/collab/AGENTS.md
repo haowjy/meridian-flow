@@ -12,7 +12,7 @@ change-trail persistence, and Hocuspocus admission. It composes
 - Work drafts are content-only fresh seeds: client 1 writes live's blocks into
   `prosemirror` and `review_base`; never merge live's Yjs identity into them.
   Background rebases use one server append under the draft row hold, reading
-  committed live without its lock. Thread peers still replicate their Work draft.
+  committed live without its lock. Thread peers retain binding identity only; model content reads and saves use the Work draft.
 - Live documents, document drafts, and thread peers are real Y.Docs. Journals and
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
@@ -37,8 +37,7 @@ change-trail persistence, and Hocuspocus admission. It composes
   and live docs, rooms (`yjs-ws-handler.ts`), clones and scratch docs. A rewrite never
   encodes a gc-on doc, and a client doc (gc on) is never the origin of a Yjs snapshot, since
   `createDocFromSnapshot` throws on it and a once-collected store restores the wrong text
-  silently. No production code reads a frontier snapshot yet (it arrives with the frontier
-  work). The [probe](../../../../docs/qa/frontier-survives-compaction.md) is pure Yjs: it pins
+  silently. Model writes materialize their planning view from their recorded frontier snapshot. The [probe](../../../../docs/qa/frontier-survives-compaction.md) is pure Yjs: it pins
   the library behaviour this contract depends on and cannot catch a server fold that begins
   encoding a gc-on doc.
 - Any apply after an `await` must use the

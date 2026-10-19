@@ -38,9 +38,9 @@ it.each([
     },
   };
   try {
-    expect(
-      reconcileStagedDraftWrites(current, helper, [entry], Y.encodeStateAsUpdate(base)).keptEntries,
-    ).toEqual([entry]);
+    expect(reconcileStagedDraftWrites(current, [entry], Y.snapshot(base)).keptEntries).toEqual([
+      entry,
+    ]);
     expect(current.getText("chapter").toString()).toBe(expected.getText("chapter").toString());
     expect(current.store.pendingStructs).toBeNull();
     expect(current.store.pendingDs).toBeNull();
@@ -59,7 +59,7 @@ it("protects planning-visible identities removed by an explicit inverse", () => 
   const undo = new Y.UndoManager(text);
   text.delete(6, 4);
   text.insert(6, "Gamma");
-  const planningState = Y.encodeStateAsUpdate(base);
+  const cut = Y.snapshot(base);
   const helper = cloneYDoc(base);
   const updates: Uint8Array[] = [];
   helper.on("update", (update: Uint8Array) => updates.push(update));
@@ -84,7 +84,7 @@ it("protects planning-visible identities removed by an explicit inverse", () => 
     },
   };
   try {
-    const replay = reconcileStagedDraftWrites(current, helper, [entry], planningState, inverse);
+    const replay = reconcileStagedDraftWrites(current, [entry], cut, inverse);
     expect(replay.keptEntries).toEqual([]);
     expect(replay.rejectedWrites).toEqual([{ writeId: "replacement", reason: "inverse" }]);
     expect(current.getText("chapter").toString()).toBe("Alpha Beta.");

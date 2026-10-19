@@ -19,6 +19,11 @@ contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). A frame
 racing another write waits for the row lock once and never judges again; no
 draft mutex exists to hold against a frame.
 
+Model reads use fresh `readRoom` copies, not thread-peer content replicas. A
+reply saves directly into its Work draft; the row-held append judges its
+precondition and captures its only before/after save cut before commit. Thread
+peers retain binding identity only and hold no content pull or catch-up job.
+
 A live-room writer frame is judged new the same way, where it serializes:
 collab's `LiveWriterJournal.appendWriterUpdate` port holds the document
 mutation lock, reads the stored document and judges the update against it, then

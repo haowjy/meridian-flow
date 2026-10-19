@@ -80,9 +80,11 @@ the UI says neither "intent" nor "outcome".
 
 A **failed document tool** shows why it failed, in place of whatever the
 command would otherwise have opened onto, with one exception: a `write`
-refused with `read_required` is titled "Paused to reread" and opens onto
-nothing, since the next rows (the read, then the retried write) say what
-happened. A failed `work` call opens onto its structured message. A failed
+refused with `region_changed` (the passage changed since the AI last saw it, or
+the AI hadn't seen all of it) is titled "Got the latest text of" the document,
+true of both, and opens onto nothing, since
+the next row (the retried write, or a read of a passage too long to show)
+says what happened. A failed `work` call opens onto its structured message. A failed
 `search` or `ls` opens onto nothing at all. Whether every
 failure deserves an expand is an open design question; do not invent an answer
 in a renderer.

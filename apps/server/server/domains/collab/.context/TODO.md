@@ -22,9 +22,9 @@ not need a separate reversal planner or mutable receipt.
 ## Connection ownership
 
 Audit paths that hold a pooled connection while acquiring another:
-`ensureThreadPeerDraft` when called from an ambient transaction and
-`createDeferredLiveProjectionCoordinator.withDocument` inside a response
-transaction. Restructure only if concurrency measurements show pool
+`ensureThreadPeerDraft` when called from an ambient transaction, and the live
+agent-edit coordinator's room copy, read outside the response transaction while
+it is open. Restructure only if concurrency measurements show pool
 exhaustion; preserve the lock order and independent root pull transactions.
 
 ## Code representation
@@ -39,9 +39,9 @@ other schema against existing content could let normalization delete it.
 
 ## Attribution and retained state
 
-The concurrent-journal scan still decodes retained candidates because its floor
-is a commit-bound attribution cursor, not a global maximum. Profile retained
-state materialization, encodes, persistence, and thread-peer pulls before
+The concurrent-journal scan reads and decodes every row of the Work draft
+generation on each save, since containment in the view is its only skip. Profile retained
+state materialization, encodes, persistence, and live→Work pulls before
 choosing an incremental checkpoint or captured-state design. Keep delete-only
 changes, the revision fence on draft rewrites (appends are sequenced and
 unfenced), the generation fence on rooms,
@@ -60,18 +60,15 @@ Do not port them onto the store or extend them.
   Undo, draft creation) still lock the Work for lifecycle order and touch it in
   their own transaction. Decide whether anything of #931 remains before
   scheduling it.
-- **Live documents** ([#934]) still use the in-process `withDocument` mutex,
-  the advisory lock and in-place room mutation; they move to checkpoint, tail
+- **Live documents** ([#934]): collab's own live paths (Markdown writes, push,
+  reversal) still use the in-process `withDocument` mutex, the advisory lock and
+  in-place room mutation (agent-edit saves only append and deliver after commit); they move to checkpoint, tail
   and revision after [#862].
 - **One unit-of-work port** ([#935]) replaces the six `deferUntilCommit`
   declarations and the response-transaction participant layer.
-- **Delete-only live reply** ([#933], unconfirmed): room recovery is gated on a
-  state-vector change, which a delete-only update does not make
-  (`adapters/hocuspocus-coordinator.ts`).
 
 [#862]: https://github.com/haowjy/meridian-flow/pull/862
 [#931]: https://github.com/haowjy/meridian-flow/issues/931
 [#932]: https://github.com/haowjy/meridian-flow/issues/932
-[#933]: https://github.com/haowjy/meridian-flow/issues/933
 [#934]: https://github.com/haowjy/meridian-flow/issues/934
 [#935]: https://github.com/haowjy/meridian-flow/issues/935

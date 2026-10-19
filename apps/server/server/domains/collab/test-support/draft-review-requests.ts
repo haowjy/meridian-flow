@@ -13,6 +13,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
+import { commitDraftRows } from "./draft-update-writes.js";
 import { captureHistoricalDraftRow } from "./historical-draft-row.js";
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
@@ -35,7 +36,7 @@ export async function commitDraftEdit(
   try {
     if (author.clientId !== undefined) staged.clone.clientID = author.clientId;
     mutate(staged.clone);
-    await fixture.draftCoordinator.commitSegmentRows({
+    await commitDraftRows(fixture.draftCoordinator, {
       draftId: draftId,
       sourceDoc: staged.clone,
       rows: [

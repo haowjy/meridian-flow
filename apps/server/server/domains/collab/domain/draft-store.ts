@@ -105,7 +105,9 @@ export type AppendFinalization =
   /** A row depends on structs or deletes the journal does not hold yet. */
   | { status: "prefixMissing"; clocks: readonly { client: number; clock: number }[] }
   /** The committed prefix's Work is no longer active. */
-  | { status: "refused" };
+  | { status: "refused" }
+  /** The save's precondition failed on the committed prefix. */
+  | { status: "preconditionFailed" };
 
 /**
  * Rows appended past the checkpoint at whatever revision the draft is at: the row `UPDATE` is
@@ -137,7 +139,7 @@ export type AppendRowsOutcome =
 
 /**
  * `exact` commits only at the revision the rewrite was computed at; `fold` commits over any
- * appends since its checkpoint cursor (a pull applies them).
+ * appends since its checkpoint cursor.
  */
 export type RewritePolicy =
   | { kind: "exact"; revision: number }
@@ -149,20 +151,12 @@ export type RewriteOperation =
    * stay. The coordinator schedules it once a committed writer frame leaves the tail past its
    * bound (decision D10).
    */
-  | { kind: "compact" }
-  /**
-   * A thread peer merges its captured upstream draft; Work drafts use content appends.
-   */
-  | { kind: "pull" }
-  /** A content rewrite the draft's owning Work must admit: a thread peer catching up its upstream. */
-  | { kind: "checkpoint" };
+  { kind: "compact" };
 
 export type CommitRewriteInput = {
   draftId: string;
   policy: RewritePolicy;
-  /** The peer's upstream as captured: locked `FOR SHARE` and checked before the peer row. */
-  upstream?: { draftId: string };
-  /** The rewritten checkpoint. A `fold` pull applies the tail into it. */
+  /** The rewritten checkpoint. A `fold` applies the tail into it. */
   doc: Y.Doc;
   operation: RewriteOperation;
 };
@@ -174,7 +168,7 @@ export type RewriteOutcome =
       checkpointRevision: number;
       seq: number;
     }
-  | { status: "moved" | "closed" | "upstreamMoved" };
+  | { status: "moved" | "closed" };
 
 /**
  * A stale draft and its keyset position in the sweep's order. `updatedAt` is the stored

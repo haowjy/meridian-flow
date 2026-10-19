@@ -185,14 +185,7 @@ export async function executeCompaction({
     },
   };
   const successor = await deps.delivery.splitAndContinue(successorBoundary);
-  return {
-    successor,
-    preparedContext: successor.context,
-    summaryBlock:
-      successor.preparedCurrent?.kind === "usable"
-        ? successor.preparedCurrent.summaryBlock
-        : undefined,
-  };
+  return { successor, preparedContext: successor.context };
 }
 
 /** The run was cancelled before the summarizer was called: no history left the process. */

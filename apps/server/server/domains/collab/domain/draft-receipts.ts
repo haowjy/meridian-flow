@@ -13,7 +13,12 @@ import {
   recoverLatePeerEdits,
   retainLateTypingDeletions,
 } from "@meridian/agent-edit/diff";
-import { captureEditParts, type EditFrontier } from "@meridian/agent-edit/integration";
+import {
+  captureEditParts,
+  type EditFrontier,
+  type SaveCut,
+  type SavePrecondition,
+} from "@meridian/agent-edit/integration";
 import {
   buildDocumentSchema,
   createCollabYDoc,
@@ -42,6 +47,8 @@ export type AuthorServerRows = (
 ) => readonly Uint8Array[] | Promise<readonly Uint8Array[]>;
 
 export type FinalizeAppendInput = {
+  /** Judged on the committed prefix before any incoming or server-authored row. */
+  precondition?: SavePrecondition;
   work?: "active" | "any";
   authorServerRows?: AuthorServerRows;
   recovery?: {
@@ -78,11 +85,18 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
  * the novel trim, held deletes, restoration ranges, and client admission on the committed prefix),
  * applies them requiring complete integration, and captures one receipt per logical write on
  * the final document. Any outcome but `appended` leaves `doc` unusable: the caller destroys it.
+ * An appended or contained outcome carries its cut: the prefix as found under the lock, and
+ * with the kept rows (the same prefix, when every row was contained).
  */
 export async function finalizeAppend(
   read: DraftRead,
   input: FinalizeAppendInput,
-): Promise<{ finalization: AppendFinalization; doc: Y.Doc; result?: FinalizedAppend }> {
+): Promise<{
+  finalization: AppendFinalization;
+  doc: Y.Doc;
+  cut?: SaveCut;
+  result?: FinalizedAppend;
+}> {
   const prefixHeld = read.checkpoint === null;
   let doc = input.candidate;
   if (prefixHeld) {
@@ -98,6 +112,10 @@ export async function finalizeAppend(
     const done = (finalization: AppendFinalization) => ({ finalization, doc });
     if (input.work !== "any" && read.documentDraft.lifecycle !== "active")
       return done({ status: "refused" });
+
+    const before = Y.encodeStateAsUpdate(doc);
+    if (input.precondition && !input.precondition(before))
+      return done({ status: "preconditionFailed" });
 
     let lateTyping = input.recovery?.memory() ?? NO_LATE_TYPING;
     const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
@@ -200,7 +218,8 @@ export async function finalizeAppend(
         authoring.destroy();
       }
     }
-    if (!kept.length) return done({ status: "contained" });
+    if (!kept.length)
+      return { ...done({ status: "contained" }), cut: { beforeState: before, afterState: before } };
 
     const groups = new Map<string, number[]>();
     for (const [index, { row }] of kept.entries()) {
@@ -229,6 +248,7 @@ export async function finalizeAppend(
     return {
       finalization: { status: "appended", rows, receipts },
       doc,
+      cut: { beforeState: before, afterState: Y.encodeStateAsUpdate(doc) },
       result: {
         status: "appended",
         rows,
