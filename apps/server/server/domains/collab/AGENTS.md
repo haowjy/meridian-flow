@@ -17,7 +17,8 @@ change-trail persistence, and Hocuspocus admission. It composes
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
   Review is computed in the browser from the draft room (lane B2). The old server
-  review, settlement and reset services are deleted; lane A builds atomic Apply.
+  review, settlement and reset services are deleted. Apply commits its frozen clicked
+  content into live and the review base in one transaction; see [Apply](.context/apply.md).
 - A draft keeps `draft:<draftId>` from seed to close; it has no generation.
   After commit, ordinary closes send `4205` with `discarded`; removals send `4208`.
 - Authority identity and generation fence every live connection and mutation.

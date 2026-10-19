@@ -37,7 +37,13 @@ import {
 } from "../domains/collab/domain/branch-commands.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
-import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
+import {
+  type FileAccessDenied,
+  type FileGrant,
+  type FileNeed,
+  isFileAccessDenied,
+  runWithEditGrants,
+} from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
@@ -56,7 +62,7 @@ type BranchRouteServices = {
     AppServices["fileAccess"],
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
   >;
-  documentSync: Pick<AppServices["documentSync"], "draftReview">;
+  documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
@@ -68,7 +74,7 @@ export function selectBranchRouteServices(app: AppServices): BranchRouteServices
   };
 }
 
-export async function requireBranchWorkAccess(
+async function requireBranchWorkIdentity(
   deps: Pick<BranchRouteServices, "projects" | "works">,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
 ): Promise<Work> {
@@ -77,9 +83,18 @@ export async function requireBranchWorkAccess(
     throw createError({ statusCode: 404, message: "Work not found" });
   }
   const work = await deps.works.findById(input.workId);
-  if (!work || work.projectId !== input.projectId || work.deletedAt) {
+  if (!work || work.projectId !== input.projectId) {
     throw createError({ statusCode: 404, message: "Work not found" });
   }
+  return work;
+}
+
+export async function requireBranchWorkAccess(
+  deps: Pick<BranchRouteServices, "projects" | "works">,
+  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
+): Promise<Work> {
+  const work = await requireBranchWorkIdentity(deps, input);
+  if (work.deletedAt) throw createError({ statusCode: 404, message: "Work not found" });
   return work;
 }
 
@@ -207,7 +222,7 @@ export async function handleBranchCommandObservation(
   deps: BranchRouteServices,
   input: CommandScope & { commandId: string },
 ): Promise<ApplyClickObservation | BranchCommandObservation> {
-  await requireBranchWorkAccess(deps, input);
+  await requireBranchWorkIdentity(deps, input);
   const id = BranchCommandIdSchema.safeParse(input.commandId);
   if (!id.success) throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
   const found = await deps.documentSync.draftReview.lookupCommand({
@@ -435,7 +450,7 @@ export async function handleApplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { documentId: DocumentId; request: unknown },
 ): Promise<ApplyClickAnswer> {
-  const work = await requireBranchWorkAccess(deps, input);
+  const work = await requireBranchWorkIdentity(deps, input);
   const parsedId = BranchCommandIdSchema.safeParse(
     input.request && typeof input.request === "object" && "commandId" in input.request
       ? input.request.commandId
@@ -472,23 +487,54 @@ export async function handleApplyClickRequest(
   const refuse = async (
     reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
   ): Promise<ApplyClickAnswer> => (await lookup()) ?? { status: "refused", commandId, reason };
+  async function deniedAnswer(grant: FileAccessDenied): Promise<ApplyClickAnswer> {
+    // A known removed identity is a terminal room outcome, not an edit denial.
+    // Never expose its record to a different owner or project.
+    if (
+      grant.facts?.deleted &&
+      grant.facts.ownerAccountId === input.userId &&
+      grant.facts.projectId === input.projectId
+    ) {
+      const removed = await deps.documentSync.roomRemoval({ documentId: input.documentId });
+      if (removed)
+        return (await lookup()) ?? { status: "closed", commandId, removal: removed.removal };
+    }
+    return refuse(
+      grant.facts?.branchWork?.deleted || grant.facts?.ownerWork?.deleted
+        ? "work_deleted"
+        : grant.reason === "work_archived"
+          ? "work_archived"
+          : "not_found",
+    );
+  }
   const parsed = ApplyClickBody.safeParse(input.request);
   if (!parsed.success) return refuse("malformed");
+  if (work.deletedAt) return refuse("work_deleted");
   if (work.archivedAt) return refuse("work_archived");
-  for (const target of [
-    { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
-    documentTarget(input.documentId),
-  ]) {
-    const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
-    if (isFileAccessDenied(grant))
-      return refuse(grant.reason === "work_archived" ? "work_archived" : "not_found");
-  }
-  return deps.documentSync.draftReview.applyClick({
+  const item = await deps.documentSync.draftReview.resolveItemByDocument({
     workId: input.workId,
     documentId: input.documentId,
-    request: parsed.data as ApplyClick,
-    envelope,
   });
+  const grants: FileGrant<"edit">[] = [];
+  for (const target of [
+    { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
+    ...(item?.item.isNew ? [] : [documentTarget(input.documentId)]),
+  ]) {
+    const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
+    if (isFileAccessDenied(grant)) return deniedAnswer(grant);
+    grants.push(grant);
+  }
+  const result = await runWithEditGrants(deps.fileAccess, grants, () =>
+    deps.documentSync.draftReview.applyClick({
+      workId: input.workId,
+      documentId: input.documentId,
+      request: parsed.data as ApplyClick,
+      envelope,
+    }),
+  );
+  if (result.ok) return result.value;
+  const denial = result.refusal.refused[0];
+  return denial ? deniedAnswer(denial) : refuse("not_found");
 }
 
 /** An item the branch no longer holds, as a 200 body status. */
