@@ -66,13 +66,18 @@ list omission alone must not infer local Discard or successful Apply.
 ## Account command lifetime
 
 `AccountFeatureLifetime.draftCommands` is shared by editor, chat and Work
-surfaces. `bind(ref, session)` joins one stable draft-row owner and installs
-its cached base provider. `apply(ref, target)` synchronously freezes the Yjs
+surfaces. `bind(ref, session)` joins one stable draft-row queue and installs a replaceable
+session binding (runtime, cached base provider and root observers). A pending
+queue owns a room reader that follows replacement sessions even without a surface.
+Retiring a session detaches that binding, not the draft queue. `apply(ref, target)` synchronously freezes the Yjs
 snapshot, O/P blocks, selected ids and one room-base-to-O delta. The queue
 retains a `readDraftRoom` lease independently of React until terminal.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
-then an item Retry. A record alone proves landing; an applied answer without
+then an item Retry. A terminal acknowledgement failure refuses unsent cuts
+with an item failure; sent heads keep their same-id settlement across session
+replacement. Transient disconnects keep acknowledgement barriers pending.
+A record alone proves landing; an applied answer without
 the record keeps its contribution. Closed/refused answers remove only their
 own contribution. A terminal close cancels unsent clicks and observes a sent
 head's durable outcome; applied then needs no room record. Feedback starts at

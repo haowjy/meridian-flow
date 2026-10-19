@@ -52,8 +52,10 @@ acknowledgement and remote whole-discard probes do.
 `whenCurrentChangesAcknowledged()` captures the socket's current FIFO prefix.
 An Apply waits for that prefix, including update delete sets, not later keys.
 A reconnect moves unresolved barriers to the next handshake upload, which
-contains every pre-click local change. Barrier settlement does not publish a
-per-key session snapshot. `4205` is terminal `closed`, not rebuild; in-band
+contains every pre-click local change. The transport exposes this prefix barrier directly; it must not fall back to
+waiting for every later keystroke. Terminal transport teardown rejects current
+and future barriers; ordinary disconnects leave them pending for reconnect.
+Barrier settlement does not publish a per-key session snapshot. `4205` is terminal `closed`, not rebuild; in-band
 closes carry code 1000, so consumers use disposition rather than numeric code.
 
 ## Draft rooms: the handshake upload goes first

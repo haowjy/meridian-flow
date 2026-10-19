@@ -341,7 +341,7 @@ export function createHocuspocusDocumentTransport({
     terminal = true;
     document.off("update", handleDocumentUpdate);
     stopHints();
-    acknowledgement.endConnection();
+    acknowledgement.terminate();
     publish(state);
     provider.destroy();
     websocket.destroy();
@@ -456,6 +456,7 @@ export function createHocuspocusDocumentTransport({
 
   return {
     unacknowledgedUpdates: () => outbox,
+    whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
       return provider.synced;
     },
@@ -490,7 +491,7 @@ export function createHocuspocusDocumentTransport({
       destroyed = true;
       stopHints();
       document.off("update", handleDocumentUpdate);
-      acknowledgement.endConnection();
+      acknowledgement.terminate();
       provider.destroy();
       websocket.destroy();
       listeners.clear();

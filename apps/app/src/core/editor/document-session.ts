@@ -418,17 +418,33 @@ export class DocumentSession {
 
   /** Captured synchronously with an Apply snapshot; later typing does not move this barrier. */
   whenCurrentChangesAcknowledged(): Promise<void> {
-    if (this.transportProvider?.whenCurrentChangesAcknowledged)
-      return this.transportProvider.whenCurrentChangesAcknowledged();
-    if (this.serverHasLocalChanges) return Promise.resolve();
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       let stop = () => {};
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        stop();
+        if (error) reject(error);
+        else resolve();
+      };
+      const prefix = this.transportProvider?.whenCurrentChangesAcknowledged?.();
       stop = this.subscribe((snapshot) => {
-        if (snapshot.serverHasLocalChanges) {
-          stop();
-          resolve();
-        }
+        const connection = snapshot.connectionState;
+        if (
+          snapshot.status === "destroyed" ||
+          connection?.kind === "reset" ||
+          connection?.kind === "terminal" ||
+          connection?.kind === "unauthorized"
+        )
+          finish(new Error("Document session can no longer acknowledge this cut"));
+        else if (!prefix && snapshot.serverHasLocalChanges) finish();
       });
+      if (settled) stop();
+      void prefix?.then(
+        () => finish(),
+        (error: Error) => finish(error),
+      );
     });
   }
 
