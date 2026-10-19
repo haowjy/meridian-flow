@@ -31,6 +31,17 @@ retained tail. Both use the fixed fiction-oriented summary sections, preserve
 writer terminology, and treat transcript text as source material rather than
 instructions.
 
+Compaction alone ends its summary instruction with `## Documents to keep open`:
+one context URI per line, most important first, only documents the conversation
+showed, at most 10, with a two-line example. The format and parser live together
+in `loop/compaction/important-files.ts`. The warm branch's retained-scope rule
+exempts this section, so retained-tail documents can be listed without copying
+their content into the summary. The appended instruction changes, never the
+cached request prefix (messages, tools, system and cache key). Handoff is
+unchanged. Successor preparation strips the list, re-shows matched documents
+plus the 3 recent within budget, and names unreadable or over-budget candidates
+in the final summary with a read-again instruction; see [compaction](compaction.md#important-files).
+
 Before either path, one settled-authority revision query over the source
 projection supplies changed document URIs. Summary rows do not supply prefix
 warmth or a token baseline. Late arrivals are fit-checked by the successor and

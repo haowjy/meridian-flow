@@ -52,7 +52,13 @@ Style directions and preferences, in the user's words where possible.
 ## Next step
 The immediate next action.
 Be concise: bullets under each heading, no preamble.
-Compaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section, and do not use their replies to mark a replaced request done. End the summary at the cut.
+## Documents to keep open
+End the summary with this section: one context URI per line, most important first, at most 10.
+List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.
+Example:
+manuscript://Chapter%201
+scratch://@/c12/plan.md
+Compaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section except Documents to keep open, and do not use their replies to mark a replaced request done. End the summary at the cut.
 Retained passages in order (role and opening; a passage may start mid-message):
 user: "Task"
 </system_update>"
@@ -106,7 +112,13 @@ Style directions and preferences, in the user's words where possible.
 ## Next step
 The immediate next action.
 Be concise: bullets under each heading, no preamble.
-Compaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section, and do not use their replies to mark a replaced request done. End the summary at the cut.
+## Documents to keep open
+End the summary with this section: one context URI per line, most important first, at most 10.
+List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.
+Example:
+manuscript://Chapter%201
+scratch://@/c12/plan.md
+Compaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section except Documents to keep open, and do not use their replies to mark a replaced request done. End the summary at the cut.
 Retained passages in order (role and opening; a passage may start mid-message):
 user: "Task"
 </system_update>",

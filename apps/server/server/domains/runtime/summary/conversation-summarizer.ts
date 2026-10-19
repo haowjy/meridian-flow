@@ -6,6 +6,7 @@ import type { AgentRevisionStore } from "../../packages/index.js";
 
 import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
+import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { modelResponseTimingFields } from "../loop/model-response-timing.js";
 import type { PrefixCacheState, PrefixCacheStateRequest } from "../loop/prefix-cache-state.js";
@@ -68,6 +69,7 @@ function instructionText(
     "## Next step",
     "The immediate next action.",
     "Be concise: bullets under each heading, no preamble.",
+    ...(instruction === "compaction" ? KEEP_OPEN_INSTRUCTION_LINES : []),
   ].join("\n");
 }
 
@@ -289,7 +291,7 @@ export function createConversationSummarizer(
           );
           const retainedScope =
             input.instruction === "compaction" && input.retainedMessages?.length
-              ? "\nCompaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section, and do not use their replies to mark a replaced request done. End the summary at the cut.\nRetained passages in order (role and opening; a passage may start mid-message):\n" +
+              ? "\nCompaction scope: the passages listed below stay verbatim after your summary. Summarize only what comes before them. Do not restate them, take no facts, URIs, requests or tool activity from them for any section except Documents to keep open, and do not use their replies to mark a replaced request done. End the summary at the cut.\nRetained passages in order (role and opening; a passage may start mid-message):\n" +
                 input.retainedMessages
                   .map((message) => {
                     const opening = message.content

@@ -1,19 +1,48 @@
-/**
- * The documents a compaction re-shows in full after its summary (C10): the ones
- * the conversation's results showed most recently, within a document count and
- * a token budget. A summary cannot credit the model with having seen a
- * document; the re-shown current text can.
- */
+/** Model-ranked documents a compaction re-shows in full, within its token budget. */
 import type { DocumentRevisionEvidence, ReferenceOccurrence } from "@meridian/contracts/protocol";
 import type { RecordedDocuments } from "./elide.js";
 
-export const IMPORTANT_FILES_MAX = 5;
+const KEEP_OPEN_HEADING = "## Documents to keep open";
+const LISTED_DOCUMENTS_MAX = 10;
+const RECENT_DOCUMENTS_COUNT = 3;
+
+export const KEEP_OPEN_INSTRUCTION_LINES = [
+  KEEP_OPEN_HEADING,
+  `End the summary with this section: one context URI per line, most important first, at most ${LISTED_DOCUMENTS_MAX}.`,
+  "List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.",
+  "Example:",
+  "manuscript://Chapter%201",
+  "scratch://@/c12/plan.md",
+];
+
+/** Remove the machine-directed section, even when the model puts it before another section. */
+export function parseImportantFiles(text: string): { summary: string; uris: string[] } {
+  const lines = text.split(/\r?\n/u);
+  const summary: string[] = [];
+  const uris: string[] = [];
+  let inSection = false;
+  for (const line of lines) {
+    if (line.trim() === KEEP_OPEN_HEADING) {
+      inSection = true;
+      continue;
+    }
+    if (/^##\s/u.test(line)) inSection = false;
+    if (!inSection) {
+      summary.push(line);
+      continue;
+    }
+    const uri = line
+      .match(/[a-z][a-z0-9+.-]*:\/\/[^\s`<>]+/iu)?.[0]
+      .replace(/[.,;:!?)\]}'"]+$/u, "");
+    if (uri) uris.push(uri);
+  }
+  return { summary: summary.join("\n").trim(), uris };
+}
+
 const IMPORTANT_FILES_MAX_TOKENS = 20_000;
 const IMPORTANT_FILES_WINDOW_FRACTION = 0.1;
 /** Compaction estimates text at 3 bytes per token wherever it lacks a tokenizer. */
 const BYTES_PER_TOKEN = 3;
-/** Skipped documents still cost a read, so the search for five that fit stops here. */
-const IMPORTANT_FILES_MAX_READS = 2 * IMPORTANT_FILES_MAX;
 
 /** Estimation slack kept under the trigger: the budget counts bytes, the next request counts tokens. */
 const TRIGGER_MARGIN_TOKENS = 1_000;
@@ -42,22 +71,39 @@ export function reshowBudgetTokens(input: {
   );
 }
 
-/** Documents in `recorded` (history order), most recently shown first, one entry per document. */
-export function importantFileCandidates(recorded: RecordedDocuments): DocumentRevisionEvidence[] {
-  const seen = new Set<string>();
-  const candidates: DocumentRevisionEvidence[] = [];
-  for (const refs of [...recorded.values()].reverse()) {
-    for (const ref of [...(refs ?? [])].reverse()) {
-      if (!ref.uri || seen.has(ref.documentId)) continue;
-      seen.add(ref.documentId);
-      candidates.push(ref);
-    }
+/** Model-listed shown URIs first, then the three most recent documents, deduplicated by id. */
+export function importantFileCandidates(
+  recorded: RecordedDocuments,
+  listedUris: readonly string[],
+): { candidates: DocumentRevisionEvidence[]; unknownUriCount: number } {
+  const newestFirst = [...recorded.values()]
+    .reverse()
+    .flatMap((refs) => [...(refs ?? [])].reverse());
+  const byUri = new Map<string, DocumentRevisionEvidence>();
+  const recent: DocumentRevisionEvidence[] = [];
+  const recentIds = new Set<string>();
+  for (const ref of newestFirst) {
+    if (!ref.uri) continue;
+    if (!byUri.has(ref.uri)) byUri.set(ref.uri, ref);
+    if (recentIds.has(ref.documentId)) continue;
+    recentIds.add(ref.documentId);
+    if (recent.length < RECENT_DOCUMENTS_COUNT) recent.push(ref);
   }
-  return candidates;
+  const listed = listedUris.flatMap((uri) => {
+    const ref = byUri.get(uri);
+    return ref ? [ref] : [];
+  });
+  const seen = new Set<string>();
+  const candidates = [...listed.slice(0, LISTED_DOCUMENTS_MAX), ...recent].filter((ref) => {
+    if (seen.has(ref.documentId)) return false;
+    seen.add(ref.documentId);
+    return true;
+  });
+  return { candidates, unknownUriCount: listedUris.length - listed.length };
 }
 
 /**
- * Reads candidates in order until `IMPORTANT_FILES_MAX` are kept. A document
+ * Reads every candidate in priority order. A document
  * whose full text does not fit the remaining budget is skipped, never
  * truncated: a truncated copy would be a partial read with its own listing.
  * `read` answers null for a document that cannot be read.
@@ -69,8 +115,7 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
 }): Promise<{ reference: ReferenceOccurrence; read: T }[]> {
   let remaining = input.budgetTokens;
   const kept: { reference: ReferenceOccurrence; read: T }[] = [];
-  for (const candidate of input.candidates.slice(0, IMPORTANT_FILES_MAX_READS)) {
-    if (kept.length === IMPORTANT_FILES_MAX) break;
+  for (const candidate of input.candidates) {
     const uri = candidate.uri as string;
     const reference: ReferenceOccurrence = {
       type: "reference",

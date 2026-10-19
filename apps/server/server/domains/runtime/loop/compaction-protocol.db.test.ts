@@ -1547,7 +1547,7 @@ else
         });
         return {
           kind: "complete",
-          text: "The earlier scene is complete.",
+          text: "The earlier scene is complete.\n\n## Documents to keep open\n- `kb://notes`\n- manuscript://never-shown",
           model: "summary-model",
           modelResponses: [],
         };
@@ -1606,7 +1606,7 @@ else
         compactedThrough: { turnId: tail[0].id, blockSequence: 2 },
       });
       expect((await rig.repos.blocks.listByTurn(tail[1].id))[0].content).toMatchObject({
-        props: { excludedTurnCount: 3 },
+        props: { excludedTurnCount: 3, summary: "The earlier scene is complete." },
       });
       expect(rig.summarizer.calls).toHaveLength(1);
       expect(rig.summarizer.calls[0].retainedMessages).toEqual([
