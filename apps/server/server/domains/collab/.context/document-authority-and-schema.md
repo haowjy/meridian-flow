@@ -66,7 +66,10 @@ history stay open; only purge deletes it.
 `DocumentRemovedError` is a `DocumentNotFoundError` carrying the removal
 record, so every not-found mapping, the model's included, answers a removal as
 `document_not_found` with who removed it (worded once, by agent-edit's
-`removal-copy.ts`) until the model gets its own `document_deleted` answer.
+`removal-copy.ts`) until the model gets its own `document_deleted` answer. A
+reply's write the removal stopped, refused when staged or at the save, is one
+`invalid_write` with `rejected: "removed"` and the record in `removal`
+(agent-edit's `removedWriteRefusal`), which the chat's card words.
 
 ## Schema-aware document engine
 

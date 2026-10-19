@@ -129,7 +129,7 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
-export { rejectedWriteResult } from "./tool/receipt.js";
+export { rejectedWriteResult, removedWriteRefusal } from "./tool/receipt.js";
 export {
   isResponseLifecycleError,
   ResponseAttemptStaleError,

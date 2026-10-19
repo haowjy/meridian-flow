@@ -124,7 +124,8 @@ known-id denial can include its record without allowing content access.
    creates a document and parks there; `./mf doc rm` the first). The staged
    write's tool result reads "This file was deleted by <name> before this reply
    was saved, so this change wasn't made." with no retry, and its chat card
-   shows the generic refusal, never "You discarded this new document".
+   reads "You deleted <title> before this reply saved its change.", never
+   "You discarded this new document".
 8. Time the document-lock hold separately from fixture setup with ten drafts
    and many pending parts. Assert no room close before commit and check every
    part actually settled; do not treat skipped work or a busy-host sample as a
