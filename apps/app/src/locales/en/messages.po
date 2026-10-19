@@ -354,6 +354,18 @@ msgstr "{name} can't be changed."
 msgid "{name} source"
 msgstr "{name} source"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "{name} was deleted before this reply saved its change."
+msgstr "{name} was deleted before this reply saved its change."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{name} was discarded from the draft before this reply saved its change."
+msgstr "{name} was discarded from the draft before this reply saved its change."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+msgstr "{name} was removed when the reply that created it didn't finish, so this change wasn't made."
+
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
 msgstr "{position} of {count}"
@@ -4569,6 +4581,10 @@ msgstr "This document is read only right now."
 msgid "This document is still opening."
 msgstr "This document is still opening."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This document was deleted before this reply saved its change."
+msgstr "This document was deleted before this reply saved its change."
+
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "This document was deleted from your project after the draft started. Check it, then apply again."
 #~ msgstr "This document was deleted from your project after the draft started. Check it, then apply again."
@@ -4581,6 +4597,10 @@ msgstr "This document was deleted, so this draft can't be applied."
 msgid "This document was deleted."
 msgstr "This document was deleted."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This document was discarded from the draft before this reply saved its change."
+msgstr "This document was discarded from the draft before this reply saved its change."
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft, so this draft can't be applied."
 msgstr "This document was discarded from the draft, so this draft can't be applied."
@@ -4588,6 +4608,10 @@ msgstr "This document was discarded from the draft, so this draft can't be appli
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft."
 msgstr "This document was discarded from the draft."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This document was removed when the reply that created it didn't finish, so this change wasn't made."
+msgstr "This document was removed when the reply that created it didn't finish, so this change wasn't made."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
@@ -5135,9 +5159,17 @@ msgstr "You can retry when this chat is free."
 msgid "You deleted {count} documents elsewhere."
 msgstr "You deleted {count} documents elsewhere."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "You deleted {name} before this reply saved its change."
+msgstr "You deleted {name} before this reply saved its change."
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "You deleted {title} elsewhere."
 msgstr "You deleted {title} elsewhere."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "You deleted this document before this reply saved its change."
+msgstr "You deleted this document before this reply saved its change."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "You deleted this document elsewhere, so this draft can't be applied."
@@ -5151,6 +5183,10 @@ msgstr "You deleted this document elsewhere."
 msgid "You discarded {count} documents from the draft elsewhere."
 msgstr "You discarded {count} documents from the draft elsewhere."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded {name} from the draft before this reply saved its change."
+msgstr "You discarded {name} from the draft before this reply saved its change."
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "You discarded {title} from the draft elsewhere."
 msgstr "You discarded {title} from the draft elsewhere."
@@ -5162,6 +5198,10 @@ msgstr "You discarded the text it edited, so the change wasn't kept. The AI will
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "You discarded this document elsewhere, so this draft can't be applied."
 msgstr "You discarded this document elsewhere, so this draft can't be applied."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded this document from the draft before this reply saved its change."
+msgstr "You discarded this document from the draft before this reply saved its change."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "You discarded this document from the draft elsewhere."

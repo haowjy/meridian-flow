@@ -36,6 +36,16 @@ it("says why a write failed, and gives every undo and redo refusal its own copy"
   expect(
     documentToolFailureCopy(failed({ status: "invalid_write", rejected: "discarded_edit" })),
   ).toBe("You discarded the text it edited, so the change wasn't kept. The AI will read it again.");
+  // A write refused because its document was removed: the host's `removed` reason and record.
+  expect(
+    documentToolFailureCopy(
+      failed({
+        status: "invalid_write",
+        rejected: "removed",
+        removal: { reason: "deleted", actor: { kind: "user", userId: "u", displayName: null } },
+      }),
+    ),
+  ).toBe("You deleted B3X before this reply saved its change.");
 
   const clash = "Two of this Work's drafts share the path B3X. Review the drafts to keep one.";
   expect(documentToolFailureCopy(failed({ status: "ambiguous_path" }))).toBe(clash);
