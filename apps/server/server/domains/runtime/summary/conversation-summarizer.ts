@@ -3,7 +3,7 @@
 import type { Usage } from "@meridian/contracts/runtime";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
-
+import { toolResult } from "../gateway/helpers/messages.js";
 import type { Gateway, GenerateRequest, GenerateResult, ModelInfo } from "../gateway/index.js";
 import { estimateModelJsonTokens } from "../loop/compaction/estimate.js";
 import { KEEP_OPEN_INSTRUCTION_LINES } from "../loop/compaction/important-files.js";
@@ -306,55 +306,58 @@ export function createConversationSummarizer(
           return result;
         }
 
-        const branchRequest = input.requestInHand;
+        const cutoffTurn = input.source.throughTurnId
+          ? (input.projection.turns.find((turn) => turn.id === input.source.throughTurnId) ??
+            input.projection.turns.at(-1))
+          : input.projection.turns.at(-1);
+        const retainedPassages = (input.retainedMessages ?? []).map((message) => {
+          const opening = message.content
+            .filter((part) => part.type !== "reasoning")
+            .map((part) => (part.type === "text" ? part.text : JSON.stringify(part)))
+            .join("\n")
+            .slice(0, 200);
+          return `${message.role}: ${JSON.stringify(opening)}`;
+        });
+        const branchPrompt = promptFor(
+          input.instruction === "handoff" &&
+            cutoffTurn?.role === "user" &&
+            cutoffTurn.origin === "writer",
+          input.instruction === "compaction" ? retainedPassages : [],
+        );
+        const branchInstruction = `<system_update>\n${branchPrompt}\n</system_update>`;
+        const branchRequest: GenerateRequest | null = input.requestInHand
+          ? {
+              ...input.requestInHand,
+              messages: [
+                ...input.requestInHand.messages,
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: branchInstruction,
+                    },
+                  ],
+                },
+              ],
+            }
+          : null;
+        const fitsBranchWindow = (request: GenerateRequest) =>
+          estimateRequestTokens({ request, baseline: null, tokenizer: threadModel.tokenizer }) <=
+          threadModel.contextWindow - threadModel.maxOutputTokens;
         if (
           chooseSummaryPath({
             knownTooLarge: input.knownTooLarge ?? false,
-            hasRequestInHand: branchRequest !== null,
+            branchFitsWindow: branchRequest !== null && fitsBranchWindow(branchRequest),
             cacheState: prediction.state,
           }) === "branch" &&
           branchRequest
         ) {
           summarizer.path = "branch";
           summarizer.segments = 1;
-          const cutoffTurn = input.source.throughTurnId
-            ? (input.projection.turns.find((turn) => turn.id === input.source.throughTurnId) ??
-              input.projection.turns.at(-1))
-            : input.projection.turns.at(-1);
-          const retainedPassages = (input.retainedMessages ?? []).map((message) => {
-            const opening = message.content
-              .filter((part) => part.type !== "reasoning")
-              .map((part) => (part.type === "text" ? part.text : JSON.stringify(part)))
-              .join("\n")
-              .slice(0, 200);
-            return `${message.role}: ${JSON.stringify(opening)}`;
-          });
-          const branchPrompt = promptFor(
-            input.instruction === "handoff" &&
-              cutoffTurn?.role === "user" &&
-              cutoffTurn.origin === "writer",
-            input.instruction === "compaction" ? retainedPassages : [],
-          );
-          const branchInstruction = `<system_update>\n${branchPrompt}\n</system_update>`;
-          const request: GenerateRequest = {
-            ...branchRequest,
-            messages: [
-              ...branchRequest.messages,
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: branchInstruction,
-                  },
-                ],
-              },
-            ],
-          };
-          let result = await call(request, threadModel, prediction);
-          let text: string;
+          const result = await call(branchRequest, threadModel, prediction);
           try {
-            text = summaryText(result);
+            return { ...outcome, kind: "complete", text: summaryText(result), model: result.model };
           } catch (error) {
             if (!(error instanceof SummaryRejection) || error.reason !== "tool_use") throw error;
             const callIds = new Set([
@@ -363,30 +366,31 @@ export function createConversationSummarizer(
                 part.type === "tool_use" ? [part.toolCallId] : [],
               ),
             ]);
-            result = await call(
-              {
-                ...request,
-                messages: [
-                  ...request.messages,
-                  { role: "assistant", content: result.content },
-                  {
-                    role: "tool",
-                    content: [...callIds].map((toolCallId) => ({
-                      type: "tool_result",
-                      toolCallId,
-                      output:
-                        "Tools are unavailable during compaction. Write the summary now, as text.",
-                      isError: true,
-                    })),
-                  },
-                ],
-              },
-              threadModel,
-              prediction,
-            );
-            text = summaryText(result, "tool_use");
+            const retryRequest: GenerateRequest = {
+              ...branchRequest,
+              messages: [
+                ...branchRequest.messages,
+                { role: "assistant", content: result.content },
+                ...[...callIds].map((id) =>
+                  toolResult(
+                    id,
+                    "Tools are unavailable while the summary is written. Write the summary now, as text.",
+                    false,
+                  ),
+                ),
+              ],
+            };
+            if (fitsBranchWindow(retryRequest)) {
+              const retry = await call(retryRequest, threadModel, prediction);
+              return {
+                ...outcome,
+                kind: "complete",
+                text: summaryText(retry, "tool_use"),
+                model: retry.model,
+              };
+            }
+            // The paid branch remains in modelResponses; only an oversized retry falls through.
           }
-          return { ...outcome, kind: "complete", text, model: result.model };
         }
 
         summarizer.path = "rolling";

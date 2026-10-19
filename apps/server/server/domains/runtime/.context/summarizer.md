@@ -11,14 +11,20 @@ The owner is the turn whose response rows and gateway correlation are produced;
 the source is the thread and optional cutoff being summarized. Compaction owns C
 and uses its thread; handoff owns S and uses the cutoff owner's thread.
 
-The path is chosen exactly once before the provider call:
+The initial path is chosen before the provider call, after composing the full
+summary instruction, writer directions, changed documents and retained scope:
 
-1. known-too-large requests roll;
+1. known-too-large or oversized branch payloads roll;
 2. otherwise warm cache branches on the source-shaped request;
 3. otherwise cold cache rolls.
 
-There is no caller-selected path or branch-to-rolling fallback. Preparation or
-provider rejection is final for that attempt. Branch requests preserve source
+Branch and retry fit use full request estimation with the thread tokenizer and
+no response baseline, against the usable window (equality fits).
+
+There is no caller-selected path. Provider rejection is final for that attempt;
+the only branch-to-rolling recovery is a tool-only response whose retry payload
+does not fit. That paid branch stays in the same response array for settlement.
+Branch requests preserve source
 fields, including output limit, tools, tool choice, reasoning, cache key, and
 marks; they add only the summary instruction. Handoff branch instructions keep
 open writer requests unanswered.
@@ -40,7 +46,9 @@ branch's retained-scope rule exempts this section, so documents shown only in th
 retained tail can be listed; the rolling path sees only the cut, and the server's
 3 most recent documents cover the tail there. Only the appended instruction
 changes: the cached request prefix (messages, tools, system and cache key) does
-not. Handoff is unchanged. What successor preparation does with the list is in
+not. These additions introduce no prefix breaks of their own; ordinary image
+breaks and the first skill-tool join remain unchanged. Handoff has no keep-open
+list. What successor preparation does with the list is in
 [compaction](compaction.md#important-files).
 
 Before either path, one settled-authority revision query over the source
@@ -52,13 +60,14 @@ fail the ordinary reply when they exceed the usable window; they do not fail C.
 
 Both paths keep nonempty summary text even when the response also contains tool
 calls; no tools execute. Output-limit and provider errors still reject the response.
-A warm-branch response containing calls but no text gets one retry on the same
-request, followed by the returned assistant content (including reasoning) and
-one tool message answering every call with an error: "Tools are unavailable
-during compaction. Write the summary now, as text." A second response without
-text fails `tool_use`. Both attempts remain in `modelResponses` for settlement,
-including on failure or cancellation. The retry preserves the source tool
-definitions and all other request fields.
+A warm-branch response containing calls but no text gets at most one retry on
+the same request, followed by the exact assistant content (including opaque
+reasoning) and one non-error tool-result message per deduplicated call id:
+"Tools are unavailable while the summary is written. Write the summary now, as
+text." A second response without text fails `tool_use`. Measure the actual retry
+before sending it; an oversized retry is not sent and the original cut rolls
+instead. Both attempted rows remain in `modelResponses`, including on failure
+or cancellation. The retry preserves source tools and all other request fields.
 
 The rolling path declares no tools and never retries tool-only output; it fails
 `tool_use`. Empty output without calls fails `empty_text` on an initial call.

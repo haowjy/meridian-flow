@@ -8,11 +8,11 @@ import {
 
 export function chooseSummaryPath(input: {
   knownTooLarge: boolean;
-  hasRequestInHand: boolean;
+  branchFitsWindow: boolean;
   cacheState: "warm" | "cold";
 }): "branch" | "rolling" {
   if (input.knownTooLarge) return "rolling";
-  return input.hasRequestInHand && input.cacheState === "warm" ? "branch" : "rolling";
+  return input.branchFitsWindow && input.cacheState === "warm" ? "branch" : "rolling";
 }
 
 /** Whether the latest settled summary attempt of this owner kind was rejected as too large. */

@@ -10,11 +10,13 @@ const RECENT_DOCUMENTS_COUNT = 3;
 export const KEEP_OPEN_INSTRUCTION_LINES = [
   KEEP_OPEN_HEADING,
   "End the summary with this section: one context URI per line, working-notes files first, then the documents most important to the task.",
+  "For each notes file you list under Documents to keep open, say in one line what it holds; detail that lives there need not be repeated.",
+  "Put those accounts in the narrative sections; keep this section one URI per line.",
   "List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.",
   "The server replaces this list with the documents it actually re-shows; list what you need.",
   "",
   "Example:",
-  "scratch://@/c12/plan.md",
+  "scratch://@/c12/@/c15/plan.md",
   "manuscript://Chapter 1.md",
 ];
 

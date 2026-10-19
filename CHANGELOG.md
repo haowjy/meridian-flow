@@ -37,6 +37,9 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Measure complete summary branches and stray-call retries before sending; roll oversized retries without losing the paid branch, and keep one neutral result per call.
+- Summaries name what each listed notes file holds, without changing exact-match keep-open URI lines.
+
 - Allow per-model compaction token or usable-window fraction defaults, preserving explicit Agent limits and existing caps.
 
 - Give non-executed notes-step calls one neutral tool row, including report and normally hidden tools.
