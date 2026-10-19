@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - A draft-mode reply's staged write into a document deleted while the reply ran now says "This file was deleted by Ana Ruiz before this reply was saved, so this change wasn't made." with no retry, instead of "the user discarded this new document. Re-read and retry.", and the chat card no longer claims the writer discarded it (#854). Every way a draft ends now goes through one close that retires what it closed once its transaction commits, with the document's removal as a first-class cause; a call that names a removed file reads "File not found. This file was deleted by Ana Ruiz." Work Restore and every removal recount the Works they changed through the Works projection, skipping Works the caller already holds.
+- A draft review link whose document was deleted no longer tells an account that can't read the document that it was deleted: it answers as an unknown draft. Every editor connection decides `4208 document-deleted` in one place, only for someone who may read the document (#854).
 
 - The document-removal upgrade now finishes draft closure even when Work Restore races its pages, bounds tree-use deletion separately, and corrects stored Work counts. Cascade removal preserves creation membership for Restore without reopening drafts. Existing drafts return without taking Work or document locks; discarded creation records remain available to authorized file-access denials (#854).
 

@@ -8,7 +8,7 @@ import {
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
 } from "../domain/document-mutation-policy.js";
-import { replaceDocumentAuthorityHeadGeneration } from "./drizzle-document-authority-head.js";
+import { replaceGeneration } from "./drizzle-document-authority-head.js";
 
 type CheckpointReader = {
   getCheckpoint(id: string): Promise<{
@@ -49,7 +49,7 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
         },
         unresolvedSettlements: async () => 0,
         replaceGeneration: async (checkpoint, expectedGeneration) => {
-          const result = await replaceDocumentAuthorityHeadGeneration(input.db, {
+          const result = await replaceGeneration(input.db, {
             documentId,
             checkpointId: Number(checkpoint.checkpointId),
             expectedGeneration,

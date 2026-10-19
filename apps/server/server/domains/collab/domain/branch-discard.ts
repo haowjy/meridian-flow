@@ -15,10 +15,10 @@ import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { NodeRef } from "../../context/tree/tree-view.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type { Branches } from "./branches.js";
-import { collabHook } from "./collab-test-hooks.js";
 import {
   type Attempt,
   type AttemptScope,
@@ -166,7 +166,7 @@ export function createBranchDiscard(deps: {
     attempt: Attempt,
     input: Parameters<BranchDiscardStore["discardLocked"]>[0],
   ): Promise<DiscardKernelResult | null> {
-    await collabHook("discard.beforeCommitScope");
+    await testHook("discard.beforeCommitScope");
     return attempt.commit(async () => {
       const ended = await deps.store.discardLocked(input);
       if (ended && !deps.store.deferUntilCommit(() => deps.releaseObjects(ended.releasedObjects)))

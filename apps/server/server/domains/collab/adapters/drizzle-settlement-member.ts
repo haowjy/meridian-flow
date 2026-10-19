@@ -11,17 +11,12 @@ import {
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   documentYjsCheckpoints,
-  documentYjsHeads,
   documentYjsUpdates,
   draftWriteJournal,
   pushLineage,
 } from "@meridian/database/schema";
-import {
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-  packCollabSchemaVersion,
-} from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { and, asc, desc, eq, inArray, isNull, lte } from "drizzle-orm";
 import * as Y from "yjs";
 import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -45,9 +40,9 @@ import { journalInsertionRanges, ProvenanceMaterializationError } from "../domai
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
 import {
-  allocateDocumentAdmission,
+  advanceHead,
+  allocateAdmission,
   findDocumentAuthorityHead,
-  refusedAuthority,
 } from "./drizzle-document-authority-head.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
@@ -225,7 +220,7 @@ export async function admitSettlementMemberWithinTx(
             .orderBy(draftWriteJournal.id)
         ).map(mapJournalRow)
       : [];
-  const authority = await allocateDocumentAdmission(db, documentId);
+  const authority = await allocateAdmission(db, documentId);
   const authoredRows =
     journalRows.length > 0
       ? await db
@@ -294,7 +289,10 @@ export async function admitSettlementMemberWithinTx(
   if (derivation.status !== "derived")
     throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
   const { stateVector } = derivation;
-  await advanceHead(db, documentId, canonicalRow.id, stateVector);
+  await advanceHead(db, documentId, {
+    latestUpdateSeq: canonicalRow.id,
+    latestStateVector: stateVector,
+  });
   await deps.projectionEffects.applyPushCompletion({
     documentId,
     ...(draftWork?.workId ? { workId: draftWork.workId } : {}),
@@ -307,27 +305,6 @@ export async function admitSettlementMemberWithinTx(
     update: staged.outbox.pushUpdate,
     excludePushId: String(pushId),
   });
-}
-
-/** The admission above proved the head exists; completion only advances it. */
-async function advanceHead(
-  db: DrizzleDb,
-  documentId: DocumentId,
-  latestUpdateSeq: number,
-  latestStateVector: Uint8Array,
-): Promise<void> {
-  const [updated] = await db
-    .update(documentYjsHeads)
-    .set({
-      // Monotonic, so a downgraded server cannot erase the stale-schema fence.
-      schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)})`,
-      latestUpdateSeq,
-      latestStateVector: Buffer.from(latestStateVector),
-      updatedAt: sql`now()`,
-    })
-    .where(eq(documentYjsHeads.documentId, documentId))
-    .returning({ documentId: documentYjsHeads.documentId });
-  if (!updated) throw await refusedAuthority(db, documentId);
 }
 
 function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {

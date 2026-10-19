@@ -12,11 +12,11 @@ import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/
 import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
 import type { DocumentRemoval } from "../ports/document-removal.js";
 import { dropDocumentRows } from "./branch-tree-store.js";
 import { lockDocuments, type RemovalInitiator, tombstoneFolders } from "./node-rows.js";
-import { treeHook } from "./test-hooks.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
 import {
@@ -78,7 +78,7 @@ export async function tombstoneUnused(
   const rows = await loadDocumentIdentityRows(tx, ids);
   const used = new Set((await loadActiveBranchUses(tx, ids)).map((use) => use.documentId));
   const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
-  await treeHook("endUse.afterRevalidate");
+  await testHook("endUse.afterRevalidate");
   if (ending.length === 0) return NOTHING_ENDED;
   const removed = await options.removal.remove({
     documentIds: ending.map((row) => row.id),

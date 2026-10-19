@@ -139,7 +139,7 @@ export function openGateway(
 
   /**
    * `payload` as a socket's Update (`syncType` 2) or SyncStep2 (1) on `room`, through the
-   * gateway's admission: the closes it asked for, and the room applies it when admitted.
+   * gateway's admission: the close a refusal carries, and the room applies it when admitted.
    */
   async function send(
     room: Document,
@@ -148,7 +148,6 @@ export function openGateway(
     payload: Uint8Array,
     syncType = 2,
   ) {
-    const closes: { code: number; reason: string }[] = [];
     const result = await settled(
       admitWriterSync({
         services,
@@ -158,12 +157,12 @@ export function openGateway(
         payload,
         userId: harness.ids.user as never,
         context: { draftSyncState: new Map([[`${draftId}:${generation}`, "passed"]]) },
-        closeTransport: (close) => closes.push(close),
       }),
     );
     // Hocuspocus applies an admitted frame to the room.
     if (result.ok) Y.applyUpdate(room, payload, "client");
-    return { ok: result.ok, closes };
+    // A refusal carries the close the gateway's removal wrapper would send.
+    return { ok: result.ok, closes: result.ok ? [] : [result.message] };
   }
 
   /**

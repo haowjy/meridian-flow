@@ -19,12 +19,12 @@ import {
   selectBranchRouteServices,
 } from "../../lib/branch-review-route.js";
 import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
+import { setTestHook } from "../../shared/test-hooks.js";
 import {
   type BranchTreeStart,
   describeBranchTreeDb,
 } from "../../test-support/branch-tree-suite.js";
 import { interleave } from "../../test-support/lock-interleave.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 /** A live chapter with two independent drafted changes in Ascension's draft. */
 async function twoChanges(start: BranchTreeStart) {
@@ -96,7 +96,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
   ] as const)("2: a live %s between selection and staging refuses stale with nothing staged", async (change) => {
     const c = await twoChanges(start);
     const request = await c.click("first");
-    const remove = setCollabHook("applyItems.beforeStaging", async () => {
+    const remove = setTestHook("applyItems.beforeStaging", async () => {
       remove();
       if (change === "edit")
         await c.s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
@@ -131,7 +131,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
   it("4: a kill after staging recovers exactly the selected change, with live changed meanwhile or not", async () => {
     const c = await twoChanges(start);
     const request = await c.click("first");
-    const remove = setCollabHook("applyItems.afterStaging", async () => {
+    const remove = setTestHook("applyItems.afterStaging", async () => {
       remove();
       throw new Error("injected process death after staging");
     });
@@ -269,7 +269,7 @@ describeBranchTreeDb("review commands (postgres)", (start, db) => {
   it("13: a blocked batch is observed as blocked, and a resend stages nothing", async () => {
     const c = await twoChanges(start);
     const request = await c.click("first");
-    const remove = setCollabHook("applyItems.afterStaging", async () => {
+    const remove = setTestHook("applyItems.afterStaging", async () => {
       remove();
       throw new Error("injected process death after staging");
     });

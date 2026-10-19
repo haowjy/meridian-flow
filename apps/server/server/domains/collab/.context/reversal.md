@@ -29,7 +29,7 @@ commands, and a model Undo of a draft edit after the chat's Work moved refuses
 `cant_undo_elsewhere`. A card Undo names and skips a part whose draft was
 discarded (`expired`) or that a later writer edit depends on
 (`cant_undo_dependent`), and inverts the rest.
-A turn's edit targets exclude tombstoned documents (`documentNotDeletedSql`), so
+A turn's edit targets exclude tombstoned documents (`livingDocumentSql`), so
 a discarded draft-created document or one the writer deleted is never an
 inverse target and drops out of Undo as it does from lineage. Final address
 liveness stays with the lineage reader.
