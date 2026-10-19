@@ -904,7 +904,7 @@ restart smoke check.
      `region_changed` with current text, the second `success` staged and settled as
      `draft (@<work>)`; `./mf doc read` still shows live unchanged.
 - **Evidence:** each send NDJSON (`tool.completed` and `tool.settled` lines).
-- **Last run:** 2026-10-19 on `feat/m2-plan-on-frontier` (M2 W2, uncommitted tree), the branch
+- **Last run:** 2026-10-19 on `f8e5f62b94` (M2 W2; the tree that commit holds), the branch
   worktree's own mock stack. All four passed. Evidence:
   `work/concurrent-edit-design/m2/probe/w2-c10/` in the docs repository; the in-process
   writer-edit exercises are in `m2/probe/w2-inprocess/results-raw.md`.
