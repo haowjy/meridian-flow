@@ -21,6 +21,8 @@ import {
 } from "../context/document-uri-resolver.js";
 import type { ContextCatalogMutationPort } from "../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
+import { createDrizzleDocumentRemovals } from "../context/tree/document-removals.js";
+import { createDocumentRemoval } from "../context/tree/removal.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
@@ -76,6 +78,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDocumentRemovalCollab } from "./adapters/drizzle-document-removal.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -147,6 +150,7 @@ import {
 } from "./domain/turn-reversal-service.js";
 import { createWorkBranchReviewService } from "./domain/work-branch-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
+import { closeRemovedDocumentRooms } from "./hocuspocus-rooms.js";
 import { createDraftThreadPeerAgentEditCore } from "./thread-peer-composition.js";
 
 export type { DocumentWriteHook } from "./contracts.js";
@@ -200,6 +204,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     boundary: createDrizzleBranchWriteBoundary(deps.db, deps.workProjectionMutation),
   });
   const drafts = createDrizzleDraftStore(deps.db, {
+    removals: createDrizzleDocumentRemovals(deps.db),
     live: {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
@@ -541,7 +546,24 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     reviewItems,
     push: branchPush,
   });
+  const removalCollab = createDrizzleDocumentRemovalCollab(deps.db, {
+    workProjection: deps.workProjectionMutation,
+    closeRooms: (documentIds, draftIds) =>
+      closeRemovedDocumentRooms(hocuspocusBinding.current(), documentIds, draftIds),
+    retire: createPeerRetirement({ closeDraftRoom() {}, agentEdit }),
+    onError: (error) => {
+      if (deps.eventSink)
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "collab.removal",
+          name: "after_commit.failed",
+          payload: { error: String(error) },
+        });
+    },
+  });
+  const documentRemoval = createDocumentRemoval(deps.db, removalCollab);
   const discardStore = createDrizzleBranchDiscard(deps.db, {
+    removal: documentRemoval,
     branches: workBranches,
     drafts,
     coordinator: draftCoordinator,
@@ -596,7 +618,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       codec: runtime.codec,
       links: deps.links,
       retirePeers,
-      deferUntilCommit: deferUntilDrizzleCommit,
       branches: workBranches,
     }),
     deps.links,
@@ -695,10 +716,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       branches: workBranches,
       draftLinks: draftAheads,
       workBranchDisposal: createDrizzleWorkBranchDisposal(deps.db, {
+        removal: documentRemoval,
         branches: workBranches,
         catalog: deps.catalogMutations,
       }),
     },
     documentCreation,
+    removal: { documentRemoval },
   });
 }

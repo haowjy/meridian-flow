@@ -1,4 +1,5 @@
 /** Wiring-only assembly of collab application services into the public domain. */
+import type { DocumentRemoval } from "../context/ports/document-removal.js";
 import type {
   AgentEditAccess,
   BranchPushAccess,
@@ -20,6 +21,7 @@ import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 
 export type CollabFacadeServices = {
+  removal: { documentRemoval: DocumentRemoval };
   transport: CollabTransport;
   lifecycle: CollabLifecycle;
   authorityHeads: DocumentAuthorityHeads;
@@ -40,6 +42,7 @@ export type CollabFacadeServices = {
 
 export function createCollabFacade(services: CollabFacadeServices): CollabDomain {
   return {
+    ...services.removal,
     ...services.transport,
     ...services.lifecycle,
     ...services.authorityHeads,

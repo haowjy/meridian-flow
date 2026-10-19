@@ -11,10 +11,12 @@ import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import { createDrizzleWorkBranchPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
+import { createDrizzleDocumentRemovalCollab } from "../../apps/server/server/domains/collab/adapters/drizzle-document-removal.js";
 import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
 import { createDrizzleLineageScratchLifecycle } from "../../apps/server/server/domains/context/adapters/lineage-scratch-lifecycle.ts";
 import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";
 import { createContextCatalogWakeHub } from "../../apps/server/server/domains/context/context-catalog-wake-hub.ts";
+import { createDocumentRemoval } from "../../apps/server/server/domains/context/tree/removal.js";
 import { createLocalFileAccessChanges } from "../../apps/server/server/domains/file-policy/adapters/file-access-changes.ts";
 import { createNoopEventSink } from "../../apps/server/server/domains/observability/adapters/noop/noop-event-sink.ts";
 import { createDrizzleProjectRepository } from "../../apps/server/server/domains/projects/adapters/project-repository/drizzle.ts";
@@ -96,6 +98,17 @@ async function main(): Promise<void> {
     await cleanupSmokeRows(db);
 
     const workRepository = createDrizzleWorkRepository({
+      removal: createDocumentRemoval(
+        db,
+        createDrizzleDocumentRemovalCollab(db, {
+          workProjection: workProjectionMutation,
+          async closeRooms() {},
+          async retire() {},
+          onError(error) {
+            throw error;
+          },
+        }),
+      ),
       lineageScratch,
       db,
       projectionMutation: workProjectionMutation,

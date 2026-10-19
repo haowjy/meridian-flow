@@ -307,6 +307,8 @@ export function materializeDraftRead(
 ): Y.Doc {
   if (!read.checkpoint) throw new Error("A draft read since a checkpoint cannot materialize alone");
   try {
+    if (read.checkpoint.state.length === 0)
+      throw new Error("Draft content was released after removal");
     Y.applyUpdate(doc, read.checkpoint.state);
     for (const row of read.tail) Y.applyUpdate(doc, row.update);
     return doc;

@@ -18,6 +18,7 @@ import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -109,6 +110,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId === THREAD_ID ? ({ threadId, workId: NO_WORK_ID } as never) : null,
         },
         works: createDrizzleProjectWorkRepository({
+          removal: createTestDocumentRemoval(db),
           lineageScratch: createDrizzleLineageScratchLifecycle(db),
           db,
           fileAccessChanges: createLocalFileAccessChanges(),

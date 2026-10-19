@@ -14,7 +14,6 @@ import type { Database } from "@meridian/database";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { recordCreated } from "./branch-tree-store.js";
-import { tombstoneUnused } from "./end-use.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
 import type {
   BinaryNode,
@@ -61,7 +60,7 @@ export async function createInBranch(
     /** The branch's draft of a text document, seeded from its empty live document. */
     ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   },
 ): Promise<Result<BranchCreateResult, CreateFault>> {
   const tree = createTreeReader(db);
@@ -216,7 +215,7 @@ export async function createLive(
     claim: LiveClaim;
     insert: LiveInsert;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
   const { claim } = input;
@@ -283,7 +282,7 @@ async function pickHiddenCandidate(
   options: {
     excludeBranchId?: BranchId;
     lock?: TreeHookPoint;
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   } = {},
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
   const filter = options.excludeBranchId ? { excludeBranchId: options.excludeBranchId } : {};
@@ -298,11 +297,13 @@ async function pickHiddenCandidate(
   await treeHook(options.lock);
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ...filter, ids });
-  const repaired = await tombstoneUnused(
-    db,
-    valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
-    { keepFolders: true, actor: { cause: "repair" } },
-  );
-  options.repair?.report(repaired, "create");
+  const unused = valid
+    .filter((candidate) => candidate.activeUses === 0)
+    .map((candidate) => candidate.id);
+  if (unused.length) {
+    if (!options.repair) throw new Error("Candidate repair requires the removal protocol");
+    const repaired = await options.repair.tombstoneUnused(unused, { keepFolders: true });
+    options.repair.report(repaired, "create");
+  }
   return firstUsed(valid);
 }

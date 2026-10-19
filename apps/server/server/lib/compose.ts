@@ -1,8 +1,3 @@
-import {
-  type AccountSettingsRepository,
-  createDrizzleAccountSettingsRepository,
-  createInMemoryAccountSettingsRepository,
-} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -115,7 +110,12 @@ import {
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createDrizzleProjectPreferencesRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 import {
   createDrizzleProjectBootstrapRepository,
   createDrizzleProjectRepository,
@@ -552,6 +552,7 @@ export async function createProductionAppPorts(input: {
   // One repair on touch for every production tree reader and create (§12.4).
   const hiddenNodeRepair = createHiddenNodeRepair({
     db,
+    removal: { remove: (input) => documentSync.documentRemoval.remove(input) },
     eventSink,
     objects: objectRelease,
     backgroundTasks,
@@ -642,6 +643,7 @@ export async function createProductionAppPorts(input: {
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
+    removal: documentSync.documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,

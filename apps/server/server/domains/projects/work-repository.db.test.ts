@@ -5,6 +5,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-branch-push.js";
 import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
@@ -67,6 +68,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges,
@@ -825,8 +827,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-        "soft delete leaves the Work's branch untouched (§2.6)",
-      ).resolves.toMatchObject([{ status: "active" }]);
+        "cascade removal closes drafts without reviving them on restore",
+      ).resolves.toMatchObject([{ status: "closed", closedCause: "document_removed" }]);
 
       await works.restore(work.id);
       await expect(
@@ -850,7 +852,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "active" }]);
+      ).resolves.toMatchObject([{ status: "closed", closedCause: "document_removed" }]);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );

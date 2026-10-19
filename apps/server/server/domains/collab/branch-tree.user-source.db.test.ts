@@ -11,6 +11,7 @@ import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleDocumentRemovals } from "../context/tree/document-removals.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 
 describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
@@ -139,6 +140,7 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
     const cinder = await stranger.work("Cinder", "draft");
     const branch = await stranger.branchOf(cinder);
     const drafts = createDrizzleDraftStore(db, {
+      removals: createDrizzleDocumentRemovals(db),
       workProjection: createTestWorkProjectionMutation(db),
       branches: stranger.branches,
     });

@@ -47,7 +47,6 @@ async function expectScopedReplay(
       },
     },
     retirePeers: async () => {},
-    deferUntilCommit: () => false,
   });
   const args = {
     documentId: ALPHA_ID,

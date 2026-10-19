@@ -156,6 +156,13 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 
   return createCollabFacade({
+    removal: {
+      documentRemoval: {
+        async remove() {
+          throw new Error("Document removal requires the persistent tree");
+        },
+      },
+    },
     lifecycle: { dispose: () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,

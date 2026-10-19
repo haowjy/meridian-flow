@@ -10,18 +10,8 @@ import { expect, it } from "vitest";
 
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-/** Why each file may end a draft, by the cause it retires with. */
-const END_OF_USE = new Map([
-  [
-    "domains/collab/adapters/drizzle-branch-discard.ts",
-    "Discard kernel: branch_closed, document_discarded, edit_discarded",
-  ],
-  [
-    "domains/collab/adapters/drizzle-drafts.ts",
-    "peer replacement, closed-upstream peers, retractCreate",
-  ],
-  ["domains/context/tree/node-rows.ts", "storage release with the tombstone"],
-]);
+/** The shared closer owns every closure; storage release only disposes bytes. */
+const END_OF_USE = ["domains/collab/adapters/drizzle-draft-close.ts"];
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -45,5 +35,5 @@ it("only the named end-of-use sites close or delete a document draft", () => {
     })
     .map((path) => relative(SERVER, path))
     .sort();
-  expect(ending).toEqual([...END_OF_USE.keys()].sort());
+  expect(ending).toEqual(END_OF_USE);
 });

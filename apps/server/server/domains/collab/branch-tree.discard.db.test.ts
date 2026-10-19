@@ -99,7 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         : null;
     }
 
-    /** What storage the document still holds (R8): live Yjs rows, drafts, its projection. */
+    /** What storage the document still holds (R8): live Yjs rows, drafts holding inline content, its projection. */
     async function storageOf(id: DocumentId) {
       const count = async (rows: Promise<unknown[]>) => (await rows).length;
       return {
@@ -117,7 +117,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             db.select().from(documentYjsHeads).where(eq(documentYjsHeads.documentId, id)),
           )),
         drafts: await count(
-          db.select().from(documentDrafts).where(eq(documentDrafts.documentId, id)),
+          db
+            .select()
+            .from(documentDrafts)
+            .where(
+              and(
+                eq(documentDrafts.documentId, id),
+                sql`octet_length(${documentDrafts.state}) > 0`,
+              ),
+            ),
         ),
         projection: await count(
           db

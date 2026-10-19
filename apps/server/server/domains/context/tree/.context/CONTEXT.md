@@ -37,8 +37,8 @@ A draft-created document is a real row with empty live content; its text lives
 in its draft until Apply. Live create may reveal a hidden candidate instead
 of inserting a twin. `document_forwards` preserves a client-minted ID when a
 create joins an existing draft document. Placement reveals targets and
-ancestors; end-of-use tombstones an unused row, releases its Yjs/draft/derived
-storage, and prunes empty hidden ancestors.
+ancestors; end-of-use tombstones an unused row, releases its content storage,
+and prunes empty hidden ancestors. Closed draft identity rows remain.
 
 `acquireEndUseScope` takes the complete namespace/document scope and rechecks
 that scope before mutation. A moved scope aborts and rediscovers. Hidden-node
@@ -55,6 +55,24 @@ does so through its existing classification). `DocumentRemovedError` lives
 with the port, so collab need not import a context adapter. A writer's Discard
 never sets the Work-cascade restore marker. Retractions name
 `reply_rolled_back` or `create_failed`; both repair paths name `repair`.
+
+`DocumentRemoval.remove` is the shared kernel for tree delete, overwrite,
+Work cascade and last use. Callers take Work and namespace locks, then the
+complete sorted document mutation-lock set before any document row lock. The
+kernel writes the removal record, collects the Works of all tree uses before retiring them, and invokes one
+collab capability. End-use also carries the Work of the use it already dropped,
+even for draftless or revealed creations. Storage release owns no lifecycle:
+only `discarded` removals release bytes, and draft rows are never deleted by it.
+
+Collab closes upstream Work drafts in ID order before peers in ID order, settles
+their pending receipt parts, and schedules room/runtime retirement plus a
+separate-root pending-count recount after commit. Discard/retraction close their
+own rows with `discarded` before last-use removal; tombstoned documents are
+excluded from generic peer retirement, so only removal sends their room close.
+A retraction returns a retirement capability, invoked after commit only if the
+document survives. Folder deletion locks the complete pre-split subtree,
+hidden boundary documents included, before the split updates any document row.
+Removal never acquires an affected Work under document or draft locks. Rollback delivers nothing.
 
 ## Lock and identity contracts
 

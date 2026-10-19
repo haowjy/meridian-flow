@@ -139,7 +139,11 @@ describe("inverse integration (postgres)", () => {
         branchId: branchId as never,
       }),
     ).toMatchObject({ outcome: "retracted" });
-    expect(await peersOfCreate()).toEqual([]);
+    expect(
+      (await peersOfCreate()).every(
+        (row) => row.status === "closed" && row.closedCause === "discarded",
+      ),
+    ).toBe(true);
   });
 
   it.each([

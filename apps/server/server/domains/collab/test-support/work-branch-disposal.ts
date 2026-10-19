@@ -1,5 +1,6 @@
 /** Work purge's real branch disposal over Postgres, for suites that purge without a composed collab domain. */
 import type { Database } from "@meridian/database";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleContextCatalog } from "../../context/index.js";
 import type { WorkBranchDisposal } from "../../projects/index.js";
@@ -11,6 +12,7 @@ import {
 import { createBranches } from "../domain/branches.js";
 export function createPostgresWorkBranchDisposal(db: Database): WorkBranchDisposal {
   return createDrizzleWorkBranchDisposal(db, {
+    removal: createTestDocumentRemoval(db),
     branches: createBranches({
       store: createDrizzleBranchStore(db),
       boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),

@@ -14,6 +14,7 @@ import {
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
@@ -153,7 +154,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(
+          db,
+          undefined,
+          undefined,
+          undefined,
+          createTestDocumentRemoval(db),
+        ),
         threadView: {
           threadId: THREAD_ID,
           branchWork: { id: WORK_ID as never, slug: "work" },
@@ -361,7 +368,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(
+          db,
+          undefined,
+          undefined,
+          undefined,
+          createTestDocumentRemoval(db),
+        ),
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,

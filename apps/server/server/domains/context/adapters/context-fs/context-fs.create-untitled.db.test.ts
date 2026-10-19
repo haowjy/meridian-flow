@@ -6,6 +6,7 @@ import { contextSources, documentYjsCheckpoints, projects, users } from "@meridi
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../../domains/file-policy/index.js";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
@@ -78,7 +79,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(
+          db,
+          undefined,
+          undefined,
+          undefined,
+          createTestDocumentRemoval(db),
+        ),
         documentSync: collab,
         scheme: "manuscript",
       });
