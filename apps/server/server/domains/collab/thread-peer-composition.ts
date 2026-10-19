@@ -7,6 +7,7 @@
 import {
   type AgentEditCodecFactory,
   createAgentEditCore,
+  type DocumentCoordinator,
   type DocumentEdits,
   type SemanticProvenanceWriter,
   type UpdateJournal,
@@ -51,6 +52,7 @@ type AgentEditObservability = Pick<
  * (draft journal, draft coordinator, scoped links), the reply save fences, and the pool.
  */
 export function createDraftThreadPeerAgentEditCore(input: {
+  resolveRevertSource: DocumentCoordinator["resolveRevertSource"];
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
@@ -108,6 +110,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
         }),
         journal: createDraftAgentEditJournal({ liveJournal: input.journal }),
         coordinator: createDraftAgentEditCoordinator({
+          resolveRevertSource: input.resolveRevertSource,
           threadId,
           removals: input.removals,
           draftCoordinator: input.draftCoordinator,

@@ -85,6 +85,7 @@ export function createHocuspocusCoordinator(deps: CoordinatorDeps): LiveDocument
  * mutex: the room is only read, synchronously.
  */
 export function createDeferredLiveProjectionCoordinator(deps: {
+  resolveRevertSource: DocumentCoordinator["resolveRevertSource"];
   hocuspocus: () => Hocuspocus;
   journal: Pick<UpdateJournal, "read" | "appendBatch">;
   live: Pick<LiveDocumentCoordinator, "deliver">;
@@ -108,6 +109,7 @@ export function createDeferredLiveProjectionCoordinator(deps: {
   };
   const deliver = (docId: string) => () => deps.live.deliver(docId);
   return {
+    resolveRevertSource: deps.resolveRevertSource,
     readRoom: async (docId, staged) => withStaged(await committedCopy(docId), staged),
     prepareSave: async (input) =>
       liveSave(

@@ -77,6 +77,7 @@ export type AppendReceiptGroup = {
   /** The rows of the write, by index into the finalized rows. */
   rowIndexes: readonly number[];
   parts: readonly CapturedPart[];
+  cuts?: { before: Uint8Array; after: Uint8Array };
 };
 
 /** A cursor a warm replica already holds, so a read ships only what came after it. */

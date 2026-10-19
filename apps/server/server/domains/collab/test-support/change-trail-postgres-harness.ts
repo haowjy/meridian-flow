@@ -37,6 +37,7 @@ import {
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { readHeadRevision } from "../adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
+import { createDrizzleRevertSourceResolver } from "../adapters/drizzle-revert-source.js";
 import { createDrizzleReviewCut, readLiveDoc } from "../adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
@@ -632,6 +633,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
+      resolveRevertSource: createDrizzleRevertSourceResolver({
+        db: db,
+        drafts: realDraftStore,
+        journal: persistence.journal,
+      }),
       hocuspocus: () => hocuspocus as never,
       journal: persistence.journal,
       live: liveCoordinator,
@@ -665,6 +671,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
     createDraftThreadPeerAgentEditCore({
+      resolveRevertSource: createDrizzleRevertSourceResolver({
+        db: db,
+        drafts: realDraftStore,
+        journal: persistence.journal,
+      }),
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),

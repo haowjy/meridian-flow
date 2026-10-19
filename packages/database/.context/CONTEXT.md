@@ -92,7 +92,10 @@ JSON-looking scalar strings into other values.
 
 Forward-turn inverses and write provenance live in immutable `document_edits`
 and `document_edit_parts`; the legacy reconstruction tables and the unused
-mutation provenance sink are retired.
+mutation provenance sink are retired. Agent write receipts also hold nullable
+`source_room`, `before_cut` and `after_cut` (Yjs snapshot V2 bytes), constrained
+all-or-none. They are immutable historical cuts, not observation frontiers;
+transport folding must not erase them or collect their source room's structs.
 
 The change-trail signal triggers on `draft_write_journal`, `document_edits`
 and `document_edit_parts` fire inside a writer keystroke's draft row lock,
