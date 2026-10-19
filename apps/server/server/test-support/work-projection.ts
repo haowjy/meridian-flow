@@ -4,7 +4,7 @@
  * notice.
  */
 import type { Database } from "@meridian/database";
-import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import {
   createWorkProjectionMutation,
   type WorkProjectionMutation,

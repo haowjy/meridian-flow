@@ -16,7 +16,7 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
