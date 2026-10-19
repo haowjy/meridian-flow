@@ -6,7 +6,7 @@
  * Discard marks its documents first, so its removals say nothing.
  */
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import { getContextTabs } from "@/client/stores";
+import { type ContextTab, getContextTabs } from "@/client/stores";
 import { useDockDocumentStore } from "../dock/dock-document-store";
 import type {
   ProjectContextAvailabilityCoordinator,
@@ -61,15 +61,17 @@ export class RemovedNoticeStore {
     private readonly availability: Pick<ProjectContextAvailabilityCoordinator, "removalRecord">,
   ) {}
 
-  /** Documents a surface was presenting closed because they vanished. */
-  presentedRemoved(
-    projectId: string,
-    surface: NoticeSurface,
-    removals: readonly PresentedRemoval[],
-  ): void {
+  /** Tabs a surface was presenting closed because their documents vanished. */
+  presentedRemoved(projectId: string, surface: NoticeSurface, tabs: readonly ContextTab[]): void {
     const key = noticeKey(projectId, surface);
     let changed = false;
-    for (const removal of removals) {
+    for (const tab of tabs) {
+      if (tab.kind === "new") continue;
+      const removal: PresentedRemoval = {
+        documentId: tab.documentId,
+        title: tab.name,
+        route: { scheme: tab.scheme, path: tab.path },
+      };
       const entries = this.notices.get(key) ?? new Map<string, Entry>();
       if (
         entries.has(removal.documentId) ||

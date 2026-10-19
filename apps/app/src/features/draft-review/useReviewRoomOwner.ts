@@ -23,7 +23,10 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import {
+  useLiveDocumentSessionRegistry,
+  useOptionalProjectContextAvailabilityCoordinator,
+} from "@/features/project/context/account-feature-context";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
@@ -51,6 +54,7 @@ export function useReviewRoomOwner({
   const draftOnly = presented?.draftOnly ?? false;
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
+  const availability = useOptionalProjectContextAvailabilityCoordinator();
   const owner = useRef(`review-room:${++ownerSequence}`);
   const documentId = review?.documentId ?? "";
   const itemKey = review?.itemKey ?? "";
@@ -248,6 +252,7 @@ export function useReviewRoomOwner({
     };
     let rebuilding = false;
     let unsubscribe: (() => void) | undefined;
+    let removedSession: DocumentSession | null = null;
     // Reopen the room from the server's state; a re-forked draft answers that
     // reconnect as superseded and the review moves to its new generation.
     const rebuild = () => {
@@ -302,8 +307,12 @@ export function useReviewRoomOwner({
               // Keep the terminal session so its schema notice can paint.
               return;
             case "removed":
-              // The document is gone: keep the terminal session, read-only, until
-              // availability closes the tab or the writer does (`removal`).
+              // Keep the terminal session, read-only, until availability answers
+              // (`removal`). The close outdates what the record cache knew.
+              if (removedSession !== session) {
+                removedSession = session;
+                availability?.roomRemoved(projectId, documentId);
+              }
               return;
             case "superseded":
               rebuilding = true;
@@ -342,12 +351,14 @@ export function useReviewRoomOwner({
       unsubscribe?.();
       registry.releaseDraftRooms(owner.current);
     };
-  }, [key, scope, registry, queryClient, dispatch]);
+  }, [key, scope, registry, queryClient, availability, dispatch]);
 
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
-  // The server closed the draft room because its document was removed: asking
-  // availability closes the tab; the Work's drafts drop the closed draft.
+  // The server closed the draft room as removed (4208). `removed` closes the
+  // tab and the Work's drafts drop the closed draft; `available`, learned
+  // after the close, means a restore won the race, so the room reopens, once
+  // per close.
   const roomRemoved = useSyncExternalStore(
     useCallback(
       (listener: () => void) => session?.subscribe(listener) ?? (() => undefined),
@@ -361,6 +372,7 @@ export function useReviewRoomOwner({
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
       });
+    if (removal?.kind === "available") reopenRoom.current?.();
   }, [projectId, queryClient, removal, workId]);
   return {
     session,

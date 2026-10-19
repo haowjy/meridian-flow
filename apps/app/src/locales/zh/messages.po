@@ -263,16 +263,28 @@ msgid "{count} changes"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were deleted."
+msgid "{count} documents were deleted ({names})."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were discarded from the draft."
+#~ msgid "{count} documents were deleted."
+#~ msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count} documents were discarded from the draft ({names})."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were removed."
+#~ msgid "{count} documents were discarded from the draft."
+#~ msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count} documents were removed ({names})."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "{count} documents were removed."
+#~ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"
@@ -4936,6 +4948,7 @@ msgid "Unnamed Work"
 msgstr "未命名工作"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Untitled"
 msgstr ""
@@ -5156,8 +5169,12 @@ msgid "You can retry when this chat is free."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You deleted {count} documents elsewhere."
+msgid "You deleted {count} documents elsewhere ({names})."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "You deleted {count} documents elsewhere."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "You deleted {name} before this reply saved its change."
@@ -5180,8 +5197,12 @@ msgid "You deleted this document elsewhere."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You discarded {count} documents from the draft elsewhere."
+msgid "You discarded {count} documents from the draft elsewhere ({names})."
 msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+#~ msgid "You discarded {count} documents from the draft elsewhere."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "You discarded {name} from the draft before this reply saved its change."

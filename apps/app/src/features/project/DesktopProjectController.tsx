@@ -213,14 +213,7 @@ export function useDesktopDockPresentation(projectId: string, screen: ScreenKey)
   const goneTab = gone ? document?.tab : undefined;
   useEffect(() => {
     if (!goneTab) return;
-    if (goneTab.kind !== "new")
-      notices?.presentedRemoved(projectId, "dock", [
-        {
-          documentId: goneTab.documentId,
-          title: goneTab.name,
-          route: { scheme: goneTab.scheme, path: goneTab.path },
-        },
-      ]);
+    notices?.presentedRemoved(projectId, "dock", [goneTab]);
     close();
   }, [goneTab, close, notices, projectId]);
   return gone || !document

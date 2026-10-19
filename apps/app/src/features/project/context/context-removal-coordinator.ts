@@ -557,8 +557,9 @@ export class ContextRemovalCoordinator {
               : undefined,
           );
         }
-        this.presentedRemoved(
+        this.notices?.presentedRemoved(
           projectId,
+          "editor",
           committed.flatMap((command) => {
             if (command.kind !== "terminal-remove") return [];
             const id = command.documentId;
@@ -806,21 +807,8 @@ export class ContextRemovalCoordinator {
     tab: ContextTab,
   ): ContextRemovalOutcome | Promise<NavigationSettlement> {
     if (this.unavailable()) return { kind: "noop" };
-    if (tab.kind !== "new") this.presentedRemoved(projectId, [tab]);
+    this.notices?.presentedRemoved(projectId, "editor", [tab]);
     return this.writerClose(projectId, tab);
-  }
-
-  private presentedRemoved(projectId: string, tabs: readonly ServerContextTab[]): void {
-    if (tabs.length === 0) return;
-    this.notices?.presentedRemoved(
-      projectId,
-      "editor",
-      tabs.map((tab) => ({
-        documentId: tab.documentId,
-        title: tab.name,
-        route: { scheme: tab.scheme, path: tab.path },
-      })),
-    );
   }
 
   /** Owns the synchronous old-Work prune and next-Work route transition. */
@@ -940,8 +928,6 @@ export class ContextRemovalCoordinator {
       reviewWorkId,
     });
     state.selection = transition.selection;
-    // This tab's own Discard is marked; any other discard says so once availability proves it.
-    this.presentedRemoved(projectId, [tab]);
     const outcome = this.executePlanning(projectId, transition.planning);
     this.publish(state);
     return outcome;

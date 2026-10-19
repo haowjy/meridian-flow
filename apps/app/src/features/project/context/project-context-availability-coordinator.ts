@@ -453,6 +453,25 @@ export class ProjectContextAvailabilityCoordinator {
     };
   }
 
+  /**
+   * The server closed this document's room as removed (4208). That outdates
+   * any answer but `removed`, so it is forgotten and, while asked, looked up
+   * again: whatever answers next was learned after the close.
+   */
+  roomRemoved(projectId: string, documentId: string): void {
+    const key = removalKey(projectId, documentId);
+    const answer = this.removalAnswers.get(key);
+    if (answer?.kind === "removed") return;
+    const asks = this.removalAsks.get(projectId);
+    if (asks?.counts.has(documentId)) {
+      asks.unasked.add(documentId);
+      this.watchAsked(projectId, asks);
+    }
+    if (!answer) return;
+    this.removalAnswers.delete(key);
+    this.notifyRemoval(key);
+  }
+
   private ask(projectId: string, documentId: string): void {
     let asks = this.removalAsks.get(projectId);
     if (!asks) {
@@ -513,7 +532,17 @@ export class ProjectContextAvailabilityCoordinator {
           !this.pendingOpens.has(JSON.stringify([projectId, documentId])),
       );
       asks.unasked.clear();
-      if (lookup.length > 0) void this.recheck(projectId, lookup);
+      if (lookup.length === 0) return;
+      // A lookup that answered nothing (still indeterminate after repair, or
+      // fenced by a newer one) leaves the asker unresolved, not loading.
+      const unanswered = () =>
+        this.learnUnresolved(
+          projectId,
+          lookup.filter(
+            (documentId) => !this.pendingOpens.has(JSON.stringify([projectId, documentId])),
+          ),
+        );
+      void this.recheck(projectId, lookup).then(unanswered, unanswered);
     });
   }
 
@@ -545,6 +574,10 @@ export class ProjectContextAvailabilityCoordinator {
       this.removalAnswers.set(key, answer);
     }
     if (asks && asked) this.watchAsked(projectId, asks);
+    this.notifyRemoval(key);
+  }
+
+  private notifyRemoval(key: string): void {
     for (const listener of [...(this.removalListeners.get(key) ?? [])]) listener();
   }
 
