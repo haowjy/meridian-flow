@@ -30,8 +30,8 @@ import {
   sameTokens,
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
-import { settleWhitespace, unionInsertions } from "./merge-settle.js";
-import { buildBlocks, buildSide, type Tok, tokenizeBlock } from "./tokens.js";
+import { settleWhitespace, subsequenceSources, unionInsertions } from "./merge-settle.js";
+import { buildBlocks, buildSide, isWordTok, type Tok, tokenizeBlock } from "./tokens.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move";
@@ -41,7 +41,21 @@ export interface Conflict {
   draft: Tok[];
 }
 
+export interface BlockSource {
+  side: "base" | "live" | "draft";
+  index: number;
+}
+
+export interface BlockCorrespondence {
+  /** Null denotes input blocks removed from the result. */
+  output: number | null;
+  sources: BlockSource[];
+}
+
 export interface RebaseResult {
+  correspondence: BlockCorrespondence[];
+  overrode: number; // live words replaced by the draft in contested text
+
   blocks: PMNode[]; // the new draft
   conflicts: Conflict[]; // where both sides changed the same text; the draft's version is in `blocks`
   orderConflict: boolean; // the two sides' paragraph moves admit no single order; the draft's order won
@@ -101,8 +115,10 @@ function coalesce(first: Cluster, second: Cluster, baseToks: Tok[]): MergedTok[]
   const liveVersion = applyWithin(baseToks, first.lo, second.hi, liveHunks, LIVE);
   const draftVersion = applyWithin(baseToks, first.lo, second.hi, draftHunks, DRAFT);
   const inserts = isPureInsert(first) && isPureInsert(second);
-  if (inserts && isSubsequence(liveVersion, draftVersion)) return draftVersion;
-  if (inserts && isSubsequence(draftVersion, liveVersion)) return liveVersion;
+  if (inserts && isSubsequence(liveVersion, draftVersion))
+    return subsequenceSources(draftVersion, liveVersion);
+  if (inserts && isSubsequence(draftVersion, liveVersion))
+    return subsequenceSources(liveVersion, draftVersion);
   return draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
 }
 
@@ -150,6 +166,18 @@ export function rebase(
   };
   const toks = (v: MergedTok[]) => v.map((o) => o.tok);
 
+  let overrode = 0;
+  const replacedWords = (live: MergedTok[], kept: MergedTok[]) => {
+    const remaining = new Map<string, number>();
+    for (const { tok } of kept)
+      if (isWordTok(tok)) remaining.set(tok.key, (remaining.get(tok.key) ?? 0) + 1);
+    for (const { tok } of live)
+      if (isWordTok(tok)) {
+        const n = remaining.get(tok.key) ?? 0;
+        if (n) remaining.set(tok.key, n - 1);
+        else overrode++;
+      }
+  };
   const conflicts: Conflict[] = order.contested.map((i) => ({
     kind: "move" as const,
     baseIds: [i],
@@ -164,7 +192,18 @@ export function rebase(
   const sourceIds = (source: number[]) => [
     ...new Set(source.map((i) => baseIds[baseSide.blockOf[i]])),
   ];
-  for (const m of movedByLive)
+  const removedLiveSources = new Map<number, Set<number>>();
+  for (const m of movedByLive) {
+    const baseBlocks = sourceIds(m.source);
+    for (const token of m.destination) {
+      const j = liveSide.blockOf[token];
+      const original = order.reordered ? order.liveOrder[j] : j;
+      const sources = removedLiveSources.get(original) ?? new Set<number>();
+      for (const index of baseBlocks) sources.add(index);
+      removedLiveSources.set(original, sources);
+    }
+    // The stale paste vanished, but words kept at the edited source were not replaced.
+    overrode += m.source.filter((i) => isWordTok(baseToks[i]) && draftAlignment.pos[i] < 0).length;
     conflicts.push({
       kind: "moved-text",
       baseIds: sourceIds(m.source),
@@ -172,7 +211,12 @@ export function rebase(
       live: m.dropped,
       draft: [],
     });
-  for (const m of movedByDraft)
+  }
+  const draftPastes = new Map<number, Tok>();
+  for (const m of movedByDraft) {
+    m.source.forEach((source, i) => {
+      draftPastes.set(source, m.dropped[i]);
+    });
     conflicts.push({
       kind: "moved-text",
       baseIds: sourceIds(m.source),
@@ -180,6 +224,7 @@ export function rebase(
       live: [],
       draft: m.dropped,
     });
+  }
 
   if (reslide(baseToks, liveSide.toks, liveAlignment.hunks, draftAlignment.hunks))
     liveAlignment.pos = posMap(baseToks.length, liveAlignment.hunks);
@@ -219,12 +264,15 @@ export function rebase(
       continue;
     }
     if (!liveHunks.length || sameTokens(liveVersion, draftVersion)) {
-      merged.push(...draftVersion);
+      merged.push(
+        ...(liveHunks.length ? subsequenceSources(draftVersion, liveVersion) : draftVersion),
+      );
       continue;
     }
     if (lo === hi) {
       const union = unionInsertions(liveVersion, draftVersion);
-      if (union.chose)
+      if (union.chose) {
+        replacedWords(liveVersion, union.out);
         conflicts.push({
           kind: "overlap",
           baseIds: idsIn(Math.max(0, lo - 1), lo),
@@ -232,6 +280,7 @@ export function rebase(
           live: toks(liveVersion),
           draft: toks(draftVersion),
         });
+      }
       merged.push(...union.out);
       continue;
     }
@@ -240,6 +289,13 @@ export function rebase(
     const absorbed = draftAbsorbsLive(liveVersion, draftVersion, liveHunks, baseToks);
     if (absorbed) merged.push(...absorbed);
     else {
+      // Words cut by the draft may still survive at its paste destination.
+      const retained = [...draftVersion];
+      for (let i = lo; i < hi; i++) {
+        const tok = draftPastes.get(i);
+        if (tok) retained.push({ tok, origin: DRAFT, index: i });
+      }
+      replacedWords(liveVersion, retained);
       conflicts.push({
         kind: "overlap",
         baseIds: idsIn(lo, hi),
@@ -258,5 +314,120 @@ export function rebase(
     liveAlignment.pos,
     draftAlignment.pos,
   );
-  return { blocks: buildBlocks(schema, settled).blocks, conflicts, orderConflict: order.cyclic };
+  const correspondence: BlockCorrespondence[] = [];
+  const represented = new Set<string>();
+  const liveBase = new Map<number, number>();
+  const draftBase = new Map<number, number>();
+  order.inLive.forEach((j, i) => {
+    if (j >= 0) liveBase.set(j, i);
+  });
+  order.inDraft.forEach((j, i) => {
+    if (j >= 0) draftBase.set(j, i);
+  });
+  const blocks = buildBlocks(schema, settled, {
+    onBlock(output, tokens) {
+      const sources = new Map<string, BlockSource>();
+      const add = (side: BlockSource["side"], index: number) => {
+        if (index < 0) return;
+        const key = `${side}:${index}`;
+        sources.set(key, { side, index });
+        represented.add(key);
+      };
+      for (const token of tokens) {
+        const current = merged[token];
+        for (const origin of [current, ...(current.sources ?? [])]) {
+          let b = -1;
+          if (origin.origin === BASE) {
+            b = baseIds[baseSide.blockOf[origin.index]];
+            const l = liveAlignment.pos[origin.index];
+            const d = draftAlignment.pos[origin.index];
+            if (l >= 0) {
+              const j = liveSide.blockOf[l];
+              add("live", order.reordered ? order.liveOrder[j] : j);
+            }
+            if (d >= 0) {
+              const j = draftSide.blockOf[d];
+              add("draft", order.reordered ? order.draftOrder[j] : j);
+            }
+          } else if (origin.origin === LIVE) {
+            const j = liveSide.blockOf[origin.index];
+            const original = order.reordered ? order.liveOrder[j] : j;
+            add("live", original);
+            b = liveBase.get(original) ?? -1;
+          } else {
+            const j = draftSide.blockOf[origin.index];
+            const original = order.reordered ? order.draftOrder[j] : j;
+            add("draft", original);
+            b = draftBase.get(original) ?? -1;
+          }
+          if (b >= 0) {
+            add("base", b);
+            add("live", order.inLive[b]);
+            add("draft", order.inDraft[b]);
+          }
+        }
+      }
+      for (const source of [...sources.values()])
+        if (source.side === "live")
+          for (const index of removedLiveSources.get(source.index) ?? []) {
+            add("base", index);
+            add("draft", order.inDraft[index]);
+          }
+      correspondence.push({ output, sources: [...sources.values()] });
+    },
+  }).blocks;
+  base.forEach((_, index) => {
+    if (represented.has(`base:${index}`)) return;
+    const sources: BlockSource[] = [{ side: "base", index }];
+    for (const [side, partner] of [
+      ["live", order.inLive],
+      ["draft", order.inDraft],
+    ] as const) {
+      const j = partner[index];
+      if (j >= 0 && !represented.has(`${side}:${j}`)) {
+        sources.push({ side, index: j });
+        represented.add(`${side}:${j}`);
+      }
+    }
+    represented.add(`base:${index}`);
+    for (const source of [...sources])
+      if (source.side === "live")
+        for (const index of removedLiveSources.get(source.index) ?? []) {
+          sources.push({ side: "base", index });
+          if (order.inDraft[index] >= 0)
+            sources.push({ side: "draft", index: order.inDraft[index] });
+        }
+    correspondence.push({ output: null, sources });
+  });
+  for (const [side, input] of [
+    ["base", base],
+    ["live", live],
+    ["draft", draft],
+  ] as const)
+    input.forEach((_, index) => {
+      if (!represented.has(`${side}:${index}`)) {
+        const sources: BlockSource[] = [{ side, index }];
+        const baseIndex =
+          side === "live"
+            ? liveBase.get(index)
+            : side === "draft"
+              ? draftBase.get(index)
+              : undefined;
+        if (baseIndex !== undefined) {
+          sources.push({ side: "base", index: baseIndex });
+          if (side !== "live" && order.inLive[baseIndex] >= 0)
+            sources.push({ side: "live", index: order.inLive[baseIndex] });
+          if (side !== "draft" && order.inDraft[baseIndex] >= 0)
+            sources.push({ side: "draft", index: order.inDraft[baseIndex] });
+        }
+        if (side === "live")
+          for (const base of removedLiveSources.get(index) ?? []) {
+            sources.push({ side: "base", index: base });
+            if (order.inDraft[base] >= 0)
+              sources.push({ side: "draft", index: order.inDraft[base] });
+          }
+        correspondence.push({ output: null, sources });
+      }
+    });
+  return { blocks, correspondence, overrode, conflicts, orderConflict: order.cyclic };
 }

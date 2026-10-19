@@ -153,7 +153,7 @@ async function fixture(
     ...document,
     draftId: snapshot.draftId,
     room,
-    async type(texts: string[], agent = false) {
+    async type(texts: string[], agent = false, owner = work) {
       let update: Uint8Array | undefined;
       const capture = (bytes: Uint8Array) => {
         update = bytes;
@@ -172,10 +172,10 @@ async function fixture(
               ? {
                   wId: await h.persistence.journal.reserveWriteOrdinal(
                     document.documentId,
-                    work.threadId,
+                    owner.threadId,
                   ),
-                  threadId: work.threadId,
-                  turnId: work.turnId,
+                  threadId: owner.threadId,
+                  turnId: owner.turnId,
                   toolCallId: randomUUID(),
                 }
               : { actorUserId: h.ids.user }),
@@ -732,6 +732,121 @@ try {
       f.close();
     },
   );
+
+  for (const mode of [
+    "independent",
+    "live move",
+    "draft move",
+    "shared paragraph",
+    "deletion",
+  ] as const) {
+    await row(`multi-author correspondence: ${mode}`, async () => {
+      const original = [
+        "First old words stay here.",
+        "Second paragraph keeps all these old words staying over there.",
+        "Last unchanged paragraph remains.",
+      ];
+      const f = await fixture(original);
+      const other = await h.seedWork(`other-author-${client++}`);
+      const first = "First AI words stay here.";
+      const second =
+        mode === "shared paragraph"
+          ? "First AI words shine here."
+          : "Second paragraph keeps all these AI words staying over there.";
+      await f.type(
+        mode === "draft move"
+          ? [original[1], first, original[2]]
+          : [first, original[1], original[2]],
+        true,
+      );
+      f.room.clientID = client++;
+      await f.type(
+        mode === "shared paragraph"
+          ? [second, original[1], original[2]]
+          : mode === "draft move"
+            ? [second, first, original[2]]
+            : mode === "deletion"
+              ? [first, original[2]]
+              : [first, second, original[2]],
+        true,
+        other,
+      );
+      const c = f.click();
+      if (mode === "live move") await f.liveWrite([original[1], original[0], original[2]]);
+      await applied(f, c);
+      for (const [owner, expected, forbidden] of mode === "shared paragraph"
+        ? ([
+            [f, second, original[1]],
+            [other, second, original[1]],
+          ] as const)
+        : ([
+            [f, first, "Second"],
+            [other, mode === "deletion" ? original[1] : second, "First"],
+          ] as const)) {
+        const rows =
+          await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${owner.threadId} and s.turn_id=${owner.turnId}`;
+        assert.equal(rows.length, 1);
+        const changes = rows[0].changes as {
+          beforeText: string | null;
+          afterTextAtReceipt: string | null;
+          navigation: unknown;
+        }[];
+        assert.equal(
+          changes.length,
+          mode === "draft move" && owner === f ? 2 : 1,
+          JSON.stringify(changes),
+        );
+        const text = changes
+          .map((change) => `${change.beforeText ?? ""} ${change.afterTextAtReceipt ?? ""}`)
+          .join(" ");
+        assert.ok(text.includes(expected), text);
+        assert.ok(!text.includes(forbidden), text);
+        assert.ok(changes.every((change) => change.navigation));
+      }
+      f.close();
+    });
+  }
+
+  await row("multi-author unrelated replacement retains deleted-block ownership", async () => {
+    const original = [
+      "Alpha orchard blooms.",
+      "Beta ocean roars.",
+      "An unchanged spacer separates these authors completely.",
+      "Third paragraph keeps all these old words standing over there.",
+    ];
+    const f = await fixture(original);
+    const other = await h.seedWork(`replacement-author-${client++}`);
+    const replacement = "New mountains shine.";
+    await f.type([replacement, original[2], original[3]], true);
+    f.room.clientID = client++;
+    await f.type([replacement, original[2], original[3].replace("old", "AI")], true, other);
+    await applied(f, f.click());
+    for (const owner of [f, other]) {
+      const rows =
+        await h.raw`select d.changes from change_trail_document_details d join change_trail_shells s on s.id=d.trail_id where s.thread_id=${owner.threadId} and s.turn_id=${owner.turnId}`;
+      assert.equal(rows.length, 1);
+      const changes = rows[0].changes as {
+        beforeText: string | null;
+        afterTextAtReceipt: string | null;
+        navigation: unknown;
+      }[];
+      const text = changes
+        .map((change) => `${change.beforeText ?? ""} ${change.afterTextAtReceipt ?? ""}`)
+        .join(" ");
+      if (owner === f) {
+        assert.ok(
+          text.includes(original[0]) && text.includes(original[1]) && text.includes(replacement),
+          text,
+        );
+        assert.ok(!text.includes("Third"), text);
+      } else {
+        assert.ok(text.includes("Third") && text.includes("AI"), text);
+        assert.ok(!/Alpha|Beta|New mountains/.test(text), text);
+      }
+      assert.ok(changes.every((change) => change.navigation));
+    }
+    f.close();
+  });
 
   await row(
     "paused before compile, retry applies then closes; original returns stored applied",

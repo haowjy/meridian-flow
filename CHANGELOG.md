@@ -16,6 +16,10 @@
 
 - Seed Work drafts with independent review content, rebase live through server appends, recover late typing deleted by rebases, and derive badges from the room's two fragments. Turn inverses no longer merge live identity into drafts.
 - Draft rooms keep one identity until close. Removed draft generations and reset replay; Discard all and Work purge close other tabs after commit with a terminal discarded reason. Live restore epochs and removal closes are unchanged.
+- Apply records each conversation’s own changed passages rather than attributing every selected paragraph to every conversation.
+
+- The text merge reports original block correspondence through moves and deletions, plus the live words replaced by contested draft edits.
+
 - Preserve removal records when a document closes during Apply admission; retries keep their recorded result.
 
 - Apply freezes the clicked draft text, commits live and review-base changes atomically, and records exactly-once command outcomes and committed change trails.
