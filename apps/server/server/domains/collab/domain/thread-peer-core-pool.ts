@@ -52,12 +52,7 @@ import type { Branches } from "./branches.js";
 import { ThreadPeerPullLost } from "./draft-pulls.js";
 import { DraftCasConflictError, DraftStaleUpdateError } from "./draft-store.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import {
-  pinStaged,
-  type ReplyDocument,
-  type ReplyRecord,
-  type ReplySaveFences,
-} from "./reply-save-fences.js";
+import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
 
 type PulledThreadPeer = {
   peerDraftId: string;
@@ -287,20 +282,6 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * The room of a document a reply saves, resolved once by whichever of the
-   * reply's calls on it rendered first and reused by the rest and the save.
-   */
-  async function replyRoomKey(
-    entry: ReplyDocument,
-    core: AgentEditCore,
-    documentId: DocumentId,
-    context: WriteContext,
-  ): Promise<string | undefined> {
-    entry.roomKey ??= await roomKeyFor(core, documentId, context);
-    return entry.roomKey;
-  }
-
-  /**
    * A write that commits at once (no reply, or a live reversal): the seams it
    * reaches confirm its grant in their own transaction. A refusal drops the
    * thread's runtime copy of the document and surfaces as the typed error.
@@ -346,9 +327,7 @@ export function createThreadPeerCorePool(input: {
     // An edits read shows history, not the document: it records no frontier.
     const room =
       recordingFrontier && documentId && command.format !== "edits"
-        ? await (pinned
-            ? replyRoomKey(pinned, core, documentId, callContext)
-            : roomKeyFor(core, documentId, callContext))
+        ? await roomKeyFor(core, documentId, callContext)
         : undefined;
     const observe = recordingFrontier ? await observation(room, recordingFrontier) : undefined;
     const outcome = await core.read(command, observe ? { ...callContext, observe } : callContext);
@@ -419,24 +398,21 @@ export function createThreadPeerCorePool(input: {
     let callContext: WriteContext = routedContext;
     /**
      * What the call records. A staged write records nothing: the reply's save replaces its
-     * echo before the model's next request, and the save records in the room resolved here.
-     * An undo, redo or revert records in the version its result names it ran on.
+     * echo before the model's next request and records in the room the save derives.
+     * An undo, redo or revert records in the version its result names it ran on; a live
+     * one's generation is read here, before its cut, like every other call's.
      */
     const observed = async (target: WriteContext): Promise<WriteContext> => {
       if (!recordingFrontier || !documentId) return target;
-      if (immediateInverse)
+      if (immediateInverse) {
+        const liveRoom = await liveRoomKey(documentId);
         return {
           ...target,
-          observeInverse: async (draftId) =>
-            observation(
-              draftId ? `draft:${draftId}` : await liveRoomKey(documentId),
-              recordingFrontier,
-            ),
+          observeInverse: (draftId) =>
+            observation(draftId ? `draft:${draftId}` : liveRoom, recordingFrontier),
         };
-      if (entry) {
-        await replyRoomKey(entry, core, documentId, target);
-        return target;
       }
+      if (entry) return target;
       const observe = await observation(
         await roomKeyFor(core, documentId, target),
         recordingFrontier,
@@ -613,15 +589,24 @@ export function createThreadPeerCorePool(input: {
     if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
   }
 
-  /** What each document a reply saves records: its reply room, chained from the model's latest. */
+  /**
+   * What each document a reply saves records, chained from the model's latest: its pinned
+   * Work draft, or the live document at its generation. Called before the save's
+   * transaction opens, so the generation is read before the save's cut.
+   */
   async function savedObservations(
     record: ResponseRecord,
     lookup: FrontierLookup | undefined,
   ): Promise<Map<string, ObservationRequest>> {
     const observations = new Map<string, ObservationRequest>();
     if (!lookup) return observations;
-    for (const [documentId, { roomKey }] of record.documents) {
-      const observe = await observation(roomKey, lookup);
+    for (const [documentId, entry] of record.documents) {
+      const room = entry.pin
+        ? `draft:${entry.pin.upstreamDraftId}`
+        : entry.core === input.liveUtilityCore
+          ? await liveRoomKey(documentId)
+          : undefined;
+      const observe = await observation(room, lookup);
       if (observe) observations.set(documentId, observe);
     }
     return observations;

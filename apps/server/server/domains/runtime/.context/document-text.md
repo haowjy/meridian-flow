@@ -42,7 +42,8 @@ a response rollback still keeps evidence for an echo the model already saw.
 An observation frontier records what document state a block showed the model:
 `{ room, snapshot, unshown }` in `observation_frontiers` (the room in
 `room_key`), on the source block: a `tool_result`, or a writer turn's reference
-block whose materialized read the model is sent. A block records at most one.
+block whose materialized read the model is sent. A block records at most one
+(`source_block_id` is the primary key).
 The room is `draft:<workDraftId>` (the thread peer's upstream, never the peer)
 or `live:<documentId>:<authorityGeneration>`; collab names it. `snapshot` is
 `Y.encodeSnapshotV2` of the doc the result was rendered from; `unshown` lists

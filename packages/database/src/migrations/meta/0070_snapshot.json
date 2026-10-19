@@ -1338,7 +1338,7 @@
         "source_block_id": {
           "name": "source_block_id",
           "type": "uuid",
-          "primaryKey": false,
+          "primaryKey": true,
           "notNull": true
         },
         "room_key": {
@@ -1393,15 +1393,7 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "observation_frontiers_pk": {
-          "name": "observation_frontiers_pk",
-          "columns": [
-            "source_block_id",
-            "room_key"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

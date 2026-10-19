@@ -96,12 +96,13 @@ a restore in between leaves the frontier on the old epoch and a failed read
 records none), looks up the model's previous frontier there, and passes
 agent-edit `observe: { room, prev }`; the outcome comes back with its
 `frontier`. An undo, redo or revert passes `observeInverse` instead: its room is
-the draft its result names it ran on (`DocumentEditResult.draftId`, the live
-room when null). A staged write records nothing; it resolves the reply
-document's room once (or reuses the one a pinned read already resolved), and
-the reply's save, given `recordingFrontier`, looks up the previous frontier in
-that room before its transaction opens and returns each saved document's
-`frontier` at the post-commit cut. `format: "edits"` reads record none.
+the draft its result names it ran on (`DocumentEditResult.draftId`), or, when
+null, the live room whose generation the pool read before the call. A staged
+write does no frontier work. The reply's save, given `recordingFrontier`,
+derives each saved document's room from its pin (`draft:<upstreamDraftId>`) or
+its live core (the live room), looks up the previous frontier there before its
+transaction opens, and returns each saved document's `frontier` at the
+post-commit cut. `format: "edits"` reads record none.
 `roomKeyFor` and `FrontierRooms` are M1 scaffolding: M2 renders from the room
 doc, whose authority identity is already bound to it. See
 [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
