@@ -59,7 +59,6 @@ import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-
 type PulledThreadPeer = {
   peerDraftId: string;
   upstreamDraftId: string;
-  draftGeneration: number;
   afterJournalId?: number;
   liveJournalSeq?: number;
   attributionBaseline: Uint8Array;
@@ -247,7 +246,6 @@ export function createThreadPeerCorePool(input: {
         mode: "threadPeer" as const,
         peerDraftId: pulled.peerDraftId,
         upstreamDraftId: pulled.upstreamDraftId,
-        draftGeneration: pulled.draftGeneration,
         afterJournalId: pulled.afterJournalId ?? 0,
         liveJournalSeq: pulled.liveJournalSeq,
         attributionBaseline: pulled.attributionBaseline,

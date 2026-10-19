@@ -64,7 +64,6 @@ describe("document mutation policy operations", () => {
     const before = Y.encodeStateAsUpdate(target);
     const row: AppendDraftJournalInput = {
       draftId: "draft-1",
-      generation: 1,
       source: "agent",
       updateData: updateWith("agent"),
       semanticEditIr: fullReplacementIr(),

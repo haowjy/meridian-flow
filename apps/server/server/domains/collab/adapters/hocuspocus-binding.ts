@@ -1,5 +1,6 @@
 /** Mutable Hocuspocus instance binding and draft-room delivery and repair. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -28,18 +29,14 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
     },
-    closeDraft(draftId: string, olderThan?: number): void {
-      closeDraftRooms(instance, draftId, olderThan);
+    closeDraft(draftId: string): void {
+      closeDraftRooms(instance, draftId);
     },
     applyToRoom,
     deliverDraftUpdate({ draftId, update }: { draftId: string; update: Uint8Array }): void {
       try {
-        const prefix = `draft:${draftId}:gen:`;
-        for (const [roomName, draftDoc] of instance?.documents.entries() ?? []) {
-          if (roomName.startsWith(prefix)) {
-            applyToRoom(draftDoc, update);
-          }
-        }
+        const room = instance?.documents.get(draftRoomName(draftId));
+        if (room) applyToRoom(room, update);
       } catch (cause) {
         if (!eventSink) return;
         emitEvent(eventSink, {

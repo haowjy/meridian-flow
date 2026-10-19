@@ -112,7 +112,6 @@ export function finalizeAppend(
         for (const updateData of input.authorServerRows(authoring)) {
           const refused = admit({
             draftId: read.documentDraft.draftId,
-            generation: read.documentDraft.generation,
             source: "server",
             updateData,
           });

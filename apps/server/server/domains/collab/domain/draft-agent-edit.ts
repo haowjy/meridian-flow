@@ -139,8 +139,7 @@ export function createDraftAgentEditCoordinator(input: {
   function draftRows(draftId: string, entries: readonly JournalBatchAppendEntry[]) {
     return entries.flatMap((entry) => {
       const mutation = entry.mutation;
-      if (mutation?.mode !== "threadPeer")
-        throw new Error("thread_peer_commit_missing_draft_generation");
+      if (mutation?.mode !== "threadPeer") throw new Error("thread_peer_commit_missing_peer");
       return (mutation.editParts ?? [entry.update]).map((updateData) => ({
         draftId,
         source: "agent" as const,
@@ -179,36 +178,19 @@ export function createDraftAgentEditCoordinator(input: {
       const { result, write } = await drafts.prepareStagedRows(
         draftId,
         async (doc, snapshot) => {
-          if (request.helperCut.generation > snapshot.generation)
-            throw new Error("Response helper belongs to a future draft generation");
-          const retired: Uint8Array[] = [];
           const inverses: Uint8Array[] = [];
           const planning = new Y.Doc({ gc: false });
           try {
             Y.applyUpdate(planning, request.helperCut.state);
             const cut = Y.snapshot(planning);
-            // Every intervening generation can contain an inverse; the old cut
-            // excludes already observed removals without a second sequence fence.
-            for (
-              let generation = request.helperCut.generation;
-              generation <= snapshot.generation;
-              generation++
-            ) {
-              const rows = await input.journalRows.listJournalRowsForDraft({
-                draftId,
-                generation,
-              });
-              for (const row of rows) {
-                const observed = Y.snapshotContainsUpdate(cut, row.updateData);
-                if (
-                  generation === request.helperCut.generation &&
-                  generation < snapshot.generation &&
-                  observed
-                )
-                  retired.push(row.updateData);
-                if (!observed && row.editKind && row.editKind !== "write")
-                  inverses.push(row.updateData);
-              }
+            const rows = await input.journalRows.listJournalRowsForDraft({ draftId });
+            for (const row of rows) {
+              if (
+                !Y.snapshotContainsUpdate(cut, row.updateData) &&
+                row.editKind &&
+                row.editKind !== "write"
+              )
+                inverses.push(row.updateData);
             }
           } finally {
             planning.destroy();
@@ -217,7 +199,6 @@ export function createDraftAgentEditCoordinator(input: {
             doc,
             request.sourceDoc,
             request.entries,
-            retired,
             request.helperCut.state,
             inverses,
           );
@@ -227,7 +208,7 @@ export function createDraftAgentEditCoordinator(input: {
               keptEntries: kept,
               rejectedWrites: replay.rejectedWrites,
               helperState: Y.encodeStateAsUpdate(doc),
-              helperCut: { generation: snapshot.generation, state: snapshot.encoded },
+              helperCut: { state: snapshot.encoded },
               beforeState: snapshot.encoded,
             },
             rows: draftRows(draftId, kept),
@@ -300,24 +281,11 @@ export function createDraftAgentEditCoordinator(input: {
                 throw new Error(`Thread-peer draft ${snapshot.draftId} has no work-draft upstream`);
               }
               const first = pendingBatch[0];
-              if (
-                first?.mutation?.mode !== "threadPeer" ||
-                pendingBatch.some(
-                  (pending) =>
-                    pending.mutation?.mode !== "threadPeer" ||
-                    pending.mutation.draftGeneration !==
-                      (first.mutation?.mode === "threadPeer"
-                        ? first.mutation.draftGeneration
-                        : undefined),
-                )
-              ) {
-                throw new Error("thread_peer_commit_missing_draft_generation");
-              }
-              const mutation = first.mutation;
+              if (pendingBatch.some((pending) => pending.mutation?.mode !== "threadPeer"))
+                throw new Error("thread_peer_commit_missing_peer");
               const committed = await drafts.commitSegmentRows({
                 draftId: workDraftId,
                 sourceDoc: doc,
-                expectedGeneration: mutation.draftGeneration,
                 rows: draftRows(workDraftId, pendingBatch),
               });
               if (!committed) return result;
@@ -536,9 +504,7 @@ export class StagedDraftWriteNoopError extends Error {
 
 export type DraftLookupWithSnapshots = WorkDraftLookup &
   DraftResolver & {
-    getDraft(
-      draftId: string,
-    ): Promise<Pick<DraftSnapshot, "upstreamDraftId" | "branchId" | "generation"> | null>;
+    getDraft(draftId: string): Promise<Pick<DraftSnapshot, "upstreamDraftId" | "branchId"> | null>;
   };
 
 type DraftPendingJournalEntries = {
@@ -622,12 +588,11 @@ async function concurrentUpstreamJournalRows(
     (await input.drafts.resolveThreadDraft(documentId, input.threadId)).draftId;
   const upstreamDraftId = (await input.drafts.getDraft(peerId))?.upstreamDraftId;
   if (!upstreamDraftId) return { rows: [] };
-  return input.draftCoordinator.readDraft(upstreamDraftId, async (doc, snapshot) => {
-    const rows = await input.journalRows.listConcurrentJournalRows(
-      upstreamDraftId,
-      snapshot.generation,
-      { afterJournalId, documentId },
-    );
+  return input.draftCoordinator.readDraft(upstreamDraftId, async (doc, _snapshot) => {
+    const rows = await input.journalRows.listConcurrentJournalRows(upstreamDraftId, {
+      afterJournalId,
+      documentId,
+    });
     return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
   });
 }

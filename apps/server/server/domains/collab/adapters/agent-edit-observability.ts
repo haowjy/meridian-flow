@@ -83,7 +83,7 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         payload: { clocks: clocks.slice(0, 16) },
       });
     },
-    roomReconciled({ draftId, generation, trigger, ...payload }) {
+    roomReconciled({ draftId, trigger, ...payload }) {
       if (!eventSink) return;
       // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
       // registering behind a commit that landed during its load is the expected race.
@@ -91,7 +91,7 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         level: trigger === "frame" ? "warn" : "info",
         source: "collab.draft",
         name: "room_reconciled",
-        correlation: { draftId, draftGeneration: generation },
+        correlation: { draftId },
         payload: { trigger, ...payload },
       });
     },

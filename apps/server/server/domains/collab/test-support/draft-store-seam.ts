@@ -27,14 +27,13 @@ export function proseDraftUpdate(text = "drafted"): Uint8Array {
 export async function appendDraftRows(
   store: Pick<DraftStore, "readDraftAt" | "appendRows">,
   draftId: string,
-  rows: readonly Omit<AppendDraftJournalInput, "draftId" | "generation">[],
+  rows: readonly Omit<AppendDraftJournalInput, "draftId">[],
 ): Promise<readonly number[]> {
   const read = await store.readDraftAt(draftId);
   if (!read) throw new Error(`Draft ${draftId} does not exist`);
   const journals = rows.map((row) => ({
     ...row,
     draftId,
-    generation: read.documentDraft.generation,
   }));
   const candidate = materializeDraftRead(read);
   let doc: Y.Doc | undefined;
@@ -42,7 +41,6 @@ export async function appendDraftRows(
     const outcome = await store.appendRows({
       draftId,
       documentId: read.documentDraft.documentId,
-      expectedGeneration: read.documentDraft.generation,
       base: {
         checkpointRevision: read.documentDraft.checkpointRevision,
         seq: Math.max(read.documentDraft.checkpointSeq, ...read.tail.map((row) => row.id)),
@@ -74,12 +72,11 @@ export async function appendDraftRows(
 export async function readResolvedDraft(
   store: Pick<DraftStore, "readDraftAt">,
   resolved: { draftId: string },
-): Promise<{ draftId: string; generation: number; doc: Y.Doc }> {
+): Promise<{ draftId: string; doc: Y.Doc }> {
   const read = await store.readDraftAt(resolved.draftId);
   if (!read) throw new Error(`Draft ${resolved.draftId} does not exist`);
   return {
     draftId: read.documentDraft.draftId,
-    generation: read.documentDraft.generation,
     doc: materializeDraftRead(read),
   };
 }

@@ -68,7 +68,8 @@ export async function insertJournalRows(
     .values(
       rows.map((journal) => ({
         draftId: journal.draftId,
-        generation: journal.generation,
+        // Legacy NOT NULL column has no default; dropped by the migrations lane.
+        generation: 1,
         updateData: Buffer.from(journal.updateData),
         // Required by the legacy NOT NULL column until the migrations lane drops it.
         draftBaseUpdateSeq: 0,
@@ -97,7 +98,6 @@ const draftColumns = {
   threadId: documentDrafts.threadId,
   status: documentDrafts.status,
   closedCause: documentDrafts.closedCause,
-  generation: documentDrafts.generation,
   revision: documentDrafts.revision,
   checkpointRevision: documentDrafts.checkpointRevision,
   checkpointSeq: documentDrafts.checkpointSeq,
@@ -107,7 +107,6 @@ const draftColumns = {
     when ${works.archivedAt} is not null then 'archived'
     else 'active' end`,
   hasEffect: documentDrafts.hasEffect,
-  discardedStateVector: documentDrafts.discardedStateVector,
   schemaVersion: documentDrafts.schemaVersion,
 };
 
@@ -143,20 +142,18 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     threadId: row.threadId,
     status: row.status,
     closedCause: row.closedCause,
-    generation: row.generation,
     revision: Number(row.revision),
     checkpointRevision: Number(row.checkpointRevision),
     checkpointSeq: Number(row.checkpointSeq),
     lifecycle: row.lifecycle,
     hasEffect: row.hasEffect,
-    discardedStateVector: row.discardedStateVector,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
   };
 }
 
 /**
  * The read seam: the draft row, its checkpoint and its tail (`id > checkpoint_seq` of the
- * current generation) from one statement, so one snapshot. With `since` naming the checkpoint
+ * active draft) from one statement, so one snapshot. With `since` naming the checkpoint
  * the caller still holds, the checkpoint bytes are left out and the tail starts after its seq.
  * Nothing else reads `document_drafts.state`.
  */
@@ -179,7 +176,6 @@ export async function readDraftAt(
         ) order by j.id), '[]'::json)
         from ${draftWriteJournal} j
         where j.draft_id = ${documentDrafts.id}
-          and j.generation = ${documentDrafts.generation}
           and j.id > case when ${held}
             then greatest(${sinceSeq}::bigint, ${documentDrafts.checkpointSeq})
             else ${documentDrafts.checkpointSeq} end
@@ -236,14 +232,14 @@ export type AppendCommitted = {
  * Shape A's storage half, inside the caller's savepoint. The `UPDATE` is the sequence point:
  * it bumps `revision` at whatever value it holds (no revision predicate, no retry) and holds
  * the row lock to `COMMIT`, so journal ids are allocated in commit order per draft (tail
- * order). It still refuses a closed, re-forked or frozen draft. After the lock, one separate
+ * order). It still refuses a closed or frozen draft. After the lock, one separate
  * statement reads the committed prefix `since` the caller's base (a fresh READ COMMITTED
  * snapshot, so every row committed before this lock), and `finalize` decides what to insert.
  * Any outcome but `appended` throws `DraftWriteRollback` so the savepoint undoes the bump.
  */
 export async function appendRowsWithinTx(
   db: DrizzleDb,
-  input: Pick<AppendRowsInput, "draftId" | "expectedGeneration" | "base" | "finalize">,
+  input: Pick<AppendRowsInput, "draftId" | "base" | "finalize">,
 ): Promise<AppendCommitted> {
   const [locked] = await db
     .update(documentDrafts)
@@ -256,7 +252,6 @@ export async function appendRowsWithinTx(
       and(
         eq(documentDrafts.id, input.draftId),
         eq(documentDrafts.status, "active"),
-        eq(documentDrafts.generation, input.expectedGeneration),
         draftWorkActive,
       ),
     )
@@ -264,7 +259,7 @@ export async function appendRowsWithinTx(
       revision: documentDrafts.revision,
       checkpointRevision: documentDrafts.checkpointRevision,
     });
-  // Zero rows: the draft closed, re-forked or its Work is no longer active. Never a writer.
+  // Zero rows: the draft closed or its Work is no longer active. Never a writer.
   if (!locked) throw new DraftWriteRollback({ status: "refused" });
   const lockedAt = performance.now();
   // Must stay its own statement: a CTE would share the UPDATE's snapshot and miss rows
@@ -273,12 +268,8 @@ export async function appendRowsWithinTx(
   if (!read) throw new Error(`Draft ${input.draftId} vanished under its row lock`);
   const finalized = await input.finalize(read);
   if (finalized.status !== "appended") throw new DraftWriteRollback(finalized);
-  if (
-    finalized.rows.some(
-      (row) => row.generation !== input.expectedGeneration || row.draftId !== input.draftId,
-    )
-  )
-    throw new Error(`Draft ${input.draftId} append names another draft or generation`);
+  if (finalized.rows.some((row) => row.draftId !== input.draftId))
+    throw new Error(`Draft ${input.draftId} append names another draft`);
   return {
     revision: Number(locked.revision),
     checkpointRevision: Number(locked.checkpointRevision),
@@ -297,7 +288,7 @@ export type RewriteCommit = {
    */
   work: "active" | "any";
   /** A peer's captured upstream: locked `FOR SHARE` before the peer row, then checked. */
-  upstream?: { draftId: string; generation: number };
+  upstream?: { draftId: string };
   /** The new checkpoint. Under `fold`, a pull applies the tail into it. */
   doc: Y.Doc;
   schemaVersion?: CollabSchemaVersion;
@@ -323,12 +314,11 @@ export async function commitRewriteWithinTx(
 ): Promise<RewriteOutcome> {
   if (input.upstream) {
     const [upstream] = await db
-      .select({ status: documentDrafts.status, generation: documentDrafts.generation })
+      .select({ status: documentDrafts.status })
       .from(documentDrafts)
       .where(eq(documentDrafts.id, input.upstream.draftId))
       .for("share");
-    if (upstream?.status !== "active" || upstream.generation !== input.upstream.generation)
-      return { status: "upstreamMoved" };
+    if (upstream?.status !== "active") return { status: "upstreamMoved" };
   }
   const [locked] = await db
     .select({
@@ -337,9 +327,7 @@ export async function commitRewriteWithinTx(
       checkpointRevision: documentDrafts.checkpointRevision,
       checkpointSeq: documentDrafts.checkpointSeq,
       status: documentDrafts.status,
-      generation: documentDrafts.generation,
       stateVector: documentDrafts.stateVector,
-      discardedStateVector: documentDrafts.discardedStateVector,
     })
     .from(documentDrafts)
     .where(eq(documentDrafts.id, input.draftId))
@@ -367,7 +355,6 @@ export async function commitRewriteWithinTx(
           .where(
             and(
               eq(draftWriteJournal.draftId, input.draftId),
-              eq(draftWriteJournal.generation, locked.generation),
               gt(draftWriteJournal.id, Number(locked.checkpointSeq)),
             ),
           )
@@ -420,7 +407,6 @@ export async function commitRewriteWithinTx(
       revision: documentDrafts.revision,
       checkpointRevision: documentDrafts.checkpointRevision,
       checkpointSeq: documentDrafts.checkpointSeq,
-      generation: documentDrafts.generation,
     });
   if (!written) {
     if (input.work === "active") return { status: "moved" };
@@ -431,6 +417,5 @@ export async function commitRewriteWithinTx(
     revision: Number(written.revision),
     checkpointRevision: Number(written.checkpointRevision),
     seq: Number(written.checkpointSeq),
-    generation: written.generation,
   };
 }

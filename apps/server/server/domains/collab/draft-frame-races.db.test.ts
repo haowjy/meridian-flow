@@ -62,7 +62,6 @@ describe("writer frames racing rewrites (postgres)", () => {
       send: () =>
         fixture.view.draftCoordinator.commitWriterUpdate({
           draftId,
-          expectedGeneration: documentDraft.generation,
           updateData: Y.mergeUpdates(updates),
           actorUserId: USER_ID as never,
           roomDocument: room,

@@ -580,7 +580,7 @@ export function toWireItem(
     branchId: item.branchId,
     itemKey: item.itemKey,
     documentId: item.documentId,
-    draftGeneration: item.draftGeneration,
+    hasDraft: item.hasDraft,
     origin: item.origin,
     isNew: item.isNew,
     binary: item.binary,

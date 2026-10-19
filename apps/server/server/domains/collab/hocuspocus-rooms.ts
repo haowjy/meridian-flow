@@ -1,28 +1,31 @@
 /** Helpers for managing generated Hocuspocus rooms. */
 import type { Document, Hocuspocus } from "@hocuspocus/server";
-import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { draftRoomName, parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 
-/** Closes the draft's rooms; with `olderThan`, only those of an earlier generation. */
-export function closeDraftRooms(
-  hocuspocus: Hocuspocus | null,
-  draftId: string,
-  olderThan?: number,
-): void {
+/** After commit: close the draft's stable room, even if it is still loading. */
+export function closeDraftRooms(hocuspocus: Hocuspocus | null, draftId: string): void {
   if (!hocuspocus) return;
-  for (const [roomName, document] of [...hocuspocus.documents.entries()]) {
-    const room = parseYjsRoomName(roomName);
-    if (room?.kind !== "draft" || room.draftId !== draftId) continue;
-    if (olderThan !== undefined && room.generation >= olderThan) continue;
-    closeRoom(hocuspocus, document);
-  }
+  const name = draftRoomName(draftId);
+  const document = hocuspocus.documents.get(name);
+  if (document) closeRoom(hocuspocus, document);
+  void hocuspocus.loadingDocuments.get(name)?.then(
+    (loaded) => closeRoom(hocuspocus, loaded),
+    () => {},
+  );
 }
 
-/** Closes one room on a generation its draft has left, and unloads it. */
-export function closeRoom(hocuspocus: Hocuspocus, document: Document): void {
+/** Close a terminal draft room and unload it. Removal uses `4208` instead. */
+export function closeRoom(
+  hocuspocus: Hocuspocus,
+  document: Document,
+  close: { code: number; reason: string } = WS_CLOSE.DRAFT_CLOSED,
+): void {
   if (hocuspocus.documents.get(document.name) !== document) return;
   for (const connection of document.getConnections()) {
-    connection.close(WS_CLOSE.DRAFT_GENERATION_STALE);
+    // Hocuspocus's protocol CLOSE loses the code (the provider reports 1000).
+    connection.context.closeTransport?.(close);
+    connection.close(close);
   }
   void hocuspocus.unloadDocument(document);
 }

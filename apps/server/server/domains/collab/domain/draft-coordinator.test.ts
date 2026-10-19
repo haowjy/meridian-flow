@@ -68,8 +68,7 @@ function storedDraft(store: MemoryDraftStore, draftId: string): StoredDraft {
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, documentDraft.checkpoint.state);
   for (const row of documentDraft.rows)
-    if (row.generation === documentDraft.generation && row.id > documentDraft.checkpointSeq)
-      Y.applyUpdate(doc, row.update);
+    if (row.id > documentDraft.checkpointSeq) Y.applyUpdate(doc, row.update);
   return {
     ...documentDraft,
     state: Y.encodeStateAsUpdate(doc),
@@ -93,7 +92,6 @@ describe("DraftCoordinator", () => {
     await expect(
       coordinator.commitWriterUpdate({
         draftId: "work",
-        expectedGeneration: 1,
         updateData: Y.encodeStateAsUpdate(draftDoc),
         actorUserId: "user-1",
         roomDocument: materialize(storedDraft(store, "work")),
@@ -118,7 +116,6 @@ describe("DraftCoordinator", () => {
     await expect(
       coordinator.commitWriterUpdate({
         draftId: "work",
-        expectedGeneration: 1,
         updateData,
         actorUserId: "user-1",
         roomDocument,
@@ -161,7 +158,6 @@ describe("DraftCoordinator", () => {
       coordinator.commitSegmentRows({
         draftId: "work",
         sourceDoc: sourceDoc,
-        expectedGeneration: beforeWork.generation,
         rows: [
           {
             draftId: "work",
@@ -241,7 +237,6 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   await expect(
     coordinator.commitSegmentRows({
       draftId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: rows.slice(0, -1),
     }),
@@ -249,7 +244,6 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   expect(store.journal).toHaveLength(0);
   await coordinator.commitSegmentRows({
     draftId: "work",
-    expectedGeneration: 1,
     sourceDoc,
     rows,
   });
@@ -259,7 +253,6 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   await expect(
     coordinator.commitSegmentRows({
       draftId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: [rows[0]],
     }),

@@ -49,3 +49,14 @@ on refusal paths.
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
 error to preserve that transport code.
+
+## Stable draft close protocol
+
+Draft rooms are `draft:<draftId>` from seed to close. Ordinary terminal retirement
+(Discard all or Work purge) sends `4205` (`DRAFT_CLOSED`), with reason `discarded`,
+only after root commit. A pending room load is included. Transport close precedes
+Hocuspocus protocol close so the provider receives the numeric code. Removal wins
+over Discard in the same transaction and keeps `4208` for live and draft rooms.
+`4206` is retired. `4207 draft-prefix-missing` remains a reconnect: the next
+SyncStep2 supplies the missing prefix. Work access refusals never become draft
+closes. Live authority generations and restore fencing are unchanged.

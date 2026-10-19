@@ -59,13 +59,12 @@ export const listed = {
   tokens: {
     locationToken: "location-1",
     liveTextToken: "live-1",
-    draftGenerationToken: "generation-1",
   },
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
   contextLocation: null,
-  draftGeneration: 1,
+  hasDraft: true,
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
@@ -83,7 +82,7 @@ export const preview = {
   item: listed,
   status: "active" as const,
   itemKey: "draft-a",
-  draftGeneration: 1,
+  hasDraft: true,
 
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",

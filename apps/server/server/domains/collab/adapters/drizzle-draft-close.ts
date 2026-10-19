@@ -55,7 +55,6 @@ export async function lockActiveDrafts(db: DrizzleDb, selection: DraftSelection)
       ...(await db
         .select({
           id: documentDrafts.id,
-          generation: documentDrafts.generation,
           threadId: documentDrafts.threadId,
         })
         .from(documentDrafts)

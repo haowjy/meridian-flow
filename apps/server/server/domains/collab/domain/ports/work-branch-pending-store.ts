@@ -15,7 +15,6 @@ export type WorkBranchPendingEvidence = {
     draftId: string;
     documentId: DocumentId;
     branchId: BranchId;
-    generation: number;
     updatedAt: Date;
     /** The pulled-live-cut effect predicate (§3.1): the draft differs from live. */
     hasEffect: boolean;

@@ -105,7 +105,7 @@ export interface ScenarioWriter {
     work: ScenarioWork,
     documentId: DocumentId,
     edit: (doc: Y.Doc) => void,
-  ): Promise<{ draftId: string; generation: number }>;
+  ): Promise<{ draftId: string }>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -173,10 +173,7 @@ export interface BranchTreeCommands {
     holder: { uri: string; id: DocumentId };
   }): Promise<{ id: string; inBranch?: true } | string>;
   /** The Work branch's draft of this document, as its review room names it. */
-  documentDraft(
-    work: ScenarioWork,
-    documentId: DocumentId,
-  ): Promise<{ draftId: string; generation: number }>;
+  documentDraft(work: ScenarioWork, documentId: DocumentId): Promise<{ draftId: string }>;
 }
 
 /** The review item of `documentId`; throws when the list has none. */
@@ -441,18 +438,17 @@ export function branchTreeCommands(
       const sync = ports().documentSync;
       const room = await documentDraft(work, documentId);
       const document = new Y.Doc({ gc: false });
-      const loaded = await sync.loadHocuspocusDraftState(room.draftId, room.generation);
+      const loaded = await sync.loadHocuspocusDraftState(room.draftId);
       if (loaded) Y.applyUpdate(document, loaded.state);
       const before = Y.encodeStateVector(document);
       edit(document);
       await sync.admitDraftWriterUpdate({
         draftId: room.draftId,
-        expectedGeneration: room.generation,
         update: Y.encodeStateAsUpdate(document, before),
         origin: { type: "user", userId },
         document,
       });
-      return { draftId: room.draftId, generation: room.generation };
+      return { draftId: room.draftId };
     },
   };
 
@@ -460,8 +456,8 @@ export function branchTreeCommands(
     const review = ports().documentSync.draftReview;
     const item = await review.resolveItemByDocument({ workId: work.id, documentId });
     if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
-    if (!item.draftId || item.item.draftGeneration === null) throw new Error("Missing draft room");
-    return { draftId: item.draftId, generation: item.item.draftGeneration };
+    if (!item.draftId || !item.item.hasDraft) throw new Error("Missing draft room");
+    return { draftId: item.draftId };
   }
 
   function view(of: ScenarioWork | "live"): ScenarioView {

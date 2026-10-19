@@ -35,7 +35,6 @@ export interface EventCorrelation {
   errorCode?: string;
   documentId?: string;
   draftId?: string;
-  draftGeneration?: number;
   /** Operational ids of branch-push settlement and draft-lineage diagnostics. */
   batchId?: string;
   pushId?: string;
