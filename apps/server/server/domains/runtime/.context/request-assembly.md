@@ -65,3 +65,12 @@ rebakes the prompt.
 
 [kb-frozen-prefix]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/frozen-request-prefix.md
 [kb-cache-state]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/prefix-cache-state.md
+
+## Prepared inputs and rendering
+
+`prepareNextTurnContext` resolves the binding, bake, model, projected history,
+image decisions and cache-key owner once per preparation attempt.
+`renderPreparedTurnContext` applies the canonical context builder and cache marks
+without more reads or image resolution. Staged suffixes use this renderer over
+those inputs; they do not re-enter assembly. `preparationUpdates` owns staged
+history updates, including image breaks and the compaction reminder.

@@ -149,7 +149,7 @@ complete compaction, not the projected retained tail. No trigger, skipped
 compaction, or a decision to compact produces no reminder. A jump past the
 trigger can therefore compact without warning; the trigger is not deferred.
 
-The request is assembled again with the durable suffix, so the reminder renders
+The prepared inputs are rendered again with the durable suffix, so the reminder renders
 exactly as it will in later requests. At run start its events commit with the
 reserved assistant. Mid-loop they use the existing split boundary: the current
 assistant completes and a successor is reserved after the reminder, within the

@@ -29,7 +29,8 @@ import {
 import {
   type AssembledNextTurnContext,
   type AssembleNextTurnContextInput,
-  assembleNextTurnContext,
+  prepareNextTurnContext,
+  renderPreparedTurnContext,
 } from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
@@ -145,7 +146,8 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
       return { turns: updates.turns, blocks: updates.blocks };
     },
   };
-  let assembled = await assembleNextTurnContext(assemblyInput);
+  const prepared = await prepareNextTurnContext(assemblyInput);
+  let assembled = renderPreparedTurnContext(prepared);
   const baseline =
     assembled.compactionTriggerTokens === null || input.skipCompaction
       ? null
@@ -171,8 +173,8 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     compaction = decideCompaction({
       request: assembled.generateRequest,
       activeHistory: assembled.activeHistory,
-      turns: [...input.turns, ...assembled.imageContextUpdates.turns],
-      blocks: [...blocks, ...assembled.imageContextUpdates.blocks],
+      turns: [...input.turns, ...assembled.preparationUpdates.turns],
+      blocks: [...blocks, ...assembled.preparationUpdates.blocks],
       thresholdTokens: assembled.compactionTriggerTokens,
       forcedDecision: input.controlMessageId
         ? {
@@ -211,8 +213,8 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     compaction = { kind: "generate" };
   }
   const updates = {
-    turns: [...assembled.imageContextUpdates.turns],
-    blocks: [...assembled.imageContextUpdates.blocks],
+    turns: [...assembled.preparationUpdates.turns],
+    blocks: [...assembled.preparationUpdates.blocks],
   };
   const threshold = assembled.compactionTriggerTokens;
   const tokenizer = assembled.resolvedModel?.tokenizer;
@@ -224,7 +226,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
     estimateRequestTokens({ request: assembled.generateRequest, baseline, tokenizer }) >=
       Math.floor(0.85 * threshold)
   ) {
-    const imageUpdates = assembled.imageContextUpdates;
+    const imageUpdates = assembled.preparationUpdates;
     const headsUp = prepareCompactionHeadsUp({
       threadId: input.threadId,
       turns: [...input.turns, ...imageUpdates.turns],
@@ -233,11 +235,16 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
       events.push(...headsUp.events);
       // Render the durable suffix through the ordinary history path, including user merging
       // and cache marks. Image decisions were already staged by the first assembly.
-      assembled = await assembleNextTurnContext({
-        ...assemblyInput,
-        turns: [...input.turns, ...imageUpdates.turns, ...headsUp.turns],
-        blocks: [...blocks, ...imageUpdates.blocks, ...headsUp.blocks],
-        persistImageProjection: undefined,
+      assembled = renderPreparedTurnContext({
+        ...prepared,
+        activeHistory: {
+          turns: [...prepared.activeHistory.turns, ...headsUp.turns],
+          blocks: [...prepared.activeHistory.blocks, ...headsUp.blocks],
+        },
+        preparationUpdates: {
+          turns: [...imageUpdates.turns, ...headsUp.turns],
+          blocks: [...imageUpdates.blocks, ...headsUp.blocks],
+        },
       });
       updates.turns.push(...headsUp.turns);
       updates.blocks.push(...headsUp.blocks);
