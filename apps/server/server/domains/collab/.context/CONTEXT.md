@@ -24,6 +24,31 @@ business behavior, mutable runtime state, or optional capability matrix.
 memory-only mutation kernel; collab owns authorization, persistence,
 coordination, settlement, and trail projection.
 
+## Draft review admission and Apply clicks
+
+`domain/provenance.ts` declares `SERVER_OWNED_ROOTS`: `review_base` and
+`__meridian_review_applied_v1`. Writer and agent admission rejects insertion
+into these roots and new deletion of their live items. Repeated tombstones are
+not a new deletion. The per-document namespace cache invalidates when protected
+roots change; deletion checks read current item flags. Provenance roots retain
+their existing stricter admission, including live's repeated-delete refusal.
+
+`finalizeAppend` judges incoming writer and agent rows under the draft row hold.
+Server rows bypass both writer authorship and agent freshness checks. Restoration
+records in `__meridian_review_restored_v1` are writer-writable and checked only
+for integer, non-overlapping link and known-range bounds after integration;
+content kinds and tombstone text never certify them. Browser restoration
+certificates are no longer written into journal metadata.
+
+Apply has one HTTP door per document: `draft/apply`. It accepts a frozen
+snapshot click, never a revision/generation token or operation selection. The
+command digest covers the authenticated envelope and the entire body. Lookup
+precedes form checking and is repeated before every fresh refusal. Form checks
+use the snapshot's base, schema-valid patch blocks and projected group ids.
+Execution currently refuses `unavailable`; the settlement services still in this
+directory are not reachable from that route. Work Apply all has no HTTP door;
+it is one click per draft. Only item-form HTTP Discard and Work Discard all remain.
+
 ## Revision and review authority
 
 `domain/document-revision.ts` produces a revision from the encoded Yjs
@@ -208,7 +233,7 @@ lower id is committed before a higher one is visible (tail order): a fold's
 separate statement reads the committed prefix since the caller's base, and
 `finalizeAppend` (`domain/draft-receipts.ts`) owns every fact that depends on
 it: containment, the novel trim (`Y.diffUpdate`), deletes the prefix already
-held, the restoration certificate, authorship when the prefix moved, complete
+held, restoration id-range bounds, writer/agent admission on the committed prefix, complete
 integration, and one receipt per logical write on the final document. An
 update with nothing novel is `contained` (nothing written, acknowledged); one
 whose prefix the journal lacks is `prefixMissing` (nothing written, the socket

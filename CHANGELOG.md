@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- Protect draft review's server-owned roots at writer and agent admission, admit server journal rows,
+  and replace Apply requests with frozen snapshot clicks (execution follows in the Apply lane).
+
+
 - Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
 
 - Shared frozen Apply merging and optimistic base deltas now use the draft review kernel; low-similarity flat rewrites retain their paragraph identity.

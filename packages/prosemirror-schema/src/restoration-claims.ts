@@ -1,4 +1,4 @@
-/** Durable, untrusted Undo restoration claims; only server-certified journal metadata grants authorship. */
+/** Legacy editor Undo claims and retained inverse metadata; new writer admission issues no certificate. */
 import * as Y from "yjs";
 
 export const RESTORATION_CLAIMS_TYPE = "meridian_restoration_claims";

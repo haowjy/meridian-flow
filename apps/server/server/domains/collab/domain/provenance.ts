@@ -1,5 +1,6 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
+import { APPLY_RECORD_ROOT, RESTORED_ROOT, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import {
   type LineageRange,
   type SemanticEditIRV1,
@@ -17,7 +18,8 @@ export const PROVENANCE_RESERVED_TYPES = [
   PROVENANCE_TARGETS_TYPE,
   "__meridian_provenance_targets_v1",
 ] as const;
-const RESERVED_TYPE_NAMES = new Set<string>(PROVENANCE_RESERVED_TYPES);
+export const SERVER_OWNED_ROOTS = [REVIEW_BASE_FRAGMENT, APPLY_RECORD_ROOT] as const;
+const RESERVED_TYPE_NAMES = new Set<string>([...PROVENANCE_RESERVED_TYPES, ...SERVER_OWNED_ROOTS]);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
 );
@@ -529,7 +531,7 @@ function sliceRanges(
 /** Refresh outside writer admission, immediately after load or provenance writes. */
 export function primeReservedNamespaceIndex(doc: Y.Doc): void {
   provenanceEnumerationCount += 1;
-  reservedNamespaceIndexes.set(doc, reservedStructRanges(doc));
+  cacheReservedNamespaceIndex(doc, reservedStructRanges(doc));
 }
 
 export function provenanceInstrumentation(): { enumerations: number } {
@@ -548,9 +550,7 @@ export function validateClientUpdateAdmission(
   const incoming = decoded.structs;
   const reservedClientId =
     incoming.find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id.client ?? null;
-  if (reservedClientId === null) {
-    assertDecodedUpdateOutsideReservedNamespace(referenceDocument, decoded, incoming);
-  }
+  assertDecodedUpdateOutsideReservedNamespace(referenceDocument, decoded, incoming);
   return { reservedClientId };
 }
 
@@ -563,9 +563,9 @@ function assertDecodedUpdateOutsideReservedNamespace(
   if (!reserved) {
     provenanceEnumerationCount += 1;
     reserved = reservedStructRanges(referenceDocument);
-    reservedNamespaceIndexes.set(referenceDocument, reserved);
+    cacheReservedNamespaceIndex(referenceDocument, reserved);
   }
-  if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
+  if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved, referenceDocument)) return;
   const incomingByClient = groupStructs(incoming);
   const ancestryMemo = new Map<DecodedStruct, boolean>();
 
@@ -609,7 +609,13 @@ function assertDecodedUpdateOutsideReservedNamespace(
   }
   for (const [client, ranges] of decoded.ds.clients) {
     for (const range of ranges) {
-      if (reserved.overlaps({ clientID: client, clock: range.clock, length: range.len })) {
+      if (
+        reserved.deletesLiveState(referenceDocument, {
+          clientID: client,
+          clock: range.clock,
+          length: range.len,
+        })
+      ) {
         throw new ReservedNamespaceAdmissionError(
           "Client update deletes reserved provenance state",
         );
@@ -622,10 +628,17 @@ function isPlainProseFastPath(
   incoming: readonly DecodedStruct[],
   deletes: ReadonlyMap<number, readonly { clock: number; len: number }[]>,
   reserved: ReservedRangeIndex,
+  referenceDocument: Y.Doc,
 ): boolean {
   for (const [client, ranges] of deletes) {
     for (const range of ranges) {
-      if (reserved.overlaps({ clientID: client, clock: range.clock, length: range.len }))
+      if (
+        reserved.deletesLiveState(referenceDocument, {
+          clientID: client,
+          clock: range.clock,
+          length: range.len,
+        })
+      )
         return false;
     }
   }
@@ -792,19 +805,82 @@ function allStringRanges(doc: Y.Doc): RangeIndex<true> {
 type DecodedStruct = Y.Item | Y.GC | Y.Skip;
 type DecodedUpdate = ReturnType<typeof Y.decodeUpdate>;
 
+const watchedNamespaceDocs = new WeakSet<Y.Doc>();
+function cacheReservedNamespaceIndex(doc: Y.Doc, index: ReservedRangeIndex): void {
+  reservedNamespaceIndexes.set(doc, index);
+  if (watchedNamespaceDocs.has(doc)) return;
+  watchedNamespaceDocs.add(doc);
+  doc.on("afterTransaction", (transaction: Y.Transaction) => {
+    for (const name of RESERVED_TYPE_NAMES) {
+      const root = doc.share.get(name);
+      if (root && transaction.changedParentTypes.has(root)) {
+        reservedNamespaceIndexes.delete(doc);
+        break;
+      }
+    }
+  });
+}
+
+/** Writer restoration records assert known id ranges, not retained tombstone content. */
+export function validateRestorationRanges(doc: Y.Doc, update: Uint8Array): void {
+  const root = doc.share.get(RESTORED_ROOT);
+  if (!root) return;
+  const known = (client: number, clock: number, length: number) =>
+    client >= 0 &&
+    client <= 0xffffffff &&
+    clock >= 0 &&
+    length > 0 &&
+    Number.isSafeInteger(clock + length) &&
+    Y.getState(doc.store, client) >= clock + length;
+  for (const struct of decodeAdmittedUpdate(update).structs) {
+    if (!(struct instanceof Y.Item)) continue;
+    const item = Y.getItem(doc.store, struct.id);
+    if (!(item instanceof Y.Item) || item.parent !== root) continue;
+    if (!(struct.content instanceof Y.ContentAny)) {
+      throw new ReservedNamespaceAdmissionError("Invalid restoration record");
+    }
+    for (const raw of struct.content.getContent()) {
+      if (
+        !Array.isArray(raw) ||
+        !raw.every(Number.isSafeInteger) ||
+        ![3, 4, 5].includes(raw.length) ||
+        !known(raw[0], raw[1], raw[2]) ||
+        (raw.length === 4 && raw[3] !== 0) ||
+        (raw.length === 5 &&
+          (!known(raw[3], raw[4], raw[2]) ||
+            (raw[0] === raw[3] && raw[1] < raw[4] + raw[2] && raw[4] < raw[1] + raw[2])))
+      ) {
+        throw new ReservedNamespaceAdmissionError(
+          "Restoration record names invalid or unknown ranges",
+        );
+      }
+    }
+  }
+}
+
 function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   const index = new ReservedRangeIndex();
-  for (const name of PROVENANCE_RESERVED_TYPES) {
+  for (const name of RESERVED_TYPE_NAMES) {
     const type = doc.share.get(name);
-    if (type) collectTypeStructs(type, index);
+    if (type)
+      collectTypeStructs(
+        type,
+        index,
+        SERVER_OWNED_ROOTS.some((root) => root === name),
+      );
   }
   return index;
 }
 
-function collectTypeStructs<E>(type: Y.AbstractType<E>, index: ReservedRangeIndex): void {
+function collectTypeStructs<E>(
+  type: Y.AbstractType<E>,
+  index: ReservedRangeIndex,
+  serverOwned: boolean,
+): void {
   const collect = (item: Y.Item): void => {
-    index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
-    if (item.content instanceof Y.ContentType) collectTypeStructs(item.content.type, index);
+    index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length }, serverOwned);
+    if (item.content instanceof Y.ContentType)
+      collectTypeStructs(item.content.type, index, serverOwned);
   };
   for (const entry of type._map.values()) {
     for (let item: Y.Item | null = entry; item; item = item.left) collect(item);
@@ -814,7 +890,9 @@ function collectTypeStructs<E>(type: Y.AbstractType<E>, index: ReservedRangeInde
 
 class ReservedRangeIndex {
   readonly byClient = new Map<number, LineageRange[]>();
-  add(range: LineageRange): void {
+  readonly serverOwned = new Set<LineageRange>();
+  add(range: LineageRange, serverOwned: boolean): void {
+    if (serverOwned) this.serverOwned.add(range);
     const ranges = this.byClient.get(range.clientID) ?? [];
     ranges.push(range);
     this.byClient.set(range.clientID, ranges);
@@ -826,8 +904,19 @@ class ReservedRangeIndex {
         ?.some((range) => id.clock >= range.clock && id.clock < end(range)) ?? false
     );
   }
-  overlaps(range: LineageRange): boolean {
-    return this.byClient.get(range.clientID)?.some((value) => rangesOverlap(value, range)) ?? false;
+  deletesLiveState(doc: Y.Doc, range: LineageRange): boolean {
+    for (const owned of this.byClient.get(range.clientID) ?? []) {
+      if (!rangesOverlap(owned, range)) continue;
+      // Preserve live's provenance admission: even repeated provenance deletions are refused.
+      if (!this.serverOwned.has(owned)) return true;
+      const limit = Math.min(end(owned), end(range));
+      for (let clock = Math.max(owned.clock, range.clock); clock < limit; ) {
+        const item = Y.getItem(doc.store, Y.createID(range.clientID, clock));
+        if (!item.deleted) return true;
+        clock = Math.min(item.id.clock + item.length, limit);
+      }
+    }
+    return false;
   }
 }
 

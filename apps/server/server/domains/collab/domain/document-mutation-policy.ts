@@ -172,7 +172,10 @@ export function admitSegmentRows(
       for (const row of writeRows) assertNonEmptyUpdate(row.updateData);
     }
     for (const row of writeRows) {
-      if (row.source === "agent") assertFreshAgentUpdate(doc, row.updateData);
+      if (row.source === "agent") {
+        assertFreshAgentUpdate(doc, row.updateData);
+        validateClientUpdateAdmission(doc, row.updateData);
+      }
       Y.applyUpdate(doc, row.updateData);
     }
   }

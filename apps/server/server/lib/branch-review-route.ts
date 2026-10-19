@@ -9,9 +9,11 @@
 import type { BranchCommandId, BranchId } from "@meridian/contracts";
 import { draftItemKey } from "@meridian/contracts";
 import {
+  type ApplyClick,
+  type ApplyClickAnswer,
+  type ApplyClickObservation,
   BRANCH_COMMAND_CONFLICT_CODE,
   BRANCH_COMMAND_UNKNOWN_CODE,
-  type BranchApplyAllRequest,
   BranchCommandIdSchema,
   type BranchCommandKind,
   type BranchCommandObservation,
@@ -20,7 +22,6 @@ import {
   type DocumentDraftHintsResponse,
   type DraftApplyPendingResponse,
   type DraftPreviewResponse,
-  MAX_DISCARD_MEMBER_PART_KEYS,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
@@ -91,27 +92,28 @@ const Base = {
   itemKey: z.string().max(80),
   commandId: BranchCommandIdSchema,
 };
-const ApplyItemBody = z.object({
-  ...Base,
-  locationToken: z.string().max(40).optional(),
-  liveTextToken: z.string().max(100).nullable().optional(),
-  draftGenerationToken: z.string().max(40).nullable().optional(),
+const RangeBody = z
+  .strictObject({
+    from: z.number().int().nonnegative().safe(),
+    to: z.number().int().nonnegative().safe(),
+  })
+  .refine((range) => range.to >= range.from);
+const ApplyClickBody = z.strictObject({
+  commandId: BranchCommandIdSchema,
+  snapshot: z.string().min(1),
+  baseViewDelta: z.array(
+    z.strictObject({
+      base: RangeBody,
+      draft: RangeBody,
+      blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
+    }),
+  ),
+  groupIds: z
+    .array(z.string().min(1))
+    .min(1)
+    .refine((ids) => new Set(ids).size === ids.length),
 });
-const ApplyChangesBody = z.object({
-  ...Base,
-  operationIds: z.array(z.string().max(200)).min(1).max(500),
-  liveRevisionToken: z.string().max(200),
-  draftRevisionToken: z.string().max(200),
-});
-const DiscardBody = z.object({
-  ...Base,
-  liveRevisionToken: z.string().max(200).optional(),
-  draftRevisionToken: z.string().max(200).optional(),
-  closureClassIds: z.array(z.string().max(200)).max(500).optional(),
-  admissionTokens: z.array(z.string().max(200)).max(500).optional(),
-  memberPartKeys: z.array(z.string().max(200)).max(MAX_DISCARD_MEMBER_PART_KEYS).optional(),
-  memberPartKeysComplete: z.boolean().optional(),
-});
+const DiscardBody = z.strictObject(Base);
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
   const parsed = schema.safeParse(body ?? {});
@@ -119,23 +121,7 @@ function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: strin
   return parsed.data;
 }
 
-export const parseDraftApplyItem = (body: unknown) => parseBody(ApplyItemBody, body, "Apply");
-export const parseDraftApplySelection = (body: unknown) =>
-  parseBody(ApplyChangesBody, body, "Apply changes");
-export const parseDraftDiscardSelection = (body: unknown) => {
-  const parsed = parseBody(DiscardBody, body, "Discard");
-  const perChange = parsed.closureClassIds !== undefined;
-  if (
-    perChange &&
-    (!parsed.liveRevisionToken ||
-      !parsed.admissionTokens ||
-      !parsed.memberPartKeys ||
-      parsed.memberPartKeysComplete === undefined)
-  ) {
-    throw createError({ statusCode: 400, message: "Invalid Discard request" });
-  }
-  return parsed;
-};
+export const parseDraftDiscardItem = (body: unknown) => parseBody(DiscardBody, body, "Discard");
 
 // --- Commands: envelope, lookup, outcome -------------------------------------------------------
 
@@ -225,7 +211,7 @@ async function recorded(
   if (found.kind === "none") return null;
   const outcome: CommandOutcome =
     found.kind === "done"
-      ? { kind: "result", result: found.result }
+      ? { kind: "result", result: found.result as BranchCommandResult }
       : found.kind === "conflict"
         ? { kind: "conflict" }
         : found.kind === "blocked"
@@ -242,7 +228,7 @@ async function recorded(
 export async function handleBranchCommandObservation(
   deps: BranchRouteServices,
   input: CommandScope & { commandId: string },
-): Promise<BranchCommandObservation> {
+): Promise<ApplyClickObservation | BranchCommandObservation> {
   await requireBranchWorkAccess(deps, input);
   const id = BranchCommandIdSchema.safeParse(input.commandId);
   if (!id.success) throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
@@ -254,13 +240,15 @@ export async function handleBranchCommandObservation(
   switch (found.kind) {
     case "none":
     case "conflict":
-      throw createError({ statusCode: 404, message: BRANCH_COMMAND_UNKNOWN_CODE });
+      return { status: found.kind, commandId: id.data as BranchCommandId };
     case "pending":
-      return { state: "pending" };
+      return { status: "pending", commandId: id.data as BranchCommandId };
     case "blocked":
-      return { state: "blocked" };
+      return { status: "pending", commandId: id.data as BranchCommandId };
     case "done":
-      return { state: "done", result: found.result };
+      return found.commandKind === "apply_click"
+        ? (found.result as ApplyClickAnswer)
+        : { state: "done", result: found.result as BranchCommandResult };
   }
 }
 
@@ -501,56 +489,64 @@ async function commandIngress(
   );
 }
 
-/**
- * Item Apply (§4.5): one rendered item through the one Apply path. A held or stale item
- * answers 409, never `applied`; a command id already used answers its stored result.
- */
-export async function handleApplyWorkDraftRequest(
+/** One immutable Apply click. Until execution lands, a valid click is refused as unavailable. */
+export async function handleApplyClickRequest(
   deps: BranchRouteServices,
-  input: CommandScope & {
-    documentId: DocumentId;
-    request: z.infer<typeof ApplyItemBody>;
-    signal?: AbortSignal;
-  },
-): Promise<CommandRouteResult> {
-  const { request } = input;
-  const { commandId: _, ...body } = request;
-  const envelope = envelopeOf(input, {
-    commandId: request.commandId,
-    kind: "apply_items",
-    branchId: request.branchId,
-    selectors: { itemKey: request.itemKey, documentId: input.documentId },
-    body,
-  });
-  return commandIngress(deps, input, envelope, { itemApply: true }, async () => {
-    const item = await commandItem(deps, input);
-    if (!item) {
-      return {
-        refusal: () => {
-          throw createError({ statusCode: 404, message: "Draft not found" });
-        },
-      };
-    }
-    return {
-      grants: await applyGrants(deps, { ...input, items: [item] }),
-      effect: () =>
-        deps.documentSync.draftReview.applyItem({
-          workId: input.workId,
-          item,
-          userId: input.userId,
-          envelope,
-          tokens: {
-            ...(request.locationToken ? { locationToken: request.locationToken } : {}),
-            ...(request.liveTextToken !== undefined
-              ? { liveTextToken: request.liveTextToken }
-              : {}),
-            ...(request.draftGenerationToken !== undefined
-              ? { draftGenerationToken: request.draftGenerationToken }
-              : {}),
-          } as never,
-          ...(input.signal ? { signal: input.signal } : {}),
-        }),
-    };
+  input: CommandScope & { documentId: DocumentId; request: unknown },
+): Promise<ApplyClickAnswer> {
+  const work = await requireBranchWorkAccess(deps, input);
+  const parsedId = BranchCommandIdSchema.safeParse(
+    input.request && typeof input.request === "object" && "commandId" in input.request
+      ? input.request.commandId
+      : undefined,
+  );
+  if (!parsedId.success) throw createError({ statusCode: 400, message: "Invalid Apply request" });
+  const commandId = parsedId.data as BranchCommandId;
+  const envelope: BranchCommandEnvelope = {
+    commandId,
+    accountId: input.userId,
+    workId: input.workId,
+    kind: "apply_click",
+    branchId: null,
+    digest: commandDigest({
+      accountId: input.userId,
+      projectId: input.projectId,
+      workId: input.workId,
+      kind: "apply_click",
+      selectors: { documentId: input.documentId },
+      body: input.request,
+    }),
+  };
+  const lookup = async (): Promise<ApplyClickAnswer | null> => {
+    const found = await deps.documentSync.draftReview.lookupCommand(envelope);
+    if (found.kind === "none") return null;
+    if (found.kind === "done")
+      return found.commandKind === "apply_click"
+        ? (found.result as ApplyClickAnswer)
+        : { status: "conflict", commandId };
+    return { status: found.kind === "conflict" ? "conflict" : "pending", commandId };
+  };
+  const recorded = await lookup();
+  if (recorded) return recorded;
+  const refuse = async (
+    reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
+  ): Promise<ApplyClickAnswer> => (await lookup()) ?? { status: "refused", commandId, reason };
+  const parsed = ApplyClickBody.safeParse(input.request);
+  if (!parsed.success) return refuse("malformed");
+  if (work.archivedAt) return refuse("work_archived");
+  for (const target of [
+    { kind: "draft" as const, documentId: input.documentId, workId: input.workId },
+    documentTarget(input.documentId),
+  ]) {
+    const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
+    if (isFileAccessDenied(grant))
+      return refuse(grant.reason === "work_archived" ? "work_archived" : "not_found");
+  }
+  return deps.documentSync.draftReview.applyClick({
+    workId: input.workId,
+    documentId: input.documentId,
+    request: parsed.data as ApplyClick,
+    envelope,
   });
 }
 
@@ -566,105 +562,21 @@ const goneBranch = (branchId: BranchId) => (): CommandRouteResult => ({
   body: { status: "gone", branchId },
 });
 
-/** Per-change Apply: complete server-vended classes; refusals are 200 body statuses. */
-export async function handleApplyWorkDraftChangesRequest(
-  deps: BranchRouteServices,
-  input: CommandScope & {
-    documentId: DocumentId;
-    request: z.infer<typeof ApplyChangesBody>;
-    signal?: AbortSignal;
-  },
-): Promise<CommandRouteResult> {
-  const { request } = input;
-  const { commandId: _, ...body } = request;
-  const envelope = envelopeOf(input, {
-    commandId: request.commandId,
-    kind: "apply_changes",
-    branchId: request.branchId,
-    selectors: { itemKey: request.itemKey, documentId: input.documentId },
-    body,
-  });
-  return commandIngress(deps, input, envelope, {}, async () => {
-    const item = await commandItem(deps, input);
-    if (!item) return { refusal: goneItem(request) };
-    return {
-      grants: await applyGrants(deps, { ...input, items: [item] }),
-      effect: () =>
-        deps.documentSync.draftReview.applyChanges({
-          workId: input.workId,
-          itemKey: request.itemKey,
-          userId: input.userId,
-          envelope,
-          selection: {
-            kind: "apply",
-            operationIds: request.operationIds,
-            liveRevisionToken: request.liveRevisionToken,
-            draftRevisionToken: request.draftRevisionToken,
-          },
-          ...(input.signal ? { signal: input.signal } : {}),
-        }),
-    };
-  });
-}
-
 /**
- * Apply all (§11.5): the items the dock rendered, one server command. The request's branch
- * must be the Work's active one (else `gone`).
- */
-export async function handleApplyAllWorkBranchRequest(
-  deps: BranchRouteServices,
-  input: CommandScope & { request: BranchApplyAllRequest; signal?: AbortSignal },
-): Promise<CommandRouteResult> {
-  const { request } = input;
-  const { commandId: _, ...body } = request;
-  const envelope = envelopeOf(input, {
-    commandId: request.commandId,
-    kind: "apply_items",
-    branchId: request.branchId,
-    selectors: {},
-    body,
-  });
-  const branchId = request.branchId as BranchId;
-  return commandIngress(deps, input, envelope, {}, async () => {
-    const listed = await deps.documentSync.draftReview.items({ workId: input.workId });
-    if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
-    // The grants of what is still an item; one that isn't answers stale from the service.
-    const keys = new Set(request.items.map((ref) => ref.itemKey));
-    return {
-      grants: await applyGrants(deps, {
-        ...input,
-        items: listed.items.filter((item) => keys.has(item.itemKey)),
-      }),
-      effect: () =>
-        deps.documentSync.draftReview.applyAll({
-          workId: input.workId,
-          branchId,
-          items: request.items,
-          userId: input.userId,
-          envelope,
-          ...(input.signal ? { signal: input.signal } : {}),
-        }),
-    };
-  });
-}
-
-/**
- * Item Discard (the whole item through the one kernel, §12.3) or per-change Discard (the
- * clicked classes, §4.1). A document deleted live authorizes through the draft (§13.3).
+ * Item Discard (the whole item through the one kernel, §12.3). A document deleted live authorizes through the draft (§13.3).
  */
 export async function handleDiscardWorkDraftRequest(
   deps: BranchRouteServices,
   input: CommandScope & {
     documentId: DocumentId;
-    request: ReturnType<typeof parseDraftDiscardSelection>;
+    request: ReturnType<typeof parseDraftDiscardItem>;
   },
 ): Promise<CommandRouteResult> {
   const { request } = input;
-  const perChange = request.closureClassIds !== undefined;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
     commandId: request.commandId,
-    kind: perChange ? "discard_changes" : "discard_items",
+    kind: "discard_items",
     branchId: request.branchId,
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
@@ -675,30 +587,12 @@ export async function handleDiscardWorkDraftRequest(
     return {
       grants: await applyGrants(deps, { ...input, items: [item] }, { live: false }),
       effect: () =>
-        perChange
-          ? deps.documentSync.draftReview.discardChanges({
-              workId: input.workId,
-              itemKey: request.itemKey,
-              userId: input.userId,
-              envelope,
-              selection: {
-                kind: "discard",
-                closureClassIds: request.closureClassIds ?? [],
-                admissionTokens: request.admissionTokens ?? [],
-                memberPartKeys: request.memberPartKeys ?? [],
-                memberPartKeysComplete: request.memberPartKeysComplete ?? false,
-                liveRevisionToken: request.liveRevisionToken ?? "",
-                ...(request.draftRevisionToken
-                  ? { draftRevisionToken: request.draftRevisionToken }
-                  : {}),
-              },
-            })
-          : deps.documentSync.draftReview.discardItem({
-              workId: input.workId,
-              item,
-              userId: input.userId,
-              envelope,
-            }),
+        deps.documentSync.draftReview.discardItem({
+          workId: input.workId,
+          item,
+          userId: input.userId,
+          envelope,
+        }),
     };
   });
 }

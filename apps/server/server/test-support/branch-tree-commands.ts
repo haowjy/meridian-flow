@@ -17,6 +17,7 @@ import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { testEnvelope } from "../domains/collab/test-support/draft-review-requests.js";
 import {
   contextPortForThread,
   resolveThreadContext,
@@ -26,14 +27,13 @@ import { createTreeReader, LIVE_TREE } from "../domains/context/tree/tree-view.j
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
   type CommandRouteResult,
-  handleApplyAllWorkBranchRequest,
-  handleApplyWorkDraftRequest,
   handleDiscardAllWorkBranchRequest,
   handleDiscardWorkDraftRequest,
   handleWorkBranchListRequest,
   selectBranchRouteServices,
 } from "../lib/branch-review-route.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
+import { documentTarget, requireFileGrant, withEditGrants } from "../lib/file-access-http.js";
 import {
   createContextEntry,
   parseCreateContextEntryBody,
@@ -569,6 +569,74 @@ export function branchTreeCommands(
     return handleWorkBranchListRequest(routes(), { projectId, workId: work.id, userId });
   }
 
+  // The settlement service still has DB coverage until lane A removes it. These verbs
+  // deliberately bypass the new Apply HTTP door, which cannot execute legacy requests.
+  async function legacyApply(
+    work: ScenarioWork,
+    items: readonly ThreadDraftListItem[],
+    branchId: string,
+    single: boolean,
+    tokens = true,
+  ): Promise<CommandRouteResult> {
+    const deps = routes();
+    const listed = await deps.documentSync.draftReview.items({ workId: work.id });
+    if (listed.branchId !== branchId)
+      return { httpStatus: 200, body: { status: "gone", branchId: branchId as never } };
+    const selected = listed.items.filter((item) =>
+      items.some((ref) => ref.itemKey === item.itemKey),
+    );
+    const grants = [];
+    for (const item of selected) {
+      if (item.deletedLive) {
+        // Removal is terminal. The retained settlement service returns held without writing.
+        continue;
+      }
+      grants.push(
+        await requireFileGrant(
+          deps.fileAccess,
+          userId,
+          { kind: "draft", documentId: item.documentId, workId: work.id },
+          "edit",
+        ),
+      );
+      if (!item.isNew)
+        grants.push(
+          await requireFileGrant(deps.fileAccess, userId, documentTarget(item.documentId), "edit"),
+        );
+    }
+    const refs = items.map((item) => ({ itemKey: item.itemKey, ...refOf(item) }));
+    const envelope = testEnvelope({
+      workId: work.id,
+      branchId: branchId as never,
+      userId,
+      kind: "apply_items",
+      body: refs,
+    });
+    const outcome = await withEditGrants(deps.fileAccess, grants, () =>
+      single
+        ? deps.documentSync.draftReview.applyItem({
+            workId: work.id,
+            item: selected[0],
+            userId,
+            envelope,
+            tokens: tokens ? refOf(items[0]) : undefined,
+          })
+        : deps.documentSync.draftReview.applyAll({
+            workId: work.id,
+            branchId: branchId as never,
+            items: refs,
+            userId,
+            envelope,
+          }),
+    );
+    if (outcome.kind !== "result") throw new Error(`Legacy Apply: ${outcome.kind}`);
+    const status = outcome.result.status;
+    return {
+      httpStatus: single && (status === "held" || status === "stale") ? 409 : 200,
+      body: outcome.result,
+    };
+  }
+
   async function discard(
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
@@ -668,18 +736,7 @@ export function branchTreeCommands(
         const item = items.find((candidate) => candidate.documentId === documentId);
         if (!item?.draftGeneration) throw new Error(`No draft of ${documentId} to apply`);
         results.push(
-          await handleApplyWorkDraftRequest(routes(), {
-            projectId,
-            workId: work.id,
-            documentId,
-            userId,
-            request: {
-              branchId: item.branchId,
-              itemKey: item.itemKey,
-              commandId: randomUUID(),
-              ...(options.tokens === "none" ? {} : refOf(item)),
-            },
-          }),
+          await legacyApply(work, [item], item.branchId, true, options.tokens !== "none"),
         );
       }
       return results;
@@ -692,18 +749,7 @@ export function branchTreeCommands(
         items[0]?.branchId ??
         (await ports().documentSync.branches.activeForWork(work.id))?.id;
       if (!branchId) throw new Error(`${work.slug} has no branch to apply`);
-      return (
-        await handleApplyAllWorkBranchRequest(routes(), {
-          projectId,
-          workId: work.id,
-          userId,
-          request: {
-            branchId,
-            commandId: randomUUID() as never,
-            items: items.map((item) => ({ itemKey: item.itemKey, ...refOf(item) })),
-          },
-        })
-      ).body;
+      return (await legacyApply(work, items, branchId, false)).body;
     },
   };
 }

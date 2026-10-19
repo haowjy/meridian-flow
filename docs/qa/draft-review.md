@@ -46,6 +46,37 @@ commit, viewport, run-owned identities, request scope/order, screenshots, clean
 console and fresh manuscript/draft readback. Read-only API success does not prove
 writer interaction.
 
+## Frozen-click server wire
+
+The per-document `draft/apply` route accepts only `commandId`, `snapshot`
+(base64 `Y.encodeSnapshotV2`), `baseViewDelta` (whole-block patches with node
+JSON), and unique, nonempty `groupIds`. Until Apply execution is installed,
+a form-valid click answers `refused(unavailable)` and writes no command claim.
+The settlement-era client cannot drive this wire; use an authenticated browser
+request for the transport checks, then run the writer flows below on the
+integrated client and server.
+
+- Send duplicate group ids or an old revision/operation selection to `draft/apply`.
+  Expect `refused(malformed)` for that command id. Observe that same id: `none`,
+  not a pending claim.
+- From a synced room capture a valid snapshot and current projection ids.
+  Exercise malformed base64, an unknown group, overlapping/out-of-bounds patch
+  ranges and schema-invalid node JSON; each must refuse before a claim.
+  A snapshot whose insertion or deletion is not committed answers `unsynced`.
+- POST to `draft/apply-changes` and Work `branches/apply`: both routes are absent.
+  Send change-selection fields to `draft/discard`: reject the body, never interpret
+  it as an item Discard. Work Discard all remains available.
+- Once execution is installed, retry a landed id after its room closes and after
+  permissions change: the stored result wins. Reuse its id with another body or
+  scope: `conflict`. A fresh refusal must recheck a same-id twin before answering.
+
+Server admission has a separate reconnect risk: seed a server-owned review base,
+prime the namespace cache, replace that base on the server, then admit a writer
+frame with ordinary typing and only already-committed base tombstones. It must
+succeed; a new base deletion or insertion and an agent Apply-record mutation
+must fail, including under the append row hold. Repeat after another server
+transaction to exercise cache invalidation.
+
 ## Whole Apply observation/projection (mock stack)
 
 Stage an existing-document proposal in an owned named Work. On the Work Files
