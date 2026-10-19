@@ -456,6 +456,13 @@
       "when": 1792290050000,
       "tag": "0070_observation_frontiers",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1792373857879,
+      "tag": "0071_observation_frontiers_room_index",
+      "breakpoints": true
     }
   ]
 }
