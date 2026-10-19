@@ -134,7 +134,6 @@ export {
   ImageInclusionMetadataCodec,
   InboxMessageMetadataCodec,
   inboxMessageMetadata,
-  isCompactionSummaryTurn,
   isPromptEpochMetadata,
   isSystemUpdateMetadata,
   isWriteModeSwitchTurn,

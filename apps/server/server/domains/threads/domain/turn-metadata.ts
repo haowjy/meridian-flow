@@ -286,12 +286,6 @@ export function compactionSummaryMetadata(): JsonObject {
   return systemUpdateMetadata("compaction_summary");
 }
 
-/** The projector's synthetic turn that carries a compaction's summary and its re-shown documents. */
-export function isCompactionSummaryTurn(turn: Pick<Turn, "metadata">): boolean {
-  const metadata = SystemUpdateMetadataCodec.safeParse(turn.metadata);
-  return metadata.success && metadata.data.section === "compaction_summary";
-}
-
 export function savedSubagentReportMetadata(): JsonObject {
   return systemUpdateMetadata("saved_subagent_report");
 }

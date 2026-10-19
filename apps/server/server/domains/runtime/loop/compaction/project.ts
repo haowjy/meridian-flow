@@ -13,6 +13,7 @@ import {
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
 import { bakeHasHistoryTool } from "../history-tool-availability.js";
+import { referenceReadText } from "../reference-context.js";
 import type { CompactionPlan } from "./plan.js";
 import { type CompactionCut, resolveCut, retainedTail } from "./tail.js";
 
@@ -192,16 +193,18 @@ function projectActiveHistory(
   );
   const tailByTurn = new Map(tail.map((slice) => [slice.turn.id, slice]));
   const elisions = new Map(metadata.elisions?.map((elision) => [elision.blockId, elision.content]));
-  // The documents the compaction re-showed ride its summary turn, after the summary.
+  // The documents the compaction re-showed ride its summary turn, after the summary, as plain
+  // text blocks that keep their ids (frontier rows cite them).
   const reshown = (blocksByTurn.get(compaction.id) ?? [])
-    .filter((block) => referenceOccurrenceContent(block)?.read)
+    .flatMap((block) => {
+      const reference = referenceOccurrenceContent(block);
+      if (!reference?.read) return [];
+      const textContent = `Current text of ${reference.uri}, re-shown after the summary:\n${referenceReadText(reference.read.result)}`;
+      return [{ ...block, turnId: synthetic.turn.id, textContent, content: textContent }];
+    })
     .sort((a, b) => a.sequence - b.sequence);
   const projectedBlocks = projectedTurns.flatMap((turn) => {
-    if (turn.id === synthetic.turn.id)
-      return [
-        synthetic.block,
-        ...reshown.map((block) => ({ ...block, turnId: synthetic.turn.id })),
-      ];
+    if (turn.id === synthetic.turn.id) return [synthetic.block, ...reshown];
     const retained = tailByTurn.get(turn.id);
     return retained
       ? retained.blocks.map((block) =>

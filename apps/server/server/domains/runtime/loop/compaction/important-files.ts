@@ -15,6 +15,33 @@ const BYTES_PER_TOKEN = 3;
 /** Skipped documents still cost a read, so the search for five that fit stops here. */
 const IMPORTANT_FILES_MAX_READS = 2 * IMPORTANT_FILES_MAX;
 
+/** Estimation slack kept under the trigger: the budget counts bytes, the next request counts tokens. */
+const TRIGGER_MARGIN_TOKENS = 1_000;
+
+/**
+ * Tokens the re-shown documents may add: a fraction of the window, capped, and never more than
+ * the headroom the successor has under the auto-compaction trigger. The successor then cannot
+ * land over the trigger, which would compact again at the next boundary.
+ */
+export function reshowBudgetTokens(input: {
+  usableWindowTokens: number;
+  triggerTokens: number | null;
+  baseTokens: number;
+}): number {
+  const headroom =
+    input.triggerTokens === null
+      ? Number.POSITIVE_INFINITY
+      : input.triggerTokens - input.baseTokens - TRIGGER_MARGIN_TOKENS;
+  return Math.max(
+    0,
+    Math.min(
+      IMPORTANT_FILES_MAX_TOKENS,
+      Math.floor(input.usableWindowTokens * IMPORTANT_FILES_WINDOW_FRACTION),
+      headroom,
+    ),
+  );
+}
+
 /** Documents in `recorded` (history order), most recently shown first, one entry per document. */
 export function importantFileCandidates(recorded: RecordedDocuments): DocumentRevisionEvidence[] {
   const seen = new Set<string>();
@@ -37,13 +64,10 @@ export function importantFileCandidates(recorded: RecordedDocuments): DocumentRe
  */
 export async function chooseImportantFiles<T extends { text: string }>(input: {
   candidates: readonly DocumentRevisionEvidence[];
-  usableWindowTokens: number;
+  budgetTokens: number;
   read: (reference: ReferenceOccurrence) => Promise<T | null>;
 }): Promise<{ reference: ReferenceOccurrence; read: T }[]> {
-  let remaining = Math.min(
-    IMPORTANT_FILES_MAX_TOKENS,
-    Math.floor(input.usableWindowTokens * IMPORTANT_FILES_WINDOW_FRACTION),
-  );
+  let remaining = input.budgetTokens;
   const kept: { reference: ReferenceOccurrence; read: T }[] = [];
   for (const candidate of input.candidates.slice(0, IMPORTANT_FILES_MAX_READS)) {
     if (kept.length === IMPORTANT_FILES_MAX) break;
