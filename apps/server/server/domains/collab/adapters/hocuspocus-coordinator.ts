@@ -405,7 +405,7 @@ function createCoordinator(
  * pass starts an outage against the room that is behind; it is retried after each wait in
  * `backoffMs` (the last repeating) for as long as Hocuspocus holds that same room, and ends with
  * a pass that catches it up or with the room unloaded or replaced (a load reads the journal).
- * A request made during a wait ends the wait: its pass runs at once into whatever room is open,
+ * A request made during a wait or the failing attempt runs at once into whatever room is open,
  * so a save after the outage never waits out the backoff.
  * Room lifetime stays Hocuspocus's: delivery never closes or drops a room. A writer's frames are
  * journal-first, so while the journal can't be read they fail too.
@@ -448,6 +448,7 @@ function createRoomDelivery(deps: {
             else {
               const wait = deps.backoffMs[Math.min(failures, deps.backoffMs.length) - 1] ?? 0;
               for (const resolve of waiters) resolve();
+              if (chain.again) continue;
               await new Promise<void>((resolve) => {
                 const timer = setTimeout(resolve, wait);
                 timer.unref?.();
