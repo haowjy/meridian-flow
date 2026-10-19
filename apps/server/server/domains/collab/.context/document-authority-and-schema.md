@@ -133,3 +133,12 @@ rejected promise.
 - [ContextFS contracts](../../context/.context/CONTEXT.md)
 - [Collab shared contracts](CONTEXT.md)
 - [WebSocket concurrency](websocket-concurrency.md)
+
+## Fresh copied documents
+
+`readCopySource` projects live PMNodes and their revision from one durable read.
+`seedFromNodes` installs them only into a document without authority and defers
+room delivery until commit. Whole-document model copy and initial seeding use
+agent-edit's `materializeDocument`, which inserts nodes with fresh CRDT and
+block binding identity, retaining stored link refs. Never initialize a copy by
+applying the source's Yjs updates or by Markdown roundtripping its nodes.

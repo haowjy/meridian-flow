@@ -276,6 +276,23 @@ no `results://` scheme. Neither Recent list lives here: chat Recent reads
 - [Collab codec and authority](../../collab/.context/CONTEXT.md)
 - [Deferred work](FUTURE.md)
 
+## Thread notes copying
+
+`ThreadNotesCopy` owns live subtree preparation and one atomic create-only install.
+It reads content before the destination namespace transaction, without retained
+source leases or revision revalidation. This is live content during copying,
+not a creation-instant snapshot. A missing source root allocates nothing; an
+empty root (including empty descendants) is copied. An existing destination
+root is left alone, including concurrent writer/model notes.
+
+The installer uses the ordinary associated-root proof and placement path,
+fresh node rows and collab's initialize-only authority seeding. Tracked nodes
+retain stable link refs but no source CRDT history, frontiers, drafts or undo
+receipts. Binary object preparation is shared with single-file copy and its
+uncommitted objects are released on failure. Content and tree install together;
+arrivals settle once against the complete tree and the destination catalog
+publishes once. No per-file ContextPort writes or catalog publications.
+
 ## Thread-folder presentation
 
 `adapters/catalog-reader.ts` owns source selection and authoritative live-tree

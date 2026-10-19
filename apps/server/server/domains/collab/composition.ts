@@ -698,6 +698,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
+      readCopySource: runtime.markdownDocuments.readCopySource,
+      seedFromNodes: runtime.markdownDocuments.seedFromNodes,
       writeDocument: runtime.markdownDocuments.writeDocument,
       withLiveDocument: runtime.markdownDocuments.withLiveDocument,
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,

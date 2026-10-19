@@ -148,6 +148,7 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createThreadNotesCopy, type ThreadNotesCopy } from "./thread-notes-copy.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export {
   createDocumentRemoval,

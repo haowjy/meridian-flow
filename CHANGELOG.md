@@ -29,6 +29,8 @@
 - AI-written scoped links expand before identity correspondence, preserving links when a writer moves a target and reuses its old path.
 
 - Editor link identity, wikilink ranking, namespace availability and recent-document routes retain complete thread-folder locations.
+- Scratch notes can be copied as one create-only subtree with fresh document and block identities, independent history and binary storage. Document `write copy` and inherited notes share the same node materializer.
+
 - Forks and handoffs retain the chat they were derived from, so `$PARENT` names that chat even when the selected turn was inherited. Existing derivations are backfilled from their cutoff owner.
 
 - Chat notes folders display chat titles (subagents use their spawning parent’s title), independently of their stable paths. Title changes publish only affected folder labels, not entire source trees.

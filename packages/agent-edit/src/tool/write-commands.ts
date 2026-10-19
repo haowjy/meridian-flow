@@ -10,6 +10,7 @@ import { createPlanningView, planningSnapshot } from "../frontier.js";
 import { type BlockRef, toDocHandle, toRef, unwrapBlock } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import { getTopLevelXmlBlocks } from "../model/block-hash.js";
+import { materializeDocument } from "../model/materialize-document.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
@@ -571,12 +572,7 @@ export function createWriteCommands(deps: {
             certifySegment(planDoc, plan.ir, beforeVector),
           );
         beforeSegment?.();
-        let insertedBlocks: string[] = [];
-        planDoc.transact(() => {
-          insertedBlocks = options.model
-            .insertBlocks(toDocHandle(planDoc), null, { blocks: [...plan.blocks] })
-            .map((block) => options.model.getBlockId(block));
-        }, origin);
+        const insertedBlocks = materializeDocument(planDoc, options.model, plan.blocks, origin);
         return { ok: true, changedBlocks: [], deletedBlocks: [], insertedBlocks };
       },
     );

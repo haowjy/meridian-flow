@@ -12,7 +12,7 @@ import {
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
-import { Err, type Result } from "../../shared/result.js";
+import { Err, Ok, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../storage/index.js";
 import type { CopiedFrom } from "./document-metadata.js";
@@ -70,26 +70,43 @@ export async function copyBinaryDocument(
   }
   if (existing.error.code !== "not_found") return existing;
 
-  const sourceKey = objectStoreKeyFromStorageUrl(input.source.storageUrl);
-  if (!sourceKey) return ioError(input.source.uri, "The source file has no stored object.");
-  const object = await input.objectStore.get(sourceKey);
-  if (!object.ok) return ioError(input.source.uri, object.error.message);
-
-  const key = `copies/${crypto.randomUUID()}`;
-  const mimeType = input.source.mimeType ?? object.value.mimeType;
-  const put = await input.objectStore.put(key, object.value.bytes, mimeType);
-  if (!put.ok) return ioError(input.destinationUri, put.error.message);
+  const prepared = await prepareBinaryCopy(input.objectStore, input.source);
+  if (!prepared.ok) return prepared;
+  const { key, storageUrl, mimeType, sizeBytes } = prepared.value;
 
   const written = await input.port.writeBinary(destinationUri, {
     fileType: input.source.fileType,
-    storageUrl: put.value.storageUrl,
+    storageUrl,
     mimeType,
-    sizeBytes: object.value.bytes.byteLength,
+    sizeBytes,
     metadata: { copiedFrom: input.copiedFrom },
     ...(input.origin ? { origin: input.origin } : {}),
   });
   if (!written.ok) await input.objectStore.delete(key);
   return written;
+}
+
+/** Prepare independent object bytes before a tree transaction; its caller owns failed-install cleanup. */
+export async function prepareBinaryCopy(
+  objectStore: ObjectStorePort,
+  source: Pick<BinaryFileRef, "storageUrl" | "mimeType" | "uri">,
+): Promise<
+  Result<{ key: string; storageUrl: string; mimeType: string; sizeBytes: number }, ContextError>
+> {
+  const sourceKey = objectStoreKeyFromStorageUrl(source.storageUrl);
+  if (!sourceKey) return ioError(source.uri, "The source file has no stored object.");
+  const object = await objectStore.get(sourceKey);
+  if (!object.ok) return ioError(source.uri, object.error.message);
+  const key = `copies/${crypto.randomUUID()}`;
+  const mimeType = source.mimeType ?? object.value.mimeType;
+  const put = await objectStore.put(key, object.value.bytes, mimeType);
+  if (!put.ok) return ioError(source.uri, put.error.message);
+  return Ok({
+    key,
+    storageUrl: put.value.storageUrl,
+    mimeType,
+    sizeBytes: object.value.bytes.byteLength,
+  });
 }
 
 function ioError(uri: string, message: string): Result<never, ContextError> {

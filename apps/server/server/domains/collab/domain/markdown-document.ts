@@ -12,6 +12,7 @@ import {
   fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
+  materializeDocument,
   overwriteWithAssigned,
   renderAgentEditResult,
   toDocHandle,
@@ -119,6 +120,13 @@ type DraftMutation = (
 ) => Result<void, SyncError> | Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
+  /** Live nodes and revision from one durable cut, without copying its journal or frontier. */
+  readCopySource(
+    documentId: DocumentId,
+  ): Promise<Result<{ nodes: readonly PMNode[]; revision: string }, SyncError>>;
+  /** Initialize-only fresh identity/history from stored nodes, preserving their link refs. */
+  seedFromNodes(documentId: DocumentId, nodes: readonly PMNode[]): Promise<void>;
+
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
@@ -447,8 +455,7 @@ export function createMarkdownDocumentEngine(
   ): Promise<void> {
     const doc = createCollabYDoc({ gc: false });
     try {
-      if (blocks.length > 0)
-        deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...blocks] });
+      materializeDocument(doc, deps.model, blocks);
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
         documentId,
         Y.encodeStateAsUpdate(doc),
@@ -472,6 +479,35 @@ export function createMarkdownDocumentEngine(
       documentId,
       deps.parseStored(projection, format.value.filetype).blocks,
     );
+  }
+
+  async function seedFromNodes(
+    documentId: DocumentId,
+    nodes: readonly PMNode[],
+    origin: DocumentSeedOrigin = { type: "system" },
+  ): Promise<void> {
+    const format = await documentFormat(documentId);
+    if (!format.ok) throwSyncError(format.error);
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      materializeDocument(doc, deps.model, nodes, yjsTransactionOrigin(origin));
+      const markdown = serializeForSchema(
+        documentId,
+        doc,
+        format.value.schemaType,
+        await spelling(documentId, [doc], LIVE_VIEW, [...nodes]),
+      );
+      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
+        documentId,
+        Y.encodeStateAsUpdate(doc),
+      );
+      if (!seeded) return;
+      const deliver = () => deps.coordinator.deliver(documentId);
+      if (!deps.deferUntilCommit?.(deliver)) await deliver();
+      await deps.afterWrite?.({ documentId, markdown });
+    } finally {
+      doc.destroy();
+    }
   }
 
   const engine: MarkdownDocumentEngine = {
@@ -535,6 +571,24 @@ export function createMarkdownDocumentEngine(
       }
     },
 
+    async readCopySource(documentId) {
+      try {
+        const result = await deps.coordinator.withDocument(documentId, async (doc) => {
+          const links = await spelling(documentId, [doc]);
+          const cut = versioned(doc, links, (current) =>
+            projectBlocks(documentId, current, (blocks) => blocks),
+          );
+          return { nodes: cut.content, revision: cut.revision };
+        });
+        return Ok(result);
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
+        throw cause;
+      }
+    },
+
+    seedFromNodes,
+
     setMarkdown,
 
     initializeEmptyDocument: (documentId) => initializeAuthority(documentId, []),
@@ -550,27 +604,7 @@ export function createMarkdownDocumentEngine(
       if (!bound.value.fresh) {
         throw new Error("A seed takes a fresh write; this one was bound against a document");
       }
-      const seededDoc = createCollabYDoc({ gc: false });
-      seededDoc.transact(() => {
-        deps.model.insertBlocks(toDocHandle(seededDoc), null, { blocks: [...bound.value.blocks] });
-      }, yjsTransactionOrigin(origin));
-      const canonicalMarkdown = serializeForSchema(
-        typedDocumentId,
-        seededDoc,
-        format.value.schemaType,
-        await spelling(typedDocumentId, [seededDoc]),
-      );
-      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
-        typedDocumentId,
-        Y.encodeStateAsUpdate(seededDoc),
-      );
-      const deliver = () => deps.coordinator.deliver(typedDocumentId);
-      // An enclosing aggregate may still roll back after the checkpoint is
-      // written. Deliver to the rooms only after that durable boundary.
-      if (!deps.deferUntilCommit?.(deliver)) await deliver();
-      if (seeded) {
-        await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
-      }
+      await seedFromNodes(typedDocumentId, bound.value.blocks, origin);
       return Ok(null);
     },
 

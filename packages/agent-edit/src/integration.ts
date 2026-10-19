@@ -37,6 +37,7 @@ export type { ShownLink } from "./links/correspondence.js";
 export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
+export { materializeDocument } from "./model/materialize-document.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
