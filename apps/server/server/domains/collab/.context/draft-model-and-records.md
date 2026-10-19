@@ -39,11 +39,11 @@ their base stays current and they apply cleanly after unarchive; see
 [CONTEXT.md](CONTEXT.md). Replaying an already committed push
 returns its durable receipt without reauthorizing a new write.
 
-Apply and Discard are server commands, not client loops. Apply item and
-per-change commands leave the branch open. Whole Apply and whole Discard name
-the branch once. Reusing a `commandId` returns its recorded result without
-reapplying it. A per-change command on a whole-document-only item refuses
-`whole_item`.
+Apply sends one frozen click to the per-document route; Work Apply all is a
+client loop of clicks, not a server command. See the admission and Apply-click
+contract in [CONTEXT.md](CONTEXT.md#draft-review-admission-and-apply-clicks).
+HTTP Discard accepts only an item; Work Discard all closes the branch. The old
+settlement services remain internal until the Apply execution replacement.
 
 A durable thread peer has no uncommitted authored state after reply finalization:
 its writes enter the shared Work draft atomically. Before a new call, pull tests
@@ -70,12 +70,10 @@ selection movement.
 A certified whole-block carry validates output length and one adjacent visible
 replacement; partial or ambiguous matches fail closed. Restoration aliases
 come from certified retained identities and exact anchors. Equal text or equal
-length is not authorship evidence. Browser Undo/Redo allocates fresh writer
-clocks and sends restoration claims that are untrusted: only claims whose
-content, range, retained source, and anchor certify under the admission lock
-grant aliases, and any other claim's bytes are admitted as writer text. A rich
-restoration may lose AI attribution rather than guess, and ambiguous
-correspondence never credits writer text to the AI.
+length is not authorship evidence. Browser Undo/Redo allocates fresh writer clocks. The review restoration root
+records their range links without a server certificate. The old claims map and
+metadata reader remain only for the legacy client and stored inverse evidence;
+new writer rows no longer carry certified aliases.
 A removed live block is named by its Yjs item, which a draft re-forked from live
 keeps when the deletion is discarded, so a held review can find the restored
 block. Incomplete ownership remains unclassified

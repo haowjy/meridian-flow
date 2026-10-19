@@ -1,6 +1,6 @@
 /** Postgres command record (contract §4.6): lookup, claim in the effect transaction, settlement. */
 
-import type { BranchCommandResult } from "@meridian/contracts/branches";
+import type { StoredBranchCommandResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import { branchCommands, branchPushSettlementBatches } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -65,7 +65,7 @@ export async function lookupCommand(
 export async function claimCommandWithinTx(
   db: DrizzleDb,
   envelope: BranchCommandEnvelope,
-  settled?: BranchCommandResult,
+  settled?: StoredBranchCommandResult,
 ): Promise<boolean> {
   const [claimed] = await db
     .insert(branchCommands)
@@ -101,7 +101,7 @@ export async function attachBatchWithinTx(
 export async function settleCommandForBatchWithinTx(
   db: DrizzleDb,
   batchId: string,
-  result: BranchCommandResult,
+  result: StoredBranchCommandResult,
 ): Promise<void> {
   await db
     .update(branchCommands)

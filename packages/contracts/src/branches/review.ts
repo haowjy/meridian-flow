@@ -15,6 +15,46 @@ import type { DocumentRemovalRecord } from "../protocol/document-removal.js";
 /** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
 export const BranchCommandIdSchema = z.string().uuid();
 
+/** JSON form of the kernel's SpanPatch; PM nodes cross the wire as node JSON. */
+export type ApplySpanPatch = {
+  base: { from: number; to: number };
+  draft: { from: number; to: number };
+  blocks: { type: string; [key: string]: unknown }[];
+};
+
+/** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
+export type ApplyClick = {
+  commandId: BranchCommandId;
+  /** Base64 of Y.encodeSnapshotV2(room snapshot). */
+  snapshot: string;
+  baseViewDelta: ApplySpanPatch[];
+  groupIds: string[];
+};
+
+export type ApplyClickRefusalReason =
+  | "unsynced"
+  | "malformed"
+  | "work_archived"
+  | "work_deleted"
+  | "not_found"
+  | "forbidden"
+  | "unavailable";
+
+export type ApplyClickResult =
+  | { status: "applied"; commandId: BranchCommandId }
+  | { status: "closed"; commandId: BranchCommandId; removal?: DocumentRemovalRecord }
+  | { status: "refused"; commandId: BranchCommandId; reason: ApplyClickRefusalReason };
+
+export type ApplyClickAnswer =
+  | ApplyClickResult
+  | { status: "pending" | "conflict"; commandId: BranchCommandId };
+export type ApplyClickObservation =
+  | ApplyClickAnswer
+  | { status: "none"; commandId: BranchCommandId };
+
+/** The journal also retains historical commands until the settlement paths are removed. */
+export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
+
 /** Why an item cannot be applied as-is: another live change collided with it. */
 export type DraftItemConflict = { code: "path_taken"; path: string } | { code: "deleted_live" };
 
@@ -235,6 +275,7 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
 /** Which writer command a `commandId` was recorded for. */
 export const BRANCH_COMMAND_KINDS = [
+  "apply_click",
   "apply_items",
   "apply_changes",
   "discard_items",
@@ -364,27 +405,17 @@ export type DraftApplyChangesResponse =
 
 // Apply all and Discard all: one server command over the Work's whole branch.
 
-export const DraftApplyItemRefSchema = z.object({
-  itemKey: z.string().max(80),
-  locationToken: z.string().max(40),
-  liveTextToken: z.string().max(100).optional(),
-  draftGenerationToken: z.string().max(40).optional(),
-});
-
-export const BranchApplyAllRequestSchema = z.object({
-  /** The whole branch the dock rendered (a `branches` row; D68). */
-  branchId: z.string().uuid(),
-  commandId: BranchCommandIdSchema,
-  /** Each item once: a selection is a set. */
-  items: z
-    .array(DraftApplyItemRefSchema)
-    .min(1)
-    .max(500)
-    .refine((items) => new Set(items.map((item) => item.itemKey)).size === items.length, {
-      message: "Each item can be applied once per request",
-    }),
-});
-export type BranchApplyAllRequest = z.infer<typeof BranchApplyAllRequestSchema>;
+// These request types remain only until the client command-layer deletion (C0) lands.
+export type BranchApplyAllRequest = {
+  branchId: string;
+  commandId: string;
+  items: {
+    itemKey: string;
+    locationToken: string;
+    liveTextToken?: string;
+    draftGenerationToken?: string;
+  }[];
+};
 
 /**
  * `completed` means the command settled, including selections whose items were all held. Apply never
