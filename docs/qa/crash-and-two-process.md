@@ -22,18 +22,18 @@ and evidence path for each run, as the [catalog](README.md) asks.
   stops the server and the app. The tab needs an app of its own because the
   app's Vite proxy sends every `/ws/yjs` upgrade to one `MERIDIAN_API_ORIGIN`,
   whatever host the tab uses.
-- The hook controller (`collab-hook-controller.ts`) pauses as well as crashes:
-  `COLLAB_PAUSE_AT=<hook point>` with `COLLAB_PAUSE_FILE=<file>` holds the
+- The hook controller (`apps/server/server/shared/test-hook-controller.ts`) pauses as well as crashes:
+  `HOOK_PAUSE_AT=<hook point>` with `HOOK_PAUSE_FILE=<file>` holds the
   operation that reaches the point, with its locks, while the file exists.
-- The crash controller: start the stack with `COLLAB_CRASH_AT=<hook point>` and
-  `COLLAB_CRASH_ARM=<file>`, then `touch <file>` to arm it. At the point, the
+- The crash controller: start the stack with `HOOK_CRASH_AT=<hook point>` and
+  `HOOK_CRASH_ARM=<file>`, then `touch <file>` to arm it. At the point, the
   server deletes the file and exits with 137. Nitro's dev server restarts its
   worker on its own (`Restarting dev worker...` in `logs/portless.log`), and the
   restarted worker finds no arm file. The hook points are
   `draft.append.beforeCommit` (rows and receipts written, the draft row held,
   nothing committed), `draft.append.afterCommit` and
   `draft.rewrite.beforeCommit`
-  (`apps/server/server/domains/collab/domain/collab-test-hooks.ts`).
+  (`apps/server/server/shared/test-hooks.ts`).
 - `collab.draft.rewrite_committed` reports each rewrite (`checkpoint`,
   `compact`, `pull`, `reset`) with `holdMs` and `tailRows`. `holdMs` runs from
   the draft row's `FOR UPDATE` to `COMMIT`.
@@ -55,7 +55,7 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
 ## P5: crash between the append's commit and its ack
 
 1. Run `pnpm dev --stop`, then start the stack armed for the append:
-   `COLLAB_CRASH_AT=draft.append.afterCommit COLLAB_CRASH_ARM=/tmp/<run>-arm MODEL_PROVIDER=mock pnpm dev:local`.
+   `HOOK_CRASH_AT=draft.append.afterCommit HOOK_CRASH_ARM=/tmp/<run>-arm MODEL_PROVIDER=mock pnpm dev:local`.
    Read `draft-readback` for the draft.
 2. Open the draft in the Editor in a named `agent-browser` session. `touch` the
    arm file and type one word.
@@ -67,7 +67,7 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    - Its `text` matches the editor.
    - After a reload, the editor and `stateSha256` are unchanged.
    - Typing again with no arm file does not crash.
-4. Repeat with `COLLAB_CRASH_AT=draft.append.beforeCommit` (phase 4). Count
+4. Repeat with `HOOK_CRASH_AT=draft.append.beforeCommit` (phase 4). Count
    the draft's receipts first:
    `select count(*) from document_edit_parts where placement->>'draftId' = '<draftId>'`
    with `psql "$db"`. Arm the file and type one word. The server exits after
@@ -81,7 +81,7 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    - The receipt count grew by exactly one: the crashed attempt left no receipt.
    - Its `text` matches the editor, and the reload check of step 3 holds.
    - No `1008` or `4207` close in the tab's `/ws/yjs` frames.
-5. Repeat with `COLLAB_CRASH_AT=draft.rewrite.beforeCommit`. Arm the file,
+5. Repeat with `HOOK_CRASH_AT=draft.rewrite.beforeCommit`. Arm the file,
    then drive a live-to-draft pull. A live write from a No Work thread followed
    by a read from the draft thread pulls.
    PASS:

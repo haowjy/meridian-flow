@@ -20,36 +20,48 @@ rooms; late load and connection completion revalidate before use.
 
 ## Only materialization makes a head (W52)
 
+`adapters/drizzle-document-authority-head.ts` is the one writer of
+`document_yjs_heads`: `initializeHead`, `allocateAdmission`, `advanceHead`
+(with `checkpointId` when a checkpoint insert moves it), `retireThrough` and
+`replaceGeneration`. Each write that moves a head joins the living `documents`
+row in its own statement (`livingDocumentSql`, exported by context's
+`tree/living-document.ts`), so a removal that won the document mutation lock
+refuses it at no extra query. Purge in context's `node-rows.ts` deletes the
+heads of documents already removed.
+
 A head and its first checkpoint are written by one initialize-only primitive,
 `InitialDocumentSeeds.seedInitialDocument`: under the document mutation lock it
-proves the `documents` row is living, writes nothing when any checkpoint or
-update exists, and otherwise installs the head and checkpoint. Two kinds of
-caller reach it: the create's own transaction (live create, a branch's new hidden
-row, bootstrap and seeds through `seedFromMarkdown`, or `initializeEmptyDocument`
-for an empty create), and explicit repair of a living document whose authority
-is absent (`repairDocumentAuthority`, from its stored projection with links
-unbound). Repair runs only on an explicit touch: the occupant `create-placement`
-returns, a joined hidden candidate before its draft seeds, live overwrite and
-the held live lease, and Hocuspocus room admission before its first generation
-read. Everything else requires an existing head and creates nothing:
-`allocateDocumentAdmission` (journal and settlement), `readDocumentAuthorityHead`
-(provenance, the generation reader), checkpoint storage, compaction, version
-replacement and push completion. A miss answers the removal record (`DocumentRemovedError`) or
+proves the document is living (`requireLivingDocument`), writes nothing when any
+checkpoint or update exists, and otherwise calls `initializeHead` and installs
+the first checkpoint. Two kinds of caller reach it: the create's own
+transaction (live create, a branch's new hidden row, bootstrap and seeds
+through `seedFromMarkdown`, or `initializeEmptyDocument` for an empty create),
+and explicit repair of a living document whose authority is absent
+(`repairDocumentAuthority`, from its stored projection with links unbound).
+Repair runs only on an explicit touch: the occupant `create-placement` returns,
+a joined hidden candidate before its draft seeds, live overwrite and the held
+live lease, and Hocuspocus room admission before its first generation read.
+Everything else requires an existing head and creates nothing. Draft creation
+(a Work draft or a thread peer) passes `requireLivingDocument` under the same
+lock. A miss answers the removal record (`DocumentRemovedError`) or
 `DocumentNotFoundError`.
 
-`allocateDocumentAdmission` is the one live-write boundary: its head update
-joins the living row, so a removal that won the mutation lock refuses every
-later frame, staged save install and Apply member at no extra query.
+`allocateAdmission` is the one live-write boundary (journal and settlement): a
+removal that won the mutation lock refuses every later frame, staged save
+install and Apply member there.
 
 A deleted document keeps its head and history for Restore, so an existing head
-is not a document that may change. Every other door that mutates retained
-history reads `findLivingDocumentAuthorityHead` under the mutation lock:
+is not a document that may change. Head reads say which they mean:
+`findDocumentAuthorityHead` / `readDocumentAuthorityHead` (nullable / required)
+read a retained head for history; with `{ living: true }`, read under the
+mutation lock, they gate every other door that mutates retained history:
 version replacement and an explicit checkpoint refuse with the record; a
-background checkpoint store and compaction do nothing. `advanceHeadToCheckpoint`,
-which every checkpoint insert passes, joins the living row too, as the backstop.
-Journal-row edit links (`document_yjs_updates.edit_id`) are written only beside
-the admission that inserted the row. Reads of a deleted document's history stay
-open; only purge deletes it.
+background checkpoint store and compaction do nothing. `advanceHead`, which
+every checkpoint insert passes, is the backstop. `readHeadRevision` is the live
+text's revision the review list's fingerprints and the review action fence
+compare. Journal-row edit links (`document_yjs_updates.edit_id`) are written
+only beside the admission that inserted the row. Reads of a deleted document's
+history stay open; only purge deletes it.
 
 `DocumentRemovedError` is a `DocumentNotFoundError` carrying the removal
 record, so every not-found mapping, the model's included, answers a removal as

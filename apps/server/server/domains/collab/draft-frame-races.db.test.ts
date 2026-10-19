@@ -10,9 +10,9 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { interleave, type Settled } from "../../test-support/lock-interleave.js";
 import { readDraftAt } from "./adapters/drizzle-draft-storage.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 import { ReversalConflictError } from "./domain/reversal-conflict.js";
 import {
   ALPHA_ID,
@@ -237,7 +237,7 @@ describe("writer frames racing rewrites (postgres)", () => {
     last: (fragment: Y.XmlFragment) => void,
   ): Promise<{ commits: () => number; remove: () => void }> {
     let commits = 0;
-    const remove = setCollabHook("inverse.beforeCommitScope", async () => {
+    const remove = setTestHook("inverse.beforeCommitScope", async () => {
       commits += 1;
       const frame = await writerFrame(draftId, commits === 4 ? last : typedAndErased);
       try {

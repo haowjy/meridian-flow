@@ -9,6 +9,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import {
   type ApplyPayloads,
@@ -22,7 +23,6 @@ import {
   type SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { Attempt } from "./draft-attempts.js";
 import { trailContributionReplacement } from "./draft-trail-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
@@ -167,7 +167,7 @@ export function createBranchPushTransition(input: {
         }
         await prepared.afterDurableCommit?.(pushes.map((push) => push.documentDraft.documentId));
         // Staged and durable, not yet settled: where a test races a change with the batch.
-        await collabHook("applyItems.afterStaging");
+        await testHook("applyItems.afterStaging");
         // The committer holds the batch's first claim; it never adopts a later one.
         const batch = await input.settlementStore.loadSettlementBatch({
           batchId: settlement.batchId,

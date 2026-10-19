@@ -8,6 +8,7 @@ import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
@@ -16,7 +17,6 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createBranches } from "./domain/branches.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 import { ThreadPeerPullLost } from "./domain/draft-pulls.js";
 import {
   ALPHA_ID,
@@ -311,7 +311,7 @@ describe("reply save refusals (postgres)", () => {
 
   it("15b: another Work revealing the create before Discard's transaction keeps the draft and refuses discarded_edit", async () => {
     const { second, review, fixture } = await createdThenStaged();
-    const remove = setCollabHook("discard.beforeCommitScope", async () => {
+    const remove = setTestHook("discard.beforeCommitScope", async () => {
       remove();
       await db
         .update(schema.documents)
@@ -469,7 +469,7 @@ describe("reply save refusals (postgres)", () => {
       const { responseId, review, write } = await setup();
       expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
       let saved: Saved | undefined;
-      const remove = setCollabHook("discard.beforeRetirement", async () => {
+      const remove = setTestHook("draft.beforeRetirement", async () => {
         remove();
         saved = await harness.commit(responseId);
       });
@@ -497,7 +497,7 @@ describe("reply save refusals (postgres)", () => {
         await shareHiddenCreate(fixture);
       }
       let saved: Saved | undefined;
-      const remove = setCollabHook("discard.beforeRetirement", async () => {
+      const remove = setTestHook("draft.beforeRetirement", async () => {
         remove();
         saved = await harness.commit(second);
       });
@@ -510,7 +510,7 @@ describe("reply save refusals (postgres)", () => {
     const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let late: Awaited<ReturnType<typeof write>> | undefined;
-    const remove = setCollabHook("discard.beforeRetirement", async () => {
+    const remove = setTestHook("draft.beforeRetirement", async () => {
       remove();
       late = await write("blue", "navy", "w-late");
     });
@@ -524,7 +524,7 @@ describe("reply save refusals (postgres)", () => {
     const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardItem(ALPHA_ID);
@@ -580,7 +580,7 @@ describe("reply save refusals (postgres)", () => {
       if (phase === "after the first ensure" && ensures === 1) await discardOnce();
       return peer;
     }) as typeof ensure;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (phase === "before the upstream read") await discardOnce();
     });
     let late: Awaited<ReturnType<typeof core.write>>;
@@ -614,7 +614,7 @@ describe("reply save refusals (postgres)", () => {
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
     const { responseId, review, write, core, context } = await setup();
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardAll();
@@ -678,7 +678,7 @@ describe("reply save refusals (postgres)", () => {
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     let next: string | undefined;
     let oldSaved: Saved | undefined;
-    const remove = setCollabHook("discard.beforeRetirement", async () => {
+    const remove = setTestHook("draft.beforeRetirement", async () => {
       remove();
       oldSaved = await harness.commit(responseId);
       next = await createResponse(db, 3);
@@ -706,7 +706,7 @@ describe("reply save refusals (postgres)", () => {
   it("21: a same-reply write after the old peer's delayed retirement commits; the old write is receipted separately", async () => {
     const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
-    const remove = setCollabHook("discard.beforeRetirement", async () => {
+    const remove = setTestHook("draft.beforeRetirement", async () => {
       remove();
       expect(await write("blue", "navy", "w-fresh")).toMatchObject({ phase: "staged" });
     });

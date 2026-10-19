@@ -2,7 +2,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { setCollabHook } from "../domain/collab-test-hooks.js";
+import { setTestHook } from "../../../shared/test-hooks.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -97,7 +97,7 @@ describe("response helper replay (Postgres)", () => {
     });
     // Pause the write before it reads its drafts, so Discard commits ahead of it.
     let paused = false;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (!paused) {
         paused = true;
         entered();
@@ -160,7 +160,7 @@ describe("response helper replay (Postgres)", () => {
     });
     // Pause the read before it reads any draft, so Discard commits ahead of it.
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
@@ -253,7 +253,7 @@ describe("response helper replay (Postgres)", () => {
       release = resolve;
     });
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();

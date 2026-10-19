@@ -35,10 +35,7 @@ import {
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
-import {
-  readDocumentAuthorityHead,
-  replaceDocumentAuthorityHeadGeneration,
-} from "./drizzle-document-authority-head.js";
+import { readDocumentAuthorityHead, replaceGeneration } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence, createDrizzleJournal } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
@@ -610,7 +607,7 @@ describe("durable document derivations", () => {
     const retiredSeq = await append(doc, " After writer typing.");
     await service.derive(documentId);
     expect(await projection()).toBe("Before typing. After writer typing.");
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const replaced = await replaceGeneration(db, {
       documentId,
       checkpointId: checkpoint.id,
       expectedGeneration: 1n,
@@ -697,7 +694,7 @@ describe("durable document derivations", () => {
       }
       throw new Error(`Expected ${count} queued mutation locks`);
     }
-    const replacement = replaceDocumentAuthorityHeadGeneration(db, {
+    const replacement = replaceGeneration(db, {
       documentId,
       checkpointId: saved.id,
       expectedGeneration: 1n,
@@ -770,7 +767,7 @@ describe("durable document derivations", () => {
     const admission = explicit.checkpoint(documentId, "pre-capture restore");
     await ready;
     try {
-      await replaceDocumentAuthorityHeadGeneration(db, {
+      await replaceGeneration(db, {
         documentId,
         checkpointId: Number(saved.id),
         expectedGeneration: 1n,

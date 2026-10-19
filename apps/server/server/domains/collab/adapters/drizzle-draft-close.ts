@@ -21,7 +21,7 @@ import {
   enlistDrizzleTransactionParticipant,
   runAfterDrizzleCommit,
 } from "../../../shared/drizzle-transaction.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type {
   ClosedDraft,
   DraftCloseCause,
@@ -107,7 +107,7 @@ export function createDraftClose(): DraftClose {
 
   async function retire(batch: DraftRetirementBatch): Promise<void> {
     try {
-      await collabHook("discard.beforeRetirement");
+      await testHook("draft.beforeRetirement");
       await sink?.retire(batch);
     } catch (error) {
       sink?.onError(error);

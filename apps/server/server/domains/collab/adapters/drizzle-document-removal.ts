@@ -4,8 +4,8 @@ import type { Database } from "@meridian/database";
 import { branches } from "@meridian/database/schema";
 import { inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { DocumentRemovalCollab } from "../../context/ports/document-removal.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 
 export function createDrizzleDocumentRemovalCollab(
@@ -16,7 +16,7 @@ export function createDrizzleDocumentRemovalCollab(
     async closeRemovedDocuments(documentIds, record) {
       const tx = currentDrizzleDb(db);
       const closed = await close.closeDrafts(tx, { documentIds }, { documentRemoved: record });
-      await collabHook("removal.afterClose");
+      await testHook("removal.afterClose");
       const branchIds = [...new Set(closed.map((draft) => draft.branchId))];
       if (!branchIds.length) return [];
       const owners = await tx

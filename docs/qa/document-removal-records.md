@@ -120,7 +120,7 @@ known-id denial can include its record without allowing content access.
    active draft.
 9. A draft-mode reply stages a write into an existing document; the document is
    tree-deleted between the staging and its step's save (stack with
-   `COLLAB_PAUSE_AT=draft.ensure.afterDocumentLock`: the step's second tool call
+   `HOOK_PAUSE_AT=draft.ensure.afterDocumentLock`: the step's second tool call
    creates a document and parks there; `./mf doc rm` the first). The staged
    write's tool result reads "This file was deleted by <name> before this reply
    was saved, so this change wasn't made." with no retry, and its chat card
@@ -170,8 +170,8 @@ live and draft rooms with `4208` after the removal commits.
 - B Discards a created document A is reviewing: A says "You discarded <title>
   from the draft elsewhere." Reopen its review address: the pane says the
   same in place of "This destination is unavailable".
-- Apply during a removal: restart with `COLLAB_PAUSE_AT=applyItems.afterStaging
-  COLLAB_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
+- Apply during a removal: restart with `HOOK_PAUSE_AT=applyItems.afterStaging
+  HOOK_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
   document, delete the file. The command answers `held` with `deleted_live` and
   the record; the review closes with the removal's chip.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`

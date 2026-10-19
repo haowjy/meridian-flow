@@ -169,7 +169,6 @@ describe("Yjs draft handshake route guard", () => {
     const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
-    const closeTransport = vi.fn();
     const document = new Y.Doc();
 
     await expect(
@@ -183,7 +182,6 @@ describe("Yjs draft handshake route guard", () => {
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        closeTransport,
         context: {
           draftSyncState: new Map([["draft_1:3", "passed"]]),
         },
@@ -195,10 +193,6 @@ describe("Yjs draft handshake route guard", () => {
       update: new Uint8Array([1, 2, 3]),
       origin: { type: "user", userId: "user-1" },
       document,
-    });
-    expect(closeTransport).toHaveBeenCalledWith({
-      code: 1008,
-      reason: "draft-update-admission-failed",
     });
   });
 
@@ -430,13 +424,12 @@ describe("Yjs live writer admission", () => {
     expect(admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("returns a contained admission without closing the transport", async () => {
+  it("returns a contained admission", async () => {
     const payload = new Uint8Array([0, 0]);
     const admitLiveWriterUpdate = vi.fn(async () => ({
       admitted: false as const,
       joinedSettlement: false as const,
     }));
-    const closeTransport = vi.fn();
 
     await expect(
       admitWriterSync({
@@ -449,11 +442,9 @@ describe("Yjs live writer admission", () => {
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        closeTransport,
         expectedGeneration: 1n,
       }),
     ).resolves.toEqual({ admitted: false, joinedSettlement: false });
-    expect(closeTransport).not.toHaveBeenCalled();
   });
 
   it("rejects a failed admission and accepts the client's resubmitted update", async () => {
@@ -462,7 +453,6 @@ describe("Yjs live writer admission", () => {
       .fn()
       .mockRejectedValueOnce(new Error("journal down"))
       .mockResolvedValueOnce({ admitted: true, joinedSettlement: false });
-    const closeTransport = vi.fn();
     const input = {
       services: {
         ...services(false),
@@ -473,17 +463,12 @@ describe("Yjs live writer admission", () => {
       syncType: messageYjsUpdate,
       payload,
       userId: "user-1" as never,
-      closeTransport,
       expectedGeneration: 1n,
     };
 
     await expect(admitWriterSync(input)).rejects.toMatchObject({
       reason: "writer-journal-admission-failed",
       code: 1013,
-    });
-    expect(closeTransport).toHaveBeenCalledWith({
-      code: 1013,
-      reason: "writer-journal-admission-failed",
     });
     await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,

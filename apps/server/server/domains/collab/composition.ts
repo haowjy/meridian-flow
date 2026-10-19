@@ -672,7 +672,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
             ? room.documentId
             : (await drafts.getDraft(room.draftId))?.documentId;
         if (!documentId) return null;
-        return (await readRemovalRecords(deps.db, [documentId])).get(documentId) ?? null;
+        const removal = (await readRemovalRecords(deps.db, [documentId])).get(documentId);
+        return removal ? { documentId, removal } : null;
       },
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,

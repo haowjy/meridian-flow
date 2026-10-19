@@ -20,6 +20,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { setTestHook } from "../../../shared/test-hooks.js";
 import {
   type BranchTreeScenario,
   branchTreeScenario,
@@ -29,7 +30,6 @@ import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
-import { setCollabHook } from "../../collab/domain/collab-test-hooks.js";
 import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
 import { endUse } from "./end-use.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
@@ -284,7 +284,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const gate = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const remove = setCollabHook("checkpoint.afterAuthorityRead", async () => {
+      const remove = setTestHook("checkpoint.afterAuthorityRead", async () => {
         const [row] = await currentDrizzleDb(db).execute<{ pid: number }>(
           sql`SELECT pg_backend_pid() AS pid`,
         );

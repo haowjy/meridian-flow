@@ -144,12 +144,13 @@ export type CollabTransport = {
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   /**
-   * The removal record of the document a room serves (a draft room's by its draft), or null
-   * while it lives. Read only where the gateway is already refusing, to answer `4208`.
+   * The removed document a room serves, with its record (a draft room's by its retained draft,
+   * at any status, never reopened), or null while it lives. Unauthorized: the gateway reads it
+   * only where it is already refusing, and answers `4208` only to a reader of the document.
    */
   roomRemoval(
     room: { documentId: DocumentId } | { draftId: string },
-  ): Promise<DocumentRemovalRecord | null>;
+  ): Promise<{ documentId: DocumentId; removal: DocumentRemovalRecord } | null>;
   validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   admitDraftWriterUpdate(input: {
     draftId: string;

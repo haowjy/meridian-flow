@@ -19,10 +19,10 @@ import {
 import { ReplicaHarness } from "@meridian/resource-replica/test-support";
 import { and, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { itemFor } from "../../test-support/branch-tree-scenario.js";
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
   it("merges a create the writer also made live, keeps a live rename, and refuses the model's later create usefully (E-1)", async () => {
@@ -98,7 +98,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     // A rename that lands after a tokenless Apply read the draft stands too, with no note.
     const notes = await s.model(ascension).create("notes/original", "Notes, drafted.");
     await s.writer.create("notes/original", { content: "Writer's notes." });
-    const renameLate = setCollabHook("applyItems.beforeStaging", async () => {
+    const renameLate = setTestHook("applyItems.beforeStaging", async () => {
       renameLate();
       await s.writer.move("notes/original", "notes/renamed");
     });
@@ -182,7 +182,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     const scope = { kind: "project" as const, projectId: s.project.id };
     const fresh = await s.model(ascension).create("catalog/new", "Drafted catalog file.");
     const before = await contextCatalog.snapshot(scope);
-    const remove = setCollabHook("applyItems.afterStaging", async () => {
+    const remove = setTestHook("applyItems.afterStaging", async () => {
       remove();
       throw new Error("injected process death after staging");
     });

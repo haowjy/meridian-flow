@@ -12,6 +12,7 @@
 import type { BranchId, ContextSourceId, DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { type TestHookPoint, testHook } from "../../../shared/test-hooks.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { recordCreated } from "./branch-tree-store.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
@@ -25,7 +26,6 @@ import type {
 } from "./hidden-node-types.js";
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
 import { type PlaceResult, place, walkFolders } from "./placement.js";
-import { type TreeHookPoint, treeHook } from "./test-hooks.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
 import {
   type DocumentSlot,
@@ -284,7 +284,7 @@ async function pickHiddenCandidate(
   slot: DocumentSlot,
   options: {
     excludeBranchId?: BranchId;
-    lock?: TreeHookPoint;
+    lock?: TestHookPoint;
     repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   } = {},
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
@@ -297,7 +297,7 @@ async function pickHiddenCandidate(
   if (!options.lock) return firstUsed(candidates);
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await treeHook(options.lock);
+  await testHook(options.lock);
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ...filter, ids });
   const unused = valid

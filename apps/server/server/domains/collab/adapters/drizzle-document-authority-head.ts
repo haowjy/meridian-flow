@@ -1,14 +1,26 @@
-/** The durable document authority head: admission allocation, require-existing reads, replacement. */
+/**
+ * The durable document authority head (`document_yjs_heads`), and its one writer. Only
+ * materialization (a create's transaction, or explicit repair of a living document) makes a
+ * head; every later write moves it under the caller's document mutation lock and requires a
+ * living document in the same statement, so a removal that won the lock refuses here at no
+ * extra query on the admitted path. A deleted document keeps its head and history for
+ * Restore: readable, frozen.
+ */
 
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
+import {
+  COLLAB_SCHEMA_VERSION,
+  type CollabSchemaVersion,
+  packCollabSchemaVersion,
+  unpackCollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { DocumentRemovedError } from "../../context/ports/document-removal.js";
-import { readRemovalRecords } from "../../context/tree/removal.js";
-import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
+import type { DocumentRemovedError } from "../../context/ports/document-removal.js";
+import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
 
@@ -17,13 +29,16 @@ export type DocumentAuthorityHeadGeneration = {
   generation: bigint;
 };
 
-/**
- * The one allocation every live write passes (the journal and settlement's direct writer),
- * under the caller's document mutation lock: it requires an existing head on a living
- * document in the same statement, so a removal that won the lock refuses here at no extra
- * query on the admitted path.
- */
-export async function allocateDocumentAdmission(
+/** A living document's first head, at birth; an existing head (a head-only anomaly) is reused. */
+export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId): Promise<void> {
+  await db
+    .insert(documentYjsHeads)
+    .values({ documentId, schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION) })
+    .onConflictDoNothing({ target: documentYjsHeads.documentId });
+}
+
+/** The one allocation every live write passes (the journal and settlement's direct writer). */
+export async function allocateAdmission(
   db: AuthorityHeadDb,
   documentId: string,
 ): Promise<DocumentAuthorityHeadGeneration & { admissionSequence: bigint }> {
@@ -33,12 +48,7 @@ export async function allocateDocumentAdmission(
       nextAdmissionSequence: sql`${documentYjsHeads.nextAdmissionSequence} + 1`,
       updatedAt: sql`now()`,
     })
-    .where(
-      and(
-        eq(documentYjsHeads.documentId, documentId as DocumentId),
-        documentNotDeletedSql(documentYjsHeads.documentId),
-      ),
-    )
+    .where(living(documentId))
     .returning({
       authorityId: documentYjsHeads.authorityId,
       generation: documentYjsHeads.authorityGeneration,
@@ -53,27 +63,51 @@ export async function allocateDocumentAdmission(
 }
 
 /**
- * The authority head of a document that must already have one. Only materialization (the
- * create's transaction, or explicit repair) makes a head; every other reader fails here.
+ * Moves a living document's head to what was just admitted or checkpointed; a checkpoint
+ * insert names its checkpoint. A missing head or a removed document is refused, rolling the
+ * caller's rows back with it, so this is the backstop behind each door's own liveness read.
  */
-export async function readDocumentAuthorityHead(
+export async function advanceHead(
   db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentAuthorityHeadGeneration> {
-  const row = await findDocumentAuthorityHead(db, documentId);
-  if (!row) throw await refusedAuthority(db, documentId);
-  return row;
+  to: { latestUpdateSeq: number; latestStateVector: Uint8Array; checkpointId?: number },
+): Promise<void> {
+  const [updated] = await db
+    .update(documentYjsHeads)
+    .set({
+      // Monotonic, so a downgraded server cannot erase the stale-schema fence.
+      schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)})`,
+      latestUpdateSeq: to.latestUpdateSeq,
+      latestStateVector: Buffer.from(to.latestStateVector),
+      ...(to.checkpointId === undefined ? {} : { latestCheckpointId: to.checkpointId }),
+      updatedAt: sql`now()`,
+    })
+    .where(living(documentId))
+    .returning({ documentId: documentYjsHeads.documentId });
+  if (!updated) throw await refusedAuthority(db, documentId);
+}
+
+/** Compaction retired the journal prefix through `seq`; the floor only rises. */
+export async function retireThrough(
+  db: AuthorityHeadDb,
+  documentId: string,
+  seq: number,
+): Promise<void> {
+  await db
+    .update(documentYjsHeads)
+    .set({ retiredThroughSeq: sql`greatest(${documentYjsHeads.retiredThroughSeq}, ${seq})` })
+    .where(living(documentId));
 }
 
 /**
- * The head of a living document, read under the caller's document mutation lock. Every door
- * that changes retained history (checkpoints, compaction, version replacement) passes it: a
- * deleted document keeps its head and history for Restore, readable but frozen, so a head
- * that exists is not a document that may change.
+ * A document's current head without materializing a missing one. `living` reads it only when
+ * the document may change: under the caller's lock, every door that changes retained history
+ * (checkpoints, compaction, version replacement) asks for it.
  */
-export async function findLivingDocumentAuthorityHead(
+export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
+  options: { living?: boolean } = {},
 ): Promise<DocumentAuthorityHeadGeneration | null> {
   const [row] = await db
     .select({
@@ -82,42 +116,74 @@ export async function findLivingDocumentAuthorityHead(
     })
     .from(documentYjsHeads)
     .where(
-      and(
-        eq(documentYjsHeads.documentId, documentId as DocumentId),
-        documentNotDeletedSql(documentYjsHeads.documentId),
-      ),
+      options.living
+        ? living(documentId)
+        : eq(documentYjsHeads.documentId, documentId as DocumentId),
     )
     .limit(1);
   return row ?? null;
 }
 
-/** Returns the current authority head without materializing a missing row. */
-export async function findDocumentAuthorityHead(
+/** The head a caller requires, else why it has none (`DocumentRemovedError` when `living`). */
+export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentAuthorityHeadGeneration | null> {
+  options: { living?: boolean } = {},
+): Promise<DocumentAuthorityHeadGeneration> {
+  const row = await findDocumentAuthorityHead(db, documentId, options);
+  if (!row) throw await refusedAuthority(db, documentId);
+  return row;
+}
+
+/** The head's schema version, or null before any head exists. */
+export async function findHeadSchemaVersion(
+  db: AuthorityHeadDb,
+  documentId: string,
+): Promise<CollabSchemaVersion | null> {
   const [row] = await db
-    .select({
-      authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
-    })
+    .select({ schemaVersion: documentYjsHeads.schemaVersion })
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, documentId as DocumentId))
     .limit(1);
-  return row ?? null;
+  return row ? unpackCollabSchemaVersion(row.schemaVersion) : null;
 }
 
-/** Why a document has no authority to write or read: its removal, else no head at all. */
+/**
+ * The live text's revision: every admission moves the next sequence and every replacement the
+ * generation, so it is equal exactly while no admission landed. A document gains its first
+ * head only by materialization, which changes the revision too.
+ */
+export async function readHeadRevision(
+  db: Pick<Database, "select">,
+  documentId: string,
+): Promise<string> {
+  const [head] = await db
+    .select({
+      authorityId: documentYjsHeads.authorityId,
+      generation: documentYjsHeads.authorityGeneration,
+      next: documentYjsHeads.nextAdmissionSequence,
+    })
+    .from(documentYjsHeads)
+    .where(eq(documentYjsHeads.documentId, documentId as DocumentId));
+  return head ? `${head.authorityId}:${head.generation}:${head.next}` : "uninitialized";
+}
+
+/** Why a document has no head to write or read: its removal, its absence, else no head. */
 export async function refusedAuthority(
   db: AuthorityHeadDb,
   documentId: string,
 ): Promise<DocumentRemovedError | DocumentNotFoundError> {
-  const removal = (await readRemovalRecords(db, [documentId as DocumentId])).get(
-    documentId as DocumentId,
+  return (
+    (await livingDocumentRefusal(db, documentId as DocumentId)) ??
+    new DocumentNotFoundError(documentId, `Document ${documentId} has no authority head`)
   );
-  return removal
-    ? new DocumentRemovedError(documentId as DocumentId, removal)
-    : new DocumentNotFoundError(documentId, `Document ${documentId} has no authority head`);
+}
+
+function living(documentId: string) {
+  return and(
+    eq(documentYjsHeads.documentId, documentId as DocumentId),
+    livingDocumentSql(documentYjsHeads.documentId),
+  );
 }
 
 /**
@@ -135,7 +201,7 @@ export function createDrizzleAuthorityGenerationReader(db: Database) {
  * The source checkpoint is copied rather than applied to the current Y.Doc: Yjs apply
  * would merge the checkpoint and current live-document state instead of replacing it.
  */
-export async function replaceDocumentAuthorityHeadGeneration(
+export async function replaceGeneration(
   db: Database,
   input: { documentId: DocumentId; checkpointId: number; expectedGeneration: bigint },
 ): Promise<
@@ -149,8 +215,7 @@ export async function replaceDocumentAuthorityHeadGeneration(
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as Database;
     await lockDocumentMutation(txDb, input.documentId);
-    const head = await findLivingDocumentAuthorityHead(txDb, input.documentId);
-    if (!head) throw await refusedAuthority(txDb, input.documentId);
+    const head = await readDocumentAuthorityHead(txDb, input.documentId, { living: true });
     if (head.generation !== input.expectedGeneration) {
       return { ok: false as const, code: "stale_generation" as const };
     }
