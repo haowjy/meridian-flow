@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Subscribe the document toolbar to its control state so unchanged review metadata does not rerender its ten controls.
+
 - End dock Discard notices when their room session retires, so Undo never targets a replaced document.
 - Hide the empty-paragraph placeholder while removed review prose occupies its line, preventing overlapping glyphs.
 

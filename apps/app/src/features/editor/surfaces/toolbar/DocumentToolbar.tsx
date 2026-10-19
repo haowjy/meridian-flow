@@ -14,6 +14,7 @@
 import { t } from "@lingui/core/macro";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
+import { useEditorState } from "@tiptap/react";
 import {
   AlignCenter,
   AlignLeft,
@@ -29,17 +30,12 @@ import {
   Redo2,
   Undo2,
 } from "lucide-react";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { type ComponentProps, memo, type ReactNode, useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { openLinkForm } from "@/core/editor/links";
-import {
-  EditorMenu,
-  EditorMenuRadioGroup,
-  EditorMenuRadioItem,
-  useEditorRevision,
-} from "@/features/editor/chrome";
+import { EditorMenu, EditorMenuRadioGroup, EditorMenuRadioItem } from "@/features/editor/chrome";
 import { cn } from "@/lib/utils";
 import { ToolbarButton, ToolbarControlTooltip, toolbarControlClass } from "./ToolbarButton";
 import {
@@ -71,23 +67,36 @@ export type DocumentToolbarProps = {
   uploadAvailable?: boolean;
 };
 
-export function DocumentToolbar({
+export const DocumentToolbar = memo(function DocumentToolbar({
   editor,
   editable = true,
   schemaType = "document",
   onUploadFigure,
   uploadAvailable = true,
 }: DocumentToolbarProps) {
-  useEditorRevision(editor);
-
-  const controls = documentToolbarControls({
-    editor,
-    editable,
-    schemaType,
-    canUndo: canUndoDocument(editor),
-    canRedo: canRedoDocument(editor),
-    imageUploadAvailable: uploadAvailable,
-  });
+  const selectToolbarState = useCallback(
+    ({ editor: target }: { editor: Editor | null }) => ({
+      controls: documentToolbarControls({
+        editor: target,
+        editable,
+        schemaType,
+        canUndo: canUndoDocument(target),
+        canRedo: canRedoDocument(target),
+        imageUploadAvailable: uploadAvailable,
+      }),
+      alignment:
+        target && !target.isDestroyed ? currentAlignmentValue(target) : ("default" as const),
+    }),
+    [editable, schemaType, uploadAvailable],
+  );
+  // Compare the matrix, not transaction revisions: review metadata and focus
+  // transactions must not rebuild the row. Alignment's value matters even
+  // when its active flag stays true (center to right).
+  const { controls, alignment } =
+    useEditorState({
+      editor,
+      selector: selectToolbarState,
+    }) ?? selectToolbarState({ editor });
   const run = (command: (editor: Editor) => unknown) => () => {
     if (editor && !editor.isDestroyed) command(editor);
   };
@@ -151,7 +160,7 @@ export function DocumentToolbar({
           <ToolbarControl id="link" state={controls.link} onPress={() => openLinkForm(editor)}>
             <LinkIcon className="size-3.5" aria-hidden />
           </ToolbarControl>
-          <AlignmentControl editor={editor} state={controls.alignment} />
+          <AlignmentControl editor={editor} state={controls.alignment} value={alignment} />
           <ToolbarControl
             id="uploadFigure"
             state={controls.uploadFigure}
@@ -163,7 +172,7 @@ export function DocumentToolbar({
       </div>
     </TooltipProvider>
   );
-}
+});
 
 function ToolbarControl({
   id,
@@ -197,9 +206,11 @@ const ALIGNMENT_ICONS = {
 function AlignmentControl({
   editor,
   state,
+  value,
 }: {
   editor: Editor | null;
   state: ToolbarControlState;
+  value: ToolbarAlignmentValue;
 }) {
   const [open, setOpen] = useState(false);
   const label = toolbarControlLabel("alignment");
@@ -209,7 +220,6 @@ function AlignmentControl({
     "alignment",
     editor ? state.blockedBy : "editor-loading",
   );
-  const value: ToolbarAlignmentValue = editor ? currentAlignmentValue(editor) : "default";
 
   // A greyed control opens nothing, so no menu is composed around it at all;
   // the button keeps its geometry and explains itself instead.
