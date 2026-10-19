@@ -59,6 +59,7 @@
 
 - Preserve typed eligibility failures during initial request preparation, including terminal diagnostics and child reports.
 ### Added
+- Runtime probe RP-22 exercises selected keep-open reads, fallback, budget, fresh credit and concurrent-writer behavior.
 - Keep-open selectors handle surrounding decoration and separator whitespace without repairing incomplete ranges.
 - Keep-open lines can select a heading, block or range after compaction, with whole-read fallback for unreadable selections and full tail copies preserved after partial re-shows.
 
