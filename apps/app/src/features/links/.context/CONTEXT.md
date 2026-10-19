@@ -262,7 +262,9 @@ from a path or label.
 
 Chat variable addresses are not browser locations. `hasContextUriVariable`
 recognizes first-segment variable syntax without expansion. Transcript scans
-leave these unasked; each click bypasses cached answers and sends the raw href
+leave these unasked; each click owns a transient request in the normal
+generation lifecycle (re-asked on replacement, settled null on teardown),
+without retaining its answer for the next click. It sends the raw href
 with the chat's `scopedThreadId`. The server proves that chat and reads current
 Work membership, including the derivation source for `$PARENT`, before expansion.
 A remote parent rebind needs no child subscription or snapshot invalidation.

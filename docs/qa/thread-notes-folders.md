@@ -138,6 +138,13 @@ arguments or use JSON files).
   reuse it deletes only the new occupant. A remains intact at its moved address.
   Chat navigation still follows the vacated address to A.
 
+- **Variable clicks across catalog generations.** Hold a variable resolve response,
+  then replace its catalog generation while the click waits. The new generation
+  must re-ask and open its replacement document; releasing the old answer must
+  never open the retired document. Repeat with the follower unmounted while the
+  request is held: release opens nothing. A later click always sends a new request;
+  transcript scans send none. Compare with the same canonical-link schedule.
+
 ## Labels and targeted publication
 
 Take a Work catalog snapshot and save its cursor. Rename a chat with

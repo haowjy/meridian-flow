@@ -278,6 +278,10 @@ export function createLinkAnswerCache(): LinkAnswerCache {
   const listeners = new Set<() => void>();
   /** The only generation anyone can read. Null until a port registers. */
   let current: Generation | null = null;
+  let clickId = 0;
+
+  const isVariableQuestion = (question: LinkQuestion) =>
+    question.ref === null && hasContextUriVariable(linkTargetHref(question.target));
 
   const publish = () => {
     for (const listener of listeners) listener();
@@ -299,6 +303,11 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     // This request's own entry and no other: after a re-registration the map
     // under this key can hold the next generation's question about it.
     if (generation.asking.get(key) === request) generation.asking.delete(key);
+    // Click-time scope answers belong to this waiter, not the next click.
+    if (isVariableQuestion(request.question)) {
+      if (generation === current) request.settle(entry);
+      return;
+    }
     const previous = generation.answers.get(key) ?? null;
     // A failure is remembered even under a kept provisional answer, so a click
     // asks the server again rather than trusting an answer it never confirmed.
@@ -349,15 +358,20 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     const already = generation.asking.get(key);
     if (already) return already.promise;
 
+    const remember = !isVariableQuestion(question);
     const local = generation.resolver.local?.(question) ?? ASK;
     if (local.kind === "answered") {
-      generation.failed.delete(key);
-      generation.answers.set(key, local.answer);
+      if (remember) {
+        generation.failed.delete(key);
+        generation.answers.set(key, local.answer);
+      }
       return Promise.resolve(local.answer);
     }
     if (local.kind === "unasked") {
-      generation.answers.delete(key);
-      generation.failed.add(key);
+      if (remember) {
+        generation.answers.delete(key);
+        generation.failed.add(key);
+      }
       return Promise.resolve(null);
     }
 
@@ -375,7 +389,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       awaited: false,
     };
     generation.asking.set(key, request);
-    generation.answers.set(key, local.provisional ?? PENDING);
+    if (remember) generation.answers.set(key, local.provisional ?? PENDING);
     // Queued, not sent: the caller pumps once it has asked everything it has,
     // so one scan of the document goes out as one batch.
     generation.queue.push(request);
@@ -471,15 +485,9 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       // A provisional answer is not settled: the click waits for the server
       // (whose gone or other document wins), or asks again if it failed.
       const settled = !generation.asking.has(key) && !generation.failed.has(key);
-      // Variables are click-time questions, never cached or shared with a previous click.
-      if (link.ref === null && hasContextUriVariable(link.href)) {
-        const local = generation.resolver.local?.(question);
-        if (local?.kind === "unasked") return null;
-        try {
-          return (await generation.resolver.remote([question]))[0] ?? null;
-        } catch {
-          return null;
-        }
+      // Each variable click owns a transient request in the same retirement lifecycle.
+      if (isVariableQuestion(question)) {
+        return askAwaited(generation, `${key}\u0000click:${++clickId}`, question);
       }
       if (known && known.state !== "pending" && settled) return known;
       // A click is the writer asking again, so a failure is worth retrying.

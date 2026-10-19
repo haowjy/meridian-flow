@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep variable-link clicks in the shared generation lifecycle: catalog changes re-ask pending clicks, teardown retires them, and later clicks never reuse an answer.
+
 - CLI variable document addresses operate at the requested location, not a moved document’s historical link destination. Navigation still follows moved links.
 
 - Move refusals name the destination’s catalog title, not its reserved notes-folder basename. Chat folder listings and mobile Scratch ancestry also use catalog labels; masked Scratch addresses no longer guess folder names.
