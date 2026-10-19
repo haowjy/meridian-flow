@@ -5,6 +5,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
+  type AgentEditJournal,
   bytesEqual,
   type ConcurrentUpdate,
   type ConcurrentUpdateOrigin,
@@ -224,61 +225,50 @@ export function createDraftAgentEditCoordinator(input: {
         : read((await threadWorkDraft(docId as DocumentId)).draftId, false);
     },
 
-    // A drafted write commits only through its reply's save: the pool runs even a write with
-    // no reply as a one-entry reply, so nothing reaches the draft through this door.
-    withDocument() {
-      throw new Error("A drafted document is read through readRoom and saved by its reply");
-    },
-
-    stagedWrites: {
-      async prepareSave({ docId, cut, entries, access }): Promise<StagedWriteSaveResult> {
-        const peerId =
-          access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
-        return underAccess(peerId, async (workDraftId) => {
-          const { result, write } = await drafts.prepareStagedRows(
-            workDraftId,
-            async (doc, snapshot) => {
-              const replay = await reconcile(
-                workDraftId,
-                doc,
-                snapshot.generation,
-                { cut, entries },
-                peerId,
-              );
-              return {
-                result: {
-                  kept: replay.keptEntries.flatMap((entry) =>
-                    entry.mutation?.writeId ? [entry.mutation.writeId] : [],
-                  ),
-                  rejected: replay.rejected,
-                  room: draftRoom(workDraftId),
-                  beforeState: snapshot.encoded,
-                  afterState: Y.encodeStateAsUpdate(doc),
-                },
-                rows: draftRows(workDraftId, replay.keptEntries),
-              };
-            },
-            true,
-          );
-          if (!write) return { ...result, write: { kind: "no-effect" } };
-          return {
-            ...result,
-            write: {
-              kind: "write",
-              async persist() {
-                await write.persist();
+    async prepareSave({ docId, cut, entries, access }): Promise<StagedWriteSaveResult> {
+      const peerId =
+        access?.pinnedDraftId ?? (await resolveThreadDraftId(input, docId as DocumentId));
+      return underAccess(peerId, async (workDraftId) => {
+        const { result, write } = await drafts.prepareStagedRows(
+          workDraftId,
+          async (doc, snapshot) => {
+            const replay = await reconcile(
+              workDraftId,
+              doc,
+              snapshot.generation,
+              { cut, entries },
+              peerId,
+            );
+            return {
+              result: {
+                kept: replay.keptEntries.flatMap((entry) =>
+                  entry.mutation?.writeId ? [entry.mutation.writeId] : [],
+                ),
+                rejected: replay.rejected,
+                room: draftRoom(workDraftId),
+                beforeState: snapshot.encoded,
+                afterState: Y.encodeStateAsUpdate(doc),
               },
-              // Installing the replica waits for the enclosing root commit: the coordinator defers it.
-              transfer: () => write.transfer(),
-              dispose: () => write.dispose(),
+              rows: draftRows(workDraftId, replay.keptEntries),
+            };
+          },
+          true,
+        );
+        if (!write) return { ...result, write: { kind: "no-effect" } };
+        return {
+          ...result,
+          write: {
+            kind: "write",
+            async persist() {
+              await write.persist();
             },
-          };
-        });
-      },
+            // Installing the replica waits for the enclosing root commit: the coordinator defers it.
+            transfer: () => write.transfer(),
+            dispose: () => write.dispose(),
+          },
+        };
+      });
     },
-
-    // A Work draft's committed replica is its truth: there is nothing to recover into.
-    async recover(): Promise<void> {},
 
     /**
      * The Work draft's rows (and anything the journal can't explain, as the writer's) that the
@@ -312,20 +302,16 @@ export function createDraftAgentEditCoordinator(input: {
 }
 
 /**
- * The draft core's journal: reads and ordinals come from live; nothing appends through it,
- * since a drafted write saves through its reply.
+ * The draft core's journal: ordinals and attribution come from live; a drafted write's rows
+ * append through its save, never here.
  */
-export function createDraftAgentEditJournal(input: { liveJournal: UpdateJournal }): UpdateJournal {
+export function createDraftAgentEditJournal(input: {
+  liveJournal: UpdateJournal;
+}): AgentEditJournal {
   const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
     input.liveJournal,
   );
-  const refuse = () =>
-    Promise.reject(new Error("A drafted write saves through its reply, not the journal"));
-
   return {
-    append: refuse,
-    appendBatch: refuse,
-
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
       return Promise.resolve({ checkpoint: null, updates: [] });
     },
@@ -344,10 +330,6 @@ export function createDraftAgentEditJournal(input: { liveJournal: UpdateJournal 
             }),
         }
       : {}),
-
-    compact(_docId, _before) {
-      return Promise.resolve({ updatesFolded: 0 });
-    },
 
     reserveWriteOrdinal(documentId, threadId) {
       return input.liveJournal.reserveWriteOrdinal(documentId, threadId);

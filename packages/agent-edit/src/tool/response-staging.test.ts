@@ -298,7 +298,7 @@ describe("response staging", () => {
     ctx.journal.failNextAppendBatchWith(new Error("journal unavailable"));
 
     await expect(ctx.core.commitResponse("response-journal-fail")).rejects.toThrow(
-      /before the journal batch was committed/,
+      /journal unavailable/,
     );
 
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);

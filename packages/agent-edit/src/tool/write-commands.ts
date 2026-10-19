@@ -21,11 +21,6 @@ import { mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import { modelBlockItem } from "./model-result.js";
-import {
-  AcceptedMutationSubmissionError,
-  type MutationCommit,
-  type PreparedMutation,
-} from "./mutation-commit.js";
 import { type ListingSource, recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import { REFUSAL_REGION_MAX_BYTES, regionRefusal } from "./region-check.js";
@@ -34,13 +29,7 @@ import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-f
 import { readCall } from "./result-text.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
-import {
-  errorResponse,
-  mutationMeta,
-  mutationUpdateOrigin,
-  parseFileAddress,
-  readSuccess,
-} from "./write-helpers.js";
+import { errorResponse, mutationMeta, parseFileAddress, readSuccess } from "./write-helpers.js";
 import { scopedToolUseId } from "./write-idempotency.js";
 
 /** Name the rejected logical write, not its model-facing ordinal. */
@@ -71,10 +60,9 @@ export function createWriteCommands(deps: {
   autoTurnIdNonce: string;
   renderer: DocumentRenderer;
   journal: CreateWriteToolOptions["journal"];
-  mutationCommit: MutationCommit;
   responseCommitter: ResponseCommitter;
 }) {
-  const { options, autoTurnCounter, autoTurnIdNonce, renderer, journal, mutationCommit } = deps;
+  const { options, autoTurnCounter, autoTurnIdNonce, renderer, journal } = deps;
   const { responseCommitter } = deps;
 
   return {
@@ -530,11 +518,11 @@ export function createWriteCommands(deps: {
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
     const editScopeId = context.responseIdentity?.editScopeId;
     const staged = Boolean(editScopeId) && actor.kind === "agent";
-    // The scope's first stage keeps the room's cut: reconcile reads what retired since.
+    // A save's first entry keeps the room's cut: reconcile reads what retired since.
     const cut =
-      staged && editScopeId && !responseCommitter.hasScopeCut(editScopeId, docId)
-        ? { generation: room.generation, snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) }
-        : undefined;
+      staged && editScopeId && responseCommitter.hasScopeCut(editScopeId, docId)
+        ? undefined
+        : { generation: room.generation, snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) };
     const preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
     // The echo compares with what the model planned on, as the settled receipt does: a block
     // the writer changed since the view shows in full beside the write.
@@ -586,12 +574,11 @@ export function createWriteCommands(deps: {
       ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
       : undefined;
     const interactionContext = context.interactionContext;
-    const meta = mutationMeta(actor),
-      liveOrigin = mutationUpdateOrigin(actor);
+    const meta = mutationMeta(actor);
     const turnId = actor.kind === "agent" ? actor.turnId : null;
     let phase: "staged" | "committed",
       revision: string | null = null;
-    let lateSweep: import("./mutation-commit.js").DestructiveSweepReport | undefined;
+    let lateSweep: import("./commit-detection.js").DestructiveSweepReport | undefined;
     let awarenessDegraded = false;
     if (staged && editScopeId && actor.kind === "agent") {
       const rejected = responseCommitter.stageUpdate({
@@ -606,7 +593,6 @@ export function createWriteCommands(deps: {
         update,
         editParts: parts,
         meta,
-        liveOrigin,
         actor,
         turnId: actor.turnId,
         writeId: identity.handle,
@@ -626,47 +612,44 @@ export function createWriteCommands(deps: {
       if (rejected) return rejected;
       phase = "staged";
     } else {
-      const committed = await submitPreparedMutation({
+      if (!cut) throw new Error(`A write outside a reply on ${docId} took no room cut`);
+      const saved = await responseCommitter.saveNow({
         docId,
-        commandName: command.command,
-        runtime: { doc: room.doc },
+        cut,
         links,
-        updates: [
-          {
-            update,
-            meta,
-            mutation: {
-              editParts: parts,
-              threadId: session.threadId,
-              turnId,
-              ...(actor.kind === "agent"
-                ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
-                : {}),
-              actorKind: actor.kind,
-              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-              writeId: identity.durableId,
-              wId: identity.ordinal,
-              toolCallId: identity.toolCallId,
-              semanticEditIr,
-              ...mutationMode(interactionContext),
-            },
+        entry: {
+          docId,
+          update,
+          meta,
+          mutation: {
+            editParts: parts,
+            threadId: session.threadId,
+            turnId,
+            ...(actor.kind === "agent"
+              ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
+              : {}),
+            actorKind: actor.kind,
+            ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+            ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+            writeId: identity.durableId,
+            wId: identity.ordinal,
+            toolCallId: identity.toolCallId,
+            semanticEditIr,
+            ...mutationMode(interactionContext),
           },
-        ],
-        liveOrigin,
+        },
         actor,
         preOwnSnapshot,
         refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
-        ...(turnId ? { turnId } : {}),
         interactionContext,
       });
-      if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
+      if (isInternalWriteResult(saved)) return saved;
+      // The echo and frontier show the room as the save left it, as a reply's receipt does.
+      Y.applyUpdate(room.doc, saved.afterState);
       context.frontiers?.reply?.append(docId, [update]);
-      if (committed.ok) {
-        revision = committed.revision;
-        lateSweep = committed.lateSweep;
-        awarenessDegraded = Boolean(committed.awarenessDegraded);
-      } else awarenessDegraded = true;
+      revision = saved.revision;
+      lateSweep = saved.lateSweep;
+      awarenessDegraded = Boolean(saved.awarenessDegraded);
       phase = "committed";
     }
     const outcome = {
@@ -737,24 +720,6 @@ export function createWriteCommands(deps: {
         ...(items.length > 0 ? { blocks: [{ extent: "full", relation: "document", items }] } : {}),
       },
     });
-  }
-
-  async function submitPreparedMutation(input: PreparedMutation) {
-    let result: Awaited<ReturnType<MutationCommit["submitMutation"]>>;
-    try {
-      result = await mutationCommit.submitMutation(input);
-    } catch (cause) {
-      if (!(cause instanceof AcceptedMutationSubmissionError)) throw cause;
-      result = {
-        ok: false,
-        response: status("internal_error", "Retry — transient edit system failure."),
-        journalCommitKind: cause.journalCommitKind,
-      };
-    }
-    if (result.ok || result.journalCommitKind !== "durable") return result;
-    // The journal has the write; the room catches up from it (a later read applies the same diff).
-    await options.coordinator.recover(input.docId).catch(() => undefined);
-    return { ...result, awarenessDegraded: true as const };
   }
 
   /**

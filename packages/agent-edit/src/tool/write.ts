@@ -3,12 +3,12 @@ import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { DocumentNotFoundError } from "../ports/document-coordinator.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
+import { createCommitDetection } from "./commit-detection.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
-import { createMutationCommit } from "./mutation-commit.js";
 import { settledReceipt } from "./receipt.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
@@ -36,7 +36,6 @@ export type { CreateWriteToolOptions } from "./write-deps.js";
 export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
-  recover(docId: string): Promise<void>;
   /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
     editScopeId: string,
@@ -81,7 +80,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const autoTurnCounter = { value: 0 };
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const journal = options.journal;
-  const mutationCommit = createMutationCommit({
+  const detection = createCommitDetection({
     links: options.links,
     journal: options.journal,
     coordinator: options.coordinator,
@@ -89,7 +88,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
   const lifecyclePort = options.lifecycle;
   const responseCommitter = createResponseCommitter({
-    mutationCommit,
+    detection,
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
@@ -99,7 +98,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     onClaimDiscarded: options.onResponseClaimDiscarded,
     onTransition: options.onResponseCommitterTransition,
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
-    afterPreflight: options.afterResponsePreflight,
     onObservationFailed: options.onObservationFailed,
   });
   const commands = createWriteCommands({
@@ -117,7 +115,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     autoTurnIdNonce,
     renderer,
     journal,
-    mutationCommit,
     responseCommitter,
   });
   const documentEdits = createDocumentEditCommands({ options, committer: responseCommitter });
@@ -244,7 +241,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     read,
     write,
-    recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
     prepareResponse: responseCommitter.prepareResponse,
     rollbackResponse: responseCommitter.rollbackResponse,

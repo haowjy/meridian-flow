@@ -24,6 +24,7 @@ import {
 } from "./markdown-document.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
 type AgentEditObservability = Pick<
@@ -40,12 +41,10 @@ type AgentEditObservability = Pick<
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
-  coordinator: DocumentCoordinator;
-  /**
-   * The live agent-edit core's coordinator when it differs from `coordinator`:
-   * production defers live projection until a reply's transaction commits.
-   */
-  agentCoordinator?: DocumentCoordinator;
+  /** The live room door the Markdown engine and link binder work on. */
+  coordinator: LiveDocumentCoordinator;
+  /** The live agent-edit core's reads and saves (production delivers a save after commit). */
+  agentCoordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
@@ -74,7 +73,7 @@ export function createAgentEditRuntime(input: {
       }),
       journal: input.journal,
       documentEdits: input.documentEdits,
-      coordinator: input.agentCoordinator ?? input.coordinator,
+      coordinator: input.agentCoordinator,
       lifecycle: input.lifecycle,
       codec,
       model,

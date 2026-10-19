@@ -5,7 +5,7 @@ export {
   type DestructiveSnapshotInput,
 } from "./apply/destructive-classification.js";
 export type { BlockSnapshot } from "./apply/echo.js";
-export { applyConcurrentUpdates, snapshotBlocks } from "./apply/echo.js";
+export { snapshotBlocks } from "./apply/echo.js";
 export { overwriteWithAssigned } from "./apply/overwrite.js";
 export type { ConcurrentUpdate, ConcurrentUpdateOrigin } from "./apply/types.js";
 export type { AgentEditCodec, AgentEditCodecFactory } from "./codec-adapter.js";
@@ -52,7 +52,6 @@ export type {
   StagedReconcile,
   StagedRoomEntries,
   StagedWriteCommit,
-  StagedWriteHost,
   StagedWriteRejectionReason,
   StagedWriteSaveResult,
 } from "./ports/document-coordinator.js";
@@ -96,6 +95,7 @@ export type {
   UpdateOrigin,
 } from "./ports/types.js";
 export type {
+  AgentEditJournal,
   JournalAuthority,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
@@ -120,7 +120,7 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
+export type { DestructiveSweepReport } from "./tool/commit-detection.js";
 export { rejectedWriteExplanation } from "./tool/receipt.js";
 export {
   isResponseLifecycleError,

@@ -663,12 +663,6 @@ export function createThreadPeerCorePool(input: {
     },
     retirePeer: ({ documentId, threadId, peerDraftId, reason }) =>
       retireThreadPeers(documentId, [{ threadId, peerDraftId, reason }]),
-    recover(docId) {
-      return Promise.all([
-        input.liveUtilityCore.recover(docId),
-        ...[...cores.values()].map((core) => core.recover(docId)),
-      ]).then(() => {});
-    },
     commitResponse,
     hasResponseDocument(responseId, docId) {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);

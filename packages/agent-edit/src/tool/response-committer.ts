@@ -1,41 +1,37 @@
 // Response committer: the one door to a document (`openRoom`), staged-write buffering and lifecycle.
 import * as Y from "yjs";
-import { snapshotBlocks } from "../apply/echo.js";
-import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { FrontierLookup, ReplyMutations } from "../frontier.js";
-import { toDocHandle } from "../handles.js";
-import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
   type DiscardedWriteReason,
-  type DocumentAccess,
   DocumentAccessLostError,
   type DocumentCoordinator,
   isDocumentNotFoundError,
   type StagedCut,
   type StagedWriteRejectionReason,
-  type StagedWriteSaveResult,
 } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
-import { type CommandLinks, openCommandLinks } from "./command-links.js";
-import { withLiveDocument } from "./coordinator.js";
+import type { CommitDetection } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
+import {
+  accessFor,
+  createDocumentSave,
+  degradedReceipts,
+  discardedWrite,
+  discardSave,
+  journalEntries,
+  type SavedNow,
+  type SaveNowInput,
+  type SaveOutcome,
+  type StagedResponseUpdate,
+} from "./document-save.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { documentNotFound, internalResultError, isInternalWriteResult } from "./internal-result.js";
-import type {
-  CommitPreflightInput,
-  DestructiveSweepReport,
-  JournaledUpdate,
-  MutationCommit,
-  OwnWriteStep,
-} from "./mutation-commit.js";
-import { observeRendered } from "./observation.js";
+import { documentNotFound } from "./internal-result.js";
 import { rejectedWriteExplanation, renderSettledReceipts } from "./receipt.js";
 import type {
   DocumentCommandName,
@@ -66,6 +62,11 @@ export interface ResponseCommitter {
   /** This edit scope's kept entries for a document, in order: a write's view replays them last. */
   stagedUpdates(responseId: string | undefined, docId: string): Uint8Array[];
   stageUpdate(input: ResponseStageUpdateInput): InternalWriteResult | null;
+  /**
+   * A write outside a reply, saved at once through the same host port a reply's save uses:
+   * its one entry kept or refused, persisted, handed over, and detected on what the save read.
+   */
+  saveNow(input: SaveNowInput): Promise<SavedNow | InternalWriteResult>;
   /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
     editScopeId: string,
@@ -169,8 +170,6 @@ export interface RoomCopy {
 }
 
 export interface ResponseCommitOptions {
-  signal?: AbortSignal;
-  lockTimeoutMs?: number;
   /**
    * Host-only: record each saved document's frontier at the post-commit cut, in the room the
    * save committed into, chained from the model's latest frontier there (this lookup).
@@ -204,7 +203,6 @@ export interface ResponseStageUpdateInput {
   update: Uint8Array;
   editParts?: readonly Uint8Array[];
   meta: UpdateMeta;
-  liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
   actor: Extract<MutationActor, { kind: "agent" }>;
   writeId?: string;
@@ -223,23 +221,6 @@ export interface ResponseStageUpdateInput {
   copied?: CopySummary;
   /** The reply's own-mutation sequence, which this write joins once its save settles. */
   reply?: ReplyMutations;
-}
-
-interface StagedResponseUpdate extends JournaledUpdate {
-  rejectionReason?: StagedWriteRejectionReason;
-  documentLabel: string;
-  description: string;
-  commandName: DocumentCommandName;
-  liveOrigin: ConcurrentUpdateOrigin;
-  turnId: string;
-  actor: Extract<MutationActor, { kind: "agent" }>;
-  writeId: string;
-  durableWriteId: string;
-  stageSeq: number;
-  touchedBlocks: readonly BlockItemId[];
-  deletedBlocks: readonly BlockItemId[];
-  preOwnSnapshot: Uint8Array;
-  copied?: CopySummary;
 }
 
 /** One document's staged entries for one edit scope; nothing resident. */
@@ -279,22 +260,11 @@ interface RollbackPendingResponseState {
 
 interface CommittingResponseState {
   kind: "committing";
-  acceptance: "none" | JournalCommitKind;
   /** Snapshot exclusively owned by this commit; installed saves change only it. */
   buffer: ResponseBuffer;
   /** The buffer as staged, untouched by the commit: a failed save restores it. */
   original: ResponseBuffer;
   promise: Promise<ResponseCommitSuccessResult>;
-}
-
-/** A drafted document's prepared save, held by its attempt until `install`. */
-interface SaveOutcome {
-  updates: StagedResponseUpdate[];
-  rejected: StagedResponseUpdate[];
-  room: string | null;
-  beforeState: Uint8Array;
-  afterState: Uint8Array;
-  write: StagedWriteSaveResult["write"];
 }
 
 type ResponseState =
@@ -321,7 +291,7 @@ export function isResponseLifecycleError(error: unknown): error is ResponseLifec
 const ROOM_READ_ATTEMPTS = 4;
 
 export function createResponseCommitter(deps: {
-  mutationCommit: MutationCommit;
+  detection: CommitDetection;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: AgentEditCodecFactory;
@@ -331,10 +301,10 @@ export function createResponseCommitter(deps: {
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onTransition?: (event: ResponseCommitterTransitionDetail) => void;
   closedResponseTombstoneCap?: number;
-  afterPreflight?: (responseId: string) => Promise<void> | void;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
 }): ResponseCommitter {
-  const { mutationCommit, coordinator, ensureDocument, onClaimDiscarded, onTransition } = deps;
+  const { coordinator, onClaimDiscarded, onTransition } = deps;
+  const documentSave = createDocumentSave(deps);
   const noticeOutbox = new Map<
     string,
     Map<string, { docId: string; writes: StagedResponseUpdate[] }>
@@ -391,14 +361,6 @@ export function createResponseCommitter(deps: {
     const entry = token ? documentEpochs.get(token.responseId)?.get(token.docId) : undefined;
     return discardedWrite(entry?.revoked);
   }
-  /** Each document's command links for the commit attempt that renders its receipts. */
-  const commitLinks = new WeakMap<ResponseDocumentBuffer, CommandLinks>();
-  const linksOf = (docBuffer: ResponseDocumentBuffer): CommandLinks => {
-    const links = commitLinks.get(docBuffer);
-    if (!links)
-      throw new Error(`Response document ${docBuffer.docId} has no links opened for commit.`);
-    return links;
-  };
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
 
@@ -470,6 +432,7 @@ export function createResponseCommitter(deps: {
             ?.updates.map((entry) => entry.update) ?? [])
         : [],
     stageUpdate,
+    saveNow: documentSave.saveNow,
     commitResponse,
     prepareResponse,
     rollbackResponse,
@@ -503,12 +466,6 @@ export function createResponseCommitter(deps: {
       });
     },
   };
-
-  function accessFor(context: InteractionContext | undefined): DocumentAccess | undefined {
-    return context?.mode === "threadPeer" && context.peerDraftId
-      ? { pinnedDraftId: context.peerDraftId }
-      : undefined;
-  }
 
   /**
    * The edit scope's binding (made before the read, so a retirement racing the read still
@@ -589,71 +546,6 @@ export function createResponseCommitter(deps: {
       );
   }
 
-  async function prepareCommitLinks(
-    responseId: string,
-    doc: ResponseDocumentBuffer,
-    docs: readonly Y.Doc[],
-  ): Promise<void> {
-    const providerResponseId = doc.providerResponseId;
-    if (!providerResponseId) throw new Error("A staged model edit must carry provider authorship");
-    commitLinks.set(
-      doc,
-      await openCommandLinks(deps, {
-        documentId: doc.docId,
-        docs,
-        context: {
-          responseIdentity: { providerResponseId, editScopeId: responseId },
-          threadId: doc.session.threadId,
-        },
-      }),
-    );
-  }
-
-  /** Each write's view before it ran, for receipts and deleted bodies; the caller destroys them. */
-  function viewsBefore(docBuffer: ResponseDocumentBuffer): Y.Doc[] {
-    return docBuffer.updates.map(({ preOwnSnapshot }) => docFromState(preOwnSnapshot));
-  }
-
-  /**
-   * A drafted document's save, prepared by its host without changing the buffer. A host that
-   * reports no effect while it kept entries broke the port's contract: refuse rather than
-   * certify writes nobody stored.
-   */
-  async function prepareSaveOn(docBuffer: ResponseDocumentBuffer): Promise<SaveOutcome> {
-    const host = coordinator.stagedWrites;
-    if (!host) throw new Error(`Host prepares no saves for ${docBuffer.docId}`);
-    const saved = await host.prepareSave({
-      docId: docBuffer.docId,
-      cut: docBuffer.cut,
-      entries: journalEntries(docBuffer.docId, docBuffer.updates),
-      access: accessFor(docBuffer.interactionContext),
-    });
-    const kept = new Set(saved.kept);
-    const reasons = new Map(saved.rejected.map((write) => [write.writeId, write.reason]));
-    const outcome: SaveOutcome = {
-      updates: docBuffer.updates.filter((entry) => kept.has(entry.durableWriteId)),
-      rejected: docBuffer.updates
-        .filter((entry) => !kept.has(entry.durableWriteId))
-        .map((entry) => ({
-          ...entry,
-          rejectionReason: reasons.get(entry.durableWriteId) ?? ("integration" as const),
-        })),
-      room: saved.room,
-      beforeState: saved.beforeState,
-      afterState: saved.afterState,
-      write: saved.write,
-    };
-    if (saved.write.kind === "no-effect" && outcome.updates.length) {
-      discardSave(outcome);
-      throw new Error(`Host reported no effect for kept writes on ${docBuffer.docId}`);
-    }
-    return outcome;
-  }
-
-  function discardSave(outcome: SaveOutcome): void {
-    if (outcome.write.kind === "write") outcome.write.dispose();
-  }
-
   function enqueueNotices(
     responseId: string,
     docId: string,
@@ -678,8 +570,11 @@ export function createResponseCommitter(deps: {
   ): Promise<ResponseCommitSuccessResult> {
     const state = responses.get(responseId);
     if (state?.kind === "committing") return state.promise;
-    const attempt = await prepareResponse(responseId, options);
+    const { attempt, own } = await prepareAttempt(responseId, options);
     try {
+      // No enclosing scope rolls back what `consume` persists, so nothing may change the
+      // response while it does: it is owned (staging refused, drops ignored) from here.
+      own();
       await attempt.consume();
     } catch (cause) {
       return attempt.fail(cause);
@@ -691,6 +586,17 @@ export function createResponseCommitter(deps: {
     responseId: string,
     options: ResponseCommitOptions = {},
   ): Promise<ResponseCommitAttempt> {
+    return (await prepareAttempt(responseId, options)).attempt;
+  }
+
+  /**
+   * The attempt, and `own`, which moves the response into its committing state before
+   * `install` would: a caller whose `consume` no scope can roll back owns it first.
+   */
+  async function prepareAttempt(
+    responseId: string,
+    options: ResponseCommitOptions,
+  ): Promise<{ attempt: ResponseCommitAttempt; own(): CommittingResponseState }> {
     let state = responses.get(responseId);
     if (!state) {
       state = { kind: "buffered", buffer: emptyResponseBuffer() };
@@ -718,64 +624,70 @@ export function createResponseCommitter(deps: {
           doc.updates.some((entry, index) => entry !== updates[index]),
       );
     const outcomes = new Map<string, SaveOutcome>();
+    const result = deferredPromise<ResponseCommitSuccessResult>();
+    let owner: CommittingResponseState | undefined;
     let settled = false;
     const dispose = () => {
       if (settled) return;
       settled = true;
       for (const outcome of outcomes.values()) discardSave(outcome);
       outcomes.clear();
+      if (owner && responses.get(responseId) === owner) restoreStaged(responseId, owner);
+    };
+    const own = (): CommittingResponseState => {
+      if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
+      if (owner) return owner;
+      if (stale()) {
+        dispose();
+        throw new ResponseAttemptStaleError(responseId);
+      }
+      owner = {
+        kind: "committing",
+        buffer: snapshotResponseBuffer(buffer),
+        original: buffer,
+        promise: result.promise,
+      };
+      responses.set(responseId, owner);
+      return owner;
     };
     try {
-      if (coordinator.stagedWrites)
-        for (const docBuffer of sortedReceiptDocs(buffer))
-          if (docBuffer.updates.length)
-            outcomes.set(docBuffer.docId, await prepareSaveOn(docBuffer));
+      for (const docBuffer of sortedReceiptDocs(buffer))
+        if (docBuffer.updates.length)
+          outcomes.set(docBuffer.docId, await documentSave.prepare(docBuffer));
     } catch (cause) {
       dispose();
       throw cause;
     }
-    return {
+    const attempt: ResponseCommitAttempt = {
       async consume() {
         if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
-        if (stale()) throw new ResponseAttemptStaleError(responseId);
+        if (!owner && stale()) throw new ResponseAttemptStaleError(responseId);
         for (const { write } of outcomes.values())
           if (write.kind === "write") await write.persist();
+        if (!outcomes.size) return;
+        const threadId = bufferThreadId(buffer);
+        emit("journal_staged", responseId, "journalStaged", threadId ? { threadId } : {});
       },
       async install() {
-        if (settled) throw new Error(`Response ${responseId} attempt was disposed`);
-        if (stale()) {
-          dispose();
-          throw new ResponseAttemptStaleError(responseId);
-        }
+        const committing = own();
         settled = true;
         // The host installs each write when the enclosing root transaction commits.
         for (const { write } of outcomes.values()) if (write.kind === "write") write.transfer();
-        const deferred = deferredPromise<ResponseCommitSuccessResult>();
-        const owner: CommittingResponseState = {
-          kind: "committing",
-          acceptance: "none",
-          buffer: snapshotResponseBuffer(buffer),
-          original: buffer,
-          promise: deferred.promise,
-        };
-        responses.set(responseId, owner);
-        void runCommitResponse(responseId, owner, options, outcomes).then(
-          deferred.resolve,
-          deferred.reject,
+        void runCommitResponse(responseId, committing, options, outcomes).then(
+          result.resolve,
+          result.reject,
         );
-        return owner.promise;
+        return committing.promise;
       },
       dispose,
       async fail(cause) {
         dispose();
         const threadId = bufferThreadId(buffer);
-        emit("evicted", responseId, "journalStaged", {
-          journalCommitKind: "staged",
-          ...(threadId ? { threadId } : {}),
-        });
-        throw responseCommitError(responseId, "staged", cause, null);
+        emit("evicted", responseId, "journalStaged", threadId ? { threadId } : {});
+        throw responseCommitError(responseId, cause);
       },
     };
+    return { attempt, own };
   }
 
   async function runCommitResponse(
@@ -786,558 +698,41 @@ export function createResponseCommitter(deps: {
   ): Promise<ResponseCommitSuccessResult> {
     const { buffer } = owner;
     const docBuffers = sortedReceiptDocs(buffer);
-    if (docBuffers.length === 0) {
-      const result = emptyResponseCommit(
-        responseId,
-        responseStagedCreateOutcome(buffer, [], responses.get(responseId)),
-      );
-      applyDiscardedClaims(buffer, result);
-      finalizeClosed(responseId, owner, "committed", null, bufferThreadId(buffer), options);
-      return result;
-    }
-
-    const drafted = Boolean(coordinator.stagedWrites);
-    const journalBatch = responseJournalBatch(docBuffers);
-    const documents: ResponseCommitDocumentResult[] = [];
     const threadId = bufferThreadId(buffer);
-    /** Live documents: the preflight's detection and the room it read under the lock. */
-    const preflights = new Map<
-      string,
-      {
-        detection?: import("./mutation-commit.js").CapturedConcurrentDetection;
-        room: string | null;
-      }
-    >();
-    let retryApplyDocument:
-      | ((docBuffer: ResponseDocumentBuffer) => Promise<ResponseCommitDocumentResult>)
-      | undefined;
-    let recoveryRecheckInputs: ReadonlyMap<string, CommitPreflightInput> | null = null;
-
     try {
+      const documents: ResponseCommitDocumentResult[] = [];
       for (const docBuffer of docBuffers) {
-        if (drafted || !docBuffer.updates.length) continue;
-        // Receipts and deleted bodies also spell each write's before side,
-        // which can still hold links the reply removed.
-        const before = viewsBefore(docBuffer);
-        try {
-          await prepareCommitLinks(responseId, docBuffer, before);
-        } finally {
-          for (const doc of before) doc.destroy();
-        }
-        const preflight = await withLiveDocument(
-          coordinator,
-          docBuffer.docId,
-          docBuffer.commandName,
-          (liveDoc) => {
-            const authority = coordinator.documentAuthority?.(liveDoc);
-            for (const entry of journalBatch) {
-              if (entry.docId === docBuffer.docId) entry.authority = authority;
-            }
-            const room = coordinator.roomFor?.(docBuffer.docId, liveDoc) ?? null;
-            return mutationCommit
-              .captureCommitPreflight(liveDoc, commitInput(docBuffer))
-              .then((detection) => ({ detection, room }));
-          },
-          { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
-        );
-        if (isInternalWriteResult(preflight)) {
-          if (preflight.status === "document_not_found" && docBuffer.createdDocumentBeforeCommit) {
-            preflights.set(docBuffer.docId, { room: null });
-            continue;
-          }
-          throw internalResultError(preflight);
-        }
-        if (!preflight) throw new Error(`Preflight returned no result for ${docBuffer.docId}.`);
-        preflights.set(docBuffer.docId, preflight);
-      }
-
-      await deps.afterPreflight?.(responseId);
-      options.signal?.throwIfAborted();
-      if (drafted) owner.acceptance = "staged";
-      else await acceptJournalBatch(responseId, owner, journalBatch);
-      const journalCommitKind = acceptedJournalKind(owner);
-      // Capture the inputs independently of the mutable response buffers before
-      // phase C. Last-resort recovery must not depend on state damaged by the
-      // projection failure it is diagnosing.
-      recoveryRecheckInputs = drafted
-        ? new Map()
-        : new Map(
-            docBuffers
-              .filter((docBuffer) => docBuffer.updates.length)
-              .map((docBuffer) => [docBuffer.docId, commitInput(docBuffer)]),
-          );
-      const applyDocument = async (
-        docBuffer: ResponseDocumentBuffer,
-        lockOptions?: { signal?: AbortSignal; timeoutMs?: number },
-      ): Promise<ResponseCommitDocumentResult> => {
         const save = saves.get(docBuffer.docId);
-        if (drafted) {
-          if (!save && docBuffer.updates.length)
-            throw new Error(`Response document ${docBuffer.docId} was not prepared`);
-          if (save) {
-            // The snapshot takes the save's verdict; the staged buffer keeps its own until close.
-            docBuffer.updates = save.updates;
-            docBuffer.rejectedUpdates = [...(docBuffer.rejectedUpdates ?? []), ...save.rejected];
-          }
-          if (!save || !docBuffer.updates.length)
-            return {
-              documentId: docBuffer.docId,
-              updateCount: 0,
-              receipts: renderSettledReceipts(
-                [],
-                docBuffer.rejectedUpdates ?? [],
-                null,
-                () => null,
-              ),
-            };
-          const before = docFromState(save.beforeState);
-          const after = docFromState(save.afterState);
-          try {
-            if (docBuffer.ensureDocumentBeforeCommit) await ensureDocument?.(docBuffer.docId);
-            let applied: Awaited<ReturnType<MutationCommit["reportAcceptedMutation"]>>;
-            try {
-              await openSaveLinks(responseId, docBuffer, after);
-              applied = await mutationCommit.reportAcceptedMutation(before, after, {
-                ...commitInput(docBuffer),
-                reportingCut: Y.encodeStateAsUpdate(before),
-                access: accessFor(docBuffer.interactionContext),
-              });
-            } catch {
-              return degradedDocumentReceipt(docBuffer);
-            }
-            return await observeSave(
-              docBuffer,
-              documentResult(docBuffer, applied, after),
-              after,
-              save.room,
-              options,
-            );
-          } finally {
-            before.destroy();
-            after.destroy();
-          }
-        }
-        if (docBuffer.ensureDocumentBeforeCommit) await ensureDocument?.(docBuffer.docId);
-        const preflight = preflights.get(docBuffer.docId);
-        const applied = await withLiveDocument(
-          coordinator,
-          docBuffer.docId,
-          docBuffer.commandName,
-          (liveDoc) =>
-            mutationCommit.applyCommittedUpdateWithRecheck(
-              liveDoc,
-              {
-                ...commitInput(docBuffer),
-                update: mergeStagedUpdates(docBuffer),
-                liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
-              },
-              preflight?.detection,
-            ),
-          lockOptions,
+        if (!save && docBuffer.updates.length)
+          throw new Error(`Response document ${docBuffer.docId} was not prepared`);
+        documents.push(
+          save
+            ? await documentSave.report(responseId, docBuffer, save, options.recordingFrontier)
+            : degradedReceipts(docBuffer, null, 0),
         );
-        if (isInternalWriteResult(applied)) throw internalResultError(applied);
-        if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
-        if (!applied.afterState) return degradedDocumentReceipt(docBuffer, applied.revision);
-        const after = docFromState(applied.afterState);
-        try {
-          try {
-            await openSaveLinks(responseId, docBuffer, after);
-          } catch {
-            return degradedDocumentReceipt(docBuffer, applied.revision);
-          }
-          return await observeSave(
-            docBuffer,
-            documentResult(docBuffer, applied, after),
-            after,
-            preflight?.room ?? null,
-            options,
-          );
-        } finally {
-          after.destroy();
-        }
-      };
-      retryApplyDocument = (docBuffer) => applyDocument(docBuffer);
-
-      for (const docBuffer of docBuffers) {
-        const document = await applyDocument(docBuffer, {
-          signal: options.signal,
-          timeoutMs: options.lockTimeoutMs ?? 30_000,
-        });
-        documents.push(document);
         assertOwner(responseId, owner);
-        emit("live_projected", responseId, responsePhaseForAcceptance(journalCommitKind), {
-          journalCommitKind,
+        emit("document_saved", responseId, "journalStaged", {
           documentId: docBuffer.docId,
           ...(threadId ? { threadId } : {}),
         });
       }
-
-      assertOwner(responseId, owner);
-      emit(
-        "live_projected",
-        responseId,
-        journalCommitKind === "durable" ? "liveProjected" : "journalStaged",
-        {
-          journalCommitKind,
-          ...(threadId ? { threadId } : {}),
-        },
-      );
-
       const result: ResponseCommitSuccessResult = {
         status: "committed",
         responseId,
         documentCount: documents.length,
         updateCount: documents.reduce((total, doc) => total + doc.updateCount, 0),
         documents,
-        stagedCreates: responseStagedCreateOutcome(buffer, docBuffers, responses.get(responseId)),
+        stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
       };
       applyDiscardedClaims(buffer, result);
-      finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
+      finalizeClosed(responseId, owner, "committed", threadId, options);
       return result;
     } catch (cause) {
-      const journalCommitKind = owner.acceptance === "none" ? null : owner.acceptance;
-      if (!journalCommitKind) {
-        emit("evicted", responseId, "buffered", { ...(threadId ? { threadId } : {}) });
-        assertOwner(responseId, owner);
-        restoreStaged(responseId, owner);
-        throw responseCommitError(responseId, null, cause, null);
-      }
-      if (journalCommitKind === "staged") {
-        emit("evicted", responseId, "journalStaged", {
-          journalCommitKind: "staged",
-          ...(threadId ? { threadId } : {}),
-        });
-        assertOwner(responseId, owner);
-        restoreStaged(responseId, owner);
-        throw responseCommitError(responseId, "staged", cause, null);
-      }
-
-      // Phase B is durable, so a transient phase-C coordinator/lock failure cannot
-      // turn the response into blind journal replay. Retry the same recheck+apply
-      // under a fresh lock first, preserving late-sweep reporting.
-      try {
-        for (const docBuffer of docBuffers.slice(documents.length)) {
-          if (!retryApplyDocument) throw new Error("Phase-C retry was not initialized.");
-          documents.push(await retryApplyDocument(docBuffer));
-        }
-        emit("recovery_succeeded", responseId, "journalCommitted", {
-          journalCommitKind,
-          ...(threadId ? { threadId } : {}),
-        });
-        const result = responseCommitResult(
-          responseId,
-          buffer,
-          docBuffers,
-          documents,
-          responses.get(responseId),
-          (docBuffer) => degradedDocumentReceipt(docBuffer).receipts,
-        );
-        applyDiscardedClaims(buffer, result);
-        finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
-        return result;
-      } catch {
-        // Persistent failures retain the existing last-resort journal recovery.
-      }
-
-      const recoverySnapshots = recoveryRecheckInputs
-        ? await captureRecoverySnapshots(docBuffers, recoveryRecheckInputs).catch(() => null)
-        : null;
-      // The room catches up from its journal; a later read applies the same diff anyway.
-      const recoveryFailure = await recoverRooms(docBuffers).catch((error: unknown) => error);
-      if (!recoveryFailure) {
-        emit("recovery_succeeded", responseId, "journalCommitted", {
-          journalCommitKind,
-          ...(threadId ? { threadId } : {}),
-        });
-        const recheckedDocuments = recoveryRecheckInputs
-          ? await recheckRecoveredDocuments(
-              docBuffers,
-              documents,
-              recoveryRecheckInputs,
-              recoverySnapshots,
-            ).catch(() => null)
-          : null;
-        // A positive recheck can report the concrete sweep. A negative result
-        // after journal replay cannot restore the exact pre-recovery live view,
-        // so last-resort recovery must still disclose degraded awareness.
-        const awarenessDegraded =
-          recheckedDocuments === null ||
-          !recheckedDocuments.some((document) => document.lateSweep !== undefined);
-        const result = responseCommitResult(
-          responseId,
-          buffer,
-          docBuffers,
-          // Journal replay leaves no cut the receipts were rendered from: no document records one.
-          (recheckedDocuments ?? documents).map(({ frontier: _, ...document }) => document),
-          responses.get(responseId),
-          (docBuffer) => degradedDocumentReceipt(docBuffer).receipts,
-          awarenessDegraded ? { awarenessDegraded: true } : {},
-        );
-        assertRecoveryResultHonest(result, journalCommitKind);
-        applyDiscardedClaims(buffer, result);
-        finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
-        return result;
-      }
-
-      emit("recovery_failed", responseId, "journalCommitted", {
-        journalCommitKind,
-        ...(threadId ? { threadId } : {}),
-      });
-      finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
-      throw responseCommitError(responseId, journalCommitKind, cause, recoveryFailure);
+      emit("evicted", responseId, "journalStaged", threadId ? { threadId } : {});
+      assertOwner(responseId, owner);
+      restoreStaged(responseId, owner);
+      throw responseCommitError(responseId, cause);
     }
-  }
-
-  async function recoverRooms(docBuffers: readonly ResponseDocumentBuffer[]): Promise<void> {
-    for (const docId of new Set(docBuffers.map((docBuffer) => docBuffer.docId)))
-      await coordinator.recover(docId);
-  }
-
-  /** What a document's commit detection and sweep read: its writes against their views. */
-  function commitInput(docBuffer: ResponseDocumentBuffer): CommitPreflightInput {
-    const last = lastStagedUpdate(docBuffer);
-    return {
-      docId: docBuffer.docId,
-      links: linksOf(docBuffer),
-      preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot ?? last.preOwnSnapshot,
-      interactionContext: docBuffer.interactionContext,
-      actor: last.actor,
-      ownWrites: ownWriteSteps(docBuffer),
-    };
-  }
-
-  /** The commit links spell the saved room and every write's view before it ran. */
-  async function openSaveLinks(
-    responseId: string,
-    docBuffer: ResponseDocumentBuffer,
-    after: Y.Doc,
-  ): Promise<void> {
-    const before = viewsBefore(docBuffer);
-    try {
-      await prepareCommitLinks(responseId, docBuffer, [after, ...before]);
-    } finally {
-      for (const doc of before) doc.destroy();
-    }
-  }
-
-  function documentResult(
-    docBuffer: ResponseDocumentBuffer,
-    applied: Awaited<ReturnType<MutationCommit["reportAcceptedMutation"]>>,
-    after: Y.Doc,
-  ): ResponseCommitDocumentResult {
-    try {
-      const lateSweep = applied.lateSweep;
-      const receipts = applied.awarenessDegraded
-        ? renderSettledReceipts(
-            docBuffer.updates,
-            docBuffer.rejectedUpdates ?? [],
-            applied.revision,
-            () => null,
-          )
-        : settledWriteReceipts(docBuffer, after, applied.revision, lateSweep);
-      return {
-        documentId: docBuffer.docId,
-        updateCount: docBuffer.updates.length,
-        receipts,
-        ...(lateSweep ? { lateSweep } : {}),
-      };
-    } catch {
-      return degradedDocumentReceipt(docBuffer, applied.revision);
-    }
-  }
-
-  async function recheckRecoveredDocuments(
-    docBuffers: readonly ResponseDocumentBuffer[],
-    knownDocuments: readonly ResponseCommitDocumentResult[],
-    inputs: ReadonlyMap<string, CommitPreflightInput>,
-    recoverySnapshots: ReadonlyMap<string, Uint8Array> | null,
-  ): Promise<ResponseCommitDocumentResult[]> {
-    if (!recoverySnapshots) throw new Error("Recovery snapshot capture was unavailable.");
-    const documentsById = new Map(
-      knownDocuments.map((document) => [document.documentId, document]),
-    );
-    for (const docBuffer of docBuffers) {
-      const input = inputs.get(docBuffer.docId);
-      if (!input) throw new Error(`Recovery recheck input missing for ${docBuffer.docId}.`);
-      const beforeRecoverySnapshot = recoverySnapshots.get(docBuffer.docId);
-      if (!beforeRecoverySnapshot) {
-        throw new Error(`Recovery snapshot missing for ${docBuffer.docId}.`);
-      }
-      const rechecked = await withLiveDocument(
-        coordinator,
-        docBuffer.docId,
-        docBuffer.commandName,
-        (liveDoc) => mutationCommit.recheckCommittedUpdate(liveDoc, input, beforeRecoverySnapshot),
-      );
-      if (isInternalWriteResult(rechecked) || !rechecked) {
-        throw new Error(`Recovery recheck unavailable for ${docBuffer.docId}.`);
-      }
-      const current = documentsById.get(docBuffer.docId) ?? degradedDocumentReceipt(docBuffer);
-      documentsById.set(docBuffer.docId, {
-        ...current,
-        ...(rechecked.lateSweep ? { lateSweep: rechecked.lateSweep } : {}),
-      });
-    }
-    return docBuffers.map((docBuffer) => {
-      const document = documentsById.get(docBuffer.docId);
-      if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
-      return document;
-    });
-  }
-
-  /**
-   * The document's frontier at the post-commit cut, in the room the save committed into, when
-   * the host asked: it credits what the accepted receipts show in full (none when they are
-   * degraded or textless), the blocks holding only their writes' text, and what the last one
-   * lists as changed since the model last saw it.
-   * A failure is reported and the document goes out without either.
-   */
-  async function observeSave(
-    docBuffer: ResponseDocumentBuffer,
-    document: ResponseCommitDocumentResult,
-    after: Y.Doc,
-    room: string | null,
-    options: ResponseCommitOptions,
-  ): Promise<ResponseCommitDocumentResult> {
-    if (!room || !options.recordingFrontier) return document;
-    try {
-      const prev = await options.recordingFrontier(room);
-      const accepted = document.receipts.slice(0, docBuffer.updates.length);
-      const links = linksOf(docBuffer);
-      const { frontier, concurrent } = observeRendered(
-        {
-          doc: after,
-          model: deps.model,
-          links,
-          ownRemoved: new Set(
-            docBuffer.updates.flatMap((entry) =>
-              entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
-            ),
-          ),
-          written: docBuffer.updates
-            .filter((_, index) => !accepted[index]?.result.awarenessDegraded)
-            .map((entry) => entry.update),
-        },
-        room,
-        prev,
-        accepted.map((receipt) => receipt.result),
-      );
-      const last = accepted.at(-1);
-      if (!concurrent || !last || last.result.status !== "success")
-        return { ...document, frontier };
-      // The listing rides on the last receipt, which the host records the frontier with.
-      const result = { ...last.result, concurrent };
-      const listed = {
-        ...last,
-        result,
-        ...shownEvidence(renderedItems(result), links),
-      };
-      return {
-        ...document,
-        frontier,
-        receipts: document.receipts.map((receipt) => (receipt === last ? listed : receipt)),
-      };
-    } catch (cause) {
-      deps.onObservationFailed?.({ documentId: docBuffer.docId, cause });
-      return document;
-    }
-  }
-
-  function degradedDocumentReceipt(
-    docBuffer: ResponseDocumentBuffer,
-    revision: string | null = null,
-  ): ResponseCommitDocumentResult {
-    return {
-      documentId: docBuffer.docId,
-      updateCount: docBuffer.updates.length,
-      receipts: renderSettledReceipts(
-        docBuffer.updates,
-        docBuffer.rejectedUpdates ?? [],
-        revision,
-        () => null,
-      ),
-    };
-  }
-
-  function settledWriteReceipts(
-    docBuffer: ResponseDocumentBuffer,
-    after: Y.Doc,
-    revision: string | null,
-    lateSweep?: DestructiveSweepReport,
-  ): ResponseCommitDocumentResult["receipts"] {
-    return renderSettledReceipts(
-      docBuffer.updates,
-      docBuffer.rejectedUpdates ?? [],
-      revision,
-      () => {
-        const links = linksOf(docBuffer);
-        const rendered = snapshotBlocks(toDocHandle(after), deps.model, links.codec);
-        const before = docBuffer.updates.map((entry) => {
-          const doc = docFromState(entry.preOwnSnapshot);
-          try {
-            return snapshotBlocks(toDocHandle(doc), deps.model, links.codec);
-          } finally {
-            doc.destroy();
-          }
-        });
-        return { before, after: rendered, links, lateSweep };
-      },
-    );
-  }
-
-  async function captureRecoverySnapshots(
-    docBuffers: readonly ResponseDocumentBuffer[],
-    inputs: ReadonlyMap<string, CommitPreflightInput>,
-  ): Promise<ReadonlyMap<string, Uint8Array>> {
-    const snapshots = new Map<string, Uint8Array>();
-    for (const docBuffer of docBuffers) {
-      if (!inputs.has(docBuffer.docId))
-        throw new Error(`Recovery recheck input missing for ${docBuffer.docId}.`);
-      const snapshot = await withLiveDocument(
-        coordinator,
-        docBuffer.docId,
-        docBuffer.commandName,
-        (liveDoc) => Y.encodeStateAsUpdate(liveDoc),
-      );
-      if (isInternalWriteResult(snapshot) || !snapshot) {
-        throw new Error(`Recovery snapshot capture unavailable for ${docBuffer.docId}.`);
-      }
-      snapshots.set(docBuffer.docId, snapshot);
-    }
-    return snapshots;
-  }
-
-  async function acceptJournalBatch(
-    responseId: string,
-    owner: CommittingResponseState,
-    journalBatch: JournalBatchAppendEntry[],
-  ): Promise<void> {
-    const threadId = bufferThreadId(owner.buffer);
-    const committed = await mutationCommit.commitJournalBatch(journalBatch);
-    assertOwner(responseId, owner);
-    owner.acceptance = committed.journalCommitKind;
-    emit(
-      committed.journalCommitKind === "staged" ? "journal_staged" : "journal_committed",
-      responseId,
-      responsePhaseForAcceptance(committed.journalCommitKind),
-      {
-        journalCommitKind: committed.journalCommitKind,
-        ...(threadId ? { threadId } : {}),
-      },
-    );
-  }
-
-  function responsePhaseForAcceptance(
-    journalCommitKind: JournalCommitKind,
-  ): ResponseCommitterTransitionDetail["phase"] {
-    return journalCommitKind === "staged" ? "journalStaged" : "journalCommitted";
-  }
-
-  function acceptedJournalKind(owner: CommittingResponseState): JournalCommitKind {
-    if (owner.acceptance === "none") {
-      throw new Error("Response commit attempt has not been accepted by the journal.");
-    }
-    return owner.acceptance;
   }
 
   async function rollbackResponse(
@@ -1369,15 +764,13 @@ export function createResponseCommitter(deps: {
     const result = {
       status: "rolledBack" as const,
       responseId,
-      stagedCreates: responseStagedCreateOutcome(buffer, [], responses.get(responseId), {
-        discardPendingStagedCreates: true,
-      }),
+      stagedCreates: responseStagedCreateOutcome(buffer, [], { discardPendingStagedCreates: true }),
     };
     let settled = false;
     const commit = () => {
       if (settled) return;
       settled = true;
-      transitionClosed(responseId, pending, "rolledBack", null, threadId);
+      transitionClosed(responseId, pending, "rolledBack", threadId);
     };
     if (options.deferFinalization)
       options.deferFinalization({
@@ -1515,7 +908,6 @@ export function createResponseCommitter(deps: {
       },
       writeId: input.writeId ?? "w0",
       durableWriteId,
-      liveOrigin: input.liveOrigin,
       turnId: input.turnId,
       actor: input.actor,
       stageSeq: buffer.nextStageSeq,
@@ -1590,7 +982,7 @@ export function createResponseCommitter(deps: {
       }
       if (!responseBufferHasPendingOutcome(buffer)) {
         if (claimedWriteDropped) {
-          transitionClosed(responseId, state, "rolledBack", null, threadId);
+          transitionClosed(responseId, state, "rolledBack", threadId);
         } else {
           responses.delete(responseId);
           emit("drop_for_thread", responseId, "buffered", { documentId: docId, threadId });
@@ -1630,7 +1022,6 @@ export function createResponseCommitter(deps: {
     responseId: string,
     owner: BufferedResponseState | CommittingResponseState | RollbackPendingResponseState,
     closed: ResponseLifecycleClosedState,
-    journalCommitKind: JournalCommitKind | null,
     threadId?: string,
   ): void {
     assertOwner(responseId, owner);
@@ -1640,7 +1031,6 @@ export function createResponseCommitter(deps: {
     responses.set(responseId, { kind: "closed", outcome: closed });
     emit("closed", responseId, "closed", {
       closedOutcome: closed,
-      ...(journalCommitKind ? { journalCommitKind } : {}),
       ...(threadId ? { threadId } : {}),
     });
     if (!closedResponseOrder.includes(responseId)) {
@@ -1661,12 +1051,11 @@ export function createResponseCommitter(deps: {
     responseId: string,
     owner: CommittingResponseState,
     closed: ResponseLifecycleClosedState,
-    journalCommitKind: JournalCommitKind | null,
     threadId: string | undefined,
     options: ResponseCommitOptions,
   ): void {
     if (!options.deferFinalization) {
-      transitionClosed(responseId, owner, closed, journalCommitKind, threadId);
+      transitionClosed(responseId, owner, closed, threadId);
       return;
     }
     let settled = false;
@@ -1674,7 +1063,7 @@ export function createResponseCommitter(deps: {
       commit() {
         if (settled) return;
         settled = true;
-        transitionClosed(responseId, owner, closed, journalCommitKind, threadId);
+        transitionClosed(responseId, owner, closed, threadId);
       },
       abort() {
         if (settled) return;
@@ -1743,45 +1132,15 @@ function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
   );
 }
 
-function responseCommitError(
-  responseId: string,
-  journalCommitKind: JournalCommitKind | null,
-  cause: unknown,
-  recoveryFailure: unknown,
-): Error {
-  const phase =
-    journalCommitKind === "durable"
-      ? "after the durable journal batch was committed"
-      : journalCommitKind === "staged"
-        ? "after only a staged journal batch was accepted"
-        : "before the journal batch was committed";
-  const recovery = recoveryFailure
-    ? ` Recovery from the committed journal also failed: ${errorMessage(recoveryFailure)}.`
-    : journalCommitKind === "durable"
-      ? " The next read catches the room up from its journal."
-      : " The response buffer is still available for retry or rollback.";
+function responseCommitError(responseId: string, cause: unknown): Error {
   return new Error(
-    `Failed to commit response ${responseId} ${phase}: ${errorMessage(cause)}.${recovery}`,
+    `Failed to commit response ${responseId}: ${errorMessage(cause)}. The response buffer is still available for retry or rollback.`,
     { cause },
   );
 }
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function emptyResponseCommit(
-  responseId: string,
-  stagedCreates: ResponseStagedCreateOutcome = { committed: [], discarded: [] },
-): ResponseCommitSuccessResult {
-  return {
-    status: "committed",
-    responseId,
-    documentCount: 0,
-    updateCount: 0,
-    documents: [],
-    stagedCreates,
-  };
 }
 
 function emptyResponseBuffer(): ResponseBuffer {
@@ -1791,18 +1150,14 @@ function emptyResponseBuffer(): ResponseBuffer {
 function responseStagedCreateOutcome(
   buffer: ResponseBuffer,
   committedDocBuffers: readonly ResponseDocumentBuffer[],
-  state: ResponseState | undefined,
   options: { discardPendingStagedCreates?: boolean } = {},
 ): ResponseStagedCreateOutcome {
-  const journalCommitted = state?.kind === "committing" && state.acceptance === "durable";
   const committed = stagedCreateDocIds(committedDocBuffers);
   const discarded = stagedCreateDocIds(
     [...buffer.docs.values()].filter(
       (docBuffer) =>
         docBuffer.discardedBeforeCommit ||
-        (options.discardPendingStagedCreates &&
-          docBuffer.createdDocumentBeforeCommit &&
-          !journalCommitted),
+        (options.discardPendingStagedCreates && docBuffer.createdDocumentBeforeCommit),
     ),
   );
   return { committed, discarded };
@@ -1818,99 +1173,6 @@ function stagedCreateDocIds(docBuffers: readonly ResponseDocumentBuffer[]): stri
   ];
 }
 
-function responseCommitResult(
-  responseId: string,
-  buffer: ResponseBuffer,
-  docBuffers: readonly ResponseDocumentBuffer[],
-  knownDocuments: readonly ResponseCommitDocumentResult[],
-  state: ResponseState | undefined,
-  settledWriteReceipts: (
-    docBuffer: ResponseDocumentBuffer,
-  ) => ResponseCommitDocumentResult["receipts"],
-  flags: Pick<ResponseCommitSuccessResult, "awarenessDegraded"> = {},
-): ResponseCommitSuccessResult {
-  const documentsById = new Map(
-    knownDocuments.map((document) => [document.documentId, document] as const),
-  );
-  for (const docBuffer of docBuffers) {
-    if (docBuffer.updates.length === 0 || documentsById.has(docBuffer.docId)) continue;
-    documentsById.set(docBuffer.docId, {
-      documentId: docBuffer.docId,
-      updateCount: docBuffer.updates.length,
-      receipts: settledWriteReceipts(docBuffer),
-    });
-  }
-  return {
-    status: "committed",
-    responseId,
-    documentCount: documentsById.size,
-    updateCount: docBuffers.reduce((total, docBuffer) => total + docBuffer.updates.length, 0),
-    documents: [...documentsById.values()],
-    stagedCreates: responseStagedCreateOutcome(buffer, docBuffers, state),
-    ...flags,
-  };
-}
-
-function assertRecoveryResultHonest(
-  result: ResponseCommitSuccessResult,
-  journalCommitKind: JournalCommitKind,
-): void {
-  if (journalCommitKind !== "durable") return;
-  const reportedSweep = result.documents.some((document) => document.lateSweep !== undefined);
-  if (!reportedSweep && result.awarenessDegraded !== true) {
-    throw new Error(
-      "Invariant violation: durable recovery returned committed without a late sweep or degraded-awareness report.",
-    );
-  }
-}
-
-function journalEntries(
-  docId: string,
-  updates: readonly StagedResponseUpdate[],
-): JournalBatchAppendEntry[] {
-  return updates.map((entry) => ({
-    docId,
-    update: entry.update,
-    meta: entry.meta,
-    mutation: entry.mutation,
-  }));
-}
-
-function responseJournalBatch(
-  docBuffers: readonly ResponseDocumentBuffer[],
-): JournalBatchAppendEntry[] {
-  return docBuffers
-    .flatMap((doc) => doc.updates.map((entry) => ({ docId: doc.docId, entry })))
-    .sort((left, right) => left.entry.stageSeq - right.entry.stageSeq)
-    .map(({ docId, entry }) => ({
-      docId,
-      update: entry.update,
-      meta: entry.meta,
-      mutation: entry.mutation,
-    }));
-}
-
-function ownWriteSteps(docBuffer: ResponseDocumentBuffer): OwnWriteStep[] {
-  return docBuffer.updates.map(({ preOwnSnapshot, update }) => ({ preOwnSnapshot, update }));
-}
-
-function mergeStagedUpdates(docBuffer: ResponseDocumentBuffer): Uint8Array {
-  const updates = docBuffer.updates.map((entry) => entry.update);
-  return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
-}
-
-function lastStagedUpdate(docBuffer: ResponseDocumentBuffer): StagedResponseUpdate {
-  const update = docBuffer.updates.at(-1);
-  if (!update) throw new Error(`Response document ${docBuffer.docId} has no staged updates.`);
-  return update;
-}
-
-function docFromState(state: Uint8Array): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  Y.applyUpdate(doc, state);
-  return doc;
-}
-
 function deferredPromise<T>(): {
   promise: Promise<T>;
   resolve(value: T | PromiseLike<T>): void;
@@ -1923,14 +1185,4 @@ function deferredPromise<T>(): {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
-}
-
-function discardedWrite(reason: DiscardedWriteReason = "discarded_edit"): InternalWriteResult {
-  return {
-    status: "invalid_write",
-    model: {
-      message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
-      rejected: reason,
-    },
-  };
 }

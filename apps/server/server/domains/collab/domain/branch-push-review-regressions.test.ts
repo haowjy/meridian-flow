@@ -2,7 +2,6 @@
 
 import {
   createAgentEditCodecFactory,
-  type DocumentCoordinator,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
@@ -30,6 +29,7 @@ import type {
 import type { DraftJournalRow } from "./draft-journal.js";
 import type { DraftSnapshot, DraftStore } from "./draft-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
@@ -254,7 +254,7 @@ function serviceFixture(input: {
   const draftStore: DraftStore = new MemoryDraftStore(
     input.drafts.map((seeded) => memoryDraft(seeded.documentDraft, seeded.state)),
   );
-  const liveCoordinator: Pick<DocumentCoordinator, "withDocument" | "recover"> = {
+  const liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover"> = {
     async withDocument(documentId, run) {
       const doc = input.liveDocs.get(documentId as DocumentId);
       if (!doc) throw new Error(`Missing live document ${documentId}`);

@@ -1,16 +1,13 @@
 /** Live→Work draft pulls (debounced and at tool boundaries), and a thread peer's identity step. */
 
-import {
-  type DiscardedWriteReason,
-  type DocumentCoordinator,
-  DocumentNotFoundError,
-} from "@meridian/agent-edit/integration";
+import { type DiscardedWriteReason, DocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { Branches } from "./branches.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
 import { DraftCasConflictError, type DraftSnapshot, DraftStaleUpdateError } from "./draft-store.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
@@ -99,7 +96,7 @@ export type DraftPullDiagnostics = {
 
 export function createDraftPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
-  liveCoordinator: Pick<DocumentCoordinator, "withDocument" | "recover">;
+  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover">;
   draftCoordinator: DraftCoordinator;
   drafts: WorkDraftLookup;
   debounceMs?: number;

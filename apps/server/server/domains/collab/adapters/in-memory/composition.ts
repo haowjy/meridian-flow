@@ -82,6 +82,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     inTransaction: () => false,
     journal,
     coordinator,
+    agentCoordinator: coordinator,
     lifecycle: documentCreation,
     initialDocumentSeeds: {
       async seedInitialDocument(documentId, state) {

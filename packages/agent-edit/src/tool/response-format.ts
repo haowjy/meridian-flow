@@ -1,5 +1,6 @@
 // Formats document-write responses for the model tool surface.
 import type { ApplyEchoHunk } from "../apply/types.js";
+import type { DestructiveSweepReport } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
@@ -8,7 +9,6 @@ import {
   modelBlockItem,
   modelResult,
 } from "./model-result.js";
-import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
   WriteErrorDetail,
   WriteErrorStatus,

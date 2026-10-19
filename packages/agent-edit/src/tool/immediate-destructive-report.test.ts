@@ -114,14 +114,15 @@ describe("immediate destructive reporting", () => {
   });
 });
 
+/** A writer edit that lands in the room after the write's read, before its save reads it. */
 function injectConcurrentHumanEdit(ctx: WriteToolHarness, blockIndex: number): void {
   let injected = false;
-  ctx.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
+  const prepareSave = ctx.coordinator.prepareSave.bind(ctx.coordinator);
+  ctx.coordinator.prepareSave = async (input) => {
     if (!injected) {
       injected = true;
-      humanText(doc, blockIndex, { from: 0, to: 0 }, "Writer: ");
+      humanText(ctx.liveDoc(input.docId), blockIndex, { from: 0, to: 0 }, "Writer: ");
     }
-    const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-    return update.length > 0 ? [{ update, origin: { type: "human", userId: "human-1" } }] : [];
+    return prepareSave(input);
   };
 }
