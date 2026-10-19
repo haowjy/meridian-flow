@@ -244,11 +244,14 @@ export function createPlanningView(
   snapshot: Y.Snapshot,
   ownUpdates: readonly Uint8Array[],
 ): Y.Doc | null {
-  const view = Y.createDocFromSnapshot(room, snapshot, new Y.Doc({ gc: false }));
-  for (const update of ownUpdates) Y.applyUpdate(view, update);
-  if (view.store.pendingStructs || view.store.pendingDs) {
-    view.destroy();
-    return null;
+  const view = new Y.Doc({ gc: false });
+  try {
+    Y.createDocFromSnapshot(room, snapshot, view);
+    for (const update of ownUpdates) Y.applyUpdate(view, update);
+    if (!view.store.pendingStructs && !view.store.pendingDs) return view;
+  } catch {
+    // An unavailable retained cut is not a usable planning view.
   }
-  return view;
+  view.destroy();
+  return null;
 }
