@@ -1188,7 +1188,8 @@ export function createResponseCommitter(deps: {
   /**
    * The document's frontier at the post-commit cut, in the room the save committed into, when
    * the host asked: it credits what the accepted receipts show in full (none when they are
-   * degraded or textless) and what the last one lists as changed since the model last saw it.
+   * degraded or textless), the blocks holding only their writes' text, and what the last one
+   * lists as changed since the model last saw it.
    * A failure is reported and the document goes out without either.
    */
   async function observeSave(
@@ -1213,6 +1214,9 @@ export function createResponseCommitter(deps: {
               entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
             ),
           ),
+          written: docBuffer.updates
+            .filter((_, index) => !accepted[index]?.result.awarenessDegraded)
+            .map((entry) => entry.update),
         },
         room,
         prev,
