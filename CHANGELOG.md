@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Turn and model inverses use text-derived draft dispositions and immutable origins, keeping applied draft reverts out of live text.
+
 - Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
 
 - Isolated reply replay journal reads from the retiring Apply settlement store.
