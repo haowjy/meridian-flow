@@ -10,7 +10,10 @@ owns diffing, grouping, move pairing and formatting context.
 changes, not text frames. `useRoomReviews` subscribes to those runtimes through
 `useSyncExternalStore`; frames stay in the runtime rather than queued React state.
 Open reviews and headless dock/Work readers share the runtime by session object; a replacement account/session cannot inherit another
-room's frame. The final holder destroys its runtime. The pool keeps room
+room's frame. Metadata effect keys contain only the four draft-address strings and metadata
+revision/status/error, never the caller's object: presentation focus carries a
+whole projection, and structural typing does not strip those extra fields.
+The final holder destroys its runtime. The pool keeps room
 sessions through its normal release grace and drains unacknowledged edits;
 IndexedDB keeps the local text across reloads.
 
@@ -59,7 +62,9 @@ Discard. Once synced, temporary offline status does not forget that history.
   Header Apply eligibility comes from that same leaf projection, not a controller
   snapshot. A click reads the painter's current frame synchronously. Launch requests
   carry id and frame together. Persisted bare ids never restore selection into a
-  newer projection.
+  newer projection. `useInlineReviewFocus` registers the mounted editor for
+  controller-owned jumps and releases only its own claim on unmount. Same-entry
+  URL replacements disable router scroll restoration so the editor owns the jump.
   An empty frame shows “No changes left”; only the close contract can end the
   draft room or send the editor to live.
 
@@ -105,7 +110,15 @@ old occurrence suffix. No post-click edit changes a frozen command.
 
 `discard(ref, target, surface)` composes against that optimistic base and
 calls `writeDiscardBlocks` (including `recordWriteBack`) in one transaction.
-Editor history tracks a dedicated Discard origin with stop-capture boundaries.
+Editor Discard executes synchronously. Dock/Work Discard first publishes its
+notice and a projection-scoped `discarding` target. Listed surfaces omit those
+groups for one paint opportunity; room frames and editor paint still come only
+from text. The next animation frame after that paint performs the whole write-back,
+then clears the list overlay. Hidden pages drain on visibility change rather than
+waiting for animation frames. Changed base or prose refuses the stale write and
+restores the row, preserving intervening edits. Only the same item's further
+Apply/Discard waits for it. Editor history tracks a dedicated Discard origin
+with stop-capture boundaries.
 Direct writes never impersonate the binding origin: its delete-only transactions
 without a writer ProseMirror transaction are schema-repair evidence. A dock
 or Work notice owns a separate manager and pool lease, retains the runtime,

@@ -76,6 +76,11 @@ to [`draft-review`](../../draft-review/.context/draft-review.md).
 Discard edits the same draft Y.Doc in place, without replacing the editor,
 selection or undo manager. An empty review stays in the same draft room.
 
+`useInlineReviewFocus` registers the mounted editor for controller-owned jumps
+and releases only its own claim on unmount. Same-entry URL replacements stand
+down router scroll restoration. Dock/Work rows and their notice paint before
+the atomic write-back; editor marks remain derived from actual text.
+
 ## Schema and repair
 
 A schema fence changes the mounted editor to read-only through its options seam;

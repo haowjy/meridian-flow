@@ -32,7 +32,11 @@ export function useOpenReviewChanges(
     items,
     status: read.status as DraftChangesData["status"],
 
-    completing: command.applying ? ("apply" as const) : null,
-    finished: read.status === "ready" && !items.length && !command.pending,
+    completing: command.discarding
+      ? ("discard" as const)
+      : command.applying
+        ? ("apply" as const)
+        : null,
+    finished: read.status === "ready" && !items.length && !command.pending && !command.discarding,
   };
 }

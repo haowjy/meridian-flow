@@ -63,7 +63,7 @@ export function WorkChanges({
     return (
       file.draft.wholeItem ||
       read?.status !== "ready" ||
-      read.changes.length > 0 ||
+      read.listedChanges.length > 0 ||
       controller.owner.state(file.draft.itemKey).pending ||
       controller.owner.state(file.draft.itemKey).failure
     );

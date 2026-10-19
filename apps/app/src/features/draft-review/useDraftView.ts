@@ -1,5 +1,7 @@
 /** Listed rows retain their room even without an editor and share its projection with open review. */
+
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftChangesView } from "./draft-changes";
 import { useChangeItems } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
@@ -18,10 +20,12 @@ export function useDraftView(
     item?: ThreadDraftListItem;
   },
 ): DraftChangesView {
+  const owner = useDraftCommandOwner();
+  const discarding = Boolean(owner.state(draft.itemKey).discarding);
   const withoutText = item?.hasDraft === false;
   const read = useRoomReview(enabled && !withoutText ? draft : null);
   const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
-  const changes = item?.wholeItem && enabled ? [itemChange(item)] : read.changes;
+  const changes = item?.wholeItem && enabled ? [itemChange(item)] : read.listedChanges;
   const { items } = useChangeItems(draft, changes);
   return {
     documentId: draft.documentId,
@@ -32,7 +36,7 @@ export function useDraftView(
     retry: read.retry,
     focused: null,
     canApply: withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0,
-    locked: controller.changesLocked || status !== "ready",
+    locked: controller.changesLocked || discarding || status !== "ready",
     apply: async (change) => {
       await controller.commandChange("apply", draft, targetOfChanges([change]));
     },
