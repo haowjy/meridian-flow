@@ -1,5 +1,5 @@
 /** Headless and open surfaces retain the rooms on screen and subscribe to one projection per room. */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useDraftMetadata } from "@/client/query/useDraftMetadata";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { type DraftRoomRead, readDraftRoom } from "@/core/editor/draft-room-read";
@@ -26,6 +26,7 @@ type HeldReview = {
 export function useRoomReviews(drafts: readonly DraftRef[]) {
   const registry = useLiveDocumentSessionRegistry();
   const owner = useDraftCommandOwner();
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
   const metadata = useDraftMetadata(drafts);
   const names = metadata.map((entry) =>
     entry.data?.status === "active" ? entry.data.reviewRoomName : null,
@@ -116,7 +117,7 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
       });
     }
   }, [namesKey, registry, owner]);
-  return drafts.map((_draft, index) => {
+  return drafts.map((draft, index) => {
     const name = names[index];
     const current = name ? held.get(name) : null;
     const meta = metadata[index];
@@ -130,8 +131,16 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
           : state.ready
             ? "ready"
             : "loading";
+    const discarding = owner.state(draft.itemKey).discarding;
     return {
       ...state,
+      listedChanges: discarding
+        ? state.changes.filter(
+            (change) =>
+              change.frame?.diff !== discarding.frame.diff ||
+              !discarding.groupIds.includes(change.id),
+          )
+        : state.changes,
       status,
       runtime: current?.runtime ?? null,
       roomName: name ?? null,
@@ -148,6 +157,7 @@ export function useRoomReview(draft: DraftRef | null) {
   return (
     useRoomReviews(draft ? [draft] : [])[0] ?? {
       ...EMPTY_REVIEW_STATE,
+      listedChanges: [],
       status: "idle" as const,
       runtime: null,
       roomName: null,

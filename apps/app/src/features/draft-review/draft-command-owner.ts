@@ -30,7 +30,7 @@ import {
 } from "@/core/editor/draft-room-read";
 import { ApplyClickQueue } from "./apply-click-queue";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
-import { readBase } from "./review-frame";
+import { type ReviewFrame, readBase } from "./review-frame";
 import type { ChangeTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
@@ -39,6 +39,7 @@ export type DraftCommandState = {
   stalled: boolean;
   pending: boolean;
   hidden: boolean;
+  discarding: { frame: ReviewFrame; groupIds: readonly string[] } | null;
   failure: BranchCommandFailure | null;
   closed: boolean;
   checkingClose: boolean;
@@ -51,6 +52,7 @@ const EMPTY: DraftCommandState = {
   stalled: false,
   pending: false,
   hidden: false,
+  discarding: null,
   failure: null,
   closed: false,
   checkingClose: false,
@@ -400,7 +402,12 @@ export class DraftCommandOwner {
   apply(ref: DraftRef, target: ChangeTarget): { sent: boolean; outcome: Promise<CommandOutcome> } {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
-    if (!this.active || !entry || !binding?.runtime.state().ready)
+    if (
+      !this.active ||
+      !entry ||
+      !binding?.runtime.state().ready ||
+      this.state(ref.itemKey).discarding
+    )
       return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
     const frame = binding.runtime.projectNow();
     if (!frame) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
@@ -467,11 +474,18 @@ export class DraftCommandOwner {
     target: ChangeTarget,
     surface: "editor" | "dock",
     onNoticeEnd?: () => void,
-  ): DiscardNotice | null {
+  ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
     const entry = this.byItem.get(ref.itemKey);
     const binding = entry?.binding;
-    if (!this.active || !entry || !binding?.runtime.state().ready) return null;
-    const frame = binding.runtime.projectNow();
+    if (
+      !this.active ||
+      !entry ||
+      !binding?.runtime.state().ready ||
+      this.state(ref.itemKey).discarding
+    )
+      return null;
+    const frame =
+      surface === "editor" ? binding.runtime.projectNow() : binding.runtime.state().frame;
     if (!frame) return null;
     if (
       target.kind === "groups" &&
@@ -490,6 +504,14 @@ export class DraftCommandOwner {
     if (surface === "editor" && !editor) return null;
     const doc = binding.session.document;
     const fragment = doc.getXmlFragment("prosemirror");
+    const wholeClick = !editor && target.kind === "draft";
+    const queued = wholeClick ? [...entry.queue.clicks] : [];
+    let changed = false;
+    const onTextChange = () => {
+      changed = true;
+    };
+    // A whole click includes unprojected typing without scanning the document's history at the click.
+    if (wholeClick) doc.on("update", onTextChange);
     if (!editor)
       for (const surface of ["editor", "dock"] as const) {
         const attached = binding.runtime.editor(surface);
@@ -501,47 +523,130 @@ export class DraftCommandOwner {
       : new Y.UndoManager(fragment, { trackedOrigins: new Set([origin]), captureTimeout: 0 });
     installRestorations(history);
     history.stopCapturing();
-    const blocks = applySpanPatches(
-      frame.diff.draft.blocks,
-      composeGroups(frame.doc.type.schema, frame, ids, "discard"),
-      "draft",
-    );
-    doc.transact(() => writeDiscardBlocks(fragment, frame.doc.type.schema, blocks), origin);
-    history.stopCapturing();
-    binding.runtime.projectNow();
-    if (editor) return { kind: "discarded", end() {} };
+    const write = (): CommandOutcome => {
+      doc.off("update", onTextChange);
+      if (!this.active || entry.binding !== binding || this.state(ref.itemKey).closed)
+        return { kind: "blocked" };
+      const current = binding.runtime.projectNow();
+      // A paint opportunity is not a lock: never overwrite typing or a peer write that arrived meanwhile.
+      if (
+        !current ||
+        (wholeClick
+          ? changed ||
+            queued.length !== entry.queue.clicks.length ||
+            queued.some((click, index) => entry.queue.clicks[index] !== click)
+          : !blocksEqual(frame.diff.base.blocks, current.diff.base.blocks) ||
+            !blocksEqual(frame.diff.draft.blocks, current.diff.draft.blocks))
+      ) {
+        this.setState(ref.itemKey, {
+          failure: { code: "discard-refused", serverCode: "review_updated" },
+        });
+        return { kind: "change-refused", code: "review_updated" };
+      }
+      const cut = wholeClick ? current : frame;
+      const selected = wholeClick ? cut.groups.map((group) => group.id) : ids;
+      const blocks = applySpanPatches(
+        cut.diff.draft.blocks,
+        composeGroups(cut.doc.type.schema, cut, selected, "discard"),
+        "draft",
+      );
+      doc.transact(() => writeDiscardBlocks(fragment, cut.doc.type.schema, blocks), origin);
+      history.stopCapturing();
+      binding.runtime.projectNow();
+      return { kind: "done" };
+    };
+    if (editor) {
+      const outcome = write();
+      return { notice: { kind: "discarded", end() {} }, outcome: Promise.resolve(outcome) };
+    }
     const lease = readDraftRoom(this.registry, binding.session.roomKey);
     entry.users++;
     const id = parseYjsRoomName(binding.session.roomKey);
     let active = true;
-    const end = () => {
-      if (!active) return;
-      active = false;
-      binding.notices.delete(end);
+    let pending = true;
+    let settle!: (outcome: CommandOutcome) => void;
+    const outcome = new Promise<CommandOutcome>((resolve) => {
+      settle = resolve;
+    });
+    const finish = (answer: CommandOutcome) => {
+      doc.off("update", onTextChange);
+      this.setState(ref.itemKey, { discarding: null });
+      settle(answer);
+    };
+    const commit = () => {
+      if (!pending) return;
+      pending = false;
+      cancelAnimationFrame(paintFrame);
+      document.removeEventListener("visibilitychange", onVisibility);
+      try {
+        const answer = write();
+        finish(answer);
+        if (answer.kind !== "done") end();
+      } catch {
+        this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
+        finish({ kind: "change-refused", code: "discard-unknown" });
+        end();
+      }
+      release();
+    };
+    let released = false;
+    const release = () => {
+      if (pending || active || released) return;
+      released = true;
       history.destroy();
       lease.dispose();
       entry.users--;
       if (id?.kind === "draft") this.releaseIdle(id.draftId, entry);
+    };
+    const end = () => {
+      if (!active) return;
+      active = false;
+      binding.notices.delete(end);
+      // Leaving ends Undo, not the accepted edit or its paint opportunity.
+      release();
       onNoticeEnd?.();
     };
     binding.notices.add(end);
+    this.setState(ref.itemKey, { discarding: { frame, groupIds: ids }, failure: null });
+    let paintFrame = 0;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") commit();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    // Two frames give React's row removal and notice a paint before the
+    // indivisible write-back. Hidden pages drain without waiting for rAF.
+    if (document.visibilityState === "hidden") setTimeout(commit, 0);
+    else
+      paintFrame = requestAnimationFrame(() => {
+        paintFrame = requestAnimationFrame(commit);
+      });
     return {
-      kind: "discarded",
-      itemKey: ref.itemKey,
-      end,
-      undo: () => {
-        if (
-          !active ||
-          !this.active ||
-          entry.binding !== binding ||
-          this.state(ref.itemKey).closed
-        ) {
+      outcome,
+      notice: {
+        kind: "discarded",
+        itemKey: ref.itemKey,
+        end,
+        undo: () => {
+          if (
+            !active ||
+            !this.active ||
+            entry.binding !== binding ||
+            this.state(ref.itemKey).closed
+          ) {
+            end();
+            return;
+          }
+          if (pending) {
+            pending = false;
+            cancelAnimationFrame(paintFrame);
+            document.removeEventListener("visibilitychange", onVisibility);
+            finish({ kind: "done" });
+          } else {
+            history.undo();
+            binding.runtime.projectNow();
+          }
           end();
-          return;
-        }
-        history.undo();
-        binding.runtime.projectNow();
-        end();
+        },
       },
     };
   }

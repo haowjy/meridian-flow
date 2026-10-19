@@ -100,12 +100,23 @@ old occurrence suffix. No post-click edit changes a frozen command.
 
 `discard(ref, target, surface)` composes against that optimistic base and
 calls `writeDiscardBlocks` (including `recordWriteBack`) in one transaction.
-Editor history uses the binding origin with stop-capture boundaries. A dock
+Editor Discard executes synchronously, using the binding origin with
+stop-capture boundaries. Dock/Work Discard first publishes its notice and a
+projection-scoped `discarding` target. Listed surfaces omit those groups for
+one paint opportunity; the room frame and editor paint still come only from
+text. The next animation frame after that paint performs the whole write-back,
+then clears the temporary list overlay. A hidden page drains on visibility
+change instead of waiting for animation frames. Base or prose changes during
+that interval refuse the stale write and restore the row, never overwrite an
+intervening edit. Only the same item's further Apply/Discard waits for it. A dock
 or Work notice owns a separate manager and pool lease, retains the runtime,
 and installs `recordRestorations` so Undo writes links in its own transaction.
 Undo restores a cached list item before server discovery catches up. At most
 the surface's latest Discard history is offered; another action ends it.
-The notice belongs to that exact session binding. Retiring the binding or
+Ending a notice does not flush or cancel an accepted deferred edit: the
+operation retains its lease until it settles, even after surface navigation or
+the next action. Undo before the transaction cancels it; Undo after it uses the
+notice's history. The notice belongs to that exact session binding. Retiring the binding or
 closing the draft ends its notice and destroys its history; replacement
 documents never inherit the manager. The surface's end callback removes
 the notice when the owner retires it.

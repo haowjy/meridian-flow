@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Paint dock and Work Discard notices and remove selected rows before large draft write-backs, preserving one-transaction Undo.
+
 - Scroll draft-review Next, Previous and list selection to the focused passage.
 
 - Keep draft-review room identity checks independent of the focused document, removing whole-draft serialization while typing.

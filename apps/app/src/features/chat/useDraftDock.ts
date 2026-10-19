@@ -76,12 +76,12 @@ export function useDraftDock({
     .map((row) => {
       const read = reads[targets.findIndex((target) => target.itemKey === row.draft.itemKey)];
       const withoutText = row.draft.hasDraft === false;
-      return dockFile(
+      const file = dockFile(
         row,
         reviewFileTargetName(row, untitled),
         {
           status: withoutText ? "ready" : (read?.status ?? "loading"),
-          items: (row.draft.wholeItem ? [itemChange(row.draft)] : (read?.changes ?? [])).map(
+          items: (row.draft.wholeItem ? [itemChange(row.draft)] : (read?.listedChanges ?? [])).map(
             (change) => ({
               change,
               failure: null,
@@ -92,6 +92,9 @@ export function useDraftDock({
         },
         threadId,
       );
+      return controller.owner.state(row.draft.itemKey).discarding
+        ? { ...file, actionable: [] }
+        : file;
     })
     .filter(
       (file) =>
