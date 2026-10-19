@@ -63,7 +63,7 @@ export async function resolveUri(
     );
     if (response.answers.length !== 1) throw usageError("Link resolution answered out of shape");
     const answer = response.answers[0];
-    if (answer?.state === "document") raw = answer.document.uri;
+    if (answer?.state === "document" && answer.requestedUri) raw = answer.requestedUri;
     else if (answer?.state === "missing") raw = answer.uri;
     else throw usageError("The variable address could not be resolved in this chat");
   }

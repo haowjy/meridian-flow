@@ -129,6 +129,15 @@ arguments or use JSON files).
   result paths after completion, and filename labels plus raw click-time
   resolution before a result exists.
 
+- **CLI requested-address parity after a move.** Create A at a chat note,
+  move A to an archive name, and compare canonical and `$THREAD` spellings
+  of its vacated address with explicit `--chat`. `doc put`, with and without
+  `--overwrite`, creates at the requested address, never at A’s new location.
+  At an occupied requested address, plain put conflicts and overwrite replaces
+  only that occupant. `doc rm` at the vacated address returns not found; after
+  reuse it deletes only the new occupant. A remains intact at its moved address.
+  Chat navigation still follows the vacated address to A.
+
 ## Labels and targeted publication
 
 Take a Work catalog snapshot and save its cursor. Rename a chat with

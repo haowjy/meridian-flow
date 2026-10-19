@@ -112,7 +112,9 @@ means a new server route behind the debug gate (`resolveDebugPathsEnabled`,
   `accepted` (exit 0) is admission only, returned just by `send --no-wait`. Run
   failures are results; `--fields` always keeps `type`, `command`, `outcome` and
   `reason`. Set `process.exitCode`; never call `process.exit()`.
-- **Documents.** Commands parse the final path segment with the contracts name
+- **Documents.** Variable inputs use the server’s canonical requested address,
+  never a link-follow destination (which may follow a moved document’s history).
+  Commands parse the final path segment with the contracts name
   codec; `doc put` reports the canonical URI creation returns. `doc put
   --overwrite` deletes and recreates (new id, drafts and history gone), reports
   `previousDocumentId`, and says the old document was already deleted if the

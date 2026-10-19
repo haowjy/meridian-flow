@@ -196,6 +196,12 @@ export async function handleDocumentLinkResolveRequest(
   if (unanswered.length > 0) {
     await answerFromBranchView(deps, { projectId, userId, view, unanswered, answers });
   }
+  for (const [index, link] of request.links.entries()) {
+    const answer = answers[index];
+    if (link.ref !== null || answer?.state !== "document") continue;
+    const requested = resolveDocumentHref(link.href, baseUri);
+    if (requested) answer.requestedUri = requested.uri;
+  }
   return holderUri === undefined ? { answers } : { answers, holderUri };
 }
 

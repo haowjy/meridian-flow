@@ -45,6 +45,8 @@ export type DocumentLinkAnswer =
         rootThreadId?: string | null;
         chatThreadId?: string | null;
       };
+      /** Canonical requested address for ref-less links, before navigation follows move history. */
+      requestedUri?: string;
       inBranch: boolean;
       /** Present iff `inBranch`: the branch containing the draft the chip opens (the reader's own if it uses it, else the oldest). */
       branch?: { branchId: string; workId: string | null };
@@ -69,7 +71,11 @@ export type ResolveDocumentLinksResponse = {
 export const resolvedLinkAddressesSchema = z.object({
   answers: z.array(
     z.discriminatedUnion("state", [
-      z.object({ state: z.literal("document"), document: z.object({ uri: z.string() }) }),
+      z.object({
+        state: z.literal("document"),
+        requestedUri: z.string().optional(),
+        document: z.object({ uri: z.string() }),
+      }),
       z.object({ state: z.literal("missing"), uri: z.string() }),
       z.object({ state: z.literal("gone") }),
       z.object({ state: z.literal("unresolvable") }),
