@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve removal records when a document closes during Apply admission; retries keep their recorded result.
+
 - Apply freezes the clicked draft text, commits live and review-base changes atomically, and records exactly-once command outcomes and committed change trails.
 
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.

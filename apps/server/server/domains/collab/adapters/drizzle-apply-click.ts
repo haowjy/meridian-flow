@@ -22,17 +22,18 @@ import {
   branchCommands,
   changeTrailDirtyLog,
   documentDrafts,
-  documents,
   pushLineage,
 } from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, sql } from "drizzle-orm";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
 import { acquireEndUseScope, EndUseScopeChangedError } from "../../context/tree/end-use.js";
+import { livingDocumentRefusal } from "../../context/tree/living-document.js";
 import { place } from "../../context/tree/placement.js";
 import { readRemovalRecords } from "../../context/tree/removal.js";
 import { createTreeReader } from "../../context/tree/tree-view.js";
@@ -153,18 +154,26 @@ export function createDrizzleApplyClick(
                         .where(eq(branchCommands.id, command.envelope.commandId));
                       return result;
                     };
-                    // The namespace precedes live's mutation lock. It protects hidden-create placement as well as removal.
-                    await acquireEndUseScope(db, { documentIds: [command.documentId] });
+                    // Only a hidden-create reveal changes the tree. Ordinary text Apply must not
+                    // serialize unrelated documents on their source's namespace lock.
+                    const [initialNode] = await tree.treeState(base.snapshot.branchId, [
+                      command.documentId,
+                    ]);
+                    if (initialNode?.hidden)
+                      await acquireEndUseScope(db, { documentIds: [command.documentId] });
+                    else await lockDocumentMutation(tx, command.documentId);
                     const [row] = await tx
                       .select({ status: documentDrafts.status })
                       .from(documentDrafts)
                       .where(eq(documentDrafts.id, draftId));
-                    const [document] = await tx
-                      .select({ deletedAt: documents.deletedAt })
-                      .from(documents)
-                      .where(eq(documents.id, command.documentId));
-                    if (!row || row.status === "closed" || !document || document.deletedAt)
-                      return finish(await closed(command));
+                    if (!row || row.status === "closed") return finish(await closed(command));
+                    const removed = await livingDocumentRefusal(tx, command.documentId);
+                    if (removed)
+                      return finish({
+                        status: "closed",
+                        commandId: command.envelope.commandId,
+                        ...(removed.removal ? { removal: removed.removal } : {}),
+                      });
                     const snapshot = await deps.live.read(command.documentId);
                     const live = storedDocument(snapshot);
                     let update: Uint8Array | undefined;
@@ -316,7 +325,6 @@ export function createDrizzleApplyClick(
                                 ownersByBlock: new Map(
                                   changes.map((block) => [block.blockId, owners]),
                                 ),
-                                operations: [],
                                 before: before.before.map((block) => ({
                                   hash: block.id,
                                   serialized: block.serialized,

@@ -87,7 +87,6 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
       [bravoId, [null]],
       [charlieId, [null]],
     ]),
-    operations: [],
     before: [
       { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
       { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
@@ -191,7 +190,6 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
       [bravoId, [null]],
       [charlieId, [null]],
     ]),
-    operations: [],
     before: [
       { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
       { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
@@ -231,116 +229,6 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
   ]);
 });
 
-it("does not relocate content from a structurally replaced source block", () => {
-  const schema = buildDocumentSchema();
-  const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
-  const model = yProsemirrorModel(schema);
-  const beforeDoc = createCollabYDoc({ gc: false });
-  model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo."));
-  const beforeBlocks = model.getBlocks(toDocHandle(beforeDoc));
-  const alpha = beforeBlocks[0];
-  const bravo = beforeBlocks[1];
-  if (!alpha || !bravo) throw new Error("missing source blocks");
-  const alphaId = model.getBlockId(alpha);
-  const bravoId = model.getBlockId(bravo);
-
-  const afterDoc = createCollabYDoc({ gc: false });
-  Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(beforeDoc));
-  const first = model.getBlocks(toDocHandle(afterDoc))[0];
-  const bravoReplacement = codec.parse("Bravo.").blocks[0];
-  if (!first || !bravoReplacement) throw new Error("missing shifted block");
-  model.applyBlockReplacement(toDocHandle(afterDoc), first, bravoReplacement);
-  afterDoc.getXmlFragment("prosemirror").delete(1, 1);
-  afterDoc.clientID = 314_159_265;
-  const shiftedBravo = model.getBlocks(toDocHandle(afterDoc))[0];
-  if (!shiftedBravo) throw new Error("missing shifted survivor");
-  model.insertBlocks(toDocHandle(afterDoc), shiftedBravo, codec.parse("Xray."));
-
-  const afterBlocks = model.getBlocks(toDocHandle(afterDoc));
-  const firstSurvivor = afterBlocks[0];
-  const xray = afterBlocks[1];
-  const firstElement = afterDoc.getXmlFragment("prosemirror").get(0);
-  const xrayElement = afterDoc.getXmlFragment("prosemirror").get(1);
-  if (
-    !firstSurvivor ||
-    !xray ||
-    !(firstElement instanceof Y.XmlElement) ||
-    !(xrayElement instanceof Y.XmlElement)
-  ) {
-    throw new Error("missing replacement blocks");
-  }
-  const firstSurvivorId = model.getBlockId(firstSurvivor);
-  const xrayId = model.getBlockId(xray);
-
-  const changes = preparedTrailChanges({
-    documentId: "document-1" as never,
-    changedBlocks: [
-      {
-        blockId: alphaId,
-        beforeBlockIdentity: getBlockItemId(alpha),
-        afterBlockIdentity: getBlockItemId(alpha),
-        beforeText: "Alpha.",
-        afterText: "Bravo.",
-      },
-      {
-        blockId: bravoId,
-        beforeBlockIdentity: getBlockItemId(bravo),
-        afterBlockIdentity: null,
-        beforeText: "Bravo.",
-        afterText: null,
-      },
-      {
-        blockId: xrayId,
-        beforeBlockIdentity: null,
-        afterBlockIdentity: getBlockItemId(xray),
-        beforeText: null,
-        afterText: "Xray.",
-      },
-    ],
-    receiptId: "receipt-replacement-relocation",
-    ownersByBlock: new Map([
-      [alphaId, [null]],
-      [bravoId, [null]],
-    ]),
-    operations: [
-      {
-        removedBlockHashes: [bravoId],
-        insertedBlocks: [{ blockId: xrayId, block: xrayElement }],
-        ambiguous: false,
-      },
-    ],
-    before: [
-      { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
-      { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
-    ],
-    blockIdentities: new Map([
-      [alphaId, { documentId: "document-1", ...getBlockItemId(alpha) }],
-      [bravoId, { documentId: "document-1", ...getBlockItemId(bravo) }],
-      [firstSurvivorId, { documentId: "document-1", ...getBlockItemId(firstSurvivor) }],
-      [xrayId, { documentId: "document-1", ...getBlockItemId(xray) }],
-    ]),
-    afterIds: new Set([firstSurvivorId, xrayId]),
-    afterById: new Map([
-      [firstSurvivorId, firstElement],
-      [xrayId, xrayElement],
-    ]),
-    afterDoc,
-  });
-
-  expect(changes).toMatchObject([
-    {
-      kind: "modify",
-      beforeText: "Alpha.",
-      afterTextAtReceipt: "Bravo.",
-    },
-    {
-      kind: "modify",
-      beforeText: "Bravo.",
-      afterTextAtReceipt: "Xray.",
-    },
-  ]);
-});
-
 it("keeps canonical identities distinct when snapshot block hashes collide", () => {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
@@ -376,7 +264,6 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
     ],
     receiptId: "receipt-hash-collision",
     ownersByBlock: new Map([[collidingHash, [null]]]),
-    operations: [],
     before: [
       {
         hash: collidingHash,

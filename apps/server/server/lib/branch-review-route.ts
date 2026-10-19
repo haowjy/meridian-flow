@@ -38,6 +38,7 @@ import {
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
 import {
+  type FileAccessDenied,
   type FileGrant,
   type FileNeed,
   isFileAccessDenied,
@@ -486,6 +487,26 @@ export async function handleApplyClickRequest(
   const refuse = async (
     reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
   ): Promise<ApplyClickAnswer> => (await lookup()) ?? { status: "refused", commandId, reason };
+  async function deniedAnswer(grant: FileAccessDenied): Promise<ApplyClickAnswer> {
+    // A known removed identity is a terminal room outcome, not an edit denial.
+    // Never expose its record to a different owner or project.
+    if (
+      grant.facts?.deleted &&
+      grant.facts.ownerAccountId === input.userId &&
+      grant.facts.projectId === input.projectId
+    ) {
+      const removed = await deps.documentSync.roomRemoval({ documentId: input.documentId });
+      if (removed)
+        return (await lookup()) ?? { status: "closed", commandId, removal: removed.removal };
+    }
+    return refuse(
+      grant.facts?.branchWork?.deleted || grant.facts?.ownerWork?.deleted
+        ? "work_deleted"
+        : grant.reason === "work_archived"
+          ? "work_archived"
+          : "not_found",
+    );
+  }
   const parsed = ApplyClickBody.safeParse(input.request);
   if (!parsed.success) return refuse("malformed");
   if (work.deletedAt) return refuse("work_deleted");
@@ -500,20 +521,7 @@ export async function handleApplyClickRequest(
     ...(item?.item.isNew ? [] : [documentTarget(input.documentId)]),
   ]) {
     const grant = await deps.fileAccess.authorize({ accountId: input.userId }, target, "edit");
-    if (isFileAccessDenied(grant)) {
-      // A known removed identity is a terminal room outcome, not an edit denial.
-      // Never expose its record to a different owner or project.
-      if (
-        grant.facts?.deleted &&
-        grant.facts.ownerAccountId === input.userId &&
-        grant.facts.projectId === input.projectId
-      ) {
-        const removed = await deps.documentSync.roomRemoval({ documentId: input.documentId });
-        if (removed)
-          return (await lookup()) ?? { status: "closed", commandId, removal: removed.removal };
-      }
-      return refuse(grant.reason === "work_archived" ? "work_archived" : "not_found");
-    }
+    if (isFileAccessDenied(grant)) return deniedAnswer(grant);
     grants.push(grant);
   }
   const result = await runWithEditGrants(deps.fileAccess, grants, () =>
@@ -525,11 +533,8 @@ export async function handleApplyClickRequest(
     }),
   );
   if (result.ok) return result.value;
-  return refuse(
-    result.refusal.refused.some((denial) => denial.reason === "work_archived")
-      ? "work_archived"
-      : "not_found",
-  );
+  const denial = result.refusal.refused[0];
+  return denial ? deniedAnswer(denial) : refuse("not_found");
 }
 
 /** An item the branch no longer holds, as a 200 body status. */

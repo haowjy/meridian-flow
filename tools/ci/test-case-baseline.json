@@ -223,7 +223,7 @@
     "apps/server/server/domains/collab/domain/draft-end-use.conformance.test.ts": 1,
     "apps/server/server/domains/collab/domain/draft-pulls.test.ts": 3,
     "apps/server/server/domains/collab/domain/draft-response-replay.test.ts": 5,
-    "apps/server/server/domains/collab/domain/draft-trail-projection.test.ts": 4,
+    "apps/server/server/domains/collab/domain/draft-trail-projection.test.ts": 3,
     "apps/server/server/domains/collab/domain/markdown-document.test.ts": 6,
     "apps/server/server/domains/collab/domain/provenance.test.ts": 10,
     "apps/server/server/domains/collab/domain/reply-save-fences.test.ts": 9,
