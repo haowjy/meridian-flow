@@ -118,7 +118,7 @@ export function ScratchFileRow({
   const openFile = useOpenDocumentInDock();
   const screen = useProjectScreen();
   const docked = useDockDocument(screen, projectId)?.tab.documentId === file.documentId;
-  const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
+  const folder = file.parentLabels?.join("/") ?? "";
   const interaction = useEntryInteraction({
     projectId,
     node: file,

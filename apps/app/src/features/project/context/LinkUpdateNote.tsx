@@ -10,12 +10,16 @@
  * operation.
  */
 import { plural, t } from "@lingui/core/macro";
-import { parseContextUri } from "@meridian/contracts/context-uri";
+import { parseContextUri, sourceLocationFromContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
+import { catalogEntryParentLabels, catalogViewFromCheckpoint } from "@meridian/resource-replica";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { announce } from "@/client/stores";
 import { cn } from "@/lib/utils";
-import { useOptionalAccountResourceReplica } from "./account-feature-context";
+import {
+  useAccountResourceProjection,
+  useOptionalAccountResourceReplica,
+} from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { type LinkNoteSubject, renameOperationLifecycle } from "./rename-operation-lifecycle";
 
@@ -47,20 +51,28 @@ export function movedLinkCount(receipt: ContextOperationReceipt | null): number 
 }
 
 /** A rename in the same folder is not destination feedback; a placement is. */
-export function movedDestinationName(receipt: ContextOperationReceipt | null): string | null {
+export function movedDestinationName(
+  receipt: ContextOperationReceipt | null,
+  parentLabels?: readonly string[],
+): string | null {
   if (receipt?.command.kind !== "move" || !receipt.result.ok) return null;
   const source = parseContextUri(receipt.command.sourceUri);
   const destination = parseContextUri(receipt.command.destinationUri);
   if (!destination.ok) return null;
-  const parent = destination.value.path.split("/").slice(0, -1);
+  const parent = sourceLocationFromContextUri(destination.value).split("/").slice(0, -1);
   if (
     source.ok &&
     source.value.scheme === destination.value.scheme &&
     JSON.stringify(source.value.authority) === JSON.stringify(destination.value.authority) &&
-    source.value.path.split("/").slice(0, -1).join("/") === parent.join("/")
+    sourceLocationFromContextUri(source.value).split("/").slice(0, -1).join("/") ===
+      parent.join("/")
   )
     return null;
-  return parent.at(-1) || schemeLabel(destination.value.scheme);
+  return (
+    parentLabels?.at(-1) ||
+    parent.filter((part) => !/^@[cp][1-9][0-9]*$/.test(part)).at(-1) ||
+    schemeLabel(destination.value.scheme)
+  );
 }
 
 // Operations already announced; entries leave once their deadline has passed.
@@ -107,7 +119,19 @@ function ActiveNote({
   const settled = selection.operationId === operationId ? selection.feedback : null;
   const links = movedLinkCount(settled?.receipt ?? null);
   const deadline = settled?.deadline;
-  const folder = movedDestinationName(settled?.receipt ?? null);
+  const { snapshot } = useAccountResourceProjection(projectId);
+  const receipt = settled?.receipt ?? null;
+  const destination = receipt?.command.kind === "move" ? receipt.command.destinationUri : null;
+  const parentLabels = snapshot?.catalogs.flatMap((checkpoint) => {
+    const view = catalogViewFromCheckpoint(checkpoint);
+    const entry = [...view.entries.values()].find(
+      (entry) => (entry.kind === "file" || entry.kind === "folder") && entry.uri === destination,
+    );
+    return entry?.kind === "file" || entry?.kind === "folder"
+      ? [catalogEntryParentLabels(view, entry)]
+      : [];
+  })[0];
+  const folder = movedDestinationName(receipt, parentLabels);
   const visible = links > 0 || Boolean(folder);
   const message =
     links > 0

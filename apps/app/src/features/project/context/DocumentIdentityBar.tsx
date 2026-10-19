@@ -24,7 +24,6 @@ import { DocumentPath } from "./DocumentPath";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
-import { tabLocation } from "./identity-location";
 import { LinkUpdateNote, useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
@@ -33,6 +32,7 @@ import {
   useIdentityCommit,
 } from "./use-identity-commit";
 import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
+import { useTabLocation } from "./use-tab-location";
 
 export type DocumentIdentityBarProps = {
   projectId: string;
@@ -72,7 +72,7 @@ export function DocumentIdentityBar({
 }: DocumentIdentityBarProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   useIdentityRowFit(rowRef);
-  const location = tabLocation(tab);
+  const location = useTabLocation(projectId, tab);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
   const { operationId: noteOperationId, remember } = useRenameOperation(projectId, {

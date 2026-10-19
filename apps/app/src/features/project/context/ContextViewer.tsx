@@ -165,6 +165,7 @@ export function ContextViewer({
         </p>
       ) : null}
       <ContextTabBar
+        projectId={projectId}
         tabs={tabs}
         activeTabId={activeTabId}
         activeTabInstanceId={(activeTab ?? settledTab)?.tabInstanceId}

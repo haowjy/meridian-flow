@@ -15,6 +15,7 @@ import {
 import {
   type CatalogCacheView,
   type catalogChildren,
+  catalogEntryParentLabels,
   catalogViewFromCheckpoint,
   emptyCatalogView,
   type FolderNamespaceRecord,
@@ -399,7 +400,10 @@ export function projectCatalogView(
       (!effective || effective.scheme !== scheme || effective.path !== `/${entry.path.join("/")}`)
     )
       return null;
-    const file = projectCatalogFile(entry);
+    const file = {
+      ...projectCatalogFile(entry),
+      parentLabels: catalogEntryParentLabels(view, entry),
+    };
     const repair = record ? projectResourceNeedsRepair(projectId, record) : null;
     const repairedAt = repair
       ? record?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt

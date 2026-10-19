@@ -19,8 +19,10 @@ import { cn } from "@/lib/utils";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
 import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
+import { useTabLocation } from "./use-tab-location";
 
 export type ContextTabBarProps = {
+  projectId: string;
   tabs: ContextTab[];
   activeTabId: string | null;
   activeTabInstanceId?: string;
@@ -43,6 +45,7 @@ export type ContextTabBarProps = {
 };
 
 export function ContextTabBar({
+  projectId,
   tabs,
   activeTabId,
   activeTabInstanceId,
@@ -111,6 +114,7 @@ export function ContextTabBar({
             <TabChip
               key={tab.tabInstanceId ?? tab.documentId}
               tab={tab}
+              projectId={projectId}
               active={active}
               reviewing={active && tab.documentId === reviewingTabId}
               // Divider only between two adjacent inactive tabs — the active
@@ -183,6 +187,7 @@ function OptimisticTabChip({ tab }: { tab: OptimisticContextTab }) {
 }
 
 function TabChip({
+  projectId,
   tab,
   active,
   reviewing,
@@ -190,6 +195,7 @@ function TabChip({
   onSelect,
   onClose,
 }: {
+  projectId: string;
   tab: ContextTab;
   active: boolean;
   reviewing: boolean;
@@ -197,6 +203,7 @@ function TabChip({
   onSelect: () => void;
   onClose: () => void;
 }) {
+  const location = useTabLocation(projectId, tab);
   return (
     <TabChipFrame active={active} reviewing={reviewing} divider={divider}>
       <button
@@ -211,7 +218,7 @@ function TabChip({
         // name; the visible glyph/label siblings are hidden from AT so the
         // strip doesn't announce each filename twice.
         className="focus-ring absolute inset-0"
-        title={tab.kind === "new" ? tab.name : tab.path}
+        title={[...location.folders, location.leaf].join("/")}
       />
       <FileKindIcon tab={tab} />
       <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">

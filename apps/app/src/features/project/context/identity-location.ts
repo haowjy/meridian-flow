@@ -89,7 +89,7 @@ export function destinationOwner(
 }
 
 /** Local documents acquire their first durable location in the project Unfiled source. */
-export function tabLocation(tab: ContextTab): TabLocation {
+export function tabLocation(tab: ContextTab, parentLabels?: readonly string[]): TabLocation {
   if (tab.kind === "new") {
     return {
       scheme: "unfiled",
@@ -105,7 +105,10 @@ export function tabLocation(tab: ContextTab): TabLocation {
   return {
     scheme: tab.scheme,
     parentPath: parentFolderPath(tab.path),
-    folders: segments.slice(0, -1),
+    folders: [
+      ...(parentLabels ??
+        segments.slice(0, -1).filter((segment) => !/^@[cp][1-9][0-9]*$/.test(segment))),
+    ],
     leaf: tab.name,
     provisional:
       tab.scheme === "unfiled" || (tab.kind === "tracked" && Boolean(tab.provisionalName)),

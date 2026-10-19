@@ -13,6 +13,7 @@ type CatalogFileBase = {
   documentId: string;
   name: string;
   aliases?: readonly string[];
+  parentLabels?: readonly string[];
   path: string;
   uri: string;
   provisionalName: boolean;

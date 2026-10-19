@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Files ancestry, document breadcrumbs, tab tooltips and move feedback use catalog folder display names instead of reserved chat-folder basenames.
+
 - File operations reject source and chat-folder roots without a writer filename, including tracked ensure and binary creation. Folder operations still accept those roots.
 
 - AI-written scoped links expand before identity correspondence, preserving links when a writer moves a target and reuses its old path.
