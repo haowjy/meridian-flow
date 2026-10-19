@@ -12,10 +12,10 @@ import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
-import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
+import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { semanticIrForEdits } from "../semantic-edit-ir-builder.js";
 import { wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
@@ -763,46 +763,15 @@ function semanticIrForResolvedEdits(
   params: NormalizedParams,
   resolved: Extract<ResolveWriteResultWithoutIr, { ok: true }>,
 ): SemanticEditIRV1 {
-  const { edits } = resolved;
-  const scope: LineageRange[] = [];
-  const deleted: LineageRange[] = [];
-  const mappedEdits = edits.map((edit) => {
-    let outputRuns: SemanticOutputRun[] = [];
-    if (edit.kind === "textRanges") {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
-      scope.push(...lineage);
-      for (const replacement of edit.replacements) {
-        deleted.push(...sliceLineage(lineage, replacement.span.start, replacement.span.end));
-      }
-      outputRuns = semanticRunsForTextRanges(lineage, edit);
-    } else if (edit.kind === "insert") {
-      if (edit.newText.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.newText,
-            output: { from: 0, to: edit.newText.length },
-          },
-        ];
-      }
-    } else {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
-      scope.push(...lineage);
-      deleted.push(...lineage);
-      if (edit.kind === "block" && edit.replacement.textContent.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.replacement.textContent,
-            output: { from: 0, to: edit.replacement.textContent.length },
-          },
-        ];
-      }
-    }
-    return { edit, outputRuns };
+  const ir = semanticIrForEdits({
+    documentId: params.documentAddress.documentId,
+    inputRevision: (ctx.inputRevision ??
+      documentRevision(ctx)) as SemanticEditIRV1["inputRevision"],
+    model: ctx.model,
+    edits: resolved.edits,
   });
-  const normalizedScope = normalizeLineageRanges(scope);
-  const normalizedDeleted = normalizeLineageRanges(deleted);
+  const normalizedScope = ir.scope;
+  const normalizedDeleted = ir.deleted;
   // Its payload is the whole requested content, so it only describes a scope
   // whose every block was rewritten.
   const isTotalFreshReplacement =
@@ -812,49 +781,11 @@ function semanticIrForResolvedEdits(
     normalizedScope.length > 0 &&
     sameLineageRanges(normalizedScope, normalizedDeleted);
   return {
-    version: 1,
-    documentId: params.documentAddress.documentId,
-    inputRevision: (ctx.inputRevision ??
-      documentRevision(ctx)) as SemanticEditIRV1["inputRevision"],
-    scope: normalizedScope,
+    ...ir,
     intent: isTotalFreshReplacement
       ? { kind: "fullScopeFreshReplacement", payload: params.content }
-      : { kind: "mappedEdits", edits: mappedEdits },
-    deleted: normalizedDeleted,
+      : ir.intent,
   };
-}
-
-function semanticRunsForTextRanges(
-  lineage: readonly LineageRange[],
-  edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
-): SemanticOutputRun[] {
-  const first = edit.replacements[0];
-  if (!first) return [];
-  const runs: SemanticOutputRun[] = [];
-  let sourceCursor = first.span.start;
-  let outputCursor = 0;
-  for (const replacement of edit.replacements) {
-    for (const source of sliceLineage(lineage, sourceCursor, replacement.span.start)) {
-      runs.push({
-        kind: "preserved",
-        source,
-        output: { from: outputCursor, to: outputCursor + source.length },
-        materialization: "retained",
-      });
-      outputCursor += source.length;
-    }
-    const text = inlineReplacementText(replacement);
-    if (text.length > 0) {
-      runs.push({
-        kind: "fresh",
-        payload: text,
-        output: { from: outputCursor, to: outputCursor + text.length },
-      });
-      outputCursor += text.length;
-    }
-    sourceCursor = replacement.span.end;
-  }
-  return runs;
 }
 
 function sameLineageRanges(left: readonly LineageRange[], right: readonly LineageRange[]): boolean {
@@ -867,24 +798,6 @@ function sameLineageRanges(left: readonly LineageRange[], right: readonly Lineag
         range.length === right[index]?.length,
     )
   );
-}
-
-function sliceLineage(lineage: readonly LineageRange[], from: number, to: number): LineageRange[] {
-  const slices: LineageRange[] = [];
-  let cursor = 0;
-  for (const range of lineage) {
-    const start = Math.max(from, cursor);
-    const end = Math.min(to, cursor + range.length);
-    if (start < end) {
-      slices.push({
-        clientID: range.clientID,
-        clock: range.clock + start - cursor,
-        length: end - start,
-      });
-    }
-    cursor += range.length;
-  }
-  return slices;
 }
 
 /** The revision a semantic IR names: the document's state vector, in hex. */
