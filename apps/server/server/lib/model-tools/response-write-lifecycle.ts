@@ -6,10 +6,15 @@ import {
   type ConcurrentEditInfo,
   type ResponseCommitWriteReceipt,
   type ResponseStagedCreateOutcome,
-  removedWriteMessage,
+  removedWriteRefusal,
+  type WriteRejection,
 } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
-import type { PermissionDeniedReason, RetractionCause } from "@meridian/contracts/protocol";
+import type {
+  DocumentRemovalRecord,
+  PermissionDeniedReason,
+  RetractionCause,
+} from "@meridian/contracts/protocol";
 import type { RefusedResponseDocument } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -42,19 +47,26 @@ type ResponseWriteLifecycleCommitResult =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
-      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
+      refused: Array<{ documentId: string } & SaveRefusal>;
     }
   | { status: "branch_closed"; responseId: string; mode: "draft" };
 
-/** Why the reply's save left out a document's changes (D29, D42). */
-function refusedAtSave(refusal: Exclude<RefusedResponseDocument, { reason: unknown }>): {
+/** A save refusal's copy, with the policy's reason or the removal's (`rejected`, `removal`). */
+type SaveRefusal = {
   message: string;
   reason?: PermissionDeniedReason;
-} {
-  if ("removed" in refusal) return { message: removedWriteMessage(refusal.removed, "save") };
+  rejected?: WriteRejection;
+  removal?: DocumentRemovalRecord;
+};
+
+/** Why the reply's save left out a document's changes (D29, D42). */
+function refusedAtSave(
+  refusal: Exclude<RefusedResponseDocument, { reason: unknown }>,
+): SaveRefusal {
+  if ("removed" in refusal) return removedWriteRefusal(refusal.removed);
   const { denial } = refusal;
   // The fence turns every `not_found` into `removed`; only permission refusals remain here.
-  if (!isPermissionDenial(denial)) return { message: removedWriteMessage(null, "save") };
+  if (!isPermissionDenial(denial)) return removedWriteRefusal(null);
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 

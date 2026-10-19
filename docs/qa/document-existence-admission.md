@@ -50,4 +50,6 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    resume. PASS: the write's result reads "This file was deleted by <name> before this
    reply was saved, so this change wasn't made." (a name appears only when the user row
    has one: dev login blanks it, so set `users.name` after the delete and before
-   resuming). Repeat in a No Work chat.
+   resuming), and the chat's card reads "You deleted <title> before this reply saved
+   its change." (the result carries `rejected: "removed"` and the record in `removal`).
+   Repeat in a No Work chat.

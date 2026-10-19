@@ -1,5 +1,6 @@
 // Receipts project accepted evidence. Reporting failure never changes acceptance.
 
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { type BlockSnapshot, computeEcho, truncateSerializedBlock } from "../apply/echo.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { StagedWriteRejectionReason } from "../ports/document-coordinator.js";
@@ -134,20 +135,34 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
 
 /**
  * A staged write the host refused, as its settled receipt says it. A removal names who removed
- * the file and asks for no retry; the chat's card then shows its generic refusal.
+ * the file and asks for no retry.
  */
 export function rejectedWriteResult(reason?: StagedWriteRejectionReason): InternalWriteResult {
   if (typeof reason === "object")
-    return {
-      status: "invalid_write",
-      model: { message: removedWriteMessage(reason.removed, "save") },
-    };
+    return { status: "invalid_write", model: removedWriteRefusal(reason.removed) };
   return {
     status: "invalid_write",
     model: {
       message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
       rejected: writeRejection(reason),
     },
+  };
+}
+
+/**
+ * A write the document's removal stopped before the reply saved it, whether the removal refused
+ * the staged write or the save found the document gone. Null: no record (the file went with its
+ * source or Work, or stands again).
+ */
+export function removedWriteRefusal(removal: DocumentRemovalRecord | null): {
+  message: string;
+  rejected: "removed";
+  removal?: DocumentRemovalRecord;
+} {
+  return {
+    message: removedWriteMessage(removal, "save"),
+    rejected: "removed",
+    ...(removal ? { removal } : {}),
   };
 }
 
