@@ -183,6 +183,11 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   const compacting = new Set<string>();
   const lateTyping = new Map<string, LateTyping>();
 
+  function rememberLateTyping(draftId: string, memory: LateTyping): void {
+    if (memory === NO_LATE_TYPING) lateTyping.delete(draftId);
+    else lateTyping.set(draftId, memory);
+  }
+
   function acknowledgeContainedFrame(draftId: string, doc: Y.Doc, update: Uint8Array): boolean {
     if (!documentContainment.contains(doc, update)) return false;
     if (!lateTyping.has(draftId)) return true;
@@ -193,7 +198,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       // memory here, never replace it with a snapshot taken before that frame.
       const memory = lateTyping.get(draftId);
       if (!memory) return;
-      lateTyping.set(
+      rememberLateTyping(
         draftId,
         recoverLatePeerEdits({
           doc,
@@ -455,13 +460,15 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       appended: () => {
         const complete = () => {
           if (snapshot.kind === "work_draft") {
-            if (finalized?.lateTyping && finalized.lateTyping !== NO_LATE_TYPING) {
-              lateTyping.set(
+            if (finalized?.lateTyping) {
+              rememberLateTyping(
                 snapshot.draftId,
-                retainLateTypingDeletions(
-                  finalized.lateTyping,
-                  lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
-                ),
+                finalized.lateTyping === NO_LATE_TYPING
+                  ? NO_LATE_TYPING
+                  : retainLateTypingDeletions(
+                      finalized.lateTyping,
+                      lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
+                    ),
               );
             }
             input.onAppendCommitted(snapshot.draftId);
