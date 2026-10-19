@@ -27,7 +27,6 @@ import type { DocumentLinkScope, MarkupCodec, ParsedContent, PMNode } from "@mer
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { DocumentRemovedError } from "../../context/ports/document-removals.js";
 import type {
   DocumentSeedOrigin,
   DocumentWriteOrigin,
@@ -427,7 +426,7 @@ export function createMarkdownDocumentEngine(
       }
       return result;
     } catch (cause) {
-      if (isDocumentNotFoundError(cause) || cause instanceof DocumentRemovedError) {
+      if (isDocumentNotFoundError(cause)) {
         return Err({ code: "not_found", documentId: input.documentId });
       }
       throw cause;
