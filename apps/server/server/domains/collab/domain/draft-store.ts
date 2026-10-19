@@ -193,8 +193,6 @@ export type CommitRewriteInput = {
   draftId: string;
   policy: RewritePolicy;
   fence: RewriteFence;
-  /** The peer's upstream as captured: locked `FOR SHARE` and checked before the peer row. */
-  upstream?: { draftId: string; generation: number };
   /** The rewritten checkpoint. A `fold` pull applies the tail into it. */
   doc: Y.Doc;
   operation: RewriteOperation;
@@ -208,7 +206,7 @@ export type RewriteOutcome =
       seq: number;
       generation: number;
     }
-  | { status: "moved" | "fenced" | "blocked" | "closed" | "upstreamMoved" };
+  | { status: "moved" | "fenced" | "blocked" | "closed" };
 
 /**
  * A stale draft and its keyset position in the sweep's order. `updatedAt` is the stored

@@ -50,6 +50,7 @@ import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js"
 import type { SettlementApplyStep } from "../domain/ports/settlement-apply.js";
 import { writeMarkdown } from "./bound-writes.js";
 import { readResolvedDraft } from "./draft-store-seam.js";
+import { commitDraftRows } from "./draft-update-writes.js";
 import { captureHistoricalDraftRow } from "./historical-draft-row.js";
 
 const { createDb } = await import("@meridian/database");
@@ -895,7 +896,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       );
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
       model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
-      await draftCoordinator.commitSegmentRows({
+      await commitDraftRows(draftCoordinator, {
         draftId: draft.draftId,
         sourceDoc: draft.doc,
         expectedGeneration: draft.generation,
@@ -1114,7 +1115,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         markupCodec.parse("Agent replacement."),
       );
     }
-    const committed = await draftCoordinator.commitSegmentRows({
+    const committed = await commitDraftRows(draftCoordinator, {
       draftId: documentDraft.draftId,
       sourceDoc: documentDraft.doc,
       expectedGeneration: documentDraft.generation,
@@ -1183,7 +1184,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const doomed = model.getBlocks(toDocHandle(documentDraft.doc))[0];
     if (!doomed) throw new Error("draft block missing before sweep classification push");
     model.deleteBlock(toDocHandle(documentDraft.doc), doomed);
-    const committed = await draftCoordinator.commitSegmentRows({
+    const committed = await commitDraftRows(draftCoordinator, {
       draftId: documentDraft.draftId,
       sourceDoc: documentDraft.doc,
       expectedGeneration: documentDraft.generation,
@@ -1327,7 +1328,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
             beforeStateVector,
           );
         }
-        const committed = await draftCoordinator.commitSegmentRows({
+        const committed = await commitDraftRows(draftCoordinator, {
           draftId: documentDraft.draftId,
           sourceDoc: documentDraft.doc,
           expectedGeneration: documentDraft.generation,
@@ -1406,7 +1407,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const block = model.getBlocks(toDocHandle(staged.doc))[0];
       if (!block) throw new Error("pending-dependency draft block is unavailable");
       model.deleteBlock(toDocHandle(staged.doc), block);
-      await draftCoordinator.commitSegmentRows({
+      await commitDraftRows(draftCoordinator, {
         draftId: documentDraft.draftId,
         sourceDoc: staged.doc,
         expectedGeneration: staged.generation,
@@ -1937,7 +1938,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       { from: end, to: end },
       " discarded",
     );
-    await draftCoordinator.commitSegmentRows({
+    await commitDraftRows(draftCoordinator, {
       draftId: documentDraft.draftId,
       sourceDoc: documentDraft.doc,
       expectedGeneration: documentDraft.generation,
@@ -1991,7 +1992,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         { from: currentEnd, to: currentEnd },
         " survivor",
       );
-      await draftCoordinator.commitSegmentRows({
+      await commitDraftRows(draftCoordinator, {
         draftId: documentDraft.draftId,
         sourceDoc: current.sourceDoc,
         expectedGeneration: current.generation,
@@ -2241,7 +2242,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         const block = model.getBlocks(toDocHandle(doc))[0];
         if (!block) throw new Error("draft block missing before subsequent edit");
         model.deleteBlock(toDocHandle(doc), block);
-        await draftCoordinator.commitSegmentRows({
+        await commitDraftRows(draftCoordinator, {
           draftId: draftId,
           sourceDoc: doc,
           expectedGeneration: staged.generation,

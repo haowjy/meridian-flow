@@ -649,7 +649,6 @@ export function createDrizzleDraftStore(
         // computed the effect on the candidate; a peer has none, a compaction keeps the
         // content and a reset is effect-free by construction.
         ...(operation.kind === "pull" && operation.effect ? { effect: operation.effect } : {}),
-        ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
         ...(onRewriteCommitted
           ? {

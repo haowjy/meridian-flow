@@ -22,6 +22,7 @@ import {
 } from "../test-support/document-edit-receipt-fixture.js";
 import { commitDraftEdit, reviewDriver } from "../test-support/draft-review-requests.js";
 import { readDraftContent } from "../test-support/draft-store-seam.js";
+import { commitDraftRows } from "../test-support/draft-update-writes.js";
 
 describe("document edit receipts (Postgres)", () => {
   const db = createTestDatabase();
@@ -179,7 +180,7 @@ describe("document edit receipts (Postgres)", () => {
             if (text) value.insert(0, text);
           });
           expect(
-            await fixture.draftCoordinator.commitSegmentRows({
+            await commitDraftRows(fixture.draftCoordinator, {
               draftId,
               sourceDoc: doc,
               expectedGeneration: snapshot.generation,

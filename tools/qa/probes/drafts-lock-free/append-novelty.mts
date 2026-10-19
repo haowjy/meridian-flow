@@ -21,6 +21,7 @@ import {
   appendProvenanceFacts,
   PROVENANCE_TARGETS_TYPE,
 } from "../../../../apps/server/server/domains/collab/domain/provenance.ts";
+import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
 import { captureUndoRestorationClaims } from "../../../../packages/prosemirror-schema/src/restoration-claims.ts";
 import {
   appendToFirstParagraph,
@@ -283,7 +284,7 @@ export const appendNovelty: Probe = {
           const source = tabOn(draft.live, 900_778);
           Y.applyUpdate(source, fact);
           const committed = await independently(() =>
-            harness.coordinator.commitSegmentRows({
+            commitDraftRows(harness.coordinator, {
               draftId: draft.draftId,
               expectedGeneration: draft.generation,
               sourceDoc: source,
@@ -373,7 +374,7 @@ export const appendNovelty: Probe = {
             const t = firstText(source);
             t.delete(t.length - 1, 1);
           });
-          const committed = await harness.coordinator.commitSegmentRows({
+          const committed = await commitDraftRows(harness.coordinator, {
             draftId: draft.draftId,
             expectedGeneration: draft.generation,
             sourceDoc: source,
