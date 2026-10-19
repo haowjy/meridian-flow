@@ -22,6 +22,9 @@ and evidence path for each run, as the [catalog](README.md) asks.
   stops the server and the app. The tab needs an app of its own because the
   app's Vite proxy sends every `/ws/yjs` upgrade to one `MERIDIAN_API_ORIGIN`,
   whatever host the tab uses.
+- The hook controller (`collab-hook-controller.ts`) pauses as well as crashes:
+  `COLLAB_PAUSE_AT=<hook point>` with `COLLAB_PAUSE_FILE=<file>` holds the
+  operation that reaches the point, with its locks, while the file exists.
 - The crash controller: start the stack with `COLLAB_CRASH_AT=<hook point>` and
   `COLLAB_CRASH_ARM=<file>`, then `touch <file>` to arm it. At the point, the
   server deletes the file and exits with 137. Nitro's dev server restarts its

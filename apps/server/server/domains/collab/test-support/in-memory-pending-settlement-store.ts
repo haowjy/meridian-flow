@@ -197,7 +197,7 @@ export function createInMemoryPendingSettlementStore(options?: {
       if (result === "retry") return { status: "retry" as const };
       input.afterCommit(input.members.map(({ push }) => push.documentId));
       for (const member of input.members) options?.onCompleted?.(member.push.id);
-      return { status: "completed" as const, projections: [], held: [], outcomes: [] };
+      return { status: "completed" as const, projections: [], held: [] };
     },
 
     // This store models no Apply steps: every check proceeds.

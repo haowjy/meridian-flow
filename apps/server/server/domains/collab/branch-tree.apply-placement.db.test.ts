@@ -85,7 +85,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await s.applyAll(ascension), "one command, one Apply").toEqual({
       status: "completed",
       branchId: reviewed.branchId,
-      items: [{ itemKey: reviewed.itemKey, status: "applied", notes: [] }],
+      items: [{ itemKey: reviewed.itemKey, status: "applied" }],
     });
     const live = s.view("live");
     expect.soft(await live.idAt("characters/kael-fix"), "the rename stands").toBe(kael);
@@ -106,7 +106,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     renameLate();
     expect.soft(raced, "the raced rename stands").toMatchObject({
       httpStatus: 200,
-      body: { item: { status: "applied", notes: [] } },
+      body: { item: { status: "applied" } },
     });
     expect.soft(await live.idAt("notes/renamed")).toBe(notes);
     expect.soft(await live.idAt("notes/original")).toBeNull();
@@ -163,7 +163,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
           status: "applied",
           branchId: item?.branchId,
           itemKey: item?.itemKey,
-          item: { itemKey: item?.itemKey, status: "applied", notes: [] },
+          item: { itemKey: item?.itemKey, status: "applied" },
         },
       },
     ]);

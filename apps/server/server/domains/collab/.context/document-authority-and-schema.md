@@ -18,6 +18,29 @@ it. Persistence revalidates both under the document mutation lock and drops
 stale bytes instead of relabeling them. Restore retires warm handles and
 rooms; late load and connection completion revalidate before use.
 
+## Only materialization makes a head (W52)
+
+A head and its first checkpoint are written by one initialize-only primitive,
+`InitialDocumentSeeds.seedInitialDocument`: under the document mutation lock it
+proves the `documents` row is living, writes nothing when any checkpoint or
+update exists, and otherwise installs the head and checkpoint. Two kinds of
+caller reach it: the create's own transaction (live create, a branch's new hidden
+row, bootstrap and seeds through `seedFromMarkdown`, or `initializeEmptyDocument`
+for an empty create), and explicit repair of a living document whose authority
+is absent (`repairDocumentAuthority`, from its stored projection with links
+unbound). Repair runs only on an explicit touch: the occupant `create-placement`
+returns, a joined hidden candidate before its draft seeds, live overwrite and
+the held live lease, and Hocuspocus room admission before its first generation
+read. Everything else requires an existing head and creates nothing:
+`allocateDocumentAdmission` (journal and settlement), `readDocumentAuthorityHead`
+(provenance, compaction, the generation reader), checkpoint storage and push
+completion. A miss answers the removal record (`DocumentRemovedError`) or
+`DocumentNotFoundError`.
+
+`allocateDocumentAdmission` is the one live-write boundary: its head update
+joins the living row, so a removal that won the mutation lock refuses every
+later frame, staged save install and Apply member at no extra query.
+
 ## Schema-aware document engine
 
 `domain/markdown-document.ts` is the sole read/write and Y.Doc projection

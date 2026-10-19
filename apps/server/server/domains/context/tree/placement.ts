@@ -1,7 +1,7 @@
 /**
  * Live placement (contract §6.3, §7): the one owner of bringing nodes into the live tree.
- * `place` reveals a hidden node or restores a soft-deleted one at its final location with
- * its ancestors; `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
+ * `place` reveals a hidden node at its final location with its ancestors (a removed
+ * document is never placed: nothing writes it back into being); `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
  * folder at a path instead of making a twin. Both walk folders through `walkFolders`, the
  * walk branch and live creates share. Both are tree writes only: they return what they
  * placed, and their callers refresh the catalog.
@@ -121,16 +121,15 @@ export type LiveLocation = {
   extension?: string;
 };
 
+/** A hidden, living node to reveal at a live location. */
 export type PlaceTarget = {
   node: NodeRef;
   at: LiveLocation;
-  /** reveal: the node must be hidden and live; restore: soft-deleted and visible (not a tombstone). */
-  mode: "reveal" | "restore";
 };
 
 /**
- * What a placement did. `absorbed` and `restored` are contract surface for Apply and
- * restore (lanes E, D); nothing in this lane reads them yet.
+ * What a placement did. `absorbed` and `restored` (soft-deleted ancestor folders brought
+ * back for the node) are contract surface; nothing reads them yet.
  */
 export type PlaceResult = {
   /** Targets plus revealed or restored ancestors. */
@@ -147,8 +146,7 @@ export type PlaceFault =
   | { code: "stale"; node: NodeRef };
 
 /**
- * One placement step (§7): each target, hidden (reveal) or soft-deleted (restore), into
- * the live tree at its final location, with its ancestors. Settles no links: its callers
+ * One placement step (§7): each hidden target into the live tree at its final location, with its ancestors. Settles no links: its callers
  * do once the tree is final. The caller holds the namespaces of every source involved and
  * the document locks of every target document.
  */
@@ -186,7 +184,6 @@ export async function place(
       target.node,
     );
     if (taken) return Err(taken);
-    const clear = target.mode === "reveal" ? "hidden" : "deleted";
     if (target.node.kind === "document") {
       await currentDrizzleDb(db)
         .update(documents)
@@ -195,15 +192,7 @@ export async function place(
           folderId: parentId,
           name: target.at.name,
           extension: target.at.extension ?? "",
-          ...(clear === "hidden"
-            ? { hidden: false }
-            : {
-                deletedAt: null,
-                deletionReason: null,
-                deletedByWorkId: null,
-                deletedByUserId: null,
-                deletionCause: null,
-              }),
+          hidden: false,
           updatedAt: new Date(),
         })
         .where(eq(documents.id, target.node.id));
@@ -211,7 +200,7 @@ export async function place(
     } else {
       await updatePlacedFolder(db, target.node.id, {
         parentId,
-        clear,
+        clear: "hidden",
         contextSourceId: target.at.contextSourceId,
         name: target.at.name,
       });
@@ -219,7 +208,6 @@ export async function place(
     await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
     if (target.node.kind === "folder") await absorbAt(db, target.node.id);
     placed.push(target.node);
-    if (target.mode === "restore") restored.push(target.node);
     sourceIds.add(target.at.contextSourceId);
   }
   return Ok({ placed, absorbed, restored, sourceIds: [...sourceIds] });
@@ -245,19 +233,17 @@ async function revalidatePlacement(
   db: Database,
   target: PlaceTarget,
 ): Promise<{ code: "stale"; node: NodeRef } | null> {
-  const want = (hidden: boolean, deleted: boolean) =>
-    target.mode === "reveal" ? hidden && !deleted : !hidden && deleted;
   const [row] =
     target.node.kind === "document"
       ? await loadDocumentIdentityRows(currentDrizzleDb(db), [target.node.id])
       : await loadFolderIdentityRows(currentDrizzleDb(db), [target.node.id]);
-  return row && want(row.hidden, row.deleted) ? null : { code: "stale", node: target.node };
+  return row?.hidden && !row.deleted ? null : { code: "stale", node: target.node };
 }
 
 /**
  * The final location's folder chain, root down (TM invariant 2, decision 9): a visible
  * folder is kept; a hidden one is revealed, or, when a visible folder already holds its
- * path, absorbed into that one (§8.2); a soft-deleted one (restore) is restored and absorbs
+ * path, absorbed into that one (§8.2); a soft-deleted one is restored and absorbs
  * any hidden twin a split left there, or the walk continues under the folder that now
  * holds its path, unless a document does.
  * Each placed folder takes the walk's current parent, so a repointed chain stays whole.

@@ -612,12 +612,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
-      const creation = r.value.requireCreation("intake");
-      if (!creation.ok) {
-        const existing = await callAdapter(canonical, () => adapter.stat(path));
-        if (!existing.ok) return existing;
-        if (!existing.value) return creation;
-      }
       const result = await callAdapter(canonical, () => adapter.write(path, content, options));
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },

@@ -85,7 +85,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
-  const lifecyclePort = options.lifecycle;
   const responseCommitter = createResponseCommitter({
     runtimeStore,
     mutationCommit,
@@ -93,7 +92,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
     links: options.links,
-    ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
     onTransition: options.onResponseCommitterTransition,
@@ -105,8 +103,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       model: options.model,
       codec: options.codec,
       coordinator: options.coordinator,
-      lifecycle: options.lifecycle,
-      createRuntimeDoc: options.createRuntimeDoc,
       links: options.links,
       semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,

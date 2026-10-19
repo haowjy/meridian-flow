@@ -6,12 +6,14 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
+import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createBranches } from "./domain/branches.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 import { ThreadPeerPullLost } from "./domain/draft-pulls.js";
@@ -213,7 +215,15 @@ describe("reply save refusals (postgres)", () => {
       extension: "",
       hidden: true,
     });
+    await seedEmptyAuthority(documentId);
     await claimCreate(documentId, WORK_ID, THREAD_ID);
+  }
+  /** A create's own step: the document's empty authority. */
+  async function seedEmptyAuthority(documentId: string) {
+    await createDrizzleCollabPersistence(db).seeds.seedInitialDocument(
+      documentId as never,
+      Y.encodeStateAsUpdate(new Y.Doc()),
+    );
   }
   /** Work B's branch claims the same hidden create, as two chats creating one path would. */
   async function shareHiddenCreate(fixture: Fixture) {
@@ -698,6 +708,7 @@ describe("reply save refusals (postgres)", () => {
     const { fixture, responseId, write, core, context } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     const granted = testFileGrant({ kind: "live" }, BETA_ID);
+    await seedEmptyAuthority(BETA_ID);
     expect(
       await core.write(
         {

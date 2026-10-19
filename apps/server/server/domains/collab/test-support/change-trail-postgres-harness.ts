@@ -100,7 +100,7 @@ const { createDrizzleDocumentProjectionEffects } = await import(
 );
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
 const { documentAuthority } = await import("../domain/document-handle.js");
-const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
+const { readDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
@@ -146,6 +146,7 @@ const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
 );
 const { createWorkBranchReviewService } = await import("../domain/work-branch-review-service.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
+const { createUnboundParser } = await import("../domain/link-binding.js");
 const { createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } = await import(
   "../domain/provenance.js"
 );
@@ -361,7 +362,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
     },
     branches: workBranches,
   });
@@ -437,8 +437,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     codec: markupCodec,
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    lifecycle: persistence.lifecycle,
-    initialDocumentSeeds: persistence.lifecycle,
+    initialDocumentSeeds: persistence.seeds,
+    parseStored: createUnboundParser({ codec: markupCodec, schema: documentSchema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this harness");
@@ -656,8 +656,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         afterCommit: deferUntilDrizzleCommit,
       },
     }),
-    lifecycle: persistence.lifecycle,
-    initialDocumentSeeds: persistence.lifecycle,
+    initialDocumentSeeds: persistence.seeds,
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
@@ -688,7 +687,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
       drafts: draftStore,
       draftCoordinator,
       draftPulls,
@@ -1065,7 +1063,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     documentId: DocumentId = ALPHA_ID,
     replace = false,
   ): Promise<string> {
-    await persistence.lifecycle.ensureDocument(documentId);
+    await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(documentId, async (doc) => {
       const before = Y.encodeStateVector(doc);
       model.insertBlocks(
@@ -1143,7 +1141,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     responseId: string;
     recentWriterUserId: UserId | null;
   }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       model.insertBlocks(
@@ -1215,7 +1213,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     initialMarkdown: string;
     steps: readonly MatrixDraftStep[];
   }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, input.initialMarkdown);
@@ -1346,7 +1344,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedPendingDependencyPush(): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     const source = new Y.Doc({ gc: false });
     source.clientID = 424_242;
     const fragment = source.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
@@ -1421,7 +1419,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, markdown);
@@ -1448,7 +1446,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     coldProvenance: string[];
     rebasedDraftProvenance: string[];
   }> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Agent-only passage.");
@@ -1492,7 +1490,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .orderBy(desc(schema.documentYjsCheckpoints.id))
         .limit(1);
       if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
       const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
@@ -1523,7 +1521,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedAuthorityReplacementProbe(): Promise<number> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Restored base.");
@@ -1584,7 +1582,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
     const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
@@ -1600,7 +1598,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
     let releaseBlocker!: () => void;
     let blockerReady!: () => void;
     const blockerRelease = new Promise<void>((resolve) => {
@@ -1658,7 +1656,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     carriedMarkdown: string | readonly string[];
     responseId: string;
   }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, input.initialMarkdown);
@@ -2337,7 +2335,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
       if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
-      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
       return replaceDocumentAuthorityHeadGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
