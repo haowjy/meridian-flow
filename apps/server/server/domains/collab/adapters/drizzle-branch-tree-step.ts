@@ -117,12 +117,21 @@ export function createDrizzleBranchTreeStep(
         const stale: string[] = [];
         const holds: ApplyItemHold[] = [];
         const apply: Eligible[] = [];
+        // Every payload document, before tree membership: a removal retires the document's
+        // tree rows, so a removed creation has no node left to say it was removed.
         const removed = await removals.lookup(
-          [...nodes.values()]
-            .filter((node) => node.conflict.kind === "deleted_live")
-            .map((node) => node.nodeId as DocumentId),
+          payload.items.map((item) => item.documentId as DocumentId),
         );
         for (const item of payload.items) {
+          const removal = removed.get(item.documentId as DocumentId);
+          if (removal) {
+            holds.push({
+              itemKey: item.itemKey,
+              ...(item.draftId ? { documentId: item.documentId } : {}),
+              reason: branchTreeRemovedHold(removal),
+            });
+            continue;
+          }
           const node = nodes.get(item.documentId);
           const documentDraft = item.draftId ? await deps.drafts.getDraft(item.draftId) : null;
           if (!node || tokensMoved(item, node, documentDraft)) {
@@ -134,10 +143,11 @@ export function createDrizzleBranchTreeStep(
               reason: branchTreeHold(node.conflict.uri ?? node.conflict.at),
             });
           } else if (node.conflict.kind === "deleted_live") {
+            // A tombstone without a record (removed before records existed).
             holds.push({
               itemKey: item.itemKey,
               ...(item.draftId ? { documentId: item.documentId } : {}),
-              reason: branchTreeRemovedHold(removed.get(node.nodeId as DocumentId) ?? null),
+              reason: branchTreeRemovedHold(null),
             });
           } else {
             apply.push({ item, node, documentDraft });
