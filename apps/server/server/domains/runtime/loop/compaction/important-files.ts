@@ -6,12 +6,11 @@ import { estimateModelPartTokens } from "./estimate.js";
 
 export const NOT_RESHOWN_HEADING = "## Documents not re-shown";
 const KEEP_OPEN_HEADING = "## Documents to keep open";
-const LISTED_DOCUMENTS_MAX = 10;
 const RECENT_DOCUMENTS_COUNT = 3;
 
 export const KEEP_OPEN_INSTRUCTION_LINES = [
   KEEP_OPEN_HEADING,
-  `End the summary with this section: one context URI per line, most important first, at most ${LISTED_DOCUMENTS_MAX}.`,
+  "End the summary with this section: one context URI per line, most important first.",
   "List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.",
   `Do not carry forward an earlier summary's ${NOT_RESHOWN_HEADING} section; the server replaces it for this compaction.`,
   "Example:",
@@ -49,32 +48,21 @@ export function importantFileText(uri: string, text: string): string {
   return `Current text of ${uri}, re-shown after the summary:\n${text}`;
 }
 
-const IMPORTANT_FILES_MAX_TOKENS = 20_000;
-const IMPORTANT_FILES_WINDOW_FRACTION = 0.1;
 /** Estimator slack only; the omission note is priced and reserved separately. */
 const TRIGGER_MARGIN_TOKENS = 1_000;
 
 /**
- * Budget for re-shown text and its omission note: a fraction of the window, capped by
- * headroom under the auto-compaction trigger. The picker reserves the note first; if the
- * mandatory note alone exceeds headroom, it is still written but no documents are admitted.
+ * Re-shown text and its omission note may use half the trigger headroom, less estimator
+ * slack. The mandatory note is still written when it alone exceeds the budget.
  */
 export function reshowBudgetTokens(input: {
-  usableWindowTokens: number;
   triggerTokens: number | null;
   baseTokens: number;
 }): number {
-  const headroom =
-    input.triggerTokens === null
-      ? Number.POSITIVE_INFINITY
-      : input.triggerTokens - input.baseTokens - TRIGGER_MARGIN_TOKENS;
+  if (input.triggerTokens === null) return Number.POSITIVE_INFINITY;
   return Math.max(
     0,
-    Math.min(
-      IMPORTANT_FILES_MAX_TOKENS,
-      Math.floor(input.usableWindowTokens * IMPORTANT_FILES_WINDOW_FRACTION),
-      headroom,
-    ),
+    Math.floor((input.triggerTokens - input.baseTokens) / 2) - TRIGGER_MARGIN_TOKENS,
   );
 }
 
@@ -126,7 +114,7 @@ export function importantFileCandidates(
     return ref ? [ref] : [];
   });
   const seen = new Set<string>();
-  const candidates = [...listed.slice(0, LISTED_DOCUMENTS_MAX), ...recent].filter((ref) => {
+  const candidates = [...listed, ...recent].filter((ref) => {
     if (seen.has(ref.documentId)) return false;
     seen.add(ref.documentId);
     return true;
@@ -145,7 +133,7 @@ export function notReshownNote(uris: readonly string[]): string {
 }
 
 /**
- * Reads every candidate in priority order. A document
+ * Reads candidates in priority order until the budget is spent. A document
  * whose full text does not fit the remaining budget is skipped, never
  * truncated: a truncated copy would be a partial read with its own listing.
  * `read` answers null for a document that cannot be read.

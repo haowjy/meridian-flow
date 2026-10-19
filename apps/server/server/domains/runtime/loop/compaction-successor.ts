@@ -145,7 +145,7 @@ async function reshowImportantFiles(args: {
       payload: { count: unknownUriCount },
     });
   }
-  const priorityFirst = await chooseImportantFiles({
+  const kept = await chooseImportantFiles({
     candidates,
     budgetTokens: args.budgetTokens,
     tokenizer: args.tokenizer,
@@ -174,8 +174,6 @@ async function reshowImportantFiles(args: {
       }
     },
   });
-  // Most important last: nearest the conversation, and most recent at the next compaction.
-  const kept = priorityFirst.reverse();
   const documentIds = new Set(kept.map(({ reference }) => reference.documentId));
   const blocks = kept.map(({ reference, read }, index) =>
     contentForBlockInput({
@@ -371,7 +369,6 @@ export async function prepareCompactionSuccessor(args: {
       listedLines: parsed.listedLines,
       tokenizer: baseEstimate.tokenizer,
       budgetTokens: reshowBudgetTokens({
-        usableWindowTokens: base.assembled.compactionUsableWindowTokens ?? 0,
         triggerTokens: base.assembled.compactionTriggerTokens,
         baseTokens: tokensAfter,
       }),

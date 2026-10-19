@@ -915,3 +915,41 @@ restart smoke check.
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments
+
+## RP-21: M2c re-shows every listed document that fits, most important first
+
+- **Protects:** owner rulings C12/C13. No listed-document count cap or fixed token
+  budget; the only budget is half the compacted request's headroom under the
+  auto-compaction trigger, less 1,000 tokens of estimator slack. The budget
+  includes the worst-case omission note. Without a trigger it is unlimited.
+- **Stack:** mock, using the Agent and `compact` helper from Setup.
+- **Steps:**
+  1. Create 12 small documents with distinct URIs and show all 12 through `read`.
+     Queue a summary with narrative followed by `## Documents to keep open`
+     and all 12 URIs, one per line in a deliberately chosen priority order
+     (not their read-recency order). Compact, then send a continuation.
+  2. Inspect `thread context --all --view raw --json` and
+     `thread view --blocks --json`. The summary has sequence 0; re-shown
+     blocks have sequences 1 through 12 in exactly the listed order. The first
+     listed URI is the first block after the summary, not the last.
+  3. Compact that thread again with narrative and an empty keep-open section,
+     without any intervening document reads. Exactly the first three documents
+     from the previous re-show are selected, in that same order: among
+     documents on one compaction turn, earlier means more recent.
+  4. In a fresh thread read a document larger than half the available headroom,
+     plus four small documents. List the oversized document first, then the
+     small documents. Compact and continue. The large document is skipped
+     whole, the small documents appear in listed order, and the server's
+     `## Documents not re-shown` section names the large URI. The successor's
+     `tokensAfter` is below the trigger. Expand the compaction divider in the
+     browser and check that the same omission note is visible.
+  5. For a genuinely spent budget, use enough fitting documents to consume all
+     available room after the reserved note. The picker must stop reading
+     further candidates once remaining room reaches zero (not read every
+     candidate merely because the list is now unbounded). Oversized candidates
+     while room remains are skipped, not truncated, so later small ones can fit.
+- **Evidence:** captured successor requests, persisted block sequences, divider
+  summary and `tokensAfter`, plus the browser screenshot. Compare the warm
+  summary request against its source: only the appended summary instruction
+  changes (its old “at most 10” clause is gone); tools, messages, system and
+  cache key otherwise stay identical.
