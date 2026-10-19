@@ -660,10 +660,14 @@ function incomingContains(
   );
 }
 
-/** Only `Y.Item` structs insert text; `Skip` (a clock gap) and `GC` (collected deletion) do not. */
+/**
+ * Every struct but `Y.Skip` is a clock range its client inserted. A `GC` is one that was
+ * inserted and later collected (a gc-on writer's update carries them), so it stays; only a
+ * `Skip` is a hole in a merged update. Same rule as `document-containment.ts`.
+ */
 export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
   return decodeAdmittedUpdate(update)
-    .structs.filter((struct): struct is Y.Item => struct instanceof Y.Item)
+    .structs.filter((struct): struct is Y.Item | Y.GC => !(struct instanceof Y.Skip))
     .map((struct) => ({
       clientID: struct.id.client,
       clock: struct.id.clock,
