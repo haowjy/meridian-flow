@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Draft review reads snapshot-bounded receipt provenance through an authenticated endpoint, with indexed AI receipt reads independent of writer history. Model attribution exposes current-item birth and deleter readers.
+
 - Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.
 - Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
 
