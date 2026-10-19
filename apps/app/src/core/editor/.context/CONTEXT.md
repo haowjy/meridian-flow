@@ -69,8 +69,8 @@ barrier that drains that open.
   effect dependency list.
 - Live sessions use a qualified, generation-aware IndexedDB key. Draft sessions
   use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
-  draft recovers unsent text. Terminal cache removal belongs to the draft-close
-  owner, not the painter or a generation carry path.
+  draft recovers unsent text. Terminal `closed`/`removed` session teardown clears that exact cache; the
+  painter and local Discard never do.
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is

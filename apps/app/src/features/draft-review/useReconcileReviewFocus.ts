@@ -1,15 +1,4 @@
-/**
- * useReconcileReviewFocus — keeps the review's focus naming the change the
- * writer was looking at when the server regroups it.
- *
- * The focus (`controller.focus`) is one value for the whole review: a class and
- * the operations it held. When a fresh preview no longer lists that class but
- * lists a change that shares one of its operations, that change is the same
- * one, and the focus is moved onto it here, once. Every surface then reads the
- * same focus through `resolveFocusedChange`, whether it was mounted before the
- * regrouping or after. Mounted by the review's owner (`useDraftReviewScopeValue`),
- * never by a reader.
- */
+/** Keeps one projected group focused; a missing group falls back to the first remaining change. */
 import { useEffect, useRef } from "react";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import { resolveFocusedChange } from "./review-model";
@@ -33,7 +22,7 @@ export function useReconcileReviewFocus(
       if (status !== "ready") return;
       restored.current = identity;
       if (presented?.review?.itemKey === itemKey && presented.review.changeId && !focus) {
-        // Stable part-key classes survive reload; a handled class falls back silently.
+        // A missing projection-local group falls back silently.
         const change = changes.find((item) => item.id === presented.review?.changeId) ?? changes[0];
         if (change) controller.focusReviewChange({ documentId, itemKey }, change);
         return;

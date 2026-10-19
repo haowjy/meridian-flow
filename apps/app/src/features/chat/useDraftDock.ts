@@ -1,6 +1,6 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   type DraftImagePreviewTarget,
@@ -28,8 +28,22 @@ export type DockFileFailure =
   | { kind: "changes"; failure: Extract<ChangeCommandState, { phase: "failed" }> }
   | { kind: "draft"; failure: BranchCommandFailure };
 
-export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
+export function useDraftDock({
+  threadId,
+  generating,
+  active = true,
+}: {
+  threadId: string;
+  generating: boolean;
+  active?: boolean;
+}) {
   const controller = useBoundWorkBranchCommands();
+  const dismiss = useRef(controller.dismissNotice);
+  dismiss.current = controller.dismissNotice;
+  useEffect(() => {
+    if (!active) dismiss.current();
+    return () => dismiss.current();
+  }, [active, threadId]);
   const listedFiles = useWorkBranchDrafts(controller.projectId, controller.workId).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -67,22 +81,31 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
         reviewFileTargetName(row, untitled),
         {
           status: withoutText ? "ready" : (read?.status ?? "loading"),
-          items: (withoutText ? [itemChange(row.draft)] : (read?.changes ?? [])).map((change) => ({
-            change,
-            failure: null,
-          })),
+          items: (row.draft.wholeItem ? [itemChange(row.draft)] : (read?.changes ?? [])).map(
+            (change) => ({
+              change,
+              failure: null,
+            }),
+          ),
 
           retry: read?.retry,
         },
         threadId,
       );
     })
-    .filter(isOnStrip);
+    .filter(
+      (file) =>
+        !controller.owner.state(file.row.draft.itemKey).hidden &&
+        (isOnStrip(file) ||
+          controller.owner.state(file.row.draft.itemKey).pending ||
+          controller.owner.state(file.row.draft.itemKey).failure),
+    );
 
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
+      controller.dismissNotice();
       // A draft-only picture has no review room: it opens as a preview.
       if (file.row.draft.draftGeneration === null) {
         if (isDraftImagePath(file.row.contextLocation?.path))
@@ -100,29 +123,39 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
 
   const send = useCallback(
     (mode: "apply" | "discard") => {
-      const items = actionableFiles.map((file) => ({
-        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-        target: targetOfChanges(file.actionable),
-      }));
+      const items = actionableFiles
+        .filter((file) => mode !== "apply" || file.row.draft.draftGeneration !== null)
+        .map((file) => ({
+          draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+          target: targetOfChanges(file.actionable),
+        }));
       if (items.length === 0) return;
       // The runner hides every file's selection at the click and returns each as
       // its own command answers; the records carry the outcomes.
-      const batch = mode === "apply" ? runner.applyBatch(items) : runner.discardBatch(items);
+      const batch = runner.batch(mode, items);
       void batch.catch(() => {});
     },
     [actionableFiles, runner],
   );
 
-  const fileFailures = (_file: DockFile): DockFileFailure[] => [];
+  const fileFailures = (file: DockFile): DockFileFailure[] => {
+    const failure = controller.owner.state(file.row.draft.itemKey).failure;
+    return failure ? [{ kind: "draft", failure }] : [];
+  };
 
   return {
     generating,
     controller,
     files,
-    mounted: files.length > 0,
+    mounted: files.length > 0 || controller.notice !== null,
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
+    canApply: actionableFiles.some(
+      (file) =>
+        (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
+          ?.groups.length ?? 0) > 0,
+    ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     workId,

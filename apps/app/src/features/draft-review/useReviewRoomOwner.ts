@@ -1,5 +1,6 @@
 /** Open review ownership holds a stable room; projection readiness is independent of command delivery. */
-import { type Dispatch, useEffect } from "react";
+import { type Dispatch, useEffect, useSyncExternalStore } from "react";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { useRoomReview } from "./useRoomReview";
 
@@ -8,10 +9,23 @@ export function useReviewRoomOwner(input: {
   workId: string;
   review: InlineDraftReview | null;
   dispatch: Dispatch<DraftReviewAction>;
-  disposing: boolean;
   presented?: unknown;
 }) {
   const { review, dispatch } = input;
+  const commands = useDraftCommandOwner();
+  useSyncExternalStore(commands.subscribe, commands.snapshot, commands.snapshot);
+  const command = commands.state(review?.itemKey ?? "");
+  useEffect(() => {
+    if (!review || (!command.hidden && !command.closed)) return;
+    dispatch({ type: "exitInline" });
+    if (!command.hidden && command.closed && !command.removed)
+      dispatch({
+        type: "toast",
+        code: "draft-closed",
+        tone: "info",
+        unsentText: command.unsentText,
+      });
+  }, [command.hidden, command.closed, review?.itemKey, dispatch]);
   const read = useRoomReview(
     review ? { projectId: input.projectId, workId: input.workId, ...review } : null,
   );

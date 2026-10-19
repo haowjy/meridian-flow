@@ -29,9 +29,7 @@ production so observation does not create a second transport path.
 ## Outbox and acknowledgement edges
 
 The outbox is the session layer's evidence that the writer has typing the
-server has not acknowledged. Draft review counts it as changes at the shown
-generation, and `DraftWriterHandoff` carries it into the next generation, so
-it must be visible to every observer before anything can act on its absence.
+server has not acknowledged. It must be visible to every observer before a command can act on its absence.
 
 - **Store, then send.** `handleDocumentUpdate` registers on the `Y.Doc` before
   `HocuspocusProvider` is constructed. Yjs (lib0 `ObservableV2`) runs update
@@ -50,6 +48,13 @@ it must be visible to every observer before anything can act on its absence.
 The ordering is a live transport contract, not a test-double detail. A witness
 for it must exercise `test-support/DocumentSocketHarness`, as the transport
 acknowledgement and remote whole-discard probes do.
+
+`whenCurrentChangesAcknowledged()` captures the socket's current FIFO prefix.
+An Apply waits for that prefix, including update delete sets, not later keys.
+A reconnect moves unresolved barriers to the next handshake upload, which
+contains every pre-click local change. Barrier settlement does not publish a
+per-key session snapshot. `4205` is terminal `closed`, not rebuild; in-band
+closes carry code 1000, so consumers use disposition rather than numeric code.
 
 ## Draft rooms: the handshake upload goes first
 

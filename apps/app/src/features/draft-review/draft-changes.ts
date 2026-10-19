@@ -1,5 +1,7 @@
 /** Shared change presentation data and failures. Open and listed bindings add their own command authority; only the open review adds focus and stepping. */
 
+import { useSyncExternalStore } from "react";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
@@ -13,10 +15,10 @@ export type ReviewChangeItem = {
 export type DraftChangesData = {
   documentId: string | null;
   itemKey: string | null;
-  /** `error`: the draft's preview could not be read. Never read it as "no changes". */
+  /** `error`: the draft room could not be read. Never read it as "no changes". */
   status: "idle" | "loading" | "error" | "ready" | "gone";
   items: readonly ReviewChangeItem[];
-  /** Read the preview again; present when `status` is `error`. */
+  /** Read the room again; present when `status` is `error`. */
   retry?: () => void;
 };
 
@@ -25,6 +27,7 @@ export type DraftChangesView = DraftChangesData & {
   focused: ReviewChange | null;
   /** Every Apply and Discard disables on this. */
   locked: boolean;
+  canApply?: boolean;
   apply: (change: ReviewChange) => Promise<void>;
   discard: (change: ReviewChange) => Promise<void>;
 };
@@ -36,10 +39,13 @@ export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "i
 
 type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
 
-/** B2b joins item failures here; text and group identity remain the runtime's. */
+/** Join item failures here; text and group identity remain the runtime's. */
 export function useChangeItems(
-  _draft: DraftRef | null,
+  draft: DraftRef | null,
   changes: readonly ReviewChange[],
 ): { items: readonly ReviewChangeItem[] } {
-  return { items: changes.map((change) => ({ change, failure: null })) };
+  const owner = useDraftCommandOwner();
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  const failure = owner.state(draft?.itemKey ?? "").failure;
+  return { items: changes.map((change) => ({ change, failure: null, draftFailure: failure })) };
 }

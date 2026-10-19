@@ -20,6 +20,7 @@ export type ReviewChangeRowProps = {
   arrived?: boolean;
   /** Disposition is locked (a command is in flight, or the Work is archived). */
   disabled: boolean;
+  canApply?: boolean;
 
   /** Why the last command on this change did not land. */
   failure: ChangeCommandState | null;
@@ -38,6 +39,7 @@ export function ReviewChangeRow({
   focused,
   arrived = false,
   disabled,
+  canApply = true,
 
   failure,
   draftFailure,
@@ -134,18 +136,20 @@ export function ReviewChangeRow({
           >
             <X aria-hidden />
           </IconButton>
-          <IconButton
-            size="xs"
-            tooltip={t`Apply`}
-            disabled={disabled}
-            onClick={(event) => {
-              event.stopPropagation();
-              onApply();
-            }}
-            className={cn("text-primary hover:text-primary", iconButton)}
-          >
-            <Check aria-hidden />
-          </IconButton>
+          {canApply ? (
+            <IconButton
+              size="xs"
+              tooltip={t`Apply`}
+              disabled={disabled}
+              onClick={(event) => {
+                event.stopPropagation();
+                onApply();
+              }}
+              className={cn("text-primary hover:text-primary", iconButton)}
+            >
+              <Check aria-hidden />
+            </IconButton>
+          ) : null}
         </span>
       </div>
       {failure || draftFailure ? (

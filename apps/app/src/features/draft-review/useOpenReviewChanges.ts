@@ -1,4 +1,6 @@
 /** Open review rows are the room runtime's group projection, without command or focus ownership. */
+import { useSyncExternalStore } from "react";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftChangesData } from "./draft-changes";
 import { useChangeItems } from "./draft-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
@@ -17,6 +19,9 @@ export function useOpenReviewChanges(
       }
     : null;
   const read = useRoomReview(draft);
+  const owner = useDraftCommandOwner();
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  const command = owner.state(draft?.itemKey ?? "");
   const { items } = useChangeItems(draft, read.changes);
   return {
     inline,
@@ -27,7 +32,7 @@ export function useOpenReviewChanges(
     items,
     status: read.status as DraftChangesData["status"],
 
-    completing: null,
-    finished: read.status === "ready" && !items.length,
+    completing: command.applying ? ("apply" as const) : null,
+    finished: read.status === "ready" && !items.length && !command.pending,
   };
 }

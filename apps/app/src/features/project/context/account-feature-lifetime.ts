@@ -1,10 +1,12 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
+
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { IdentityContinuity } from "./identity-continuity";
@@ -17,6 +19,7 @@ import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
+  readonly draftCommands;
   readonly removal;
   readonly availability;
   readonly notices;
@@ -41,6 +44,25 @@ export class AccountFeatureLifetime {
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
     this.registry = this.runtime.registry;
+    this.draftCommands = new DraftCommandOwner(this.registry, {
+      removed: (ref) => {
+        this.availability.roomRemoved(ref.projectId, ref.documentId);
+        const record = this.availability.removalRecord(ref.projectId, ref.documentId);
+        let stop = () => {};
+        stop = record.subscribe(() => {
+          const answer = record.get();
+          if (answer && answer.kind !== "unresolved") {
+            stop();
+            this.removedRooms.delete(stop);
+          }
+        });
+        this.removedRooms.add(stop);
+      },
+      closeCreated: (ref) => {
+        this.removal.discardDraft(ref.projectId, ref.workId, ref.itemKey);
+      },
+      markOwnRemoval: (ref) => this.notices.markOwnRemoval(ref.projectId, [ref.documentId]),
+    });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {
@@ -133,6 +155,7 @@ export class AccountFeatureLifetime {
     this.renameOperations?.dispose();
     this.continuity?.dispose();
     this.resources?.beginClose();
+    this.draftCommands.close();
     this.runtime.beginClose();
     this.featureLease.suspend();
   }

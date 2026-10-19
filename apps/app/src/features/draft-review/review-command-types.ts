@@ -1,6 +1,11 @@
-/** Presentation types retained while B2 replaces the command owner. */
+/** Work addresses and item-level command feedback shared by review surfaces. */
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 export type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
-export type ServerRefusal = { serverCode?: string; serverReason?: string; removal?: unknown };
+export type ServerRefusal = {
+  serverCode?: string;
+  serverReason?: string;
+  removal?: DocumentRemovalRecord;
+};
 export type BranchCommandFailure = { code: string } & ServerRefusal;
 export type ChangeCommandMode = "apply" | "discard";
 export type ChangeFailureCode = string;

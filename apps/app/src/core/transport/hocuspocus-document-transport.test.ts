@@ -184,6 +184,10 @@ describe("Hocuspocus document transport adapter", () => {
       await vi.advanceTimersByTimeAsync(0);
       document.getText("body").insert(0, "writer");
       const carry = transport.unacknowledgedUpdates();
+      let prefixAcknowledged = false;
+      const prefix = transport.whenCurrentChangesAcknowledged?.().then(() => {
+        prefixAcknowledged = true;
+      });
       for (let close = 0; close < 4; close += 1) {
         const socket = DocumentSocketHarness.instances.at(-1);
         if (!socket) throw new Error("missing document socket");
@@ -205,6 +209,13 @@ describe("Hocuspocus document transport adapter", () => {
       fifth.open();
       fifth.syncStep1(roomName, serverDocument);
       expect(sentSyncKinds(fifth)).toEqual(["step2"]);
+      const clicked = transport.whenCurrentChangesAcknowledged?.();
+      document.getText("later").insert(0, "typed after the click");
+      fifth.acknowledge(roomName);
+      await prefix;
+      await clicked;
+      expect(prefixAcknowledged).toBe(true);
+      expect(transport.unacknowledgedUpdates()).not.toBeNull();
       fifth.acknowledge(roomName);
       expect(transport.unacknowledgedUpdates()).toBeNull();
       Y.applyUpdate(serverDocument, Y.encodeStateAsUpdate(document));

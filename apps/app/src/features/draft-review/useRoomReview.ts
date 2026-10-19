@@ -1,9 +1,12 @@
 /** Headless and open surfaces retain the rooms on screen and subscribe to one projection per room. */
 import { useEffect, useRef, useState } from "react";
-import { useDraftPreviews } from "@/client/query/useDraftPreview";
+import { useDraftMetadata } from "@/client/query/useDraftMetadata";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { type DraftRoomRead, readDraftRoom } from "@/core/editor/draft-room-read";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import {
+  useDraftCommandOwner,
+  useLiveDocumentSessionRegistry,
+} from "@/features/project/context/account-feature-context";
 import type { DraftRef } from "./review-command-types";
 import {
   EMPTY_REVIEW_STATE,
@@ -20,11 +23,10 @@ type HeldReview = {
 };
 export function useRoomReviews(drafts: readonly DraftRef[]) {
   const registry = useLiveDocumentSessionRegistry();
-  const metadata = useDraftPreviews(drafts);
+  const owner = useDraftCommandOwner();
+  const metadata = useDraftMetadata(drafts);
   const names = metadata.map((entry) =>
-    entry.status === "ready" && entry.preview.status === "active"
-      ? entry.preview.reviewRoomName
-      : null,
+    entry.data?.status === "active" ? entry.data.reviewRoomName : null,
   );
   const namesKey = JSON.stringify(names);
   const [held, setHeld] = useState<ReadonlyMap<string, HeldReview>>(new Map());
@@ -71,9 +73,14 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
           unwatchRuntime();
           release();
           session = next;
+          const draft = drafts[names.indexOf(name)];
           const hold = next ? retainReviewRuntime(next) : null;
+          const detach = next && draft ? owner.bind(draft, next) : () => {};
           runtime = hold?.runtime ?? null;
-          release = hold?.release ?? (() => {});
+          release = () => {
+            detach();
+            hold?.release();
+          };
           unwatchRuntime = runtime?.subscribe(publish) ?? (() => {});
         }
         publish();
@@ -87,7 +94,7 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
         read.dispose();
       });
     }
-  }, [namesKey, registry]);
+  }, [namesKey, registry, owner]);
   return drafts.map((_draft, index) => {
     const name = names[index];
     const current = name ? held.get(name) : null;
@@ -95,9 +102,9 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
     const state = current?.state ?? EMPTY_REVIEW_STATE;
     const fault = current?.read.state().kind;
     const status =
-      meta?.status === "error" || fault === "error" || fault === "unavailable"
+      meta?.isError || fault === "error" || fault === "unavailable"
         ? "error"
-        : meta?.status === "ready" && meta.preview.status === "gone"
+        : meta?.data?.status === "gone"
           ? "gone"
           : state.ready
             ? "ready"
@@ -110,7 +117,9 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
       session: current?.session ?? null,
       usable: current?.read.usable() ?? null,
       retry:
-        current?.read.retry ?? (meta?.status === "error" ? meta.retry : undefined) ?? (() => {}),
+        current?.read.retry ??
+        (meta?.isError ? () => void meta.refetch() : undefined) ??
+        (() => {}),
     } as const;
   });
 }

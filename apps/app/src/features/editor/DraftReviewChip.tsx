@@ -25,7 +25,6 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
 
   const group = fileForDocument(documentId);
   if (!group) return null;
-  const draft = group.draft;
   // A launch that failed shows on the chip itself; clicking it again retries.
   const failed = false;
 
@@ -33,7 +32,7 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
     <DraftSwitcher
       showing="live"
       draftOnly={false}
-      disabled={controller.isDisposing}
+      disabled={false}
       failed={failed}
       touch={touch}
       onShowLive={() => undefined}

@@ -5,12 +5,17 @@ export type InlineDraftReview = DraftReviewSelection & {
   kind: "inline";
   roomName?: string;
   roomError?: boolean;
-  previewIdentity?: string;
+  projectionIdentity?: string;
   focus?: ReviewFocus | null;
   shown?: boolean;
 };
-export type ReviewToastCode = "change-gone";
-export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "error" };
+export type ReviewToastCode = "change-gone" | "draft-closed";
+export type ReviewToast = {
+  id: number;
+  code: ReviewToastCode;
+  tone: "info" | "error";
+  unsentText?: string | null;
+};
 export type DraftReviewState = {
   surface: { kind: "none" } | InlineDraftReview;
   marksVisible: boolean;
@@ -25,7 +30,7 @@ export type DraftReviewAction =
   | (DraftReviewSelection & { type: "inlineShown"; shown: boolean })
   | (DraftReviewSelection & { type: "changeFocused"; focus: ReviewFocus | null })
   | { type: "marksVisible"; visible: boolean }
-  | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
+  | { type: "toast"; code: ReviewToastCode; tone: "info" | "error"; unsentText?: string | null }
   | { type: "toastDismissed"; id: number }
   | { type: "exitInline" | "exitReview" };
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
@@ -61,7 +66,12 @@ export function draftReviewReducer(
       return {
         ...state,
         toastSeq: state.toastSeq + 1,
-        toast: { id: state.toastSeq + 1, code: action.code, tone: action.tone },
+        toast: {
+          id: state.toastSeq + 1,
+          code: action.code,
+          tone: action.tone,
+          unsentText: action.unsentText,
+        },
       };
     case "toastDismissed":
       return state.toast?.id === action.id ? { ...state, toast: null } : state;
@@ -80,9 +90,9 @@ export function draftReviewReducer(
         ? state
         : { ...state, surface: { ...review, shown: action.shown } };
     case "inlineModelAvailable":
-      return review.previewIdentity === action.identity
+      return review.projectionIdentity === action.identity
         ? state
-        : { ...state, surface: { ...review, previewIdentity: action.identity } };
+        : { ...state, surface: { ...review, projectionIdentity: action.identity } };
     case "changeFocused":
       return review.focus?.id === action.focus?.id
         ? state

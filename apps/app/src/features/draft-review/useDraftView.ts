@@ -21,7 +21,7 @@ export function useDraftView(
   const withoutText = item?.draftGeneration === null;
   const read = useRoomReview(enabled && !withoutText ? draft : null);
   const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
-  const changes = withoutText && item && enabled ? [itemChange(item)] : read.changes;
+  const changes = item?.wholeItem && enabled ? [itemChange(item)] : read.changes;
   const { items } = useChangeItems(draft, changes);
   return {
     documentId: draft.documentId,
@@ -31,6 +31,7 @@ export function useDraftView(
 
     retry: read.retry,
     focused: null,
+    canApply: !withoutText && (read.frame?.groups.length ?? 0) > 0,
     locked: controller.changesLocked || status !== "ready",
     apply: async (change) => {
       await controller.commandChange("apply", draft, targetOfChanges([change]));
