@@ -1,6 +1,8 @@
 /**
- * Probe: a Yjs snapshot (a frontier) survives the branch store's compaction fold while the
- * origin stays `gc: false`. Pure Yjs, no database: `pnpm exec tsx tools/qa/probes/frontier-survives-compaction/run.mts`.
+ * Probe: pins the Yjs behaviour the store's gc-off contract depends on. A snapshot (a frontier)
+ * survives a compaction fold of a `gc: false` doc, and fails or restores wrong text otherwise.
+ * It builds its own `Y.Doc`s and imports nothing from the repo, so it cannot notice a server
+ * fold that starts encoding a gc-on doc. Pure Yjs, no database: `pnpm exec tsx tools/qa/probes/frontier-survives-compaction/run.mts`.
  * Prints each observation and exits with the number of failed checks.
  */
 import * as Y from "yjs";
@@ -68,5 +70,11 @@ const refork = fresh(false);
 refork.getXmlFragment("content").insert(0, [new Y.XmlText(text(atS))]);
 check("containment accepts the compacted room", originContainsSnapshot(B, S));
 check("containment refuses a re-fork", !originContainsSnapshot(refork, S));
+// The tempting alternative asks the opposite question: whether the snapshot holds every struct
+// of the origin. A valid compacted room has written past the snapshot, so it answers false.
+check(
+  "snapshotContainsUpdate(S, origin) fails on a valid compacted room",
+  !Y.snapshotContainsUpdate(S, Y.encodeStateAsUpdate(B)),
+);
 
 process.exit(failed);

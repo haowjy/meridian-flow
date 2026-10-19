@@ -30,7 +30,10 @@ review settlement, and Hocuspocus admission. It composes
   and live docs, rooms (`yjs-ws-handler.ts`), clones and scratch docs. A rewrite never
   encodes a gc-on doc, and a client doc (gc on) is never the origin of a Yjs snapshot, since
   `createDocFromSnapshot` throws on it and a once-collected store restores the wrong text
-  silently. [Probe](../../../../docs/qa/frontier-survives-compaction.md).
+  silently. No production code reads a frontier snapshot yet (it arrives with the frontier
+  work). The [probe](../../../../docs/qa/frontier-survives-compaction.md) is pure Yjs: it pins
+  the library behaviour this contract depends on and cannot catch a server fold that begins
+  encoding a gc-on doc.
 - Any apply after an `await` must use the
   documented durable authority/concurrency fence; a coordinator lock alone is
   not enough.
