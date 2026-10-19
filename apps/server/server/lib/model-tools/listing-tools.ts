@@ -137,7 +137,7 @@ export function createSearchHandler(deps: ToolWiringDeps) {
         }),
       ),
       // Only returned, authorized hits were shown, and only the passages their text shows whole.
-      shown: hits.flatMap(({ hit }) => shownPassages(hit, pattern, verbose)),
+      evidence: { shown: hits.flatMap(({ hit }) => shownPassages(hit, pattern, verbose)) },
       metadata: {
         documentRevisions: hits.map(
           ({ hit: { documentId, uri, revision } }) =>

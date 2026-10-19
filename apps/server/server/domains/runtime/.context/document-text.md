@@ -40,47 +40,55 @@ a response rollback still keeps evidence for an echo the model already saw.
 ## Observation frontiers
 
 An observation frontier records what document state a block showed the model:
-`{ roomKey, snapshot, unshown }` in `observation_frontiers`, keyed by the
-source block (a `tool_result`, or a writer turn's reference block whose
-materialized read the model is sent) and the room. `roomKey` is
-`draft:<workDraftId>` (the thread peer's upstream, never the peer) or
-`live:<documentId>:<authorityGeneration>`; collab resolves it. `snapshot` is
+`{ room, snapshot, unshown }` in `observation_frontiers` (the room in
+`room_key`), on the source block: a `tool_result`, or a writer turn's reference
+block whose materialized read the model is sent. A block records at most one.
+The room is `draft:<workDraftId>` (the thread peer's upstream, never the peer)
+or `live:<documentId>:<authorityGeneration>`; collab names it. `snapshot` is
 `Y.encodeSnapshotV2` of the doc the result was rendered from; `unshown` lists
 blocks changed since the model's previous frontier and not shown in full
 (`@meridian/agent-edit/integration` computes both). Nothing plans on them yet;
 M2 replaces today's concurrent-edit reporting with them.
 
-- **Recording.** Reads, write echoes (undo, redo and revert included) and
-  settled receipts record. Refusals, `format: "edits"` reads and copy source
-  reads record none. A result reported with `awarenessDegraded` records a
-  frontier crediting nothing in full. The handler returns host-only `frontiers`
-  beside the result, stripped like `shown`; dispatch records them in
-  `persistAndAppendEvents`'s `afterEvents`. Deleting the block's old rows is
-  part of the block write and fails it; the insert runs in a savepoint, so a
-  failed insert is logged (`observation_frontier.record_failed`) and the result
-  commits with no frontier, never the stale one.
-- **Replacement.** A staged result's row is a link in the chain: its snapshot
-  includes this step's staged writes. For every room a step's save committed,
-  the save deletes every row the step's blocks recorded there, then records on
-  the document's last settled result a frontier at the post-commit cut chained
-  from the **planning** lookup, crediting what the settled receipts show in
-  full (nothing when they are degraded or textless). A frontier that can't be
-  computed leaves the room with no step rows, so the pre-step frontier stands.
-  A failed save, a refused write and recovery's typed rejection record none.
-  Cost: a block changed during the step and shown only by a sibling read is
-  unshown after the save. Concurrent-run backfill keeps the settled row and is
-  not credited.
+- **What records.** Only results the model receives: reads, immediate write
+  echoes, undo, redo and revert echoes, settled save receipts, and reference
+  reads. A staged write's echo records nothing: the step's save replaces it
+  before the next request is built. Refusals, `format: "edits"` reads and copy
+  source reads record none. A result reported with `awarenessDegraded` records
+  a frontier crediting nothing in full.
+- **Recording.** A handler returns its host-only `evidence` (`ResultEvidence`:
+  shown links and the frontier) beside the result; the executor strips it from
+  everything serialized, and dispatch records both in
+  `persistAndAppendEvents`'s `afterEvents`, once the block row exists.
+  Reference reads carry `ReferenceEvidence` the same way to the commit that
+  persists their blocks. Deleting the block's old row is part of the block write
+  and fails it; the insert runs in a savepoint, so a failed insert is logged
+  (`observation_frontier.record_failed`) and the result commits with no
+  frontier, never the stale one.
+- **Saves.** The save records on each committed document's last settled
+  result a frontier at the post-commit cut, chained like any result from the
+  `recording` lookup, crediting what the settled receipts show in full (nothing
+  when they are degraded or textless). The latest row may be a sibling read's
+  from the same step: its snapshot holds the step's staged structs, so it
+  validates only if they landed, and it credits only what that read showed.
+  Recovery's journal replay leaves the cut unknown and records none; a failed
+  save, a refused write and a typed rejection record none. Replacing a result
+  replaces its row. Concurrent-run backfill keeps the settled row and is not
+  credited.
 - **Selection.** The model's frontier for a room is the row with the greatest
   `recorded_seq` among a block set (rooms only grow, so recording order is cut
-  order). `ToolHandlerContext.frontiers.recording` reads the run's current
-  blocks, so a sibling call's result counts as seen; `planning` reads the
-  blocks the authoring request was built from (C4), and is what a save chains
-  from. The block set is the effective conversation
-  (fork lineage through the cutoff, forgotten turns removed), not the
-  compaction projection: credit survives a summarized or elided result. A
-  failed lookup is logged and answers null, the empty frontier; it runs in a
-  savepoint inside a transaction, so the caller's stays usable. Lookups use the
-  `(room_key, recorded_seq DESC)` index.
+  order). `frontierLookup` (`loop/frontier-recording.ts`) builds one lookup per
+  block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
+  reads the run's current blocks, so a sibling call's result counts as seen,
+  and `planning` reads the blocks the authoring request was built from (C4;
+  nothing calls it until M2). The block set is the effective conversation (fork
+  lineage through the cutoff, forgotten turns removed), not the compaction
+  projection: credit survives a summarized or elided result. A failed lookup is
+  logged and answers null, the empty frontier; it runs in a savepoint inside a
+  transaction, so the caller's stays usable. Its `ORDER BY recorded_seq DESC
+  NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS LAST)` index, so
+  the scan walks the room newest first and stops at the first row among the
+  blocks.
 - **Lifecycle.** Rows cascade with their block. A fork renders inherited block
   ids and finds their rows with nothing copied; a retry has new blocks.
 

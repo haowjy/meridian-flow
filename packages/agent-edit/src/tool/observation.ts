@@ -1,26 +1,30 @@
 // Host-only observation frontiers for rendered read and write results.
 import type * as Y from "yjs";
-import { frontierBlockId, nextObservationFrontier, type ObservationFrontier } from "../frontier.js";
+import {
+  frontierBlockId,
+  nextObservationFrontier,
+  type ObservationFrontier,
+  type ObservationRequest,
+} from "../frontier.js";
 import { blockHashesForDoc, getBlockItemId, getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditModelPayload } from "./model-result.js";
-import type { WriteContext } from "./types.js";
 import type { ObservationFailedDetail } from "./write-deps.js";
 
 /**
  * `result` with the frontier of what it showed, rendered from `doc`, when the
- * host asked (`context.observe`). A failure is reported and leaves it off.
+ * host asked (`observe`). A failure is reported and leaves it off.
  */
 export function withObservation(
   result: InternalWriteResult,
   doc: Y.Doc,
-  context: WriteContext,
+  observe: ObservationRequest | undefined,
   documentId: string,
   onFailed: ((event: ObservationFailedDetail) => void) | undefined,
 ): InternalWriteResult {
-  if (!context.observe) return result;
+  if (!observe) return result;
   try {
-    return { ...result, observation: observeRendered(doc, context.observe.prev, [result.model]) };
+    return { ...result, frontier: observeRendered(doc, observe, [result.model]) };
   } catch (cause) {
     onFailed?.({ documentId, cause });
     return result;
@@ -35,7 +39,7 @@ export function withObservation(
  */
 export function observeRendered(
   doc: Y.Doc,
-  prev: ObservationFrontier | null,
+  observe: ObservationRequest,
   models: readonly (AgentEditModelPayload | undefined)[],
 ): ObservationFrontier {
   const shownHashes = new Set(
@@ -56,5 +60,5 @@ export function observeRendered(
       if (shownHashes.has(hash)) shownInFull.add(frontierBlockId(getBlockItemId(blocks[index])));
     });
   }
-  return nextObservationFrontier(doc, prev, shownInFull);
+  return nextObservationFrontier(doc, observe, shownInFull);
 }

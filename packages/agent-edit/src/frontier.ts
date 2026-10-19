@@ -2,18 +2,35 @@
  * Observation frontiers: what document state a model was shown. A frontier is
  * a Yjs snapshot of the document a result was rendered from plus the blocks
  * that changed since the model's previous frontier and that this result did not
- * show in full ("unshown"). Pure Yjs; the host keys and stores frontiers.
+ * show in full ("unshown"). Pure Yjs; the host names rooms and stores frontiers.
  */
 import * as Y from "yjs";
 import { getBlockItemId, getTopLevelXmlBlocks } from "./model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./model/prosemirror-fragment.js";
 
 export interface ObservationFrontier {
+  /** The host's opaque label for the room the document belongs to; carried, never read. */
+  room: string;
   /** `Y.encodeSnapshotV2` of the document the result was rendered from. */
   snapshot: Uint8Array;
   /** Block ids (`client:clock` of the top-level item), in document order. */
   unshown: readonly string[];
 }
+
+/**
+ * What a host passes to have a result record its frontier: the room's label
+ * and the model's previous frontier there (`null` when it has none).
+ */
+export interface ObservationRequest {
+  room: string;
+  prev: ObservationFrontier | null;
+}
+
+/**
+ * A host's lookup of the model's latest frontier for a room. Never throws: an
+ * unavailable frontier is `null`, the empty one.
+ */
+export type FrontierLookup = (room: string) => Promise<ObservationFrontier | null>;
 
 /** The stable serialization of a block's identity: its top-level Yjs item id. */
 export function frontierBlockId(id: { clientID: number; clock: number }): string {
@@ -31,7 +48,7 @@ export function frontierBlockId(id: { clientID: number; clock: number }): string
  */
 export function nextObservationFrontier(
   doc: Y.Doc,
-  prev: ObservationFrontier | null | undefined,
+  { room, prev }: ObservationRequest,
   shownInFull: ReadonlySet<string>,
 ): ObservationFrontier {
   const current = Y.snapshot(doc);
@@ -48,6 +65,7 @@ export function nextObservationFrontier(
     unshown = (id) => carried.has(id) || changed.has(id);
   }
   return {
+    room,
     snapshot: Y.encodeSnapshotV2(current),
     unshown: blocks.filter((id) => unshown(id) && !shownInFull.has(id)),
   };

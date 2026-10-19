@@ -36,7 +36,7 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { frontierLookups, recordFrontiers } from "./frontier-recording.js";
+import { frontierLookup, recordFrontier } from "./frontier-recording.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
@@ -256,6 +256,7 @@ export async function dispatchToolCall(
     return { ok: true as const };
   };
 
+  const correlation = { threadId: ctx.state.threadId, turnId: ctx.state.currentTurn.id };
   const execResult = await deps.toolExecutor.executeTool(
     {
       id: call.id,
@@ -280,10 +281,14 @@ export async function dispatchToolCall(
       threadMessage,
       threadReport,
       returnResult,
-      frontiers: frontierLookups(deps, () => ctx.state.allBlocks, ctx.planningBlockIds, {
-        threadId: ctx.state.threadId,
-        turnId: ctx.state.currentTurn.id,
-      }),
+      frontiers: {
+        recording: frontierLookup(
+          deps,
+          () => ctx.state.allBlocks.map((block) => block.id),
+          correlation,
+        ),
+        planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+      },
     },
   );
   await outputDeltaAppendChain;
@@ -313,15 +318,6 @@ export async function dispatchToolCall(
     deps.persistenceDeps,
     ctx.state.threadId,
     async () => {
-      // The model is shown exactly the result persisted here, so its evidence
-      // commits with it; a cancelled or timed-out call never reaches this point.
-      for (const showing of execResult.shown ?? []) {
-        await deps.shownLinks.record({
-          ...showing,
-          threadId: ctx.state.threadId,
-          turnId: ctx.state.currentTurn.id,
-        });
-      }
       const block = contentForBlockInput({
         turnId: ctx.state.currentTurn.id,
         ...(stagedWrite ? { responseId: ctx.responseId } : {}),
@@ -352,13 +348,16 @@ export async function dispatchToolCall(
       };
     },
     {
-      // After the block row exists: frontiers reference it.
+      // The model is shown exactly the result persisted here, so its evidence commits with
+      // it, after the block row exists (the frontier references it); a cancelled or timed-out
+      // call never reaches this point.
       afterEvents: async (block) => {
-        if (!execResult.frontiers?.length) return;
-        await recordFrontiers(deps, block.id, execResult.frontiers, {
-          threadId: ctx.state.threadId,
-          turnId: ctx.state.currentTurn.id,
-        });
+        const evidence = execResult.evidence;
+        if (!evidence) return;
+        const owner = { threadId: ctx.state.threadId, turnId: block.turnId };
+        for (const showing of evidence.shown)
+          await deps.shownLinks.record({ ...showing, ...owner });
+        if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
       },
     },
   );

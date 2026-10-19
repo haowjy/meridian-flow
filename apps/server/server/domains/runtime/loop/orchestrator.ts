@@ -49,6 +49,7 @@ import {
   type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
+  type FrontierLookup,
   isAgentEditResultEnvelope,
   type LinkShowing,
   modelConcurrentResult,
@@ -108,11 +109,7 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
-import type {
-  FrontierLookups,
-  ObservationFrontiers,
-  RoomFrontier,
-} from "../ports/observation-frontiers.js";
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
@@ -143,7 +140,7 @@ import {
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
-import { frontierLookups, persistedIds, recordFrontiers } from "./frontier-recording.js";
+import { frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -280,7 +277,7 @@ export interface OrchestratorDeps {
   responseWrites: {
     commitResponse(
       responseIdentity: ModelResponseIdentity,
-      ctx: { threadId: ThreadId; turnId: TurnId; planningFrontier: FrontierLookups["planning"] },
+      ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier: FrontierLookup },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
@@ -294,15 +291,8 @@ type ResponseWriteCommitOutcome =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      /**
-       * Each saved document's room, with its frontier at the post-commit cut, or
-       * null when it could not be computed. Absent when the save recorded none.
-       */
-      frontiers?: Array<{
-        documentId: string;
-        roomKey: string;
-        frontier: ObservationFrontier | null;
-      }>;
+      /** The saved documents' frontiers at the post-commit cut, for those that recorded one. */
+      frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out; their writes did not land (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
@@ -1249,20 +1239,20 @@ async function persistUncommittedWriteResult(input: {
         ],
       };
     },
-    // The failure shows no document: the staged echo's frontier goes with the text it credited.
-    { afterEvents: (block) => replaceFrontiers(input.deps, input.threadId, block, []) },
+    // The failure shows no document: whatever the result recorded goes with the text it replaced.
+    { afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, undefined) },
   );
   return { block: persisted.result };
 }
 
-/** A replaced result's frontiers are its new rendering's, in the transaction that replaces it. */
-function replaceFrontiers(
+/** A replaced result's frontier is its new rendering's, in the transaction that replaces it. */
+function replaceFrontier(
   deps: OrchestratorDeps,
   threadId: ThreadId,
   block: Block,
-  frontiers: readonly RoomFrontier[],
+  frontier: ObservationFrontier | undefined,
 ): Promise<void> {
-  return recordFrontiers(deps, block.id, frontiers, { threadId, turnId: block.turnId });
+  return recordFrontier(deps, block.id, frontier, { threadId, turnId: block.turnId });
 }
 
 async function persistCommittedWriteResult(input: {
@@ -1272,7 +1262,7 @@ async function persistCommittedWriteResult(input: {
   result: AgentEditResultV1;
   documentRevision: DocumentRevisionEvidence;
   /** The save's post-commit frontier, on the document's last settled result only. */
-  frontiers: readonly RoomFrontier[];
+  frontier: ObservationFrontier | undefined;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
     toolCallId?: string;
@@ -1312,7 +1302,7 @@ async function persistCommittedWriteResult(input: {
       };
     },
     {
-      afterEvents: (block) => replaceFrontiers(input.deps, input.threadId, block, input.frontiers),
+      afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, input.frontier),
     },
   );
   return { block: persisted.result };
@@ -1331,8 +1321,8 @@ async function recordReferenceEvidence(
 ): Promise<void> {
   for (const showing of evidence.shown)
     await deps.shownLinks.record({ ...showing, threadId, turnId });
-  for (const { sourceBlockId, frontiers } of evidence.frontiers)
-    await recordFrontiers(deps, sourceBlockId, frontiers, { threadId, turnId });
+  for (const { sourceBlockId, frontier } of evidence.frontiers)
+    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
 }
 
 /**
@@ -1358,12 +1348,11 @@ async function prepareReferenceReads(input: {
     assistantTurnId: input.assistantTurnId,
     reader: input.deps.referenceReader,
     signal: input.signal,
-    recordingFrontier: frontierLookups(
+    recordingFrontier: frontierLookup(
       input.deps,
-      () => [...input.runBlocks, ...input.blocks],
-      [],
+      () => [...input.runBlocks, ...input.blocks].map((block) => block.id),
       { threadId: input.threadId, turnId: input.assistantTurnId },
-    ).recording,
+    ),
   });
   if (loaded.length === 0) return { blocks: [...input.blocks], events: [], evidence };
   const events = loaded.map((block) => ({
@@ -1549,10 +1538,8 @@ function createResponseScope(input: {
   turnId: TurnId;
   responseId: string;
   allBlocks: Block[];
-  /** The blocks the step's request was built from; the step's own blocks are the rest. */
-  planningBlockIds: readonly string[];
 }) {
-  const { deps, threadId, turnId, allBlocks, planningBlockIds } = input;
+  const { deps, threadId, turnId, allBlocks } = input;
   const writes = new Map<
     string,
     Array<{
@@ -1605,7 +1592,7 @@ function createResponseScope(input: {
         documentId: string,
         write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
-        frontiers: readonly RoomFrontier[],
+        frontier: ObservationFrontier | undefined,
       ) => {
         if (receipt.result.status !== "success")
           return persistUncommittedWriteResult({
@@ -1625,7 +1612,7 @@ function createResponseScope(input: {
           block: write.block,
           documentRevision: { documentId, uri: write.uri, revision: receipt.revision },
           result: receipt.result,
-          frontiers,
+          frontier,
         });
       };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
@@ -1634,30 +1621,25 @@ function createResponseScope(input: {
         {
           threadId,
           turnId,
-          // The save's frontier starts from the one the step was planned on, not from the
-          // step's own rows: a staged echo the save replaced must not lend its credit.
-          planningFrontier: frontierLookups(deps, () => allBlocks, planningBlockIds, {
+          // The settled receipts are a result like any other: their frontier chains from the
+          // model's latest row, which may be a sibling read's in this step.
+          recordingFrontier: frontierLookup(deps, () => allBlocks.map((block) => block.id), {
             threadId,
             turnId,
-          }).planning,
+          }),
         },
         async (settled) => {
-          const planned = new Set(planningBlockIds);
-          const stepBlockIds = persistedIds(
-            allBlocks.map((block) => block.id).filter((id) => !planned.has(id)),
-          );
           for (const [documentId, blocks] of writes) {
             const refusal =
               settled.status === "committed"
                 ? settled.refused.find((refused) => refused.documentId === documentId)
                 : undefined;
-            // The save's frontier supersedes every row the step recorded for the room: those
-            // rows go first, and the frontier records on the last settled receipt, after them.
-            const room =
+            // The document's frontier records on its last settled receipt, the step's latest
+            // result there.
+            const frontier =
               settled.status === "committed" && !refusal
-                ? settled.frontiers?.find((entry) => entry.documentId === documentId)
+                ? settled.frontiers?.find((entry) => entry.documentId === documentId)?.frontier
                 : undefined;
-            if (room) await deps.observationFrontiers.remove(stepBlockIds, room.roomKey);
             const lastSettled =
               settled.status === "committed" && !refusal
                 ? [...blocks]
@@ -1668,9 +1650,6 @@ function createResponseScope(input: {
                           .status === "success",
                     )
                 : undefined;
-            const documentFrontiers: RoomFrontier[] = room?.frontier
-              ? [{ roomKey: room.roomKey, ...room.frontier }]
-              : [];
             for (const write of blocks) {
               const result = refusal
                 ? await persistUncommittedWriteResult({
@@ -1686,7 +1665,7 @@ function createResponseScope(input: {
                       documentId,
                       write,
                       settledReceipt(settled.receipts, documentId, write.settlementId),
-                      write === lastSettled ? documentFrontiers : [],
+                      write === lastSettled ? frontier : undefined,
                     )
                   : await persistUncommittedWriteResult({
                       deps,
@@ -2489,7 +2468,6 @@ async function executeLoop({
             turnId: currentTurn.id,
             responseId,
             allBlocks,
-            planningBlockIds,
           });
           responseScope = scope;
           if (isCancelled()) {

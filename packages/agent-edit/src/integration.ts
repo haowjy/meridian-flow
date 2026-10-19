@@ -31,7 +31,7 @@ export {
 } from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
-export type { ObservationFrontier } from "./frontier.js";
+export type { FrontierLookup, ObservationFrontier, ObservationRequest } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";

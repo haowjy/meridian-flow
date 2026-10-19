@@ -128,7 +128,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     frontierRooms: {
       // No version restores in memory: every live document stays in its first epoch.
       liveGeneration: async () => 1n,
-      workDraftId: async () => null,
     },
   });
   const projections = { refresh: runDocumentWriteHook };

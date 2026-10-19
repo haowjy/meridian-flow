@@ -19,7 +19,7 @@ interface InternalWriteResultBase {
   /** Host-only: what the rendered result showed the model. */
   showing?: LinkShowing;
   /** Host-only: the frontier of what the rendered result showed, when the caller asked. */
-  observation?: ObservationFrontier;
+  frontier?: ObservationFrontier;
   /** The blocks a read selected, for a host copying them. */
   nodes?: readonly Block[];
   model?: AgentEditModelPayload;

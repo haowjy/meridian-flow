@@ -87,19 +87,24 @@ write against a different version from the thread's last read returns
 the immutable edit policy, not a legacy journal selection.
 
 A call whose caller passes `recordingFrontier` (the read and write tools, and
-reference reads) records an observation frontier keyed by its room: the pulled
+reference reads) records an observation frontier in its room: the pulled
 peer's upstream Work draft (`draft:<upstreamDraftId>`, never the peer id or the
-draft generation); for undo, redo and revert, which plan on the branch's Work
-draft itself, that draft; or `live:<documentId>:<authorityGeneration>`.
-`FrontierRooms` (`adapters/drizzle-frontier-rooms.ts`) reads the generation and
-Work draft before the call, isolated from any ambient transaction, so a restore
-in between leaves the frontier on the old epoch and a failed read records none.
-The pool passes agent-edit the previous frontier and returns `frontiers` beside
-the outcome. A reply's save takes `planningFrontier`: before its transaction
-opens it looks up, in the room each document's staged writes recorded under,
-the frontier the step was planned on, and returns each saved document's
-`room` with its post-commit frontier, null when none could be computed.
-`format: "edits"` reads record none. See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+draft generation), or `live:<documentId>:<authorityGeneration>`. The pool
+resolves the room before the call (the generation through `FrontierRooms`,
+`adapters/drizzle-frontier-rooms.ts`, isolated from any ambient transaction, so
+a restore in between leaves the frontier on the old epoch and a failed read
+records none), looks up the model's previous frontier there, and passes
+agent-edit `observe: { room, prev }`; the outcome comes back with its
+`frontier`. An undo, redo or revert passes `observeInverse` instead: its room is
+the draft its result names it ran on (`DocumentEditResult.draftId`, the live
+room when null). A staged write records nothing; it resolves the reply
+document's room once (or reuses the one a pinned read already resolved), and
+the reply's save, given `recordingFrontier`, looks up the previous frontier in
+that room before its transaction opens and returns each saved document's
+`frontier` at the post-commit cut. `format: "edits"` reads record none.
+`roomKeyFor` and `FrontierRooms` are M1 scaffolding: M2 renders from the room
+doc, whose authority identity is already bound to it. See
+[runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
 Yjs peers. A planning-visible item disappearing is not by itself rollback

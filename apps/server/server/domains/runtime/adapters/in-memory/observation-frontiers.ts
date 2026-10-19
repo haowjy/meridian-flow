@@ -4,11 +4,11 @@
  * owner, so a frontier recorded with a result that fails to persist rolls back
  * with it. Rows are not removed with their block; a test deletes no blocks.
  */
+import type { ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
-import type { ObservationFrontiers, RoomFrontier } from "../../ports/observation-frontiers.js";
+import type { ObservationFrontiers } from "../../ports/observation-frontiers.js";
 
-interface Row extends RoomFrontier {
-  sourceBlockId: string;
+interface Row extends ObservationFrontier {
   recordedSeq: number;
 }
 
@@ -19,31 +19,26 @@ export function createInMemoryObservationFrontiers(deps: {
   const rows = deps.transactionOwner.map<string, Row>();
   let seq = 0;
   return {
-    async remove(sourceBlockIds, roomKey) {
-      const ids = new Set(sourceBlockIds);
-      for (const [key, row] of rows)
-        if (ids.has(row.sourceBlockId) && (roomKey === undefined || row.roomKey === roomKey))
-          rows.delete(key);
+    async remove(sourceBlockId) {
+      rows.delete(sourceBlockId);
     },
-    async insert(sourceBlockId, frontiers) {
-      for (const frontier of frontiers) {
-        rows.set(JSON.stringify([sourceBlockId, frontier.roomKey]), {
-          sourceBlockId,
-          roomKey: frontier.roomKey,
-          snapshot: frontier.snapshot.slice(),
-          unshown: [...frontier.unshown],
-          recordedSeq: ++seq,
-        });
-      }
+    async insert(sourceBlockId, frontier) {
+      rows.set(sourceBlockId, {
+        room: frontier.room,
+        snapshot: frontier.snapshot.slice(),
+        unshown: [...frontier.unshown],
+        recordedSeq: ++seq,
+      });
     },
-    async latest(roomKey, sourceBlockIds) {
-      const ids = new Set(sourceBlockIds);
+    async latest(room, sourceBlockIds) {
       let latest: Row | undefined;
-      for (const row of rows.values()) {
-        if (row.roomKey !== roomKey || !ids.has(row.sourceBlockId)) continue;
-        if (!latest || row.recordedSeq > latest.recordedSeq) latest = row;
+      for (const id of sourceBlockIds) {
+        const row = rows.get(id);
+        if (row?.room === room && (!latest || row.recordedSeq > latest.recordedSeq)) latest = row;
       }
-      return latest ? { snapshot: latest.snapshot.slice(), unshown: [...latest.unshown] } : null;
+      return latest
+        ? { room, snapshot: latest.snapshot.slice(), unshown: [...latest.unshown] }
+        : null;
     },
   };
 }

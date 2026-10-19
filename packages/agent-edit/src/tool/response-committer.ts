@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
-import type { ObservationFrontier } from "../frontier.js";
+import type { ObservationRequest } from "../frontier.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -177,11 +177,11 @@ export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
   /**
-   * Host-only: per document, the model's previous frontier for its room when
-   * the host records one. The document's result then carries the frontier at
-   * the post-commit cut (`observation`).
+   * Host-only: per document, the room to record in and the model's previous
+   * frontier there, when the host records one. The document's result then
+   * carries the frontier at the post-commit cut (`frontier`).
    */
-  observe?(documentId: string): { prev: ObservationFrontier | null } | undefined;
+  observe?(documentId: string): ObservationRequest | undefined;
   /** Host transaction hook; keeps lifecycle delivery aligned with durable commit. */
   deferFinalization?(participant: {
     commit(): void | Promise<void>;
@@ -1247,7 +1247,7 @@ export function createResponseCommitter(deps: {
           signal: options.signal,
           timeoutMs: options.lockTimeoutMs ?? 30_000,
         });
-        documents.push(withObservation(docBuffer, document, options));
+        documents.push(saveObservation(docBuffer, document, options));
         assertOwner(responseId, owner);
         emit("live_projected", responseId, responsePhaseForAcceptance(journalCommitKind), {
           journalCommitKind,
@@ -1308,7 +1308,7 @@ export function createResponseCommitter(deps: {
       try {
         for (const docBuffer of docBuffers.slice(documents.length)) {
           if (!retryApplyDocument) throw new Error("Phase-C retry was not initialized.");
-          documents.push(withObservation(docBuffer, await retryApplyDocument(docBuffer), options));
+          documents.push(saveObservation(docBuffer, await retryApplyDocument(docBuffer), options));
         }
         emit("recovery_succeeded", responseId, "journalCommitted", {
           journalCommitKind,
@@ -1361,7 +1361,7 @@ export function createResponseCommitter(deps: {
           buffer,
           docBuffers,
           // Journal replay leaves no cut the receipts were rendered from: no document records one.
-          (recheckedDocuments ?? documents).map(({ observation: _, ...document }) => document),
+          (recheckedDocuments ?? documents).map(({ frontier: _, ...document }) => document),
           liveResponseState(responseId),
           (docBuffer) => settledWriteReceipts(docBuffer, null),
           awarenessDegraded ? { awarenessDegraded: true } : {},
@@ -1443,7 +1443,7 @@ export function createResponseCommitter(deps: {
    * full (none when they are degraded or textless). A failure is reported and
    * the document goes out without one.
    */
-  function withObservation(
+  function saveObservation(
     docBuffer: ResponseDocumentBuffer,
     document: ResponseCommitDocumentResult,
     options: ResponseCommitOptions,
@@ -1452,12 +1452,12 @@ export function createResponseCommitter(deps: {
     if (!observe) return document;
     try {
       const accepted = document.receipts.slice(0, docBuffer.updates.length);
-      const observation = observeRendered(
+      const frontier = observeRendered(
         documentDoc(docBuffer),
-        observe.prev,
+        observe,
         accepted.map((receipt) => receipt.result),
       );
-      return { ...document, observation };
+      return { ...document, frontier };
     } catch (cause) {
       deps.onObservationFailed?.({ documentId: docBuffer.docId, cause });
       return document;

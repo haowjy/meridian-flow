@@ -2,6 +2,7 @@
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
   ConcurrentEditInfo,
+  FrontierLookup,
   ObservationFrontier,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
@@ -22,21 +23,12 @@ import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type {
-  FrontierLookup,
   RefusedResponseDocument,
-  RoomObservation,
-  RoutedOutcome,
   RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type {
-  FrontierLookup,
-  RefusedResponseDocument,
-  RoomObservation,
-  RoutedOutcome,
-  RoutedWriteOutcome,
-};
+export type { RefusedResponseDocument, RoutedWriteOutcome };
 
 import type { ApplyItemRef } from "./domain/branch-apply.js";
 import type {
@@ -291,11 +283,8 @@ export type ResponseWriteCommitDocument = {
   receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
-  /**
-   * Host-only, when the save recorded frontiers: the room it committed to and
-   * the document's frontier at the post-commit cut, null when not computed.
-   */
-  room?: { roomKey: string; frontier: ObservationFrontier | null };
+  /** Host-only, when the save recorded one: the document's frontier at the post-commit cut. */
+  frontier?: ObservationFrontier;
 };
 
 export type BranchClosedFinalizeResult = {
@@ -324,7 +313,7 @@ export type ResponseWriteRollbackFinalizeResult = {
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId; planningFrontier?: FrontierLookup },
+    ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier?: FrontierLookup },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(

@@ -85,10 +85,10 @@ transaction. A staged result left by process failure becomes a typed rejection
 only when its canonical result shape and staged phase are both present.
 Cancellation rolls the response buffer back before finalizing the turn.
 
-A block that shows the model a document records its
+A block whose document view the model receives records its
 [observation frontier](document-text.md#observation-frontiers) in the
-transaction that persists it, in `afterEvents`, once the block row exists;
-document-text.md lists the blocks that record none.
+transaction that persists it, in `afterEvents`, once the block row exists. A
+staged result records none; the settled receipt that replaces it does.
 
 Summary calls use `TurnAccounting.computeAndDebit` and the shared tree budget;
 handoff settlement is outside this loop. Summary calls do not consume model

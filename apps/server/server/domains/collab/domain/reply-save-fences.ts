@@ -21,7 +21,10 @@ export type ReplyDocument = {
   grant: FileGrant<"edit">;
   linkView: LinkView;
   pin?: ReplyPin;
-  /** The room the reply's staged writes recorded frontiers under; its save records there too. */
+  /**
+   * The observation-frontier room the reply's calls on this document render
+   * from, resolved by the first that records; the save records there.
+   */
   roomKey?: string;
 };
 export type ReplyRecord = {

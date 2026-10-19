@@ -54,20 +54,19 @@ export function createDocumentEditCommands(deps: {
         model: { message: result.message, read: { format: "edits" } },
       };
 
+    // `after` is the cut the inverse committed on top of, in the version it ran on: the echo
+    // records there, crediting nothing when it degraded.
+    const observe = result.after ? await context.observeInverse?.(result.draftId) : undefined;
     const before = new Y.Doc({ gc: false }),
       after = new Y.Doc({ gc: false });
-    // `after` is the cut the inverse committed on top of: the room's, so it is what the echo
-    // records, crediting nothing when the echo degraded.
     const observed = (rendered: InternalWriteResult) =>
-      result.after
-        ? withObservation(
-            rendered,
-            after,
-            context,
-            address.documentId,
-            deps.options.onObservationFailed,
-          )
-        : rendered;
+      withObservation(
+        rendered,
+        after,
+        observe,
+        address.documentId,
+        deps.options.onObservationFailed,
+      );
     try {
       await deps.runtimeStore.evictThreadRuntimes(address.documentId, session.threadId, {
         markLiveDocStale: true,

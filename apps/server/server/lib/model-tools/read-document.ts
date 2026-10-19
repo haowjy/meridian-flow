@@ -3,9 +3,13 @@
  * reference loading all call `readDocument`; nothing builds tool arguments to
  * reach it.
  */
-import type { DocumentVersion, ReadToolInput } from "@meridian/agent-edit/integration";
+import type {
+  DocumentVersion,
+  FrontierLookup,
+  ReadToolInput,
+  WriteOutcome,
+} from "@meridian/agent-edit/integration";
 import { formatDocumentFile } from "@meridian/agent-edit/integration";
-import type { FrontierLookup, RoutedOutcome } from "../../domains/collab/index.js";
 import type { FileGrant } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import type { ResolvedDocumentAddress, ToolWiringDeps } from "./tool-context.js";
@@ -34,7 +38,7 @@ export async function readDocument(
     recordingFrontier?: FrontierLookup;
   },
   ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
-): Promise<RoutedOutcome> {
+): Promise<WriteOutcome> {
   return deps.documentSync.agentEdit().read(
     {
       ...options.selection,

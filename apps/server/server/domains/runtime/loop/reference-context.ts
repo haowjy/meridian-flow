@@ -5,12 +5,13 @@
  * until the commit that persists those blocks.
  */
 
+import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
-import type { FrontierLookups, RoomFrontier } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { historyReadStub, staleReadStub } from "../tools/document-text.js";
+import type { ResultEvidence } from "../tools/types.js";
 
 type ReferenceRead = { result: JsonValue; revision: string | null };
 
@@ -22,11 +23,9 @@ export interface ReferenceReader {
       turnId: string;
       signal?: AbortSignal;
       /** The read records its frontier, chained from this lookup. */
-      recordingFrontier?: FrontierLookups["recording"];
+      recordingFrontier?: FrontierLookup;
     },
-  ): Promise<
-    ReferenceRead & { shown?: readonly ShownLinkShowing[]; frontiers?: readonly RoomFrontier[] }
-  >;
+  ): Promise<ReferenceRead & { evidence?: ResultEvidence }>;
 }
 
 /**
@@ -35,8 +34,8 @@ export interface ReferenceReader {
  */
 export interface ReferenceEvidence {
   shown: ShownLinkShowing[];
-  /** Each reference block's frontiers: the block whose materialized read the model is sent. */
-  frontiers: { sourceBlockId: string; frontiers: readonly RoomFrontier[] }[];
+  /** Each reference block's frontier: the block whose materialized read the model is sent. */
+  frontiers: { sourceBlockId: string; frontier: ObservationFrontier }[];
 }
 
 export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [] };
@@ -66,7 +65,7 @@ export async function loadReferenceReads(input: {
   assistantTurnId: string;
   reader: ReferenceReader;
   signal?: AbortSignal;
-  recordingFrontier?: FrontierLookups["recording"];
+  recordingFrontier?: FrontierLookup;
 }): Promise<LoadedReferenceReads> {
   const images = new Set(
     input.blocks
@@ -81,7 +80,7 @@ export async function loadReferenceReads(input: {
           : [];
       }),
   );
-  const reads = new Map<string, ReferenceRead & { frontiers: readonly RoomFrontier[] }>();
+  const reads = new Map<string, ReferenceRead & { frontier?: ObservationFrontier }>();
   const updated: Block[] = [];
   const evidence: ReferenceEvidence = { shown: [], frontiers: [] };
   for (const block of input.blocks) {
@@ -98,14 +97,18 @@ export async function loadReferenceReads(input: {
         ...(input.signal ? { signal: input.signal } : {}),
         ...(input.recordingFrontier ? { recordingFrontier: input.recordingFrontier } : {}),
       });
-      result = { result: read.result, revision: read.revision, frontiers: read.frontiers ?? [] };
+      result = {
+        result: read.result,
+        revision: read.revision,
+        ...(read.evidence?.frontier ? { frontier: read.evidence.frontier } : {}),
+      };
       reads.set(key, result);
-      evidence.shown.push(...(read.shown ?? []));
+      evidence.shown.push(...(read.evidence?.shown ?? []));
     }
     input.signal?.throwIfAborted();
     // A repeated mention shows the same read, so its block records the same frontier.
-    if (result.frontiers.length > 0)
-      evidence.frontiers.push({ sourceBlockId: block.id, frontiers: result.frontiers });
+    if (result.frontier)
+      evidence.frontiers.push({ sourceBlockId: block.id, frontier: result.frontier });
     updated.push({
       ...block,
       content: { ...reference, read: { result: result.result, revision: result.revision } },
