@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
+
 - Shared frozen Apply merging and optimistic base deltas now use the draft review kernel; low-similarity flat rewrites retain their paragraph identity.
 
 - Ported the browser-safe draft review text kernel for shared review, Apply, Discard and rebase.
