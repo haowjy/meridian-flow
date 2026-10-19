@@ -118,6 +118,11 @@ Forks inherit elisions only when their cutoff includes C. Never write elisions
 onto source block rows or derive stubs at render time, or a later source
 compaction/deploy would rewrite a fork's frozen prefix.
 
+A document the compaction re-shows after its summary
+([important files](compaction.md#important-files)) elides every tail copy of it
+as `reshown`, stale or not, with a stub pointing at the text after the summary;
+a block that also holds some other stale document keeps the `stale` stub.
+
 Successor preparation queries current revisions from raw retained blocks once
 per attempt. Stale text in pinned unanswered messages is replaced while writer
 words and mentions remain verbatim. A response-staged overlay must not be
