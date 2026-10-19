@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Capture draft edit receipts by retained item ranges instead of expanding every review-base character.
+
 - End dock Discard notices when their room session retires, so Undo never targets a replaced document.
 - Hide the empty-paragraph placeholder while removed review prose occupies its line, preventing overlapping glyphs.
 
