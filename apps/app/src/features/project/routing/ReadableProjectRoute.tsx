@@ -254,7 +254,16 @@ function ReadableProjectDestination({
         subscribe: (listener) => router.history.subscribe(listener),
         flush: () => router.history.flush(),
         settlePendingTraversal: () => router.history.settlePendingTraversal(),
-        replaceEntry: (href, state) => router.history.replace(href, state, { ignoreBlocker: true }),
+        replaceEntry: (href, state) => {
+          // Same-entry repairs must not restore the pre-jump scroll over an editor-owned destination.
+          void router.navigate({
+            href,
+            state,
+            replace: true,
+            resetScroll: false,
+            ignoreBlocker: true,
+          });
+        },
         navigate: (href, options) =>
           router.navigate({
             href,
