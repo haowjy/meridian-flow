@@ -697,17 +697,18 @@ restart smoke check.
 ## RP-19: Observation frontiers survive a restart and a fork finds them
 
 - **Protects:** observation frontiers ([runtime document text](../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)). Each read or write result
-  the model is shown records one row per room, keyed by that result block; `room_key` is
+  the model receives records at most one row, keyed by that result block; `room_key` is
   `draft:<workDraftId>` (the `document_drafts` row of kind `work_draft`, never the thread
   peer) or `live:<documentId>:<authorityGeneration>`; `unshown` lists block ids that changed
   since the previous frontier and were not shown in full. Lookup is the latest `recorded_seq`
-  among the conversation's blocks. A fork finds inherited rows with no copy. Staging-time
-  rows are replaced by the step's save. Host-only: the model request carries no frontier text.
+  among the conversation's blocks. A fork finds inherited rows with no copy. A staged write
+  records nothing; the step's save records on the write's block. An undo records in the version
+  its inverse ran on. Host-only: the model request carries no frontier text.
 - **Stack:** mock, owned fresh database. A gate run uses a detached checkout pinned to the
   commit under test (`docs/qa/README.md`), not another lane's stack.
 - **SQL:** `tools/qa/probes/observation-frontiers.sh` dumps `observation_frontiers` joined to
   `turn_blocks` and `turns`. Optional argument: a thread UUID, or a `live:` / `draft:` prefix.
-  `recorded_seq` is an identity: a deleted staging row leaves a gap.
+  `recorded_seq` is an identity: a replaced row leaves a gap.
 - **Seed:** write the chapter to a file and pass `--text @file`. A shell `$'\n'` is dash-literal
   and becomes one heading whose text contains `\n`. Partial reads use 1-based `in` (heading is 1).
 
@@ -784,7 +785,9 @@ restart smoke check.
 
   5. Staged write: a fresh auto-apply thread, one model step that reads then replaces. After the
      step settles, the write's block has one frontier row whose `recorded_seq` is higher than the
-     read's; the identity sequence has a gap for the deleted staging insert.
+     read's, and the sequence advanced by exactly two (no staging insert). Repeat with the write
+     before the read in the same step: the read records from the reply's lease, the save still
+     records last on the write's block.
 
      ```bash
      printf '%s\n' '# Write Probe' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-chapter.md"
@@ -800,6 +803,9 @@ restart smoke check.
   6. No model-visible change: inspect `$E/cell6-context-raw.json` (captured in step 1). The second
      request is the step after the read.
 
+  7. Undo: on `$WT` (live) and `$DT` (draft), one step with
+     `{"name":"write","args":{"command":"undo","path":"<the document>"}}`.
+
 - **Expect:**
   1. One `live:<documentId>:1` row, `unshown: []`, `blocks: 4` in the read result.
   2. Same-thread partial read after restart: `unshown: []`, `blocks: 1 of 4`. Control thread:
@@ -807,14 +813,18 @@ restart smoke check.
   3. Fork copies no rows (same count and `source_block_id` set before vs after). Fork partial read:
      `unshown: []`.
   4. Read's `room_key` is `draft:<work_draft.id>`, not `draft:<thread_peer.id>`. Result `version: draft`.
-  5. Write block: one row, `recorded_seq` greater than the same-step read. `tool.completed` then
-     `tool.settled`. A gap in `recorded_seq` is the replaced staging insert, not a missing save.
+  5. Write block: one row, `recorded_seq` greater than the same-step read, in both orders, with no
+     seq consumed by the staged write. `tool.completed` then `tool.settled`.
   6. Raw request text contains none of `frontier`, `snapshot`, `unshown`.
+  7. Each undo block records one row: `live:<documentId>:<generation>` on `$WT`, and on `$DT`
+     `draft:<work_draft.id>` (the draft the inverse ran on), never the thread peer.
 - **Evidence:** each send NDJSON, the SQL dumps, the fork body, `document_drafts` ids next to
   `room_key`, seq occupancy 1..last_value, and the captured model requests.
 - **Last run:** 2026-10-19 on `404c09761b` (`feat/m1-frontier`), mock, detached checkout
   `p13624-m1-probe`, all six cells passed. Evidence:
   `work/concurrent-edit-design/m1/probe/` in the docs repository. Browser: none (no writer-visible change).
+  Cells 5 (both orders), 6 and 7 re-run 2026-10-19 on `84adf97603` (revision 4), mock, the
+  worktree's own stack: all passed.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
