@@ -4,7 +4,10 @@
  * The store calls it with its post-lock read; it returns the rows to insert (their novel bytes)
  * and their receipts, or why nothing is written.
  */
+
+import { DRAFT_SERVER_CLIENT_ID } from "@meridian/agent-edit/diff";
 import { captureEditParts, type EditFrontier } from "@meridian/agent-edit/integration";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { createDocumentContainment } from "./document-containment.js";
 import { assertFreshAgentUpdate } from "./document-mutation-policy.js";
@@ -18,7 +21,12 @@ import {
 } from "./draft-store.js";
 import { validateClientUpdateAdmission, validateRestorationRanges } from "./provenance.js";
 
+/** Runs synchronously under the row hold, after incoming rows. Capture each server transaction
+ * as an update and return it in order. The runtime owns and destroys this private prefix copy. */
+export type AuthorServerRows = (prefix: Y.Doc) => readonly Uint8Array[];
+
 export type FinalizeAppendInput = {
+  authorServerRows?: AuthorServerRows;
   /**
    * A private clone of the caller's base replica, made off the lock. When the checkpoint held
    * it becomes the committed prefix; when a rewrite moved it, it is destroyed.
@@ -64,70 +72,100 @@ export function finalizeAppend(
     input.candidate.destroy();
     doc = materializeDraftRead(read);
   }
-  const done = (finalization: AppendFinalization) => ({ finalization, doc });
-  if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
+  try {
+    const done = (finalization: AppendFinalization) => ({ finalization, doc });
+    if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
 
-  const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
-  for (const row of input.rows) {
-    if (input.containment.contains(doc, row.updateData)) continue;
-    const stateVector = Y.encodeStateVector(doc);
-    const novel = Y.diffUpdate(row.updateData, stateVector);
-    const frontier = Y.decodeStateVector(stateVector);
-    const held = heldDeletes(doc, novel, frontier);
-    if (row.source === "writer") input.validateWriter(doc, novel);
-    if (row.source === "agent") {
-      assertFreshAgentUpdate(doc, novel);
-      validateClientUpdateAdmission(doc, novel);
+    const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
+    function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
+      if (input.containment.contains(doc, row.updateData)) return;
+      const stateVector = Y.encodeStateVector(doc);
+      const novel = Y.diffUpdate(row.updateData, stateVector);
+      const frontier = Y.decodeStateVector(stateVector);
+      const held = heldDeletes(doc, novel, frontier);
+      if (row.source === "writer") input.validateWriter(doc, novel);
+      if (row.source === "agent") {
+        assertFreshAgentUpdate(doc, novel);
+        validateClientUpdateAdmission(doc, novel);
+      }
+      Y.applyUpdate(doc, novel);
+      const missing = pendingClocks(doc);
+      if (missing.length) return { status: "prefixMissing", clocks: missing };
+      if (row.source !== "server") validateRestorationRanges(doc, novel);
+      kept.push({
+        row: { ...row, updateData: novel },
+        frontier: Object.fromEntries(frontier),
+        held,
+      });
     }
-    Y.applyUpdate(doc, novel);
-    const missing = pendingClocks(doc);
-    if (missing.length) return done({ status: "prefixMissing", clocks: missing });
-    if (row.source !== "server") validateRestorationRanges(doc, novel);
-    kept.push({
-      row: { ...row, updateData: novel },
-      frontier: Object.fromEntries(frontier),
-      held,
-    });
-  }
-  if (!kept.length) return done({ status: "contained" });
+    for (const row of input.rows) {
+      const refused = admit(row);
+      if (refused) return done(refused);
+    }
+    if (input.authorServerRows) {
+      // Authoring must not mutate the receipt before-view. This copy is made only for server
+      // operations, under the hold, so client 1 allocates clocks after every committed row.
+      const authoring = createCollabYDoc({ gc: false });
+      try {
+        Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
+        authoring.clientID = DRAFT_SERVER_CLIENT_ID;
+        for (const updateData of input.authorServerRows(authoring)) {
+          const refused = admit({
+            draftId: read.documentDraft.draftId,
+            generation: read.documentDraft.generation,
+            source: "server",
+            updateData,
+          });
+          if (refused) return done(refused);
+        }
+      } finally {
+        authoring.destroy();
+      }
+    }
+    if (!kept.length) return done({ status: "contained" });
 
-  const groups = new Map<string, number[]>();
-  for (const [index, { row }] of kept.entries()) {
-    const key = row.documentEditKey ?? `${row.threadId}:${row.wId ?? `#${index}`}`;
-    groups.set(key, [...(groups.get(key) ?? []), index]);
+    const groups = new Map<string, number[]>();
+    for (const [index, { row }] of kept.entries()) {
+      const key = row.documentEditKey ?? `${row.threadId}:${row.wId ?? `#${index}`}`;
+      groups.set(key, [...(groups.get(key) ?? []), index]);
+    }
+    const receipts: AppendReceiptGroup[] = [...groups.values()].map((rowIndexes) => ({
+      rowIndexes,
+      parts: captureEditParts(
+        doc,
+        rowIndexes.map((index) => ({
+          update: kept[index].row.updateData,
+          frontier: kept[index].frontier,
+        })),
+      ).map((part, i) => {
+        // A re-sent delete the prefix already held is not this row's effect.
+        const held = kept[rowIndexes[i]].held;
+        if (!held.size) return part;
+        return {
+          ...part,
+          effect: { ...part.effect, deleted: withoutClocks(part.effect.deleted, held) },
+        };
+      }),
+    }));
+    const rows = kept.map((entry) => entry.row);
+    return {
+      finalization: { status: "appended", rows, receipts },
+      doc,
+      result: {
+        status: "appended",
+        rows,
+        receipts,
+        doc,
+        prefixHeld,
+        prefixRows: read.tail,
+        checkpointSeq: read.documentDraft.checkpointSeq,
+      },
+    };
+  } catch (cause) {
+    // A moved checkpoint materialized a new owned prefix that the caller has not received.
+    if (doc !== input.candidate) doc.destroy();
+    throw cause;
   }
-  const receipts: AppendReceiptGroup[] = [...groups.values()].map((rowIndexes) => ({
-    rowIndexes,
-    parts: captureEditParts(
-      doc,
-      rowIndexes.map((index) => ({
-        update: kept[index].row.updateData,
-        frontier: kept[index].frontier,
-      })),
-    ).map((part, i) => {
-      // A re-sent delete the prefix already held is not this row's effect.
-      const held = kept[rowIndexes[i]].held;
-      if (!held.size) return part;
-      return {
-        ...part,
-        effect: { ...part.effect, deleted: withoutClocks(part.effect.deleted, held) },
-      };
-    }),
-  }));
-  const rows = kept.map((entry) => entry.row);
-  return {
-    finalization: { status: "appended", rows, receipts },
-    doc,
-    result: {
-      status: "appended",
-      rows,
-      receipts,
-      doc,
-      prefixHeld,
-      prefixRows: read.tail,
-      checkpointSeq: read.documentDraft.checkpointSeq,
-    },
-  };
 }
 
 /**
