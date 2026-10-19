@@ -10,20 +10,21 @@ writer sees. The codec's edge-character encoding currently prevents some plain
 text matches; the seam is `src/model/markdown-text-view.ts` and
 `src/resolver/find.ts`.
 
-## Response save
+## One save sequencing before M3's landing check
 
-- `src/tool/response-committer.ts` runs two save protocols chosen by whether
-  the host provides `stagedWrites`. Split them behind one save seam chosen per
-  host at composition, with required host capabilities
-  ([#938](https://github.com/haowjy/meridian-flow/issues/938)).
-
-## Observation frontiers
-
-- `src/tool/observation.ts` credits only `extent: full` blocks, so a write echo's
-  context line shown whole (a paragraph shorter than the truncation) still lands
-  in `unshown`. Decide when the region refusal lands ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)):
-  credit an untruncated context line as shown in full, or accept that the next
-  write touching that paragraph is refused once with its current text.
+A save still has two sequencings, and model inverses commit outside the port.
+The reply save (and the pool's draft one-entry reply) prepares, persists inside
+the pool's transaction and reports before commit (`response-committer.ts`); the
+immediate save, `saveNow` in `tool/document-save.ts`, persists in a transaction
+`appendBatch` owns and reports after durability. Undo, redo and revert journal
+and deliver through collab's `drizzle-turn-inverse.ts`. Every save-time concern
+lands once per path: the immediate path is where three review rounds' findings
+lived, and a drafted agent write outside a reply (a one-entry reply) carries no
+save-time "only if empty" precondition, which only `saveNow` passes. Unify
+before M3's landing check, so it is written once: have `saveNow` run the reply
+path's prepare, persist and report inside one transaction the host owns (the
+pool's draft-only one-entry wrapper then becomes optional), and route inverses
+through `prepareSave` when M2b moves revert to the write door.
 
 ## Deferred until earned
 

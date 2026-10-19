@@ -520,10 +520,18 @@ describe("compaction-owned elisions", () => {
         { blockId: "late-read", treatment: "stale_read", uris: [], content: replacement },
       ],
     };
+    const reshown = {
+      type: "reference",
+      text: "manuscript://chapter",
+      documentId: "00000000-0000-4000-8000-000000000001",
+      uri: "manuscript://chapter",
+      read: { result: "CURRENT CHAPTER", revision: "r1" },
+    };
     const blocks = [
       block("read", "reply", 0, "tool_result", raw),
       block("late-read", "late", 0, "tool_result", raw),
       compactionBlock("summary", c.id, "Summary"),
+      { ...block("reshown", c.id, 1, "text", reshown), textContent: "manuscript://chapter" },
     ];
     const projected = await projectActiveHistoryWithBakes(
       [old, pin, reply, c, late],
@@ -533,17 +541,21 @@ describe("compaction-owned elisions", () => {
     );
     expect(projected.blocks.find((b) => b.id === "read")?.content).toEqual(replacement);
     expect(projected.blocks.find((b) => b.id === "late-read")?.content).toEqual(raw);
+    // C10: only what follows C and the documents it re-shows credit the model; the retained tail credits nothing.
+    expect([...projected.creditedBlockIds].sort()).toEqual(["late-read", "reshown"]);
+    expect(projected.blocks.find((b) => b.id === "reshown")?.turnId).toBe("c:summary");
+    expect(JSON.stringify(buildContext({ thread: thread("c1"), ...projected }).messages)).toContain(
+      "Current text of manuscript://chapter, re-shown after the summary:\\nCURRENT CHAPTER",
+    );
     for (const status of ["pending", "error", "cancelled"] as const) {
-      expect(
-        (
-          await projectActiveHistoryWithBakes(
-            [old, pin, reply, { ...c, status }, late],
-            blocks,
-            "c1",
-            noPromptBakes,
-          )
-        ).blocks,
-      ).toEqual(blocks);
+      const uncompacted = await projectActiveHistoryWithBakes(
+        [old, pin, reply, { ...c, status }, late],
+        blocks,
+        "c1",
+        noPromptBakes,
+      );
+      expect(uncompacted.blocks).toEqual(blocks);
+      expect(uncompacted.creditedBlockIds).toEqual(new Set(blocks.map((b) => b.id)));
     }
     const next = compactionTurn("next", 6, "old", "pin");
     expect(

@@ -5,10 +5,10 @@
  * Meridian server persistence/read-model concern, built only by orchestrating the
  * package codec/model, Yjs fragment helper, journal, and document coordinator.
  */
+
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCodecFactory,
-  type DocumentCoordinator,
   fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
@@ -48,6 +48,7 @@ import {
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
 
@@ -84,7 +85,7 @@ type MarkdownDocumentEngineDeps = {
   links: DocumentLinkScopes;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
-  coordinator: DocumentCoordinator;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument" | "deliver">;
   initialDocumentSeeds: InitialDocumentSeeds;
   /** A stored projection read with its links unbound, in its filetype's shape (repair only). */
   parseStored(markdown: string, filetype: string | null): { blocks: readonly PMNode[] };
@@ -105,8 +106,11 @@ type MarkdownDocumentEngineDeps = {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
 
-/** When the live document takes an admitted change (see `replaceLiveDocumentMarkdown`). */
-type WarmApply = { kind: "now" } | { kind: "after-commit"; threadId?: ThreadId };
+/**
+ * When a write's projection hook runs: with the write, or once the caller's transaction
+ * commits (see `replaceLiveDocumentMarkdown`).
+ */
+type WriteHook = { kind: "now" } | { kind: "after-commit"; threadId?: ThreadId };
 
 /** Stages a change on a copy of the live document, under its lock. */
 type DraftMutation = (
@@ -315,10 +319,9 @@ export function createMarkdownDocumentEngine(
 
   /**
    * Stage `mutate` on a copy of the live document, serialize, then admit it to the
-   * journal. `warm` says when the live document itself takes the update: `now` (the
-   * caller then runs `afterWrite`), or `after-commit` for a held write inside its caller's
-   * transaction, where an abort must leave the warm room untouched and `afterWrite` runs
-   * with the warm apply.
+   * journal and apply it to `liveDoc` once the caller's transaction commits (at once outside
+   * one). `hook` says when `afterWrite` runs: `now` (the caller runs it), or `after-commit`
+   * with the apply, for a held write that an abort must leave unprojected.
    */
   async function replaceLiveDocumentMarkdown(
     documentId: DocumentId,
@@ -326,7 +329,7 @@ export function createMarkdownDocumentEngine(
     mutate: DraftMutation,
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
-    warm: WarmApply = { kind: "now" },
+    hook: WriteHook = { kind: "now" },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     // This copy stages the change so serialization and journal admission
     // both complete before the live document is mutated.
@@ -360,15 +363,16 @@ export function createMarkdownDocumentEngine(
             meta,
             documentAuthority(liveDoc),
           );
-          if (warm.kind === "now") {
+          // Inside a transaction `liveDoc` takes the row only once the root commits, never
+          // before (LOCK-WS): a door acquired in the transaction handed out a private copy, and
+          // one acquired before it (a held write) handed out the open room itself, whose
+          // holder keeps the mutex through the commit so `deliver` couldn't run here.
+          const apply = async () => {
             Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
-          } else {
-            const applyWarm = async () => {
-              Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
-              await deps.afterWrite?.({ documentId, threadId: warm.threadId, markdown });
-            };
-            if (!deps.deferUntilCommit?.(applyWarm)) await applyWarm();
-          }
+            if (hook.kind === "after-commit")
+              await deps.afterWrite?.({ documentId, threadId: hook.threadId, markdown });
+          };
+          if (!deps.deferUntilCommit?.(apply)) await apply();
           return { sequence: BigInt(seq) };
         },
       },
@@ -453,8 +457,8 @@ export function createMarkdownDocumentEngine(
     } finally {
       doc.destroy();
     }
-    const recover = () => deps.coordinator.recover(documentId);
-    if (!deps.deferUntilCommit?.(recover)) await recover();
+    const deliver = () => deps.coordinator.deliver(documentId);
+    if (!deps.deferUntilCommit?.(deliver)) await deliver();
   }
 
   async function repairDocumentAuthority(documentId: DocumentId): Promise<void> {
@@ -560,10 +564,10 @@ export function createMarkdownDocumentEngine(
         typedDocumentId,
         Y.encodeStateAsUpdate(seededDoc),
       );
-      const recover = () => deps.coordinator.recover(typedDocumentId);
+      const deliver = () => deps.coordinator.deliver(typedDocumentId);
       // An enclosing aggregate may still roll back after the checkpoint is
-      // written. Recover the rooms only after that durable boundary.
-      if (!deps.deferUntilCommit?.(recover)) await recover();
+      // written. Deliver to the rooms only after that durable boundary.
+      if (!deps.deferUntilCommit?.(deliver)) await deliver();
       if (seeded) {
         await deps.afterWrite?.({ documentId: typedDocumentId, markdown: canonicalMarkdown });
       }
@@ -590,7 +594,7 @@ export function createMarkdownDocumentEngine(
   /**
    * A revealed document's first content (§6.3 B3): the ordinary whole-document overwrite,
    * applied under the caller's held lease, accepting only creation-bound content for the
-   * expected address, journaled in the caller's transaction and applied warm after commit.
+   * expected address, journaled in the caller's transaction and delivered to the open room after commit.
    */
   async function writeDocumentHeld(input: {
     held: HeldLiveDocument;
@@ -638,6 +642,8 @@ export function createMarkdownDocumentEngine(
       actor,
     });
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
+    // Inside the caller's transaction the door reads a private copy holding this transaction's
+    // rows, the save's own state; the open room takes them only once the root commits.
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
       serializeForSchema(
         input.documentId,

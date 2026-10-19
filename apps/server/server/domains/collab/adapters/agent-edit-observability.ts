@@ -23,6 +23,7 @@ import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-do
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
+import type { RoomDeliveryDiagnostics } from "./hocuspocus-coordinator.js";
 
 /** The effect projection job's failures and blocked legacy baselines. */
 export function createDraftProjectionDiagnostics(
@@ -52,6 +53,35 @@ export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiag
         name: "background.failed",
         correlation: { documentId },
         payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/**
+ * A delivery outage of committed rows to an open live room: a warning when it begins, and
+ * notice of how it ended (the room caught up, or unloaded so a load reads the journal).
+ */
+export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDeliveryDiagnostics {
+  return {
+    failed({ documentId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.room_delivery",
+        name: "delivery.failing",
+        correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+    recovered({ documentId, attempts, outcome }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.room_delivery",
+        name: "delivery.recovered",
+        correlation: { documentId },
+        payload: { attempts, outcome },
       });
     },
   };
@@ -169,24 +199,6 @@ export function createResponseTransactionDiagnostics(
 
 export function createDraftAgentEditDiagnostics(eventSink?: EventSink): DraftAgentEditDiagnostics {
   return {
-    stagedWriteNoop(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.draft_agent_edit",
-        name: "staged_write.no_durable_journal_row",
-        payload,
-      });
-    },
-    mutationLessPendingEntry(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft_pending_journal",
-        name: "mutation_less_entry_dropped",
-        payload,
-      });
-    },
     replyPinMismatch(payload) {
       if (!eventSink) return;
       emitEvent(eventSink, {

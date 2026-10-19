@@ -9,6 +9,7 @@ import type {
 import {
   captureEditParts,
   isDocumentNotFoundError,
+  SavePreconditionRefused,
   unwrapDoc,
 } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
@@ -30,11 +31,7 @@ import {
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import {
-  currentDrizzleDb,
-  isInDrizzleTransaction,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
@@ -588,11 +585,10 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       });
     },
 
-    async appendBatch(entries) {
+    async appendBatch(entries, precondition) {
       if (entries.length === 0) return [];
       // Inside a reply's save the rows join its one transaction (D42) and stay
       // staged until it commits; otherwise this call owns a durable transaction.
-      const journalCommitKind = isInDrizzleTransaction() ? "staged" : "durable";
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = await enterJournalSeam(
           db,
@@ -601,15 +597,20 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         );
         for (const entry of entries)
           await validateAppendAuthority(txDb, entry.docId, entry.authority);
+        // Each document as this append finds it under its lock: the batch's cut, the state its
+        // precondition is judged on before anything is written (a refusal leaves an ambient
+        // transaction untouched), and the base its receipts are captured against.
+        const beforeStates = new Map<string, Uint8Array>();
+        for (const docId of uniqueSortedDocIds(entries.map((e) => e.docId))) {
+          const beforeState = encodeJournalSnapshot(await this.read(docId));
+          if (precondition && !precondition(beforeState)) throw new SavePreconditionRefused(docId);
+          beforeStates.set(docId, beforeState);
+        }
         const admissions = new Map<string, Awaited<ReturnType<typeof allocateAdmission>>>();
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           admissions.set(docId, await allocateAdmission(txDb, docId));
         }
-        const receiptStates = new Map<string, Uint8Array>();
-        for (const docId of uniqueSortedDocIds(
-          entries.filter((e) => e.mutation).map((e) => e.docId),
-        ))
-          receiptStates.set(docId, encodeJournalSnapshot(await this.read(docId)));
+        const mutated = new Set(entries.filter((e) => e.mutation).map((e) => e.docId));
         const batchOrdinals = new Map<string, number>();
 
         const updateRows = await txDb
@@ -655,7 +656,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
         await captureLiveEdits(
           txDb,
-          receiptStates,
+          new Map([...beforeStates].filter(([docId]) => mutated.has(docId))),
           entries.map((entry, index) => ({
             ...entry,
             ...(entry.mutation
@@ -667,7 +668,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
         return updateRows.map((row, index) => ({
           seq: row.id,
-          journalCommitKind,
+          beforeState: beforeStates.get(entries[index].docId) as Uint8Array,
           ...(ordinals.has(index) ? { wId: ordinals.get(index) } : {}),
         }));
       });

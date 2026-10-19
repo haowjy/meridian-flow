@@ -241,21 +241,21 @@ function documentFailureDocumentName(tool: ToolView): string | null {
 }
 
 /**
- * A write refused because the model last read another version of the document
- * (live, or a Work's draft). It moved nothing and the model reads again on its
- * own, so the writer sees a routine step rather than a failure.
+ * A write held back because the passage changed since the AI last saw it. It
+ * moved nothing, and the refusal handed the AI the current text, so the writer
+ * sees a routine step rather than a failure.
  */
-function isRereadPause(tool: ToolView): boolean {
+function isCatchUpPause(tool: ToolView): boolean {
   return (
     documentToolFailed(tool) &&
     tool.toolName === "write" &&
-    documentFailureStatus(tool) === "read_required"
+    documentFailureStatus(tool) === "region_changed"
   );
 }
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return documentToolFailed(tool) && !isRereadPause(tool);
+  return documentToolFailed(tool) && !isCatchUpPause(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -435,8 +435,9 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const path = asString(inputObject(tool).path);
   const descriptor = descriptorFor(tool);
 
-  if (isRereadPause(tool)) {
-    const verb = t`Paused to reread`;
+  if (isCatchUpPause(tool)) {
+    // True whether the passage changed or the AI hadn't seen all of it: it got the text either way.
+    const verb = t`Got the latest text of`;
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
   if (documentToolFailed(tool)) {
@@ -461,8 +462,8 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
 };
 
 function documentExpand(tool: ToolView): ToolExpand | null {
-  // The next rows (the read, then the retried write) say what happened.
-  if (isRereadPause(tool)) return null;
+  // The next row (the retried write, or a read when the passage was too long) says what happened.
+  if (isCatchUpPause(tool)) return null;
   if (documentToolFailed(tool)) {
     return () => (
       <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>

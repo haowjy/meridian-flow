@@ -78,7 +78,10 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     | { kind: "assistant" }
     | {
         kind: "placeholder";
-        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
+        complete: (
+          prepared: TCurrent | undefined,
+          failure: unknown | undefined,
+        ) => Promise<{ turn: Turn; blocks: Block[] }>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
@@ -120,6 +123,8 @@ export type AdoptedBatch<TCurrent = undefined> = {
    */
   terminal?: boolean;
   completed?: Turn;
+  /** Blocks the completion persisted (a compaction's summary and re-shown documents). */
+  completedBlocks?: Block[];
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;

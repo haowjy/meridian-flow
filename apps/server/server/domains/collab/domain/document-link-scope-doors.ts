@@ -68,17 +68,14 @@ export function scopeAgentEdit(
   });
   return asThreadPeerAgentEditCore({
     // Passed through: no Markdown of their own, or it comes from the scoped engine.
-    recover: core.recover,
     // Saved and rolled back within the reply's thread, by the finalizer below.
     rollbackResponse: core.rollbackResponse,
     commitResponse: core.commitResponse,
     hasResponseDocument: core.hasResponseDocument,
-    prepare: core.prepare,
+    readRoom: core.readRoom,
     refuseStaged: core.refuseStaged,
     retirePeer: core.retirePeer,
-    responseDestination: core.responseDestination,
-    invalidateThreadDocument: core.invalidateThreadDocument,
-    evictThread: core.evictThread,
+    dropStaged: core.dropStaged,
     retireThreadPeers: core.retireThreadPeers,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>

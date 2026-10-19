@@ -119,7 +119,7 @@ async function fixture(
     coordinator: h.coordinator,
     live: h.persistence.journal,
     liveCoordinator: {
-      recover: async () => {
+      deliver: async () => {
         recovered++;
       },
     },
