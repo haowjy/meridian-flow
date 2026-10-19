@@ -1,5 +1,6 @@
 /** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply, Discard and the rebase. */
 
+export type { Alignment } from "./align.js";
 export {
   APPLY_RECORD_ROOT,
   type ApplyEntry,
@@ -32,7 +33,7 @@ export {
   NO_LATE_TYPING,
   recoverLatePeerEdits,
 } from "./late-peer-recovery.js";
-export { type Conflict, type RebaseResult, rebase } from "./merge.js";
+export { type Conflict, type RebaseOptions, type RebaseResult, rebase } from "./merge.js";
 export {
   RESTORED_ROOT,
   type RestorationLink,
@@ -49,6 +50,6 @@ export {
   type ReviewProjection,
   type ReviewSpan,
 } from "./review.js";
-export type { Tok } from "./tokens.js";
+export type { Side, Tok } from "./tokens.js";
 export { countWords, groupWordDelta, type WordDelta, wordDeltaBetweenTexts } from "./word-count.js";
 export { pmToY, type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";

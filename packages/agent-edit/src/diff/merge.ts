@@ -11,7 +11,7 @@
  * `writer.ts`.
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import { align } from "./align.js";
+import { type Alignment, align } from "./align.js";
 import type { Hunk } from "./hunks.js";
 import { posMap } from "./hunks.js";
 import {
@@ -31,7 +31,7 @@ import {
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, unionInsertions } from "./merge-settle.js";
-import { buildBlocks, buildSide, type Tok, tokenizeBlock } from "./tokens.js";
+import { buildBlocks, buildSide, type Side, type Tok, tokenizeBlock } from "./tokens.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move";
@@ -39,6 +39,11 @@ export interface Conflict {
   base: Tok[];
   live: Tok[];
   draft: Tok[];
+}
+
+export interface RebaseOptions {
+  /** Identity-sensitive draft patches keep their own alignment, including after block reorder. */
+  alignDraft?: (base: Side, draft: Side) => Alignment;
 }
 
 export interface RebaseResult {
@@ -111,6 +116,7 @@ export function rebase(
   base: readonly PMNode[],
   live: readonly PMNode[],
   draft: readonly PMNode[],
+  options: RebaseOptions = {},
 ): RebaseResult {
   const alignAll = (
     baseBlocks: readonly PMNode[],
@@ -125,7 +131,7 @@ export function rebase(
       live: liveSide,
       draft: draftSide,
       liveAlignment: align(baseSide, liveSide),
-      draftAlignment: align(baseSide, draftSide),
+      draftAlignment: (options.alignDraft ?? align)(baseSide, draftSide),
     };
   };
   let sides = alignAll(base, live, draft);
@@ -183,7 +189,11 @@ export function rebase(
 
   if (reslide(baseToks, liveSide.toks, liveAlignment.hunks, draftAlignment.hunks))
     liveAlignment.pos = posMap(baseToks.length, liveAlignment.hunks);
-  if (reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks))
+  // A caller-supplied patch addresses identities; sliding onto an equal neighbour changes its target.
+  if (
+    !options.alignDraft &&
+    reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks)
+  )
     draftAlignment.pos = posMap(baseToks.length, draftAlignment.hunks);
   peel(liveAlignment.hunks, draftAlignment.hunks);
 

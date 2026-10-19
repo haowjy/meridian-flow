@@ -189,3 +189,14 @@ give a pre-`review_base` branch its base from its `live_cut` text, so the first 
 migration owns the CAS (`packages/database/src/migration-steps/`).
 
 [late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md
+
+### Identity-sensitive draft patches
+
+`rebase(schema, base, live, draft, { alignDraft })` accepts a caller-owned
+base-to-draft aligner. It runs both initially and after paragraph reorder, on
+the reordered blocks. Base-to-live always uses ordinary content alignment.
+The caller must return the normal Alignment maps and hunks; its draft hunks
+are pinned against reslide so an equal neighbour cannot become the target.
+The result remains content only: kernel transformations do not certify token
+origins or destination identity. Mutation planning must select destination
+items separately.
