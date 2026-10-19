@@ -55,7 +55,6 @@ export function frontierLookups(
   planningBlockIds: readonly string[],
   correlation: { threadId: string; turnId: string },
 ): FrontierLookups {
-  const planning = persistedIds(planningBlockIds);
   const latest = async (roomKey: string, ids: readonly string[]) => {
     try {
       return await deps.observationFrontiers.latest(roomKey, ids);
@@ -73,7 +72,7 @@ export function frontierLookups(
   return {
     recording: (roomKey) =>
       latest(roomKey, persistedIds(recordingBlocks().map((block) => block.id))),
-    planning: (roomKey) => latest(roomKey, planning),
+    planning: (roomKey) => latest(roomKey, persistedIds(planningBlockIds)),
   };
 }
 
