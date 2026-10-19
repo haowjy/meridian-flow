@@ -70,6 +70,7 @@ import type { ContextRemovalRoutePort } from "./context/context-removal-coordina
 import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
+import type { DocumentRemoval } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import {
@@ -162,7 +163,12 @@ export type ProjectViewProps = {
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
-  routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
+  routeIssues?: {
+    main?: ProjectRouteIssue;
+    editor?: ProjectRouteIssue;
+    /** Why an unavailable Editor destination is gone, when its document was removed. */
+    removed?: DocumentRemoval;
+  };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
   onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
@@ -651,6 +657,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const editorMask: ProjectRouteMask = {
     destinationKey: props.routeLocationKey,
     issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
+    removed: props.routeIssues?.removed,
     onRetry: props.onRetryEditorRoute,
     retainWhileLoading: editorPresentation.retainWhileLoading,
     recovery:

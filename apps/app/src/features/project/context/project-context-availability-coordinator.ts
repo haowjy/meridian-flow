@@ -3,6 +3,7 @@ import type {
   AvailabilityCommandId,
   AvailabilityGeneration,
   CatalogFileEntry,
+  DocumentRemovalRecord,
   ProjectContextAuthority,
   ProjectContextIdentityLookupResult,
   ProjectContextIdentityResolution,
@@ -25,6 +26,8 @@ export type ProjectDocumentAvailabilityCommand =
       /** Namespace version that proved the deletion; the local terminal keeps it. */
       deletionVersion: string | null;
       cause: "document-deleted";
+      /** Who removed it and why; absent when the deletion was learned without a lookup. */
+      removal?: DocumentRemovalRecord;
     }
   | {
       kind: "authority-revoke";
@@ -482,6 +485,7 @@ export class ProjectContextAvailabilityCoordinator {
         generation: resolution.generation,
         deletionVersion: resolution.observationVersion,
         cause: "document-deleted",
+        ...(resolution.removal ? { removal: resolution.removal } : {}),
         commandId: commandId("terminal-remove", projectId, documentId, resolution.generation),
       };
     }

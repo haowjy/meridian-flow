@@ -26,7 +26,8 @@ export interface DraftOnlyContainer {
   subscribe(listener: () => void): () => void;
   /** Document-wide: every Work's entry clears, and each container keeps the review it showed. */
   promote(draft: DraftRef): Promise<boolean>;
-  remove(draft: DraftRef): void;
+  /** `elsewhere`: the draft list showed it gone; the Editor's tab says so unless this tab discarded it. */
+  remove(draft: DraftRef, elsewhere?: boolean): void;
 }
 
 function presentations(projectId: string, tab: ContextTab, container: "editor" | "dock") {
@@ -98,9 +99,9 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
         const dock = settleDock(draft, true);
         return (await editor) || dock;
       },
-      remove: (draft) => {
+      remove: (draft, elsewhere) => {
         if (epoch?.aborted) return;
-        removal.discardDraft(draft.projectId, draft.workId, draft.itemKey);
+        removal.discardDraft(draft.projectId, draft.workId, draft.itemKey, elsewhere);
         settleDock(draft, false);
       },
     }),

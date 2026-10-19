@@ -389,9 +389,18 @@ msgstr "<0>{0}</0> and its messages will be deleted."
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "<0>{title}</0> was deleted by {actorName}."
+msgstr "<0>{title}</0> was deleted by {actorName}."
+
 #: src/features/chat/DeletedChatCard.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "<0>{title}</0> was deleted."
 msgstr "<0>{title}</0> was deleted."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "<0>{title}</0> was discarded from the draft."
+msgstr "<0>{title}</0> was discarded from the draft."
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 #: src/features/chat/derivation/ThreadReferenceChip.tsx
