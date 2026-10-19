@@ -66,11 +66,7 @@ export async function insertJournalRows(
     .values(
       rows.map((journal) => ({
         draftId: journal.draftId,
-        // Legacy NOT NULL column has no default; dropped by the migrations lane.
-        generation: 1,
         updateData: Buffer.from(journal.updateData),
-        // Required by the legacy NOT NULL column until the migrations lane drops it.
-        draftBaseUpdateSeq: 0,
         source: journal.source,
         wId: journal.wId ?? null,
         toolCallId: journal.toolCallId ?? null,

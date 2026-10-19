@@ -138,9 +138,8 @@ export const appendTailOrder: Probe = {
         let lowId = 0;
         // The unsequenced writer: an INSERT with no draft row lock, held open.
         const lowWriter = harness.raw.begin(async (tx) => {
-          const [row] =
-            await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
-            values (${draftId}, 1, ${Buffer.from(low)}, 'writer', 0) returning id`;
+          const [row] = await tx`insert into draft_write_journal (draft_id, update_data, source)
+            values (${draftId}, ${Buffer.from(low)}, 'writer') returning id`;
           lowId = Number(row?.id);
           inserted.open();
           await finish.wait;
@@ -150,9 +149,8 @@ export const appendTailOrder: Probe = {
           let highId = 0;
           await harness.raw.begin(async (tx) => {
             await tx`update document_drafts set revision = revision + 1 where id = ${draftId}`;
-            const [row] =
-              await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
-              values (${draftId}, 1, ${Buffer.from(high)}, 'writer', 0) returning id`;
+            const [row] = await tx`insert into draft_write_journal (draft_id, update_data, source)
+              values (${draftId}, ${Buffer.from(high)}, 'writer') returning id`;
             highId = Number(row?.id);
           });
           const read = await harness.store.readDraftAt(draftId);

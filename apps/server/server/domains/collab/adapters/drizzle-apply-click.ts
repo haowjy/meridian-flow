@@ -329,9 +329,7 @@ export function createDrizzleApplyClick(
                         .insert(pushLineage)
                         .values({
                           draftId: base.snapshot.draftId,
-                          draftGeneration: 1,
                           documentId: command.documentId,
-                          journalIds: [],
                           upstreamUpdateSeq: seq,
                           pushedByUserId: command.envelope.accountId,
                           idempotencyKey: command.envelope.commandId,

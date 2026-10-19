@@ -70,7 +70,7 @@ try {
       seq: 0,
     });
     const draftId = `g1-${randomUUID()}`;
-    await h.raw`insert into document_drafts(id,branch_id,document_id,kind,state,state_vector,live_cut,has_effect) values (${draftId},${work.branchId},${documentId},'work_draft',${Buffer.from(Y.encodeStateAsUpdate(doc))},${Buffer.from(Y.encodeStateVector(doc))},${Buffer.from(Y.encodeStateAsUpdate(doc))},true)`;
+    await h.raw`insert into document_drafts(id,branch_id,document_id,kind,state,state_vector,has_effect) values (${draftId},${work.branchId},${documentId},'work_draft',${Buffer.from(Y.encodeStateAsUpdate(doc))},${Buffer.from(Y.encodeStateVector(doc))},true)`;
     const before = new Y.Doc({ gc: false });
     Y.applyUpdate(before, Y.encodeStateAsUpdate(doc));
     const vector = Y.encodeStateVector(doc);
@@ -81,7 +81,7 @@ try {
     const update = Y.encodeStateAsUpdate(doc, vector);
     const wId = await h.persistence.journal.reserveWriteOrdinal(documentId, work.threadId);
     const [row] =
-      await h.raw`insert into draft_write_journal(draft_id,generation,draft_base_update_seq,update_data,source,thread_id,turn_id,w_id) values (${draftId},0,0,${Buffer.from(update)},'agent',${work.threadId},${work.turnId},${wId}) returning id`;
+      await h.raw`insert into draft_write_journal(draft_id,update_data,source,thread_id,turn_id,w_id) values (${draftId},${Buffer.from(update)},'agent',${work.threadId},${work.turnId},${wId}) returning id`;
     const editId = await recordDocumentEdit(h.db, {
       documentId,
       threadId: work.threadId as never,
@@ -177,8 +177,7 @@ try {
   );
 
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
-  const partsBefore =
-    await h.raw`select id,origin,placement,effect from document_edit_parts order by id`;
+  const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;
   const journalBefore = await h.raw`select id,status from draft_write_journal order by id`;
   const close = createDraftClose();
   const discard = createDrizzleBranchDiscard(h.db, {
@@ -202,7 +201,7 @@ try {
   assert.ok(closed.length >= 5);
   assert.ok(closed.every((row) => row.status === "closed" && row.closed_cause === "discarded"));
   assert.deepEqual(
-    await h.raw`select id,origin,placement,effect from document_edit_parts order by id`,
+    await h.raw`select id,origin,effect from document_edit_parts order by id`,
     partsBefore,
   );
   assert.deepEqual(
@@ -229,7 +228,7 @@ try {
   assert.match(closedRevert.message, /discarded/i);
   assert.equal(await h.liveText(applied.documentId), closedLive);
   assert.deepEqual(
-    await h.raw`select id,origin,placement,effect from document_edit_parts order by id`,
+    await h.raw`select id,origin,effect from document_edit_parts order by id`,
     partsBefore,
   );
   console.log("PASS G1 disposition and close");

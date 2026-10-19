@@ -19,7 +19,6 @@ const journalColumns = {
   turnId: draftWriteJournal.turnId,
   actorUserId: draftWriteJournal.actorUserId,
   updateData: draftWriteJournal.updateData,
-  draftBaseUpdateSeq: draftWriteJournal.draftBaseUpdateSeq,
   status: draftWriteJournal.status,
   updateMeta: draftWriteJournal.updateMeta,
 };
@@ -70,16 +69,8 @@ export function createDrizzleDraftReplayJournalReads(db: Database): DraftReplayJ
         .where(
           and(
             eq(documentDrafts.documentId, options.documentId),
-            // Same-draft active rows and cross-draft pushed rows are both needed for
-            // attribution. Cold-start scans are deliberately unbounded until we add a
-            // push-ordered floor; max(journal.id) is unsound because journal ids can include
-            // unpushed sibling rows and do not encode push order.
-            sql`(
-              (${draftWriteJournal.draftId} = ${draftId}
-                AND ${draftWriteJournal.status} IN ('active', 'pushed'))
-              OR (${draftWriteJournal.draftId} <> ${draftId}
-                AND ${draftWriteJournal.status} = 'pushed')
-            )`,
+            eq(draftWriteJournal.draftId, draftId),
+            eq(draftWriteJournal.status, "active"),
           ),
         )
         .orderBy(draftWriteJournal.id);
@@ -99,7 +90,6 @@ function mapJournalRow(row: JournalRecord): DraftJournalRow {
     turnId: row.turnId,
     actorUserId: row.actorUserId,
     updateData: row.updateData,
-    draftBaseUpdateSeq: row.draftBaseUpdateSeq,
     status: row.status,
     updateMeta: row.updateMeta,
   };

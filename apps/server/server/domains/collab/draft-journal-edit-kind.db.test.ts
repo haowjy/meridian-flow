@@ -19,7 +19,7 @@ const db = createTestDatabase();
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
-it("returns editKind from the pending part's origin, whatever its placement or text became", async () => {
+it("returns editKind from the pending part's origin, independent of current text", async () => {
   const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha base.", "edit-kind");
@@ -39,7 +39,7 @@ it("returns editKind from the pending part's origin, whatever its placement or t
     const [plain, undone, partless] = rows;
     if (!plain || !undone || !partless) throw new Error("journal rows are missing");
     // The writes above left one `write` edit part per row. Make the second an inverse edit
-    // whose part was moved off its draft, and strip the third of any part.
+    // and strip the third of any part.
     const [undoPart] = await db
       .select({ id: documentEditParts.id, editId: documentEditParts.editId })
       .from(documentEditParts)
@@ -49,10 +49,6 @@ it("returns editKind from the pending part's origin, whatever its placement or t
       .update(documentEdits)
       .set({ kind: "undo" })
       .where(eq(documentEdits.id, undoPart.editId));
-    await db
-      .update(documentEditParts)
-      .set({ placement: { kind: "retired" } as never })
-      .where(eq(documentEditParts.id, undoPart.id));
     await db
       .delete(documentEditParts)
       .where(sql`${documentEditParts.origin}->>'rowId' = ${String(partless.id)}`);
