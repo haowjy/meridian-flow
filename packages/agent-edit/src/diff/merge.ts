@@ -11,7 +11,7 @@
  * `writer.ts`.
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import { align } from "./align.js";
+import { type Alignment, align } from "./align.js";
 import type { Hunk } from "./hunks.js";
 import { posMap } from "./hunks.js";
 import {
@@ -42,15 +42,11 @@ export interface Conflict {
 }
 
 export interface RebaseOptions {
-  /** One optional tag per token, used only when aligning base to draft. */
-  identity?: { base: readonly (string | undefined)[]; draft: readonly (string | undefined)[] };
+  /** Identity-sensitive draft patches keep their own alignment, including after block reorder. */
+  alignDraft?: (base: Side, draft: Side) => Alignment;
 }
 
 export interface RebaseResult {
-  /** Settled tokens; origin indices address the original input sides, even after paragraph moves. */
-  merged: MergedTok[];
-  /** Original base token to original live token outside live hunks, else -1. */
-  baseToLive: Int32Array;
   blocks: PMNode[]; // the new draft
   conflicts: Conflict[]; // where both sides changed the same text; the draft's version is in `blocks`
   orderConflict: boolean; // the two sides' paragraph moves admit no single order; the draft's order won
@@ -122,37 +118,6 @@ export function rebase(
   draft: readonly PMNode[],
   options: RebaseOptions = {},
 ): RebaseResult {
-  const original = [buildSide(base), buildSide(live), buildSide(draft)];
-  const permutation = (side: Side, origin: Side): number[] => {
-    const available = new Map<PMNode, number[]>();
-    origin.blocks.forEach((node, i) => {
-      const indices = available.get(node) ?? [];
-      indices.push(i);
-      available.set(node, indices);
-    });
-    return side.blocks.flatMap((node, i) => {
-      const block = available.get(node)?.shift();
-      if (block === undefined) throw new Error("Rebase order lost an input block");
-      return Array.from(
-        { length: side.starts[i + 1] - side.starts[i] },
-        (_, k) => origin.starts[block] + k,
-      );
-    });
-  };
-  const tagged = (side: Side, origin: Side, tags: readonly (string | undefined)[]): Side => {
-    if (tags.length !== origin.toks.length)
-      throw new Error("Rebase identity tags must match token count");
-    const indices = permutation(side, origin);
-    return {
-      ...side,
-      toks: side.toks.map((tok, i) => {
-        const tag = tags[indices[i]];
-        return tag === undefined
-          ? tok
-          : { ...tok, key: `${tok.key}\u0000${tag}`, alignmentTag: `\u0000${tag}` };
-      }),
-    };
-  };
   const alignAll = (
     baseBlocks: readonly PMNode[],
     liveBlocks: readonly PMNode[],
@@ -166,13 +131,7 @@ export function rebase(
       live: liveSide,
       draft: draftSide,
       liveAlignment: align(baseSide, liveSide),
-      draftAlignment: options.identity
-        ? align(
-            tagged(baseSide, original[BASE], options.identity.base),
-            tagged(draftSide, original[DRAFT], options.identity.draft),
-            true,
-          )
-        : align(baseSide, draftSide),
+      draftAlignment: (options.alignDraft ?? align)(baseSide, draftSide),
     };
   };
   let sides = alignAll(base, live, draft);
@@ -189,9 +148,6 @@ export function rebase(
   }
 
   const { base: baseSide, live: liveSide, draft: draftSide, liveAlignment, draftAlignment } = sides;
-  // Identity belongs to alignment only; all merge comparisons and emitted payload use plain tokens.
-  for (const h of draftAlignment.hunks)
-    h.ins = draftSide.toks.slice(h.sfrom, h.sfrom + h.ins.length);
   const baseToks = baseSide.toks;
   const idsIn = (lo: number, hi: number) => {
     const ids = new Set<number>();
@@ -233,7 +189,11 @@ export function rebase(
 
   if (reslide(baseToks, liveSide.toks, liveAlignment.hunks, draftAlignment.hunks))
     liveAlignment.pos = posMap(baseToks.length, liveAlignment.hunks);
-  if (reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks))
+  // A caller-supplied patch addresses identities; sliding onto an equal neighbour changes its target.
+  if (
+    !options.alignDraft &&
+    reslide(baseToks, draftSide.toks, draftAlignment.hunks, liveAlignment.hunks)
+  )
     draftAlignment.pos = posMap(baseToks.length, draftAlignment.hunks);
   peel(liveAlignment.hunks, draftAlignment.hunks);
 
@@ -308,20 +268,5 @@ export function rebase(
     liveAlignment.pos,
     draftAlignment.pos,
   );
-  const indices = [baseSide, liveSide, draftSide].map((side, i) => permutation(side, original[i]));
-  const baseToLive = new Int32Array(original[BASE].toks.length).fill(-1);
-  liveAlignment.pos.forEach((at, i) => {
-    if (at >= 0) baseToLive[indices[BASE][i]] = indices[LIVE][at];
-  });
-  return {
-    blocks: buildBlocks(schema, settled).blocks,
-    merged: merged.map((token, i) => ({
-      ...token,
-      tok: settled[i],
-      index: indices[token.origin][token.index],
-    })),
-    baseToLive,
-    conflicts,
-    orderConflict: order.cyclic,
-  };
+  return { blocks: buildBlocks(schema, settled).blocks, conflicts, orderConflict: order.cyclic };
 }
