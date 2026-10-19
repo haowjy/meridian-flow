@@ -181,7 +181,7 @@ jobs:
       # Weekly key so the floating `16` tag picks up patch releases.
       - name: Postgres image cache key
         id: pg-key
-        run: echo "key=postgres-16-$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+        run: echo "key=postgres-16-probe-$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Restore Postgres image
         id: pg-cache
         uses: actions/cache/restore@v4
@@ -201,7 +201,7 @@ jobs:
         env:
           FALLBACK_KEY: ${{ steps.pg-cache.outputs.cache-matched-key }}
         run: |
-          if docker pull "$PG_IMAGE"; then
+          if false; then
             docker save "$PG_IMAGE" -o "$PG_IMAGE_TAR"
             echo "pulled=true" >> "$GITHUB_OUTPUT"
           elif [ -n "$FALLBACK_KEY" ]; then
