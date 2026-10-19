@@ -1,114 +1,31 @@
-# Collab — push settlement and change trail
+# Collab — committed change trail
 
-This page records the single push pipeline and its durable settlement boundary.
-Live-document locks, journal admission, the staging transaction's row locks,
-trail projection, and completion fencing must remain ordered; no caller may
-apply a partial push.
+The staged Apply/settlement pipeline is deleted. There is no pending settlement
+store, contribution replacement/refinement, seed parser, owner reopening,
+worker recovery call, ingress barrier or offline-reconciliation service.
+Lane A builds atomic Apply and its committed live effect; it must not replay
+draft journal rows onto live to reconstruct owners. Receipt classification
+supplies ownership; canonical live before/after identities supply navigation.
 
-## Push pipeline
+`DurableTrailRecord`, normalized committed changes, aggregate persistence,
+authorized reads/navigation, dirty signals and the delivery outbox remain.
+`draft-trail-projection.ts` retains live identity comparison/navigation and
+committed record persistence, not journal-attribution reconstruction.
+`document-difference.ts` remains for lane A's focused trim.
 
-Apply holds no draft. Staging takes the live coordinator locks of its
-documents in document-ID order (capturing each one's LOCK-WS cut first), then
-runs as one bounded attempt whose commit scope is the staging transaction: it
-locks Works through the Works mutation boundary, then branches, namespaces,
-documents and draft rows, and a draft that moved since preparation misses its
-revision, rolls the staging back and recaptures. Completion runs after that
-scope has closed.
+The aggregate keeps terminal-turn and `rollback_pending` readiness. Pending
+Apply settlement no longer blocks it. Trail shells' observable
+building/settling/settled delivery lifecycle is not an Apply settlement batch.
+Reconciliation consumes exactly the dirty signals in its cut, under sorted
+aggregate locks. Sequence allocation is not commit order. Delivery follows
+commit, through the trail dispatcher's outbox.
 
-Whole-draft and selected-row builders produce one candidate batch consumed by
-the shared push pipeline. Locked preparation computes the diff from the live
-cut; trail projection turns that diff into the sole durable Apply
-record. A typed draft generation supplies idempotency, not a second diff.
+Trail detail authorization precedes manuscript-bearing materialization. Denied
+occurrences disappear; authorized deleted anchors keep their evidence. Durable
+identity is a canonical live block identity, not equal text, a display hash or
+an ambiguous relocation chain.
 
-The transition captures the immutable LOCK-WS cut, admits concurrent rows
-through the document mutation lock, and before completion compares each warm
-room's full-state fingerprint with its lock cut plus the push (deletions
-count), retrying the batch when the room moved. It delivers
-the committed replace-set to connected bare-document rooms only after the
-completion fence reports applied or already applied. Delivery is a session hint,
-not a durable outbox and cannot make a committed push fail.
-
-Whole Apply applies the current draft, including rows created after a
-preview. Per-change Apply and Discard replay only complete selected classes and
-require their displayed live revision, class identities, immutable member keys,
-and server-vended admission evidence. A missing or changed selected class
-returns typed stale/gone/incomplete refusal without mutation. Whole Discard is
-unfenced. Selective Discard re-forks from live plus surviving rows and creates
-no restoration edit. Success returns only after the settlement completion fence,
-never after a durable outbox handoff.
-
-## Trail and attribution
-
-The change trail is the durable Apply record. It carries document-scoped
-Yjs block identities `{ clientID, clock }`, nullable before/after identities,
-and authorized evidence for receipts and navigation. Display hash prefixes and
-serialized prose are not durable identity. Before/After evidence is read-only;
-receipt Undo/Redo is the reversal authority.
-
-Trail detail authorization precedes detail materialization: each occurrence
-resolves to available, deleted, or denied before any manuscript-bearing title
-or prose is read. Denied occurrences disappear; authorized deleted anchors
-keep their evidence under an explicit `anchorState`.
-
-Trail rows persist every edit without classification. Missing sweep evidence
-suppresses a live editor's elevation and never blocks Apply. Elevation goes
-only to an authenticated connected editor, for their own overwritten
-post-observation edits, and a push's admission identity never transfers AI
-authorship to the admitting writer.
-
-Apply retains original authored rows and appends a `system:reconcile` row for
-causal replay coverage. The reconcile row is not a new author, inverse target,
-or provenance shortcut. Immutable edit parts and certified restoration aliases
-retain authorship across settlement. Trail projection must never infer an
-owner from equal text, rendered position, or an ambiguous relocation chain.
-
-Trail, receipt, journal disposition, Apply, settlement, and turn-lifecycle
-producers append dirty signals in their own transaction. Reconciliation follows
-those signals through one semantic owner resolver under sorted aggregate locks,
-then deletes exactly the signals it observed. Sequence allocation is not commit
-order. Active drafts do not block reconciliation, but rollback-pending journals
-and pending live settlements do.
-
-The journal and receipt signal triggers run inside an append's draft row lock,
-so their cost is the keystroke's hold. `change_trail_owners` runs with JIT off
-(its recursive estimate otherwise compiles LLVM code on every call) and looks
-journals up by primary key; inserts that cannot have owners return before it
-(migration 0065).
-
-Provenance admission is root-unit injective: one protected root unit has one
-visible target, so divergent restoration or replication blocks rather than
-granting deletion credit to either copy.
-
-Push completion settles arriving ahead refs in its completion transaction. Branch
-moves are not hidden-view moves: a branch can create, edit, and delete, while
-location changes settle in the tree-store move transaction. Branch-held moves are
-rejected because a document's address would depend on the view. An Apply arrival is
-already at its final SQL address when completion calls the arrivals seam.
-
-## Settlement and recovery
-
-`PendingSettlementStore` owns pending/blocked/completed state, claims, backoff,
-trail refinement, and fenced completion. Journal and staged-push admissions
-join post-cut updates through one SQL seam inside the document-mutation
-transaction. Root-effect materialization failure yields no swept elevation and
-never becomes settlement authority.
-
-Settlement takes the completion transaction's locks again before certification.
-It rejects retired generations, stale ownership, and unexplained post-cut
-changes. A transient failure stays pending and retries with backoff. Only a
-known corrupt durable projection is blocking; other projection errors remain
-retryable. Failure reports carry stable correlation IDs and diagnostic codes,
-not manuscript content.
-
-Recovery runs as an independent lane with bounded pages of actionable
-settlements, owner keys, and outbox rows. It keeps its own root transaction,
-uses a wraparound cursor, and acquires selected trail locks in sorted order.
-Unfinished shells remain eligible after signal consumption.
-
-## Undo-restored Apply
-
-Net live-to-draft hunks use the same clock attribution index as review. A
-cancelled writer delete/restore must not add writer ownership to an AI-only
-Apply. Certified restoration aliases replay from journal metadata;
-physical writer rows remain untouched. Apply trail and receipt keep the
-originating AI turn, including during cold replay.
+Journal and receipt signal triggers still run inside an append's draft row
+hold. `change_trail_owners` retains JIT off and primary-key journal lookups;
+D1 does not change installed SQL or migrations. A/MIG own replacement signaling,
+historical Apply conversion and physical settlement-table drops.

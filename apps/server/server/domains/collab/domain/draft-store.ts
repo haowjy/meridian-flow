@@ -148,15 +148,8 @@ export type AppendRowsOutcome =
   | Exclude<AppendFinalization, { status: "appended" }>;
 
 /**
- * What else a rewrite must not race: a pull is fenced by an unfinished settlement on its
- * document (`fenced` while it is pending, `blocked` once it is terminally blocked); a
- * settlement's own reset is not; Discard and close fence on neither.
- */
-export type RewriteFence = { kind: "pending-settlement" } | { kind: "none" };
-
-/**
  * `exact` commits only at the revision the rewrite was computed at; `fold` commits over any
- * appends since its checkpoint cursor (a pull applies them, a reset discards them).
+ * appends since its checkpoint cursor (a pull applies them).
  */
 export type RewritePolicy =
   | { kind: "exact"; revision: number }
@@ -175,13 +168,7 @@ export type RewriteOperation =
    */
   | { kind: "pull"; effect?: PullEffect }
   /** A content rewrite the draft's owning Work must admit: a thread peer catching up its upstream. */
-  | { kind: "checkpoint" }
-  /** A re-fork: the next generation, the tail discarded with its clocks fenced. */
-  | {
-      kind: "reset";
-      editDisposition: "discarded" | "retired";
-      schemaVersion: CollabSchemaVersion;
-    };
+  | { kind: "checkpoint" };
 
 /**
  * A pull's effect against its new baseline, judged on the candidate. When a `fold` applies
@@ -198,7 +185,6 @@ export type PullEffect = {
 export type CommitRewriteInput = {
   draftId: string;
   policy: RewritePolicy;
-  fence: RewriteFence;
   /** The peer's upstream as captured: locked `FOR SHARE` and checked before the peer row. */
   upstream?: { draftId: string; generation: number };
   /** The rewritten checkpoint. A `fold` pull applies the tail into it. */

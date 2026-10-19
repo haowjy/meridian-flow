@@ -33,7 +33,6 @@ import type {
 
 export type { RefusedResponseDocument };
 
-import type { ApplyItemRef } from "./domain/branch-apply.js";
 import type {
   BranchCommandEnvelope,
   CommandLookup,
@@ -46,8 +45,6 @@ import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
-import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
-import type { DerivedReview } from "./domain/review-cut.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 
 export type UpdateOrigin =
@@ -112,9 +109,7 @@ export type CollabPersistenceMetrics = {
   openConnectionCount: number;
 };
 
-export type AdmitLiveWriterUpdateResult =
-  | { admitted: true; joinedSettlement: boolean }
-  | { admitted: false; joinedSettlement: false };
+export type AdmitLiveWriterUpdateResult = { admitted: true } | { admitted: false };
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
@@ -161,15 +156,6 @@ export type CollabTransport = {
     document: Y.Doc;
     expectedGeneration: number;
   }): Promise<void>;
-  writerIngressBarrier: WriterIngressBarrier;
-  persistConnectionUpdate(input: {
-    documentId: DocumentId;
-    update: Uint8Array;
-    origin: UpdateOrigin;
-    document: Y.Doc;
-    /** True only for the client's initial sync-step-2 integration. */
-    reconcileOffline?: boolean;
-  }): void;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
@@ -344,25 +330,6 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
-/** What per-change Apply and Discard say they selected, and the tokens that fence it (§4.1). */
-export type ReviewSelectionCommand =
-  | {
-      kind: "apply";
-      operationIds: readonly string[];
-      liveRevisionToken: string;
-      draftRevisionToken: string;
-    }
-  | {
-      kind: "discard";
-      closureClassIds: readonly string[];
-      admissionTokens: readonly string[];
-      memberPartKeys: readonly string[];
-      /** False when the client sent a sample: absence then proves nothing. */
-      memberPartKeysComplete: boolean;
-      liveRevisionToken: string;
-      draftRevisionToken?: string;
-    };
-
 /**
  * A writer command's answer (§4.6): the stored wire body, still pending, blocked, or the id
  * belongs to a different command. The route maps these to HTTP.
@@ -370,7 +337,6 @@ export type ReviewSelectionCommand =
 export type CommandOutcome =
   | { kind: "result"; result: BranchCommandResult }
   | { kind: "pending" }
-  | { kind: "blocked" }
   | { kind: "conflict" };
 
 /** The model-facing list row: which documents have a draft, nothing more. */
@@ -380,11 +346,6 @@ export type ModelDraftRow = {
   contextLocation: import("@meridian/contracts/branches").ThreadDraftListItem["contextLocation"];
   createdDocument?: boolean;
 };
-
-export type DraftPreviewResult =
-  | (DerivedReview & { threadTitles: ReadonlyMap<string, string> })
-  | { status: "gone"; itemKey: string }
-  | { status: "corrupt"; branchId: BranchId; itemKey: string; draftGeneration: number };
 
 export type DraftReviewApi = {
   applyClick(input: {
@@ -414,44 +375,12 @@ export type DraftReviewApi = {
     workId: WorkId;
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
-  preview(input: { workId: WorkId; itemKey: string }): Promise<DraftPreviewResult>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
-  applyItem(input: {
-    workId: WorkId;
-    item: DraftReviewItem;
-    userId: UserId;
-    envelope: BranchCommandEnvelope;
-    tokens?: Omit<ApplyItemRef, "itemKey">;
-    signal?: AbortSignal;
-  }): Promise<CommandOutcome>;
-  applyAll(input: {
-    workId: WorkId;
-    branchId: BranchId;
-    items: readonly ApplyItemRef[];
-    userId: UserId;
-    envelope: BranchCommandEnvelope;
-    signal?: AbortSignal;
-  }): Promise<CommandOutcome>;
-  applyChanges(input: {
-    workId: WorkId;
-    itemKey: string;
-    userId: UserId;
-    envelope: BranchCommandEnvelope;
-    selection: Extract<ReviewSelectionCommand, { kind: "apply" }>;
-    signal?: AbortSignal;
-  }): Promise<CommandOutcome>;
   discardItem(input: {
     workId: WorkId;
     item: DraftReviewItem;
     userId: UserId;
     envelope: BranchCommandEnvelope;
-  }): Promise<CommandOutcome>;
-  discardChanges(input: {
-    workId: WorkId;
-    itemKey: string;
-    userId: UserId;
-    envelope: BranchCommandEnvelope;
-    selection: Extract<ReviewSelectionCommand, { kind: "discard" }>;
   }): Promise<CommandOutcome>;
   discardAll(input: {
     workId: WorkId;
@@ -478,10 +407,6 @@ export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
-};
-
-export type BranchPushAccess = {
-  recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
 };
 
 /**
@@ -565,7 +490,6 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
-  BranchPushAccess &
   DraftPeerShadowAccess &
   CollabBranches &
   CollabBranchResolver &

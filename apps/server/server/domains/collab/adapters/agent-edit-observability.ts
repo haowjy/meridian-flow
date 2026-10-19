@@ -13,7 +13,6 @@ import {
   errorMessageOf,
   unknownToEventPayload,
 } from "../../observability/index.js";
-import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftAgentEditDiagnostics } from "../domain/draft-agent-edit.js";
 import type { DraftAheadDiagnostics } from "../domain/draft-ahead-registration.js";
@@ -23,7 +22,6 @@ import type { WriterFrameDiagnostics } from "../domain/draft-writer-frames.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
-import type { DraftReviewDiagnostics } from "../domain/work-branch-review-service.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
 
 /** The effect projection job's failures and blocked legacy baselines. */
@@ -228,23 +226,6 @@ export function createAgentEditInvariantDiagnostic(
       name: "invariant_violation",
       payload,
     });
-  };
-}
-
-export function createSweepProjectionDiagnostics(
-  eventSink?: EventSink,
-): SweepProjectionDiagnostics {
-  return {
-    unavailable({ pushId, documentId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.change_event",
-        name: "sweep_projection.unavailable",
-        correlation: { pushId: String(pushId) },
-        payload: { documentId, ...unknownToEventPayload(cause) },
-      });
-    },
   };
 }
 
@@ -512,20 +493,5 @@ function idempotencyHitObserver(
       name: "write.idempotency_hit",
       payload: { ...event },
     });
-  };
-}
-
-export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
-  return {
-    unattributedHunks({ documentId, hunkIds }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft_review",
-        name: "attribution.incomplete",
-        correlation: { documentId },
-        payload: { hunkCount: hunkIds.length },
-      });
-    },
   };
 }

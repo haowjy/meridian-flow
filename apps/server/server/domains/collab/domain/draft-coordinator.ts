@@ -1,14 +1,14 @@
 /**
  * The draft runtime and the operations on it. The runtime holds one immutable committed
- * replica per draft, prepares every write on a private candidate (append, rewrite, reset) and
- * installs it only once its attempt completes; the operations (pull, reset, a reply's staged
+ * replica per draft, prepares every write on a private candidate (append and rewrite) and
+ * installs it only once its attempt completes; the operations (pull, a reply's staged
  * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
  * fold they trigger are `draft-writer-frames.ts`, over the same runtime surface.
  */
 
 import { bytesEqual } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { type CollabSchemaVersion, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { createDocumentContainment } from "./document-containment.js";
 import { documentEffectsEqual } from "./document-content.js";
@@ -186,7 +186,7 @@ export type SegmentRowsInput = {
 
 /**
  * A pull merges `upstream` into the draft. A peer's pull names the upstream epoch it read
- * `upstream` at: the commit locks that row `FOR SHARE` and loses to a re-fork of it.
+ * `upstream` at: the commit locks that row `FOR SHARE` and loses if it closed or moved.
  */
 export type PullInput = {
   draftId: string;
@@ -195,13 +195,8 @@ export type PullInput = {
 };
 
 /**
- * `pulled` committed. A live pull into a work draft waits out a pending settlement on its
- * document (`fenced`: nothing was written, and the caller tries again later); a settlement
- * terminally blocked on it freezes the pull (`blocked`: nothing written, nothing to retry
- * until something new arrives, since no transition lifts a blocked batch); a closed
- * draft has nothing to pull into; a peer whose upstream re-forked since its read is
- * `upstreamMoved`, its capture abandoned. An archived Work's draft keeps pulling, so it applies
- * cleanly after unarchive.
+ * A completed pull, a closed draft, or a changed upstream. The legacy fenced/blocked
+ * arms have no producer after settlement deletion; lane R owns the Work-pull contract cut.
  */
 export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed" | "upstreamMoved";
 
@@ -216,23 +211,6 @@ class DraftRewriteRefused extends Error {
   }
 }
 
-/**
- * A work draft re-forked from `upstream` at the generation it was read: `exact` only at the
- * revision read; `fold` over every append since, which the reset discards with its clocks fenced.
- */
-export type ResetFromDocInput = Omit<ResetInput, "expectedRevision"> &
-  ({ policy: "exact"; expectedRevision: number } | { policy: "fold" });
-
-/** The fields every work-draft reset names. */
-type ResetInput = {
-  draftId: string;
-  upstream: Y.Doc;
-  expectedGeneration: number;
-  expectedRevision: number;
-  schemaVersion?: CollabSchemaVersion;
-  editDisposition?: "discarded" | "retired";
-};
-
 export type DraftCoordinator = {
   /**
    * Merges `upstream` into the draft as a folding rewrite, outside any transaction: each
@@ -240,15 +218,6 @@ export type DraftCoordinator = {
    * into its checkpoint, never a miss; only another rewrite makes it recompute.
    */
   pullFromDoc(input: PullInput): Promise<PullOutcome>;
-  /**
-   * Re-forks a work draft from `upstream` inside the caller's transaction, holding nothing:
-   * false when the draft is no longer at the generation (or, `exact`, the revision) read.
-   * With `owner`, the caller's attempt owns the reset candidate and the write runs in its
-   * already-open commit scope, so a later miss in that attempt disposes it; without one, the
-   * reset is a single attempt in the caller's transaction. A moved draft throws
-   * `DraftCasConflictError` for the caller's attempt to classify.
-   */
-  resetFromDoc(input: ResetFromDocInput, owner?: Attempt): Promise<boolean>;
   readDraft<T>(
     draftId: string,
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
@@ -277,7 +246,6 @@ export type DraftCoordinator = {
   commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   /** A writer frame (`draft-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
-  notifyReset(input: { draftId: string; generation: number }): void;
   /** Brings this process's rooms up to what is committed now: a read, installed as any other. */
   deliverCommitted(draftId: string): Promise<void>;
   /**
@@ -300,7 +268,6 @@ export function createDraftCoordinator(input: {
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
   attemptScope?: AttemptScope;
   onDraftUpdate?: (input: { draftId: string; update: Uint8Array }) => void;
-  onDraftReset?: (input: { draftId: string; generation: number }) => void;
   /** Applies a reconciling update to one room; defaults to a plain apply. */
   applyToRoom?: (room: Y.Doc, update: Uint8Array) => void;
   diagnostics?: WriterFrameDiagnostics;
@@ -360,34 +327,6 @@ export function createDraftCoordinator(input: {
           : {}),
       },
     );
-  }
-
-  async function resetFromDoc(resetInput: ResetFromDocInput, owner?: Attempt): Promise<boolean> {
-    const snapshot = await loadSnapshot(resetInput.draftId);
-    if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
-      throw new Error(`Draft ${snapshot.draftId} is not an active work draft reset target`);
-    if (snapshot.generation !== resetInput.expectedGeneration) return false;
-    if (resetInput.policy === "exact" && snapshot.revision !== resetInput.expectedRevision)
-      return false;
-    const policy =
-      resetInput.policy === "exact"
-        ? { kind: "exact" as const, revision: snapshot.revision }
-        : {
-            kind: "fold" as const,
-            checkpointRevision: snapshot.checkpointRevision,
-            seq: snapshot.checkpointSeq,
-          };
-    const write = prepareReset(snapshot, resetInput.upstream, { ...resetInput, policy });
-    if (owner) await owner.own(write).persist();
-    else await commitOnce(write, { scope: NO_ATTEMPT_SCOPE });
-    return true;
-  }
-
-  async function loadSnapshot(draftId: string): Promise<DraftSnapshot> {
-    const snapshot = await input.store.getDraft(draftId);
-    if (!snapshot) throw new DraftMissingError(draftId);
-    assertReadableDraft(snapshot);
-    return snapshot;
   }
 
   /**
@@ -465,11 +404,6 @@ export function createDraftCoordinator(input: {
       if (previous && previous.revision >= transition.next.revision) return;
       committed.set(draftId, transition.next);
       if (!previous) return;
-      if (previous.generation !== transition.next.generation) {
-        // Another process re-forked the draft: rooms on an older generation close.
-        input.onDraftReset?.({ draftId, generation: transition.next.generation });
-        return;
-      }
       const update = deliveryFrom(previous, transition);
       if (update) input.onDraftUpdate?.({ draftId, update });
     };
@@ -554,7 +488,7 @@ export function createDraftCoordinator(input: {
   /**
    * The one lifetime of a prepared write: prepared (nothing persisted), persisted in its
    * attempt (written, but the attempt can still roll it back), transferred (the attempt
-   * completed; installation owns the committed replica, or a reset closes the room). Disposing
+   * completed; installation owns the committed replica, or installation owns the committed replica). Disposing
    * destroys every document the write owns in every state but the last, so a write whose own
    * statement succeeded in a scope that a later miss rolled back is dropped like one that never
    * ran. A contained append persisted nothing and transfers nothing.
@@ -562,14 +496,14 @@ export function createDraftCoordinator(input: {
   function preparedWrite(write: {
     draftId: string;
     candidate: Y.Doc;
-    persist(): Promise<Transition | { resetTo: number } | { contained: true }>;
+    persist(): Promise<Transition | { contained: true }>;
     /** Every document the write owns besides the candidate (an append's committed prefix). */
     owned?(): readonly Y.Doc[];
     /** The append's rows committed: told once its attempt completed. */
     appended?(): void;
   }): PreparedDraftWrite {
     let state: "prepared" | "persisted" | "transferred" | "disposed" = "prepared";
-    let committed: Transition | { resetTo: number } | { contained: true } | undefined;
+    let committed: Transition | { contained: true } | undefined;
     const destroyOwned = (keep?: Y.Doc) => {
       for (const doc of new Set([write.candidate, ...(write.owned?.() ?? [])]))
         if (doc !== keep) doc.destroy();
@@ -589,12 +523,6 @@ export function createDraftCoordinator(input: {
         state = "transferred";
         if ("contained" in committed) {
           destroyOwned();
-          return;
-        }
-        if ("resetTo" in committed) {
-          // A reset's candidate is never installed: the room closes on the new generation.
-          destroyOwned();
-          notifyReset({ draftId: write.draftId, generation: committed.resetTo });
           return;
         }
         destroyOwned(committed.next.doc);
@@ -720,7 +648,6 @@ export function createDraftCoordinator(input: {
         )
           throw new DraftRewriteRefused(draftId, outcome.status);
         if (outcome.status !== "committed") throw new DraftCasConflictError(draftId);
-        if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
         // The fold may have applied rows this process never installed: delivery diffs the
         // documents rather than trusting anything computed before the lock.
         return { next: { ...outcome, doc: candidate, tail: EMPTY_TAIL } };
@@ -733,7 +660,6 @@ export function createDraftCoordinator(input: {
     const { snapshot } = base;
     return prepareRewrite(snapshot.draftId, candidate, {
       policy: { kind: "exact", revision: snapshot.revision },
-      fence: { kind: "none" },
       operation: { kind: "checkpoint" },
     });
   }
@@ -759,8 +685,6 @@ export function createDraftCoordinator(input: {
         : { kind: "pull" };
     return prepareRewrite(snapshot.draftId, candidate, {
       policy: foldPolicy(base.replica),
-      // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
-      fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
       operation,
       ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
     });
@@ -769,39 +693,6 @@ export function createDraftCoordinator(input: {
   /** A fold over everything appended past `replica`'s cursor. */
   function foldPolicy(replica: CommittedReplica): RewritePolicy {
     return { kind: "fold", checkpointRevision: replica.checkpointRevision, seq: replica.seq };
-  }
-
-  /** A re-fork of the draft from `upstream` under the caller's revision policy. */
-  function prepareReset(
-    snapshot: DraftSnapshot,
-    upstream: Y.Doc,
-    reset: Pick<ResetInput, "schemaVersion" | "editDisposition"> & {
-      policy: RewritePolicy;
-      upstreamEpoch?: PullInput["upstreamEpoch"];
-    },
-  ): PreparedDraftWrite {
-    const candidate = createCollabYDoc({ gc: false });
-    replicatedInto(upstream, candidate);
-    return prepareRewrite(snapshot.draftId, candidate, {
-      policy: reset.policy,
-      fence: { kind: "none" },
-      operation: {
-        kind: "reset",
-        editDisposition: reset.editDisposition ?? "discarded",
-        schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
-      },
-      ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
-    });
-  }
-
-  /** A re-fork committed: the replica is dropped and rooms on older generations close. */
-  function notifyReset(reset: { draftId: string; generation: number }): void {
-    const install = () => {
-      const current = committed.get(reset.draftId);
-      if (current && current.generation < reset.generation) committed.delete(reset.draftId);
-      input.onDraftReset?.(reset);
-    };
-    if (!input.store.deferUntilCommit(install)) install();
   }
 
   /**
@@ -814,19 +705,13 @@ export function createDraftCoordinator(input: {
     const { snapshot } = base;
     if (snapshot.status !== "active") return "closed";
     // A durable thread peer has already saved its writes into the Work draft. If the parent
-    // no longer contains them, a review retired their effect: merging cannot remove those
-    // structs or undo their tombstones, so the peer re-forks from the parent.
+    // no longer contains them, merging cannot repair the lost lineage. Refuse the pull;
+    // its caller translates this outcome to ThreadPeerPullLost without re-forking.
     if (
       snapshot.kind === "thread_peer" &&
       !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const write = prepareReset(snapshot, pull.upstream, {
-        policy: foldPolicy(base.replica),
-        ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
-      });
-      attempt.own(write);
-      await attempt.commit(() => write.persist());
-      return "pulled";
+      return "upstreamMoved";
     }
     const candidate = cloneReplica(base.replica);
     replicatedInto(pull.upstream, candidate);
@@ -960,7 +845,6 @@ export function createDraftCoordinator(input: {
   );
 
   return {
-    notifyReset,
     readDraft: readCommitted,
     withTransient: transient,
     prepareStagedRows,
@@ -975,8 +859,6 @@ export function createDraftCoordinator(input: {
         throw cause;
       });
     },
-
-    resetFromDoc,
 
     async deliverCommitted(draftId) {
       await loadBase(draftId);

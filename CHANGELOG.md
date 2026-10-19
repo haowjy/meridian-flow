@@ -3,12 +3,18 @@
 ## [Unreleased]
 
 - Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.
+- Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
+
+- Isolated reply replay journal reads from the retiring Apply settlement store.
 
 - Removed the settlement-era draft-review command client in preparation for the per-draft command owner.
 ### Changed
 - Protect draft review's server-owned roots at writer and agent admission, admit server journal rows,
   and replace Apply requests with frozen snapshot clicks (execution follows in the Apply lane).
 
+- Draft receipt readers derive pending, applied and discarded status from one captured text review, including retained closed drafts.
+
+- Draft Apply evidence recognizes Undo-restored AI items and preserves unnamed receipt membership after a conversation or turn is deleted.
 
 - Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
 

@@ -1,19 +1,18 @@
 /** The checkpoint + tail draft store in memory, for unit tests whose flows write a draft. */
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import {
-  type AppendDraftJournalInput,
-  type AppendRowsInput,
-  type AppendRowsOutcome,
-  type CommitRewriteInput,
-  type DraftRead,
-  type DraftReadSince,
-  type DraftSnapshot,
-  type DraftStore,
-  type EffectBaseline,
-  mergeStateVectors,
-  type RewriteOutcome,
-  type StaleEffectCursor,
+import type {
+  AppendDraftJournalInput,
+  AppendRowsInput,
+  AppendRowsOutcome,
+  CommitRewriteInput,
+  DraftRead,
+  DraftReadSince,
+  DraftSnapshot,
+  DraftStore,
+  EffectBaseline,
+  RewriteOutcome,
+  StaleEffectCursor,
 } from "../domain/draft-store.js";
 
 /** A draft row, defaulting every field the test does not name. */
@@ -200,7 +199,7 @@ export class MemoryDraftStore implements DraftStore {
     const { operation } = input;
     // A fold applies what landed after its cursor; a reset discards it.
     let folded = 0;
-    if (input.policy.kind === "fold" && operation.kind !== "reset") {
+    if (input.policy.kind === "fold") {
       const after = input.policy.seq;
       for (const row of tail) {
         if (row.id <= after) continue;
@@ -208,23 +207,10 @@ export class MemoryDraftStore implements DraftStore {
         folded += 1;
       }
     }
-    if (operation.kind === "reset") {
-      documentDraft.discardedStateVector = tail.reduce(
-        (vector, row) =>
-          mergeStateVectors(vector, Y.encodeStateVector(Y.parseUpdateMeta(row.update).to)),
-        mergeStateVectors(documentDraft.discardedStateVector, documentDraft.checkpoint.stateVector),
-      );
-      documentDraft.generation += 1;
-      documentDraft.schemaVersion = operation.schemaVersion;
-    }
     documentDraft.checkpoint = {
       state: Y.encodeStateAsUpdate(input.doc),
       stateVector: Y.encodeStateVector(input.doc),
     };
-    if (operation.kind === "reset") {
-      documentDraft.liveCut = documentDraft.checkpoint.state;
-      documentDraft.hasEffectRevision = documentDraft.revision + 1;
-    }
     if (operation.kind === "pull" && operation.effect) {
       const { effect } = operation;
       documentDraft.liveCut = effect.liveCut;

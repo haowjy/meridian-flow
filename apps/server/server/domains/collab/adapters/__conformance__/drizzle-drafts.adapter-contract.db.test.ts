@@ -4,11 +4,6 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
-import {
-  commitJournaledUpdate,
-  resetDraftFromDoc,
-} from "../../test-support/draft-update-writes.js";
-import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 import { createDraftClose } from "../drizzle-draft-close.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -26,10 +21,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsCheckpoints,
       documentYjsHeads,
       documents,
-      branchCommands,
       branches,
       projects,
-      pushLineage,
       threadWorks,
       threads,
       turns,
@@ -43,31 +36,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/drizzle-reset.js"
     );
     const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
-    const { appendDraftRows, proseDraftUpdate, readDraftContent, readResolvedDraft } = await import(
+    const { appendDraftRows, proseDraftUpdate, readDraftContent } = await import(
       "../../test-support/draft-store-seam.js"
     );
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
-    const { createDrizzleDraftJournalReadStore, createDrizzlePushCommitStore } = await import(
-      "../drizzle-branch-push.js"
-    );
     const { createDrizzleWorkBranchPendingStore } = await import(
       "../drizzle-work-branch-pending.js"
     );
-    const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
-      "../drizzle-pending-settlement.js"
-    );
-    const { createDrizzleChangeTrailAggregateWriter } = await import(
-      "../drizzle-change-trail-aggregate.js"
-    );
-    const { createDrizzleDocumentProjectionEffects } = await import(
-      "../drizzle-document-activity.js"
-    );
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createDraftCoordinator } = await import("../../domain/draft-coordinator.js");
-    const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
-    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
-    const { createDocumentLastAddress } = await import("../../../context/document-uri-resolver.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
     );
@@ -183,46 +161,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       doc.getText("content").insert(0, value);
       return doc;
     }
-
-    const _markdownProjectionSerializer = (
-      model: ReturnType<typeof yProsemirrorModel>,
-      codec: ReturnType<typeof mdxCodec>,
-    ) => ({
-      async serializeDocument(_documentId: string, doc: Y.Doc) {
-        return codec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
-      },
-    });
-    const _createPushStores = (
-      serializer: Parameters<typeof createDrizzlePendingSettlementStore>[1],
-      changeTrails: Parameters<
-        typeof createDrizzlePushCommitStore
-      >[2] = createDrizzleChangeTrailAggregateWriter(db),
-    ) => {
-      const journalReadStore = createDrizzleDraftJournalReadStore(db);
-      const commitStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        changeTrails,
-        undefined,
-        createTestWorkProjectionMutation(db),
-      );
-      return {
-        journalReadStore,
-        commitStore,
-        workBranchPendingStore: createDrizzleWorkBranchPendingStore(db),
-        settlementStore: createDrizzlePendingSettlementStore(
-          db,
-          serializer,
-          createDrizzleDocumentProjectionEffects(db, createTestWorkProjectionMutation(db)),
-          changeTrails,
-          createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
-          undefined,
-          undefined,
-          { steps: [] },
-          createTestWorkProjectionMutation(db),
-        ),
-      };
-    };
 
     beforeEach(async () => {
       db = database.current;
@@ -384,89 +322,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       base.destroy();
     });
 
-    it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
-      // Pending counts describe visible manuscript effect, not arbitrary Y.Text roots.
-      const { buildDocumentSchema, createCollabYDoc } = await import(
-        "@meridian/prosemirror-schema"
-      );
-      const model = yProsemirrorModel(buildDocumentSchema());
-      const codec = mdxCodec({ schema: buildDocumentSchema() });
-      const proseDoc = (text: string) => {
-        const doc = createCollabYDoc({ gc: false });
-        model.insertBlocks(toDocHandle(doc), null, codec.parse(text));
-        return doc;
-      };
-      const live = proseDoc("live base");
-      const work = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: live,
-      });
-      const resets: number[] = [];
-      const coordinator = createDraftCoordinator({
-        onAppendCommitted: () => {},
-        store,
-        onDraftReset: ({ generation }) => resets.push(generation),
-      });
-      const draft = proseDoc("draft row before discard");
-      const seeded = await store.getDraft(work.draftId);
-      const { createDrizzleJournal } = await import("../drizzle-journal.js");
-      await commitJournaledUpdate(coordinator, {
-        draftId: work.draftId,
-        updateData: Y.encodeStateAsUpdate(draft),
-        source: "agent",
-        threadId: THREAD_ID as never,
-        wId: await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID),
-      });
-      // The projection job's judgement of the append (design §3.2).
-      const appended = await store.getDraft(work.draftId);
-      if (!appended) throw new Error("the draft is gone");
-      await expect(
-        store.writeEffect({
-          draftId: work.draftId,
-          revision: appended.revision,
-          hasEffect: true,
-          workId: appended.workId,
-        }),
-      ).resolves.toBe("written");
-      const pendingBranches = createDrizzleWorkBranchPendingStore(db);
-      await expect(
-        pendingBranches
-          .countPendingByWorkIds([WORK_ID as never])
-          .then((counts) => counts.get(WORK_ID as never) ?? 0),
-      ).resolves.toBe(1);
-
-      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
-      const before = await store.getDraft(work.draftId);
-      // The append and the reset are review-membership inputs: each moves the revision (§2.5).
-      expect(before?.revision).toBeGreaterThan(seeded?.revision ?? Number.POSITIVE_INFINITY);
-      await expect(
-        runInDrizzleTransaction(db, async () => {
-          await resetDraftFromDoc(coordinator, store, work.draftId, live);
-          expect(resets).toEqual([]);
-          throw new Error("abort composite discard");
-        }),
-      ).rejects.toThrow("abort composite discard");
-      expect(await store.getDraft(work.draftId)).toEqual(before);
-      expect(resets).toEqual([]);
-      await resetDraftFromDoc(coordinator, store, work.draftId, live);
-      expect(resets).toEqual([work.generation + 1]);
-      expect((await store.getDraft(work.draftId))?.revision).toBeGreaterThan(
-        before?.revision ?? Number.POSITIVE_INFINITY,
-      );
-
-      await expect(
-        pendingBranches
-          .countPendingByWorkIds([WORK_ID as never])
-          .then((counts) => counts.get(WORK_ID as never) ?? 0),
-      ).resolves.toBe(0);
-      const rows = await db
-        .select({ generation: draftWriteJournal.generation, status: draftWriteJournal.status })
-        .from(draftWriteJournal)
-        .where(eq(draftWriteJournal.draftId, work.draftId));
-      expect(rows).toEqual([{ generation: work.generation, status: "discarded" }]);
-    });
-
     it("keeps compacted live documents visible when seeding despite zero live update rows", async () => {
       const live = docWithText("compacted live chapter");
       const [checkpoint] = await db
@@ -494,189 +349,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: BRANCH_ID as never,
         liveDoc: live,
       });
-    });
-
-    it("commitPushBatch rejects stale draft snapshots and non-active source rows", async () => {
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-        undefined,
-        createTestWorkProjectionMutation(db),
-      );
-      const journalReadStore = createDrizzleDraftJournalReadStore(db);
-      const documentDraft = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      const draftDoc = docWithText("draft");
-      const update = Y.encodeStateAsUpdate(draftDoc, Y.encodeStateVector(docWithText("live")));
-      const [journalRow] = await db
-        .insert(draftWriteJournal)
-        .values({
-          draftId: documentDraft.draftId,
-          generation: documentDraft.generation,
-          updateData: Buffer.from(update),
-          draftBaseUpdateSeq: 0,
-          source: "agent",
-        })
-        .returning();
-      if (!journalRow) throw new Error("missing journal row");
-
-      // A concurrent committed write moves the revision the push was prepared at.
-      await db
-        .update(documentDrafts)
-        .set({ revision: documentDraft.revision + 1 })
-        .where(eq(documentDrafts.id, documentDraft.draftId));
-      await expect(
-        pushStore.commitPushBatch(
-          batchOfOne({
-            documentDraft,
-            journalRows: [
-              {
-                id: journalRow.id,
-                draftId: documentDraft.draftId,
-                generation: documentDraft.generation,
-                wId: null,
-                source: "agent",
-                threadId: null,
-                turnId: null,
-                actorUserId: null,
-                updateData: update,
-                draftBaseUpdateSeq: journalRow.draftBaseUpdateSeq,
-                status: "active",
-              },
-            ],
-            pushUpdate: update,
-            idempotencyKey: "stale-draft",
-            trail: {
-              documentId: DOC_ID,
-              documentTitle: "document",
-              receiptId: "receipt",
-              threadIds: [],
-              journalOwners: [],
-              changes: [],
-            },
-            documentTitle: "document",
-            lockCutUpdate: Y.encodeStateAsUpdate(draftDoc),
-          }),
-        ),
-      ).rejects.toThrow("changed before its push could commit");
-      await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
-
-      const fresh = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      const freshRows = await journalReadStore.listActiveJournalRows(
-        fresh.draftId,
-        fresh.generation,
-      );
-      await db
-        .update(draftWriteJournal)
-        .set({ status: "discarded" })
-        .where(eq(draftWriteJournal.id, journalRow.id));
-      await expect(
-        pushStore.commitPushBatch(
-          batchOfOne({
-            documentDraft: fresh,
-            journalRows: freshRows,
-            pushUpdate: update,
-            idempotencyKey: "inactive-row",
-            trail: {
-              documentId: DOC_ID,
-              documentTitle: "document",
-              receiptId: "receipt",
-              threadIds: [],
-              journalOwners: [],
-              changes: [],
-            },
-            documentTitle: "document",
-            lockCutUpdate: Y.encodeStateAsUpdate(draftDoc),
-          }),
-        ),
-      ).rejects.toThrow("changed before its push could commit");
-      await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
-    });
-
-    it("commitPushBatch leaves no pending command behind when a lineage conflict ends staging", async () => {
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-        undefined,
-        createTestWorkProjectionMutation(db),
-      );
-      const journalReadStore = createDrizzleDraftJournalReadStore(db);
-      const documentDraft = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      const update = Y.encodeStateAsUpdate(
-        docWithText("draft"),
-        Y.encodeStateVector(docWithText("live")),
-      );
-      await db.insert(draftWriteJournal).values({
-        draftId: documentDraft.draftId,
-        generation: documentDraft.generation,
-        updateData: Buffer.from(update),
-        draftBaseUpdateSeq: 0,
-        source: "agent",
-      });
-      const journalRows = await journalReadStore.listActiveJournalRows(
-        documentDraft.draftId,
-        documentDraft.generation,
-      );
-      const command = (commandId: string, batchId: string) => ({
-        ...batchOfOne({
-          documentDraft,
-          journalRows,
-          pushUpdate: update,
-          idempotencyKey: "one-cut",
-          trail: {
-            documentId: DOC_ID,
-            documentTitle: "document",
-            receiptId: "receipt",
-            threadIds: [],
-            journalOwners: [],
-            changes: [],
-          },
-          documentTitle: "document",
-          lockCutUpdate: update,
-        }),
-        settlement: {
-          batchId,
-          claimToken: "00000000-0000-4000-8000-0000000006f9",
-        },
-        command: {
-          commandId: commandId as never,
-          workId: WORK_ID as never,
-          accountId: USER_ID as never,
-          kind: "apply_items" as const,
-          branchId: BRANCH_ID as never,
-          digest: commandId,
-        },
-      });
-      // Another process already staged this exact cut under its own command.
-      await db.insert(pushLineage).values({
-        draftId: documentDraft.draftId,
-        draftGeneration: documentDraft.generation,
-        documentId: DOC_ID as never,
-        journalIds: journalRows.map((row) => row.id),
-        idempotencyKey: "one-cut",
-      });
-      const second = command(
-        "00000000-0000-4000-8000-0000000006c2",
-        "00000000-0000-4000-8000-0000000006b2",
-      );
-      expect(await pushStore.commitPushBatch(second as never)).toMatchObject({
-        status: "conflict",
-      });
-      const claimed = await db.select().from(branchCommands);
-      expect(claimed).toEqual([]);
     });
 
     it("G2 §6.1 entry corrupt snapshot fails loudly at draft-room load", async () => {
@@ -745,68 +417,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           "and no draft row is added",
         )
         .toEqual(before);
-    });
-
-    it("G2 §6.1 corrupt recovery resets from live without decoding the corrupt snapshot", async () => {
-      await db.insert(documentDrafts).values({
-        id: "draft_corrupt_preview_reset",
-        documentId: DOC_ID as never,
-        kind: "work_draft",
-        upstreamDraftId: null,
-        branchId: BRANCH_ID as never,
-        threadId: null,
-        status: "active",
-        state: Buffer.from([1, 2]),
-        stateVector: Buffer.from([0]),
-        schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-      });
-      const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-
-      await expect(
-        resetDraftFromDoc(
-          coordinator,
-          store,
-          "draft_corrupt_preview_reset",
-          docWithText("live repair"),
-        ),
-      ).resolves.toBe(true);
-
-      const repaired = await readResolvedDraft(store, {
-        draftId: "draft_corrupt_preview_reset",
-      });
-      expect(repaired.generation).toBeGreaterThan(1);
-      expect(repaired.doc.getText("content").toString()).toBe("live repair");
-      repaired.doc.destroy();
-    });
-
-    it("G2 §6.1 entry mid-reset rebinds to the bumped generation draft room", async () => {
-      const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-      const documentDraft = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: docWithText("before reset"),
-      });
-      await resetDraftFromDoc(
-        coordinator,
-        store,
-        documentDraft.draftId,
-        docWithText("after reset"),
-      );
-      const persistence = draftRoomPersistence();
-
-      const freshGeneration = documentDraft.generation + 1;
-      const room = await persistence.resolveDraftHocuspocusRoom(
-        documentDraft.draftId,
-        freshGeneration,
-      );
-      const loaded = (
-        await persistence.loadHocuspocusDraftState(documentDraft.draftId, freshGeneration)
-      )?.state;
-      const loadedDoc = new Y.Doc({ gc: false });
-      if (loaded) Y.applyUpdate(loadedDoc, loaded);
-
-      expect(room?.generation).toBe(freshGeneration);
-      expect(loadedDoc.getText("content").toString()).toBe("after reset");
     });
 
     it("G2 §6.1 entry connect failure is a typed draft-room miss, never live fallback", async () => {
@@ -921,14 +531,4 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(journalRows).toHaveLength(1);
     });
   });
-}
-
-function batchOfOne<T>(prepared: T) {
-  return {
-    settlement: {
-      batchId: "00000000-0000-4000-8000-000000000698",
-      claimToken: "00000000-0000-4000-8000-000000000699",
-    },
-    pushes: [prepared],
-  };
 }

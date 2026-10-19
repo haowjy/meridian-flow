@@ -67,7 +67,6 @@ import {
 } from "./drizzle-document-authority-head.js";
 import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
-import { joinAdmissionWithinTx } from "./drizzle-settlement-admission.js";
 
 type JournalDb = Pick<
   Database,
@@ -343,7 +342,7 @@ async function validateAppendAuthority(
   }
 }
 
-type AppendedUpdate = { seq: number; joinedSettlement: boolean };
+type AppendedUpdate = { seq: number };
 
 /**
  * One update inserted under the document mutation lock the caller holds. `stored` is the
@@ -382,14 +381,7 @@ async function insertUpdate(
       receipts: captureReceiptRows(stored, [{ update, origin: { kind: "live", seq: row.id } }]),
     });
   }
-  // Every admitted content mutation invalidates an unresolved settlement cut.
-  const joinedSettlement =
-    (await joinAdmissionWithinTx(db, {
-      documentId: asDocumentId(documentId),
-      source: { kind: "journal", id: String(row.id) },
-      update,
-    })) > 0;
-  return { seq: row.id, joinedSettlement };
+  return { seq: row.id };
 }
 
 async function checkpointAttributionManifest(
@@ -647,16 +639,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         // PostgreSQL returning order matches insertion order for a single
         // INSERT, but sort by id to be safe (id is auto-incrementing).
         updateRows.sort((a, b) => a.id - b.id);
-        for (const [index, entry] of entries.entries()) {
-          const updateRow = updateRows[index];
-          if (!updateRow) throw new Error("Missing inserted journal row for settlement join");
-          await joinAdmissionWithinTx(txDb, {
-            documentId: asDocumentId(entry.docId),
-            source: { kind: "journal", id: String(updateRow.id) },
-            update: entry.update,
-          });
-        }
-
         const ordinals = new Map<number, number>();
         for (const [index, entry] of entries.entries()) {
           if (!entry.mutation) continue;

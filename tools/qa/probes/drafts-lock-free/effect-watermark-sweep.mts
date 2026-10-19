@@ -98,7 +98,7 @@ export const effectWatermarkSweep: Probe = {
               checkpointRevision: read.documentDraft.checkpointRevision,
               seq: 0,
             },
-            fence: { kind: "none" },
+
             operation: { kind: "compact" },
           });
           checkpoint.destroy();
@@ -257,7 +257,7 @@ export const effectWatermarkSweep: Probe = {
                 checkpointRevision: read.documentDraft.checkpointRevision,
                 seq: 0,
               },
-              fence: { kind: "none" },
+
               operation: { kind: "compact" },
             });
             checkpoint.destroy();

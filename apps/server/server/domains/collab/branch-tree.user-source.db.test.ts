@@ -71,44 +71,6 @@ describeBranchTreeDb("Drafted user:// (postgres)", (start, db) => {
     );
   });
 
-  it("applies a user:// item alone, then a mixed Apply all into each item's own source", async () => {
-    const { runtime, s } = await start();
-    const ascension = await s.work("Ascension", "draft");
-    const model = s.model(ascension);
-    const kael = await model.create("user://kael", "Kael.");
-    const chapter = await model.create("chapter-one", "One.");
-    const peak = await model.create("user://notes/peak", "Peak.");
-    const live = s.view("live");
-    const { contextCatalog } = runtime.ports;
-    const personal = { kind: "user" as const, userId: s.project.userId };
-    const project = { kind: "project" as const, projectId: s.project.id };
-    const before = {
-      personal: await contextCatalog.snapshot(personal),
-      project: await contextCatalog.snapshot(project),
-    };
-    expect.soft(JSON.stringify(await live.ls("user://")), "hidden live").not.toContain("kael");
-
-    expect
-      .soft(await s.apply(ascension, [kael]))
-      .toMatchObject([{ httpStatus: 200, body: { status: "applied" } }]);
-    expect.soft(await live.text("user://kael")).toContain("Kael.");
-    expect.soft(JSON.stringify(await live.ls("user://")), "listed live").toContain("kael");
-
-    expect
-      .soft(await s.applyAll(ascension), "both sources in one Apply all")
-      .toMatchObject({ status: "completed" });
-    expect.soft(await live.idAt("chapter-one")).toBe(chapter);
-    expect.soft(await live.idAt("user://notes/peak")).toBe(peak);
-    const personalChanges = JSON.stringify(
-      await contextCatalog.changes(personal, before.personal.cursor),
-    );
-    expect.soft(personalChanges, "the personal catalog learns Kael").toContain(kael);
-    expect.soft(personalChanges, "and Peak").toContain(peak);
-    expect
-      .soft(JSON.stringify(await contextCatalog.changes(project, before.project.cursor)))
-      .toContain(chapter);
-  });
-
   it("shares one hidden user:// document across the account's projects until its last branch ends", async () => {
     const { s } = await start();
     const other = await s.another("project");

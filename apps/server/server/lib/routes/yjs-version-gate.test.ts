@@ -52,7 +52,6 @@ function versionGateServices(
     currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,
-      joinedSettlement: false,
     })),
     flushDraftLivePull: vi.fn(async () => undefined),
   };

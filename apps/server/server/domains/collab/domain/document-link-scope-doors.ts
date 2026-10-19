@@ -6,18 +6,14 @@
  *
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections), the model's edit core, a
- * reply's save, the draft-aware reads (Markdown, hashlines and revision), offline
- * reconciliation. Draft preview scopes both sides
- * in `work-branch-review-service.ts`; ContextFS.search scopes its source's
- * chapters together. A push scopes itself before draft locks in
- * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. Links
+ * reply's save and draft-aware reads (Markdown, hashlines and revision).
+ * ContextFS.search scopes its source's chapters together. Links
  * spelled outside every scope are reported (`createLinkScopeObserver`).
  */
 
 import type { DraftPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
 import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { OfflineReconciliation } from "./offline-reconciliation.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function scopeMarkdownEngine(
@@ -104,17 +100,6 @@ export function scopeResponseFinalizer(
       scopes.within({ threadId: ctx.threadId }, () =>
         finalizer.finalizeResponseRollback(responseId, ctx),
       ),
-  };
-}
-
-/** Offline edits land in the change trail as text the writer reads back. */
-export function scopeOfflineReconciliation(
-  reconciliation: OfflineReconciliation,
-  scopes: DocumentLinkScopes,
-): OfflineReconciliation {
-  return {
-    reconcile: (input) =>
-      scopes.within({ documentId: input.documentId }, () => reconciliation.reconcile(input)),
   };
 }
 

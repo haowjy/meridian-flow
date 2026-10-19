@@ -3,8 +3,7 @@ import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { appendDraftRows } from "../test-support/draft-store-seam.js";
-import { commitJournaledUpdate, resetDraftFromDoc } from "../test-support/draft-update-writes.js";
+import { commitJournaledUpdate } from "../test-support/draft-update-writes.js";
 import { captureHistoricalDraftRow } from "../test-support/historical-draft-row.js";
 import {
   type MemoryDraft,
@@ -190,52 +189,6 @@ describe("DraftCoordinator", () => {
     expect(storedDraft(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   });
 
-  // Risk: a delete-only write leaves the state vector unchanged; a reset judged before it
-  // must not commit over it (the byte compare caught this; the revision must too).
-  it("a reset against a moved revision returns moved", async () => {
-    const store = new MemoryDraftStore();
-    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: docWithText("abcdef") }));
-    const original = storedDraft(store, "work");
-
-    const deleteOnlyDoc = materialize(original);
-    const before = Y.encodeStateVector(deleteOnlyDoc);
-    deleteOnlyDoc.getText("content").delete(1, 2);
-    expect(Y.encodeStateVector(deleteOnlyDoc)).toEqual(original.stateVector);
-    await expect(
-      appendDraftRows(store, "work", [
-        { updateData: Y.encodeStateAsUpdate(deleteOnlyDoc, before), source: "writer" },
-      ]),
-    ).resolves.toHaveLength(1);
-
-    const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-    await expect(
-      coordinator.resetFromDoc({
-        draftId: "work",
-        upstream: docWithText("fresh live"),
-        policy: "exact",
-        expectedGeneration: original.generation,
-        expectedRevision: original.revision,
-        schemaVersion: original.schemaVersion,
-      }),
-    ).resolves.toBe(false);
-    await expect(
-      store.commitRewrite({
-        draftId: "work",
-        policy: { kind: "exact", revision: original.revision },
-        fence: { kind: "none" },
-        doc: docWithText("fresh live"),
-        operation: {
-          kind: "reset",
-          editDisposition: "discarded",
-          schemaVersion: original.schemaVersion,
-        },
-      }),
-    ).resolves.toEqual({ status: "moved" });
-
-    expect(materialize(storedDraft(store, "work")).getText("content").toString()).toBe("adef");
-    expect(storedDraft(store, "work").generation).toBe(1);
-  });
-
   it("does not mutate the cached draft doc when journal append fails", async () => {
     const store = new MemoryDraftStore();
     store.drafts.set("work", draftSnapshot({ draftId: "work", doc: new Y.Doc({ gc: false }) }));
@@ -255,23 +208,6 @@ describe("DraftCoordinator", () => {
     await pull(coordinator, "work", new Y.Doc({ gc: false }));
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedDraft(store, "work")).getText("content").toString()).toBe("");
-  });
-
-  it("keeps the discarded replay fence monotonic across resets", async () => {
-    const store = new MemoryDraftStore();
-    const first = docWithText("first discarded");
-    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: first }));
-    const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-
-    await resetDraftFromDoc(coordinator, store, "work", docWithText("second discarded"));
-    await resetDraftFromDoc(coordinator, store, "work", docWithText("current"));
-
-    const discarded = Y.decodeStateVector(
-      storedDraft(store, "work").discardedStateVector ?? new Uint8Array(),
-    );
-    for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(first))) {
-      expect(discarded.get(client)).toBeGreaterThanOrEqual(clock);
-    }
   });
 });
 
@@ -330,50 +266,8 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   ).rejects.toThrow("reused client");
 });
 
-const cloneOf = (doc: Y.Doc) => {
+const _cloneOf = (doc: Y.Doc) => {
   const clone = new Y.Doc({ gc: false });
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
   return clone;
 };
-
-describe("containment replacement (U3)", () => {
-  it("replaces a peer whose state its upstream no longer contains, and merges one that is only behind", async () => {
-    const shared = docWithText("base");
-    const store = new MemoryDraftStore();
-    const dropped = cloneOf(shared);
-    dropped.getText("content").insert(4, " discarded");
-    store.drafts.set(
-      "peer",
-      draftSnapshot({
-        draftId: "peer",
-        doc: dropped,
-        kind: "thread_peer",
-        upstreamDraftId: "work",
-      }),
-    );
-    const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-
-    // The upstream reforked from live, losing the peer's saved text.
-    await pull(coordinator, "peer", cloneOf(shared));
-    expect(storedDraft(store, "peer").generation).toBe(2);
-    expect(materialize(storedDraft(store, "peer")).getText("content").toString()).toBe("base");
-
-    const behind = cloneOf(shared);
-    store.drafts.set(
-      "behind",
-      draftSnapshot({
-        draftId: "behind",
-        doc: behind,
-        kind: "thread_peer",
-        upstreamDraftId: "work",
-      }),
-    );
-    const ahead = cloneOf(shared);
-    ahead.getText("content").insert(4, " more");
-    await pull(coordinator, "behind", ahead);
-    expect(storedDraft(store, "behind").generation).toBe(1);
-    expect(materialize(storedDraft(store, "behind")).getText("content").toString()).toBe(
-      "base more",
-    );
-  });
-});

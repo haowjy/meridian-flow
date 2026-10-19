@@ -4,13 +4,7 @@
  * a cold undo in the draft it changed.
  */
 import { createDb } from "@meridian/database";
-import {
-  branchTreeChanges,
-  changeTrailDocumentDetails,
-  documents,
-  folders,
-  modelResponses,
-} from "@meridian/database/schema";
+import { branchTreeChanges, documents, folders, modelResponses } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -20,7 +14,6 @@ import { testFileGrant } from "../../test-support/file-grants.js";
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
-import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
@@ -59,8 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
     });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } =
-      createWorkBranchFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
@@ -224,30 +216,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ref: `asset:${OLD_COVER}`,
         address: "manuscript://cover.png",
       });
-    });
-
-    it("accepts a draft on a chapter with an image", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-
-      await expect(
-        applyDraftDocument(collab.draftReview, {
-          workId: WORK_ID as never,
-          documentId: DOC_ID as never,
-          userId: USER_ID as never,
-        }),
-      ).resolves.toMatchObject({ status: "applied" });
-
-      const details = await db
-        .select({ changes: changeTrailDocumentDetails.changes })
-        .from(changeTrailDocumentDetails)
-        .where(eq(changeTrailDocumentDetails.documentId, DOC_ID as never));
-      // The trail keeps block text, which an image has none of; the push's
-      // snapshot of every block is what serializes the picture.
-      const trail = JSON.stringify(details);
-      expect(trail).toContain("The pass.");
-      expect(trail).not.toContain("asset:");
     });
 
     it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
@@ -502,28 +470,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);
     });
-
-    it("undoes and redoes a live turn on a chapter with an image", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-      await applyDraft(collab, DOC_ID);
-
-      for (const direction of ["undo", "redo"] as const) {
-        const outcome = await collab.reverseTurn({
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        });
-        expect(outcome.status, JSON.stringify(outcome)).toBe("reversed");
-        expect(JSON.stringify(outcome)).not.toContain("asset:");
-      }
-      await expectMarkdown(collab, DOC_ID, "![Pass](assets/map.png) The pass.");
-    });
   });
 }
-async function expectMarkdown(
+async function _expectMarkdown(
   collab: {
     readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
   },

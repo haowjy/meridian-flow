@@ -17,11 +17,10 @@ import {
   BranchCommandIdSchema,
   type BranchCommandKind,
   type BranchCommandObservation,
+  type BranchCommandPendingResponse,
   type BranchCommandResult,
   type BranchDiscardAllRequest,
   type DocumentDraftHintsResponse,
-  type DraftApplyPendingResponse,
-  type DraftPreviewResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
@@ -42,7 +41,6 @@ import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/fi
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
-import { branchApplyHttpAnswer } from "./branch-apply-http.js";
 import {
   documentTarget,
   isFileAccessRefusal,
@@ -156,17 +154,12 @@ function envelopeOf(
 
 export type CommandRouteResult =
   | { httpStatus: 200 | 409; body: BranchCommandResult }
-  | { httpStatus: 202; body: DraftApplyPendingResponse };
+  | { httpStatus: 202; body: BranchCommandPendingResponse };
 
-/**
- * The HTTP meaning of an outcome. Item Apply answers 409 for a held or stale item; a gone
- * item is a 404. A pending or blocked command is the 202 handoff (observe the id); an id
- * that belongs to a different command is a 409 `command_conflict`.
- */
+/** Map stored Discard results, pending claims and command-id conflicts to HTTP. */
 function respond(
   outcome: CommandOutcome,
   command: { branchId: string; commandId: string },
-  options: { itemApply?: boolean } = {},
 ): CommandRouteResult {
   switch (outcome.kind) {
     case "conflict":
@@ -179,7 +172,6 @@ function respond(
         409,
       );
     case "pending":
-    case "blocked":
       return {
         httpStatus: 202,
         body: {
@@ -189,13 +181,6 @@ function respond(
         },
       };
     case "result": {
-      const { status } = outcome.result;
-      if (options.itemApply && (status === "held" || status === "stale")) {
-        return { httpStatus: 409, body: outcome.result };
-      }
-      if (options.itemApply && status === "gone") {
-        throw createError({ statusCode: 404, message: "Draft not found" });
-      }
       return { httpStatus: 200, body: outcome.result };
     }
   }
@@ -205,7 +190,6 @@ function respond(
 async function recorded(
   deps: BranchRouteServices,
   envelope: BranchCommandEnvelope,
-  options?: { itemApply?: boolean },
 ): Promise<CommandRouteResult | null> {
   const found = await deps.documentSync.draftReview.lookupCommand(envelope);
   if (found.kind === "none") return null;
@@ -214,14 +198,8 @@ async function recorded(
       ? { kind: "result", result: found.result as BranchCommandResult }
       : found.kind === "conflict"
         ? { kind: "conflict" }
-        : found.kind === "blocked"
-          ? { kind: "blocked" }
-          : { kind: "pending" };
-  return respond(
-    outcome,
-    { branchId: envelope.branchId ?? "", commandId: envelope.commandId },
-    options,
-  );
+        : { kind: "pending" };
+  return respond(outcome, { branchId: envelope.branchId ?? "", commandId: envelope.commandId });
 }
 
 /** GET …/branches/commands/:commandId: what a command settled as, never a guess from the list. */
@@ -242,8 +220,6 @@ export async function handleBranchCommandObservation(
     case "conflict":
       return { status: found.kind, commandId: id.data as BranchCommandId };
     case "pending":
-      return { status: "pending", commandId: id.data as BranchCommandId };
-    case "blocked":
       return { status: "pending", commandId: id.data as BranchCommandId };
     case "done":
       return found.commandKind === "apply_click"
@@ -388,36 +364,6 @@ export async function handleDocumentDraftHintsRequest(
   };
 }
 
-export async function handleWorkDraftPreviewRequest(
-  deps: BranchRouteServices,
-  input: CommandScope & { documentId: DocumentId; itemKey: string },
-): Promise<DraftPreviewResponse> {
-  await requireBranchWorkAccess(deps, input);
-  const resolved = await deps.documentSync.draftReview.resolveItem(input);
-  if (!resolved || resolved.documentId !== input.documentId) {
-    return { status: "gone", itemKey: input.itemKey };
-  }
-  // Review evidence survives live deletion. This read grant cannot authorize rooms,
-  // downloads or ordinary file reads, which still check the deleted document.
-  if (resolved.item.deletedLive) await restoreGrant(deps, input, resolved.item, "read");
-  else await draftGrants(deps, input, "read");
-  const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
-  if (preview.status !== "active") return preview;
-  const { threadTitles, operations, hunks, item, ...rest } = preview;
-  return {
-    status: "active",
-    branchId: rest.branchId,
-    itemKey: rest.itemKey,
-    draftGeneration: rest.draftGeneration,
-    reviewRoomName: rest.reviewRoomName,
-    liveRevisionToken: rest.liveRevisionToken,
-    draftRevisionToken: rest.draftRevisionToken,
-    item: toWireItem(item, threadTitles),
-    operations: operations.map(toWireReviewOperation),
-    hunks,
-  };
-}
-
 // --- Commands ----------------------------------------------------------------------------------
 
 /** Resolves a command's item for a URL document, or null when it is not that document's item. */
@@ -454,15 +400,14 @@ async function commandIngress(
   deps: BranchRouteServices,
   input: CommandScope,
   envelope: BranchCommandEnvelope,
-  options: { itemApply?: boolean },
   prepare: () => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
   await requireBranchWorkAccess(deps, input);
-  const replay = await recorded(deps, envelope, options);
+  const replay = await recorded(deps, envelope);
   if (replay) return replay;
   const replayOr = async (cause: unknown): Promise<CommandRouteResult> => {
     if (isFileAccessRefusal(cause)) {
-      const stored = await recorded(deps, envelope, options);
+      const stored = await recorded(deps, envelope);
       if (stored) return stored;
     }
     throw cause;
@@ -473,7 +418,7 @@ async function commandIngress(
   } catch (cause) {
     return replayOr(cause);
   }
-  if ("refusal" in prepared) return (await recorded(deps, envelope, options)) ?? prepared.refusal();
+  if ("refusal" in prepared) return (await recorded(deps, envelope)) ?? prepared.refusal();
   let outcome: Awaited<ReturnType<typeof prepared.effect>>;
   try {
     outcome = await withEditGrants(deps.fileAccess, prepared.grants, () =>
@@ -482,11 +427,7 @@ async function commandIngress(
   } catch (cause) {
     return replayOr(cause);
   }
-  return respond(
-    outcome,
-    { branchId: envelope.branchId ?? "", commandId: envelope.commandId },
-    options,
-  );
+  return respond(outcome, { branchId: envelope.branchId ?? "", commandId: envelope.commandId });
 }
 
 /** One immutable Apply click. Until execution lands, a valid click is refused as unavailable. */
@@ -581,7 +522,7 @@ export async function handleDiscardWorkDraftRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  return commandIngress(deps, input, envelope, {}, async () => {
+  return commandIngress(deps, input, envelope, async () => {
     const item = await commandItem(deps, input);
     if (!item) return { refusal: goneItem(request) };
     return {
@@ -615,7 +556,7 @@ export async function handleDiscardAllWorkBranchRequest(
     body,
   });
   const branchId = request.branchId as BranchId;
-  return commandIngress(deps, input, envelope, {}, async () => {
+  return commandIngress(deps, input, envelope, async () => {
     const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
     if (listed.branchId !== branchId) return { refusal: goneBranch(branchId) };
     return {
@@ -629,19 +570,6 @@ export async function handleDiscardAllWorkBranchRequest(
         }),
     };
   });
-}
-
-// --- Wire --------------------------------------------------------------------------------------
-
-function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
-  operation: T,
-) {
-  const {
-    discardUpdateIds: _discardUpdateIds,
-    sourceUpdateIds: _sourceUpdateIds,
-    ...wire
-  } = operation;
-  return wire;
 }
 
 export function toWireItem(
@@ -661,7 +589,6 @@ export function toWireItem(
     contextLocation: reviewContextLocation(item.path),
     conflict: item.conflict,
     tokens: item.tokens,
-    settling: item.settling,
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,
@@ -674,9 +601,6 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
-    // Throws the HTTP error of a known Apply failure; the service already answered a
-    // staged Apply as pending, so a value here is nothing to return.
-    branchApplyHttpAnswer(cause);
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }

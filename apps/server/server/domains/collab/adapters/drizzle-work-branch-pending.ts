@@ -1,19 +1,11 @@
 /** Drizzle store for what is pending review in a Work: counts, the branches changing a document, creators and evidence. */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  branches,
-  branchPushSettlementBatches,
-  branchPushSettlementPayloads,
-  documentDrafts,
-  draftWriteJournal,
-  works,
-} from "@meridian/database/schema";
+import { branches, documentDrafts, draftWriteJournal, works } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { draftBranchWork } from "../../../shared/work-branch-lifecycle.js";
 import { livingDocumentUses } from "../../context/tree/tree-view.js";
-import { BRANCH_TREE_STEP } from "../domain/branch-tree-payload.js";
 import type {
   WorkBranchPendingEvidence,
   WorkBranchPendingStore,
@@ -136,28 +128,6 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           row.threadId ? [[row.documentId as DocumentId, row.threadId as string] as const] : [],
         ),
       );
-    },
-    async listSettling(branchId) {
-      const rows = await currentDrizzleDb(db)
-        .select({ payload: branchPushSettlementPayloads.payload })
-        .from(branchPushSettlementPayloads)
-        .innerJoin(
-          branchPushSettlementBatches,
-          eq(branchPushSettlementBatches.id, branchPushSettlementPayloads.batchId),
-        )
-        .where(
-          and(
-            eq(branchPushSettlementPayloads.stepKind, BRANCH_TREE_STEP),
-            eq(branchPushSettlementBatches.state, "pending"),
-            sql`${branchPushSettlementPayloads.payload}->>'branchId' = ${branchId}`,
-          ),
-        );
-      const keys = new Set<string>();
-      for (const { payload } of rows) {
-        const items = (payload as { items?: { itemKey?: string }[] }).items ?? [];
-        for (const item of items) if (item.itemKey) keys.add(item.itemKey);
-      }
-      return keys;
     },
     async listBranchDraftEvidence(branchId, documentIds) {
       // One row per draft and writing chat: the journal is aggregated here, not shipped.
