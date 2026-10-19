@@ -7,14 +7,15 @@ import type { FrontierLookup } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
-import type {
-  DiscardedWriteReason,
-  DocumentAccess,
-  DocumentCoordinator,
-  SaveCut,
-  StagedCut,
-  StagedWriteRejectionReason,
-  StagedWriteSaveResult,
+import {
+  type DiscardedWriteReason,
+  type DocumentAccess,
+  type DocumentCoordinator,
+  type SaveCut,
+  SavePreconditionRefused,
+  type StagedCut,
+  type StagedWriteRejectionReason,
+  type StagedWriteSaveResult,
 } from "../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -69,11 +70,8 @@ export interface SavedDocument {
   rejectedUpdates?: StagedResponseUpdate[];
 }
 
-/**
- * A document's prepared save, held by its attempt until `install`. Its cut is the prepared
- * candidate's until `persist` replaces it with the append's.
- */
-export interface SaveOutcome extends SaveCut {
+/** A document's prepared save, held by its attempt until `install`. */
+export interface SaveOutcome {
   updates: StagedResponseUpdate[];
   rejected: StagedResponseUpdate[];
   room: string | null;
@@ -90,7 +88,10 @@ export interface SaveNowInput {
   preOwnSnapshot: Uint8Array;
   actor: MutationActor;
   interactionContext?: InteractionContext;
-  /** A create without overwrite lands only in a document still empty when its save reads it. */
+  /**
+   * A create without overwrite lands only in a document still empty when its append reads it
+   * under the document's lock; otherwise this is the answer.
+   */
   refuseUnlessEmpty?: InternalWriteResult;
 }
 
@@ -108,19 +109,21 @@ export interface DocumentSave {
   prepare(doc: SavedDocument): Promise<SaveOutcome>;
   /**
    * The durable phase, inside the caller's commit scope: the host appends the kept rows and
-   * `save` takes the cut the append actually followed; a created document is ensured.
+   * resolves the cut the append actually followed (null when nothing was written); a created
+   * document is ensured.
    */
-  persist(doc: SavedDocument, save: SaveOutcome): Promise<void>;
+  persist(doc: SavedDocument, save: SaveOutcome): Promise<SaveCut | null>;
   /**
    * The saved document's receipts, after its save handed its write to the host: the save's
-   * verdict on `doc` (the commit's snapshot), then detection on what the save read and wrote,
-   * then the frontier it records. Never throws: past persistence any failure degrades the
-   * receipts, never the save.
+   * verdict on `doc` (the commit's snapshot), then detection on `cut` (what `persist`
+   * resolved), then the frontier it records. Never throws: past persistence any failure
+   * degrades the receipts, never the save.
    */
   report(
     editScopeId: string,
     doc: SavedDocument,
     save: SaveOutcome,
+    cut: SaveCut | null,
     recordingFrontier: FrontierLookup | undefined,
   ): Promise<ResponseCommitDocumentResult>;
   /**
@@ -162,8 +165,6 @@ export function createDocumentSave(deps: {
             rejectionReason: reasons.get(entry.durableWriteId) ?? ("integration" as const),
           })),
         room: saved.room,
-        beforeState: saved.beforeState,
-        afterState: saved.afterState,
         write: saved.write,
       };
       if (saved.write.kind === "no-effect" && outcome.updates.length) {
@@ -174,25 +175,22 @@ export function createDocumentSave(deps: {
     },
 
     async persist(doc, save) {
-      if (save.write.kind === "write") {
-        const cut = await save.write.persist();
-        save.beforeState = cut.beforeState;
-        save.afterState = cut.afterState;
-      }
+      const cut = save.write.kind === "write" ? await save.write.persist() : null;
       if (save.updates.length && doc.ensureDocumentBeforeCommit)
         await deps.ensureDocument?.(doc.docId);
+      return cut;
     },
 
-    async report(editScopeId, doc, save, recordingFrontier) {
+    async report(editScopeId, doc, save, cut, recordingFrontier) {
       // The snapshot takes the save's verdict; the staged buffer keeps its own until close.
       doc.updates = save.updates;
       doc.rejectedUpdates = [...(doc.rejectedUpdates ?? []), ...save.rejected];
       if (!doc.updates.length) return degradedReceipts(doc, null, 0);
-      return reportAccepted(save, degradedReceipts(doc, null), async (before, after) => {
+      if (!cut) return degradedReceipts(doc, null);
+      return reportAccepted(cut, degradedReceipts(doc, null), async (before, after) => {
         const links = await saveLinks(editScopeId, doc, after);
         const applied = await detection.reportAcceptedMutation(before, after, {
           ...detectionInput(doc, links),
-          reportingCut: save.beforeState,
           access: accessFor(doc.interactionContext),
         });
         const document = renderedReceipts(doc, links, applied, after);
@@ -204,11 +202,13 @@ export function createDocumentSave(deps: {
 
     async saveNow(input) {
       const access = accessFor(input.interactionContext);
+      const { refuseUnlessEmpty } = input;
       const saved = await coordinator.prepareSave({
         docId: input.docId,
         cut: input.cut,
         entries: [input.entry],
         access,
+        ...(refuseUnlessEmpty ? { precondition: holdsNoBlocks } : {}),
       });
       const { write } = saved;
       let persisted = false;
@@ -217,9 +217,14 @@ export function createDocumentSave(deps: {
         if (refused) return refusedWrite(refused.reason);
         if (write.kind === "no-effect")
           throw new Error(`Host reported no effect for a kept write on ${input.docId}`);
-        if (input.refuseUnlessEmpty && !preparedEmpty(saved.beforeState))
-          return input.refuseUnlessEmpty;
-        const cut = await write.persist();
+        let cut: SaveCut;
+        try {
+          cut = await write.persist();
+        } catch (cause) {
+          if (refuseUnlessEmpty && cause instanceof SavePreconditionRefused)
+            return refuseUnlessEmpty;
+          throw cause;
+        }
         persisted = true;
         write.transfer();
         return reportAccepted(
@@ -230,7 +235,6 @@ export function createDocumentSave(deps: {
               docId: input.docId,
               links: input.links,
               preOwnSnapshot: input.preOwnSnapshot,
-              reportingCut: cut.beforeState,
               access,
               actor: input.actor,
               interactionContext: input.interactionContext,
@@ -245,8 +249,8 @@ export function createDocumentSave(deps: {
     },
   };
 
-  /** Whether the prepared candidate's document held no blocks. */
-  function preparedEmpty(state: Uint8Array): boolean {
+  /** Whether a document's state holds no blocks: a create without overwrite's precondition. */
+  function holdsNoBlocks(state: Uint8Array): boolean {
     const doc = docFromState(state);
     try {
       return deps.model.getBlocks(toDocHandle(doc)).length === 0;
@@ -324,7 +328,7 @@ export function createDocumentSave(deps: {
   }
 
   /**
-   * The document's frontier at the post-commit cut, in the room the save committed into: it
+   * The document's frontier at the save's after-state, in the room the save committed into: it
    * credits what the accepted receipts show in full (none when they are degraded or textless),
    * the blocks holding only their writes' text, and what the last one lists as changed since
    * the model last saw it. A failure is reported and the document goes out without either.

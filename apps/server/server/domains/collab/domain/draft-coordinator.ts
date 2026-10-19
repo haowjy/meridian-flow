@@ -6,7 +6,12 @@
  * fold they trigger are `draft-writer-frames.ts`, over the same runtime surface.
  */
 
-import { bytesEqual, type SaveCut } from "@meridian/agent-edit/integration";
+import {
+  bytesEqual,
+  type SaveCut,
+  type SavePrecondition,
+  SavePreconditionRefused,
+} from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { type CollabSchemaVersion, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -177,12 +182,6 @@ export type PreparedDraftAppend = PreparedDraftWrite & { cut(): SaveCut };
 /** Every other exact-predicate write: four commit attempts, then the caller's own outcome. */
 const COMMIT_ATTEMPTS = 4;
 
-/** The pre-replay view a save's staged rows are reconciled against. */
-export type StagedDraftView = DraftSnapshot & {
-  /** The committed draft bytes at `revision`, captured before any replay. */
-  readonly encoded: Uint8Array;
-};
-
 /** A pull merges `upstream` into the draft. */
 export type PullInput = {
   draftId: string;
@@ -259,9 +258,10 @@ export type DraftCoordinator = {
     draftId: string,
     run: (
       doc: Y.Doc,
-      snapshot: StagedDraftView,
+      snapshot: DraftSnapshot,
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
+    precondition?: SavePrecondition,
   ): Promise<{ result: T; write: PreparedDraftAppend | null }>;
   /** A writer frame (`draft-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
@@ -607,6 +607,7 @@ export function createDraftCoordinator(input: {
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
     admitted?: Y.Doc,
+    precondition?: SavePrecondition,
   ): PreparedDraftAppend {
     const { snapshot, replica } = base;
     let prefix: Y.Doc;
@@ -640,6 +641,7 @@ export function createDraftCoordinator(input: {
               rows: journals,
               containment: documentContainment,
               validateWriter: assertWriterAuthorship,
+              precondition,
             });
             committedDoc = judged.doc;
             finalized = judged.result;
@@ -648,6 +650,8 @@ export function createDraftCoordinator(input: {
           },
         });
         if (outcome.status === "contained") return { contained: true };
+        if (outcome.status === "preconditionFailed")
+          throw new SavePreconditionRefused(snapshot.documentId);
         if (outcome.status === "refused")
           throw new DraftStaleUpdateError(`Draft ${snapshot.draftId}`);
         if (outcome.status === "prefixMissing") {
@@ -842,6 +846,7 @@ export function createDraftCoordinator(input: {
   function prepareRows(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
+    precondition?: SavePrecondition,
   ): PreparedDraftAppend {
     const admitted = cloneReplica(base.replica);
     try {
@@ -850,27 +855,29 @@ export function createDraftCoordinator(input: {
       admitted.destroy();
       throw cause;
     }
-    return prepareAppend(base, journals, admitted);
+    return prepareAppend(base, journals, admitted, precondition);
   }
 
   async function prepareStagedRows<T>(
     draftId: string,
     run: (
       doc: Y.Doc,
-      snapshot: StagedDraftView,
+      snapshot: DraftSnapshot,
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
+    precondition?: SavePrecondition,
   ): Promise<{ result: T; write: PreparedDraftAppend | null }> {
     const base = await loadBase(draftId);
     const { snapshot } = base;
     assertWritableDraft(snapshot);
     const replay = cloneReplica(base.replica);
     try {
-      const { result, rows } = await run(replay, { ...snapshot, encoded: encodedOf(base.replica) });
+      const { result, rows } = await run(replay, snapshot);
       if (!commit || !rows.length) return { result, write: null };
       const write = prepareRows(
         base,
         rows.map((row) => ({ ...row, generation: snapshot.generation })),
+        precondition,
       );
       if (!bytesEqual(Y.encodeStateAsUpdate(write.candidate), Y.encodeStateAsUpdate(replay))) {
         write.dispose();

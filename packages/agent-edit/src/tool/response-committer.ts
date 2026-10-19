@@ -9,6 +9,7 @@ import {
   DocumentAccessLostError,
   type DocumentCoordinator,
   isDocumentNotFoundError,
+  type SaveCut,
   type StagedCut,
   type StagedWriteRejectionReason,
 } from "../ports/document-coordinator.js";
@@ -624,6 +625,8 @@ export function createResponseCommitter(deps: {
           doc.updates.some((entry, index) => entry !== updates[index]),
       );
     const outcomes = new Map<string, SaveOutcome>();
+    // What each persisted save's append followed: the only cut its report reads.
+    const cuts = new Map<string, SaveCut | null>();
     const result = deferredPromise<ResponseCommitSuccessResult>();
     let owner: CommittingResponseState | undefined;
     let settled = false;
@@ -665,7 +668,7 @@ export function createResponseCommitter(deps: {
         for (const [docId, outcome] of outcomes) {
           const doc = buffer.docs.get(docId);
           if (!doc) throw new Error(`Response document ${docId} was not prepared`);
-          await documentSave.persist(doc, outcome);
+          cuts.set(docId, await documentSave.persist(doc, outcome));
         }
         if (!outcomes.size) return;
         const threadId = bufferThreadId(buffer);
@@ -676,7 +679,7 @@ export function createResponseCommitter(deps: {
         settled = true;
         // The host installs each write when the enclosing root transaction commits.
         for (const { write } of outcomes.values()) if (write.kind === "write") write.transfer();
-        void runCommitResponse(responseId, committing, options, outcomes).then(
+        void runCommitResponse(responseId, committing, options, outcomes, cuts).then(
           result.resolve,
           result.reject,
         );
@@ -698,6 +701,7 @@ export function createResponseCommitter(deps: {
     owner: CommittingResponseState,
     options: ResponseCommitOptions,
     saves: ReadonlyMap<string, SaveOutcome>,
+    cuts: ReadonlyMap<string, SaveCut | null>,
   ): Promise<ResponseCommitSuccessResult> {
     const { buffer } = owner;
     const docBuffers = sortedReceiptDocs(buffer);
@@ -710,7 +714,13 @@ export function createResponseCommitter(deps: {
           throw new Error(`Response document ${docBuffer.docId} was not prepared`);
         documents.push(
           save
-            ? await documentSave.report(responseId, docBuffer, save, options.recordingFrontier)
+            ? await documentSave.report(
+                responseId,
+                docBuffer,
+                save,
+                cuts.get(docBuffer.docId) ?? null,
+                options.recordingFrontier,
+              )
             : degradedReceipts(docBuffer, null, 0),
         );
         assertOwner(responseId, owner);

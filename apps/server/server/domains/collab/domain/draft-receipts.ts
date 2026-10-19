@@ -8,6 +8,7 @@ import {
   captureEditParts,
   type EditFrontier,
   type SaveCut,
+  type SavePrecondition,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import type { createDocumentContainment } from "./document-containment.js";
@@ -35,6 +36,8 @@ export type FinalizeAppendInput = {
    * the base the pre-lock check judged; throws the authorship errors.
    */
   validateWriter(prefix: Y.Doc, update: Uint8Array): void;
+  /** The save's precondition, judged on the committed prefix before any row. */
+  precondition?: SavePrecondition;
 };
 
 /** A finalized append: what the store inserts, and the document it commits into. */
@@ -73,6 +76,8 @@ export function finalizeAppend(
   const done = (finalization: AppendFinalization) => ({ finalization, doc });
   if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
   const before = Y.encodeStateAsUpdate(doc);
+  if (input.precondition && !input.precondition(before))
+    return done({ status: "preconditionFailed" });
   const moved = !prefixHeld || read.tail.length > 0;
 
   const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];

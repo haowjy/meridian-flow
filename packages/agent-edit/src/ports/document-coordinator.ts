@@ -55,13 +55,8 @@ export interface SaveCut {
   afterState: Uint8Array;
 }
 
-/**
- * A save of one scope's entries: the kept and refused ones, and where they went. Its cut is the
- * prepared candidate's, read before any lock: only a check that must refuse before anything
- * persists reads it. The save's receipts, detection, revision and frontier read the cut
- * `persist` resolves.
- */
-export interface StagedWriteSaveResult extends StagedReconcile, SaveCut {
+/** A save of one scope's entries: the kept and refused ones, and where they went. */
+export interface StagedWriteSaveResult extends StagedReconcile {
   /** The room the rows append into; null records no frontier (a document this save creates). */
   room: string | null;
   /**
@@ -73,13 +68,28 @@ export interface StagedWriteSaveResult extends StagedReconcile, SaveCut {
 }
 
 /**
+ * What a save requires of its document, judged by the host inside the append under the
+ * document's lock, on the state the rows would follow (the cut's `beforeState`), before
+ * anything is written. False refuses the save: `persist` rejects with SavePreconditionRefused.
+ */
+export type SavePrecondition = (beforeState: Uint8Array) => boolean;
+
+/** A save whose precondition its document failed under the lock: nothing was appended. */
+export class SavePreconditionRefused extends Error {
+  constructor(readonly docId: string) {
+    super(`Save precondition refused on ${docId}`);
+    this.name = "SavePreconditionRefused";
+  }
+}
+
+/**
  * A host's prepared write of a save's kept entries, owned by the caller: nothing is persisted
  * until `persist` runs inside the caller's commit scope; `transfer` hands the write to the host
  * once that scope completed, and the host installs it (a live host delivers it to open
  * editors) when the enclosing root transaction commits, never before, or at once when there is
  * none; `dispose` drops it on any unwind.
  *
- * `persist` resolves the append's actual cut: the document as the host's serialization of the
+ * `persist` resolves the save's only cut: the document as the host's serialization of the
  * append (its document lock) found it, and with the kept rows. Someone else's rows that landed
  * between preparing and appending are in its `beforeState`, so the report names what the rows
  * swept of them; the rows themselves are Yjs updates and land the same either way.
@@ -139,23 +149,27 @@ export interface DocumentCoordinator {
   /**
    * One save of a scope's entries, reconciled against its cut on the current room and prepared
    * without touching the host until `persist`. A document that doesn't exist yet saves onto an
-   * empty one.
+   * empty one. `precondition` is judged inside the append, never before it.
    */
   prepareSave(
-    input: StagedRoomEntries & { docId: string; access?: DocumentAccess },
+    input: StagedRoomEntries & {
+      docId: string;
+      access?: DocumentAccess;
+      precondition?: SavePrecondition;
+    },
   ): Promise<StagedWriteSaveResult>;
 
   /**
    * Optional origin-aware description of the updates present in `doc` (the save's before
-   * state) that `baselineDoc` (the view the writes planned on) doesn't contain: containment is
-   * the only skip. Hosts that omit it have the whole delta treated as the writer's.
+   * state, frozen: the host reports only what it contains) that `baselineDoc` (the view the
+   * writes planned on) doesn't contain: containment is the only skip. Hosts that omit it have
+   * the whole delta treated as the writer's.
    */
   concurrentUpdatesSince?(input: {
     docId: string;
     doc: Y.Doc;
     baselineDoc?: Y.Doc;
     sinceStateVector: Uint8Array;
-    reportingCut?: Uint8Array;
     access?: DocumentAccess;
   }): Promise<ConcurrentUpdate[]>;
 }

@@ -1,5 +1,6 @@
 // Canonical in-memory agent-edit journal for tests and demos.
 import * as Y from "yjs";
+import { type SavePrecondition, SavePreconditionRefused } from "../ports/document-coordinator.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -57,6 +58,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
 
   async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
+    precondition?: SavePrecondition,
   ): Promise<JournalBatchAppendResult[]> {
     if (entries.length === 0) return [];
 
@@ -77,6 +79,8 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         Y.mergeUpdates([...(checkpoint ? [checkpoint] : []), ...updates.map((row) => row.update)]),
       );
     }
+    for (const [docId, beforeState] of beforeStates)
+      if (precondition && !precondition(beforeState)) throw new SavePreconditionRefused(docId);
 
     return entries.map((batchEntry) => {
       const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);

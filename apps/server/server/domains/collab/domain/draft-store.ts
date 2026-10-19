@@ -111,7 +111,9 @@ export type AppendFinalization =
   /** A row depends on structs or deletes the journal does not hold yet. */
   | { status: "prefixMissing"; clocks: readonly { client: number; clock: number }[] }
   /** The committed prefix's Work is no longer active. */
-  | { status: "refused" };
+  | { status: "refused" }
+  /** The save's precondition failed on the committed prefix. */
+  | { status: "preconditionFailed" };
 
 /**
  * Rows appended past the checkpoint at whatever revision the draft is at: the row `UPDATE` is

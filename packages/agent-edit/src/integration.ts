@@ -49,6 +49,7 @@ export type {
   DocumentCoordinator,
   RoomRead,
   SaveCut,
+  SavePrecondition,
   StagedCut,
   StagedReconcile,
   StagedRoomEntries,
@@ -60,6 +61,7 @@ export {
   DocumentAccessLostError,
   DocumentNotFoundError,
   isDocumentNotFoundError,
+  SavePreconditionRefused,
 } from "./ports/document-coordinator.js";
 export type {
   DocumentEditRequest,
