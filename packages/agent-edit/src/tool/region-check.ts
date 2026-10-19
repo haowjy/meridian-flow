@@ -1,7 +1,7 @@
 // The region check (C3, C5, C8): a write isn't applied where the passage changed since the model saw it.
 import * as Y from "yjs";
 import { windowOf } from "../apply/echo.js";
-import { changedWords, frontierBlockId, type ObservationFrontier } from "../frontier.js";
+import { changedWords, frontierBlockId } from "../frontier.js";
 import { getBlockItemId, getTopLevelXmlBlocks } from "../model/block-hash.js";
 
 /** More changed words than this inside the region refuses; a typo fix or short phrase merges. */
@@ -17,19 +17,30 @@ export interface RegionCheckInput {
   room: Y.Doc;
   /** Target block indexes on `planDoc` (an anchorless insert is -1), or every block. */
   targets: readonly number[] | "all";
-  /** The planning frontier the view was built from; null when the room has no valid one. */
-  planned: ObservationFrontier | null;
+  /**
+   * What the view was planned from: the planning frontier's unshown blocks (none from the
+   * empty snapshot a document this reply created plans on); null when there was no valid one.
+   */
+  planned: { unshown: readonly string[] } | null;
 }
 
 /**
- * The room blocks a refusal shows, or null when the write may proceed. The region is the
- * targets' window on the plan doc; in the room it spans each window's surviving blocks and
+ * Why a write wasn't applied: the model hasn't seen all of the passage (no valid frontier, or
+ * a region block it left unshown or never saw), or the passage changed since it saw it.
+ */
+export type RegionRefusalReason = "unseen" | "changed";
+
+/**
+ * The room blocks a refusal shows and why, or null when the write may proceed. The region is
+ * the targets' window on the plan doc; in the room it spans each window's surviving blocks and
  * whatever top-level blocks were inserted between them. Refused with no valid frontier, a
  * region block F left unshown, or more than the budget of changed words in the region between
  * the view's cut and the room's (clipped to the flipped ranges, so text typed and deleted in
  * between counts nothing, nor do the reply's own updates, which both cuts hold).
  */
-export function regionRefusal(input: RegionCheckInput): Y.XmlElement[] | null {
+export function regionRefusal(
+  input: RegionCheckInput,
+): { blocks: Y.XmlElement[]; reason: RegionRefusalReason } | null {
   const viewBlocks = getTopLevelXmlBlocks(input.planDoc);
   const roomBlocks = getTopLevelXmlBlocks(input.room);
   const roomIndex = new Map(roomBlocks.map((block, index) => [blockId(block), index]));
@@ -51,12 +62,18 @@ export function regionRefusal(input: RegionCheckInput): Y.XmlElement[] | null {
       region.add(blockId(roomBlocks[position]));
     }
   }
-  const refused =
-    !input.planned ||
-    input.planned.unshown.some((id) => viewRegion.has(id)) ||
-    changedWords(input.room, Y.snapshot(input.planDoc), Y.snapshot(input.room), region) >
-      REGION_CHANGE_BUDGET_WORDS;
-  return refused ? [...shown].sort((a, b) => a - b).map((position) => roomBlocks[position]) : null;
+  const reason: RegionRefusalReason | null =
+    !input.planned || input.planned.unshown.some((id) => viewRegion.has(id))
+      ? "unseen"
+      : changedWords(input.room, Y.snapshot(input.planDoc), Y.snapshot(input.room), region) >
+          REGION_CHANGE_BUDGET_WORDS
+        ? "changed"
+        : null;
+  if (!reason) return null;
+  return {
+    blocks: [...shown].sort((a, b) => a - b).map((position) => roomBlocks[position]),
+    reason,
+  };
 }
 
 function blockId(block: Y.XmlElement): string {

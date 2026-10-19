@@ -100,8 +100,9 @@ refused; the merge decides what survives.
 No text duplicated anywhere. In draft mode the live document keeps the five original paragraphs
 (`./mf doc read`). To see the refusal, repeat cell 2 typing a sentence of more than ten words:
 the write returns `status: region_changed` with "Not applied: this passage changed since you last
-saw it. Current text:", the chat row reads "Caught up on changes in" the document, and the next
-step's identical write lands with the writer's sentence intact.
+saw it. Current text:", the chat row reads "Got the latest text of" the document, and the next
+step's identical write lands with the writer's sentence intact. (A passage the model hasn't seen
+all of says "Not applied: you haven't seen all of this passage yet. Current text:" instead.)
 
 Capture per cell the `tool.settled` line, `./mf thread view "$T" --last 2 --full --json`, the
 document text (auto-apply: `./mf doc read`; draft: the visible editor), and one screenshot of the

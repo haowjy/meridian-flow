@@ -371,7 +371,8 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   const descriptor = descriptorFor(tool);
 
   if (isCatchUpPause(tool)) {
-    const verb = t`Caught up on changes in`;
+    // True whether the passage changed or the AI hadn't seen all of it: it got the text either way.
+    const verb = t`Got the latest text of`;
     return path ? <CommandTitle verb={verb} parameter={<DocumentName path={path} />} /> : verb;
   }
   if (documentToolFailed(tool)) {
