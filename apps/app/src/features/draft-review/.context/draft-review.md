@@ -52,7 +52,11 @@ Discard. Once synced, temporary offline status does not forget that history.
 - The controller's focus is a group id paired with its immutable frame. A new
   projection invalidates that address and reconciles to the first remaining
   group; a click reads the painter's current frame synchronously. Launch requests carry the id and frame all the way into focus. Persisted
-  bare ids never restore selection into a newer projection.
+  bare ids never restore selection into a newer projection. `useInlineReviewFocus`
+  registers the mounted review editor with the controller for explicit scroll
+  commands and releases only that editor's claim on unmount. Same-entry URL
+  replacements disable router scroll restoration: the editor owns the jump,
+  not the cached scroll for the old `change=` value.
   An empty frame shows “No changes left”; only the close contract can end the
   draft room or send the editor to live.
 

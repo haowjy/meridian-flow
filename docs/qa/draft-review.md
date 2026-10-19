@@ -31,14 +31,21 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
    draft paragraph holding a red removal must not also paint “Start writing…”.
    Hide changes: the genuine empty paragraph may show its placeholder again;
    show changes: only the removal occupies the line.
-2. Type inside and beside a change, then Ctrl+Z. Paint follows the actual text
+2. On a long draft, put changes far apart (middle and document end). From
+   the top, Next change must scroll the focused passage into the editor pane;
+   Previous must bring the earlier passage back. Repeat past both ends to
+   wrap, then select either change from the list. Check the passage is visible,
+   not just the stepper, `change=` URL and emphasis. Repeat with Show changes
+   off and reduced motion enabled, then after switching review documents and
+   returning: only the currently presented editor scrolls.
+3. Type inside and beside a change, then Ctrl+Z. Paint follows the actual text
    while the 120 ms projection waits. Cut/paste the paragraph and Undo; repeat
    with block drag. Removal widgets never enter pasted manuscript text.
-3. Bold a word and change a heading beside a prose edit. Both remain red/green
+4. Bold a word and change a heading beside a prose edit. Both remain red/green
    changes. A one-character substitution narrows to that character.
-4. Edit live in another tab. The draft receives base and prose together. No
+5. Edit live in another tab. The draft receives base and prose together. No
    flash, lost focus or stale mark. A scheduled list refresh survives a rebind.
-5. Type offline, reconnect, then reload with a held upload. Local text returns
+6. Type offline, reconnect, then reload with a held upload. Local text returns
    and eventually reaches server readback. An unopened, never-synced row offers
    no Discard. A previously synced held room can Discard while offline.
 

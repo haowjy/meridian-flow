@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Scroll draft-review Next, Previous and list selection to the focused passage.
+
 - Keep draft-review room identity checks independent of the focused document, removing whole-draft serialization while typing.
 
 - Share equal blocks' immutable merge tokens without replacing editor nodes or arrays.
