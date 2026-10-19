@@ -32,6 +32,7 @@ import {
   type ThreadContextResolution,
 } from "../../domains/context/context-port-resolution.js";
 import type { ContextError, ContextPort } from "../../domains/context/ports/context-port.js";
+import type { DocumentRemovals } from "../../domains/context/ports/document-removals.js";
 import type { UnifiedContextPortFactory } from "../../domains/context/unified-context-port-factory.js";
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
 import {
@@ -76,7 +77,9 @@ export interface ToolWiringDeps {
   /** Binary copies duplicate the stored object (D24). */
   objectStore: ObjectStorePort;
   /** Every model read and write asks the file policy first (file-access §1). */
-  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess">;
+  fileAccess: Pick<FileAccess, "authorize" | "confirmEdit" | "listAccess" | "historyAccess">;
+  /** The removal record behind a missing file the model already addresses by id (e2 D9). */
+  documentRemovals: DocumentRemovals;
   /** The calling thread's bound skills, read as files under `skills://` (D52). */
   agentRevisions: SkillFilesDeps["agentRevisions"];
   /** The calling thread's delegation chain, read fresh per call (file-access §8). */

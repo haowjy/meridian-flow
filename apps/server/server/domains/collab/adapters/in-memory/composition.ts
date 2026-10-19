@@ -106,6 +106,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drafts: { getDraft: async () => null },
       branches,
       fileAccess,
+      removals: { lookup: async () => new Map() },
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
     }),

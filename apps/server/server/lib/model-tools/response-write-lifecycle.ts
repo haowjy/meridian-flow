@@ -9,8 +9,8 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type { RefusedResponseDocument } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
-import type { FileAccessDenied } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import {
   deletedFileMessage,
@@ -50,11 +50,13 @@ type ResponseWriteLifecycleCommitResult =
   | { status: "branch_closed"; responseId: string; mode: "draft" };
 
 /** Why the reply's save left out a document's changes (D29, D42). */
-function refusedAtSave(denial: FileAccessDenied): {
+function refusedAtSave(refusal: Exclude<RefusedResponseDocument, { reason: unknown }>): {
   message: string;
   reason?: PermissionDeniedReason;
 } {
-  if (!isPermissionDenial(denial)) return { message: deletedFileMessage("save") };
+  if ("removed" in refusal) return { message: deletedFileMessage("save", refusal.removed) };
+  const { denial } = refusal;
+  if (!isPermissionDenial(denial)) return { message: deletedFileMessage("save", refusal.removal) };
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
@@ -129,9 +131,9 @@ export function createAgentEditResponseWriteLifecycle(
           ),
           // A refusal with a reason is receipted write by write in `documents`.
           refused: result.refused.flatMap((refusal) =>
-            "denial" in refusal
-              ? [{ documentId: refusal.documentId, ...refusedAtSave(refusal.denial) }]
-              : [],
+            "reason" in refusal
+              ? []
+              : [{ documentId: refusal.documentId, ...refusedAtSave(refusal) }],
           ),
         };
       };

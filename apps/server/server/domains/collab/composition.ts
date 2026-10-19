@@ -195,12 +195,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   // Every bounded draft-store attempt's rollback boundary (decision D13).
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
+  const documentRemovals = createDrizzleDocumentRemovals(deps.db);
   const workBranches = createBranches({
     store: createDrizzleBranchStore(deps.db),
     boundary: createDrizzleBranchWriteBoundary(deps.db, deps.workProjectionMutation),
   });
   const drafts = createDrizzleDraftStore(deps.db, {
-    removals: createDrizzleDocumentRemovals(deps.db),
+    removals: documentRemovals,
     live: {
       journal: persistence.journal,
     },
@@ -401,6 +402,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       branches: workBranches,
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
+      removals: documentRemovals,
       async lockWorks(workIds) {
         await deps.workProjectionMutation.lockWorks({ works: workIds as WorkId[] });
       },
@@ -472,7 +474,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       runAfterDrizzleCommit(callback);
     },
     readAuthorityHeadGeneration: authorityGeneration,
-    removals: createDrizzleDocumentRemovals(deps.db),
+    removals: documentRemovals,
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
     onLiveUpdatePersisted: (documentId) => {
       draftPulls.scheduleLivePull(documentId);
@@ -491,6 +493,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       })
     : SILENT_POST_DURABILITY_NOTICES;
   const turnInverse = createDrizzleTurnInverseService({
+    removals: documentRemovals,
     db: deps.db,
     journal: persistence.journal,
     drafts,

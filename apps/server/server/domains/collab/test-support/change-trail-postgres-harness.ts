@@ -25,6 +25,7 @@ import { grantedJournal, testFileGrant } from "../../../test-support/file-grants
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
+import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
 import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
@@ -683,6 +684,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
+      removals: createDrizzleDocumentRemovals(db),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
@@ -715,6 +717,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     links,
   );
   const turnInverse = createDrizzleTurnInverseService({
+    removals: createDrizzleDocumentRemovals(db),
     db,
     journal: persistence.journal,
     drafts: draftStore,

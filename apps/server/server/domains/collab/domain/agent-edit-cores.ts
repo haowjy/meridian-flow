@@ -9,6 +9,7 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
@@ -31,6 +32,16 @@ export type RefusedResponseDocument =
       documentId: DocumentId;
       /** The policy's refusal under the save's locks; its copy is the tool's to write. */
       denial: FileAccessDenied;
+      /** Who removed the document, when the denial is its removal and the record is known. */
+      removal?: DocumentRemovalRecord;
+    }
+  | {
+      documentId: DocumentId;
+      /**
+       * The document was removed, or its draft closed because it was: the writes are dropped
+       * with the record's copy. Null when the document stands again and no record remains.
+       */
+      removed: DocumentRemovalRecord | null;
     }
   | {
       documentId: DocumentId;

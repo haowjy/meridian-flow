@@ -30,6 +30,7 @@ function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
     drafts,
     branches,
     fileAccess,
+    removals: { lookup: async () => new Map() },
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });

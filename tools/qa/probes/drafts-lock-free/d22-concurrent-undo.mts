@@ -10,6 +10,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { captureReceiptRows } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-edits.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { setCollabHook } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
+import { createDrizzleDocumentRemovals } from "../../../../apps/server/server/domains/context/tree/document-removals.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { seedModelLiveWrite, workGrant } from "./f1-inverse-grant.mts";
 import {
@@ -77,6 +78,7 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
 
 function inverseService(harness: Harness, label: string) {
   return createDrizzleTurnInverseService({
+    removals: createDrizzleDocumentRemovals(harness.db),
     db: harness.db,
     journal: harness.persistence.journal,
     drafts: harness.store,

@@ -5,9 +5,11 @@
  */
 import type { DocumentCommandName } from "@meridian/agent-edit/integration";
 import { documentNotFoundMessage, modelResult } from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
+import { removalPhrase } from "../../domains/context/index.js";
 import {
   type FileAccessDenied,
   type FileEditRefusedError,
@@ -82,7 +84,7 @@ export async function keptDraftReader(
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */
 export async function documentGrant<N extends FileNeed>(
-  deps: Pick<ToolWiringDeps, "fileAccess">,
+  deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
   command: DocumentCommandName,
   address: Pick<ResolvedDocumentAddress, "documentId" | "filePath">,
@@ -94,8 +96,28 @@ export async function documentGrant<N extends FileNeed>(
     need,
   );
   return isFileAccessDenied(grant)
-    ? fileAccessDeniedError(command, grant, address.filePath)
+    ? fileAccessDeniedError(
+        command,
+        grant,
+        address.filePath,
+        await removalBehind(deps, principal, grant),
+      )
     : grant;
+}
+
+/**
+ * The removal record behind a `not_found` the principal could have read: a document id the
+ * model already holds, whose file was removed. A reader without access learns nothing more.
+ */
+export async function removalBehind(
+  deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
+  principal: Principal,
+  denial: FileAccessDenied,
+): Promise<DocumentRemovalRecord | undefined> {
+  if (isPermissionDenial(denial) || denial.target.kind !== "document") return undefined;
+  const { documentId } = denial.target;
+  if ((await deps.fileAccess.historyAccess(principal, documentId)) !== "deleted") return undefined;
+  return (await deps.documentRemovals.lookup([documentId])).get(documentId);
 }
 
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
@@ -103,16 +125,16 @@ export function fileAccessDeniedError(
   command: DocumentCommandName,
   denial: FileAccessDenied,
   path?: string,
+  removal?: DocumentRemovalRecord,
 ): WriteToolErrorOutput {
   const at = path ? { path } : {};
   if (!isPermissionDenial(denial)) {
+    const message = removal
+      ? `${documentNotFoundMessage(command)} This file was ${removalPhrase(removal)}.`
+      : documentNotFoundMessage(command);
     return {
       isError: true,
-      output: modelResult({
-        command,
-        status: "document_not_found",
-        payload: { ...at, message: documentNotFoundMessage(command) },
-      }),
+      output: modelResult({ command, status: "document_not_found", payload: { ...at, message } }),
     };
   }
   return {

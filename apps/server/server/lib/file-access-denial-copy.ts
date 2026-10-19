@@ -3,7 +3,8 @@
  * A refusal that suggests a call writes it exactly, and only when the agent
  * may make it; otherwise it says to ask the user.
  */
-import type { FileAccessDenial } from "@meridian/contracts/protocol";
+import type { DocumentRemovalRecord, FileAccessDenial } from "@meridian/contracts/protocol";
+import { removalPhrase } from "../domains/context/index.js";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
 import { chainPermission, mayChangeWorks } from "../domains/runtime/index.js";
 
@@ -26,13 +27,17 @@ const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
 
 /**
- * A write whose file was deleted under it: at the reply's save (D29, D42), or
- * when an undo or redo reached it.
+ * A write whose file was removed under it: at the reply's save (D29, D42), or when an undo
+ * or redo reached it. The record, when the lookup found one, says who removed it and how.
  */
-export function deletedFileMessage(when: "save" | "reversal"): string {
-  return when === "save"
-    ? "This file was deleted before this reply was saved, so this change wasn't made."
-    : "This file was deleted, so this change wasn't made.";
+export function deletedFileMessage(
+  when: "save" | "reversal",
+  removal?: DocumentRemovalRecord | null,
+): string {
+  const removed = `This file was ${removalPhrase(removal)}`;
+  return when === "save" && removal?.actor?.kind !== "system"
+    ? `${removed} before this reply was saved, so this change wasn't made.`
+    : `${removed}, so this change wasn't made.`;
 }
 
 /** What the model reads when the policy refused a write. */
