@@ -22,7 +22,10 @@ command resolves the checkout the same way before touching a database.
 extend `RESERVED_DATABASES`, not the CLI. `db:reset` is the
 schema-only reset for an owned active database; a full infrastructure wipe is a
 separate explicit operation. `db:migrate` runs the locked migration runner and
-function synchronization.
+function synchronization. Ordered code companions are declared and digest-pinned in
+no-transaction SQL files; history validation refuses changed bytes. The runner invokes
+`migrate(session)` before the SQL assertions and ledger write on its reserved advisory-
+lock session. Domain-specific conversion stays beside its migration, not in tools/dev.
 
 Managed DB tests provision owned databases and route each worker to its own
 clone. Cleanup hands only this invocation's databases to the detached cleanup
