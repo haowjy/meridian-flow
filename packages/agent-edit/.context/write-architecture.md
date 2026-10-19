@@ -32,15 +32,19 @@ handle or journal row exists.
 
 `applyEdits` mutates from typed nodes and returns ordered touched, deleted, and
 inserted identities. It never parses or serializes. The write owner snapshots,
-merges concurrent updates, and renders the echo. Preflight validates the full
+applies the write to the room copy, and renders the echo. Echo targeting and deletion
+anchors carry Yjs item identities, not display hashes: the same block can have
+a different unique prefix among the room's siblings. Only the rendered cut
+chooses the display hash. Preflight validates the full
 IR and each block reference before a transaction changes Yjs. Deleting the only
 remaining block clears its text while preserving the required ProseMirror
 container.
 
 ## Prepared writes and receipts
 
-Create, copy, and mutation commands share one `PreparedEdit` path. It reserves
-a write identity, captures the before cut and ordered transaction parts,
+Create, copy, and mutation commands share one `PreparedEdit` path. It runs the
+region check first (below), registers the refs the write minted, reserves a
+write identity, captures the before cut and ordered transaction parts,
 certifies each segment, then stages or submits one logical edit. The command
 submits merged `editParts`; host storage chooses journal row expansion. Receipt
 rendering runs outside mutation certification and preserves settlement identity
@@ -69,23 +73,119 @@ visible, so the fold visits only those structs plus one `Y.snapshot` walk
 (about 4 ms at 440k structs). Containment needs every state-vector clock and
 every deleted range of the snapshot: a delete-only staged update allocates no
 clock, so the state vector alone accepts a refused staged deletion. An absent,
-undecodable or uncontained previous frontier is the empty snapshot.
+undecodable or uncontained previous frontier is the empty snapshot: every block
+is unseen, and nothing is listed as changed (the model saw no earlier version
+to compare with).
 
-The host names rooms; agent-edit carries the label. When the host passes
-`WriteContext.observe = { room, prev }`, read results and write receipts carry
-a host-only `frontier` (`{ room, snapshot, unshown }`) from the doc they
-rendered. An undo, redo or revert renders from the version the host's inverse
-ran on, which only its result names (`DocumentEditResult.draftId`), so the host
-passes `observeInverse(draftId)` and the echo records from the inverse's
-`after` cut. With `ResponseCommitOptions.observe(documentId)` each saved
-document's result carries one at the post-commit cut (`saveObservation`),
-crediting what its accepted receipts show; journal-replay recovery leaves the
-cut unknown and records none. Shown in full: a read's rendered blocks (an
-outline read credits none) and `extent: full` changed blocks (never prefix context, copy
-edges or swept bodies). A result reported with `awarenessDegraded` still
+`planningSnapshot` validates the room and snapshot containment. `createPlanningView`
+constructs an explicit gc-off snapshot target and replays only supplied reply updates
+contained in the room copy. Either pending store, or a final view whose structs or
+deletions are not contained in that copy, invalidates the view. Every write
+plans on that view (`write-commands.ts` `withPlanDoc`). `frontierDelta` and `changedWords` share the
+same flipped-range walk; word counts clip each string item to the flipped clock range.
+
+### The listing
+
+Every result that shows document text (a read, a recorded write echo, a settled
+receipt, a region refusal) lists under `concurrent edits:` the blocks changed
+since the model's recording frontier that it doesn't show in full, unlabelled,
+in document order (`observation.ts` `observeRendered`). The listing and the
+recorded `unshown` are one computation over `frontierDelta`: listed blocks
+credit as shown in full; past `CONCURRENT_LISTING_MAX_BYTES` (8 KB) the rest are
+named by count ("N more blocks changed since you last saw them") and stay
+unshown. Blocks removed since the frontier are listed on one line by hash,
+without their old text; a write's own removals are named by its receipt and
+left out. A full read lists nothing. Only blocks that **changed** since a usable
+frontier are listed: a block `unshown` because the model never saw it (a
+partial or outline read, or a first contact with no frontier) stays unshown and
+unlisted, so successive partial reads don't carry the rest of the document.
+The region check covers writes to it. Echo context lines and truncated previews
+never credit by being shown; the listing and the region check cover them. A
+write does credit the blocks it wrote when every visible item in them (the
+block, its attributes, children, text and formats) is that write's own, by the
+structs its committed update created (`frontier.ts` `writtenOnlyBy`): the model
+sent that text itself, so a create's truncated preview doesn't refuse its next
+edit. A block holding any other author's visible item credits only when shown
+in full. A degraded echo credits nothing. A
+staged echo lists and records nothing: its settled receipt does, on the
+document's last accepted receipt, where the host records the frontier.
+
+### The region check
+
+`region-check.ts` runs in `finishPreparedEdit` before anything is registered or
+reserved. The region is the targets' window on the view (`echo.ts` `windowOf`,
+the echo's ±1, overlaps merged; an insert's target is its anchor;
+`create(overwrite)` of a non-empty document targets every block); in the room
+copy it spans each window's surviving blocks and any top-level block inserted
+between them. A write is refused (`region_changed`) when the room has no valid
+planning frontier or the view is incomplete, when a region block is in the
+frontier's `unshown`, or when more than `REGION_CHANGE_BUDGET_WORDS` (10)
+changed words lie in the region between the view's cut and the room copy's.
+Its one sentence says which: "Not applied: you haven't seen all of this passage
+yet." for no frontier or an unshown region block, "Not applied: this passage
+changed since you last saw it." for changed words; both end "Current text:".
+Exempt (`Planned = "exempt"`, never `undefined`): creating a document,
+initializing an empty one, and every write when the host passes no lookups at
+all (a host that keeps no frontiers; utility, seed and import writes). A reply's
+model write whose lookups lack `planning` is a host bug and throws. A document
+this reply created (`ReplyMutations.created`, noted when a create lands in a
+missing or empty document) plans from the empty snapshot plus the reply's own
+mutations when the planning lookup has no usable frontier: the model knows it
+began empty, so create-then-edit in one reply lands, and anyone else's text in
+it still counts in the region check. Undo and redo are never refused. The
+refusal shows the region's blocks in full from the room copy and goes through
+the same recording as a read, so the next attempt proceeds unless the passage
+changes again. Past
+`REFUSAL_REGION_MAX_BYTES` (16 KB) it names the first and last block, asks for
+a read of that range, and records nothing. With no frontier and a target the
+room can't place (`not_found`, `ambiguous_match`, such as a live hash in a new
+draft) it says to read the document. The host records whatever frontier a
+result carries, error or not.
+
+The host names rooms; agent-edit carries the label. `readRoom` returns the
+room it read (`draft:<workDraftId>`, `live:<documentId>:<generation>`; `null`
+when the host has none) and nothing is resolved before the call. When the
+host passes `WriteContext.frontiers = { recording, planning }`, read results
+and write receipts carry a host-only `frontier` (`{ room, snapshot, unshown }`)
+from the doc they rendered, chained from `recording(room)`; `planning(room)` is
+the view a write plans on. An undo, redo or revert names the room its inverse
+committed into (`DocumentEditResult.room`) and the echo records there from the
+inverse's `after` cut. With `ResponseCommitOptions.recordingFrontier` each
+saved document's result carries one at the save's after-state, in the room the
+save committed into, crediting what its accepted receipts show. A write outside
+a reply records from its save's after state, merged into its room copy. A staged result records
+nothing: its save does. Shown in full: a read's rendered blocks (an outline
+read credits none) and `extent: full` changed blocks (never prefix context,
+copy edges or swept bodies). A result reported with `awarenessDegraded` still
 records, crediting nothing. A failure is reported through
-`onObservationFailed` and the result goes out without one; `frontier` never
-reaches `AgentEditResultV1`.
+`onObservationFailed` and the result goes out without a frontier or a listing;
+`frontier` never reaches `AgentEditResultV1`.
+
+### The accepted save's report
+
+A save has three phases with separate owners: the host's durable append
+(`persist`, inside the caller's commit scope), the host's install or delivery
+after root commit, and agent-edit's report. Once `persist` succeeded the write
+is accepted: `document-save.ts` `reportAccepted` is the one reporting boundary
+for reply saves and immediate writes alike, and any failure in it (links,
+revision, detection, receipts, frontier) answers an accepted
+`awarenessDegraded` result, never an error. An error would leave the tool call
+uncached and invite the model to retry a write that already landed; a degraded
+result keeps its write identity for idempotency, and an immediate write still
+appends its own bytes to the reply's `ReplyMutations`. Ensuring a created
+document belongs to the durable phase.
+
+### Commit-time detection
+
+`commit-detection.ts` `reportAcceptedMutation(before, after)` is the same for
+both hosts and every save, on the append's cut, and never throws: it reads the updates the save's before state holds
+that the first write's view (`preOwnSnapshot`) doesn't contain, the only skip,
+and applies them one at a time to record which lineage each first made visible
+and who wrote it. That
+lineage is the swept classification's only input (until M3 replaces swept);
+nothing from it renders. The draft host reads its Work draft's journal rows for
+the generation, with no floor, and attributes the residual the journal can't
+explain to the writer.
 
 ## CRDT and content boundaries
 

@@ -44,7 +44,9 @@ export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
   live: Y.Doc;
-  /** Set when the document is removed: its inverse is skipped with this record, never planned. */
+  /** The live room `live` was captured from, by its authority; null when it has none yet. */
+  liveRoom: string | null;
+  /** Removed documents are skipped with the record, never planned against. */
   removal: DocumentRemovalRecord | null;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
@@ -74,7 +76,7 @@ export interface TurnInverseStore {
     kind: "undo" | "redo" | "revert" | "rollback";
     userId?: UserId;
     query: TurnInverseQuery;
-  }): Promise<string[]>;
+  }): Promise<{ handles: string[]; updates: Uint8Array[] }>;
   describePart(
     document: InverseDocument,
     part: StoredInversePart,

@@ -2,9 +2,8 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
-import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
-import type { ObservationFrontier, ObservationRequest } from "../frontier.js";
+import type { FrontierLookups, ObservationFrontier } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -57,9 +56,9 @@ interface WriteOutcomeBase {
    */
   showing?: LinkShowing;
   /**
-   * Host-only: the frontier of what this result showed, present when the
-   * caller asked (`WriteContext.observe` or `observeInverse`). Never copied
-   * into `result`.
+   * Host-only: the frontier of what this result showed, in the room its door
+   * named, present when the caller passed `WriteContext.frontiers`. Never
+   * copied into `result`.
    */
   frontier?: ObservationFrontier;
 }
@@ -126,23 +125,15 @@ export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;
 
-export type ResponseCommitterPhase =
-  | "buffered"
-  | "journalStaged"
-  | "journalCommitted"
-  | "liveProjected"
-  | "closed";
+export type ResponseCommitterPhase = "buffered" | "journalStaged" | "closed";
 
 export type ResponseCommitterTransition =
   | "stage"
   | "drop_for_thread"
   | "journal_staged"
-  | "journal_committed"
-  | "live_projected"
+  | "document_saved"
   | "closed"
   | "rollback"
-  | "recovery_succeeded"
-  | "recovery_failed"
   | "evicted";
 
 export interface ResponseCommitterTransitionDetail {
@@ -150,7 +141,6 @@ export interface ResponseCommitterTransitionDetail {
   transition: ResponseCommitterTransition;
   responseId: string;
   phase: ResponseCommitterPhase;
-  journalCommitKind?: import("../ports/update-journal.js").JournalCommitKind;
   closedOutcome?: ResponseLifecycleClosedState;
   documentId?: string;
   threadId?: string;
@@ -159,29 +149,15 @@ export interface ResponseCommitterTransitionDetail {
 
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
-interface InteractionContextBase {
-  /** Durable peer state captured before the host pulls concurrent upstream changes. */
-  attributionBaseline?: Uint8Array;
-  /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
-  afterJournalId?: number;
-  /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
-  liveJournalSeq?: number;
-  /** Durable write attempt id used to exclude this write from concurrent attribution. */
-  attemptId?: string;
-}
-
 export type InteractionContext =
-  | (InteractionContextBase & {
-      /** Live writes carry no draft identity. */
-      mode: "live";
-    })
-  | (InteractionContextBase & {
-      /** Thread-peer writes retain their exact peer identity. */
+  | { mode: "live" }
+  | {
+      /** A draft-mode write, bound to its thread peer's identity before its room read. */
       mode: "threadPeer";
-      /** Host peer identity for exact retirement. */
+      /** Host peer identity, for exact retirement independently of generation replay. */
       peerDraftId?: string;
       upstreamDraftId?: string;
-    });
+    };
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
@@ -203,9 +179,11 @@ export interface WriteContext {
   responseIdentity?: ModelResponseIdentity;
   /**
    * Host-captured interaction identity: baseline, journal floor, draft
-   * identity, and optional attempt guard travel as one object.
+   * generation, and optional attempt guard travel as one object.
    */
   interactionContext?: InteractionContext;
+  /** Host-routed: the Work draft a draft read bound to no peer reads (`DocumentAccess.workDraftId`). */
+  workDraftId?: string;
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
   /** True only when the host resolved this create to a previously missing document. */
@@ -232,18 +210,12 @@ export interface WriteContext {
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   /**
-   * Host-only: record the result's observation frontier in this room, chained
-   * from the model's previous frontier there. Absent for callers that record
-   * no frontier.
+   * Host-only: the model's frontier lookups for this call. A result that shows
+   * document text records its frontier in the room its door named, chained from
+   * `recording`; a write plans on `planning`'s frontier there. Absent for
+   * callers that record no frontier.
    */
-  observe?: ObservationRequest;
-  /**
-   * Host-only, for an undo, redo or revert: the room is the version the host's
-   * inverse rendered `after` from, which only its result names
-   * (`DocumentEditResult.draftId`, null for the live document). Answers the
-   * request to record under, or undefined to record none.
-   */
-  observeInverse?(draftId: string | null): Promise<ObservationRequest | undefined>;
+  frontiers?: FrontierLookups;
   /**
    * The link view the host routed this command to: the Work branch or live
    * version its destination names. A host that routes between versions sets
@@ -267,11 +239,11 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  concurrentEdits?: ConcurrentEditInfo;
-  lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+  lateSweep?: import("./commit-detection.js").DestructiveSweepReport;
   /**
-   * Host-only, when the commit asked (`ResponseCommitOptions.observe`): the
-   * frontier at the post-commit cut, crediting every accepted receipt.
+   * Host-only, when the commit asked (`ResponseCommitOptions.recordingFrontier`):
+   * the frontier at the save's after-state, crediting every accepted receipt and what the last
+   * one lists.
    */
   frontier?: ObservationFrontier;
 }

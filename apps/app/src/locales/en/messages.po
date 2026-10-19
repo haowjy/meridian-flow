@@ -918,6 +918,10 @@ msgstr "Cancel queue"
 msgid "Caption"
 msgstr "Caption"
 
+#: src/features/chat/tool-renderers.tsx
+#~ msgid "Caught up on changes in"
+#~ msgstr "Caught up on changes in"
+
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Center"
 msgstr "Center"
@@ -2299,6 +2303,10 @@ msgstr "Goal saved"
 msgid "Goal: {0}. "
 msgstr "Goal: {0}. "
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Got the latest text of"
+msgstr "Got the latest text of"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
 msgstr "grid"
@@ -3278,8 +3286,8 @@ msgid "Paste"
 msgstr "Paste"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Paused to reread"
-msgstr "Paused to reread"
+#~ msgid "Paused to reread"
+#~ msgstr "Paused to reread"
 
 #: src/features/chat/chat-upload-display.ts
 msgid "PDF"

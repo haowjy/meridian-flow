@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
+import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
 import {
   appendToFirstParagraph,
   gate,
@@ -251,7 +252,7 @@ export const twoProcessCompaction: Probe = {
         source: "writer" as const,
         updateData: appendToFirstParagraph(source, "x"),
       }));
-      await f.a.coordinator.commitSegmentRows({
+      await commitDraftRows(f.a.coordinator, {
         draftId: f.draftId,
         sourceDoc: source,
         rows,

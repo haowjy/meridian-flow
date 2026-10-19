@@ -148,7 +148,7 @@ describe("reply save fence", () => {
     const refused = await s.fences.confirm(s.record);
 
     expect(refused).toEqual([{ documentId: DOCUMENT, denial }]);
-    expect(s.threadCore.invalidateThreadDocument).toHaveBeenCalledWith(DOCUMENT, THREAD);
+    expect(s.threadCore.dropStaged).toHaveBeenCalledWith(DOCUMENT, THREAD);
     expect(s.threadCore.refuseStaged).not.toHaveBeenCalled();
     expect(s.record.participants.size).toBe(0);
   });

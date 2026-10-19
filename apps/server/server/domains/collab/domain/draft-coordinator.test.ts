@@ -1,9 +1,9 @@
-/** Shadow draft coordinator conformance for peer pulls and CAS persistence. */
+/** Draft writer admission and response journal persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { commitJournaledUpdate } from "../test-support/draft-update-writes.js";
+import { commitDraftRows, commitJournaledUpdate } from "../test-support/draft-update-writes.js";
 import { captureHistoricalDraftRow } from "../test-support/historical-draft-row.js";
 import {
   type MemoryDraft,
@@ -17,14 +17,6 @@ import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000502" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000503" as ThreadId;
-
-function pull(
-  coordinator: ReturnType<typeof createDraftCoordinator>,
-  draftId: string,
-  upstream: Y.Doc,
-) {
-  return coordinator.pullFromDoc({ draftId, upstream });
-}
 
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
@@ -126,21 +118,6 @@ describe("DraftCoordinator", () => {
     expect(materialize(storedDraft(store, "work")).getMap(PROVENANCE_TARGETS_TYPE).size).toBe(1);
   });
 
-  it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
-    const store = new MemoryDraftStore();
-    const live = docWithText("live prose");
-    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: live, kind: "thread_peer" }));
-
-    live.getText("content").delete(0, 5);
-    const before = storedDraft(store, "work");
-    expect(Y.encodeStateVector(live)).toEqual(before.stateVector);
-
-    const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-    await pull(coordinator, "work", live);
-
-    expect(storedDraft(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
-  });
-
   it("journals only new multi-range deletions so replay reaches byte-identical state", async () => {
     const store = new MemoryDraftStore();
     const base = docWithText("abcdef");
@@ -155,7 +132,7 @@ describe("DraftCoordinator", () => {
 
     const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
     await expect(
-      coordinator.commitSegmentRows({
+      commitDraftRows(coordinator, {
         draftId: "work",
         sourceDoc: sourceDoc,
         rows: [
@@ -235,14 +212,14 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
     onDraftUpdate: () => broadcasts++,
   });
   await expect(
-    coordinator.commitSegmentRows({
+    commitDraftRows(coordinator, {
       draftId: "work",
       sourceDoc,
       rows: rows.slice(0, -1),
     }),
   ).rejects.toThrow("unjournaled residual");
   expect(store.journal).toHaveLength(0);
-  await coordinator.commitSegmentRows({
+  await commitDraftRows(coordinator, {
     draftId: "work",
     sourceDoc,
     rows,
@@ -251,16 +228,10 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   expect(broadcasts).toBe(1);
   expect(storedDraft(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   await expect(
-    coordinator.commitSegmentRows({
+    commitDraftRows(coordinator, {
       draftId: "work",
       sourceDoc,
       rows: [rows[0]],
     }),
   ).rejects.toThrow("reused client");
 });
-
-const _cloneOf = (doc: Y.Doc) => {
-  const clone = new Y.Doc({ gc: false });
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-  return clone;
-};

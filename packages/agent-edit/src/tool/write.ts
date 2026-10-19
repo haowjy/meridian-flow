@@ -1,17 +1,17 @@
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { isDocumentNotFoundError } from "../ports/document-coordinator.js";
+import { DocumentNotFoundError, isDocumentNotFoundError } from "../ports/document-coordinator.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
+import { createCommitDetection } from "./commit-detection.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import { isInternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
-import { createMutationCommit } from "./mutation-commit.js";
 import { settledReceipt } from "./receipt.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
-import { createRuntimeStore } from "./runtime-store.js";
 import type {
   DocumentCommandName,
   ReadFunction,
@@ -36,7 +36,6 @@ export type { CreateWriteToolOptions } from "./write-deps.js";
 export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
-  recover(docId: string): Promise<void>;
   /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
     editScopeId: string,
@@ -48,7 +47,14 @@ export interface WriteTool {
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
-  prepare: ResponseCommitter["prepare"];
+  /**
+   * A host's read of the document a call would see: the room copy with the reply's
+   * surviving staged entries. The caller disposes it.
+   */
+  readRoom(
+    docId: string,
+    scope: { threadId: string; responseId?: string; workDraftId?: string },
+  ): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
   responseDocuments: ResponseCommitter["responseDocuments"];
   /** Move one response document's staged writes (one peer's, when named) to rejected receipts. */
   refuseStaged(
@@ -62,11 +68,9 @@ export interface WriteTool {
     threadId: string;
     peerDraftId: string;
     reason: import("../ports/document-coordinator.js").RetiredWriteReason;
-  }): Promise<void>;
-  /** Drop one thread/document pair's runtimes and staged writes, for the request that owns them. */
-  invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
-  /** Evict one thread's runtimes without revoking its response buffers. */
-  evictThread(threadId: string): Promise<void>;
+  }): void;
+  /** Drop one thread's staged writes to a document: a save fence denied them. */
+  dropStaged(docId: string, threadId: string): void;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -76,19 +80,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const autoTurnCounter = { value: 0 };
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const journal = options.journal;
-  const mutationCommit = createMutationCommit({
+  const detection = createCommitDetection({
     links: options.links,
     journal: options.journal,
     coordinator: options.coordinator,
     model: options.model,
   });
-  const runtimeStore = createRuntimeStore({
-    coordinator: options.coordinator,
-    createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
-  });
   const responseCommitter = createResponseCommitter({
-    runtimeStore,
-    mutationCommit,
+    detection,
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
@@ -97,7 +96,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     onClaimDiscarded: options.onResponseClaimDiscarded,
     onTransition: options.onResponseCommitterTransition,
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
-    afterPreflight: options.afterResponsePreflight,
     onObservationFailed: options.onObservationFailed,
   });
   const commands = createWriteCommands({
@@ -114,15 +112,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     autoTurnIdNonce,
     renderer,
     journal,
-    mutationCommit,
-    runtimeStore,
     responseCommitter,
   });
-  const documentEdits = createDocumentEditCommands({
-    options,
-    committer: responseCommitter,
-    runtimeStore,
-  });
+  const documentEdits = createDocumentEditCommands({ options, committer: responseCommitter });
   const dispatch = createWriteDispatch({ commands, documentEdits });
 
   const read: ReadFunction = async (command, context = {}) => {
@@ -240,7 +232,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const threadId = actorThreadId ?? context.threadId ?? options.defaultThreadId ?? id;
     const existing = localSessions.get(id);
     if (existing) return existing;
-    const session: ActorSession = { id, threadId, documents: new Set() };
+    const session: ActorSession = { id, threadId };
     localSessions.set(id, session);
     return session;
   }
@@ -248,32 +240,31 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     read,
     write,
-    recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
     prepareResponse: responseCommitter.prepareResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
     hasResponseDocument: responseCommitter.hasResponseDocument,
-    prepare: responseCommitter.prepare,
+    async readRoom(docId, { threadId, responseId, workDraftId }) {
+      const room = await responseCommitter.openRoom({
+        docId,
+        threadId,
+        commandName: "read",
+        ...(responseId ? { responseId } : {}),
+        ...(workDraftId ? { workDraftId } : {}),
+      });
+      if (isInternalWriteResult(room)) throw new DocumentNotFoundError(docId);
+      return room;
+    },
     responseDocuments: responseCommitter.responseDocuments,
     refuseStaged: responseCommitter.refuseStaged,
-    async retirePeer(input) {
+    retirePeer(input) {
       if (!input.documentId || !input.threadId || !input.peerDraftId)
         throw new Error("Retirement requires a document, thread and peer");
       responseCommitter.retirePeer(input);
-      await runtimeStore.evictThreadRuntimes(input.documentId, input.threadId, {
-        markLiveDocStale: true,
-        peerDraftId: input.peerDraftId,
-      });
     },
-    async invalidateThreadDocument(docId, threadId) {
-      if (!docId || !threadId)
-        throw new Error("invalidateThreadDocument names one document and one thread");
-      responseCommitter.dropForThread(docId, threadId);
-      await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
-    },
-    async evictThread(threadId) {
-      if (!threadId) throw new Error("evictThread names one thread");
-      await runtimeStore.evictThreadRuntimes(null, threadId);
+    dropStaged(docId, threadId) {
+      if (!docId || !threadId) throw new Error("dropStaged names one document and one thread");
+      responseCommitter.dropStaged(docId, threadId);
     },
   };
 }

@@ -122,6 +122,8 @@ export interface AssembledNextTurnContext {
     "messages" | "tools" | "model" | "reasoning" | "promptCacheKey"
   >;
   activeHistory: ProjectedActiveHistory;
+  /** The block ids whose observation frontiers may credit the model on this request (C10). */
+  creditedBlockIds: ReadonlySet<string>;
   imageContextUpdates: { turns: Turn[]; blocks: Block[] };
 }
 
@@ -309,6 +311,7 @@ export async function assembleNextTurnContext(
       ...gatewayParams,
     },
     activeHistory: modelHistory,
+    creditedBlockIds: activeHistory.creditedBlockIds,
     imageContextUpdates,
   };
 }

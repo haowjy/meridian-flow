@@ -175,10 +175,6 @@ export class MemoryDraftStore implements DraftStore {
   }
 
   async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
-    if (input.upstream) {
-      const upstream = this.drafts.get(input.upstream.draftId);
-      if (upstream?.status !== "active") return { status: "upstreamMoved" };
-    }
     const documentDraft = this.drafts.get(input.draftId);
     if (documentDraft?.status !== "active") return { status: "closed" };
     if (this.takeCasFailure()) return { status: "moved" };
@@ -189,7 +185,7 @@ export class MemoryDraftStore implements DraftStore {
     )
       return { status: "moved" };
     const tail = documentDraft.rows.filter((row) => row.id > documentDraft.checkpointSeq);
-    // A fold applies what landed after its cursor; a reset discards it.
+    // A fold applies what landed after its cursor.
     if (input.policy.kind === "fold") {
       const after = input.policy.seq;
       for (const row of tail) {

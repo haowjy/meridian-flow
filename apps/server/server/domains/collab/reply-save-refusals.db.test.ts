@@ -272,13 +272,6 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, DRAFT]]);
   });
 
-  // The last-use Discard lands at each phase boundary of the peer pull, not only before its read.
-  const _pullPhases = [
-    "after the first ensure",
-    "before the second ensure",
-    "before the upstream read",
-  ] as const;
-
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
     const { responseId, review, write, core, context } = await setup();
     let once = true;

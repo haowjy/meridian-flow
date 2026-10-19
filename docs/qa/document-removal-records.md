@@ -150,8 +150,8 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 ## Removal notices in the browser
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
-device. Projects are single-owner, so every removal by a person reads "You
-deleted <title> elsewhere."; there is no named form. The server closes a
+device. Every removal by a person names the actor from the record: "<name> deleted
+<title>." ("<title> was deleted." without a display name), never "you" or "elsewhere". The server closes a
 removed document's live and draft rooms with `4208` after the removal commits.
 
 - A shows a document with a long one beside it; B deletes it from Files. A

@@ -1,5 +1,6 @@
 // Canonical in-memory agent-edit journal for tests and demos.
 import * as Y from "yjs";
+import { type SavePrecondition, SavePreconditionRefused } from "../ports/document-coordinator.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -57,6 +58,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
 
   async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
+    precondition?: SavePrecondition,
   ): Promise<JournalBatchAppendResult[]> {
     if (entries.length === 0) return [];
 
@@ -68,9 +70,22 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       nextSeqByDoc.set(batchEntry.docId, nextSeq + 1);
     }
 
+    const beforeStates = new Map<string, Uint8Array>();
+    for (const { docId } of entries) {
+      if (beforeStates.has(docId)) continue;
+      const { checkpoint, updates } = this.readSync(docId);
+      beforeStates.set(
+        docId,
+        Y.mergeUpdates([...(checkpoint ? [checkpoint] : []), ...updates.map((row) => row.update)]),
+      );
+    }
+    for (const [docId, beforeState] of beforeStates)
+      if (precondition && !precondition(beforeState)) throw new SavePreconditionRefused(docId);
+
     return entries.map((batchEntry) => {
       const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
-      if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
+      const beforeState = beforeStates.get(batchEntry.docId) as Uint8Array;
+      if (!batchEntry.mutation) return { seq, beforeState };
       const wId =
         batchEntry.mutation.wId ??
         this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId);
@@ -80,7 +95,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         threadTurns.add(batchEntry.mutation.turnId);
         turns.set(batchEntry.mutation.threadId, threadTurns);
       }
-      return { seq, wId, journalCommitKind: "durable" };
+      return { seq, wId, beforeState };
     });
   }
 

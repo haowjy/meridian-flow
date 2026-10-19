@@ -103,7 +103,6 @@ describe("Yjs draft handshake route guard", () => {
       outsideTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
-        recover: async () => {},
       },
       draftCoordinator,
       liveJournal: { read: async () => ({ checkpoint: Y.encodeStateAsUpdate(live), updates: [] }) },
@@ -111,7 +110,6 @@ describe("Yjs draft handshake route guard", () => {
         listActiveWorkDraftIds: async () => ["draft_1"],
         ensureThreadPeerDraft: async () => ({
           documentDraft: { draftId: "thread-peer", upstreamDraftId: "draft_1" },
-          state: new Uint8Array(),
         }),
       },
     });

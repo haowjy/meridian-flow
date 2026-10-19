@@ -1,4 +1,5 @@
 /** R acceptance: content rebases and late frames through production services and PostgreSQL. */
+
 import assert from "node:assert/strict";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -6,6 +7,7 @@ import { createDrizzleTurnInverseService } from "../../../../apps/server/server/
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import { createDraftProjection } from "../../../../apps/server/server/domains/collab/domain/draft-projection.ts";
 import { createDraftPullService } from "../../../../apps/server/server/domains/collab/domain/draft-pulls.ts";
+import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
 import {
   runInRootDrizzleTransaction,
   runOutsideWrite,
@@ -48,7 +50,7 @@ const liveCoordinator = {
       doc.destroy();
     }
   },
-  recover: async () => {},
+  deliver: async () => {},
 };
 const pulls = createDraftPullService({
   outsideTransaction: runOutsideWrite,
@@ -97,7 +99,7 @@ async function writer(s: Seed, update: Uint8Array) {
 }
 async function agent(s: Seed, update: Uint8Array, peer: Y.Doc) {
   const wId = await h.persistence.journal.reserveWriteOrdinal(s.documentId, s.threadId);
-  return coordinator.commitSegmentRows({
+  return commitDraftRows(coordinator, {
     draftId: s.draftId,
     sourceDoc: peer,
     rows: [
