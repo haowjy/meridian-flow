@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reuse draft attribution receipt and room-root indexes across text projections without caching change membership or bylines.
+
 - Refuse unsent Apply clicks when their session retires, while keeping sent command settlement and rebinding review ownership to the replacement session.
 
 - Consolidate draft review cutover into one ordered migration series with shared receipt-origin indexes; preserve frontier-planned saves and atomic Apply through retirement.
