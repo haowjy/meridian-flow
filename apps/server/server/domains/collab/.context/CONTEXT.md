@@ -363,7 +363,7 @@ Only a generation the draft has left, or a draft no longer writable, refuses
 the frame (`1008`).
 
 Room delivery has one owner: `install` in
-`domain/draft-coordinator.ts`, the only place a replica becomes the draft's
+`domain/draft-runtime.ts`, the only place a replica becomes the draft's
 committed replica. It runs when the store's transaction commits (a savepoint's
 callbacks move to its parent on release and are dropped on its rollback, so a
 rolled-back child installs nothing), installs only past the replica installed
@@ -398,17 +398,28 @@ brings the tab current. `1008` stays for a generation mismatch. Another process'
 commits also reach this process's rooms when its runtime reads the draft for a
 turn inverse's `deliverCommitted`. There is no periodic reconciliation: an idle
 room with no exchange catches up at the next keystroke, rejoin or handshake.
-A frame that leaves more than 512 tail rows or 2 MiB of tail folds it in
-the background (`compact`: no content, effect or `updatedAt` change). Frames
-and the fold they trigger are `domain/draft-writer-frames.ts`, over the draft
-runtime surface (`DraftRuntime`: committed replicas, private candidates,
-prepared writes, attempts) that `domain/draft-coordinator.ts` owns with the
-operations on it: frame admission depends on the runtime, never on the
-operations. Its `compacting`
-set keeps one fold per draft in a process; the fold
-fence orders it against every other write, so a frame that lands meanwhile is
-folded in and a rewrite that commits first makes it miss until the next frame
-past the bound. A failure is logged as `collab.draft` `compaction.failed`.
+Every committed append (writer, agent or server) schedules a background tail fold at
+512 rows or 2 MiB (`compact`: no content, effect or `updatedAt` change).
+`domain/draft-runtime.ts` owns committed replicas, prefix materialization, prepared
+append/rewrite ownership, monotonic installation/delivery and maintenance. Its
+`compacting` set keeps one fold per draft in this process. A rewrite that wins
+first makes the fold miss; the next append past the bound tries again. Failure
+is logged as `collab.draft` `compaction.failed`. Neither maintenance nor dirty
+signaling runs before the root commit, even when a prepared append's savepoint
+has released. `domain/draft-coordinator.ts` owns operation policy and bounded
+rewrite attempts; `domain/draft-writer-frames.ts` owns writer admission.
+
+The shared `prepareAppend(base, rows, { admitted?, authorServerRows? })` prepares
+no server bytes before the lock. `finalizeAppend` first materializes the committed
+prefix and admits incoming rows. The optional synchronous author receives a
+private gc-off copy of that post-row prefix, with client 1 set, and returns its
+captured transaction updates in order. Each is admitted on the receipt before-view
+as a separate `source: server` journal row and receipt. The authoring copy is
+needed only for server operations; ordinary typing adds no copy under the hold.
+Zero updates are contained when no incoming row is novel. A thrown author aborts
+the same append. There is no rebase- or Apply-specific persistence/install door.
+`drizzle-draft-storage.ts` still owns storage primitives; `drizzle-drafts.ts`
+wraps them with receipt persistence and savepoint rollback.
 
 Every draft write runs through `runBoundedAttempts`
 (`domain/draft-attempts.ts`), the one owner of a candidate's lifetime: capture

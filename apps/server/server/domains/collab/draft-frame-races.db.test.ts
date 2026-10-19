@@ -1,18 +1,19 @@
 /**
  * A writer frame acquires nothing (lock-free drafts, phase 1b): it judges against its committed
- * replica and appends under its revision predicate. These races pin the two doors a frame can
+ * replica and appends under its draft row hold. These races pin the two doors a frame can
  * reach mid-transaction: a pull's rewrite holding the draft row, and a created document's
  * retraction (F3); and an inverse every one of whose attempts a frame moves (F5).
  */
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { setTestHook } from "../../shared/test-hooks.js";
 import { interleave, type Settled } from "../../test-support/lock-interleave.js";
 import { readDraftAt } from "./adapters/drizzle-draft-storage.js";
+import { createDraftRuntime } from "./domain/draft-runtime.js";
 import { ReversalConflictError } from "./domain/reversal-conflict.js";
 import {
   ALPHA_ID,
@@ -127,6 +128,113 @@ describe("writer frames racing rewrites (postgres)", () => {
     paragraph.insert(0, [content]);
     fragment.insert(fragment.length, [paragraph]);
   };
+
+  it("authors server rows on the locked prefix without client-1 clock collisions, installing only after root commit", async () => {
+    const draftId = await draftWithChange();
+    const delivered: Uint8Array[] = [];
+    const dirty: string[] = [];
+    const runtime = createDraftRuntime({
+      store: fixture.view.draftStore,
+      onAppendCommitted: (id) => dirty.push(id),
+      onDraftUpdate: ({ update }) => delivered.push(update),
+    });
+    const base = await runtime.loadBase(draftId);
+    const serverAppend = (text: string) =>
+      runtime.prepareAppend(base, [], {
+        authorServerRows: (prefix) =>
+          captureMutationUpdates(prefix, () => {
+            appendParagraph(text)(prefix.getXmlFragment("prosemirror"));
+          }),
+      });
+    // Both are prepared from the same replica. Neither allocates client-1 clocks yet.
+    const first = serverAppend("Server one.");
+    const second = serverAppend("Server two.");
+    try {
+      await runInDrizzleTransaction(db, async () => {
+        expect(await first.persist()).toBe(true);
+        first.transfer();
+        expect(runtime.committed(draftId)).toBe(base.replica);
+        expect(delivered).toHaveLength(0);
+        expect(dirty).toHaveLength(0);
+      });
+      expect(runtime.committed(draftId)?.revision).toBeGreaterThan(base.replica.revision);
+      expect(delivered).toHaveLength(1);
+      const installed = runtime.committed(draftId);
+      const rolledBack = serverAppend("Must roll back.");
+      try {
+        await expect(
+          runInDrizzleTransaction(db, async () => {
+            await rolledBack.persist();
+            rolledBack.transfer();
+            throw new Error("Abort the root after savepoint release");
+          }),
+        ).rejects.toThrow("Abort the root");
+      } finally {
+        rolledBack.dispose();
+      }
+      expect(runtime.committed(draftId)).toBe(installed);
+      expect(delivered).toHaveLength(1);
+      expect(dirty).toHaveLength(1);
+      await runtime.commitOnce(second, {});
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+    const writer = await writerFrame(draftId, appendParagraph("Writer first."));
+    let sawWriter = false;
+    const third = runtime.prepareAppend(base, [], {
+      authorServerRows: (prefix) => {
+        sawWriter = prefix.getXmlFragment("prosemirror").toString().includes("Writer first.");
+        return captureMutationUpdates(prefix, () =>
+          appendParagraph("Server three.")(prefix.getXmlFragment("prosemirror")),
+        );
+      },
+    });
+    try {
+      const raced = await interleave(db, writer.send, "draft.append.beforeCommit", () =>
+        runtime.commitOnce(third, {}),
+      );
+      expect(raced.a).toEqual({ ok: true, value: { admitted: true } });
+      expect(raced.b).toEqual({ ok: true, value: true });
+      expect(raced.bWaited).toBe(true);
+      expect(sawWriter).toBe(true);
+    } finally {
+      third.dispose();
+      writer.destroy();
+    }
+    const rows = await db
+      .select()
+      .from(schema.draftWriteJournal)
+      .where(
+        and(
+          eq(schema.draftWriteJournal.draftId, draftId),
+          eq(schema.draftWriteJournal.source, "server"),
+        ),
+      )
+      .orderBy(schema.draftWriteJournal.id);
+    expect(rows).toHaveLength(3);
+    let end = Y.decodeStateVector(Y.encodeStateVector(base.replica.doc)).get(1) ?? 0;
+    for (const row of rows) {
+      const structs = Y.decodeUpdate(row.updateData).structs;
+      expect(structs.length).toBeGreaterThan(0);
+      expect(structs.every((struct) => struct.id.client === 1)).toBe(true);
+      expect(structs[0].id.clock).toBe(end);
+      end = Math.max(...structs.map((struct) => struct.id.clock + struct.length));
+      const receipts = await db.select().from(schema.documentEditParts).where(
+        // Every server row has its own immutable receipt, not a synthetic writer receipt.
+        sql`origin->>'draftId' = ${draftId} AND (origin->>'rowId')::int = ${row.id}`,
+      );
+      expect(receipts).toHaveLength(1);
+    }
+    const text = await fixture.view.draftMarkdown(draftId);
+    expect(text).toBe(
+      "Alpha Gamma.\n\nBlue.\n\nServer one.\n\nServer two.\n\nWriter first.\n\nServer three.\n",
+    );
+    expect(runtime.committed(draftId)?.doc.getXmlFragment("prosemirror").toString()).toContain(
+      "Server three.",
+    );
+    expect(dirty).toHaveLength(3);
+  });
 
   it.each([
     "pull",

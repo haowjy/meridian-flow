@@ -77,8 +77,8 @@ revision it was computed at) or a `fold` policy (any appends since its cursor ar
 applied). Pulls, inverses, peer checkpoints and compaction are rewrites.
 No rewrite resets generations, accumulates discarded clocks or marks journal
 rows discarded through reset. Compaction folds the tail with unchanged content
-and leaves `updated_at`; the writer-frame path schedules it past 512 rows or
-2 MiB. Lane R owns the surviving Work pull and `live_cut` effect projection.
+and leaves `updated_at`; the runtime schedules it after every committed append at 512 rows or
+2 MiB, only after its root commit. Lane R owns the surviving Work pull and `live_cut` effect projection.
 
 A draft's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its branch's origin Work with the row; anything but `active` is frozen. The
@@ -88,7 +88,7 @@ and the post-lock read refuses one whose statement started earlier but took the
 row after the archive committed. A lifecycle transition touches no draft row:
 the one append it can miss is one whose post-lock read ran before it committed,
 which lands in the archived draft (the archive window, `CONTEXT.md`). The
-coordinator holds one immutable replica per draft at a
+runtime holds one immutable replica per draft at a
 committed revision and catches it up from the tail; every write computes on a
 private copy, so a failed commit never changes what a reader holds.
 

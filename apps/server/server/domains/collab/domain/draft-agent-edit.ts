@@ -24,11 +24,12 @@ import {
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { testHook } from "../../../shared/test-hooks.js";
-import type { DraftCoordinator, PreparedDraftWrite } from "./draft-coordinator.js";
+import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "./draft-journal.js";
 import type { WorkDraftLookup } from "./draft-pulls.js";
 import type { DraftResolver } from "./draft-resolver.js";
 import { reconcileStagedDraftWrites } from "./draft-response-replay.js";
+import type { PreparedDraftWrite } from "./draft-runtime.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import {
   type AttributionRow,
