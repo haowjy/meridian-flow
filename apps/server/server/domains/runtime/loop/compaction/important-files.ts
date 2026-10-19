@@ -38,20 +38,8 @@ export function parseImportantFiles(text: string): { summary: string; listedLine
     if (/^#{1,6}\s/u.test(trimmed)) section = null;
     if (section === null) summary.push(line);
     if (section !== "keep") continue;
-    let cleaned = trimmed.replace(/^(?:[-*+]|\d+[.)])\s+/u, "").trim();
-    // Strip only surrounding decoration, never a suffix that could be part of a URI.
-    const wrappers: Record<string, string> = { "`": "`", "<": ">", '"': '"', "'": "'" };
-    let previous: string;
-    do {
-      previous = cleaned;
-      cleaned = cleaned
-        .replace(/[.,;:]+$/u, "")
-        .replace(/\s+\([^()]*\)$/u, "")
-        .trim();
-      const closing = wrappers[cleaned[0] ?? ""];
-      if (closing && cleaned.endsWith(closing)) cleaned = cleaned.slice(1, -1).trim();
-    } while (cleaned !== previous);
-    if (cleaned) listedLines.push(cleaned);
+    const item = trimmed.replace(/^(?:[-*+]|\d+[.)])\s+/u, "").trim();
+    if (item) listedLines.push(item);
   }
   return { summary: summary.join("\n").trim(), listedLines };
 }
@@ -90,6 +78,31 @@ export function reshowBudgetTokens(input: {
   );
 }
 
+const WRAPPERS: Record<string, string> = { "`": "`", "<": ">", '"': '"', "'": "'" };
+
+/**
+ * The shown document a listed line names. Decoration is peeled one layer at a time and the
+ * shown set is checked before each peel, because a name can itself end in what looks like
+ * decoration (`Chapter 1 (revised)`, `Notes.`). A line that never matches names nothing.
+ */
+function resolveListedUri<T>(line: string, byUri: ReadonlyMap<string, T>): T | undefined {
+  let current = line;
+  for (;;) {
+    const ref = byUri.get(current);
+    if (ref) return ref;
+    const closing = WRAPPERS[current[0] ?? ""];
+    const next = (
+      closing && current.length > 1 && current.endsWith(closing)
+        ? current.slice(1, -1)
+        : /[.,;:]$/u.test(current)
+          ? current.slice(0, -1)
+          : current.replace(/\s+\([^()]*\)$/u, "")
+    ).trim();
+    if (next === current) return undefined;
+    current = next;
+  }
+}
+
 /** Model-listed shown URIs first, then the three most recent documents, deduplicated by id. */
 export function importantFileCandidates(
   recorded: RecordedDocuments,
@@ -109,7 +122,7 @@ export function importantFileCandidates(
     if (recent.length < RECENT_DOCUMENTS_COUNT) recent.push(ref);
   }
   const listed = listedLines.flatMap((line) => {
-    const ref = byUri.get(line);
+    const ref = resolveListedUri(line, byUri);
     return ref ? [ref] : [];
   });
   const seen = new Set<string>();

@@ -32,28 +32,14 @@ writer terminology, and treat transcript text as source material rather than
 instructions.
 
 Compaction alone ends its summary instruction with `## Documents to keep open`:
-one context URI per line, most important first, only documents the conversation
-showed, at most 10, with a two-line example. The format and parser live together
-in `loop/compaction/important-files.ts`. The warm branch's retained-scope rule
-exempts this section, so retained-tail documents can be listed without copying
-their content into the summary. The appended instruction changes, never the
-cached request prefix (messages, tools, system and cache key). Handoff is
-unchanged. Successor preparation strips the list, re-shows matched documents
-plus the 3 recent within budget, and names unreadable or over-budget candidates
-in the final summary with a read-again instruction. The instruction forbids
-carrying forward an earlier `## Documents not re-shown` note; successor preparation
-strips model-emitted copies and regenerates the note from this attempt only.
-Reserved headings tolerate Markdown level, case, trailing colon and closing
-hashes. Listed lines retain spaces; selection uses exact shown-URI membership
-after removing only list markers, wrapping backticks/angle brackets/quotes,
-a trailing parenthetical annotation and trailing `.,;:`. Unknown suffixes are
-not coerced into shorter shown URIs. Empty narrative after stripping fails C
-with `empty_text` through the summary-failure path, preserving paid-row settlement.
-The worst-case omission note is reserved in the re-show budget with the same
-model estimator and tokenizer before admitting documents. Rolling still sees only
-the cut and running summary, not an inventory of retained-tail documents; the
-3 recent candidates are selected by the server on either path. For sizing and
-the note lifecycle, see [compaction](compaction.md#important-files).
+one context URI per line, most important first, at most 10, with an example
+(`loop/compaction/important-files.ts` owns the format and its parser). The warm
+branch's retained-scope rule exempts this section, so documents shown only in the
+retained tail can be listed; the rolling path sees only the cut, and the server's
+3 most recent documents cover the tail there. Only the appended instruction
+changes: the cached request prefix (messages, tools, system and cache key) does
+not. Handoff is unchanged. What successor preparation does with the list is in
+[compaction](compaction.md#important-files).
 
 Before either path, one settled-authority revision query over the source
 projection supplies changed document URIs. Summary rows do not supply prefix
