@@ -26,9 +26,11 @@ Changed selection arguments do not overwrite it. Other reuse returns 409.
 
 Creation uses this order: idempotent destination lookup; acquire the
 destination's `RunClaim.hold`; create the destination, pending system seed S,
-and source `agent.handoff` event in one transaction; then transfer the claim to
-a detached brief after commit. The request returns when S commits, not when the
-brief finishes. A rollback or other path that does not launch releases the
+and source `agent.handoff` event in one transaction; after commit, await
+best-effort notes copying; then transfer the claim to a detached brief. The
+request returns after the copy attempt, not after brief generation. Copy
+failure is logged and never fails handoff. The seed names the originals'
+canonical notes address, and creation replay never retries copying. A rollback or other path that does not launch releases the
 claim. If the lookup found nothing and the claim is held, the server creates
 nothing and returns 409 `handoff_in_progress`; retrying after the creating
 request commits replays the destination.

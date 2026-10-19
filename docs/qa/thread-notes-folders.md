@@ -58,8 +58,9 @@ arguments or use JSON files).
    `return_result` with `artifacts:["scratch://$THREAD/report"]`. Spawn it
    foreground with `overrides:{model:"mock-llm-v1"}`. The report and parent
    chip must contain the canonical p-handle address. Check a fork/handoff's
-   `$PARENT` read against the source turn's thread, not its inherited spawn
-   parent. Thread snapshots must not carry a notes location map. A root `$PARENT` fails naming the variable.
+   `$PARENT` read against the acted-on source chat, not the owner of an
+   inherited cutoff turn or its inherited spawn parent. Thread snapshots must
+   not carry a notes location map. A root `$PARENT` fails naming the variable.
 7. **Literal and invalid syntax.** `$5 bills` and an inner literal `$THREAD`
    folder round-trip. Unknown `$FOO` in the first URI segment, a variable
    without chat scope, extra qualifier chains, `@cN` writer names and
@@ -155,6 +156,91 @@ there is no subtree invalidation or descendant re-publication. Stored `name`,
 subagent folder is mounted and verify both labels update. A missing/empty title
 uses `Untitled chat`; a subagent uses its spawning parent's title plus `(subagent)`.
 
+## Fork and handoff copies (Phase 3)
+
+Creation commits the conversation, copies notes best-effort in the same request,
+then returns. Handoff launches its detached brief after copying; creation does
+not wait for brief generation. There is no notes-copy job, status UI or Retry.
+An idempotent creation replay does not retry copying, even after failure.
+
+Capture the source assistant turn id from
+`./mf api GET /api/threads/$SOURCE/snapshot --json`. Use client-minted destination
+UUIDs and retain each request body unchanged for replay:
+
+```bash
+./mf api POST /api/threads/$SOURCE/fork --data \
+  '{"id":"<destination-uuid>","originTurnId":"<settled-assistant-turn>"}' --json
+./mf api GET /api/agents --json # retain the selected primary Agent's full selection
+./mf api POST /api/threads/$SOURCE/handoff --data \
+  '{"id":"<destination-uuid>","originTurnId":"<settled-turn>","agentSelection":{"catalogEntryId":"<catalog-id>","definitionRevisionId":"<revision-id>"}}' --json
+./mf doc read 'scratch://$THREAD/plan.md' --chat '<destination-id>' --json
+./mf doc read 'scratch://$PARENT/plan.md' --chat '<destination-id>' --json
+```
+
+1. **Named Work.** Seed `plan.md`, `nested/scene.md` through model writes. Add
+   an empty descendant with the ordinary context folder-create route, using
+   `?workId=<work-id>` and `{type:"folder",path:"/@cN/empty"}`. This is a
+   source-relative transport path, not a public URI. Fork and hand off. Each
+   destination reads its own copy immediately after creation returns. Folder
+   shape, empty descendants and persisted text filetypes survive. The seed
+   names the canonical source folder where originals remain.
+2. **No Work.** Repeat on a No Work source. A fork keeps the lineage source
+   with a different associated root; a handoff owns a new lineage source.
+   `$PARENT` names the old owner/chat and `$THREAD` the destination. The locked
+   No Work row owns no Scratch source.
+3. **Inherited cutoff.** Give a fork a unique note, then fork and hand it off
+   at an inherited ancestor assistant turn. Both copy the acted-on fork's
+   unique note, not only its ancestor's notes. Snapshot `notesScope.parent`
+   and `derivationSourceThreadId` name the acted-on fork; transcript cutoff
+   and inherited uploads still use their existing owner rules.
+4. **Absent and empty roots.** Derive from a chat that has no notes root:
+   no target root (or new No Work handoff source) is allocated. Write source
+   notes later and replay the same creation body: still no copy. Separately
+   create a present root containing only an empty child folder and derive it:
+   the root and empty child are copied despite having no documents.
+5. **Independent identity/history.** Compare source/destination document ids,
+   authority clients and checkpoints in the owned database. Copies have new
+   ids, a fresh initial checkpoint, no source journal updates, no source undo
+   receipts or frontiers. `metadata.copiedFrom` names the source URI/live
+   revision. `read` with `format:"edits"` starts empty. Read then overwrite
+   a copied note through the model; the original stays unchanged. Edit the
+   source and confirm the copy stays unchanged. Ordinary document `write copy`
+   still stages/saves and reports its own receipt normally.
+6. **Binary descendants.** Upload a binary, move it into the source notes
+   using the ordinary identity move, then derive. It has a new document id
+   and object key with the same bytes. Removing source bytes must not remove
+   the copied object's bytes. Nested binary provenance uses the original
+   canonical address, not a storage basename.
+7. **No subagent copy.** Queue a child mock matched to its spawn prompt. Its
+   first read of `scratch://$THREAD/plan.md` is not found; its `$PARENT` read
+   succeeds. Its first own report write succeeds, without a copied plan.
+8. **Atomic failure isolation.** On an owned disposable database, install a
+   temporary document-insert trigger that raises for the nested `scene`
+   document. Derive and remove the trigger in a `finally` cleanup. Creation
+   succeeds, no target root/document/catalog tree survives, and `copy.failed`
+   logs source and destination ids. The seed still names original notes.
+   Send a real first message with a mock read of `$PARENT`: it succeeds.
+   Replay creation after removing the fault: copying is not retried. For
+   binary cleanup, repeat with a catalog-commit failure after preparation:
+   uncommitted copied objects are released and no tree is published.
+9. **Create-only and publication.** Replaying successful creation preserves
+   all destination identities and independent notes. Calling the copy
+   primitive against an existing destination root does no preparation or
+   installation. For a preparation/install race, let the destination create
+   its own root before installation; that root and its bytes win unchanged.
+   Observe one committed destination catalog publication for the complete
+   tree, not one per file. Reconnect and reload see the same tree and title
+   labels. No source document is moved or relabelled.
+10. **Populated migration.** Apply migrations 0079–0080 to populated derivation
+    fixtures exceeding the 500-row page size. Every historical fork/handoff
+    gets its origin turn's owner, organic rows stay null, explicit recorded
+    provenance is preserved, and replay changes no settled row. New creates
+    must supply the acted-on source. Regenerate schema expecting no drift.
+
+Record every scenario's exact command, expected outcome, actual outcome and
+raw evidence path in the work item's Phase 3 verification log. Keep fixtures,
+SQL fault triggers and scripts disposable; never reset another stack's DB.
+
 ## Final browser run (separate prober)
 
 1. Open the fixture Work's Files and the chat's Scratch. Capture title-labelled
@@ -169,7 +255,12 @@ uses `Untitled chat`; a subagent uses its spawning parent's title plus `(subagen
    root label (and subagent root label) changes without losing the open note.
 5. Follow an unresolved Scratch link: no Create offer. In an Editor document,
    author a raw `$THREAD` link; it must remain unasked, not missing-creatable.
-6. Save screenshots with the fixture ids and compare the chat with
+6. Fork and hand off the visible source in both named Work and No Work. Check
+   immediate navigation, copied notes after creation/reload, independent edits,
+   canonical source pointers, and title labels. On an injected copy failure,
+   the conversation still works and there is no notes status/Retry control.
+   Save copied/failure screenshots separately from CLI debugging evidence.
+7. Save screenshots with the fixture ids and compare the chat with
    `./mf thread view $THREAD_ID --json`.
 
 Cleanup: remove queued scripts, close only your browser session, remove temporary
