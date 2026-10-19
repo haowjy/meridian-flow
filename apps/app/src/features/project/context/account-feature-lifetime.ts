@@ -9,6 +9,7 @@ import { IdentityContinuity } from "./identity-continuity";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { reconcileRecentAvailability } from "./recent-availability";
+import { RemovedNoticeStore } from "./removed-notice-store";
 import { renameOperationLifecycle } from "./rename-operation-lifecycle";
 
 export class AccountFeatureLifetime {
@@ -16,6 +17,7 @@ export class AccountFeatureLifetime {
   readonly registry;
   readonly removal;
   readonly availability;
+  readonly notices;
   readonly resources;
   readonly opener;
   readonly renameOperations;
@@ -35,7 +37,6 @@ export class AccountFeatureLifetime {
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
     this.registry = this.runtime.registry;
-    this.removal = new ContextRemovalCoordinator(accountId, { sessions: this.registry });
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {
@@ -44,9 +45,14 @@ export class AccountFeatureLifetime {
       },
       repairProjectCatalog,
     });
+    this.notices = new RemovedNoticeStore(this.availability);
+    this.removal = new ContextRemovalCoordinator(accountId, {
+      sessions: this.registry,
+      notices: this.notices,
+    });
     // The one reaction to a live room's 4208, held by an editor or not: ask
-    // availability now. `deleted` closes its tabs with the record (an editor
-    // still holding the room reads the same shared answer); `available` means
+    // availability now. `deleted` closes its tabs (an editor still holding
+    // the room reads the same answer from the record cache); `available` means
     // a restore won the race, so the room reconnects in place, once per
     // session so a server that keeps closing it can't make it loop.
     const restarted = new WeakSet<object>();

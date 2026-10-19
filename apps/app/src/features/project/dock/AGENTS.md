@@ -24,6 +24,10 @@ The dock header uses `DockDocumentIdentity` over the shared `DocumentIdentityBar
 - The document shares the project's one presented-document review. Its review
   address lives on the occupant and persists with it. Draft-only settlement and
   address writes never bump the revision, so a writer's open in flight wins.
+- A document the catalog no longer places closes the slot and reports itself
+  to the dock's removed-documents notice (`RemovedNoticeStore`, surface
+  `dock`), shown beside "Recent" on Chat's rail. See
+  `../context/.context/resource-catalog-and-editor-lifecycle.md`.
 - The dock slot owns its material. Keep document shells transparent. Do not
   stack custom `border-border-subtle` with another border-color class in `cn`.
 

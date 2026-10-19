@@ -230,6 +230,18 @@ msgstr ""
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count, plural, one {# document deleted} other {# documents deleted}}"
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count, plural, one {# document discarded} other {# documents discarded}}"
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count, plural, one {# document removed} other {# documents removed}}"
+msgstr ""
+
 #: src/features/chat/ChatUploadsMenu.tsx
 msgid "{count, plural, one {# file} other {# files}}"
 msgstr ""
@@ -248,10 +260,6 @@ msgstr ""
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{count} changes"
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were deleted by {name}."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -374,6 +382,18 @@ msgstr ""
 msgid "{title} removed from Favorites"
 msgstr ""
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted."
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was discarded from the draft."
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was removed when the reply that created it didn't finish."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 #~ msgid "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
 #~ msgstr ""
@@ -405,29 +425,8 @@ msgstr ""
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr ""
 
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "<0>{title}</0> was deleted by {actorName}."
-#~ msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "<0>{title}</0> was deleted by {name}."
-msgstr ""
-
 #: src/features/chat/DeletedChatCard.tsx
-#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "<0>{title}</0> was deleted."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "<0>{title}</0> was discarded from the draft by {name}."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "<0>{title}</0> was discarded from the draft."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "<0>{title}</0> was removed when the reply that created it didn't finish."
 msgstr ""
 
 #: src/features/chat/derivation/InheritedMarks.tsx
@@ -4570,14 +4569,6 @@ msgstr ""
 msgid "This document is still opening."
 msgstr ""
 
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted by {name}, so this draft can't be applied."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted by {name}."
-msgstr ""
-
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "This document was deleted from your project after the draft started. Check it, then apply again."
 #~ msgstr ""
@@ -4591,7 +4582,7 @@ msgid "This document was deleted."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was discarded from the draft by {name}."
+msgid "This document was discarded from the draft, so this draft can't be applied."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -5145,7 +5136,7 @@ msgid "You deleted {count} documents elsewhere."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You deleted <0>{title}</0> elsewhere."
+msgid "You deleted {title} elsewhere."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -5161,7 +5152,7 @@ msgid "You discarded {count} documents from the draft elsewhere."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You discarded <0>{title}</0> from the draft elsewhere."
+msgid "You discarded {title} from the draft elsewhere."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx

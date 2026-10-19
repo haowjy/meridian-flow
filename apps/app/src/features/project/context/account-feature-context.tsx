@@ -27,6 +27,7 @@ import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import type { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
+import type { RemovedNoticeStore } from "./removed-notice-store";
 
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
@@ -35,6 +36,7 @@ const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | n
 const ProjectAvailabilityAccountContext =
   createContext<ProjectContextAvailabilityCoordinator | null>(null);
 const ResourceReplicaAccountContext = createContext<AccountResourceReplica | null>(null);
+const RemovedNoticesAccountContext = createContext<RemovedNoticeStore | null>(null);
 const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
   null,
 );
@@ -170,11 +172,13 @@ function AccountFeatureProviders({
           <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
             <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
               <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
-                <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                  <LinkSettlementsProvider value={lifetime.linkSettlements}>
-                    {children}
-                  </LinkSettlementsProvider>
-                </ProjectDocumentLiveOpenerContext.Provider>
+                <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
+                  <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
+                    <LinkSettlementsProvider value={lifetime.linkSettlements}>
+                      {children}
+                    </LinkSettlementsProvider>
+                  </ProjectDocumentLiveOpenerContext.Provider>
+                </RemovedNoticesAccountContext.Provider>
               </LiveDocumentRegistryAccountContext.Provider>
             </ResourceReplicaAccountContext.Provider>
           </ProjectAvailabilityAccountContext.Provider>
@@ -289,9 +293,9 @@ export function useAccountEpochSignal(): AbortSignal {
   return signal;
 }
 
-/** The signed-in user's id, or null outside the authenticated shell. */
-export function useOptionalAccountId(): string | null {
-  return useContext(AccountIdContext);
+/** The removed-documents notice store; null outside the authenticated shell. */
+export function useOptionalRemovedNotices(): RemovedNoticeStore | null {
+  return useContext(RemovedNoticesAccountContext);
 }
 
 export function useAccountId(): string {

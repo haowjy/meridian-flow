@@ -27,7 +27,8 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import { useAccountResourceReplica, useContextRemovalCoordinator } from "./account-feature-context";
+import { useDockDocumentStore } from "../dock/dock-document-store";
+import { useAccountResourceReplica, useOptionalRemovedNotices } from "./account-feature-context";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -217,11 +218,20 @@ function DropdownActionItems({
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────
 
-/** The file, or the open tabs inside the folder (same scheme and owner), that this delete removes. */
+/**
+ * The file, or the presented documents inside the folder (same scheme and
+ * owner), that this delete removes. The notice store keeps marks only for
+ * documents a tab or the dock presents.
+ */
 function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[] {
   if (target.kind === "file") return [target.documentId];
   const folder = `${target.path.replace(/^\/+|\/+$/g, "")}/`;
-  return getContextTabs(projectId).tabs.flatMap((tab) =>
+  const dock = useDockDocumentStore.getState().occupant;
+  const presented = [
+    ...getContextTabs(projectId).tabs,
+    ...(dock?.projectId === projectId ? [dock.tab] : []),
+  ];
+  return presented.flatMap((tab) =>
     tab.kind !== "new" &&
     tab.scheme === target.scheme &&
     (target.owner.workId == null || tab.workId === target.owner.workId) &&
@@ -247,16 +257,14 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
     setTarget(null);
   }, []);
 
-  const removal = useContextRemovalCoordinator();
+  const notices = useOptionalRemovedNotices();
   const confirm = useCallback(async () => {
     if (!target) return;
     setError(null);
-    // This tab's own delete closes its tabs and says nothing about it, however the removal arrives.
-    const settleMark = removal.markOwnRemoval(
-      projectId,
-      ownDeletedDocumentIds(projectId, target),
-      "deleted",
-    );
+    // This tab's own delete closes what it presents and says nothing about it, however the removal arrives.
+    const settleMark =
+      notices?.markOwnRemoval(projectId, ownDeletedDocumentIds(projectId, target)) ??
+      (() => undefined);
     let removed = false;
     try {
       setLocalPending(true);
@@ -276,7 +284,7 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
       settleMark(removed ? "removed" : "kept");
       setLocalPending(false);
     }
-  }, [projectId, removal, resources, target]);
+  }, [notices, projectId, resources, target]);
 
   return {
     target,
