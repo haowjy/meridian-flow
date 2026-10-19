@@ -480,7 +480,12 @@ function createProductionStoreResolvers(
       return workId;
     },
     resolveMutationStore() {
-      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals, repair, removal);
+      return new DrizzleContextTreeMutationStore(db, {
+        removal,
+        catalogMutations,
+        ...(arrivals ? { arrivals } : {}),
+        ...(repair ? { repair } : {}),
+      });
     },
   };
 }
@@ -600,10 +605,10 @@ export function createProductionUnifiedContextPortFactory(options: {
   links: ContextFSDeps["links"];
   db: Database;
   documentSync: ContextFSDeps["documentSync"] &
-    DocumentCreationAggregate & { documentRemoval: DocumentRemoval } & Pick<
-      DraftPeerShadowAccess,
-      "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft"
-    >;
+    DocumentCreationAggregate &
+    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  /** The tree's removal kernel: every delete, overwrite and end of use tombstones through it. */
+  removal: DocumentRemoval;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
@@ -631,7 +636,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   const storeResolvers = createProductionStoreResolvers(
     options.db,
     catalogMutations,
-    options.documentSync.documentRemoval,
+    options.removal,
     options.arrivals,
     options.hiddenNodeRepair,
   );
@@ -646,7 +651,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     creates: (store) =>
       createDrizzleBranchCreates({
         db: options.db,
-        removal: options.documentSync.documentRemoval,
+        removal: options.removal,
         sourceId: () => store.contextSourceId(),
         documents: options.documentSync,
         drafts: options.documentSync,

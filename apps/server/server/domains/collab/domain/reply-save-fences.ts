@@ -6,7 +6,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { DocumentRemovals } from "../../context/ports/document-removals.js";
+import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
 import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
@@ -75,22 +75,19 @@ export function createReplySaveFences(deps: {
       await collabHook("save.afterDocumentLock");
       const refusals = new Map<DocumentId, RefusedResponseDocument>();
       const denials = await deps.fileAccess.confirmEdit(grants);
-      // A deleted document answers `not_found`; the record says who deleted it.
-      const removals = await deps.removals.lookup(
-        denials
-          .filter((denial) => denial.reason === "not_found")
-          .map((d) => targetDocumentId(d.target)),
-      );
-      for (const denial of denials) {
-        const documentId = targetDocumentId(denial.target);
-        const removal = removals.get(documentId);
-        refusals.set(documentId, { documentId, denial, ...(removal ? { removal } : {}) });
-      }
       const active = new Map<BranchId, boolean>();
+      // A closed pin whose draft may have closed with its document's removal: judged below,
+      // against one batched record lookup.
+      const closedPins: {
+        documentId: DocumentId;
+        reason: StagedWriteRejectionReason;
+        byRemoval: boolean;
+      }[] = [];
       for (const [documentId, { pin }] of entries.sort(([, a], [, b]) =>
         (a.pin?.branchId ?? "").localeCompare(b.pin?.branchId ?? ""),
       )) {
-        if (!pin || refusals.has(documentId)) continue;
+        if (!pin || denials.some((denial) => targetDocumentId(denial.target) === documentId))
+          continue;
         if (!active.has(pin.branchId))
           active.set(pin.branchId, Boolean(await deps.branches.shareActive(pin.branchId)));
         const upstream = await deps.drafts.getDraft(pin.upstreamDraftId);
@@ -112,20 +109,40 @@ export function createReplySaveFences(deps: {
           reason = "integration";
           deps.diagnostics?.replyPinMismatch({ documentId, threadId: record.threadId, pin });
         }
-        if (reason === "discarded_document" || reason === "discarded_edit") {
-          // A closed draft over a removed document is the removal's, not a writer's discard;
-          // a draft closed with `document_removed` keeps that cause once the document stands again.
-          const removal = (await deps.removals.lookup([documentId])).get(documentId);
-          if (
-            removal ||
-            upstream?.closedCause === "document_removed" ||
-            peer?.closedCause === "document_removed"
-          ) {
-            refusals.set(documentId, { documentId, removed: removal ?? null });
-            continue;
-          }
-        }
-        if (reason) refusals.set(documentId, { documentId, reason });
+        if (reason === "discarded_document" || reason === "discarded_edit")
+          closedPins.push({
+            documentId,
+            reason,
+            // A draft closed with `document_removed` keeps that cause once the document stands again.
+            byRemoval:
+              upstream?.closedCause === "document_removed" ||
+              peer?.closedCause === "document_removed",
+          });
+        else if (reason) refusals.set(documentId, { documentId, reason });
+      }
+      // A deleted document answers `not_found`; the record says who deleted it. A closed draft
+      // over a removed document is the removal's, not a writer's discard.
+      const removals = await deps.removals.lookup([
+        ...denials
+          .filter((denial) => denial.reason === "not_found")
+          .map((denial) => targetDocumentId(denial.target)),
+        ...closedPins.map((pin) => pin.documentId),
+      ]);
+      for (const denial of denials) {
+        const documentId = targetDocumentId(denial.target);
+        refusals.set(
+          documentId,
+          denial.reason === "not_found"
+            ? { documentId, removed: removals.get(documentId) ?? null }
+            : { documentId, denial },
+        );
+      }
+      for (const { documentId, reason, byRemoval } of closedPins) {
+        const removal = removals.get(documentId);
+        refusals.set(
+          documentId,
+          removal || byRemoval ? { documentId, removed: removal ?? null } : { documentId, reason },
+        );
       }
       const denied = new Set<AgentEditCore>();
       for (const [documentId, refusal] of refusals) {

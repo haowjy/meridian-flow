@@ -4,6 +4,7 @@
  * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
 import type { ContextSourceId, DocumentId, FolderId, UserId } from "@meridian/contracts";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
@@ -105,9 +106,7 @@ export async function insertFolder(
   return row.id;
 }
 
-export type RemovalInitiator =
-  | { userId: UserId }
-  | { cause: "reply_rolled_back" | "create_failed" | "repair" };
+export type RemovalInitiator = { userId: UserId } | { cause: DocumentRemovalCause };
 
 export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): Promise<void> {
   if (ids.length === 0) return;

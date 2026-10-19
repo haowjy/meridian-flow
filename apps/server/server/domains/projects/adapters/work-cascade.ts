@@ -2,25 +2,19 @@
 
 import type { ContextSourceId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contextSources,
-  documents,
-  folders,
-  projectResults,
-  threads,
-} from "@meridian/database/schema";
+import { contextSources, folders, projectResults, threads } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockContextNamespaces } from "../../context/adapters/context-fs/document-locations.js";
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { lockDocuments } from "../../context/tree/node-rows.js";
-import {
-  loadActiveBranchUses,
-  loadLivingSourceDocumentIds,
-} from "../../context/tree/tree-view-sql.js";
+import { restoreWorkDocuments } from "../../context/tree/removal.js";
+import { loadLivingSourceDocumentIds } from "../../context/tree/tree-view-sql.js";
+import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 type WorkCascadeInput = {
   removal: DocumentRemoval;
+  projection: Pick<WorkProjectionMutation, "recountAfterCommit">;
   workId: WorkId;
   projectId: ProjectId;
   threadIds: readonly ThreadId[];
@@ -90,26 +84,8 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
       await lockDocuments(db, documentIds);
       await removal.remove({ documentIds, reason: "deleted", workId, at });
     },
-    async cascadeRestore({ db, workId, removal }) {
-      const restored = await currentDrizzleDb(db)
-        .update(documents)
-        .set({
-          deletedAt: null,
-          deletionReason: null,
-          deletedByUserId: null,
-          deletionCause: null,
-          deletedByWorkId: null,
-          locationVersion: sql`${documents.locationVersion} + 1`,
-        })
-        .where(eq(documents.deletedByWorkId, workId))
-        .returning({ id: documents.id });
-      const uses = await loadActiveBranchUses(
-        currentDrizzleDb(db),
-        restored.map(({ id }) => id),
-      );
-      removal.recount([
-        ...new Set(uses.flatMap(({ originWorkId }) => (originWorkId ? [originWorkId] : []))),
-      ]);
+    async cascadeRestore({ db, workId, projection }) {
+      projection.recountAfterCommit(await restoreWorkDocuments(db, workId));
     },
   },
   {

@@ -14,7 +14,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import type { DocumentRemovals } from "../context/ports/document-removals.js";
+import type { DocumentRemovals } from "../context/ports/document-removal.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
@@ -85,6 +85,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   return createThreadPeerCorePool({
     branches: input.branches,
     drafts: input.drafts,
+    removals: input.removals,
     fences: createReplySaveFences({
       liveUtilityCore: input.liveUtilityCore,
       drafts: input.drafts,

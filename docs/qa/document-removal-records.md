@@ -62,7 +62,7 @@ writer data. No additional unit case is needed for these recipe-covered risks.
   read-triggered hidden-node repair. Both old identities must record
   `discarded` with system cause `repair`.
 
-Read removal records through `DocumentRemovals.lookup`: only tombstones
+Read removal records through `readRemovalRecords` (`tree/removal.ts`): only tombstones
 appear, actor names are current, unknown historical actors remain null.
 Instantiate `DocumentRemovedError` with one result and check it retains the
 same document ID and record. The optional availability `removal` is filled
@@ -109,19 +109,28 @@ known-id denial can include its record without allowing content access.
    closed with cause `discarded`; journal rows and inline bytes are released.
    `state` and `state_vector` are zero-length bytea (not an empty Yjs document),
    `live_cut` and `discarded_state_vector` are NULL. Wait beyond room checkpoint
-   debounce and check they remain released. Removal owns the sole `4208` room
-   path for tombstones; generic Discard/retraction retirement applies only to
-   documents that survive. A creation shared by two Works survives the first
-   Work's Discard and keeps the other Work's active draft.
+   debounce and check they remain released. The transaction's one retirement
+   closes a tombstoned creation's rooms `4208` (another tab reviewing it sees
+   the removal) and a surviving document's draft rooms stale. A creation shared
+   by two Works survives the first Work's Discard and keeps the other Work's
+   active draft.
+9. A draft-mode reply stages a write into an existing document; the document is
+   tree-deleted between the staging and its step's save (stack with
+   `COLLAB_PAUSE_AT=draft.ensure.afterDocumentLock`: the step's second tool call
+   creates a document and parks there; `./mf doc rm` the first). The staged
+   write's tool result reads "This file was deleted by <name> before this reply
+   was saved, so this change wasn't made." with no retry, and its chat card
+   shows the generic refusal, never "You discarded this new document".
 8. Time the document-lock hold separately from fixture setup with ten drafts
    and many pending parts. Assert no room close before commit and check every
    part actually settled; do not treat skipped work or a busy-host sample as a
    performance improvement.
 
 `DocumentRemoval.remove` requires the caller's complete, sorted document-lock
-set after Work/namespace admission and before document row locks. Keep a batch's
-Works recount in its own root transaction after commit. Do not add Work locks
-while holding the removed documents or drafts.
+set after Work/namespace admission and before document row locks. Works the
+caller does not hold recount in their own root transaction after commit
+(`recountAfterCommit`). Do not add Work locks while holding the removed
+documents or drafts.
 
 ## Browser finish
 

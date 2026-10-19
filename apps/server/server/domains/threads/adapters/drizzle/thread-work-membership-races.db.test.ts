@@ -5,8 +5,8 @@ import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { createDraftClose } from "../../../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
-import { createDrizzleDocumentRemovals } from "../../../context/tree/document-removals.js";
 import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 import {
   resetThreadWorkRaceFixture,
@@ -58,7 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const drafts = createDrizzleDraftStore(db, {
-      removals: createDrizzleDocumentRemovals(db),
+      close: createDraftClose(),
       workProjection: createTestWorkProjectionMutation(db),
       branches: createDrizzleBranchStore(db),
     });

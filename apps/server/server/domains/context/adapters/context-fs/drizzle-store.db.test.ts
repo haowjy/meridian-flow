@@ -79,13 +79,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const markdownByDocument = new Map<string, string>();
       const observedWriteFiletypes: Array<string | null> = [];
       let beforeCollabWrite: (() => Promise<void>) | null = null;
-      const mutationStore = new DrizzleContextTreeMutationStore(
-        db,
-        undefined,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const mutationStore = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       const context = new ContextFS({
         placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
@@ -283,13 +279,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("ignores source content activity during an overwrite move", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        createDrizzleContextCatalog(db),
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: createDrizzleContextCatalog(db),
+      });
       const source = await tree.inspect(SOURCE_ID, "rollback-source");
       const target = await tree.inspect(SOURCE_ID, "rollback-target");
       expect(source?.kind).toBe("file");

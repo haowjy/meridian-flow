@@ -13,6 +13,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import * as Y from "yjs";
+import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import {
   DOCUMENT_RUNTIME_RESET_TABLES,
   deleteDrizzleRows,
@@ -52,6 +53,7 @@ export function createWorkBranchFixture(db: Database) {
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
+        ...createTestRemovalDeps(db),
       }),
     );
     collabs.push(collab);

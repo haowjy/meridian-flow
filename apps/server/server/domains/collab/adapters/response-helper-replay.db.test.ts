@@ -46,7 +46,6 @@ async function expectScopedReplay(
         return branchId ? { kind: "branch", branchId } : { kind: "live" };
       },
     },
-    retirePeers: async () => {},
   });
   const args = {
     documentId: ALPHA_ID,

@@ -1,4 +1,5 @@
 /** Seeded upgrade contract: normalize historical content and every mutable address. */
+
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ import {
 } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import { useRollbackTestDatabase } from "../../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
@@ -434,6 +436,7 @@ else
       const contextPorts = createProductionUnifiedContextPortFactory({
         pendingBranch: createTestWorkProjectionMutation(db),
         db,
+        removal: createTestDocumentRemoval(db),
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
         branches: collab.branches,

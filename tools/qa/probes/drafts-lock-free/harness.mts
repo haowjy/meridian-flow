@@ -14,6 +14,7 @@ import postgres from "postgres";
 import * as Y from "yjs";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
 import { createDrizzleBranchStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branches.ts";
+import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.js";
 import {
   type AppendCommitted,
   createDrizzleDraftStore,
@@ -21,7 +22,6 @@ import {
 import { createDrizzleCollabPersistence } from "../../../../apps/server/server/domains/collab/adapters/drizzle-journal.ts";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
-import { createDrizzleDocumentRemovals } from "../../../../apps/server/server/domains/context/tree/document-removals.js";
 import { createWorkProjectionMutation } from "../../../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { runInDrizzleSavepoint } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
@@ -104,7 +104,7 @@ export async function openHarness(url: string) {
   /** Every committed append's sequence-point timing, in commit order. */
   const appends: AppendCommitted[] = [];
   const store = createDrizzleDraftStore(db, {
-    removals: createDrizzleDocumentRemovals(db),
+    close: createDraftClose(),
     workProjection: projection,
     branches,
     live: persistence,

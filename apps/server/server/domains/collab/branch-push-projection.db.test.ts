@@ -31,7 +31,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
-import { createDrizzleDocumentRemovals } from "../context/tree/document-removals.js";
 import {
   createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
@@ -43,6 +42,7 @@ import {
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import { createDraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
@@ -84,7 +84,7 @@ describe("branch-push durable projection", () => {
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const draftStore = createDrizzleDraftStore(db, {
-    removals: createDrizzleDocumentRemovals(db),
+    close: createDraftClose(),
     workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,

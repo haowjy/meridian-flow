@@ -34,7 +34,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import { DocumentRemovedError } from "../../context/ports/document-removals.js";
+import { DocumentRemovedError } from "../../context/ports/document-removal.js";
 import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { collabHook } from "../domain/collab-test-hooks.js";

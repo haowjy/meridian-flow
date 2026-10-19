@@ -50,39 +50,48 @@ refresh the catalog in their own surrounding transaction.
 
 ## Removal facts
 
-`DocumentRemovals` is the context-owned port for current tombstone records;
-`tree/document-removals.ts` joins actor names in the caller's transaction.
-Callers must authorize identity access before exposing its result (availability
-does so through its existing classification). `DocumentRemovedError` lives
-with the port, so collab need not import a context adapter. A writer's Discard
-never sets the Work-cascade restore marker. Retractions name
-`reply_rolled_back` or `create_failed`; both repair paths name `repair`.
+`tree/removal.ts` is the removal record's one owner: `createDocumentRemoval`
+writes it, `restoreWorkDocuments` clears it for a Work Restore, and
+`readRemovalRecords` reads it (actor names joined as they read now) through the
+handle its caller gives. Adapters call the reader directly; domain code that
+needs a seam (the reply save fence, the model's file tools) takes the narrow
+`DocumentRemovals` port, built over it at a composition root. Callers must
+authorize identity access before exposing a record (availability does so through
+its existing classification). `ports/document-removal.ts` holds the kernel, the
+collab port and `DocumentRemovedError`, so collab need not import a context
+adapter. A writer's Discard never sets the Work-cascade restore marker.
+Retractions name `reply_rolled_back` or `create_failed`; both repair paths name
+`repair` (one `DocumentRemovalCause`, from contracts).
 
-`DocumentRemoval.remove` is the shared kernel for tree delete, overwrite,
-Work cascade and last use. Callers take Work and namespace locks, then the
-complete sorted document mutation-lock set before any document row lock. The
-kernel writes the removal record, collects the Works of all tree uses, and invokes one
-collab capability. Independent removal retires uses; Work cascade retains hidden creations' uses for Restore. Retained uses are inactive while their document is tombstoned: tree
-membership and pending counts filter document liveness. Restore never reopens a
-closed draft and schedules a recount for every Work whose retained uses reactivate.
+`DocumentRemoval.remove` is the shared kernel for tree delete, overwrite, Work
+cascade and last use, and returns exactly the documents it tombstoned. It is
+built at the composition root (`lib/compose.ts`), not by collab. Callers take
+Work and namespace locks, then the complete sorted document mutation-lock set
+before any document row lock. The kernel writes the record, collects the Works
+of all tree uses, and calls collab's `closeRemovedDocuments` with the record.
+Independent removal retires uses; Work cascade retains hidden creations' uses
+so `restoreWorkDocuments` brings their membership back with the tombstone (the
+rule lives beside the Restore it serves). Retained uses are inactive while their
+document is tombstoned: tree membership and pending counts filter document
+liveness. Restore never reopens a closed draft; the cascade recounts the Works
+whose retained uses reactivate through the projects projection.
 
 Production Work sources are Scratch (historical Work uploads were live too);
 file policy routes both schemes live and draft admission rejects them. A hidden
 creation there is not a supported production write. Legacy schemas nevertheless
 permit such rows, so cascade and cutover preserve their membership as well as
-their bytes rather than turning Restore into an orphan eligible for repair. End-use also carries the Work of the use it already dropped,
-even for draftless or revealed creations. Storage release owns no lifecycle:
-only `discarded` removals release bytes, and draft rows are never deleted by it.
+their bytes rather than turning Restore into an orphan eligible for repair.
+Storage release owns no lifecycle: only `discarded` removals release bytes, and
+draft rows are never deleted by it.
 
-Collab closes upstream Work drafts in ID order before peers in ID order, settles
-their pending receipt parts, and schedules room/runtime retirement plus a
-separate-root pending-count recount after commit. Discard/retraction close their
-own rows with `discarded` before last-use removal; tombstoned documents are
-excluded from generic peer retirement, so only removal sends their room close.
-A retraction returns a retirement capability, invoked after commit only if the
-document survives. Folder deletion locks the complete pre-split subtree,
-hidden boundary documents included, before the split updates any document row.
-Removal never acquires an affected Work under document or draft locks. Rollback delivers nothing.
+Pending counts: every Work the removal changed (tree uses, closed drafts' Works)
+goes to `WorkProjectionMutation.recountAfterCommit`, which skips a Work the
+caller already holds through the projection (Discard, a branch create's
+retraction) and recounts the rest in a separate root transaction after commit,
+because the removal holds document locks and may not take a Work lock. End of
+use recounts nothing itself: every caller holds the branch's Work. Folder
+deletion locks the complete pre-split subtree, hidden boundary documents
+included, before the split updates any document row. Rollback delivers nothing.
 
 ## Lock and identity contracts
 

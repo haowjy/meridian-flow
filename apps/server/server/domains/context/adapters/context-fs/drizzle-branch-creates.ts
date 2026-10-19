@@ -4,7 +4,6 @@
  * draft lifecycle, journals and pooled cores).
  */
 import type { Database } from "@meridian/database";
-import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { DraftPeerShadowAccess, MarkdownDocumentStore } from "../../../collab/index.js";
 import type { BranchCreatePort } from "../../ports/branch-create.js";
 import type { DocumentRemoval } from "../../ports/document-removal.js";
@@ -53,26 +52,14 @@ export function createDrizzleBranchCreates(deps: {
     },
     async retractCreate({ branch, documentId, cause }) {
       await lockedSource();
-      let retire: (() => Promise<void>) | undefined;
       const retracted = await retractCreate(deps.db, {
         branchId: branch.id,
         documentId,
         cause,
         removal: deps.removal,
-        retractDraft: async () => {
-          const result = await deps.drafts.retractCreatedDocumentDraft({
-            documentId,
-            branchId: branch.id,
-          });
-          if (result.outcome === "retracted") retire = result.retire;
-          return result.outcome;
-        },
+        retractDraft: () =>
+          deps.drafts.retractCreatedDocumentDraft({ documentId, branchId: branch.id }),
       });
-      if (
-        retire &&
-        !retracted.tombstoned.some((ref) => ref.kind === "document" && ref.id === documentId)
-      )
-        runAfterDrizzleCommit(retire);
       return retracted.retracted ? "retracted" : "stands";
     },
   };

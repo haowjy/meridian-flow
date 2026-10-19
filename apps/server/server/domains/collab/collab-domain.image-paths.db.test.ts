@@ -154,13 +154,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(
-          db,
-          undefined,
-          undefined,
-          undefined,
-          createTestDocumentRemoval(db),
-        ),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         threadView: {
           threadId: THREAD_ID,
           branchWork: { id: WORK_ID as never, slug: "work" },
@@ -368,13 +364,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(
-          db,
-          undefined,
-          undefined,
-          undefined,
-          createTestDocumentRemoval(db),
-        ),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,

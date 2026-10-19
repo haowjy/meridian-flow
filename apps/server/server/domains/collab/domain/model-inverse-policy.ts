@@ -8,10 +8,10 @@ import {
   type ModelInverseCommand,
   type PreparedEditRoots,
   prepareEditRoots,
+  removedFileMessage,
 } from "@meridian/agent-edit/integration";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { removedFileSentence } from "../../context/document-removal-copy.js";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
@@ -211,7 +211,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     if (document.removal)
       return {
         status: "document_not_found",
-        message: `File not found. ${removedFileSentence(document.removal)}`,
+        message: removedFileMessage(document.removal),
       };
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,

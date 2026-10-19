@@ -54,23 +54,39 @@ and whole Discard retain their existing document-level semantics. Corrupt
 previews return a typed refusal without resetting state; the whole Discard
 command is the recovery path for a corrupt draft.
 
-Discard closes only peers whose upstream is the addressed Work draft,
-then retires those peers after commit. A fresh peer in the same thread and
-peers for other Works survive. Thread-core invalidation is a post-discard
-side effect, never a preview side effect.
+Discard closes only peers whose upstream is the addressed Work draft. A fresh
+peer in the same thread and peers for other Works survive. Thread-core
+invalidation is a post-discard side effect, never a preview side effect.
 
-Removal closes all active drafts on the document through `closeDrafts`, the same
-operation Discard, purge and retraction use. It prelocks Work drafts in ID order,
-then thread peers in ID order, matching a pull's upstream-before-peer order.
-Retraction takes that order before checking for other contributions and closes
-rather than deleting. Removed documents refuse new draft/peer inserts under
-their document mutation lock, after Work/thread and branch admission.
+Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
+cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
+`branch_closed`, `document_discarded`, `edit_discarded` or
+`{ documentRemoved: record }`. It prelocks Work drafts in ID order, then thread
+peers in ID order (a pull's upstream-before-peer order), derives the durable
+`closed_cause` (`document_removed` for a removal, else `discarded`), settles
+each Work draft's current generation, and joins the root transaction's
+retirement batch (a transaction participant: a rolled-back savepoint's closes
+leave with it). After the root commits the batch retires once
+(`domain/draft-retirement.ts`): a draft whose document the same transaction
+removed retires as a removal whatever its own cause (its rooms close `4208`,
+its peers' staged writes are refused `{ removed: record }`), so a Discard that
+closes a created document's drafts and then tombstones it still closes their
+rooms `4208`; any other closed draft's room closes stale and its peers are
+refused with their cause's `discarded_*` reason. A removal's selection names its
+documents, whose live rooms close `4208` even with no draft. The closer is
+built at the composition root and its retirement bound by the collab domain once
+rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as in
+fixtures without rooms, it retires nothing. A caller whose commit happens inside
+process-level live scopes (Discard) runs under `holdRetirement`, so retirement,
+and a save racing it, never wait on scopes the committer still holds.
+Retraction takes the same lock order before checking for other contributions
+and closes rather than deleting. Removed documents refuse new draft/peer inserts
+under their document mutation lock, after Work/thread and branch admission.
 
 Only a committed removal closes live and draft sockets with `4208`. The room
 helper closes the gateway transport before Hocuspocus's protocol close, which
-otherwise arrives as `1000`. Pending-count reconciliation runs in a separate
-root transaction after those document and draft locks have been released.
-Failures are logged as `collab.removal.after_commit.failed`.
+otherwise arrives as `1000`. Failures are logged as
+`collab.retirement.after_commit.failed`.
 
 A discarded document's closed draft rows remain as lifecycle records, but their
 journals are deleted, `state`/`state_vector` are zero-length bytea and

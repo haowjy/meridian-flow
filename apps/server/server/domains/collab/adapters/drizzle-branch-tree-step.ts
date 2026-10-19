@@ -32,8 +32,8 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
-import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
+import { readRemovalRecords } from "../../context/tree/removal.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import {
   BRANCH_TREE_STEP,
@@ -86,7 +86,6 @@ export function createDrizzleBranchTreeStep(
   },
 ): SettlementApplyStep {
   const tree = createTreeReader(db);
-  const removals = createDrizzleDocumentRemovals(db);
 
   return {
     kind: BRANCH_TREE_STEP,
@@ -118,8 +117,10 @@ export function createDrizzleBranchTreeStep(
         const holds: ApplyItemHold[] = [];
         const apply: Eligible[] = [];
         // Every payload document, before tree membership: a removal retires the document's
-        // tree rows, so a removed creation has no node left to say it was removed.
-        const removed = await removals.lookup(
+        // tree rows, so a removed creation has no node left to say it was removed. Every
+        // tombstone has its record, so a node never reaches `deleted_live` below.
+        const removed = await readRemovalRecords(
+          currentDrizzleDb(db),
           payload.items.map((item) => item.documentId as DocumentId),
         );
         for (const item of payload.items) {
@@ -141,13 +142,6 @@ export function createDrizzleBranchTreeStep(
               itemKey: item.itemKey,
               ...(item.draftId ? { documentId: item.documentId } : {}),
               reason: branchTreeHold(node.conflict.uri ?? node.conflict.at),
-            });
-          } else if (node.conflict.kind === "deleted_live") {
-            // A tombstone without a record (removed before records existed).
-            holds.push({
-              itemKey: item.itemKey,
-              ...(item.draftId ? { documentId: item.documentId } : {}),
-              reason: branchTreeRemovedHold(null),
             });
           } else {
             apply.push({ item, node, documentDraft });

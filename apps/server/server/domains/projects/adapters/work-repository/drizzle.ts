@@ -335,6 +335,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         const deletedThreadIds = await cascadeDelete(db, {
           projectId: before.projectId,
           removal: deps.removal,
+          projection: projectionMutation,
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -383,6 +384,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           await cascadeRestore(db, {
             projectId: existing.projectId,
             removal: deps.removal,
+            projection: projectionMutation,
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,

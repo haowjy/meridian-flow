@@ -8,6 +8,7 @@ import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { modelResult, type WriteRejection } from "./model-result.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
+import { removalPhrase, removedWriteMessage } from "./removal-copy.js";
 import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName, ResponseCommitDocumentResult } from "./types.js";
 
@@ -111,13 +112,7 @@ export function renderSettledReceipts(
   return [
     ...receipts,
     ...rejected.map((edit) =>
-      settledReceipt(edit, null, {
-        status: "invalid_write",
-        model: {
-          message: `Write did not land: ${rejectedWriteExplanation(edit.rejectionReason)}. Re-read and retry.`,
-          rejected: writeRejection(edit.rejectionReason),
-        },
-      }),
+      settledReceipt(edit, null, rejectedWriteResult(edit.rejectionReason)),
     ),
   ];
 }
@@ -137,8 +132,27 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
   );
 }
 
+/**
+ * A staged write the host refused, as its settled receipt says it. A removal names who removed
+ * the file and asks for no retry; the chat's card then shows its generic refusal.
+ */
+export function rejectedWriteResult(reason?: StagedWriteRejectionReason): InternalWriteResult {
+  if (typeof reason === "object")
+    return {
+      status: "invalid_write",
+      model: { message: removedWriteMessage(reason.removed, "save") },
+    };
+  return {
+    status: "invalid_write",
+    model: {
+      message: `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`,
+      rejected: writeRejection(reason),
+    },
+  };
+}
+
 /** A refusal explains host evidence, not a guess from item visibility. */
-function writeRejection(reason?: StagedWriteRejectionReason): WriteRejection {
+function writeRejection(reason?: Exclude<StagedWriteRejectionReason, object>): WriteRejection {
   switch (reason) {
     case "discard":
       return "discarded_edit";
@@ -153,6 +167,7 @@ function writeRejection(reason?: StagedWriteRejectionReason): WriteRejection {
 }
 
 export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): string {
+  if (typeof reason === "object") return `this file was ${removalPhrase(reason.removed)}`;
   switch (reason) {
     case "discard":
       return "the user discarded the text it edited";

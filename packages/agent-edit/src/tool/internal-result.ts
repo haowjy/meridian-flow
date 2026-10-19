@@ -1,8 +1,10 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
 
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { Block } from "../codec-types.js";
 import type { LinkShowing } from "../links/shown.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
+import { removedFileMessage } from "./removal-copy.js";
 import type {
   DocumentCommandName,
   WriteErrorDetail,
@@ -25,20 +27,22 @@ interface InternalWriteResultBase {
   error?: WriteErrorDetail;
 }
 
+/** A missing document; a removed one says who removed it and how. */
 export function documentNotFound(
   commandName: DocumentCommandName,
-  cause?: { modelReason?: string },
+  cause?: { removal?: DocumentRemovalRecord },
 ): InternalWriteResult {
-  return status("document_not_found", documentNotFoundMessage(commandName, cause?.modelReason));
+  return status(
+    "document_not_found",
+    cause?.removal ? removedFileMessage(cause.removal) : documentNotFoundMessage(commandName),
+  );
 }
 
-/** The one sentence every missing-document result gives the model, then why, when known. */
-export function documentNotFoundMessage(commandName: DocumentCommandName, reason?: string): string {
-  const missing =
-    commandName === "read"
-      ? "File not found. Check the path with `ls`."
-      : "File not found. Read the project to find the right path.";
-  return reason ? `${missing} ${reason}` : missing;
+/** The one sentence every missing-document result gives the model; a removed file has its own. */
+export function documentNotFoundMessage(commandName: DocumentCommandName): string {
+  return commandName === "read"
+    ? "File not found. Check the path with `ls`."
+    : "File not found. Read the project to find the right path.";
 }
 
 export function isInternalWriteResult(value: unknown): value is InternalWriteResult {

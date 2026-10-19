@@ -31,7 +31,6 @@ import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
-import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
@@ -108,10 +107,6 @@ async function fixture(
       model: f.runtime.model,
       codec: f.runtime.codec,
       links,
-      retirePeers: createPeerRetirement({
-        closeDraftRoom: () => {},
-        agentEdit: f.collab.agentEdit(),
-      }),
       branches,
     }),
     links,

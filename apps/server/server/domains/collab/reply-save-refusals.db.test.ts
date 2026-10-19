@@ -3,13 +3,13 @@
  * or an archive lands before the save. A refusal is a receipt, never a thrown save.
  */
 
+import { removedWriteMessage } from "@meridian/agent-edit/integration";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { removalPhrase } from "../context/document-removal-copy.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
@@ -51,8 +51,9 @@ const DOC = "Write did not land: the user discarded this new document. Re-read a
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 type Saved = Awaited<ReturnType<ReturnType<typeof createHarness>["commit"]>>;
-/** A Discard that released the creation refuses at document level with the removal record's copy. */
-const REMOVED = "discarded from the draft";
+/** A Discard that released the creation refuses with the removal record's copy, never a retry. */
+const REMOVED =
+  "This file was discarded from the draft before this reply was saved, so this change wasn't made.";
 /** Each refused write's document and the copy it carries, in save order. */
 function refused(saved: Saved) {
   return [
@@ -62,7 +63,9 @@ function refused(saved: Saved) {
       ),
     ),
     ...("refused" in saved ? saved.refused : []).flatMap((refusal) =>
-      "removed" in refusal ? [[refusal.documentId, removalPhrase(refusal.removed)]] : [],
+      "removed" in refusal
+        ? [[refusal.documentId, removedWriteMessage(refusal.removed, "save")]]
+        : [],
     ),
   ];
 }
@@ -601,7 +604,10 @@ describe("reply save refusals (postgres)", () => {
     // find, but the reply still names the discarded document; none crash.
     expect(late.isError).toBe(true);
     if (phase === "before the upstream read") expect(late.status).toBe("invalid_write");
-    expect(JSON.stringify(late.result)).toContain("the user discarded this new document");
+    // A tombstoned creation is the removal's, so the write says so and asks for no retry.
+    expect(JSON.stringify(late.result)).toContain(
+      other ? "the user discarded this new document" : REMOVED,
+    );
     expect(refused(await harness.commit(second))).toEqual([[NEW_ID, other ? DOC : REMOVED]]);
   });
 

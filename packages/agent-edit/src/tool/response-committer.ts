@@ -7,9 +7,9 @@ import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type {
-  DiscardedWriteReason,
   DocumentAccess,
   DocumentCoordinator,
+  RetiredWriteReason,
   StagedHelperCut,
   StagedWriteHost,
   StagedWriteRejectionReason,
@@ -92,7 +92,7 @@ export interface ResponseCommitter {
     documentId: string;
     threadId: string;
     peerDraftId: string;
-    reason: DiscardedWriteReason;
+    reason: RetiredWriteReason;
   }): void;
   dropForThread(docId: string, threadId: string): void;
   prepare(editScopeId: string, docId: string): Promise<ResponseReadLease | null>;
@@ -503,7 +503,9 @@ export function createResponseCommitter(deps: {
         const explanation = writes.every((entry) => entry.rejectionReason === "discard")
           ? "was discarded with the text it edited"
           : `did not land: ${[...new Set(writes.map((entry) => rejectedWriteExplanation(entry.rejectionReason)))].join("; ")}`;
-        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
+        // A removed file has nothing to re-read.
+        const removed = writes.every((entry) => typeof entry.rejectionReason === "object");
+        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}.${removed ? "" : " Re-read and retry."}`;
       });
     },
   };

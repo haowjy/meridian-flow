@@ -9,9 +9,8 @@
  * the documents), then draft rows as the kernel writes them. A scope that moved aborts
  * the transaction and runs again under the callers' bounded attempts.
  *
- * The kernel reports the drafts it closed or deleted (`retired`) so the caller retires
- * exactly their rooms and thread state after commit, and reconciles the catalog of every
- * source it touched inside the transaction (F23), as Apply does.
+ * Every draft the kernel closes retires after commit through the one close; the kernel
+ * reconciles the catalog of every source it touched inside the transaction (F23), as Apply does.
  */
 
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
@@ -46,18 +45,19 @@ import {
 import type { Branches } from "../domain/branches.js";
 import { NO_ATTEMPT_SCOPE, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
+import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import {
   DraftCasConflictError,
   type DraftRead,
   materializeDraftRead,
 } from "../domain/draft-store.js";
-import type { PeerRetirementCause, RetiredDraft } from "../domain/peer-retirement.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { claimCommandWithinTx } from "./drizzle-branch-commands.js";
-import { closeDrafts } from "./drizzle-draft-close.js";
+import type { DraftClose } from "./drizzle-draft-close.js";
 
 type KernelDeps = {
   removal: DocumentRemoval;
+  close: Pick<DraftClose, "closeDrafts">;
   branches: Pick<Branches, "close">;
   catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
 };
@@ -93,19 +93,15 @@ async function endUseReconciled(
  */
 async function closeBranchDrafts(
   db: Database,
+  deps: KernelDeps,
   branchId: BranchId,
-  cause: PeerRetirementCause,
+  cause: Exclude<DraftCloseCause, object>,
   documentIds?: readonly DocumentId[],
-): Promise<RetiredDraft[]> {
-  if (documentIds?.length === 0) return [];
-  const tx = currentDrizzleDb(db);
-  return closeDrafts(
-    tx,
-    and(
-      eq(documentDrafts.branchId, branchId),
-      documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
-    ),
-    "discarded",
+): Promise<void> {
+  if (documentIds?.length === 0) return;
+  await deps.close.closeDrafts(
+    currentDrizzleDb(db),
+    documentIds ? { documentIds, branchId } : { branchId },
     cause,
   );
 }
@@ -121,17 +117,13 @@ async function discardWholeLocked(
   branchId: BranchId,
   userId?: UserId,
 ): Promise<DiscardKernelResult> {
-  const closed = await closeBranchDrafts(db, branchId, "branch_closed");
+  await closeBranchDrafts(db, deps, branchId, "branch_closed");
   const ended = await endUseReconciled(db, deps, branchId, { branches: [{ branchId }] }, userId);
   await deps.branches.close(branchId, new Date());
   return {
     branchClosed: true,
     tombstoned: ended.tombstoned,
     releasedObjects: ended.releasedObjects,
-    retired: closed.filter(
-      (row) =>
-        !ended.tombstoned.some((ref) => ref.kind === "document" && ref.id === row.documentId),
-    ),
   };
 }
 
@@ -168,7 +160,7 @@ export function createDrizzleBranchDiscard(
   async function resetItemText(
     input: Extract<DiscardKernelInput, { selection: { kind: "items" } }>,
     item: { documentId: DocumentId; draftId: string },
-  ): Promise<readonly RetiredDraft[]> {
+  ): Promise<void> {
     const read = await deps.drafts.readDraftAt(item.draftId);
     const content = read?.documentDraft;
     // Gone with its tombstone, or no longer the branch's: no draft of this branch remains to reset.
@@ -179,7 +171,7 @@ export function createDrizzleBranchDiscard(
       content.branchId !== input.branchId ||
       content.documentId !== item.documentId
     ) {
-      return [];
+      return;
     }
     const hasPending = async () => {
       const [pending] = await currentDrizzleDb(db)
@@ -208,7 +200,8 @@ export function createDrizzleBranchDiscard(
         .for("update");
       if (Number(locked?.revision) !== content.revision || (await hasPending()))
         throw new DraftCasConflictError(content.draftId);
-      return deps.drafts.closeThreadPeersOf([content.draftId], "edit_discarded");
+      await deps.drafts.closeThreadPeersOf([content.draftId], "edit_discarded");
+      return;
     }
     const liveDoc = input.liveDocs.get(item.documentId);
     if (!liveDoc) throw new Error(`Discard of ${item.documentId} holds no live document`);
@@ -223,7 +216,7 @@ export function createDrizzleBranchDiscard(
       input.attempt,
     );
     if (!reset) throw new DraftCasConflictError(content.draftId);
-    return deps.drafts.closeThreadPeersOf([content.draftId], "edit_discarded");
+    await deps.drafts.closeThreadPeersOf([content.draftId], "edit_discarded");
   }
 
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
@@ -239,7 +232,8 @@ export function createDrizzleBranchDiscard(
     const hiddenNow = await hiddenDocumentIds(db, withRows);
     const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
     const created = items.filter(isCreated).map((item) => item.documentId);
-    const closed = await closeBranchDrafts(db, branchId, "document_discarded", created);
+    // A hidden create another branch still uses stays, but this branch's drafts on it end.
+    await closeBranchDrafts(db, deps, branchId, "document_discarded", created);
     const ended = await endUseReconciled(
       db,
       deps,
@@ -247,26 +241,14 @@ export function createDrizzleBranchDiscard(
       { branches: [{ branchId, documentIds: withRows }] },
       input.userId,
     );
-    // A hidden create another branch still uses stays, but this branch's drafts on it end.
-    const retiredDrafts = closed.filter(
-      (row) =>
-        !ended.tombstoned.some((ref) => ref.kind === "document" && ref.id === row.documentId),
-    );
     for (const item of items) {
-      if (item.draftId && !isCreated(item)) {
-        retiredDrafts.push(
-          ...(await resetItemText(input, {
-            documentId: item.documentId,
-            draftId: item.draftId,
-          })),
-        );
-      }
+      if (item.draftId && !isCreated(item))
+        await resetItemText(input, { documentId: item.documentId, draftId: item.draftId });
     }
     return {
       branchClosed: false,
       tombstoned: ended.tombstoned,
       releasedObjects: ended.releasedObjects,
-      retired: retiredDrafts,
     };
   }
 
@@ -322,8 +304,8 @@ const PURGE_ATTEMPTS = 3;
  * lock each of the Work's active branches, acquire the verified end-use scope of every one,
  * and discard each whole through the kernel. A scope that moved rolls the purge transaction
  * back and runs it again, a bounded attempt each. The public command's active-Work fence is
- * never used. No pending projection and no thread retirement: the Work and its threads are
- * being deleted.
+ * never used. No pending projection: the Work is being deleted; its closed drafts retire after
+ * commit like any others.
  */
 export function createDrizzleWorkBranchDisposal(
   db: Database,

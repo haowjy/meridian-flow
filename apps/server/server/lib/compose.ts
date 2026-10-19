@@ -21,6 +21,8 @@ import {
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
+import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -37,6 +39,7 @@ import {
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
+  createDocumentRemoval,
   createDocumentRevisions,
   createDraftUploadVerifier,
   createDrizzleChatUploadsOwners,
@@ -45,7 +48,6 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
-  createDrizzleDocumentRemovals,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -70,6 +72,7 @@ import {
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type PromotionService,
+  readRemovalRecords,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -253,7 +256,11 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runAfterDrizzleCommit,
+  runInDrizzleSavepoint,
+} from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
@@ -408,7 +415,7 @@ export type ProductionAppPorts = {
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
   shownLinks: ShownLinkStore;
-  /** The removal record behind a missing file (e2 D9). */
+  /** The removal record behind a missing file the model asked for. */
   documentRemovals: DocumentRemovals;
 };
 
@@ -497,6 +504,7 @@ export async function createProductionAppPorts(input: {
     availability: projectContextAvailability,
     catalog: contextCatalog,
     pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    eventSink,
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
@@ -553,13 +561,18 @@ export async function createProductionAppPorts(input: {
       });
     },
   });
+  // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
+  // thread peers) exists only once the collab domain does, which binds it; nothing retires
+  // before a commit, so the late binding is never observed unbound in production.
+  const draftClose = createDraftClose();
+  const documentRemoval = createDocumentRemoval(db, {
+    collab: createDrizzleDocumentRemovalCollab(db, draftClose),
+    workProjection: workProjectionMutation,
+  });
   // One repair on touch for every production tree reader and create (§12.4).
   const hiddenNodeRepair = createHiddenNodeRepair({
     db,
-    removal: {
-      remove: (input) => documentSync.documentRemoval.remove(input),
-      recount: (workIds) => documentSync.documentRemoval.recount(workIds),
-    },
+    removal: documentRemoval,
     eventSink,
     objects: objectRelease,
     backgroundTasks,
@@ -583,6 +596,8 @@ export async function createProductionAppPorts(input: {
     notices,
     workProjectionMutation,
     objects: objectRelease,
+    draftClose,
+    documentRemoval,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -611,6 +626,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     arrivals,
     hiddenNodeRepair,
+    removal: documentRemoval,
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
   });
@@ -650,7 +666,7 @@ export async function createProductionAppPorts(input: {
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
-    removal: documentSync.documentRemoval,
+    removal: documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
@@ -740,7 +756,9 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
-    documentRemovals: createDrizzleDocumentRemovals(db),
+    documentRemovals: {
+      lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds),
+    },
   };
 }
 

@@ -30,7 +30,7 @@ import {
   runInDrizzleSavepoint,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import type { DocumentRemovals } from "../../context/ports/document-removals.js";
+import { readRemovalRecords } from "../../context/tree/removal.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
@@ -57,7 +57,6 @@ type Dependencies = {
   drafts: DraftStore;
   coordinator: DocumentCoordinator;
   draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
-  removals: DocumentRemovals;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
@@ -139,7 +138,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const draftIds = inverseDraftIds(query, parts);
       const documents: InverseDocument[] = [];
       const heads = new Map<DocumentId, number>();
-      const removals = await input.removals.lookup(ids);
+      const removals = await readRemovalRecords(db(), ids);
       try {
         for (const documentId of ids) {
           // A removed document has no live content to plan against: its parts are skipped
