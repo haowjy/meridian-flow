@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Reuse immutable draft encodings across append cuts and replicas, keeping unused serialization out of row holds.
+
 - Capture draft edit receipts by retained item ranges instead of expanding every review-base character.
 
 - End dock Discard notices when their room session retires, so Undo never targets a replaced document.

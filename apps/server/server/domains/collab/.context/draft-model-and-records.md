@@ -92,7 +92,10 @@ which lands in the archived draft (the archive window, `CONTEXT.md`). The
 background content rebase explicitly admits archived Works to keep them current. The
 runtime holds one immutable replica per draft at a
 committed revision and catches it up from the tail; every write computes on a
-private copy, so a failed commit never changes what a reader holds.
+private copy, so a failed commit never changes what a reader holds. Its cached
+encoding supplies a no-tail append's before-cut; the finalized immutable doc's
+lazy encoding is shared by the save cut and installed replica. Typing, rebase
+and Apply do not eagerly encode an unused after-cut under the hold.
 
 ## Durable records and checkpoints
 

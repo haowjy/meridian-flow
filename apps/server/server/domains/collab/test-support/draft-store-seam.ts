@@ -48,6 +48,7 @@ export async function appendDraftRows(
       async finalize(prefix) {
         const judged = await finalizeAppend(prefix, {
           candidate,
+          candidateState: Y.encodeStateAsUpdate(candidate),
           rows: journals,
           containment: createDocumentContainment(),
           validateWriter: () => {},
