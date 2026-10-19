@@ -22,6 +22,7 @@ import type {
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
+import type { FrontierLookups, RoomFrontier } from "../ports/observation-frontiers.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
@@ -81,6 +82,8 @@ export interface ToolExecutionContext {
   threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
   threadReport?: ThreadReportToolHandlerContext["threadReport"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
+  /** The run's observation-frontier lookups, for tools that show documents. */
+  frontiers?: FrontierLookups;
 }
 
 /**
@@ -121,6 +124,11 @@ export interface ToolExecutionResult {
    * thrown call carries none. Never part of `output`, `result` or `metadata`.
    */
   shown?: readonly ShownLinkShowing[];
+  /**
+   * Host-only observation frontiers the handler returned beside its result
+   * (`frontiers`), recorded with the persisted result like `shown`.
+   */
+  frontiers?: readonly RoomFrontier[];
 }
 
 /**
@@ -163,6 +171,11 @@ export interface ToolHandlerContext {
    * that stream. Undefined for non-streaming handlers.
    */
   emitOutputDelta?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
+  /**
+   * Observation-frontier lookups for a tool that shows documents: the frontier
+   * a result chains from (`recording`) and the request's view (`planning`).
+   */
+  frontiers?: FrontierLookups;
 }
 
 export type InterruptResponse = InterruptAnswerEnvelope;

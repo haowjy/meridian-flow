@@ -80,6 +80,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
+  liveAuthorityGeneration(documentId: DocumentId): Promise<bigint | null>;
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
@@ -99,6 +100,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
     fileAccess: input.fileAccess,
     lockWorks: input.lockWorks,
     lockLiveDocuments: input.lockLiveDocuments,
+    liveAuthorityGeneration: input.liveAuthorityGeneration,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     attemptScope: input.attemptScope,
     responseTransactionSettlement: input.responseTransactionSettlement,

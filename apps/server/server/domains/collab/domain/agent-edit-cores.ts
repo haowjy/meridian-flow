@@ -2,6 +2,7 @@
 import type {
   AgentEditCore,
   DiscardedWriteReason,
+  ObservationFrontier,
   ReadCommand,
   ResponseCommitSuccessResult,
   StagedWriteRejectionReason,
@@ -13,17 +14,40 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
+ * The model's latest observation frontier for a room (`draft:<workDraftId>` or
+ * `live:<documentId>:<authorityGeneration>`), from the caller's transcript.
+ * Never throws: an unavailable frontier is `null`, the empty one.
+ */
+export type FrontierLookup = (roomKey: string) => Promise<ObservationFrontier | null>;
+
+/** A frontier the pool observed, keyed by the room it was rendered from. */
+export type RoomObservation = ObservationFrontier & { roomKey: string };
+
+/**
+ * A call that records what it showed passes the lookup its frontier chains
+ * from; its outcome then carries `frontiers`.
+ */
+type ObservedCall = { recordingFrontier?: FrontierLookup };
+
+/**
  * A write's context: the edit grant the caller got from the file policy. Its
  * destination routes the call, and the write seams confirm it (file-access §5).
  */
-export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
+export type RoutedWriteContext = WriteContext & ObservedCall & { grant: FileGrant<"edit"> };
 
 /**
  * A read's context. `liveVersion` marks a `version: "live"` read (D3): it reads
  * the live document even when this reply already drafted it, where a default
  * read follows the reply's pinned destination.
  */
-export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
+export type RoutedReadContext = WriteContext &
+  ObservedCall & { grant: FileGrant; liveVersion?: boolean };
+
+/**
+ * A routed call's outcome. Host-only `frontiers` replace agent-edit's
+ * room-less `observation`, which the pool never forwards.
+ */
+export type RoutedOutcome = WriteOutcome & { frontiers?: RoomObservation[] };
 
 /** Why the save step left a document out of a reply (D29). */
 export type RefusedResponseDocument =
@@ -45,17 +69,28 @@ export type RefusedResponseDocument =
  * A model call's outcome. An undo or redo that reversed some of its writes but
  * was refused for others names the refused ones; the tool writes the copy.
  */
-export type RoutedWriteOutcome = WriteOutcome & {
+export type RoutedWriteOutcome = RoutedOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
 
+/** A saved document; `frontiers` replaces agent-edit's room-less `observation`, never forwarded. */
+export type ResponseSaveDocument = ResponseCommitSuccessResult["documents"][number] & {
+  frontiers?: RoomObservation[];
+};
+
 /** One reply's save across every destination it wrote (D42). */
-export type ResponseSaveResult = ResponseCommitSuccessResult & {
+export type ResponseSaveResult = Omit<ResponseCommitSuccessResult, "documents"> & {
+  documents: ResponseSaveDocument[];
   refused: RefusedResponseDocument[];
 };
 
-type ResponseTransactionOptions = Parameters<AgentEditCore["commitResponse"]>[1] & {
+type ResponseTransactionOptions = Omit<
+  NonNullable<Parameters<AgentEditCore["commitResponse"]>[1]>,
+  "observe"
+> & {
   beforeTransactionCommit?(result: ResponseSaveResult): void | Promise<void>;
+  /** Record each saved document's frontier at the post-commit cut, chained from this lookup. */
+  recordingFrontier?: FrontierLookup;
 };
 
 declare const liveAgentEditCoreBrand: unique symbol;
@@ -70,7 +105,7 @@ export type ThreadPeerAgentEditCore = Omit<
   AgentEditCore,
   "read" | "write" | "commitResponse" | "prepareResponse" | "responseDocuments"
 > & {
-  read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
+  read(command: ReadCommand, context: RoutedReadContext): Promise<RoutedOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /**
    * Retire exactly these peers on `documentId` after their drafts closed or were deleted:

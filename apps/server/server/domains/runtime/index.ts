@@ -6,6 +6,7 @@ export type {
 } from "@meridian/contracts/threads";
 export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
+export { createDrizzleObservationFrontiers } from "./adapters/drizzle/observation-frontiers.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export { createDrizzleShownLinkStore } from "./adapters/drizzle/shown-links.js";
 export { createDrizzleHandoffStatusReader } from "./adapters/drizzle-handoff-status-reader.js";
@@ -24,6 +25,7 @@ export {
   type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
+export { createInMemoryObservationFrontiers } from "./adapters/in-memory/observation-frontiers.js";
 export { createInMemoryShownLinkStore } from "./adapters/in-memory/shown-links.js";
 export {
   type AdmissionPersistencePort,
@@ -165,6 +167,11 @@ export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversatio
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
+export type {
+  FrontierLookups,
+  ObservationFrontiers,
+  RoomFrontier,
+} from "./ports/observation-frontiers.js";
 export type { ShownLink, ShownLinkShowing, ShownLinkStore } from "./ports/shown-links.js";
 export {
   appendSubagentActivity,
