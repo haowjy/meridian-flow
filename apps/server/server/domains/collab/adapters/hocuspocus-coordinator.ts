@@ -86,12 +86,14 @@ export function createDeferredLiveProjectionCoordinator(deps: {
     ): Promise<T> {
       if (!deps.transactions.inTransaction()) return deps.live.withDocument(docId, fn, options);
       const { doc: copy } = await committedCopy(docId);
+      // Any change, a pure deletion included: a delete set moves no state vector.
+      let changed = false;
+      copy.on("update", () => {
+        changed = true;
+      });
       try {
-        const seeded = Y.encodeStateVector(copy);
         const result = await fn(copy);
-        if (!sameStateVector(seeded, Y.encodeStateVector(copy))) {
-          deps.transactions.afterCommit(() => deps.live.recover(docId));
-        }
+        if (changed) deps.transactions.afterCommit(() => deps.live.recover(docId));
         return result;
       } finally {
         copy.destroy();
@@ -154,10 +156,6 @@ export function withStaged(
 export function liveRoomFor(docId: string, doc: Y.Doc): string | null {
   const authority = boundDocumentAuthority(doc);
   return authority ? liveRoom(docId, authority.generation) : null;
-}
-
-function sameStateVector(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
 export function createHocuspocusCoordinatorForTest(
