@@ -785,7 +785,13 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           authorityId: documentYjsHeads.authorityId,
           generation: documentYjsHeads.authorityGeneration,
           schemaVersion: documentYjsHeads.schemaVersion,
-          checkpoint: { state: checkpoint.state, upToSeq: checkpoint.upToSeq },
+          checkpoint: {
+            // A large checkpoint is transferred once, not once for every retained tail row.
+            state:
+              sql<Buffer | null>`case when row_number() over (order by ${documentYjsUpdates.id}) = 1
+              then ${checkpoint.state} else null end`.mapWith(documentYjsCheckpoints.state),
+            upToSeq: checkpoint.upToSeq,
+          },
           update: journalTransportColumns,
         })
         .from(documentYjsHeads)

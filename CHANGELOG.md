@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Read committed live authority and tail atomically without repeating checkpoint bytes for each journal row.
+
 - Reset the draft runtime's late-typing cache when the kernel reaches its memory bound.
 
 - Preserve incremental late-frame recovery across contained deletion echoes and reconnect snapshots; verify the content-rebase cutover with production-store probes.
