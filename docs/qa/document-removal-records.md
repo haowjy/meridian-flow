@@ -22,11 +22,15 @@ by deleting a document in the browser. The record lookup is owner-gated through
 5. Give a removed shared creation more than 500 branch-use rows. Capture
    statement-level DELETE transition-table counts: no page deletes more than
    500 uses. Hidden cascade-marked uses remain; revealed and independent tombstones lose theirs.
-6. Pause 0071's parent-close UPDATE with a scratch-only trigger waiting on an
-   advisory lock. While paused, commit production Work Restore from another
-   connection. Release the barrier. The parent and its earlier-sorting peer
-   must both close with `document_removed`; only current-generation parts
-   settle. Restore must not make later passes skip that closure.
+6. Give the removed cascade creation 501 active Work drafts on distinct branches
+   (so they span two closure pages) and an earlier-sorting peer of the first.
+   Pause 0071's first parent-close UPDATE with a scratch-only trigger waiting on
+   an advisory lock. While paused, commit production Work Restore
+   (`restoreWorkDocuments`) from another connection, then create a new active
+   draft of the restored document. Release the barrier. Every old parent (the
+   last page's included) and the peer close with `document_removed`; only
+   current-generation parts settle; the new draft stays active. 0071 closes a
+   queue it fills once at its start, never re-reading tombstones, and drops it.
 7. Seed a stale stored Work count, including one that should become zero.
    Check the exact pending-document rule after upgrade: stored counts agree
    and each changed Work's `entity_revision` advances once. Re-run 0071:

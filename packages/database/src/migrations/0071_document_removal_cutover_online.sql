@@ -9,6 +9,18 @@ DECLARE
   work_cursor uuid; work_ids uuid[];
   item record;
 BEGIN
+  -- The drafts this cutover closes, chosen once, before any page commits: every active draft
+  -- of a removed document. Later pages consume this queue rather than re-reading tombstones,
+  -- so a Work Restore that clears one mid-run spares none of that identity's old drafts on a
+  -- later page, and a draft created after the Restore is never swept. A rerun after a crash
+  -- keeps the unconsumed rows and adds what is newly eligible; the table is dropped at the end.
+  CREATE TABLE IF NOT EXISTS document_removal_cutover_queue (
+    draft_id text PRIMARY KEY, kind text NOT NULL);
+  INSERT INTO document_removal_cutover_queue (draft_id, kind)
+    SELECT b.id, b.kind FROM document_drafts b JOIN documents d ON d.id = b.document_id
+    WHERE b.status = 'active' AND d.deleted_at IS NOT NULL
+    ON CONFLICT DO NOTHING;
+  COMMIT;
   -- Separate first/range queries preserve indexed seeks even with PL/pgSQL generic plans.
   LOOP
     SET LOCAL lock_timeout = '2s';
@@ -68,28 +80,46 @@ BEGIN
       SET LOCAL lock_timeout = '2s';
       IF draft_cursor IS NULL THEN
         SELECT array_agg(id), max(id) INTO draft_ids, draft_next FROM (
-          SELECT id FROM document_drafts WHERE kind = item.kind
-          ORDER BY id LIMIT batch_size FOR UPDATE
+          SELECT b.id FROM document_removal_cutover_queue q
+          JOIN document_drafts b ON b.id = q.draft_id
+          WHERE q.kind = item.kind
+          ORDER BY q.draft_id LIMIT batch_size FOR UPDATE OF b
         ) page;
       ELSE
         SELECT array_agg(id), max(id) INTO draft_ids, draft_next FROM (
-          SELECT id FROM document_drafts WHERE kind = item.kind AND id > draft_cursor
-          ORDER BY id LIMIT batch_size FOR UPDATE
+          SELECT b.id FROM document_removal_cutover_queue q
+          JOIN document_drafts b ON b.id = q.draft_id
+          WHERE q.kind = item.kind AND q.draft_id > draft_cursor
+          ORDER BY q.draft_id LIMIT batch_size FOR UPDATE OF b
         ) page;
       END IF;
       EXIT WHEN draft_next IS NULL;
-      UPDATE document_drafts b SET status = 'closed', closed_cause = 'document_removed',
+      UPDATE document_drafts SET status = 'closed', closed_cause = 'document_removed',
         revision = revision + 1, updated_at = now()
-      FROM documents d WHERE b.id = ANY(draft_ids) AND b.document_id = d.id
-        AND b.status = 'active' AND (d.deleted_at IS NOT NULL OR (
-          b.kind = 'thread_peer' AND EXISTS (
-            SELECT 1 FROM document_drafts parent WHERE parent.id = b.upstream_draft_id
-              AND parent.status = 'closed' AND parent.closed_cause = 'document_removed')));
-      UPDATE document_drafts SET closed_cause = 'discarded'
-        WHERE id = ANY(draft_ids) AND status = 'closed' AND closed_cause IS NULL;
+      WHERE id = ANY(draft_ids) AND status = 'active';
       draft_cursor := draft_next;
       COMMIT;
     END LOOP;
+  END LOOP;
+  -- Drafts closed before close causes existed were writers' discards.
+  draft_cursor := NULL;
+  LOOP
+    SET LOCAL lock_timeout = '2s';
+    IF draft_cursor IS NULL THEN
+      SELECT array_agg(id), max(id) INTO draft_ids, draft_next FROM (
+        SELECT id FROM document_drafts ORDER BY id LIMIT batch_size FOR UPDATE
+      ) page;
+    ELSE
+      SELECT array_agg(id), max(id) INTO draft_ids, draft_next FROM (
+        SELECT id FROM document_drafts WHERE id > draft_cursor
+        ORDER BY id LIMIT batch_size FOR UPDATE
+      ) page;
+    END IF;
+    EXIT WHEN draft_next IS NULL;
+    UPDATE document_drafts SET closed_cause = 'discarded'
+      WHERE id = ANY(draft_ids) AND status = 'closed' AND closed_cause IS NULL;
+    draft_cursor := draft_next;
+    COMMIT;
   END LOOP;
   -- Parts can outnumber drafts by orders of magnitude; bound their own updates too.
   LOOP
@@ -159,3 +189,5 @@ END $$;
 CALL backfill_document_removal(500);
 --> statement-breakpoint
 DROP PROCEDURE IF EXISTS backfill_document_removal(integer);
+--> statement-breakpoint
+DROP TABLE IF EXISTS document_removal_cutover_queue;
