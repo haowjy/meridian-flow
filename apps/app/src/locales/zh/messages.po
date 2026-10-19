@@ -128,11 +128,6 @@ msgstr ""
 
 #. placeholder {0}: others.length
 #: src/features/editor/DocumentDraftHint.tsx
-#~ msgid "{0, plural, other {# drafts have changes to this}}"
-#~ msgstr ""
-
-#. placeholder {0}: others.length
-#: src/features/editor/DocumentDraftHint.tsx
 msgid "{0, plural, other {# Works have drafts for this}}"
 msgstr "{0, plural, other {# 个工作中的草稿修改了此文档}}"
 
@@ -267,24 +262,16 @@ msgid "{count} documents were deleted ({names})."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{count} documents were deleted."
-#~ msgstr ""
+msgid "{count} documents were deleted with the Work {name} ({names})."
+msgstr "{count} 份文档随工作区 {name} 一并删除（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{count} documents were discarded from the draft ({names})."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{count} documents were discarded from the draft."
-#~ msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{count} documents were removed ({names})."
 msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "{count} documents were removed."
-#~ msgstr ""
 
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"
@@ -362,6 +349,38 @@ msgstr ""
 msgid "{name} can't be changed."
 msgstr ""
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {count} documents ({names})."
+msgstr "{name} 删除了 {count} 份文档（{names}）。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {title}."
+msgstr "{name} 删除了{title}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted this document, so this draft can't be applied."
+msgstr "{name} 删除了这份文档，因此无法应用这份草稿。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted this document."
+msgstr "{name} 删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} discarded {count} documents from the draft ({names})."
+msgstr "{name} 从草稿中放弃了 {count} 份文档（{names}）。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} discarded {title} from the draft."
+msgstr "{name} 从草稿中放弃了{title}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} discarded this document from the draft, so this draft can't be applied."
+msgstr "{name} 从草稿中放弃了这份文档，因此无法应用这份草稿。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} discarded this document from the draft."
+msgstr "{name} 从草稿中放弃了这份文档。"
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr ""
@@ -369,6 +388,10 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was deleted before this reply saved its change."
 msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{name} was deleted with the Work {work} before this reply saved its change."
+msgstr "{name} 已随工作区 {work} 删除，在此回复保存其更改之前。"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "{name} was discarded from the draft before this reply saved its change."
@@ -407,6 +430,10 @@ msgid "{title} removed from Favorites"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted with the Work {name}."
+msgstr "{title} 已随工作区 {name} 一并删除。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
 msgstr ""
 
@@ -419,12 +446,24 @@ msgid "{title} was removed when the reply that created it didn't finish."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-#~ msgid "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
-#~ msgstr ""
-
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "{waiting, plural, one {Drafts, # document waiting} other {Drafts, # documents waiting}}"
 msgstr "{waiting, plural, one {草稿，# 篇文档待处理} other {草稿，# 篇文档待处理}}"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{who} deleted {name} before this reply saved its change."
+msgstr "{who} 在此回复保存其更改之前删除了 {name}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{who} deleted this document before this reply saved its change."
+msgstr "{who} 在此回复保存其更改之前删除了这份文档。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{who} discarded {name} from the draft before this reply saved its change."
+msgstr "{who} 在此回复保存其更改之前从草稿中放弃了 {name}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "{who} discarded this document from the draft before this reply saved its change."
+msgstr "{who} 在此回复保存其更改之前从草稿中放弃了这份文档。"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -474,15 +513,6 @@ msgstr ""
 #: src/features/chat/DeletedChatCard.tsx
 msgid "A chat you had open was deleted."
 msgstr ""
-
-#: src/features/editor/DocumentDraftHint.tsx
-#~ msgid "A draft has changes to this"
-#~ msgstr ""
-
-#. placeholder {0}: only.label
-#: src/features/editor/DocumentDraftHint.tsx
-#~ msgid "A draft has changes to this ({0})"
-#~ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -1217,10 +1247,6 @@ msgstr ""
 msgid "Conversation compacted automatically"
 msgstr ""
 
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "Conversation not compacted"
-#~ msgstr ""
-
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
@@ -1320,10 +1346,6 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
 msgstr ""
-
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "Couldn't compact"
-#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
@@ -1512,10 +1534,6 @@ msgstr ""
 msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
 msgstr ""
 
-#: src/features/chat/useQueueControls.ts
-#~ msgid "Couldn't move your queued message to the message box."
-#~ msgstr ""
-
 #: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr ""
@@ -1634,10 +1652,6 @@ msgstr ""
 msgid "Couldn't send your answer."
 msgstr ""
 
-#: src/features/chat/useChatSubmissions.ts
-#~ msgid "Couldn't send your message."
-#~ msgstr "未能发送你的消息。"
-
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/chat-card-copy.ts
 msgid "Couldn't send."
@@ -1647,18 +1661,9 @@ msgstr ""
 msgid "Couldn't start a new brief."
 msgstr ""
 
-#: src/features/chat/derivation/useHandoffBrief.ts
-#~ msgid "Couldn't start a new brief. Try again."
-#~ msgstr ""
-
 #: src/features/chat/chat-card-copy.ts
 msgid "Couldn't start the retry."
 msgstr ""
-
-#: src/features/chat/ErrorBlock.tsx
-#: src/features/chat/useReplyRetry.ts
-#~ msgid "Couldn't start the retry. Try again."
-#~ msgstr ""
 
 #: src/features/chat/derivation/derive-conversation.ts
 msgid "Couldn't start this handoff."
@@ -1667,11 +1672,6 @@ msgstr ""
 #: src/features/chat/chat-card-copy.ts
 msgid "Couldn't stop the brief."
 msgstr ""
-
-#: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/derivation/useHandoffBrief.ts
-#~ msgid "Couldn't stop the brief. Try again."
-#~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't stop the compaction."
@@ -1990,10 +1990,6 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr ""
-
-#: src/components/app/work-composer-controls/WriteModeControl.tsx
-#~ msgid "Draft ({waiting})"
-#~ msgstr ""
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
@@ -2326,11 +2322,6 @@ msgstr ""
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Handoff brief stopped"
 msgstr ""
-
-#: src/features/chat/compaction/useControlTurnAnnouncements.ts
-#: src/features/chat/derivation/HandoffBriefCard.tsx
-#~ msgid "Handoff brief unavailable"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Header row"
@@ -3050,10 +3041,6 @@ msgstr ""
 msgid "No Work yet."
 msgstr ""
 
-#: src/features/chat/compaction/CompactionDivider.tsx
-#~ msgid "Not compacted"
-#~ msgstr ""
-
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Not created"
@@ -3624,10 +3611,6 @@ msgstr ""
 msgid "Retry Pending drafts"
 msgstr ""
 
-#: src/features/chat/thread-controls/control-copy.ts
-#~ msgid "Retry queueing"
-#~ msgstr ""
-
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Retry save"
 msgstr ""
@@ -3635,10 +3618,6 @@ msgstr ""
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr ""
-
-#: src/features/chat/thread-controls/control-copy.ts
-#~ msgid "Retry switching"
-#~ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Retry the handoff brief"
@@ -3938,10 +3917,6 @@ msgstr ""
 msgid "Some typing inside a discarded change couldn't be kept."
 msgstr "已丢弃改动中的部分输入未能保留。"
 
-#: src/features/chat/useLiveTurnAnnouncements.ts
-#~ msgid "Something went wrong generating a response."
-#~ msgstr ""
-
 #: src/features/chat/tool-renderers.tsx
 msgid "Something went wrong while changing {name}."
 msgstr ""
@@ -4172,10 +4147,6 @@ msgid "Text size"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "That change can't be made because the draft is archived."
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be made because this Work's drafts are archived."
 msgstr "此工作中的草稿已归档，无法进行该修改。"
 
@@ -4184,11 +4155,11 @@ msgid "That change can't be redone because it is held for review."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because the text changed afterwards."
+msgid "That change can't be redone because it was discarded."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because you discarded it."
+msgid "That change can't be redone because the text changed afterwards."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -4208,15 +4179,15 @@ msgid "That change can't be undone because it is held for review."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because it was discarded."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because later edits depend on it."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because the text changed afterwards."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "That change can't be undone because you discarded it."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -4374,6 +4345,10 @@ msgid "the source chat"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "The text it edited was discarded, so the change wasn't kept. The AI will read it again."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
@@ -4417,10 +4392,6 @@ msgstr "思考"
 #: src/components/app/composer/placeholders.ts
 msgid "Thinking out loud?"
 msgstr "边想边说？"
-
-#: src/features/chat/derivation/HandoffBriefCard.tsx
-#~ msgid "This brief failed."
-#~ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
@@ -4597,9 +4568,17 @@ msgstr ""
 msgid "This document was deleted before this reply saved its change."
 msgstr ""
 
-#: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "This document was deleted from your project after the draft started. Check it, then apply again."
-#~ msgstr ""
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was deleted with the Work {name}, so this draft can't be applied."
+msgstr "这份文档已随工作区 {name} 一并删除，因此无法应用这份草稿。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was deleted with the Work {name}."
+msgstr "这份文档已随工作区 {name} 一并删除。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This document was deleted with the Work {work} before this reply saved its change."
+msgstr "这份文档已随工作区 {work} 删除，在此回复保存其更改之前。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted, so this draft can't be applied."
@@ -4634,7 +4613,11 @@ msgid "This document was removed when the reply that created it didn't finish."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
+msgid "This draft is no longer here. It may have been applied or discarded already."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -4692,6 +4675,10 @@ msgstr ""
 
 #: src/features/project/context/EntryMovePicker.tsx
 msgid "This location is unavailable. Refresh and try again."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This new document was discarded, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -4842,14 +4829,6 @@ msgid "Turns {0}"
 msgstr "轮次 {0}"
 
 #: src/features/chat/tool-renderers.tsx
-#~ msgid "Two files in the draft share the path {name}. Review the draft to keep one."
-#~ msgstr "草稿中有两个文件使用同一路径 {name}。请审阅草稿，保留其中一个。"
-
-#: src/features/chat/tool-renderers.tsx
-#~ msgid "Two files in the draft share this path. Review the draft to keep one."
-#~ msgstr "草稿中有两个文件使用同一路径。请审阅草稿，保留其中一个。"
-
-#: src/features/chat/tool-renderers.tsx
 msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
 msgstr "此工作中的两个草稿使用了相同路径 {name}。请查看草稿并保留其中一个。"
 
@@ -4920,10 +4899,6 @@ msgid "Undoing…"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "Undone in your draft. Apply it to change your manuscript."
-#~ msgstr "已在你的草稿中撤销。应用后才会更改你的正文。"
-
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undone in your drafts. Apply them to change your manuscript."
 msgstr "已在你的草稿中撤销。应用后才会更改你的正文。"
 
@@ -4938,10 +4913,6 @@ msgstr "未知"
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
 msgstr ""
-
-#: src/features/editor/DocumentDraftHint.tsx
-#~ msgid "Unnamed draft"
-#~ msgstr ""
 
 #: src/features/editor/DocumentDraftHint.tsx
 msgid "Unnamed Work"
@@ -5166,74 +5137,6 @@ msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You deleted {count} documents elsewhere ({names})."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "You deleted {count} documents elsewhere."
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You deleted {name} before this reply saved its change."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You deleted {title} elsewhere."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You deleted this document before this reply saved its change."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You deleted this document elsewhere, so this draft can't be applied."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You deleted this document elsewhere."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You discarded {count} documents from the draft elsewhere ({names})."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-#~ msgid "You discarded {count} documents from the draft elsewhere."
-#~ msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You discarded {name} from the draft before this reply saved its change."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You discarded {title} from the draft elsewhere."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You discarded the text it edited, so the change wasn't kept. The AI will read it again."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You discarded this document elsewhere, so this draft can't be applied."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You discarded this document from the draft before this reply saved its change."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "You discarded this document from the draft elsewhere."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You discarded this draft, so the change wasn't kept. The AI will read it again."
-msgstr ""
-
-#: src/features/chat/tool-renderers.tsx
-msgid "You discarded this new document, so the change wasn't kept. The AI will read it again."
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx

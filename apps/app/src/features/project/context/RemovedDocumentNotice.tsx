@@ -6,7 +6,7 @@
  * notice row.
  */
 import { i18n } from "@lingui/core";
-import { msg, plural, t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { Info, X } from "lucide-react";
@@ -20,20 +20,22 @@ import type { NoticeSurface, RemovedNoticeSnapshot, ShownRemoval } from "./remov
 export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRecord | null }>;
 
 /**
- * How one removal reads. Projects have one owner, so a person who removed a
- * document is the writer, from another tab or device: they read "You". A
- * Work's removal keeps its authority-loss handling and never reaches here.
- * Name another person once projects are shared.
+ * How one removal reads: it names who removed the document, from the record,
+ * the same for the current account and anyone else, and never says "you". A
+ * user with no display name, a purged actor, or no record read passively.
  */
 type RemovalVoice =
-  | { kind: "you"; reason: DocumentRemovalRecord["reason"] }
+  | { kind: "person"; name: string; reason: DocumentRemovalRecord["reason"] }
+  | { kind: "work"; name: string }
   | { kind: "unfinished-reply" }
   | { kind: "anonymous"; reason: DocumentRemovalRecord["reason"] };
 
 function voiceOf(record: DocumentRemovalRecord | null): RemovalVoice {
   const reason = record?.reason ?? "deleted";
   const actor = record?.actor;
-  if (actor?.kind === "user") return { kind: "you", reason };
+  if (actor?.kind === "user" && actor.displayName)
+    return { kind: "person", name: actor.displayName, reason };
+  if (actor?.kind === "work") return { kind: "work", name: actor.name };
   if (actor?.kind === "system" && actor.cause !== "repair") return { kind: "unfinished-reply" };
   return { kind: "anonymous", reason };
 }
@@ -45,10 +47,16 @@ function sameVoice(left: RemovalVoice, right: RemovalVoice): boolean {
 /** Inside the document's own pane, where the title is already on screen. */
 function thisDocumentSentence(voice: RemovalVoice): string {
   switch (voice.kind) {
-    case "you":
+    case "person": {
+      const { name } = voice;
       return voice.reason === "discarded"
-        ? t`You discarded this document from the draft elsewhere.`
-        : t`You deleted this document elsewhere.`;
+        ? t`${name} discarded this document from the draft.`
+        : t`${name} deleted this document.`;
+    }
+    case "work": {
+      const { name } = voice;
+      return t`This document was deleted with the Work ${name}.`;
+    }
     case "unfinished-reply":
       return t`This document was removed when the reply that created it didn't finish.`;
     case "anonymous":
@@ -60,10 +68,16 @@ function thisDocumentSentence(voice: RemovalVoice): string {
 
 function oneSentence(title: string, voice: RemovalVoice): string {
   switch (voice.kind) {
-    case "you":
+    case "person": {
+      const { name } = voice;
       return voice.reason === "discarded"
-        ? t`You discarded ${title} from the draft elsewhere.`
-        : t`You deleted ${title} elsewhere.`;
+        ? t`${name} discarded ${title} from the draft.`
+        : t`${name} deleted ${title}.`;
+    }
+    case "work": {
+      const { name } = voice;
+      return t`${title} was deleted with the Work ${name}.`;
+    }
     case "unfinished-reply":
       return t`${title} was removed when the reply that created it didn't finish.`;
     case "anonymous":
@@ -78,10 +92,16 @@ function oneSentence(title: string, voice: RemovalVoice): string {
  * parentheses; mixed causes read as "removed".
  */
 function manySentence(count: number, names: string, voice: RemovalVoice | null): string {
-  if (voice?.kind === "you")
+  if (voice?.kind === "person") {
+    const { name } = voice;
     return voice.reason === "discarded"
-      ? t`You discarded ${count} documents from the draft elsewhere (${names}).`
-      : t`You deleted ${count} documents elsewhere (${names}).`;
+      ? t`${name} discarded ${count} documents from the draft (${names}).`
+      : t`${name} deleted ${count} documents (${names}).`;
+  }
+  if (voice?.kind === "work") {
+    const { name } = voice;
+    return t`${count} documents were deleted with the Work ${name} (${names}).`;
+  }
   if (voice?.kind === "anonymous")
     return voice.reason === "discarded"
       ? t`${count} documents were discarded from the draft (${names}).`
@@ -114,7 +134,11 @@ function shortRemovalSentence(documents: readonly Removal[]): string {
   const reasons = new Set(
     documents.map((document) => {
       const voice = voiceOf(document.record);
-      return voice.kind === "unfinished-reply" ? "removed" : voice.reason;
+      return voice.kind === "unfinished-reply"
+        ? "removed"
+        : voice.kind === "work"
+          ? "deleted"
+          : voice.reason;
     }),
   );
   const [reason] = reasons;
@@ -130,32 +154,34 @@ export function RemovedDocumentSentence({ documents }: { documents: readonly Rem
   return <>{removalSentence(documents)}</>;
 }
 
-const APPLY_REFUSALS = {
-  youDeleted: msg`You deleted this document elsewhere, so this draft can't be applied.`,
-  youDiscarded: msg`You discarded this document elsewhere, so this draft can't be applied.`,
-  unfinished: msg`This document was removed when the reply that created it didn't finish, so this draft can't be applied.`,
-  deleted: msg`This document was deleted, so this draft can't be applied.`,
-  discarded: msg`This document was discarded from the draft, so this draft can't be applied.`,
-};
-
 /**
  * Why a draft can't be applied: its document was removed. Apply never revives
  * a removed document, so there is nothing to try again.
  */
 export function RemovedDocumentApplyRefusal({ record }: { record: DocumentRemovalRecord | null }) {
-  const { i18n } = useLingui();
-  const voice = voiceOf(record);
-  const message =
-    voice.kind === "unfinished-reply"
-      ? APPLY_REFUSALS.unfinished
-      : voice.kind === "you"
-        ? voice.reason === "discarded"
-          ? APPLY_REFUSALS.youDiscarded
-          : APPLY_REFUSALS.youDeleted
-        : voice.reason === "discarded"
-          ? APPLY_REFUSALS.discarded
-          : APPLY_REFUSALS.deleted;
-  return <>{i18n._(message)}</>;
+  useLingui();
+  return <>{applyRefusal(voiceOf(record))}</>;
+}
+
+function applyRefusal(voice: RemovalVoice): string {
+  switch (voice.kind) {
+    case "person": {
+      const { name } = voice;
+      return voice.reason === "discarded"
+        ? t`${name} discarded this document from the draft, so this draft can't be applied.`
+        : t`${name} deleted this document, so this draft can't be applied.`;
+    }
+    case "work": {
+      const { name } = voice;
+      return t`This document was deleted with the Work ${name}, so this draft can't be applied.`;
+    }
+    case "unfinished-reply":
+      return t`This document was removed when the reply that created it didn't finish, so this draft can't be applied.`;
+    case "anonymous":
+      return voice.reason === "discarded"
+        ? t`This document was discarded from the draft, so this draft can't be applied.`
+        : t`This document was deleted, so this draft can't be applied.`;
+  }
 }
 
 const EMPTY_NOTICE: RemovedNoticeSnapshot = { shown: [], waiting: [], version: 0 };

@@ -15,7 +15,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This Work no longer exists.`;
     case "draft_not_found":
     case "not_found":
-      return msg`This draft is no longer here. It may have been applied or discarded elsewhere.`;
+      return msg`This draft is no longer here. It may have been applied or discarded already.`;
     case "path_taken":
       return msg`Another document is already at this name. Rename or remove it, then apply again.`;
     case "stale":
