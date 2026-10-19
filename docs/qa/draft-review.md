@@ -246,3 +246,25 @@ item's outcome refreshes its list. Notice, failure and pending feedback update a
 rendering leaves without rebuilding the project file tree.
 Undo the typing, navigate changes, toggle Show changes and Discard a change,
 then Ctrl+Z: all must preserve exact prose and restore the review from text.
+
+## Sustained server retention
+
+Use one 500-paragraph, 50k-word fixture across the whole run: two independent
+open-loop senders at 10 keys/s, with 176 one-paragraph live edits/rebases followed
+by 39 fifty-paragraph live edits/rebases. Wait for every key's durable ack and
+verify the review base equals live. Do not reseed between operations: fresh
+fixtures hide retention of superseded append replicas.
+
+Sample **the Nitro worker**, not its parent process, with a worker-local inspector
+`HeapProfiler.collectGarbage` followed by `process.memoryUsage()`. Record initial,
+10, 176 and 215 operation cuts and a drained cut. Snapshot in a separate run:
+snapshots pause the worker, queue more typing and distort per-operation measurements. Compare
+current encoded document bytes alongside post-GC heap. Gc-off tombstones grow with
+changed text and survive checkpoint folding; old whole-document replicas and
+append callbacks must not accumulate. Inspect root-to-retainer paths rather than
+inferring a leak from process RSS. Never raise the worker's heap limit to pass.
+
+The reproducible incident, isolated encoding-lifetime fix, heap snapshots and
+harness setup are recorded in the [OOM investigation][draft-review-oom].
+
+[draft-review-oom]: https://github.com/haowjy/meridian-flow-docs/blob/158e2c97e912ecf5856acdd7de1a2afa702c70ea/work/diff-based-review/b/oom/REPORT.md
