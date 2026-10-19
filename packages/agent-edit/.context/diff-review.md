@@ -190,16 +190,13 @@ migration owns the CAS (`packages/database/src/migration-steps/`).
 
 [late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md
 
-### Identity-keyed inverse planning
+### Identity-sensitive draft patches
 
-`rebase` optionally accepts `identity: { base, draft }`, one optional tag per
-plain token on those sides. Only base-to-draft alignment sees keyed copies;
-base-to-live, coalescing and emitted payload remain plain. Keyed alignment
-includes paragraph anchors and bypasses the content-only unit memo, without
-changing segmentation. Tags never become document text or marks.
-
-`merged` zips the settled tokens with their `MergedTok` origins; indices address
-the original input token arrays, including after paragraph-order reconciliation.
-`baseToLive` supplies the corresponding original live-token index outside live
-hunks (otherwise -1). Lowering must use these correspondences, not diff the
-merged block text again: another content match can select an earlier equal copy.
+`rebase(schema, base, live, draft, { alignDraft })` accepts a caller-owned
+base-to-draft aligner. It runs both initially and after paragraph reorder, on
+the reordered blocks. Base-to-live always uses ordinary content alignment.
+The caller must return the normal Alignment maps and hunks; its draft hunks
+are pinned against reslide so an equal neighbour cannot become the target.
+The result remains content only: kernel transformations do not certify token
+origins or destination identity. Mutation planning must select destination
+items separately.
