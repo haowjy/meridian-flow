@@ -4,7 +4,7 @@
  *
  * Vocabulary (D68): `branchId` is a `branches` row (the Work's whole branch), `itemKey`
  * (`${branchId}:${documentId}`) is the client's only identity for one reviewed document, and a
- * document's text draft never crosses the wire. `hasDraft` reports only its existence.
+ * `hasDraft` reports text-room existence; addressed metadata supplies its stable draft id.
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";

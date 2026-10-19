@@ -36,7 +36,7 @@ import { acquireEndUseScope, EndUseScopeChangedError } from "../../context/tree/
 import { livingDocumentRefusal } from "../../context/tree/living-document.js";
 import { place } from "../../context/tree/placement.js";
 import { readRemovalRecords } from "../../context/tree/removal.js";
-import { createTreeReader } from "../../context/tree/tree-view.js";
+import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
 import {
   WorkLifecycleUnavailableError,
   type WorkProjectionMutation,
@@ -102,6 +102,27 @@ export function createDrizzleApplyClick(
       ...(removal ? { removal } : {}),
     };
   }
+  async function reveal(node: TreeStateNode) {
+    const placed = await place(db, {
+      targets: [
+        {
+          node: { kind: "document", id: node.nodeId },
+          at: {
+            contextSourceId: node.target.contextSourceId,
+            parentFolderId: node.target.parentFolderId,
+            name: node.target.name,
+            extension: node.target.extension,
+          },
+        },
+      ],
+    });
+    if (!placed.ok) throw new ApplyClickRefused("forbidden");
+    await deps.arrivals?.settle([node.nodeId]);
+    await deps.catalog.refreshSources(
+      placed.value.sourceIds,
+      placed.value.placed.map((ref) => ref.id),
+    );
+  }
   return {
     closed,
     async loadBase(draftId) {
@@ -118,7 +139,11 @@ export function createDrizzleApplyClick(
       }
     },
     measured: deps.measured,
-    async execute(command, base, click, branchId) {
+    async execute(command, prepared) {
+      const base = prepared.kind === "text" ? prepared.base : null;
+      const click = prepared.kind === "text" ? prepared.click : null;
+      const branchId =
+        prepared.kind === "text" ? prepared.base.snapshot.branchId : prepared.branchId;
       const draftId = base?.snapshot.draftId;
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
@@ -197,25 +222,7 @@ export function createDrizzleApplyClick(
                           commandId: command.envelope.commandId,
                           reason: "malformed",
                         });
-                      const placed = await place(db, {
-                        targets: [
-                          {
-                            node: { kind: "document", id: command.documentId },
-                            at: {
-                              contextSourceId: node.target.contextSourceId,
-                              parentFolderId: node.target.parentFolderId,
-                              name: node.target.name,
-                              extension: node.target.extension,
-                            },
-                          },
-                        ],
-                      });
-                      if (!placed.ok) throw new ApplyClickRefused("forbidden");
-                      await deps.arrivals?.settle([command.documentId]);
-                      await deps.catalog.refreshSources(
-                        placed.value.sourceIds,
-                        placed.value.placed.map((ref) => ref.id),
-                      );
+                      await reveal(node);
                       await dropDocumentRows(db, { branchId, documentIds: [command.documentId] });
                       deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
                       return finish({ status: "applied", commandId: command.envelope.commandId });
@@ -276,25 +283,7 @@ export function createDrizzleApplyClick(
                       await testHook("apply.afterLive");
                       const [node] = await tree.treeState(branchId, [command.documentId]);
                       if (node?.hidden && node.origin === "created") {
-                        const placed = await place(db, {
-                          targets: [
-                            {
-                              node: { kind: "document", id: command.documentId },
-                              at: {
-                                contextSourceId: node.target.contextSourceId,
-                                parentFolderId: node.target.parentFolderId,
-                                name: node.target.name,
-                                extension: node.target.extension,
-                              },
-                            },
-                          ],
-                        });
-                        if (!placed.ok) throw new ApplyClickRefused("forbidden");
-                        await deps.arrivals?.settle([command.documentId]);
-                        await deps.catalog.refreshSources(
-                          placed.value.sourceIds,
-                          placed.value.placed.map((ref) => ref.id),
-                        );
+                        await reveal(node);
                       }
                       if (node?.origin === "created")
                         await dropDocumentRows(db, {

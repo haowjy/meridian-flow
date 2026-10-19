@@ -109,6 +109,7 @@
     "apps/app/src/features/draft-review/review-change-links.test.tsx": 3,
     "apps/app/src/features/draft-review/review-changes.test.ts": 10,
     "apps/app/src/features/draft-review/review-files.test.ts": 3,
+    "apps/app/src/features/draft-review/apply-click-queue.test.ts": 4,
     "apps/app/src/features/draft-review/useReviewRefresh.test.tsx": 5,
     "apps/app/src/features/editor/EditorView.lifetime.test.tsx": 5,
     "apps/app/src/features/editor/surfaces/table/table-cell-hold.test.ts": 3,

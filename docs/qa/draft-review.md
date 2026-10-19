@@ -144,3 +144,17 @@ The selective server Discard and Work Apply-all routes do not exist. Existing
 text Discard sends ordinary Yjs updates only. Server Discard is limited to a
 still-hidden creation or Work Discard all. The SQL-only addressed metadata
 lookup must resolve empty active drafts without a server preview.
+
+## Addressed metadata and creations without rooms
+
+The addressed GET `…/works/:work/documents/:document/draft?itemKey=…` returns
+`active` with the stable draft id, room name and item even after local Discard
+makes it unlisted. It returns `gone` for an old item key; a different Work or
+project cannot read it. This lookup must not open a Yjs room.
+
+For a hidden creation without a text room (for example a copied image), its
+item Apply is available without opening an editor. The click omits `snapshot`
+and sends empty `groupIds` and `baseViewDelta`. Verify that it reveals the same
+document id, removes the pending item, and a same-id replay returns `applied`.
+The same empty click on a text draft or an already revealed item is malformed.
+A creation with a text room continues through the ordinary frozen text click.
