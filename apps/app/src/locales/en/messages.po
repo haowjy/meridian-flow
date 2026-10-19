@@ -250,6 +250,22 @@ msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 msgid "{count} changes"
 msgstr "{count} changes"
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count} documents were deleted by {name}."
+msgstr "{count} documents were deleted by {name}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count} documents were deleted."
+msgstr "{count} documents were deleted."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count} documents were discarded from the draft."
+msgstr "{count} documents were discarded from the draft."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{count} documents were removed."
+msgstr "{count} documents were removed."
+
 #: src/features/chat/chat-upload-display.ts
 msgid "{days, plural, one {# day ago} other {# days ago}}"
 msgstr "{days, plural, one {# day ago} other {# days ago}}"
@@ -390,8 +406,12 @@ msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "<0>{title}</0> was deleted by {actorName}."
-msgstr "<0>{title}</0> was deleted by {actorName}."
+#~ msgid "<0>{title}</0> was deleted by {actorName}."
+#~ msgstr "<0>{title}</0> was deleted by {actorName}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "<0>{title}</0> was deleted by {name}."
+msgstr "<0>{title}</0> was deleted by {name}."
 
 #: src/features/chat/DeletedChatCard.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -399,8 +419,16 @@ msgid "<0>{title}</0> was deleted."
 msgstr "<0>{title}</0> was deleted."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "<0>{title}</0> was discarded from the draft by {name}."
+msgstr "<0>{title}</0> was discarded from the draft by {name}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "<0>{title}</0> was discarded from the draft."
 msgstr "<0>{title}</0> was discarded from the draft."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "<0>{title}</0> was removed when the reply that created it didn't finish."
+msgstr "<0>{title}</0> was removed when the reply that created it didn't finish."
 
 #: src/features/chat/derivation/InheritedMarks.tsx
 #: src/features/chat/derivation/ThreadReferenceChip.tsx
@@ -1886,6 +1914,7 @@ msgstr "Discarding"
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 #: src/features/project/work/WorkFileRows.tsx
@@ -4541,9 +4570,41 @@ msgstr "This document is read only right now."
 msgid "This document is still opening."
 msgstr "This document is still opening."
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was deleted by {name}, so this draft can't be applied."
+msgstr "This document was deleted by {name}, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was deleted by {name}."
+msgstr "This document was deleted by {name}."
+
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document was deleted from your project after the draft started. Check it, then apply again."
-msgstr "This document was deleted from your project after the draft started. Check it, then apply again."
+#~ msgid "This document was deleted from your project after the draft started. Check it, then apply again."
+#~ msgstr "This document was deleted from your project after the draft started. Check it, then apply again."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was deleted, so this draft can't be applied."
+msgstr "This document was deleted, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was deleted."
+msgstr "This document was deleted."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was discarded from the draft by {name}."
+msgstr "This document was discarded from the draft by {name}."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was discarded from the draft."
+msgstr "This document was discarded from the draft."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
+msgstr "This document was removed when the reply that created it didn't finish, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "This document was removed when the reply that created it didn't finish."
+msgstr "This document was removed when the reply that created it didn't finish."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
@@ -5079,9 +5140,41 @@ msgstr "you answered"
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You deleted {count} documents elsewhere."
+msgstr "You deleted {count} documents elsewhere."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You deleted <0>{title}</0> elsewhere."
+msgstr "You deleted <0>{title}</0> elsewhere."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You deleted this document elsewhere, so this draft can't be applied."
+msgstr "You deleted this document elsewhere, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You deleted this document elsewhere."
+msgstr "You deleted this document elsewhere."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You discarded {count} documents from the draft elsewhere."
+msgstr "You discarded {count} documents from the draft elsewhere."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You discarded <0>{title}</0> from the draft elsewhere."
+msgstr "You discarded <0>{title}</0> from the draft elsewhere."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "You discarded the text it edited, so the change wasn't kept. The AI will read it again."
 msgstr "You discarded the text it edited, so the change wasn't kept. The AI will read it again."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You discarded this document elsewhere, so this draft can't be applied."
+msgstr "You discarded this document elsewhere, so this draft can't be applied."
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "You discarded this document from the draft elsewhere."
+msgstr "You discarded this document from the draft elsewhere."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "You discarded this draft, so the change wasn't kept. The AI will read it again."

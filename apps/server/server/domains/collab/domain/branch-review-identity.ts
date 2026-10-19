@@ -8,10 +8,10 @@
  * item is the tree-derived observation read for every such document, listed or not.
  */
 import type { BranchId } from "@meridian/contracts";
+import { type DraftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { isUuid } from "../../../shared/uuid.js";
 import type { BranchReviewItems, DraftReviewItem } from "./branch-review-items.js";
-import { type DraftItemKey, draftItemKey } from "./branch-tree-payload.js";
 import type { Branches } from "./branches.js";
 
 export type ResolvedReviewItem = {
@@ -55,11 +55,9 @@ export function createBranchReviewIdentity(deps: {
     async resolveReviewItem({ workId, itemKey }) {
       const branch = await deps.branches.activeForWork(workId);
       if (!branch) return null;
-      const prefix = `${branch.id}:`;
-      if (!itemKey.startsWith(prefix)) return null;
-      const documentId = itemKey.slice(prefix.length) as DocumentId;
-      if (!isUuid(documentId) || draftItemKey(branch.id, documentId) !== itemKey) return null;
-      return inBranch(branch.id, documentId);
+      const parsed = parseDraftItemKey(itemKey);
+      if (parsed?.branchId !== branch.id || !isUuid(parsed.documentId)) return null;
+      return inBranch(branch.id, parsed.documentId);
     },
     async resolveReviewItemByDocument({ workId, documentId }) {
       const branch = await deps.branches.activeForWork(workId);

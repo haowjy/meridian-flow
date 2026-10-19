@@ -32,7 +32,7 @@ import type { ContextPaneState } from "./context-pane-state";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
-import { RemovedDocumentNotices } from "./RemovedDocumentNotice";
+import { RemovedDocumentTabNotice } from "./RemovedDocumentNotice";
 import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
@@ -177,6 +177,8 @@ export function ContextViewer({
         recentsActive={paneState.kind === "empty-workspace"}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
+        // With no tab left the landing's top margin holds it instead.
+        notice={tabs.length > 0 ? <RemovedDocumentTabNotice projectId={projectId} /> : null}
       />
       {masked && route ? (
         <PendingDocumentPath
@@ -247,12 +249,12 @@ export function ContextViewer({
               projectId={projectId}
               editorWorkId={editorWorkId}
               onNewDocument={onNewDocument}
+              holdsRemovedNotice={tabs.length === 0}
             />
           ) : null}
           {controller.inlineReview?.shown ? (
             <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
           ) : null}
-          <RemovedDocumentNotices projectId={projectId} />
         </PaintHold>
       </ProjectRouteBoundary>
     </div>

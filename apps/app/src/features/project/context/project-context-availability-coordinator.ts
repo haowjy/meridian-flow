@@ -39,12 +39,6 @@ export type ProjectDocumentAvailabilityCommand =
       cause: "authority-unavailable" | "no-longer-visible";
     };
 
-export type InstalledCatalogObservation = {
-  projectId: string;
-  vanishedDocumentIds: readonly string[];
-  changedWatchedDocumentIds: readonly string[];
-};
-
 type Lookup = (
   projectId: string,
   documentIds: readonly string[],
@@ -168,11 +162,6 @@ export class ProjectContextAvailabilityCoordinator {
         if (state.leases === 0) this.projects.delete(projectId);
       },
     };
-  }
-
-  async observe(observation: InstalledCatalogObservation): Promise<void> {
-    const ids = [...observation.vanishedDocumentIds, ...observation.changedWatchedDocumentIds];
-    await this.recheck(observation.projectId, ids);
   }
 
   async coldScopeHint(projectId: string, workId: string): Promise<void> {

@@ -7,6 +7,7 @@
  */
 
 import type { BranchCommandId, BranchId } from "@meridian/contracts";
+import { draftItemKey } from "@meridian/contracts";
 import {
   BRANCH_COMMAND_CONFLICT_CODE,
   BRANCH_COMMAND_UNKNOWN_CODE,
@@ -35,7 +36,6 @@ import {
   commandDigest,
 } from "../domains/collab/domain/branch-commands.js";
 import type { DraftReviewItem } from "../domains/collab/domain/branch-review-items.js";
-import { draftItemKey } from "../domains/collab/domain/branch-tree-payload.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
 import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";

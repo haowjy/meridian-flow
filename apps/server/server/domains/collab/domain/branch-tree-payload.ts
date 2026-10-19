@@ -4,7 +4,7 @@
  * reads what a crashed process staged), and one codec for the step's refusals and holds,
  * so neither side probes untyped JSON.
  */
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DraftItemKey } from "@meridian/contracts";
 import type { DraftHeldReason } from "@meridian/contracts/branches";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
@@ -13,13 +13,6 @@ import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
 /** The tree step's payload kind; recovery finds the step by it. */
 export const BRANCH_TREE_STEP = "branch_tree";
-
-/** `${BranchId}:${DocumentId}`: one key for every item, text or binary (F12). */
-export type DraftItemKey = string;
-
-export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftItemKey {
-  return `${branchId}:${documentId}`;
-}
 
 const PayloadItemSchema = z.object({
   itemKey: z.string(),

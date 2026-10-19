@@ -13,6 +13,7 @@ import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
+import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
@@ -79,6 +80,7 @@ export function MobileProject(props: MobileProjectProps) {
     "quiet",
   );
   const onWorkDetail = props.activeScreen === "work" && !work.onCollection && Boolean(work.title);
+  const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
 
   return (
     <div
@@ -103,7 +105,9 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={onWorkDetail ? work.notice : undefined}
+        notice={
+          onWorkDetail ? work.notice : props.activeScreen === "context" ? removedNotice : undefined
+        }
         chatAction={
           props.activeScreen !== "chat" ? (
             <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>

@@ -10,6 +10,7 @@ import type {
   DraftApplyRequest,
   DraftDiscardRequest,
   DraftDiscardResponse,
+  DraftHeldReason,
   DraftPreviewResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/branches";
@@ -60,6 +61,7 @@ import {
   rebaseChangeCommand,
   releaseBranchCommand,
   retainUnknownCommand,
+  type ServerRefusal,
   selectionKeys,
   wholeDraftPending,
 } from "./branch-command-record";
@@ -76,7 +78,8 @@ export type BranchCommandOutcome =
   | { kind: "applied" }
   | { kind: "apply-outcome-unknown" }
   | { kind: "discarded" }
-  | { kind: "change-settled"; mode: Mode }
+  /** `itemClosed`: the change was the item's last, so the item left review. */
+  | { kind: "change-settled"; mode: Mode; itemClosed: boolean }
   | { kind: "change-refused"; mode: Mode; code: ChangeFailureCode }
   | { kind: "failed"; failure: BranchCommandFailure };
 type Mode = "apply" | "discard";
@@ -261,10 +264,16 @@ function evenSample(keys: readonly string[], limit: number): string[] {
   );
 }
 
-/** The server code a refused item command carries to the render layer. */
-function refusalCode(response: CommandResult): string {
-  if (response.status === "held") return response.reason.code;
-  return response.status === "gone" ? "draft_not_found" : response.status;
+/** What a refused item command carries to the render layer: the server's code, and a hold's record. */
+function refusalOf(response: CommandResult): ServerRefusal {
+  if (response.status === "held") return heldRefusal(response.reason);
+  return { serverCode: response.status === "gone" ? "draft_not_found" : response.status };
+}
+
+function heldRefusal(reason: DraftHeldReason): ServerRefusal {
+  return reason.code === "deleted_live"
+    ? { serverCode: reason.code, removal: reason.removal }
+    : { serverCode: reason.code };
 }
 
 function canSendBranchCommand(): boolean {
@@ -411,10 +420,7 @@ async function execute(
     ) {
       await refreshDraft().catch(() => undefined);
       if (!claimIsLive(claim)) return { kind: "blocked" };
-      const failure: BranchCommandFailure = {
-        code: `${mode}-refused`,
-        serverCode: refusalCode(response),
-      };
+      const failure: BranchCommandFailure = { code: `${mode}-refused`, ...refusalOf(response) };
       failBranchCommand(claim, failure);
       return { kind: "failed", failure };
     }
@@ -453,7 +459,11 @@ async function execute(
       if (!claimIsLive(claim)) return { kind: "blocked" };
       confirmChangeCommand(claim, command.selection, mode);
       return confirmed
-        ? { kind: "change-settled", mode }
+        ? {
+            kind: "change-settled",
+            mode,
+            itemClosed: "itemClosed" in response && Boolean(response.itemClosed),
+          }
         : { kind: "change-refused", mode, code: "gone" };
     }
     await refresh(queryClient, draft, threadId, !retryStale);
@@ -893,7 +903,7 @@ async function executeWorkWide(
         }
         const failure: BranchCommandFailure = {
           code: "apply-refused",
-          serverCode: item?.status === "held" ? item.reason.code : "stale",
+          ...(item?.status === "held" ? heldRefusal(item.reason) : { serverCode: "stale" }),
         };
         failBranchCommand(claim, failure);
         return { kind: "failed", failure };

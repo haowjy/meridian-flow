@@ -37,6 +37,8 @@ export type ContextTabBarProps = {
    * expand toggle when the dock is collapsed). Same render rule as `leading`.
    */
   trailing?: ReactNode;
+  /** Feedback in the strip's free end, where a closed tab's width went; never takes a tab's width. */
+  notice?: ReactNode;
 };
 
 export function ContextTabBar({
@@ -52,6 +54,7 @@ export function ContextTabBar({
   recentsActive = false,
   leading,
   trailing,
+  notice,
 }: ContextTabBarProps) {
   return (
     <div
@@ -92,7 +95,7 @@ export function ContextTabBar({
           the row, not a control docked beside it. */}
       <div
         className={cn(
-          "flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden",
+          "flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
           onShowRecents ? "pl-0" : "pl-2",
         )}
       >
@@ -146,6 +149,11 @@ export function ContextTabBar({
             <Trans>New tab</Trans>
           </TooltipContent>
         </Tooltip>
+      </div>
+      {/* The strip's free end: tabs keep their width and a notice takes what is
+          left, never less than its glyph and dismiss. */}
+      <div className="@container flex min-w-0 flex-1 basis-0 items-stretch has-[[data-removed-document-notice]]:min-w-16">
+        {notice}
       </div>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
