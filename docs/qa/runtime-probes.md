@@ -870,7 +870,7 @@ restart smoke check.
   for d in C10-Target C10-Reshown C10-Fork W2-Draft; do
     ./mf doc put "manuscript://$d" --text @"$E/ch.md" --overwrite --json > /dev/null
   done
-  for i in 1 2 3 4 5; do
+  for i in 1 2 3; do
     printf 'Filler %s text.\n' $i > "$E/f$i.md"
     ./mf doc put "manuscript://C10-Filler$i" --text @"$E/f$i.md" --overwrite --json > /dev/null
   done
@@ -883,12 +883,15 @@ restart smoke check.
 - **Steps:**
 
   1. Compaction without a re-show: in a fresh No Work thread read `C10-Target`, then read
-     `C10-Filler1` to `C10-Filler5` in five sends (the target falls out of the five re-shown
-     files), compact, then send `writemock C10-Target` twice.
+     `C10-Filler1` to `C10-Filler3` in three sends (the target falls out of the 3 recent
+     documents). Before compacting, set the summary mock to return a summary ending with
+     `## Documents to keep open` and no URIs, so the target is not model-listed either.
+     Compact, then send `writemock C10-Target` twice.
   2. Compaction with a re-show: a fresh thread reads `C10-Reshown`, compacts, then sends
      `writemock C10-Reshown` once.
   3. Fork before the compaction: a fresh thread reads `C10-Fork` (keep the send's result
-     `turnId` as `CUT`), reads the five fillers, compacts, sends `writemock C10-Fork`; then
+     `turnId` as `CUT`), reads the three fillers, compacts with the same empty keep-open list as step 1,
+     sends `writemock C10-Fork`; then
      fork at `CUT` (`POST /api/threads/$T/fork` with `originTurnId`) and send `writemock C10-Fork`
      on the fork.
   4. First draft-mode write after a live read: a draft-mode thread on a new Work (body as in

@@ -26,6 +26,7 @@ import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.
 import {
   chooseImportantFiles,
   importantFileCandidates,
+  parseImportantFiles,
   reshowBudgetTokens,
 } from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
@@ -69,12 +70,14 @@ interface ReshownDocuments {
   /** Recorded with the blocks: a fresh frontier chain, like an @-mentioned document's. */
   evidence: ReferenceEvidence;
   documentIds: ReadonlySet<string>;
+  notReshownUris: string[];
 }
 
 const NO_RESHOWN: ReshownDocuments = {
   blocks: [],
   evidence: NO_REFERENCE_EVIDENCE,
   documentIds: new Set(),
+  notReshownUris: [],
 };
 
 function fittingTokens(context: AssembledNextTurnContext) {
@@ -100,7 +103,7 @@ function fittingTokens(context: AssembledNextTurnContext) {
 }
 
 /**
- * Reads the pre-compaction history's most recently shown documents in full, through the
+ * Reads the pre-compaction history's model-ranked and recent documents in full, through the
  * reference reader (the server's one read door), each as a block on the compaction turn with
  * evidence recorded like an @-mentioned document's: a frontier chained from nothing.
  */
@@ -113,6 +116,7 @@ async function reshowImportantFiles(args: {
   allBlocks: Block[];
   policies: (name: string) => DocumentTextPolicy | undefined;
   budgetTokens: number;
+  listedUris: readonly string[];
 }): Promise<ReshownDocuments> {
   const { deps, input, placeholder, allBlocks } = args;
   const blocksByTurn = new Map<string, Block[]>();
@@ -125,8 +129,21 @@ async function reshowImportantFiles(args: {
     turn,
     blocks: blocksByTurn.get(turn.id) ?? [],
   }));
-  const newestFirst = await chooseImportantFiles({
-    candidates: importantFileCandidates(collectRecordedDocuments(history, args.policies)),
+  const { candidates, unknownUriCount } = importantFileCandidates(
+    collectRecordedDocuments(history, args.policies),
+    args.listedUris,
+  );
+  if (unknownUriCount > 0) {
+    emitEvent(deps.eventSink, {
+      level: "debug",
+      source: "runtime.compaction",
+      name: "important_file.unknown_uris",
+      correlation: { threadId: input.threadId, turnId: placeholder.id },
+      payload: { count: unknownUriCount },
+    });
+  }
+  const priorityFirst = await chooseImportantFiles({
+    candidates,
     budgetTokens: args.budgetTokens,
     read: async (reference) => {
       args.assertNoResponseScope();
@@ -153,8 +170,9 @@ async function reshowImportantFiles(args: {
       }
     },
   });
-  // Oldest first: history order is recency order, so a later compaction ranks these correctly.
-  const kept = newestFirst.reverse();
+  // Most important last: nearest the conversation, and most recent at the next compaction.
+  const kept = priorityFirst.reverse();
+  const documentIds = new Set(kept.map(({ reference }) => reference.documentId));
   const blocks = kept.map(({ reference, read }, index) =>
     contentForBlockInput({
       turnId: placeholder.id,
@@ -174,7 +192,10 @@ async function reshowImportantFiles(args: {
           : [],
       ),
     },
-    documentIds: new Set(kept.map(({ reference }) => reference.documentId)),
+    documentIds,
+    notReshownUris: candidates
+      .filter((candidate) => !documentIds.has(candidate.documentId))
+      .map((candidate) => candidate.uri as string),
   };
 }
 
@@ -243,8 +264,8 @@ export async function prepareCompactionSuccessor(args: {
       sequence: 0,
       status: "complete" as const,
     };
+    const parsed = parseImportantFiles(outcome.text);
     const props = {
-      summary: outcome.text,
       model: outcome.model,
       excludedTurnCount: projection.turns.filter(
         (turn) =>
@@ -254,16 +275,27 @@ export async function prepareCompactionSuccessor(args: {
       ).length,
       tokensBefore: decision.tokensBefore,
     };
-    // Projection reads only the summary text; its provisional block is not persisted.
-    const projectedSummary = localBlockFromEvent(
-      contentForBlockInput({
-        ...blockInput,
-        content: { kind: "compaction", props: { ...props, tokensAfter: 0 } },
-      }),
-    );
-    // The request this compaction would hand the successor, given what it re-shows: the tail's
-    // copies of those documents are elided, so the request carries each once.
+    // The request this compaction would hand the successor, including its final summary text.
     const stage = (reshown: ReshownDocuments) => {
+      const summary = [
+        parsed.summary,
+        ...(reshown.notReshownUris.length
+          ? [
+              [
+                "## Documents not re-shown",
+                "These documents were not re-shown after the summary. Read them again before writing in them.",
+                ...reshown.notReshownUris.map((uri) => `- ${uri}`),
+              ].join("\n"),
+            ]
+          : []),
+      ].join("\n\n");
+      // Projection reads only the summary text; its provisional block is not persisted.
+      const projectedSummary = localBlockFromEvent(
+        contentForBlockInput({
+          ...blockInput,
+          content: { kind: "compaction", props: { ...props, summary, tokensAfter: 0 } },
+        }),
+      );
       const elisions = planModelElisions({
         retainedSuffix: decision.plan.retainedSuffix,
         recorded,
@@ -326,7 +358,7 @@ export async function prepareCompactionSuccessor(args: {
                 : deps.repos.promptBakes.findById(id),
           },
         });
-      return { metadata, reshown, assemble };
+      return { metadata, reshown, assemble, summary };
     };
     let staged = stage(NO_RESHOWN);
     const base = await staged.assemble([], []);
@@ -335,20 +367,21 @@ export async function prepareCompactionSuccessor(args: {
     const reshown = await reshowImportantFiles({
       ...args,
       policies,
+      listedUris: parsed.uris,
       budgetTokens: reshowBudgetTokens({
         usableWindowTokens: base.assembled.compactionUsableWindowTokens ?? 0,
         triggerTokens: base.assembled.compactionTriggerTokens,
         baseTokens: tokensAfter,
       }),
     });
-    if (reshown.blocks.length > 0) {
+    if (reshown.blocks.length > 0 || reshown.notReshownUris.length > 0) {
       staged = stage(reshown);
       // Measurement: the recorded `tokensAfter` is what the successor really carries.
       tokensAfter = fittingTokens((await staged.assemble([], [])).assembled);
     }
     const summaryBlock = contentForBlockInput({
       ...blockInput,
-      content: { kind: "compaction", props: { ...props, tokensAfter } },
+      content: { kind: "compaction", props: { ...props, summary: staged.summary, tokensAfter } },
     });
     return {
       kind: "usable",
