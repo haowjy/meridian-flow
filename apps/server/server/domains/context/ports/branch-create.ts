@@ -3,7 +3,9 @@
  * placement holds and a live placement never has. Postgres implements it over the tree
  * view; the in-memory composition has no branches and never builds a branch placement.
  */
+
 import type { BranchId, DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts";
+import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type {
   BinaryNode,
@@ -30,6 +32,6 @@ export interface BranchCreatePort {
   retractCreate(input: {
     branch: EnsuredBranch;
     documentId: DocumentId;
-    cause: "reply_rolled_back" | "create_failed";
+    cause: RetractionCause;
   }): Promise<"retracted" | "stands">;
 }

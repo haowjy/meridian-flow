@@ -10,7 +10,8 @@
  * live tree, once: an item is blocked by what stands at its row's location now, never by another item.
  * An item whose live document was removed is held with the removal's record, at the check
  * (nothing is staged for it) and again in completion (its staged member is withdrawn while
- * the batch's living members apply): Apply revives nothing (W52).
+ * the batch's living members apply): a document exists only by being created, so Apply
+ * revives nothing.
  * The check refines the payload to the eligible items. `beforeAdmission` then installs
  * reveals of still-hidden creates through placement, each at its row's location.
  * `afterAdmission` settles arrivals once against the final tree (an ahead ref binds there,

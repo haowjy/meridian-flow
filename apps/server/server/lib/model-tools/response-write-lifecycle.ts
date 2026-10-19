@@ -9,7 +9,7 @@ import {
   removedWriteMessage,
 } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
-import type { DocumentRemovalCause, PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type { PermissionDeniedReason, RetractionCause } from "@meridian/contracts/protocol";
 import type { RefusedResponseDocument } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
@@ -66,7 +66,7 @@ export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
   path: string;
   documentId: string;
-  cause: Exclude<DocumentRemovalCause, "repair">;
+  cause: RetractionCause;
 }): Promise<void> {
   const retracted = await input.port.retractCreate(input.path, {
     documentId: input.documentId,

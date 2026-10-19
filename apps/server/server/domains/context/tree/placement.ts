@@ -127,16 +127,10 @@ export type PlaceTarget = {
   at: LiveLocation;
 };
 
-/**
- * What a placement did. `absorbed` and `restored` (soft-deleted ancestor folders brought
- * back for the node) are contract surface; nothing reads them yet.
- */
+/** What a placement did. */
 export type PlaceResult = {
   /** Targets plus revealed or restored ancestors. */
   placed: readonly NodeRef[];
-  /** Hidden ancestors folded into the visible folder that already held their path. */
-  absorbed: readonly FolderId[];
-  restored: readonly NodeRef[];
   /** The sources the catalog refresh covers, with `placed` as its invalidated roots. */
   sourceIds: readonly ContextSourceId[];
 };
@@ -156,8 +150,6 @@ export async function place(
 ): Promise<Result<PlaceResult, PlaceFault>> {
   const tree = createTreeReader(db);
   const placed: NodeRef[] = [];
-  const restored: NodeRef[] = [];
-  const absorbed: FolderId[] = [];
   const sourceIds = new Set<ContextSourceId>();
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
@@ -166,8 +158,6 @@ export async function place(
     const ancestors = await placeAncestors(db, tree, target);
     if (!ancestors.ok) return ancestors;
     placed.push(...ancestors.value.placed);
-    restored.push(...ancestors.value.restored);
-    absorbed.push(...ancestors.value.absorbed);
     const { parentId } = ancestors.value;
     const filename =
       target.node.kind === "document"
@@ -210,7 +200,7 @@ export async function place(
     placed.push(target.node);
     sourceIds.add(target.at.contextSourceId);
   }
-  return Ok({ placed, absorbed, restored, sourceIds: [...sourceIds] });
+  return Ok({ placed, sourceIds: [...sourceIds] });
 }
 
 /** The fault for a live path something other than `self` holds, else null. */
@@ -258,8 +248,6 @@ async function placeAncestors(
       parentId: FolderId | null;
       path: string[];
       placed: NodeRef[];
-      restored: NodeRef[];
-      absorbed: FolderId[];
     },
     PlaceFault
   >
@@ -277,8 +265,6 @@ async function placeAncestors(
   let parentId: FolderId | null = null;
   const path: string[] = [];
   const placed: NodeRef[] = [];
-  const restored: NodeRef[] = [];
-  const absorbed: FolderId[] = [];
   for (const id of chainIds) {
     const row = rows.get(id);
     if (!row) return Err({ code: "stale", node: { kind: "folder", id } });
@@ -296,10 +282,8 @@ async function placeAncestors(
     if (holder.kind === "found" && holder.node.kind === "folder") {
       // One folder per path (decision 10): a hidden one folds into the visible holder; a
       // deleted one stays deleted and the walk continues under the holder.
-      if (row.hidden && !row.deleted) {
+      if (row.hidden && !row.deleted)
         await absorbHiddenFolder(db, { hidden: row.id, into: holder.node.id });
-        absorbed.push(row.id);
-      }
       parentId = holder.node.id;
       continue;
     }
@@ -315,10 +299,9 @@ async function placeAncestors(
     // A split may have left a hidden twin at a restored folder's path (§8.3).
     if (row.deleted) await absorbAt(db, row.id);
     placed.push({ kind: "folder", id: row.id });
-    if (row.deleted) restored.push({ kind: "folder", id: row.id });
     parentId = row.id;
   }
-  return Ok({ parentId, path, placed, restored, absorbed });
+  return Ok({ parentId, path, placed });
 }
 
 async function updatePlacedFolder(

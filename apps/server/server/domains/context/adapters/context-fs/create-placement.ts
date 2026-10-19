@@ -5,7 +5,9 @@
  * `retractCreate`, and the refusals a draft placement makes (a draft never seeds live
  * Yjs, and an empty hidden folder would have no use).
  */
+
 import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { RetractionCause } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
@@ -61,7 +63,7 @@ export interface CreatePlacement {
   /** Reverse a create (§12.5): `live` asks the caller to delete; a branch create retracts here. */
   retract(
     documentId: string,
-    cause: "reply_rolled_back" | "create_failed",
+    cause: RetractionCause,
   ): Promise<Result<{ placement: ContextPlacement["kind"] }, AdapterFault>>;
 }
 

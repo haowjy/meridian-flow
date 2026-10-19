@@ -2,6 +2,8 @@
 import type { UserId } from "../ids.js";
 
 export type DocumentRemovalCause = "reply_rolled_back" | "create_failed" | "repair";
+/** A create's own retraction: the reply that made it rolled back, or the create failed. */
+export type RetractionCause = Exclude<DocumentRemovalCause, "repair">;
 
 type DocumentRemovalActor =
   | { kind: "user"; userId: UserId; displayName: string | null }

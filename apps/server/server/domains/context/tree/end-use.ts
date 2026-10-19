@@ -9,7 +9,7 @@
  * commit. Hidden nodes are tombstoned, never hard-deleted.
  */
 import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
-import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
+import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
@@ -206,7 +206,7 @@ export async function retractCreate(
   input: {
     branchId: BranchId;
     documentId: DocumentId;
-    cause: Exclude<DocumentRemovalCause, "repair">;
+    cause: RetractionCause;
     removal: DocumentRemoval;
     retractDraft(): Promise<"retracted" | "stands">;
   },

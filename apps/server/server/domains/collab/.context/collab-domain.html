@@ -743,7 +743,7 @@ without a row.
   <li><strong>Seed.</strong> A new document's first content is installed as
     an <code>up_to_seq = 0</code> checkpoint with no journal rows. Seeding is
     initialize-only; a later attempt on a document with any admission or
-    checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerDocumentLifecycle</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
+    checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerInitialDocumentSeeds</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
   <li><strong>Room store.</strong> Hocuspocus <code>onStoreDocument</code>
     queues the room's authority binding. After the caller's transaction commits,
     the worker captures a durable cut and writes it (dropped on rollback or when

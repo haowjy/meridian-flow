@@ -13,6 +13,7 @@ import {
   filetypeForPath,
   type ParsedDocumentFilename,
   parseDocumentFilename,
+  type RetractionCause,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -543,7 +544,7 @@ export class ContextFS implements ContextSchemeAdapter {
   retractCreate(
     _path: string,
     documentId: string,
-    cause: "reply_rolled_back" | "create_failed",
+    cause: RetractionCause,
   ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
     return this.placement.retract(documentId, cause);
   }

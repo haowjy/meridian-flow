@@ -1,6 +1,7 @@
 import {
   folderDocumentName,
   parseDocumentFilename,
+  type RetractionCause,
   renderFilename as renderDocumentFilename,
 } from "@meridian/contracts/protocol";
 /**
@@ -44,7 +45,7 @@ type FolderRow = ContextFolder & {
 type DocumentRow = ContextDocument & {
   deletionReason?: "deleted" | "discarded";
   deletedByUserId?: string | null;
-  deletionCause?: "reply_rolled_back" | "create_failed" | null;
+  deletionCause?: RetractionCause | null;
 
   contextSourceId: string;
   deletedAt: string | null;
