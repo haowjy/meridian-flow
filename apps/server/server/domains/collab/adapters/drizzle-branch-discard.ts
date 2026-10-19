@@ -168,18 +168,18 @@ export function createDrizzleBranchDiscard(
     deferUntilCommit: deferUntilDrizzleCommit,
     async discardLocked({ workId, kernel: input, command }) {
       return runInDrizzleTransaction(db, async () => {
-        // The command's claim is the transaction's first write (§4.6).
-        if (
-          command &&
-          !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope, command.result))
-        ) {
-          throw new BranchCommandExistsError(command.envelope.commandId);
-        }
         // The Work and the branch enter the Work boundary before the branch row and the scope
         // locks (decision D17).
         return deps.workProjection.mutate(
           { works: [workId as WorkId], branches: [input.branchId] },
           async () => {
+            // Claims follow the Work boundary for every command, including conflicting deliveries.
+            if (
+              command &&
+              !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope, command.result))
+            ) {
+              throw new BranchCommandExistsError(command.envelope.commandId);
+            }
             if (!(await deps.branches.lockActive(input.branchId))) return null;
             const items = input.selection.kind === "items" ? input.selection.items : null;
             const itemIds = items?.map((item) => item.documentId);
