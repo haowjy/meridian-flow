@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Stop long draft editing sessions from exhausting server memory.
+
 - Keep draft typing independent of unchanged sibling drafts, paint Discard feedback without rebuilding the project, and classify attribution by item intervals rather than individual characters.
 - Keep repeated large draft Discard and Undo saved without socket timeouts.
 
