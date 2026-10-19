@@ -105,6 +105,7 @@ interface Dispatch extends ContextTreeDispatch {
   authority: CanonicalContextAuthority;
   workScopeId: string | null;
   path: string;
+  writerPath: string;
   canonical: string;
 }
 
@@ -524,6 +525,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       scheme,
       authority: canonicalAuthority,
       workScopeId,
+      writerPath: parsed.value.path,
       path,
       canonical,
     });
@@ -555,6 +557,12 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     binary?: ContextWriteBinaryOptions,
     sourceExtension?: string,
   ): Result<T & { filename: ParsedDocumentFilename }, ContextError> {
+    if (!dispatch.writerPath)
+      return Err({
+        code: "invalid_uri",
+        uri: dispatch.canonical,
+        reason: "A file address requires a filename",
+      });
     const segments = dispatch.path.split("/");
     const filename = segments.pop() ?? "";
     const parsed = storedFilename(filename, { extension: sourceExtension ?? "" });

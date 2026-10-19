@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- File operations reject source and chat-folder roots without a writer filename, including tracked ensure and binary creation. Folder operations still accept those roots.
+
 - AI-written scoped links expand before identity correspondence, preserving links when a writer moves a target and reuses its old path.
 
 - Editor link identity, wikilink ranking, namespace availability and recent-document routes retain complete thread-folder locations.
