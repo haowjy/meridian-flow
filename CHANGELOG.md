@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Take Apply's draft hold only at the append door; a late close rolls back both document halves and the command claim.
+
 - Compile already-current Apply snapshots without duplicating the draft document.
 
 - Reuse immutable draft encodings across append cuts and replicas, keeping unused serialization out of row holds.
