@@ -49,11 +49,12 @@ owner rulings C10 and C12). The summarizer ends its output with
 headings accept any Markdown heading level, case differences, a trailing colon
 and closing hashes. An empty narrative after stripping fails with `empty_text`
 through the summary-failure path; documents and the note cannot replace it.
-Cleaning removes list markers, wrapping backticks, angle brackets or quotes,
-a trailing parenthetical annotation and trailing `.,;:`. The whole cleaned
-line must exactly match a shown URI; spaces in names survive, but unknown
-suffixes are dropped. Matching uses `documentRevisions` evidence from the
-**whole pre-compaction history**, not only the retained tail. Unknown URIs are
+A listed line names a shown URI only by exact match: list markers are removed,
+then the line is checked against the shown URIs before each layer of decoration
+is peeled (a wrapping backtick, angle bracket or quote; trailing `.,;:`; a
+trailing parenthetical), so a name like `Chapter 1 (revised)` keeps its
+parenthesis and `Chapter 1.bak` never becomes `Chapter 1`. Matching uses
+`documentRevisions` evidence from the **whole pre-compaction history**, not only the retained tail. Unknown URIs are
 dropped with `important_file.unknown_uris` (count). Candidates are the first 10
 matched entries, then the 3 most recently shown documents, deduplicated by
 document id. Missing or malformed lists naturally leave only the 3 recent.
