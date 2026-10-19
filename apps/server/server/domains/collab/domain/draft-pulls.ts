@@ -96,7 +96,7 @@ export type DraftPullDiagnostics = {
 
 export function createDraftPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
-  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover">;
+  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   draftCoordinator: DraftCoordinator;
   drafts: WorkDraftLookup;
   debounceMs?: number;

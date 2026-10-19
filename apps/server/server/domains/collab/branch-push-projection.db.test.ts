@@ -75,7 +75,6 @@ describe("branch-push durable projection", () => {
       }
       return fn(doc);
     },
-    async recover() {},
     async deliver() {},
   };
   const branches = createBranches({

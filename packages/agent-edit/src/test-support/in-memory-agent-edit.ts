@@ -85,7 +85,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return entries.map((batchEntry) => {
       const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
       const beforeState = beforeStates.get(batchEntry.docId) as Uint8Array;
-      if (!batchEntry.mutation) return { seq, journalCommitKind: "durable", beforeState };
+      if (!batchEntry.mutation) return { seq, beforeState };
       const wId =
         batchEntry.mutation.wId ??
         this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId);
@@ -95,7 +95,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         threadTurns.add(batchEntry.mutation.turnId);
         turns.set(batchEntry.mutation.threadId, threadTurns);
       }
-      return { seq, wId, journalCommitKind: "durable", beforeState };
+      return { seq, wId, beforeState };
     });
   }
 

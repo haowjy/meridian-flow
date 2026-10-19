@@ -148,10 +148,9 @@ describe("DraftPullService", () => {
     }
   });
 });
-function coordinatorFor(doc: Y.Doc): Pick<LiveDocumentCoordinator, "withDocument" | "recover"> {
+function coordinatorFor(doc: Y.Doc): Pick<LiveDocumentCoordinator, "withDocument"> {
   return {
     withDocument: async (_documentId, fn) => fn(doc),
-    recover: async () => {},
   };
 }
 

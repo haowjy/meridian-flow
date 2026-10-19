@@ -32,11 +32,7 @@ import {
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import {
-  currentDrizzleDb,
-  isInDrizzleTransaction,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
@@ -649,7 +645,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       if (entries.length === 0) return [];
       // Inside a reply's save the rows join its one transaction (D42) and stay
       // staged until it commits; otherwise this call owns a durable transaction.
-      const journalCommitKind = isInDrizzleTransaction() ? "staged" : "durable";
       return runInDrizzleTransaction(db as Database, async () => {
         const txDb = await enterJournalSeam(
           db,
@@ -739,7 +734,6 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
         return updateRows.map((row, index) => ({
           seq: row.id,
-          journalCommitKind,
           beforeState: beforeStates.get(entries[index].docId) as Uint8Array,
           ...(ordinals.has(index) ? { wId: ordinals.get(index) } : {}),
         }));

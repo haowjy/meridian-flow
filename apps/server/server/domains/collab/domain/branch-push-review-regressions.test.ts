@@ -254,13 +254,12 @@ function serviceFixture(input: {
   const draftStore: DraftStore = new MemoryDraftStore(
     input.drafts.map((seeded) => memoryDraft(seeded.documentDraft, seeded.state)),
   );
-  const liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument" | "recover"> = {
+  const liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument"> = {
     async withDocument(documentId, run) {
       const doc = input.liveDocs.get(documentId as DocumentId);
       if (!doc) throw new Error(`Missing live document ${documentId}`);
       return run(doc);
     },
-    async recover() {},
   };
   return {
     stores,

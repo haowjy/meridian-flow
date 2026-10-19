@@ -4,8 +4,6 @@ import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { SavePrecondition } from "./document-coordinator.js";
 import type { CompactionResult, JournalSnapshot, UpdateMeta } from "./types.js";
 
-export type JournalCommitKind = "durable" | "staged";
-
 type JournalMutationBase = {
   /** Ordered parts of one atomic edit. Storage adapters choose their journal row expansion. */
   editParts?: readonly Uint8Array[];
@@ -50,8 +48,6 @@ export interface JournalBatchAppendEntry {
 
 export interface JournalBatchAppendResult {
   seq: number;
-  /** Whether this append created durable truth, or only queued pending draft state. */
-  journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
   /**
