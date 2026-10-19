@@ -26,7 +26,6 @@ import {
   encodeBranchTreePayload,
   type HeldReason,
   readBranchTreeHold,
-  readBranchTreeNotes,
   readBranchTreeRefusal,
 } from "./branch-tree-payload.js";
 import type { Branches } from "./branches.js";
@@ -36,7 +35,6 @@ import type { DraftSnapshot } from "./draft-store.js";
 import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
 export {
-  type ApplyNote,
   BRANCH_TREE_STEP,
   type DraftItemKey,
   draftItemKey,
@@ -209,9 +207,6 @@ export function createBranchApply(deps: {
         };
       }
       const held = new Map(pushed.heldItems.map((hold) => [hold.itemKey, hold.reason]));
-      const notes = new Map(
-        pushed.outcomes.map((outcome) => [outcome.itemKey, readBranchTreeNotes(outcome.detail)]),
-      );
       return {
         status: "completed",
         branchId,
@@ -219,7 +214,7 @@ export function createBranchApply(deps: {
           const reason = held.get(itemKey);
           return reason
             ? { itemKey, status: "held", reason: heldReason(reason) }
-            : { itemKey, status: "applied", notes: notes.get(itemKey) ?? [] };
+            : { itemKey, status: "applied" };
         }),
       };
     }

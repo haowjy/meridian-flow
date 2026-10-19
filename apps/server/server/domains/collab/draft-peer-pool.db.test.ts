@@ -13,6 +13,7 @@ import {
 } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, expect, it } from "vitest";
+import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
@@ -36,7 +37,7 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
   });
   const store = createDrizzleDraftStore(db, {
     workProjection: createTestWorkProjectionMutation(db),
-    live: { journal: persistence.journal, lifecycle: persistence.lifecycle },
+    live: { journal: persistence.journal },
     branches,
   });
   const userId = randomUUID();
@@ -83,7 +84,10 @@ it("ensureThreadPeerDraft from more callers than connections completes", async (
       status: "idle",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
-    await persistence.lifecycle.ensureDocument(documentId as never);
+    await persistence.seeds.seedInitialDocument(
+      documentId as never,
+      Y.encodeStateAsUpdate(new Y.Doc()),
+    );
     await store.ensureDocumentDraft({
       documentId: documentId as never,
       branchId: branch.id,

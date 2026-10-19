@@ -8,9 +8,11 @@
  * fingerprint, the draft generation) are compared only at the check: staging is the consent
  * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the branch's own view, then the
  * live tree, once: an item is blocked by what stands at its row's location now, never by another item.
- * The check refines the payload to the eligible items. `beforeAdmission` then installs: reveals
- * of still-hidden creates and restores of documents deleted live (F9) through placement,
- * each at its row's location, and reports each item's receipt notes.
+ * An item whose live document was removed is held with the removal's record, at the check
+ * (nothing is staged for it) and again in completion (its staged member is withdrawn while
+ * the batch's living members apply): Apply revives nothing (W52).
+ * The check refines the payload to the eligible items. `beforeAdmission` then installs
+ * reveals of still-hidden creates through placement, each at its row's location.
  * `afterAdmission` settles arrivals once against the final tree (an ahead ref binds there,
  * once, for every holder), reconciles the catalog for every source it
  * touched (F23), drops the branch's applied rows, resets every admitted item whose draft
@@ -30,20 +32,19 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
+import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import {
-  type ApplyNote,
   BRANCH_TREE_STEP,
   type BranchTreePayload,
   type BranchTreePayloadItem,
   branchTreeHold,
-  branchTreeNotes,
   branchTreeRefusal,
+  branchTreeRemovedHold,
   encodeBranchTreePayload,
   parseBranchTreePayload,
   readBranchTreeHold,
-  readBranchTreeNotes,
   readBranchTreeRefusal,
 } from "../domain/branch-tree-payload.js";
 import type { Branches } from "../domain/branches.js";
@@ -85,6 +86,7 @@ export function createDrizzleBranchTreeStep(
   },
 ): SettlementApplyStep {
   const tree = createTreeReader(db);
+  const removals = createDrizzleDocumentRemovals(db);
 
   return {
     kind: BRANCH_TREE_STEP,
@@ -115,6 +117,11 @@ export function createDrizzleBranchTreeStep(
         const stale: string[] = [];
         const holds: ApplyItemHold[] = [];
         const apply: Eligible[] = [];
+        const removed = await removals.lookup(
+          [...nodes.values()]
+            .filter((node) => node.conflict.kind === "deleted_live")
+            .map((node) => node.nodeId as DocumentId),
+        );
         for (const item of payload.items) {
           const node = nodes.get(item.documentId);
           const documentDraft = item.draftId ? await deps.drafts.getDraft(item.draftId) : null;
@@ -125,6 +132,12 @@ export function createDrizzleBranchTreeStep(
               itemKey: item.itemKey,
               ...(item.draftId ? { documentId: item.documentId } : {}),
               reason: branchTreeHold(node.conflict.uri ?? node.conflict.at),
+            });
+          } else if (node.conflict.kind === "deleted_live") {
+            holds.push({
+              itemKey: item.itemKey,
+              ...(item.draftId ? { documentId: item.documentId } : {}),
+              reason: branchTreeRemovedHold(removed.get(node.nodeId as DocumentId) ?? null),
             });
           } else {
             apply.push({ item, node, documentDraft });
@@ -195,7 +208,6 @@ export function createDrizzleBranchTreeStep(
 
       // What completion decided, for the command's terminal result (§4.5, §4.6).
       let completionHolds: readonly ApplyItemHold[] = [];
-      let completionNotes: ReadonlyMap<string, readonly ApplyNote[]> = new Map();
 
       /** The command's terminal result when the batch completed. */
       function completedResult(
@@ -212,9 +224,7 @@ export function createDrizzleBranchTreeStep(
         );
         const results = command.itemKeys.map((itemKey): DraftApplyItemResult => {
           const reason = holds.get(itemKey);
-          return reason
-            ? { itemKey, status: "held", reason }
-            : { itemKey, status: "applied", notes: [...(completionNotes.get(itemKey) ?? [])] };
+          return reason ? { itemKey, status: "held", reason } : { itemKey, status: "applied" };
         });
         if (command.shape === "all") return { status: "completed", branchId, items: results };
         const [result] = results;
@@ -353,23 +363,16 @@ export function createDrizzleBranchTreeStep(
         async beforeAdmission() {
           const decided = await decide();
           if (decided.kind === "refuse") return decided;
-          // Reveal every still-hidden create, restore every document deleted live (F9),
-          // each at its row's location with its ancestors (decisions 7, 9).
-          const placing = decided.apply.flatMap(({ node }) => {
-            const mode =
-              node.origin === "created" && node.hidden
-                ? ("reveal" as const)
-                : node.conflict.kind === "deleted_live"
-                  ? ("restore" as const)
-                  : null;
-            return mode ? [{ node, mode }] : [];
-          });
-          const targets = placing.map(({ node, mode }): PlaceTarget => {
+          // Reveal every still-hidden create at its row's location with its ancestors
+          // (decisions 7, 9). A removed document is held above, never placed.
+          const placing = decided.apply.filter(
+            ({ node }) => node.origin === "created" && node.hidden,
+          );
+          const targets = placing.map(({ node }): PlaceTarget => {
             const { contextSourceId, parentFolderId, name, extension } = node.target;
             return {
               node: { kind: "document", id: node.nodeId },
               at: { contextSourceId, parentFolderId, name, extension },
-              mode,
             };
           });
           const placed = targets.length > 0 ? await place(db, { targets }) : null;
@@ -384,30 +387,16 @@ export function createDrizzleBranchTreeStep(
             },
           };
           completionHolds = decided.holds;
-          const outcomes = decided.apply.flatMap(({ item, node }) => {
-            const notes = notesOf(node);
-            return notes.length > 0
-              ? [{ itemKey: item.itemKey, detail: branchTreeNotes(notes) }]
-              : [];
-          });
-          completionNotes = new Map(
-            outcomes.map((outcome) => [outcome.itemKey, readBranchTreeNotes(outcome.detail)]),
-          );
-          return {
-            kind: "proceed",
-            hold: decided.holds,
-            // The receipt says what this decision did (§11.2), not what a review saw.
-            outcomes,
-          };
+          return { kind: "proceed", hold: decided.holds };
         },
 
         async afterAdmission(admitted) {
           if (!installed) throw new Error("branch_tree afterAdmission ran without beforeAdmission");
           const { apply, arrived } = installed;
-          // A restore or a reveal is an arrival; settled once against the final tree.
+          // A reveal is an arrival; settled once against the final tree.
           if (arrived.length > 0) await deps.arrivals?.settle([...new Set(arrived)]);
           // In this transaction, warm or recovered: a replica replaying from a cursor taken
-          // before the Apply learns of every node it revealed or restored.
+          // before the Apply learns of every node it revealed.
           if (installed.catalog.sourceIds.size > 0) {
             await deps.catalog.refreshSources(
               [...installed.catalog.sourceIds],
@@ -458,13 +447,6 @@ function slotsOf(node: TreeStateNode) {
 function uriIn(node: TreeStateNode, path: string): string {
   const { uri, path: targetPath } = node.target;
   return uri?.endsWith(targetPath) ? uri.slice(0, uri.length - targetPath.length) + path : path;
-}
-
-/** What placing this node does, as the writer's receipt says it. */
-function notesOf(node: TreeStateNode): ApplyNote[] {
-  const path = node.target.uri ?? node.target.path;
-  if (node.conflict.kind === "deleted_live") return [{ code: "restored", path }];
-  return [];
 }
 
 function refuse(reason: Refusal["reason"]): Refusal {

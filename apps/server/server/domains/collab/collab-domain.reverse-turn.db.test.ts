@@ -85,7 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       try {
-        const created = await context.write("fresh.md", "Seed.");
+        const created = await context.createTrackedDocument("fresh.md", "Seed.");
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
         await expect(

@@ -16,7 +16,6 @@ import type { ApplyCheckResult } from "../domain/ports/pending-settlement-store.
 import type {
   ApplyAdmission,
   ApplyItemHold,
-  ApplyItemOutcome,
   SettlementApplyPlan,
   SettlementApplyStep,
   SettlementBatchScope,
@@ -85,7 +84,6 @@ export async function decideAdmission(
   decide: (plan: SettlementApplyPlan) => Promise<ApplyAdmission> | undefined,
 ): Promise<ApplyAdmission> {
   const hold = new Map<string, ApplyItemHold>();
-  const outcomes: ApplyItemOutcome[] = [];
   for (const { plan } of plans) {
     const admission = await decide(plan);
     if (!admission) continue;
@@ -93,9 +91,8 @@ export async function decideAdmission(
     for (const held of admission.hold ?? []) {
       if (!hold.has(held.itemKey)) hold.set(held.itemKey, held);
     }
-    outcomes.push(...(admission.outcomes ?? []));
   }
-  return { kind: "proceed", hold: [...hold.values()], outcomes };
+  return { kind: "proceed", hold: [...hold.values()] };
 }
 
 /**

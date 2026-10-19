@@ -154,7 +154,7 @@ export async function openHarness(url: string) {
       const documentId = randomUUID() as DocumentId;
       await raw`insert into documents(id,context_source_id,name) values (${documentId},${ids.source},${`${label}-${documents}.md`})`;
       const live = paragraphDoc(text);
-      await persistence.lifecycle.seedInitialDocument(documentId, Y.encodeStateAsUpdate(live));
+      await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(live));
       return { documentId, live };
     },
 

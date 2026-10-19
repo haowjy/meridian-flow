@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { DocumentLifecycle, UpdateJournal } from "@meridian/agent-edit/integration";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -99,10 +99,7 @@ const EFFECT_WRITE_LOCK_TIMEOUT = "100ms";
 export function createDrizzleDraftStore(
   db: Database,
   deps: {
-    live?: {
-      journal: UpdateJournal;
-      lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-    };
+    live?: { journal: UpdateJournal };
     /** The one owner of Work-first order and the Works' projection (decision D17). */
     workProjection: WorkProjectionMutation;
     /** A peer ensure relies on its branch staying active; a thread finds its Work's branch. */
@@ -312,7 +309,6 @@ export function createDrizzleDraftStore(
     branchId: BranchId;
   }): Promise<void> {
     if (!live) throw new Error("A created document's draft needs the collab live journal");
-    await live.lifecycle.ensureDocument(input.documentId);
     const snapshot = await live.journal.read(input.documentId);
     const liveDoc = createCollabYDoc({ gc: false });
     try {

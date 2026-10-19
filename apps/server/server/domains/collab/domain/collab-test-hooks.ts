@@ -8,6 +8,8 @@
 
 const COLLAB_HOOK_POINTS = [
   "save.afterWorkLock",
+  /** A reply's save holds its live document locks and has not confirmed its grants. */
+  "save.afterDocumentLock",
   "checkpoint.afterAuthorityRead",
   /** A Discard attempt has not entered its commit scope. */
   "discard.beforeCommitScope",

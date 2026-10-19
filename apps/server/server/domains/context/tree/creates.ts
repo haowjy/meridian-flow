@@ -56,8 +56,10 @@ export async function createInBranch(
     node: TrackedNode | BinaryNode;
     /** The chat that made the create, recorded for the review row (§3.3). */
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
-    /** Empty live Yjs for a new text row (never seeded). */
-    ensureEmptyContent(documentId: DocumentId): Promise<void>;
+    /** A new text row's authority, empty, in this transaction (never seeded). */
+    initializeEmptyContent(documentId: DocumentId): Promise<void>;
+    /** A joined text row whose authority is missing, repaired from its stored projection. */
+    repairContent(documentId: DocumentId): Promise<void>;
     /** The branch's draft of a text document, seeded from its empty live document. */
     ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
@@ -121,7 +123,9 @@ export async function createInBranch(
       ...(id ? { id } : {}),
     });
     if (!documentId) throw new Error(`Hidden document ${slot.name} was not inserted`);
-    if (input.node.kind === "tracked") await input.ensureEmptyContent(documentId);
+    if (input.node.kind === "tracked") await input.initializeEmptyContent(documentId);
+  } else if (joined) {
+    await input.repairContent(documentId);
   }
 
   await recordCreated(db, {
@@ -254,7 +258,6 @@ export async function createLive(
           name: input.slot.name,
           extension: input.slot.extension,
         },
-        mode: "reveal",
       },
     ],
   });

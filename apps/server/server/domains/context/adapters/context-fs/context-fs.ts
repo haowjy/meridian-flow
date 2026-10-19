@@ -215,7 +215,6 @@ export class ContextFS implements ContextSchemeAdapter {
       deps.documentCreation ??
       createDocumentCreationAggregate({
         atomic: (operation) => deps.store.transaction(operation),
-        ensureDocument: (documentId) => deps.documentSync.ensureDocument(documentId),
       });
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction: deps.commandTransaction ?? {
@@ -382,6 +381,8 @@ export class ContextFS implements ContextSchemeAdapter {
     const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
     const existing = await this.boundWrites.lookup(path);
     if (!existing.ok) return existing;
+    // A whole-file write overwrites a document; it never creates one (creation is `create`).
+    if (!existing.value) return Err({ code: "not_found" });
     const bound = await this.boundWrites.bind(
       path,
       existing.value,
@@ -389,7 +390,6 @@ export class ContextFS implements ContextSchemeAdapter {
       actor ? "current" : undefined,
     );
     if (!bound.ok) return bound;
-    if (!existing.value) return this.liveCreate.create(path, bound.value, options);
     return this.commandExecutor.run(() => this.overwriteInTransaction(path, bound.value, options));
   }
 

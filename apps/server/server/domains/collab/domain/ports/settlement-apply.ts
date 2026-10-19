@@ -50,19 +50,10 @@ export type ApplyItemHold = {
   reason: ApplyRefusal;
 };
 
-/**
- * What completion did to one item that applies, in the step's own terms (lane E: the
- * receipt notes, a restore), decided under the completion's locks
- * and returned with the batch's result.
- */
-export type ApplyItemOutcome = { itemKey: string; detail: JsonValue };
-
 export type ApplyAdmission =
   | {
       kind: "proceed";
       hold?: readonly ApplyItemHold[];
-      /** Completion only: what it did per item, reported with the batch's result. */
-      outcomes?: readonly ApplyItemOutcome[];
     }
   | { kind: "refuse"; reason: ApplyRefusal };
 

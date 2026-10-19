@@ -6,7 +6,11 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
-import type { ReversalOutcome, TurnReceiptChip } from "@meridian/contracts/protocol";
+import type {
+  DocumentRemovalRecord,
+  ReversalOutcome,
+  TurnReceiptChip,
+} from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -40,7 +44,6 @@ import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
-import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { DerivedReview } from "./domain/review-cut.js";
@@ -141,6 +144,13 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  /**
+   * The removal record of the document a room serves (a draft room's by its draft), or null
+   * while it lives. Read only where the gateway is already refusing, to answer `4208`.
+   */
+  roomRemoval(
+    room: { documentId: DocumentId } | { draftId: string },
+  ): Promise<DocumentRemovalRecord | null>;
   validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   admitDraftWriterUpdate(input: {
     draftId: string;
@@ -227,7 +237,13 @@ export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  ensureDocument(documentId: string): Promise<void>;
+  /** The create's own step for an empty create: its authority, empty, in its transaction. */
+  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  /**
+   * Explicit repair of a living document whose authority is absent, from its stored
+   * projection; a no-op when it has authority. Called only on an explicit touch.
+   */
+  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
@@ -532,7 +548,6 @@ export type CollabLifecycle = {
 
 export type CollabDomain = CollabTransport &
   CollabLifecycle &
-  DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &
   MarkdownDocumentStore &
@@ -548,7 +563,3 @@ export type CollabDomain = CollabTransport &
   DocumentCreationAggregate;
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";
-export type {
-  DocumentAuthorityHead,
-  DocumentAuthorityHeads,
-} from "./domain/ports/document-authority-heads.js";
