@@ -99,8 +99,14 @@ left out. A full read lists nothing. Only blocks that **changed** since a usable
 frontier are listed: a block `unshown` because the model never saw it (a
 partial or outline read, or a first contact with no frontier) stays unshown and
 unlisted, so successive partial reads don't carry the rest of the document.
-The region check covers writes to it. Echo context lines and a create's
-truncated preview never credit; the listing and the region check cover them. A
+The region check covers writes to it. Echo context lines and truncated previews
+never credit by being shown; the listing and the region check cover them. A
+write does credit the blocks it wrote when every visible item in them (the
+block, its attributes, children, text and formats) is that write's own, by the
+structs its committed update created (`frontier.ts` `writtenOnlyBy`): the model
+sent that text itself, so a create's truncated preview doesn't refuse its next
+edit. A block holding any other author's visible item credits only when shown
+in full. A degraded echo credits nothing. A
 staged echo lists and records nothing: its settled receipt does, on the
 document's last accepted receipt, where the host records the frontier.
 

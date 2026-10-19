@@ -26,7 +26,7 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
-import { recordObservation } from "./observation.js";
+import { type ListingSource, recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import { REFUSAL_REGION_MAX_BYTES, regionRefusal } from "./region-check.js";
 import type { ResponseCommitter, RoomCallInput, RoomCopy } from "./response-committer.js";
@@ -699,7 +699,7 @@ export function createWriteCommands(deps: {
           snapshotBlocks(toDocHandle(room.doc), options.model, links.codec),
           outcome,
         ),
-        ownRemoved,
+        { ownRemoved, written: [update] },
       );
     } catch {
       return withEvidence(
@@ -708,7 +708,7 @@ export function createWriteCommands(deps: {
         docId,
         recorded,
         formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
-        ownRemoved,
+        { ownRemoved },
       );
     }
   }
@@ -768,11 +768,11 @@ export function createWriteCommands(deps: {
     documentId: string,
     context: WriteContext,
     result: InternalWriteResult,
-    ownRemoved?: ReadonlySet<string>,
+    own?: Pick<ListingSource, "ownRemoved" | "written">,
   ): Promise<InternalWriteResult> {
     return recordObservation(
       result,
-      { doc: room.doc, model: options.model, links, ...(ownRemoved ? { ownRemoved } : {}) },
+      { doc: room.doc, model: options.model, links, ...own },
       room.room,
       context.frontiers?.recording,
       documentId,

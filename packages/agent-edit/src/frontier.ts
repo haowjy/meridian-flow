@@ -214,6 +214,53 @@ function walkChangedRanges(
   }
 }
 
+/**
+ * Top-level blocks every visible item of which (the block, its attribute entries, children,
+ * text and formats) one of `updates` created: text a write sent in its own call, which the
+ * model therefore has verbatim. Only blocks those updates touch are walked.
+ */
+export function writtenOnlyBy(doc: Y.Doc, updates: readonly Uint8Array[]): Set<string> {
+  const ranges = new Map<number, [number, number][]>();
+  for (const update of updates)
+    for (const struct of Y.decodeUpdate(update).structs) {
+      if (!(struct instanceof Y.Item)) continue;
+      const own = ranges.get(struct.id.client) ?? [];
+      own.push([struct.id.clock, struct.id.clock + struct.length]);
+      ranges.set(struct.id.client, own);
+    }
+  const merged = new Map(
+    [...ranges].map(([client, own]) => [
+      client,
+      deleteRanges(own.map(([clock, end]) => ({ clock, len: end - clock }))),
+    ]),
+  );
+  const isOwn = (item: Y.Item) =>
+    covered([[item.id.clock, item.id.clock + item.length]], merged.get(item.id.client) ?? []);
+  const onlyOwn = (item: Y.Item): boolean => {
+    if (!isOwn(item)) return false;
+    if (!(item.content instanceof Y.ContentType)) return true;
+    const type = item.content.type;
+    for (let child = type._start; child; child = child.right)
+      if (!child.deleted && !onlyOwn(child)) return false;
+    for (const entry of type._map.values()) if (!entry.deleted && !onlyOwn(entry)) return false;
+    return true;
+  };
+  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  const touched = new Map<string, Y.Item>();
+  for (const [client, own] of merged) {
+    const structs = doc.store.clients.get(client) ?? [];
+    for (const [start, end] of own)
+      for (let index = Y.findIndexSS(structs, start); index < structs.length; index += 1) {
+        const struct = structs[index];
+        if (struct.id.clock >= end) break;
+        const block = struct instanceof Y.Item ? topLevelItem(struct, fragment) : null;
+        if (block && !block.deleted)
+          touched.set(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }), block);
+      }
+  }
+  return new Set([...touched].filter(([, block]) => onlyOwn(block)).map(([id]) => id));
+}
+
 /** The fragment child whose subtree holds `item`, or null outside the document fragment. */
 function topLevelItem(item: Y.Item, fragment: Y.XmlFragment): Y.Item | null {
   let current = item;

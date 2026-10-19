@@ -7,6 +7,7 @@ import {
   frontierDelta,
   type ObservationFrontier,
   recordedFrontier,
+  writtenOnlyBy,
 } from "../frontier.js";
 import { toDocHandle, toRef } from "../handles.js";
 import { renderedItems, type ShownCommandLinks, shownEvidence } from "../links/shown.js";
@@ -40,6 +41,11 @@ export interface ListingSource {
    * listing doesn't call them removed since the model last saw them.
    */
   ownRemoved?: ReadonlySet<string>;
+  /**
+   * The result's own write, as the updates it committed: a block holding only their text
+   * counts as shown, since the model sent that text itself.
+   */
+  written?: readonly Uint8Array[];
 }
 
 /**
@@ -77,9 +83,10 @@ export async function recordObservation(
 /**
  * What results rendered from `source.doc` record, chained from `prev`: the listing
  * `changed − shown`, in document order until the byte cap, and the frontier
- * `unseen − shown − listed`. Shown in full: the blocks of a full or partial read, and a
- * write's `extent: full` changed blocks; an outline, prefix context, copy edges and swept
- * bodies show none, and neither does a result reported with `awarenessDegraded`.
+ * `unseen − shown − listed`. Shown in full: the blocks of a full or partial read, a
+ * write's `extent: full` changed blocks, and the blocks that hold only the write's own text;
+ * an outline, prefix context, copy edges and swept bodies show none, and neither does a
+ * result reported with `awarenessDegraded`.
  */
 export function observeRendered(
   source: ListingSource,
@@ -90,6 +97,7 @@ export function observeRendered(
   const { doc } = source;
   const delta = frontierDelta(doc, prev);
   const shown = shownInFull(doc, models);
+  for (const id of writtenOnlyBy(doc, source.written ?? [])) shown.add(id);
   const blocks = getTopLevelXmlBlocks(doc);
   const byId = new Map(blocks.map((block) => [frontierBlockId(getBlockItemId(block)), block]));
   const candidates = delta.changed.filter((id) => !shown.has(id));
