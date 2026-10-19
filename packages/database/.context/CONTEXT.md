@@ -115,6 +115,13 @@ Postgres column defaults. The checkpoint range capture function stays one SQL
 statement: a client-managed savepoint spanning awaits can roll back sibling
 operations queued on the same connection.
 
+`observation_frontiers` rows belong to the transcript block that showed the
+model a document (`source_block_id`, cascading with the block, so a fork finds
+inherited rows by block id with nothing copied). The model's frontier for a room
+is the row with the greatest `recorded_seq` among a conversation's blocks, read
+through the `(room_key, recorded_seq DESC)` index; the runtime owns when rows are
+written and replaced ([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
+
 Billing stores Stripe customer identity on `users.stripe_customer_id`; credit
 lots represent grants and purchases. The partial free-tier uniqueness guard
 prevents duplicate grants without requiring a subscription table.
