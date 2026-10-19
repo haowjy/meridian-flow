@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Take the Work lock before claiming Discard commands, matching Apply and preventing conflicting-delivery deadlocks.
+
 - Resolve draft addresses from metadata only; classify receipt membership only for review lists and frozen Apply cuts.
 
 - Stop computing and shipping unused live fingerprints on draft review lists.
