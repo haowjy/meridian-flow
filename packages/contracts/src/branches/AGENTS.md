@@ -13,8 +13,9 @@ the server boundary.
   durable draft-list receipt.
 - Keep storage identities behind the DTOs; the server maps an `itemKey` to its
   document draft and owns draft integration.
-- Preview and command responses preserve explicit stale, gone, held, and
-  incomplete outcomes so clients do not infer closure from operation counts.
+- Apply is a frozen snapshot click with a command-id outcome, never a revision
+  fence. Preview and persisted settlement results retain their older vocabulary
+  until those paths are retired.
 - Apply and discard remain writer commands, not draft-storage operations.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for command, preview, and

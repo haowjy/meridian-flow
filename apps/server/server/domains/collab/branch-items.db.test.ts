@@ -6,8 +6,6 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
 import {
-  handleApplyWorkDraftChangesRequest,
-  handleApplyWorkDraftRequest,
   handleDiscardWorkDraftRequest,
   handleDocumentDraftHintsRequest,
   handleWorkDraftPreviewRequest,
@@ -16,8 +14,8 @@ import {
 import { describeBranchTreeDb } from "../../test-support/branch-tree-suite.js";
 
 describeBranchTreeDb("review items (postgres)", (start) => {
-  it("a created document is a whole-item row: a per-change request refuses, item Discard of one leaves the other", async () => {
-    const { runtime, s } = await start();
+  it("a created document is a whole-item row: item Discard of one leaves the other", async () => {
+    const { s } = await start();
     const work = await s.work("Ascension", "draft");
     const empty = async (path: string) => {
       const answer = await s
@@ -35,24 +33,6 @@ describeBranchTreeDb("review items (postgres)", (start) => {
         [dropped, true],
       ].sort(),
     );
-    const deps = selectBranchRouteServices(runtime.app);
-    const scope = { projectId: s.project.id, workId: work.id, userId: s.project.userId };
-    const keptItem = items.find((item) => item.documentId === kept);
-    if (!keptItem) throw new Error("no kept item");
-    const perChange = await handleApplyWorkDraftChangesRequest(deps, {
-      ...scope,
-      documentId: kept,
-      request: {
-        branchId: keptItem.branchId,
-        itemKey: keptItem.itemKey,
-        commandId: randomUUID(),
-        operationIds: ["1"],
-        liveRevisionToken: "x",
-        draftRevisionToken: "x",
-      },
-    });
-    expect(perChange.body).toMatchObject({ status: "whole_item" });
-
     // Item Discard of one created item leaves the other and the branch active.
     const [discarded] = (await s.discard(work, [dropped])) as { status: string }[];
     expect(discarded).toMatchObject({ status: "discarded" });
@@ -92,13 +72,6 @@ describeBranchTreeDb("review items (postgres)", (start) => {
         request: { branchId: mine.branchId, itemKey: wrong, commandId: randomUUID() },
       });
       expect(discard.body).toMatchObject({ status: "gone" });
-      await expect(
-        handleApplyWorkDraftRequest(deps, {
-          ...scope,
-          documentId: chapter,
-          request: { branchId: mine.branchId, itemKey: wrong, commandId: randomUUID() },
-        }),
-      ).rejects.toMatchObject({ statusCode: 404 });
     }
     // Nothing was done to the item the wrong keys named.
     expect((await s.items(work)).map((item) => item.itemKey)).toEqual([mine.itemKey]);

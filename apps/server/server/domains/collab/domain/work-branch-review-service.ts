@@ -6,9 +6,14 @@
  */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
-import type { BranchCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type {
+  ApplyClickAnswer,
+  BranchCommandResult,
+  ThreadDraftListItem,
+} from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import * as Y from "yjs";
 import type {
   CollabBranches,
   CommandOutcome,
@@ -16,6 +21,7 @@ import type {
   ModelDraftRow,
   ReviewSelectionCommand,
 } from "../contracts.js";
+import { checkApplyClick } from "./apply-click.js";
 import { type BranchApply, BranchApplyPendingError } from "./branch-apply.js";
 import {
   type BranchCommandEnvelope,
@@ -51,6 +57,45 @@ export function createWorkBranchReviewService(input: {
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument">;
 }): CollabBranches {
+  async function applyClick(
+    command: Parameters<CollabBranches["draftReview"]["applyClick"]>[0],
+  ): Promise<ApplyClickAnswer> {
+    const commandId = command.envelope.commandId;
+    async function lookup(): Promise<ApplyClickAnswer | null> {
+      const found = await input.commands.lookup(command.envelope);
+      if (found.kind === "none") return null;
+      if (found.kind === "done") {
+        if (found.commandKind !== "apply_click") return { status: "conflict", commandId };
+        return found.result as ApplyClickAnswer;
+      }
+      return { status: found.kind === "conflict" ? "conflict" : "pending", commandId };
+    }
+    const recorded = await lookup();
+    if (recorded) return recorded;
+    const refuse = async (
+      reason: import("@meridian/contracts/branches").ApplyClickRefusalReason,
+    ): Promise<ApplyClickAnswer> => (await lookup()) ?? { status: "refused", commandId, reason };
+    const resolved = await input.identity.resolveReviewItemByDocument(command);
+    if (!resolved?.draftId) return (await lookup()) ?? { status: "closed", commandId };
+    let cut: Awaited<ReturnType<ReadReviewCut>>;
+    try {
+      cut = await input.readReviewCut({ workId: command.workId, itemKey: resolved.itemKey });
+    } catch (cause) {
+      if (cause instanceof DraftChangeRefusal && cause.status === "gone")
+        return (await lookup()) ?? { status: "closed", commandId };
+      if (cause instanceof DraftCorruptError) return refuse("unavailable");
+      throw cause;
+    }
+    const room = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(room, cut.documentDraft.state);
+      const reason = checkApplyClick(room, command.request, input.model.schema);
+      return refuse(reason ?? "unavailable");
+    } finally {
+      room.destroy();
+    }
+  }
+
   async function workItems(
     workId: WorkId,
   ): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }> {
@@ -68,7 +113,9 @@ export function createWorkBranchReviewService(input: {
       case "pending":
         return { kind: "pending" };
       case "done":
-        return { kind: "result", result: found.result };
+        return found.commandKind === "apply_click"
+          ? { kind: "conflict" }
+          : { kind: "result", result: found.result as BranchCommandResult };
       case "blocked":
         return { kind: "blocked" };
     }
@@ -295,6 +342,7 @@ export function createWorkBranchReviewService(input: {
 
   return {
     draftReview: {
+      applyClick,
       async list(command) {
         const { items } = await workItems(command.workId);
         return items.map(

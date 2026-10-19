@@ -1,11 +1,11 @@
 import type {
   BranchCommandId,
   BranchCommandKind,
-  BranchCommandResult,
   BranchId,
   DocumentAuthorityId,
   DocumentId,
   ModelResponseId,
+  StoredBranchCommandResult,
   ThreadId,
   TurnId,
   UserId,
@@ -38,7 +38,7 @@ import { users } from "./users";
 
 type DocumentDraftKind = "work_draft" | "thread_peer";
 type DocumentDraftStatus = "active" | "closed";
-type DraftWriteJournalSource = "agent" | "writer";
+type DraftWriteJournalSource = "agent" | "writer" | "server";
 type DraftWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
 type BranchPushSettlementState = "pending" | "blocked" | "completed" | "abandoned";
 type BranchPushSettlementClaimKind = "warm" | "recovery";
@@ -167,7 +167,10 @@ export const draftWriteJournal = pgTable(
     index("draft_write_journal_active")
       .on(table.draftId, table.generation, table.status)
       .where(sql`${table.status} = 'active'`),
-    check("draft_write_journal_source_valid", sql`${table.source} IN ('agent', 'writer')`),
+    check(
+      "draft_write_journal_source_valid",
+      sql`${table.source} IN ('agent', 'writer', 'server')`,
+    ),
     check(
       "draft_write_journal_status_valid",
       sql`${table.status} IN ('active', 'pushed', 'discarded', 'rollback_pending')`,
@@ -683,7 +686,7 @@ export const branchCommands = pgTable(
       { onDelete: "set null" },
     ),
     state: text("state").$type<"pending" | "done">().notNull().default("pending"),
-    result: jsonb("result").$type<BranchCommandResult>(),
+    result: jsonb("result").$type<StoredBranchCommandResult>(),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
@@ -694,7 +697,7 @@ export const branchCommands = pgTable(
       .where(sql`${table.settlementBatchId} IS NOT NULL`),
     check(
       "branch_commands_kind_valid",
-      sql`${table.kind} IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
+      sql`${table.kind} IN ('apply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')`,
     ),
     check("branch_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
     check(

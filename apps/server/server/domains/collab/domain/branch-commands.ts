@@ -6,7 +6,7 @@
  */
 import { createHash } from "node:crypto";
 import type { BranchCommandId, BranchId, UserId, WorkId } from "@meridian/contracts";
-import type { BranchCommandKind, BranchCommandResult } from "@meridian/contracts/branches";
+import type { BranchCommandKind, StoredBranchCommandResult } from "@meridian/contracts/branches";
 
 /** Who sent which command and what it said: the identity a resend must match exactly. */
 export type BranchCommandEnvelope = {
@@ -64,7 +64,7 @@ export type CommandLookup =
   /** Another digest, Work or account under this id: reveals nothing. */
   | { kind: "conflict" }
   | { kind: "pending"; branchId: BranchId | null }
-  | { kind: "done"; commandKind: BranchCommandKind; result: BranchCommandResult }
+  | { kind: "done"; commandKind: BranchCommandKind; result: StoredBranchCommandResult }
   | { kind: "blocked" };
 
 /** What a lookup needs; the observation route has no body to digest, so it names none. */

@@ -5,8 +5,7 @@ import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { branches, documentDrafts } from "@meridian/database/schema";
 import { expect, it } from "vitest";
 import {
-  handleApplyAllWorkBranchRequest,
-  handleApplyWorkDraftRequest,
+  handleApplyClickRequest,
   handleDiscardAllWorkBranchRequest,
   handleDiscardWorkDraftRequest,
   handleWorkBranchListRequest,
@@ -84,17 +83,8 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     expect(await rows()).toEqual(deletedRows);
     for (const request of [
       () => handleWorkDraftPreviewRequest(deps, documentInput),
-      () => handleApplyWorkDraftRequest(deps, { ...input, documentId, request: body }),
+      () => handleApplyClickRequest(deps, { ...input, documentId, request: body }),
       () => handleDiscardWorkDraftRequest(deps, { ...input, documentId, request: body }),
-      () =>
-        handleApplyAllWorkBranchRequest(deps, {
-          ...input,
-          request: {
-            branchId: item.branchId,
-            commandId: randomUUID() as never,
-            items: [{ itemKey: item.itemKey, locationToken: item.tokens.locationToken }],
-          },
-        }),
       () =>
         handleDiscardAllWorkBranchRequest(deps, {
           ...input,
