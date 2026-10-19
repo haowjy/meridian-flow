@@ -9,8 +9,8 @@ draft ID, item key, or presented address interchangeably.
 | Term | Meaning | Wire identity |
 |---|---|---|
 | **branch** | One active Work branch; Apply leaves it open, whole Discard and purge close it. | `branchId` |
-| **draft** | One document's pending version: either a Work draft (`work_draft`) or a thread peer (`thread_peer`). Each is its own Y.Doc with stable identity from seed to close. | opaque draft room |
-| **revision** | The draft row's counter: every append, rewrite and status or hold change moves it; rewrites are fenced by it, appends never check it; never reaches a client. | none |
+| **draft** | One document's pending version (`work_draft`), one Y.Doc with stable identity from seed to close. Legacy `thread_peer` rows retain binding identity only. | opaque draft room |
+| **revision** | The draft row's counter: every append, rewrite and close moves it; exact rewrites check it, folds absorb intervening appends, and appends never check it; never reaches a client. | none |
 | **checkpoint** | The draft's stored state, with the highest journal id it contains (`checkpoint_seq`). | none |
 | **tail** | The draft's journal rows past the checkpoint in id order, replayed on every read. | none |
 | **item** | One document's reviewable change, including an empty create or image. | `${branchId}:${documentId}` |
@@ -18,7 +18,8 @@ draft ID, item key, or presented address interchangeably.
 | **presented address** | The writer's Work/item/change selection; it names no draft storage ID. | review selector |
 
 There is at most one active Work draft per `(documentId, branchId)`.
-Thread peers fork from that draft and name it as their upstream. The server resolves
+Thread-peer bindings name that draft as their upstream; they hold no independently
+maintained document view. The server resolves
 every item key through the identity module; no caller accepts an ambiguous bare
 ID. A document with no draft can still be an item and can still be applied.
 
@@ -27,14 +28,15 @@ ID. A document with no draft can still be an item and can still be applied.
 Work admission and reply writes still require the shared Work lifecycle boundary.
 The old server review, staged Apply, selective Discard and draft reset are gone.
 Atomic Apply commits frozen clicked content into live and the review base
-together; see [Apply](apply.md). Lane B2 builds room-derived review and local
+together; see [Apply](apply.md). The browser owns room-derived review and local
 undoable text Discard. Per-document server Discard only ends a still-hidden creation's
 branch use. A revealed creation answers `stale`; Work Discard all and purge close
 drafts and run end-use removal without re-forking text.
 
-Thread peers keep seed replication, pull and exact checkpoints until Track M.
-A parent that no longer contains its peer refuses `ThreadPeerPullLost`, never
-re-forks or redirects to another draft. Archived Works admit reads but no new writer edits.
+Thread peers retain binding identity only: no content pull, peer-bound write
+or exact catch-up checkpoint runs. Model reads and saves use the Work draft.
+`ThreadPeerPullLost` names a failed binding/save fence, not a content pull; a
+retired binding never redirects its staged writes to a replacement draft. Archived Works admit reads but no new writer edits.
 `DraftReplayJournalReads` lives in `drizzle-draft-journal-reads.ts`; both reads
 use the ambient transaction, including the reply's uncommitted receipts.
 
@@ -43,8 +45,8 @@ use the ambient transaction, including the reply's uncommitted receipts.
 A draft's content is its checkpoint (`state`, `state_vector`) replayed with its
 tail. `readDraftAt` reads the row, the checkpoint, and the tail in one
 statement, and nothing else reads `state`. Every committed write moves
-`revision`: appends, checkpoint rewrites and closes. Rewrites and metadata changes are fenced by it; appends bump it
-without checking it. The projection job's `has_effect` write is the one
+`revision`: appends, checkpoint rewrites and closes. Exact rewrites check the captured revision; fold rewrites absorb intervening
+appends. Closes lock and bump it; appends bump it without checking it. The projection job's `has_effect` write is the one
 exception: it writes at the judged revision and never bumps it, so it never
 makes an exact rewrite miss. Draft room identity is `draft:<draftId>` for life; journal rows and receipt origins carry no epoch.
 
@@ -72,7 +74,7 @@ finalizes the update against the committed prefix there (see the append
 contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). `commitRewrite` writes
 a new checkpoint covering every row of the draft, under an `exact` policy (the
 revision it was computed at) or a `fold` policy (any appends since its cursor are
-applied). Thread-peer pulls, inverses, peer checkpoints and compaction are rewrites.
+applied). Model turn inverses are exact rewrites; compaction is a fold rewrite.
 Live-to-Work content rebases are server appends, not Yjs pulls.
 No rewrite resets generations, accumulates discarded clocks or marks journal
 rows discarded through reset. Compaction folds the tail with unchanged content
@@ -111,7 +113,7 @@ branch's drafts with reviewable rows plus its change rows, so a created
 document counts before it has text), never raw journal-row totals; each Work stores its count (`works.pending_document_count`), reconciled by the Works boundary. Tree
 presence comes from context's tree views, never a Yjs manifest.
 
-Live-to-draft pulls run independently of the caller's response transaction and
+Live-to-Work content rebases run independently of the caller's response transaction and
 deliver to loaded draft rooms after durability. Checkpoints are a separate
 authority concern: a room release queues its immutable binding, and a worker
 captures a durable cut after the releasing transaction commits. A dropped or
@@ -127,7 +129,6 @@ and delegates this ordering.
 
 A peer reconstructed from journal rows is integrable only after every row has applied with no pending structs and no pending delete set. State-vector equality, or a pending-struct check before applying, is not enough.
 
-[#862]: https://github.com/haowjy/meridian-flow/pull/862
 
 ## Pending review membership
 

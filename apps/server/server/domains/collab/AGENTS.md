@@ -16,7 +16,7 @@ change-trail persistence, and Hocuspocus admission. It composes
 - Live documents, document drafts, and thread peers are real Y.Docs. Journals and
   durable authority heads are the source from which runtime state is rebuilt.
 - A Work draft is shared by every thread editing that document in that Work.
-  Review is computed in the browser from the draft room (lane B2). The old server
+  Review is computed in the browser from the draft room. The old server
   review, settlement and reset services are deleted. Apply commits its frozen clicked
   content into live and the review base in one transaction; see [Apply](.context/apply.md).
 - A draft keeps `draft:<draftId>` from seed to close; it has no generation.
@@ -71,7 +71,7 @@ Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.contex
 The focused references are [draft records](.context/draft-model-and-records.md),
 [document authority](.context/document-authority-and-schema.md),
 [reversal](.context/reversal.md),
-[committed trail](.context/settlement-and-trail.md), and
+[committed trail](.context/change-trail.md), and
 [WebSocket concurrency](.context/websocket-concurrency.md).
 Deferred work is in [FUTURE.md](.context/FUTURE.md) and [TODO.md](.context/TODO.md). Related boundaries are [`domains/notices`](../notices/AGENTS.md)
 and [`@meridian/agent-edit`](../../../../../packages/agent-edit/AGENTS.md).

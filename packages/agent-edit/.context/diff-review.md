@@ -8,7 +8,7 @@ draft "has changed".
 
 ## The model
 
-A text branch's Y.Doc holds two top-level fragments: `prosemirror` (what the
+A text draft's Y.Doc holds two top-level fragments: `prosemirror` (what the
 writer and the AI edit) and the server-owned `review_base`
 (`REVIEW_BASE_FRAGMENT`): the committed live text folded into this draft. Every
 view of the review is a function of those two block lists.
@@ -90,7 +90,9 @@ Restoration validation also tracks missing clocks for future references so their
 arrival can make a previously invalid record valid without changing the root.
 Snapshot/local-witness decisions, layout, membership and names remain frame-local.
 No final classification is cached across edits.
-Incremental attribution and publication remain separate work (#900).
+Further incremental projection work is tracked in
+[#900](https://github.com/haowjy/meridian-flow/issues/900); cached evidence must not
+become a cached final classification across edits.
 
 ## Attribution footprint and names
 
@@ -249,8 +251,10 @@ is never touched.
 ## Migration seam
 
 `convertLegacyDraft` (`draft-base.ts`) is the pure conversion a data step uses to
-give a pre-`review_base` branch its base from its `live_cut` text, so the first rebase merges live's edits since. The
-migration owns the CAS (`packages/database/src/migration-steps/`).
+give a pre-`review_base` draft its base from its `live_cut` text, so the first rebase merges live's edits since. The
+migration owns the CAS in the digest-pinned companion
+`packages/database/src/migrations/0078_draft_review_convert.ts`; see the
+[database migration contract](../../database/.context/CONTEXT.md).
 
 [late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/late-peer-recovery.md
 

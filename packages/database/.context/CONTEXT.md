@@ -72,9 +72,12 @@ an interrupted cutover must finish before serving traffic.
 
 A `branches` row is a Work's pending file tree. `document_drafts` stores each
 document version, with writes in `draft_write_journal`; `branch_tree_changes`
-and `branch_commands` belong to the whole branch. Migration 0077 refuses legacy
-NULL cuts and unfinished Apply; the previous release
-repairs/drains those before stopping. 0078 folds retained Work drafts and records
+and `branch_commands` belong to the whole branch. Expand-only migrations 0075
+(server journal source and Apply-click command kind) and 0076 (replacement trail
+functions) precede preflight and write no data. Migration 0077 refuses legacy
+NULL cuts and unfinished Apply. Repair missing legacy cuts and complete or
+withdraw every staged Apply using the installed release before stopping it;
+preflight refuses to proceed while either invariant is unmet. 0078 folds retained Work drafts and records
 every generation's applied ranges in their Yjs Apply root. It clears active cuts
 under row locks; exact closed-row entries make restart and parallel conversion
 idempotent. Released content stays released. 0079 builds replacement indexes and
@@ -118,9 +121,9 @@ mutation provenance sink are retired.
 
 The change-trail signal triggers on `draft_write_journal`, `document_edits`
 and `document_edit_parts` fire inside a writer keystroke's draft row lock,
-three per key, so their cost is that writer's save latency and every other
+one signal-trigger path per inserted row in those tables, so their cost is that writer's save latency and every other
 writer's wait on the draft. `change_trail_owners` is defined only in migrations
-(the current body is `0068_draft_branch_names.sql`, not `src/functions/`):
+(the current body is `0076_atomic_apply_trail.sql`, not `src/functions/`):
 a replacement keeps `SET jit = off` (its recursive CTE's unbounded estimate
 otherwise makes PostgreSQL compile LLVM code on every call, 15 ms empty and
 hundreds once the tables grow), its primary-key journal lookup and its early

@@ -63,8 +63,10 @@ All controls use 44px targets. Apply/Discard, refusal holds, toast, and next
 change behavior come from shared draft-review state; phone owns only sheet and
 phone-layout state. No Apply-all/Discard-all lives in the sheet.
 
-A pending live draft exposes a Draft chip. A draft-only entry can show the
-terminal Close state. The read-only body selects changes instead of opening the
+A pending draft exposes a Draft chip on its live view. An empty review stays in
+the same draft room and reads "No changes left"; closing a draft-only document
+tab is navigation, not Discard or a terminal review card. The read-only body
+selects changes instead of opening the
 keyboard; mobile review never becomes an editable Editor.
 
 ## Files browser and phone chrome
