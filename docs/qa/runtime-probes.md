@@ -946,10 +946,24 @@ restart smoke check.
   5. For a genuinely spent budget, use enough fitting documents to consume all
      available room after the reserved note. The picker must stop reading
      further candidates once remaining room reaches zero (not read every
-     candidate merely because the list is now unbounded). Oversized candidates
+     candidate merely because the list is now unbounded). To hit exact zero
+     cheaply, invoke the picker in a throwaway script with 1,000 candidates and
+     a budget of the estimated worst-case note plus the first rendered read;
+     count reader calls and require exactly one. Keep no test from this script.
+     Oversized candidates
      while room remains are skipped, not truncated, so later small ones can fit.
 - **Evidence:** captured successor requests, persisted block sequences, divider
   summary and `tokensAfter`, plus the browser screenshot. Compare the warm
   summary request against its source: only the appended summary instruction
   changes (its old “at most 10” clause is gone); tools, messages, system and
   cache key otherwise stay identical.
+
+- **Last run:** 2026-10-19, C13 amendment after `d18594b1b0`, this branch's mock
+  stack. All 12 listed documents appeared in order (sequences 1–12); the next
+  empty-list compaction picked documents 1, 2, 3. An oversized first candidate
+  was omitted whole while four small candidates fit in order; `tokensAfter`
+  was 8,238 against the 100,000 trigger. The exact-zero picker probe read only
+  one of 1,000 candidates. Browser: expanded normal and omission dividers both
+  matched their stored summaries. Evidence: docs repository
+  `work/concurrent-edit-design/m2c/probe/c13/` (report and screenshots); raw
+  request captures remain at `/tmp/m2c-c13-probe/`.
