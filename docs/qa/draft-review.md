@@ -61,7 +61,11 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
 | Next dock action, navigation away, reload | Notice and its history end; discarded text persists. No durable dock Revert. |
 | AI A's removal discarded, then AI B removes the written-back words | No byline names A. |
 | A reply writes through Discard | It keeps writing into the same draft. Later edits are new changes, never a stale-generation refusal. |
-| 50k words all changed, then Discard | One transaction/frame, instant notice and count drop, no editor navigation. Record timing and update bytes. |
+| 50k words all changed, then Discard | Row and count leave at the click; Discarded and Undo paint before write-back starts. Write-back is one transaction/frame with no editor navigation. Record click→notice DOM, paint opportunity, transaction duration and update bytes separately. |
+| Multiple all-changed files in the dock, then Discard | Every selected row leaves and the final notice paints before any file's write-back. Ending the previous notice must not synchronously flush its pending write. |
+| Notice Undo before the deferred transaction starts | The write is cancelled, the row returns and no Yjs update is emitted. |
+| Navigate away immediately after Discard | Notice ends, but the retained operation still writes once. Retiring the binding or replacing the account before it starts instead prevents stale writes and releases its lease. |
+| Type or receive a peer write before the deferred transaction | Changed prose/base refuses the stale Discard with its item failure; intervening text survives and the row returns. |
 
 Repeat the notice cells on Work Files, including an initially opening room and
 Undo after the server's pending list has omitted the discarded item. Try a
