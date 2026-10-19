@@ -1,6 +1,6 @@
 /**
  * Decision D13: one attempt owns every candidate it prepared. Two prepared catch-ups in one
- * attempt: the first persists, then an independent pull moves the second's draft, so the
+ * attempt on thread peers: the first persists, then an independent metadata revision bump moves the second's draft, so the
  * second misses. The attempt's scope rolls the first write back, and both candidates are
  * destroyed, the successful one included (the defect was "persisted, so dispose does nothing").
  */
@@ -20,11 +20,21 @@ export const d13CandidateDisposal: Probe = {
   decision: "D13",
   expected: "the second write misses; the first is rolled back; both candidates emit `destroy`",
   async run(harness) {
-    const { branchId } = await harness.seedWork("candidate-disposal");
+    const { branchId, threadId } = await harness.seedWork("candidate-disposal");
     const a = await harness.seedDocument("candidate-a", "Base");
     const b = await harness.seedDocument("candidate-b", "Base");
-    const draftA = await harness.store.ensureDocumentDraft({ ...a, branchId, liveDoc: a.live });
-    const draftB = await harness.store.ensureDocumentDraft({ ...b, branchId, liveDoc: b.live });
+    const { documentDraft: draftA } = await harness.store.ensureThreadPeerDraft({
+      documentId: a.documentId,
+      threadId: threadId as never,
+      branchId,
+      liveDoc: a.live,
+    });
+    const { documentDraft: draftB } = await harness.store.ensureThreadPeerDraft({
+      documentId: b.documentId,
+      threadId: threadId as never,
+      branchId,
+      liveDoc: b.live,
+    });
     const source = paragraphDoc("Base");
     appendToFirstParagraph(source, " caught up");
     const destroyed = { first: false, second: false };
@@ -48,9 +58,9 @@ export const d13CandidateDisposal: Probe = {
           });
           return attempt.commit(async () => {
             await first.persist();
-            b.live.getMap("probe").set("moved", true);
-            await independently(() =>
-              harness.coordinator.pullFromDoc({ draftId: draftB.draftId, upstream: b.live }),
+            await independently(
+              () => harness.raw`
+              update document_drafts set revision = revision + 1 where id = ${draftB.draftId}`,
             );
             await second.persist();
             return "committed";

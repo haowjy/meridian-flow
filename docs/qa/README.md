@@ -32,6 +32,7 @@ stack.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Chat uploads menu](chat-uploads-menu.md): the top-bar list of a chat's files: add, open, delete, fork source and dock restore.
 - [Crash and two processes](crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.ts`.
+- [Draft content rebase](draft-review-rebase.md): fresh client-1 seeds, the server append rebase, late typing recovery, badge convergence and inverse cutover through PostgreSQL.
 - [Lock-free drafts seam probes](drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, sampled Discard, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
 - [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the branch store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.

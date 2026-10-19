@@ -28,8 +28,6 @@ import type {
   DraftSnapshot,
   DraftTailRow,
   DraftWorkLifecycle,
-  EffectBaseline,
-  PullEffect,
   RewriteOutcome,
   RewritePolicy,
 } from "../domain/draft-store.js";
@@ -206,23 +204,6 @@ export async function readDraftAt(
   };
 }
 
-/**
- * A work draft's effect baseline: its stored `live_cut`, null for a legacy row no creator,
- * pull has cut yet (the projection job establishes it with a pull).
- */
-export async function readEffectBaselineWithin(
-  db: DrizzleDb,
-  draftId: string,
-): Promise<EffectBaseline | null> {
-  const [row] = await db
-    .select({ kind: documentDrafts.kind, liveCut: documentDrafts.liveCut })
-    .from(documentDrafts)
-    .where(eq(documentDrafts.id, draftId))
-    .limit(1);
-  if (row?.kind !== "work_draft") return null;
-  return { state: row.liveCut ? new Uint8Array(row.liveCut) : null };
-}
-
 /** What an append's sequence point committed, with the lock's wait and hold. */
 export type AppendCommitted = {
   revision: number;
@@ -243,7 +224,7 @@ export type AppendCommitted = {
  */
 export async function appendRowsWithinTx(
   db: DrizzleDb,
-  input: Pick<AppendRowsInput, "draftId" | "expectedGeneration" | "base" | "finalize">,
+  input: Pick<AppendRowsInput, "draftId" | "expectedGeneration" | "base" | "finalize" | "work">,
 ): Promise<AppendCommitted> {
   const [locked] = await db
     .update(documentDrafts)
@@ -257,7 +238,7 @@ export async function appendRowsWithinTx(
         eq(documentDrafts.id, input.draftId),
         eq(documentDrafts.status, "active"),
         eq(documentDrafts.generation, input.expectedGeneration),
-        draftWorkActive,
+        input.work === "any" ? undefined : draftWorkActive,
       ),
     )
     .returning({
@@ -303,8 +284,6 @@ export type RewriteCommit = {
   schemaVersion?: CollabSchemaVersion;
   /** A content-free fold: the reader-visible modification stamp (`updated_at`) stays. */
   keepUpdatedAt?: boolean;
-  /** The effect the caller computed on `doc` before locking, with the baseline it used. */
-  effect?: PullEffect;
   /** Writes under the locked row before the checkpoint `UPDATE` (rows the checkpoint contains). */
   withinLock?: () => Promise<void>;
   /** Told when the row lock was taken (`performance.now()`) and how many tail rows it read. */
@@ -373,21 +352,14 @@ export async function commitRewriteWithinTx(
           )
           .orderBy(asc(draftWriteJournal.id));
   input.onLocked?.({ lockedAt, tailRows: tail.length });
-  let folded = 0;
   if (input.policy.kind === "fold") {
     const after = input.policy.seq;
     for (const row of tail) {
       if (row.id <= after) continue;
       if (row.source === "agent") assertFreshAgentUpdate(input.doc, row.update);
       Y.applyUpdate(input.doc, row.update);
-      folded += 1;
     }
   }
-  const effect = input.effect && {
-    hasEffect:
-      folded && input.effect.refolded ? input.effect.refolded(input.doc) : input.effect.hasEffect,
-    liveCut: input.effect.liveCut,
-  };
   const state = Buffer.from(Y.encodeStateAsUpdate(input.doc));
   const stateVector = Buffer.from(Y.encodeStateVector(input.doc));
   await input.withinLock?.();
@@ -402,13 +374,6 @@ export async function commitRewriteWithinTx(
       checkpointRevision: sql`${documentDrafts.revision} + 1`,
       schemaVersion: monotonicSchemaStamp(input.schemaVersion),
       ...(input.keepUpdatedAt ? {} : { updatedAt: new Date() }),
-      ...(effect
-        ? {
-            hasEffect: effect.hasEffect,
-            hasEffectRevision: sql`${documentDrafts.revision} + 1`,
-            liveCut: Buffer.from(effect.liveCut),
-          }
-        : {}),
     })
     .where(
       and(

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Align the peer-retraction probe with the upstream-first refusal check.
+
+- Read committed live authority and tail atomically without repeating checkpoint bytes for each journal row.
+
+- Reset the draft runtime's late-typing cache when the kernel reaches its memory bound.
+
+- Preserve incremental late-frame recovery across contained deletion echoes and reconnect snapshots; verify the content-rebase cutover with production-store probes.
+
+- Seed Work drafts with independent review content, rebase live through server appends, recover late typing deleted by rebases, and derive badges from the room's two fragments. Turn inverses no longer merge live identity into drafts.
+
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
 - Removed inverse holds and their refusal statuses. Revert keeps applied changes in the draft until the writer applies them.
 

@@ -47,8 +47,8 @@ export async function appendDraftRows(
         checkpointRevision: read.documentDraft.checkpointRevision,
         seq: Math.max(read.documentDraft.checkpointSeq, ...read.tail.map((row) => row.id)),
       },
-      finalize(prefix) {
-        const judged = finalizeAppend(prefix, {
+      async finalize(prefix) {
+        const judged = await finalizeAppend(prefix, {
           candidate,
           rows: journals,
           containment: createDocumentContainment(),

@@ -10,7 +10,12 @@ import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentDrafts, draftWriteJournal, threadWorks } from "@meridian/database/schema";
+import {
+  documentDrafts,
+  documentEditParts,
+  draftWriteJournal,
+  threadWorks,
+} from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
   createCollabYDoc,
@@ -40,6 +45,7 @@ import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
+import { seedDraftState } from "../domain/draft-content.js";
 import { DraftNotFoundError, type ResolvedDraft } from "../domain/draft-resolver.js";
 import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import {
@@ -64,7 +70,6 @@ import {
   DraftWriteRollback,
   mapDraft,
   readDraftAt,
-  readEffectBaselineWithin,
   selectDraft,
 } from "./drizzle-draft-storage.js";
 
@@ -85,6 +90,7 @@ export type AppendCommitted = {
   waitMs: number;
   holdMs: number;
   rows: number;
+  serverRows: number;
   prefixRows: number;
   prefixMoved: boolean;
 };
@@ -160,11 +166,10 @@ export function createDrizzleDraftStore(
   }): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    const seed = replicatedSnapshotFrom(input.liveDoc);
+    const seed = seedDraftState(input.liveDoc);
     // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
-    // A fresh fork has no effect against its seed, its baseline (`live_cut`), and the judgement
-    // is fresh at revision 0: the baseline is frozen here and replaced only under a bump.
+    // Both fragments start equal at revision 0; live shares content, never Yjs items.
     return workProjection.mutate({ branches: [input.branchId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed branch gains no draft.
       if (!(await branches.shareActive(input.branchId))) {
@@ -188,7 +193,6 @@ export function createDrizzleDraftStore(
           threadId: null,
           status: "active",
           ...seed,
-          liveCut: seed.state,
           hasEffect: false,
           hasEffectRevision: 0,
           schemaVersion: packCollabSchemaVersion(
@@ -438,6 +442,7 @@ export function createDrizzleDraftStore(
         const committed = await appendRowsWithinTx(tx, {
           draftId: input.draftId,
           expectedGeneration: input.expectedGeneration,
+          work: input.work,
           base: input.base,
           async finalize(read) {
             prefix = { rows: read.tail.length, moved: read.checkpoint !== null };
@@ -457,6 +462,7 @@ export function createDrizzleDraftStore(
               waitMs: Math.round(lockedAt - startedAt),
               holdMs: Math.round(performance.now() - lockedAt),
               rows: rowIds.length,
+              serverRows: finalized?.rows.filter((row) => row.source === "server").length ?? 0,
               prefixRows: prefix.rows,
               prefixMoved: prefix.moved,
             }),
@@ -557,10 +563,6 @@ export function createDrizzleDraftStore(
         policy: input.policy,
         work: operation.kind === "checkpoint" ? "active" : "any",
         keepUpdatedAt: operation.kind === "compact",
-        // Only a pull moves a work draft's content against its baseline, and its caller
-        // computed the effect on the candidate; a peer has none, a compaction keeps the
-        // content and a reset is effect-free by construction.
-        ...(operation.kind === "pull" && operation.effect ? { effect: operation.effect } : {}),
         ...(input.upstream ? { upstream: input.upstream } : {}),
         doc: input.doc,
         ...(onRewriteCommitted
@@ -588,14 +590,7 @@ export function createDrizzleDraftStore(
         generation: outcome.generation,
       };
     };
-    const run =
-      operation.kind === "pull"
-        ? () =>
-            runInDrizzleTransaction(db, () =>
-              workProjection.mutate({ drafts: [input.draftId] }, rewrite),
-            )
-        : () => runInDrizzleTransaction(db, rewrite);
-    return run().catch((cause): RewriteOutcome => {
+    return runInDrizzleTransaction(db, rewrite).catch((cause): RewriteOutcome => {
       if (cause instanceof DraftWriteRollback && isRewriteOutcome(cause.outcome))
         return cause.outcome;
       throw cause;
@@ -620,8 +615,40 @@ export function createDrizzleDraftStore(
       return readDraftAt(currentDrizzleDb(db), draftId, since);
     },
 
-    readEffectBaseline(draftId) {
-      return readEffectBaselineWithin(currentDrizzleDb(db), draftId);
+    async serverDeletedBlocks(draftId, ids) {
+      if (!ids.length) return new Set<string>();
+      const rows = await currentDrizzleDb(db)
+        .select({ effect: documentEditParts.effect })
+        .from(documentEditParts)
+        .innerJoin(
+          draftWriteJournal,
+          sql`${draftWriteJournal.id} = (${documentEditParts.origin}->>'rowId')::bigint`,
+        )
+        .where(
+          and(
+            sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
+            eq(draftWriteJournal.source, "server"),
+            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r
+            where ${sql.join(
+              ids.map(
+                (id) =>
+                  sql`((r->>'client')::bigint = ${id.client} and (r->>'clock')::bigint <= ${id.clock} and (r->>'clock')::bigint + (r->>'len')::bigint > ${id.clock})`,
+              ),
+              sql` or `,
+            )})`,
+          ),
+        );
+      return new Set(
+        ids
+          .filter((id) =>
+            rows.some((row) =>
+              row.effect.deleted.some(
+                (r) => r.client === id.client && r.clock <= id.clock && id.clock < r.clock + r.len,
+              ),
+            ),
+          )
+          .map((id) => `${id.client}:${id.clock}`),
+      );
     },
 
     appendRows,
