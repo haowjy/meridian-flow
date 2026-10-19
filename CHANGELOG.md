@@ -4,7 +4,7 @@
 
 - Write echoes and settled receipts now locate touched blocks and deletion neighbours by Yjs item identity, so a concurrent sibling that lengthens a block's display hash cannot make its echo disappear.
 
-- Add the M2 frontier planning primitives: validated, gc-off snapshot views with reply-update replay and clipped changed-word counting. Document write behavior is unchanged until the room/view write path is connected.
+- Add the M2 frontier planning primitives: validated, gc-off snapshot views with room-contained reply-update replay and clipped changed-word counting. Document write behavior is unchanged until the room/view write path is connected.
 
 - Server records what each document view the model receives showed it: an observation frontier (Yjs snapshot plus blocks changed and not shown in full) per read, write echo, undo/redo/revert echo, settled save receipt and @-mention read, keyed by the transcript block and the room (Work draft, or live document at its restore epoch). Survives restart; forks inherit it; retries don't. Nothing plans on it yet: model text and writer behavior unchanged (#871, migrations 0070-0071).
 

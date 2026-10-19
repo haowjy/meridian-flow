@@ -238,7 +238,10 @@ export function planningSnapshot(
   return snapshot && containsSnapshot(Y.snapshot(doc), snapshot) ? snapshot : null;
 }
 
-/** A disposable offline peer of what this request saw, plus this reply's surviving writes. */
+/**
+ * A disposable offline peer of the request's cut plus kept staged and settled reply updates.
+ * A save is not permanent membership: Discard can retire its structs or deletions later.
+ */
 export function createPlanningView(
   room: Y.Doc,
   snapshot: Y.Snapshot,
@@ -246,9 +249,17 @@ export function createPlanningView(
 ): Y.Doc | null {
   const view = new Y.Doc({ gc: false });
   try {
+    const roomCut = Y.snapshot(room);
     Y.createDocFromSnapshot(room, snapshot, view);
-    for (const update of ownUpdates) Y.applyUpdate(view, update);
-    if (!view.store.pendingStructs && !view.store.pendingDs) return view;
+    for (const update of ownUpdates) {
+      if (Y.snapshotContainsUpdate(roomCut, update)) Y.applyUpdate(view, update);
+    }
+    if (
+      !view.store.pendingStructs &&
+      !view.store.pendingDs &&
+      containsSnapshot(roomCut, Y.snapshot(view))
+    )
+      return view;
   } catch {
     // An unavailable retained cut is not a usable planning view.
   }

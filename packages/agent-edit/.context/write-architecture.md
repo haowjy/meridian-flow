@@ -75,8 +75,9 @@ clock, so the state vector alone accepts a refused staged deletion. An absent,
 undecodable or uncontained previous frontier is the empty snapshot.
 
 `planningSnapshot` validates the room and snapshot containment. `createPlanningView`
-constructs an explicit gc-off snapshot target and replays the supplied reply updates;
-either pending structs or pending delete ranges invalidates the view. These primitives
+constructs an explicit gc-off snapshot target and replays only supplied reply updates
+contained in the room copy. Either pending store, or a final view whose structs or
+deletions are not contained in that copy, invalidates the view. These primitives
 are not yet connected to the write door. `changedSince` and `changedWords` share the
 same flipped-range walk; word counts clip each string item to the flipped clock range.
 
