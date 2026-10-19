@@ -1,6 +1,5 @@
 // Versioned JSON result contract presented to editing models.
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
-import type { ConcurrentEditInfo } from "../apply/types.js";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
 
@@ -31,7 +30,7 @@ export type WriteErrorStatus =
   | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
-  | "read_required"
+  | "region_changed"
   | "binary_file"
   | "permission_denied"
   | "internal_error";
@@ -68,10 +67,14 @@ export type AgentEditBlockGroup =
       items: AgentEditBlockItem[];
     };
 
-export interface AgentEditConcurrentRun {
-  origin: "human" | "agent" | "mixed" | "concurrent edits";
+/**
+ * Blocks changed since the model last saw them that the result doesn't show, in document
+ * order until the listing's byte cap; removed ones by hash; what didn't fit by count.
+ */
+export interface AgentEditConcurrentListing {
   blocks: AgentEditBlockItem[];
-  tombstones: Array<{ hash: string; body: string }>;
+  removed?: string[];
+  more?: number;
 }
 
 /** A staged write the host refused: the writer discarded what it edited, or it could not integrate. */
@@ -114,10 +117,7 @@ export interface AgentEditModelPayload {
     version?: "draft" | "live";
   };
   blocks?: AgentEditBlockGroup[];
-  concurrent?: {
-    runs: AgentEditConcurrentRun[];
-    syncOverflow?: boolean;
-  };
+  concurrent?: AgentEditConcurrentListing;
   awarenessDegraded?: boolean;
   /** The write left the document empty; its one blank block is the empty document, not a leftover. */
   documentEmpty?: boolean;
@@ -216,7 +216,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_redo_users_undo":
     case "nothing_to_revert":
     case "work_archived":
-    case "read_required":
+    case "region_changed":
     case "binary_file":
     case "internal_error":
     case "reversed":
@@ -239,21 +239,5 @@ export function modelBlockItem(serialized: string): AgentEditBlockItem {
   return {
     hash: line.hash,
     body: line.body.startsWith("\n") ? line.body.slice(1) : line.body,
-  };
-}
-
-export function modelConcurrentResult(
-  info: ConcurrentEditInfo,
-): NonNullable<AgentEditResultV1["concurrent"]> {
-  return {
-    runs: info.runs.map((run) => ({
-      origin: run.origin,
-      blocks: run.blocks.map(modelBlockItem),
-      tombstones: run.tombstones.map(({ hash, capturedBody }) => ({
-        hash,
-        body: capturedBody,
-      })),
-    })),
-    ...(info.syncOverflow ? { syncOverflow: true } : {}),
   };
 }

@@ -50,15 +50,20 @@ call read. `snapshot` is `Y.encodeSnapshotV2` of the doc the result was
 rendered from; `unshown` lists blocks changed since the model's previous
 frontier and not shown in full (`@meridian/agent-edit/integration` computes
 both). Every write plans on the `planning` frontier of its room plus the
-reply's own writes ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md));
-concurrent-edit reporting still also runs on the journal watermarks until
-the one listing replaces them (M2 W2).
+reply's own writes ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)),
+and is refused with the passage's current text (`region_changed`) when that
+passage changed since the model saw it. Every result that shows document text
+lists, under `concurrent edits:`, the blocks changed since the model's frontier
+that it doesn't show; the listing and `unshown` are one computation in
+agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/write-architecture.md#the-listing)).
 
 - **What records.** Only results the model receives: reads, immediate write
   echoes, undo, redo and revert echoes, settled save receipts, and reference
   reads. A staged write's echo records nothing: the step's save replaces it
-  before the next request is built. Refusals, `format: "edits"` reads and copy
-  source reads record none. A result reported with `awarenessDegraded` records
+  before the next request is built. A `region_changed` refusal that shows the
+  passage records like a read; other refusals, `format: "edits"` reads and copy
+  source reads record none. Dispatch records whatever frontier a result
+  carries, error or not. A result reported with `awarenessDegraded` records
   a frontier that counts no block as shown in full: its snapshot advances and
   every changed block is unshown.
 - **Recording.** A handler returns its host-only `evidence` (`ResultEvidence`:
@@ -73,13 +78,12 @@ the one listing replaces them (M2 W2).
 - **Saves.** The save records on each committed document's last settled
   result a frontier at the post-commit cut, chained like any result from the
   `recording` lookup, crediting what the settled receipts show in full (nothing
-  when they are degraded or textless). The latest row may be a sibling read's
+  when they are degraded or textless) and what the last one lists. The latest row may be a sibling read's
   from the same step: its snapshot holds the step's staged structs, so it
   validates only if they landed, and it credits only what that read showed.
   Recovery's journal replay leaves the cut unknown and records none; a failed
   save, a refused write and a typed rejection record none. Replacing a result
-  replaces its row. Concurrent-run backfill keeps the settled row and is not
-  credited.
+  replaces its row.
 - **Selection.** The model's frontier for a room is the row with the greatest
   `recorded_seq` among a block set (rooms only grow, so recording order is cut
   order). `frontierLookup` (`loop/frontier-recording.ts`) builds one lookup per

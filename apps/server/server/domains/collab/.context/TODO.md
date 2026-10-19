@@ -34,8 +34,8 @@ other schema against existing content could let normalization delete it.
 
 ## Attribution and retained state
 
-The concurrent-journal scan still decodes retained candidates because its floor
-is a commit-bound attribution cursor, not a global maximum. Profile retained
+The concurrent-journal scan reads and decodes every row of the Work draft
+generation on each save, since containment in the view is its only skip. Profile retained
 state materialization, encodes, persistence, and live→Work pulls before
 choosing an incremental checkpoint or captured-state design. Keep delete-only
 changes, the revision fence on draft rewrites (appends are sequenced and

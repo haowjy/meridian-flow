@@ -2,7 +2,6 @@
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
-import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ModelInverseCommand } from "../ports/document-edits.js";
 import { openCommandLinks } from "./command-links.js";
@@ -51,10 +50,17 @@ export function createDocumentEditCommands(deps: {
     // records there, crediting nothing when it degraded.
     const before = new Y.Doc({ gc: false }),
       after = new Y.Doc({ gc: false });
+    let links: Awaited<ReturnType<typeof openCommandLinks>> | undefined;
+    let ownRemoved: Set<string> | undefined;
     const observed = (rendered: InternalWriteResult) =>
       recordObservation(
         rendered,
-        after,
+        {
+          doc: after,
+          model: deps.options.model,
+          ...(links ? { links } : {}),
+          ...(ownRemoved ? { ownRemoved } : {}),
+        },
         result.after ? result.room : null,
         context.frontiers?.recording,
         address.documentId,
@@ -65,7 +71,7 @@ export function createDocumentEditCommands(deps: {
         throw new Error("Accepted inverse is missing its content cuts");
       Y.applyUpdate(before, result.before);
       Y.applyUpdate(after, result.after);
-      const links = await openCommandLinks(deps.options, {
+      links = await openCommandLinks(deps.options, {
         documentId: address.documentId,
         docs: [before, after],
         context,
@@ -76,6 +82,8 @@ export function createDocumentEditCommands(deps: {
         `${block.clientID}:${block.clock}`;
       const beforeById = new Map(beforeBlocks.map((block) => [blockId(block), block.body]));
       const afterIds = new Set(afterBlocks.map(blockId));
+      const deletedBlocks = beforeBlocks.filter((block) => !afterIds.has(blockId(block)));
+      ownRemoved = new Set(deletedBlocks.map(blockId));
       const receipt = renderReceipt(
         {
           commandName: command.command,
@@ -84,7 +92,7 @@ export function createDocumentEditCommands(deps: {
           touchedBlocks: afterBlocks.filter(
             (block) => beforeById.get(blockId(block)) !== block.body,
           ),
-          deletedBlocks: beforeBlocks.filter((block) => !afterIds.has(blockId(block))),
+          deletedBlocks,
         },
         beforeBlocks,
         afterBlocks,
@@ -92,7 +100,6 @@ export function createDocumentEditCommands(deps: {
       );
       return await observed({
         ...receipt,
-        ...shownEvidence(renderedItems(receipt.model), links),
         revision: deps.options.links.revision(after, links.scope),
         model: { ...receipt.model, message: result.message },
       });

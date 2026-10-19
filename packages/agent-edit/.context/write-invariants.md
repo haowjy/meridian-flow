@@ -45,12 +45,13 @@ the scope's kept staged writes). `preOwnSnapshot`, the concurrency baseline,
 is the view before the write. The captured update applies to the room copy for
 the echo. Each captured segment takes a fresh client absent from both the view
 and the room copy, so parallel calls and write/undo/write in one reply never
-reuse a client. A write with no valid view still plans on the room copy (the
-one `TODO(M2 W2)` branch in `write-commands.ts`).
+reuse a client. A write with no valid view is refused with the region's current
+text ([write-architecture.md](write-architecture.md#the-region-check)).
 
 Commit re-sync applies durable updates one at a time with persisted origin so
-human/agent attribution survives restart. A session snapshot cannot substitute
-for that baseline.
+human/agent attribution survives restart; containment in the view is the only
+skip, the model's own earlier updates included. A session snapshot cannot
+substitute for that baseline.
 
 Yjs convergence is not intent preservation. Concurrent character edits may
 produce mangled prose. Echoes inform the model, but the kernel never gates a

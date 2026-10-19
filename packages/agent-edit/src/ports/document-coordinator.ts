@@ -158,18 +158,15 @@ export interface DocumentCoordinator {
   ): Promise<T>;
 
   /**
-   * Optional origin-aware description of the updates currently present in the
-   * coordinated doc after `sinceStateVector`. Generic live-doc adapters omit this
-   * and callers treat the delta as human-origin for backward compatibility.
+   * Optional origin-aware description of the updates present in the coordinated doc that
+   * `baselineDoc` (the view the writes planned on) doesn't contain: containment is the only
+   * skip. Generic live-doc adapters omit this and callers treat the delta as human-origin.
    */
   concurrentUpdatesSince?(input: {
     docId: string;
     doc: Y.Doc;
     baselineDoc?: Y.Doc;
     sinceStateVector: Uint8Array;
-    afterJournalId?: number;
-    liveJournalSeq?: number;
-    attemptId?: string;
     reportingCut?: Uint8Array;
     access?: DocumentAccess;
   }): Promise<ConcurrentUpdate[]>;

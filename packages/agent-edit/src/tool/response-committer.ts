@@ -5,7 +5,7 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { FrontierLookup } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
-import { withRunShownLinks } from "../links/shown.js";
+import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { BlockItemId } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
@@ -1138,7 +1138,6 @@ export function createResponseCommitter(deps: {
       links: linksOf(docBuffer),
       preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot ?? last.preOwnSnapshot,
       interactionContext: docBuffer.interactionContext,
-      ownTurnId: last.turnId,
       actor: last.actor,
       ownWrites: ownWriteSteps(docBuffer),
     };
@@ -1177,14 +1176,6 @@ export function createResponseCommitter(deps: {
         documentId: docBuffer.docId,
         updateCount: docBuffer.updates.length,
         receipts,
-        ...(applied.concurrent.detection.info
-          ? {
-              concurrentEdits: withRunShownLinks(
-                applied.concurrent.detection.info,
-                linksOf(docBuffer),
-              ),
-            }
-          : {}),
         ...(lateSweep ? { lateSweep } : {}),
       };
     } catch {
@@ -1221,14 +1212,6 @@ export function createResponseCommitter(deps: {
       const current = documentsById.get(docBuffer.docId) ?? degradedDocumentReceipt(docBuffer);
       documentsById.set(docBuffer.docId, {
         ...current,
-        ...(rechecked.concurrent.detection.info
-          ? {
-              concurrentEdits: withRunShownLinks(
-                rechecked.concurrent.detection.info,
-                linksOf(docBuffer),
-              ),
-            }
-          : {}),
         ...(rechecked.lateSweep ? { lateSweep: rechecked.lateSweep } : {}),
       });
     }
@@ -1242,7 +1225,8 @@ export function createResponseCommitter(deps: {
   /**
    * The document's frontier at the post-commit cut, in the room the save committed into, when
    * the host asked: it credits what the accepted receipts show in full (none when they are
-   * degraded or textless). A failure is reported and the document goes out without one.
+   * degraded or textless) and what the last one lists as changed since the model last saw it.
+   * A failure is reported and the document goes out without either.
    */
   async function observeSave(
     docBuffer: ResponseDocumentBuffer,
@@ -1255,12 +1239,37 @@ export function createResponseCommitter(deps: {
     try {
       const prev = await options.recordingFrontier(room);
       const accepted = document.receipts.slice(0, docBuffer.updates.length);
-      const frontier = observeRendered(
-        after,
-        { room, prev },
+      const links = linksOf(docBuffer);
+      const { frontier, concurrent } = observeRendered(
+        {
+          doc: after,
+          model: deps.model,
+          links,
+          ownRemoved: new Set(
+            docBuffer.updates.flatMap((entry) =>
+              entry.deletedBlocks.map((block) => `${block.clientID}:${block.clock}`),
+            ),
+          ),
+        },
+        room,
+        prev,
         accepted.map((receipt) => receipt.result),
       );
-      return { ...document, frontier };
+      const last = accepted.at(-1);
+      if (!concurrent || !last || last.result.status !== "success")
+        return { ...document, frontier };
+      // The listing rides on the last receipt, which the host records the frontier with.
+      const result = { ...last.result, concurrent };
+      const listed = {
+        ...last,
+        result,
+        ...shownEvidence(renderedItems(result), links),
+      };
+      return {
+        ...document,
+        frontier,
+        receipts: document.receipts.map((receipt) => (receipt === last ? listed : receipt)),
+      };
     } catch (cause) {
       deps.onObservationFailed?.({ documentId: docBuffer.docId, cause });
       return document;

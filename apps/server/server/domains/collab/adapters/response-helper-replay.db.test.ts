@@ -442,15 +442,16 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.draftCoordinator.readDraft.bind(fixture.draftCoordinator);
+    // Hold the write at its room read while the writer commits.
+    const original = fixture.draftCoordinator.copyDraft.bind(fixture.draftCoordinator);
     let once = true;
-    fixture.draftCoordinator.readDraft = async (documentDraft, fn) => {
-      if (once && documentDraft === draftId && String(fn).includes("listConcurrentJournalRows")) {
+    fixture.draftCoordinator.copyDraft = async (documentDraft) => {
+      if (once && documentDraft === draftId) {
         once = false;
         entered();
         await gate;
       }
-      return original(documentDraft, fn);
+      return original(documentDraft);
     };
     const writing = write("green", "lime");
     await waiting;
@@ -462,7 +463,7 @@ describe("response helper replay (Postgres)", () => {
     try {
       expect(await writing).toMatchObject({ status: "success" });
     } finally {
-      fixture.draftCoordinator.readDraft = original;
+      fixture.draftCoordinator.copyDraft = original;
     }
     await review("pink");
     expect(await read()).toMatchObject({ status: "success" });

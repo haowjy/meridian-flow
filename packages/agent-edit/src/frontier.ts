@@ -5,7 +5,7 @@
  * show in full ("unshown"). Pure Yjs; the host names rooms and stores frontiers.
  */
 import * as Y from "yjs";
-import { getBlockItemId, getTopLevelXmlBlocks } from "./model/block-hash.js";
+import { type BlockItemId, getBlockItemId, getTopLevelXmlBlocks } from "./model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./model/prosemirror-fragment.js";
 
 export interface ObservationFrontier {
@@ -15,15 +15,6 @@ export interface ObservationFrontier {
   snapshot: Uint8Array;
   /** Block ids (`client:clock` of the top-level item), in document order. */
   unshown: readonly string[];
-}
-
-/**
- * What a host passes to have a result record its frontier: the room's label
- * and the model's previous frontier there (`null` when it has none).
- */
-export interface ObservationRequest {
-  room: string;
-  prev: ObservationFrontier | null;
 }
 
 /**
@@ -48,36 +39,57 @@ export function frontierBlockId(id: { clientID: number; clock: number }): string
 }
 
 /**
- * The frontier a result rendered from `doc` records:
- * `(prev.unshown ∪ changedSince(prev, doc)) ∩ blocks(doc) − shownInFull`.
- * A block changed when some item in its subtree (children, text, formats,
- * attribute entries including overwritten ones) is visible at exactly one of
- * the two cuts, so text typed and deleted in between changes nothing. An
- * absent, undecodable or uncontained `prev` is the empty snapshot: every block
- * not shown in full is unshown.
+ * What `doc` holds that the model's previous frontier there doesn't: the one computation
+ * behind a result's listing and the unshown it records. A block changed when some item in its
+ * subtree (children, text, formats, attribute entries including overwritten ones) is visible at
+ * exactly one of the two cuts, so text typed and deleted in between changes nothing. An absent,
+ * undecodable or uncontained `prev` is the empty snapshot: every block is unseen, and nothing
+ * is listed as changed, since the model saw no earlier version to compare with.
  */
-export function nextObservationFrontier(
-  doc: Y.Doc,
-  { room, prev }: ObservationRequest,
-  shownInFull: ReadonlySet<string>,
-): ObservationFrontier {
-  const current = Y.snapshot(doc);
+export interface FrontierDelta {
+  snapshot: Y.Snapshot;
+  /** Every present top-level block id, in document order. */
+  blocks: readonly string[];
+  /** Present blocks not seen in their current form: `prev.unshown ∪ changed`, or all of them. */
+  unseen: ReadonlySet<string>;
+  /** Present blocks changed since a usable `prev`, in document order: what a result lists. */
+  changed: readonly string[];
+  /** Blocks visible at a usable `prev` and gone now. */
+  removed: readonly BlockItemId[];
+}
+
+export function frontierDelta(doc: Y.Doc, prev: ObservationFrontier | null): FrontierDelta {
+  const snapshot = Y.snapshot(doc);
   const blocks = getTopLevelXmlBlocks(doc).map((block) => frontierBlockId(getBlockItemId(block)));
   const previous = prev ? decodeSnapshot(prev.snapshot) : null;
-  let unshown: (id: string) => boolean;
-  if (!prev || !previous || !containsSnapshot(current, previous)) {
-    unshown = () => true;
-  } else {
-    const carried = new Set(prev.unshown);
-    const changed = Y.equalSnapshots(previous, current)
-      ? new Set<string>()
-      : changedSince(doc, previous, current);
-    unshown = (id) => carried.has(id) || changed.has(id);
-  }
+  if (!prev || !previous || !containsSnapshot(snapshot, previous))
+    return { snapshot, blocks, unseen: new Set(blocks), changed: [], removed: [] };
+  const flipped = Y.equalSnapshots(previous, snapshot)
+    ? new Map<string, Y.Item>()
+    : changedBlocks(doc, previous, snapshot);
+  const present = new Set(blocks);
+  const changed = blocks.filter((id) => flipped.has(id));
+  return {
+    snapshot,
+    blocks,
+    unseen: new Set([...prev.unshown.filter((id) => present.has(id)), ...changed]),
+    changed,
+    removed: [...flipped]
+      .filter(([id]) => !present.has(id))
+      .map(([, item]) => ({ clientID: item.id.client, clock: item.id.clock })),
+  };
+}
+
+/** The frontier a result records: `unseen − shownInFull`, at the delta's cut. */
+export function recordedFrontier(
+  room: string,
+  delta: FrontierDelta,
+  shownInFull: ReadonlySet<string>,
+): ObservationFrontier {
   return {
     room,
-    snapshot: Y.encodeSnapshotV2(current),
-    unshown: blocks.filter((id) => unshown(id) && !shownInFull.has(id)),
+    snapshot: Y.encodeSnapshotV2(delta.snapshot),
+    unshown: delta.blocks.filter((id) => delta.unseen.has(id) && !shownInFull.has(id)),
   };
 }
 
@@ -109,15 +121,15 @@ export function containsSnapshot(current: Y.Snapshot, previous: Y.Snapshot): boo
 }
 
 /**
- * Blocks with an item visible at exactly one cut. Given containment, those
- * items are exactly the clocks born before `previous` and deleted since, plus
- * the clocks born since and still visible; only their structs are visited,
- * never the rest of the history.
+ * Blocks with an item visible at exactly one cut, by id, each with its top-level item. Given
+ * containment, those items are exactly the clocks born before `previous` and deleted since,
+ * plus the clocks born since and still visible; only their structs are visited, never the rest
+ * of the history.
  */
-export function changedSince(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): Set<string> {
-  const changed = new Set<string>();
+function changedBlocks(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): Map<string, Y.Item> {
+  const changed = new Map<string, Y.Item>();
   walkChangedRanges(doc, previous, current, (block) => {
-    changed.add(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }));
+    changed.set(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }), block);
   });
   return changed;
 }

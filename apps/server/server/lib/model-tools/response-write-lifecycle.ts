@@ -3,7 +3,6 @@
  * that saves every staged write in one transaction, and the rollback.
  */
 import type {
-  ConcurrentEditInfo,
   FrontierLookup,
   ObservationFrontier,
   ResponseCommitWriteReceipt,
@@ -52,7 +51,6 @@ type ResponseWriteLifecycleCommitResult =
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
       /** Host-only: the saved documents' frontiers at the post-commit cut, for those that recorded one. */
       frontiers: Array<{ documentId: string; frontier: ObservationFrontier }>;
-      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
     }
@@ -130,11 +128,6 @@ export function createAgentEditResponseWriteLifecycle(
           frontiers: result.documents.flatMap((document) =>
             document.frontier
               ? [{ documentId: document.documentId, frontier: document.frontier }]
-              : [],
-          ),
-          concurrentEdits: result.documents.flatMap((document) =>
-            document.concurrentEdits
-              ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
               : [],
           ),
           // A refusal with a reason is receipted write by write in `documents`.

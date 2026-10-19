@@ -118,7 +118,6 @@ const {
 } = await import("../adapters/agent-edit-observability.js");
 const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
 const { scopeAgentEdit } = await import("../domain/document-link-scope-doors.js");
-const { createDraftConcurrentJournalWatermarks } = await import("../domain/draft-agent-edit.js");
 const { createDraftCoordinator } = await import("../domain/draft-coordinator.js");
 const { createDraftPullService } = await import("../domain/draft-pulls.js");
 const { createDraftProjection } = await import("../domain/draft-projection.js");
@@ -397,32 +396,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
     onDraftUpdate: ({ draftId }) => draftBroadcasts.push(draftId),
   });
-  const realWatermarks = createDraftConcurrentJournalWatermarks();
-  const pendingWatermarks = new Set<string>();
-  const watermarkCommits: string[] = [];
-  const watermarkKey = (threadId: ThreadId, documentId: DocumentId) => `${threadId}:${documentId}`;
-  const watermarks = {
-    current: realWatermarks.current,
-    capturePending(threadId: ThreadId, documentId: DocumentId, id: number, attemptId?: string) {
-      pendingWatermarks.add(watermarkKey(threadId, documentId));
-      realWatermarks.capturePending(threadId, documentId, id, attemptId);
-    },
-    commitPending(threadId: ThreadId, documentId: DocumentId, attemptId?: string) {
-      pendingWatermarks.delete(watermarkKey(threadId, documentId));
-      watermarkCommits.push(watermarkKey(threadId, documentId));
-      realWatermarks.commitPending(threadId, documentId, attemptId);
-    },
-    clearPending(threadId: ThreadId, documentId: DocumentId) {
-      pendingWatermarks.delete(watermarkKey(threadId, documentId));
-      realWatermarks.clearPending(threadId, documentId);
-    },
-  };
   const draftPulls = createDraftPullService({
     outsideTransaction: runOutsideWrite,
     liveCoordinator,
     draftCoordinator,
     drafts: draftStore,
-    concurrentJournalWatermarks: watermarks,
   });
   const draftEffects = createDraftProjection({
     coordinator: draftCoordinator,
@@ -694,10 +672,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       draftCoordinator,
       draftPulls,
       draftJournal: durableDraftJournalReadStore,
-      concurrentJournalWatermarks: watermarks,
       diagnostics: createDraftAgentEditDiagnostics(eventSink),
-      afterCommit: runAfterDrizzleCommit,
-      enlistResponseParticipant,
       model: runtime.model,
       codec: runtime.codec,
       links,
@@ -971,7 +946,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     // Staging pulls legitimately deliver into loaded draft rooms. Start the
     // measurement window after staging so it covers only the commit attempt.
     draftBroadcasts.length = 0;
-    watermarkCommits.length = 0;
     hocuspocus.broadcasts.length = 0;
     const workDrafts = await db
       .select({ id: schema.documentDrafts.id })
@@ -2452,7 +2426,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       ),
     afterCommitEffects: () => ({
       draftBroadcasts: [...draftBroadcasts].sort(),
-      watermarkCommits: [...watermarkCommits].sort(),
     }),
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
@@ -2473,7 +2446,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       collab.agentEdit().hasResponseDocument(responseId, ALPHA_ID) ? [ALPHA_ID] : [],
       collab.agentEdit().hasResponseDocument(responseId, BETA_ID) ? [BETA_ID] : [],
     ],
-    pendingWatermarkDocuments: () => [...pendingWatermarks].sort(),
     eventsNamed: (name: string) => events.filter((event) => event.name === name),
     responseEvents: (responseId: string) =>
       events
@@ -2576,7 +2548,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       // Each document's Work draft takes the reply's rows and reaches its room; a thread peer
       // is identity only and takes none.
       expect(draftBroadcasts).toHaveLength(2);
-      expect(watermarkCommits).toHaveLength(2);
       expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
     },
   };

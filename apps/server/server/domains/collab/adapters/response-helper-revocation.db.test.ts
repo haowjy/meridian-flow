@@ -353,17 +353,17 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.draftCoordinator.readDraft.bind(fixture.draftCoordinator);
+    // The write's room read: Discard lands just before it copies the draft, or just after.
+    const original = fixture.draftCoordinator.copyDraft.bind(fixture.draftCoordinator);
     let once = true;
-    fixture.draftCoordinator.readDraft = async (documentDraft, fn) => {
-      const targeted =
-        once && documentDraft === draftId && String(fn).includes("listConcurrentJournalRows");
+    fixture.draftCoordinator.copyDraft = async (documentDraft) => {
+      const targeted = once && documentDraft === draftId;
       if (targeted) once = false;
       if (targeted && !afterRead) {
         entered();
         await gate;
       }
-      const result = await original(documentDraft, fn);
+      const result = await original(documentDraft);
       if (targeted && afterRead) {
         entered();
         await gate;
@@ -394,7 +394,7 @@ describe("response helper revocation (Postgres)", () => {
       });
     } finally {
       release();
-      fixture.draftCoordinator.readDraft = original;
+      fixture.draftCoordinator.copyDraft = original;
     }
     expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite(fresh);

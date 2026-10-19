@@ -27,6 +27,6 @@ failures and may enqueue `awareness_degraded`. A writer Work rebind records
 `work_switched` in the same transaction as the binding transition, so notice
 failure rolls the transition back rather than committing a silent switch.
 
-Notices never become mutation authority or a `read_required` fence. A writer
+Notices never become mutation authority or a write fence. A writer
 reverses a switch by selecting the previous Work normally; no switch-specific
 Undo/Redo path exists.

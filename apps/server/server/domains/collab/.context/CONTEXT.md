@@ -87,8 +87,9 @@ save's fences and admission.
 
 Save confirms every grant used by the reply once, drops writes whose Work lost
 access, and marks the remaining writes for the journal's no-grant guard. A
-write against a different version from the thread's last read returns
-`read_required`. Model inverse commands use the current destination grant and
+write into a room where the model has no frontier (its last read was another
+version) is refused once with the passage's current text (`region_changed`):
+the frontier's room key replaces the old last-read destination check. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
 Every model call reads its room fresh through agent-edit's `readRoom`. The
@@ -478,8 +479,9 @@ the derivation sweep.
 Each concurrent-attribution preflight and final recheck uses its own upstream
 cut. Baseline containment compares struct clocks and the delete set: equal
 state vectors alone do not establish equality, so delete-only writer edits are
-still attributed. The journal floor is a provisional, commit-bound cursor, never
-a global maximum.
+still attributed. There is no journal floor: each check reads the Work draft
+generation's rows and skips only those the view contains, so its cost grows with
+the generation's history (C11) until an epoch reset bounds it.
 
 `document_links` is a hint from a certified cut, never link authority. Changing
 the extractor bumps its version, and no second post-write writer exists.

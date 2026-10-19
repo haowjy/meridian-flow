@@ -118,7 +118,6 @@ import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
-import { createDraftConcurrentJournalWatermarks } from "./domain/draft-agent-edit.js";
 import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
@@ -227,15 +226,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     // The projection is composed below, over the coordinator; a mark only fires after a commit.
     onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
   });
-  const concurrentJournalWatermarks = createDraftConcurrentJournalWatermarks();
   const draftPulls = createDraftPullService({
     // A pull isn't the write that scheduled it: it leaves that write's grants too.
     outsideTransaction: runOutsideWrite,
     liveCoordinator,
     draftCoordinator,
     drafts,
-    concurrentJournalWatermarks,
-    liveJournal: persistence.journal,
     diagnostics: createDraftPullDiagnostics(deps.eventSink),
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
@@ -417,10 +413,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       draftCoordinator,
       draftPulls,
       draftJournal,
-      concurrentJournalWatermarks,
       diagnostics: createDraftAgentEditDiagnostics(deps.eventSink),
-      afterCommit: runAfterDrizzleCommit,
-      enlistResponseParticipant,
       model: runtime.model,
       codec: runtime.codec,
       links: deps.links,

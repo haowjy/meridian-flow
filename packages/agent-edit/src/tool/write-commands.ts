@@ -6,10 +6,10 @@ import { snapshotBlocks } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
-import { createPlanningView, planningSnapshot } from "../frontier.js";
-import { type BlockRef, toDocHandle } from "../handles.js";
+import { createPlanningView, type ObservationFrontier, planningSnapshot } from "../frontier.js";
+import { type BlockRef, toDocHandle, toRef, unwrapBlock } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
+import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
@@ -17,9 +17,10 @@ import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edi
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
-import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
+import { mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
+import { modelBlockItem } from "./model-result.js";
 import {
   AcceptedMutationSubmissionError,
   type MutationCommit,
@@ -27,8 +28,10 @@ import {
 } from "./mutation-commit.js";
 import { recordObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
+import { REFUSAL_REGION_MAX_BYTES, regionRefusal } from "./region-check.js";
 import type { ResponseCommitter, RoomCallInput, RoomCopy } from "./response-committer.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
+import { readCall } from "./result-text.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
@@ -167,50 +170,36 @@ export function createWriteCommands(deps: {
   }
 
   /**
-   * The model's view to plan a write on: the room copy at the planning frontier, then the
-   * reply's own surviving updates. Null when the room has no valid frontier or the view is
-   * incomplete.
-   */
-  async function planningView(
-    room: RoomCopy,
-    docId: string,
-    session: ActorSession,
-    context: WriteContext,
-  ): Promise<Y.Doc | null> {
-    if (!room.room || !context.frontiers?.planning) return null;
-    const snapshot = planningSnapshot(
-      room.doc,
-      room.room,
-      await context.frontiers.planning(room.room),
-    );
-    if (!snapshot) return null;
-    return createPlanningView(
-      room.doc,
-      snapshot,
-      responseCommitter.ownUpdates({
-        threadId: session.threadId,
-        providerResponseId: context.responseIdentity?.providerResponseId,
-        responseId: context.responseIdentity?.editScopeId,
-        docId,
-      }),
-    );
-  }
-
-  /**
-   * `use` with the doc a write plans on and the room copy it renders from.
-   * TODO(M2 W2): a write with no valid view is refused with the region's current text; until
-   * the region refusal lands it plans on the room copy, as before M2.
+   * `use` with the doc a write plans on and the frontier its region check reads: the model's
+   * view (the room copy at the planning frontier, then the reply's own surviving updates) and
+   * that frontier; the room copy and null when the room has no valid frontier or the view is
+   * incomplete. A host that keeps no frontiers plans on the room copy, unchecked.
    */
   async function withPlanDoc(
     room: RoomCopy,
     docId: string,
     session: ActorSession,
     context: WriteContext,
-    use: (planDoc: Y.Doc) => Promise<InternalWriteResult>,
+    use: (planDoc: Y.Doc, planned: Planned) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
-    const view = await planningView(room, docId, session, context);
+    const lookup = context.frontiers?.planning;
+    if (!lookup) return use(room.doc, undefined);
+    const frontier = room.room ? await lookup(room.room) : null;
+    const snapshot = room.room ? planningSnapshot(room.doc, room.room, frontier) : null;
+    const view =
+      snapshot &&
+      createPlanningView(
+        room.doc,
+        snapshot,
+        responseCommitter.ownUpdates({
+          threadId: session.threadId,
+          providerResponseId: context.responseIdentity?.providerResponseId,
+          responseId: context.responseIdentity?.editScopeId,
+          docId,
+        }),
+      );
     try {
-      return await use(view ?? room.doc);
+      return await use(view ?? room.doc, view ? frontier : null);
     } finally {
       view?.destroy();
     }
@@ -302,10 +291,10 @@ export function createWriteCommands(deps: {
             !(responseId && responseCommitter.hasScopeCut(responseId, address.documentId)));
         const existing = options.model.getBlocks(toDocHandle(room.doc)).length > 0;
         if (existing && !overwriting) return alreadyExists;
-        // Creating a document or initializing an empty one plans on the room copy; replacing
-        // a non-empty one plans on the model's view of it.
-        const plan = (planDoc: Y.Doc) =>
-          createOn(planDoc, room, {
+        // Creating a document or initializing an empty one plans on the room copy, unchecked;
+        // replacing a non-empty one plans on the model's view of it.
+        const plan = (planDoc: Y.Doc, planned: Planned) =>
+          createOn(planDoc, room, planned, {
             command,
             session,
             context,
@@ -319,9 +308,9 @@ export function createWriteCommands(deps: {
             overwriting,
             alreadyExists,
           });
-        return existing
+        return existing && hasText(room.doc)
           ? withPlanDoc(room, address.documentId, session, context, plan)
-          : plan(room.doc);
+          : plan(room.doc, undefined);
       },
     );
   }
@@ -329,6 +318,7 @@ export function createWriteCommands(deps: {
   async function createOn(
     planDoc: Y.Doc,
     room: RoomCopy,
+    planned: Planned,
     input: {
       command: Extract<WriteCommand, { command: "create" | "copy" }>;
       session: ActorSession;
@@ -387,13 +377,16 @@ export function createWriteCommands(deps: {
       given || overwrite
         ? parsed.parsed
         : { blocks: assigner.assignSpan([], parsed.parsed.blocks) };
-    await registerMinted(assigner, address.documentId, context);
     return finishPreparedEdit({
       command,
       session,
       context,
       room,
       planDoc,
+      planned,
+      // Replacing a document's content targets all of it.
+      targets: "all",
+      assigner,
       links,
       actor,
       docId: address.documentId,
@@ -435,7 +428,7 @@ export function createWriteCommands(deps: {
     return withRoom(
       { docId: address.documentId, commandName: command.command, session, context },
       (room) =>
-        withPlanDoc(room, address.documentId, session, context, async (planDoc) => {
+        withPlanDoc(room, address.documentId, session, context, async (planDoc, planned) => {
           const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
           const links = await openCommandLinks(options, {
             documentId: address.documentId,
@@ -470,6 +463,12 @@ export function createWriteCommands(deps: {
           );
           const resolved = plan.ok ? plan.assign(assigner) : plan;
           if (!resolved.ok) {
+            // With no frontier here, a target the room can't place was never shown in this room.
+            if (planned === null && LOCATE_FAILURES.has(resolved.error.code))
+              return status(
+                "region_changed",
+                `Not applied: you haven't seen the current text of this document. Read it with ${readCall(address.filePath)}, then write again.`,
+              );
             return errorResponse(
               resolved.error.code,
               resolved.error.message,
@@ -479,14 +478,15 @@ export function createWriteCommands(deps: {
           }
           validateResolvedIr(resolved.ir, address.documentId, planDoc);
           if (resolved.edits.length === 0) return formatUnchangedSuccess();
-          await registerMinted(assigner, address.documentId, context);
-
           return finishPreparedEdit({
             command,
             session,
             context,
             room,
             planDoc,
+            planned,
+            targets: targetIndexes(planDoc, resolved.edits),
+            assigner,
             links,
             actor: mutationActor(session, address.documentId, context),
             docId: address.documentId,
@@ -506,6 +506,12 @@ export function createWriteCommands(deps: {
     room: RoomCopy;
     /** What the write plans and applies on: the model's view, or the room copy itself. */
     planDoc: Y.Doc;
+    /** What the region check reads; undefined exempts the write from it. */
+    planned: Planned;
+    /** The write's target block indexes on `planDoc`, or every block. */
+    targets: readonly number[] | "all";
+    /** Refs the write minted, registered once the write is past its region check. */
+    assigner: WriteLinkAssigner;
     links: CommandLinks;
     actor: MutationActor;
     docId: string;
@@ -518,6 +524,16 @@ export function createWriteCommands(deps: {
   /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
   async function finishPreparedEdit(edit: PreparedEdit): Promise<InternalWriteResult> {
     const { command, session, context, room, planDoc, links, actor, docId, filePath, plan } = edit;
+    if (edit.planned !== undefined) {
+      const region = regionRefusal({
+        planDoc,
+        room: room.doc,
+        targets: edit.targets,
+        planned: edit.planned,
+      });
+      if (region) return refuseRegion(edit, region);
+    }
+    await registerMinted(edit.assigner, docId, context);
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
     const editScopeId = context.responseIdentity?.editScopeId;
     const staged = Boolean(editScopeId) && actor.kind === "agent";
@@ -527,11 +543,9 @@ export function createWriteCommands(deps: {
         ? { generation: room.generation, snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) }
         : undefined;
     const preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
+    // The echo compares with what the model planned on, as the settled receipt does: a block
+    // the writer changed since the view shows in full beside the write.
     const planned = snapshotBlocks(toDocHandle(planDoc), options.model, links.codec);
-    const before =
-      planDoc === room.doc
-        ? planned
-        : snapshotBlocks(toDocHandle(room.doc), options.model, links.codec);
     const beforeVector = Y.encodeStateVector(planDoc);
     // A view lacks the room's newer clients; a fresh segment client must avoid them too.
     const roomClients =
@@ -578,34 +592,15 @@ export function createWriteCommands(deps: {
     const copied = edit.copy
       ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
       : undefined;
-    const interactionContext = interactionContextForAttempt(
-      context.interactionContext,
-      identity.durableId,
-    );
+    const interactionContext = context.interactionContext;
     const meta = mutationMeta(actor),
       liveOrigin = mutationUpdateOrigin(actor);
     const turnId = actor.kind === "agent" ? actor.turnId : null;
     let phase: "staged" | "committed",
       revision: string | null = null;
-    let concurrentEdits: import("../apply/types.js").ConcurrentEditInfo | undefined;
     let lateSweep: import("./mutation-commit.js").DestructiveSweepReport | undefined;
     let awarenessDegraded = false;
     if (staged && editScopeId && actor.kind === "agent") {
-      // Await attribution before staging: the scope must still be current at acceptance.
-      try {
-        if (interactionContext) {
-          const concurrent = await mutationCommit.detectConcurrentEdits({
-            docId,
-            links,
-            interactionContext,
-            preOwnSnapshot,
-            ownTurnId: actor.turnId,
-          });
-          concurrentEdits = concurrent.info;
-        }
-      } catch {
-        awarenessDegraded = true;
-      }
       const rejected = responseCommitter.stageUpdate({
         responseId: editScopeId,
         docId,
@@ -674,7 +669,6 @@ export function createWriteCommands(deps: {
       if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
       if (committed.ok) {
         revision = committed.revision;
-        concurrentEdits = committed.concurrentEdits;
         lateSweep = committed.lateSweep;
         awarenessDegraded = Boolean(committed.awarenessDegraded);
       } else awarenessDegraded = true;
@@ -685,12 +679,12 @@ export function createWriteCommands(deps: {
       revision,
       writeId: identity.handle,
       ...(phase === "staged" ? { settlementId: identity.durableId } : {}),
-      concurrentEdits,
       lateSweep,
       awarenessDegraded,
     };
     // A staged echo records nothing: the reply's save replaces it before the model's next request.
     const recorded = phase === "staged" ? { ...context, frontiers: undefined } : context;
+    const ownRemoved = new Set(deletedBlocks.map((block) => `${block.clientID}:${block.clock}`));
     try {
       return await withEvidence(
         links,
@@ -706,10 +700,11 @@ export function createWriteCommands(deps: {
             deletedBlocks,
             copied,
           },
-          before,
+          planned,
           snapshotBlocks(toDocHandle(room.doc), options.model, links.codec),
-          { ...outcome, concurrentEdits: withRunShownLinks(concurrentEdits, links) },
+          outcome,
         ),
+        ownRemoved,
       );
     } catch {
       return withEvidence(
@@ -718,8 +713,35 @@ export function createWriteCommands(deps: {
         docId,
         recorded,
         formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
+        ownRemoved,
       );
     }
+  }
+
+  /**
+   * The region check's refusal: the region's current text from the room copy, recorded like a
+   * read so the next attempt proceeds unless the passage changes again. A region too long to
+   * show names its range to read instead, and records nothing.
+   */
+  function refuseRegion(edit: PreparedEdit, blocks: readonly Y.XmlElement[]) {
+    const items = options.model
+      .serializeBlockLines(toDocHandle(edit.room.doc), edit.links.codec, blocks.map(toRef))
+      .map(modelBlockItem);
+    const bytes = new TextEncoder().encode(items.map((item) => item.body).join("\n")).byteLength;
+    const first = items[0],
+      last = items.at(-1);
+    if (bytes > REFUSAL_REGION_MAX_BYTES && first && last)
+      return status(
+        "region_changed",
+        `Not applied: this passage changed since you last saw it, and it is too long to show here. Read it with read({"path": ${JSON.stringify(edit.filePath)}, "in": [${JSON.stringify(first.hash)}, ${JSON.stringify(last.hash)}]}), then write again.`,
+      );
+    return withEvidence(edit.links, edit.room, edit.docId, edit.context, {
+      status: "region_changed",
+      model: {
+        message: "Not applied: this passage changed since you last saw it. Current text:",
+        ...(items.length > 0 ? { blocks: [{ extent: "full", relation: "document", items }] } : {}),
+      },
+    });
   }
 
   async function submitPreparedMutation(input: PreparedMutation) {
@@ -741,9 +763,9 @@ export function createWriteCommands(deps: {
   }
 
   /**
-   * Attach what the rendered result showed: its links, spelled with the
-   * command's links, and, when the host passed lookups, its observation frontier
-   * in the room the copy was read from.
+   * Attach what the rendered result showed: its links, spelled with the command's links, and,
+   * when the host passed lookups, the listing of what changed that it doesn't show and its
+   * observation frontier in the room the copy was read from.
    */
   function withEvidence(
     links: CommandLinks,
@@ -751,10 +773,11 @@ export function createWriteCommands(deps: {
     documentId: string,
     context: WriteContext,
     result: InternalWriteResult,
+    ownRemoved?: ReadonlySet<string>,
   ): Promise<InternalWriteResult> {
     return recordObservation(
-      { ...result, ...shownEvidence(renderedItems(result.model), links) },
-      room.doc,
+      result,
+      { doc: room.doc, model: options.model, links, ...(ownRemoved ? { ownRemoved } : {}) },
       room.room,
       context.frontiers?.recording,
       documentId,
@@ -889,6 +912,38 @@ export function createWriteCommands(deps: {
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
+
+/**
+ * What a write's region check reads: the planning frontier its view was built from, null when
+ * the room has no valid one, undefined when the write is exempt (creating a document,
+ * initializing an empty one, or a host that keeps no frontiers).
+ */
+type Planned = ObservationFrontier | null | undefined;
+
+/** Resolution failures that mean the room couldn't place a target, not a malformed write. */
+const LOCATE_FAILURES = new Set<string>(["not_found", "ambiguous_match"]);
+
+/**
+ * Whether the document holds anything beyond the one blank block an empty document keeps:
+ * initializing an empty document isn't checked against the model's view.
+ */
+function hasText(doc: Y.Doc): boolean {
+  return getTopLevelXmlBlocks(doc).some((block) =>
+    block.toArray().some((child) => !(child instanceof Y.XmlText) || child.length > 0),
+  );
+}
+
+/** Each edit's target block on `doc`: the edited block, or an insert's anchor (-1 at the start). */
+function targetIndexes(doc: Y.Doc, edits: readonly ResolvedEdit[]): number[] {
+  const blocks = getTopLevelXmlBlocks(doc);
+  const index = new Map(blocks.map((block, position) => [block as unknown, position]));
+  return edits.flatMap((edit) => {
+    const target = edit.kind === "insert" ? edit.after : edit.block;
+    if (!target) return [-1];
+    const position = index.get(unwrapBlock(target));
+    return position === undefined ? [] : [position];
+  });
+}
 
 /** The docs a write's links spell: the plan doc and, when it is a view, the room copy. */
 function planDocs(planDoc: Y.Doc, room: RoomCopy): Y.Doc[] {
