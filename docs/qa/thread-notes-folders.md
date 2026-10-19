@@ -58,8 +58,8 @@ arguments or use JSON files).
    `return_result` with `artifacts:["scratch://$THREAD/report"]`. Spawn it
    foreground with `overrides:{model:"mock-llm-v1"}`. The report and parent
    chip must contain the canonical p-handle address. Check a fork/handoff's
-   prepared `thread.notesScope.parent` against the source turn's thread, not
-   its inherited spawn parent. A root `$PARENT` fails naming the variable.
+   `$PARENT` read against the source turn's thread, not its inherited spawn
+   parent. Thread snapshots must not carry a notes location map. A root `$PARENT` fails naming the variable.
 7. **Literal and invalid syntax.** `$5 bills` and an inner literal `$THREAD`
    folder round-trip. Unknown `$FOO` in the first URI segment, a variable
    without chat scope, extra qualifier chains, `@cN` writer names and
@@ -104,14 +104,19 @@ arguments or use JSON files).
   the link with either that canonical spelling or
   `scratch://$THREAD/plan#part` retains A and the written suffix. Stored
   occurrences and shown-address evidence contain no variable.
-- **Delayed scope refresh.** Hold the chat's snapshot response after own
-  Work rebind. Click a `$THREAD` link once: it shows checking, not missing;
-  release the snapshot and it opens the new owner's note without another
-  click. Repeat for a cached child's `$PARENT` after parent rebind:
-  invalidate the complete prepared scope, not only its parent field.
-  A genuinely settled root with no parent still cannot resolve `$PARENT`.
-  Exercise the ready → pending → changed-ready follower transition, not
-  only the initial pending load.
+- **Click-time scope, including remote rebind.** Leave only a fork mounted.
+  Rebind its unmounted parent from `./mf`, then click `$PARENT` once. The
+  request sends the raw variable href and fork id, and opens the current
+  owner's note without reload or a parent snapshot request. Rebind the parent
+  back and click again: no cached variable answer may open the old note.
+  Repeat own and parent rebind through the same browser. Hold a link resolve
+  response: the click shows checking, then opens when released without another
+  click; holding a snapshot must not hold the variable click. A root with no
+  parent cannot resolve `$PARENT`; an Editor holder still cannot resolve it.
+  Check `./mf doc read 'scratch://$PARENT/plan' --chat cN` follows the same
+  raw-href server path, not a snapshot map. Check tool chips use canonical typed
+  result paths after completion, and filename labels plus raw click-time
+  resolution before a result exists.
 
 ## Labels and targeted publication
 

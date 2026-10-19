@@ -278,6 +278,10 @@ export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
+  /** Current server-only shorthand locations; never projected to clients. */
+  findNotesScope(
+    id: ThreadId,
+  ): Promise<import("@meridian/contracts/context-uri").ContextNotesScope>;
   /** Reads the thread and parent ownership/deletion state without live filters. */
   findByIdIncludingDeleted(
     id: ThreadId,

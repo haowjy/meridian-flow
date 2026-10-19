@@ -121,7 +121,8 @@ Production barrels do not re-export test data.
 expands only a whole `$THREAD`/`$PARENT` first segment after `scheme://`, then
 applies the destination scheme's ordinary grammar. Missing or unknown variables
 report `unresolvedVariable`. Inner variable-like names and `$5 bills` are literal.
-`notesScope` on the validated thread projection supplies browser and mf scope;
-Editor holders supply none. Persisted links, refs, admission and keep-open lines
+The thread repository supplies notes scope only to server consumers. Browser and
+mf send raw variables with a chat id to link resolution; Editor holders supply
+no variable scope. Persisted links, refs, admission and keep-open lines
 are canonical-only. Catalog folder `displayName` is presentation; `name`/`path`
 remain source coordinates even when a title changes.

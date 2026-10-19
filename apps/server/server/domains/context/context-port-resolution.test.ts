@@ -57,7 +57,7 @@ describe("thread context-port resolution", () => {
   it("binds manuscript URIs to the thread project rather than a fallback project", async () => {
     const resolution = await resolveThreadContext(
       {
-        threads: { findById: async () => thread() },
+        threads: { findById: async () => thread(), findNotesScope: async () => ({}) },
         threadWorks: { findPrimary: async () => ({ workId: WORK_ID }) },
         works: {
           findById: async () => null,

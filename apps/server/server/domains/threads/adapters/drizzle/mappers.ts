@@ -40,7 +40,6 @@ export function mapThread(
     agentDefinitionRevisionId?: string | null;
     agentName?: string | null;
     pendingWriteMode?: AiWriteMode | null;
-    notesScope?: Thread["notesScope"];
   },
 ): Thread {
   return {
@@ -54,7 +53,6 @@ export function mapThread(
     status: row.status as Thread["status"],
     title: row.title === "" ? null : row.title,
     ref: row.ref,
-    ...(row.notesScope ? { notesScope: row.notesScope } : {}),
     initialPromptBakeId: row.initialPromptBakeId,
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,

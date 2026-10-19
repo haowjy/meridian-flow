@@ -423,7 +423,7 @@ function rejectionCopy(rejected: string | null): string | null {
 }
 
 function DocumentToolTitle({ tool }: { tool: ToolView }) {
-  const path = asString(inputObject(tool).path);
+  const path = readPath(tool);
   const descriptor = descriptorFor(tool);
 
   if (isCatchUpPause(tool)) {
@@ -437,9 +437,6 @@ function DocumentToolTitle({ tool }: { tool: ToolView }) {
   }
 
   const phrase = toolActivityPhrase(tool);
-  // A partial call has no settled path yet, so the row names no document —
-  // and therefore offers no door onto one.
-  if (tool.status !== "complete") return <PhraseTitle phrase={phrase} />;
   if (!path) return descriptor.pathlessTitle?.() ?? <PhraseTitle phrase={phrase} />;
   return <CommandTitle verb={phrase.verb} parameter={<DocumentName path={path} />} />;
 }
@@ -464,7 +461,15 @@ function documentExpand(tool: ToolView): ToolExpand | null {
 }
 
 function readPath(tool: ToolView): string | undefined {
-  return asString(inputObject(tool).path);
+  const result = tool.result;
+  const canonicalPath =
+    result &&
+    typeof result === "object" &&
+    !Array.isArray(result) &&
+    result.schema === "meridian.agent-edit.v1"
+      ? asString(result.path)
+      : undefined;
+  return canonicalPath ?? asString(inputObject(tool).path);
 }
 
 function resultPreview(tool: ToolView): ToolExpand | null {

@@ -79,7 +79,6 @@ const pendingWriteMode = sql<AiWriteMode | null>`(
 import { threadNotesScope } from "./thread-notes-scope.js";
 
 const threadColumns = {
-  notesScope: threadNotesScope,
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,
@@ -277,6 +276,14 @@ export function createDrizzleThreadRepository(
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+    },
+    async findNotesScope(id: ThreadId) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ scope: threadNotesScope })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, id))
+        .limit(1);
+      return row?.scope ?? {};
     },
     async findById(id: ThreadId) {
       const [row] = await currentDrizzleDb(db)

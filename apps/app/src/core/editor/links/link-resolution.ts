@@ -48,9 +48,8 @@
  */
 
 import {
-  type ContextUriVariables,
   classifyWrittenSource,
-  resolveDocumentHref,
+  hasContextUriVariable,
   storedHref,
   storedLinkRef,
 } from "@meridian/contracts";
@@ -153,8 +152,6 @@ export type InternalLinkResolver = {
 };
 
 export type LinkAnswerCache = {
-  /** Input spelling in the registered scope, shared by cache keys and follow outcomes. */
-  canonicalLink(link: LinkKey): LinkKey | null;
   subscribe: (listener: () => void) => () => void;
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
@@ -206,7 +203,6 @@ export type LinkAnswerCache = {
     options?: {
       baseUri?: string | null;
       projectId?: string | null;
-      variables?: ContextUriVariables;
     },
   ) => () => void;
   destroy: () => void;
@@ -262,7 +258,6 @@ type Request = {
 /** Everything true of one registration of the port. */
 type Generation = {
   readonly resolver: InternalLinkResolver;
-  readonly variables?: ContextUriVariables;
   readonly baseUri: string | null;
   readonly assignment: LinkAssignmentScope;
   /** Answers, keyed by the link's ref and the classifier's spelling of its href. */
@@ -290,12 +285,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
 
   /** The cache key of an internal link, or null for anything else. */
   const internalLink = (link: LinkKey): { key: string; question: LinkQuestion } | null => {
-    let target = classifyLinkTarget(link.href);
-    if (link.ref === null && current?.baseUri === null && target?.kind === "scheme") {
-      const resolved = resolveDocumentHref(target.uri, null, { variables: current.variables });
-      if (!resolved) return null;
-      target = { kind: "scheme", uri: storedHref(resolved.uri, resolved.suffix) };
-    }
+    const target = classifyLinkTarget(link.href);
     if (!target || !isInternalLinkTarget(target)) return null;
     return {
       key: linkCacheKey({ ref: link.ref, href: linkTargetHref(target) }),
@@ -425,12 +415,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
   };
 
   return {
-    canonicalLink(link) {
-      const internal = internalLink(link);
-      return internal
-        ? { ref: internal.question.ref, href: linkTargetHref(internal.question.target) }
-        : null;
-    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -466,7 +450,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       let asked = false;
       for (const link of links) {
         const internal = internalLink(link);
-        if (!internal) continue;
+        if (!internal || (link.ref === null && hasContextUriVariable(link.href))) continue;
         if (generation.answers.has(internal.key) || generation.failed.has(internal.key)) continue;
         ask(generation, internal.key, internal.question);
         asked = true;
@@ -487,6 +471,16 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       // A provisional answer is not settled: the click waits for the server
       // (whose gone or other document wins), or asks again if it failed.
       const settled = !generation.asking.has(key) && !generation.failed.has(key);
+      // Variables are click-time questions, never cached or shared with a previous click.
+      if (link.ref === null && hasContextUriVariable(link.href)) {
+        const local = generation.resolver.local?.(question);
+        if (local?.kind === "unasked") return null;
+        try {
+          return (await generation.resolver.remote([question]))[0] ?? null;
+        } catch {
+          return null;
+        }
+      }
       if (known && known.state !== "pending" && settled) return known;
       // A click is the writer asking again, so a failure is worth retrying.
       generation.failed.delete(key);
@@ -500,7 +494,6 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       const baseUri = options?.baseUri ?? null;
       current = {
         resolver: resolve,
-        variables: baseUri === null ? options?.variables : undefined,
         baseUri,
         assignment: {
           holderUri: baseUri,

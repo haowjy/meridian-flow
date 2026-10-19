@@ -32,7 +32,10 @@ import type { ProjectRepository } from "../domains/projects/ports/project-reposi
 import { throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export interface DocumentLinkRouteDeps {
-  threads?: Pick<import("../domains/threads/index.js").ThreadRepository, "findById">;
+  threads?: Pick<
+    import("../domains/threads/index.js").ThreadRepository,
+    "findById" | "findNotesScope"
+  >;
   projectRepo: ProjectRepository;
   documentLinks: DocumentLinkResolver;
   linkScopes: DocumentLinkScopes;
@@ -52,10 +55,12 @@ export async function handleDocumentLinkResolveRequest(
   let request = input.request;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
   if (request.scopedThreadId && request.baseUri === null && !request.holderDocumentId) {
-    const thread = await deps.threads?.findById(request.scopedThreadId);
+    const threads = deps.threads;
+    if (!threads) throw createError({ statusCode: 400, message: "Invalid chat link scope" });
+    const thread = await threads.findById(request.scopedThreadId);
     if (!thread || thread.projectId !== projectId || thread.userId !== userId)
       throw createError({ statusCode: 400, message: "Invalid chat link scope" });
-    const variables = contextUriVariables(thread.notesScope ?? {});
+    const variables = contextUriVariables(await threads.findNotesScope(thread.id));
     request = {
       ...request,
       links: request.links.map((link) => {

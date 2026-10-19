@@ -872,7 +872,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }))
     toolRegistry.register(registration);
   for (const registration of createSpawnToolRegistrations(async (threadId) =>
-    contextUriVariables((await ports.threadRepos.threads.findById(threadId))?.notesScope ?? {}),
+    contextUriVariables(await ports.threadRepos.threads.findNotesScope(threadId)),
   )) {
     toolRegistry.register(registration);
   }

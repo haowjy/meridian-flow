@@ -42,8 +42,8 @@ and document-index contracts.
 
 [link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
 
-Chat syntax links receive prepared notes variables from the validated thread
-projection. Canonicalize them at address intake before cache keys, lookups or
-follow outcomes; include that scope in resolver generations. Editor holders
-supply no variables. The server derives any raw chat substitution from a proved
-`scopedThreadId`, never from a client-supplied map or an Editor holder.
+Only the server expands chat `$THREAD`/`$PARENT` addresses. Send raw syntax
+with `scopedThreadId` on every click; do not cache variable answers or project
+notes locations into the browser. Chips use the canonical typed tool result
+when present, otherwise the filename and a click-time resolution. Editor
+holders cannot expand variables.

@@ -105,36 +105,10 @@ function patchSnapshot(client: QueryClient, threadId: string, workId: string | n
           thread: {
             ...current.thread,
             workId,
-            ...(current.thread.workId !== workId ? { notesScope: undefined } : {}),
           },
         }
       : current,
   );
-  // A prepared scope is atomic: dependent clicks wait until the refreshed
-  // snapshot validates both current and parent locations.
-  for (const [key, snapshot] of client.getQueriesData<ThreadSnapshotResponse>({
-    queryKey: threadQueryKeys.all,
-    predicate: ({ queryKey }) => queryKey.length === 3 && queryKey[2] === "snapshot",
-  })) {
-    const parent = snapshot?.thread.notesScope?.parent;
-    if (!snapshot || parent?.threadId !== threadId) continue;
-    const catalog = client.getQueryData<ListWorksResponse>(
-      projectQueryKeys.works(snapshot.thread.projectId),
-    );
-    const work = workId ? workFromSnapshot(catalog, workId) : null;
-    if (
-      work &&
-      (work.isNoWork
-        ? parent.owner.kind === "lineage"
-        : parent.owner.kind === "work" && parent.owner.workSlug === work.slug)
-    )
-      continue;
-    client.setQueryData<ThreadSnapshotResponse>(key, (current) => {
-      if (!current?.thread.notesScope) return current;
-      return { ...current, thread: { ...current.thread, notesScope: undefined } };
-    });
-    void client.invalidateQueries({ queryKey: key, exact: true });
-  }
 }
 
 export function convergeThreadWorkBinding(

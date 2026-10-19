@@ -16,7 +16,7 @@ import { requireRequestId } from "./request-id.js";
 export interface ThreadContextRouteDeps {
   contextPorts: UnifiedContextPortFactory;
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
-  threads: Pick<ThreadRepository, "findById">;
+  threads: Pick<ThreadRepository, "findById" | "findNotesScope">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: Pick<WorkRepository, "listByProject" | "findNoWork" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;

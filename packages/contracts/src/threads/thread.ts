@@ -1,20 +1,6 @@
 /** Stored chat identity and its HTTP response validator. Run state lives on the live record. */
 import { z } from "zod";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
-import { decodeWorkSlug, type WorkSlug } from "../works/work-slug.js";
-
-const notesLocationSchema = z.object({
-  threadId: z.string().uuid().optional(),
-  owner: z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("work"),
-      workSlug: z.custom<WorkSlug>((value) => decodeWorkSlug(value) !== null),
-    }),
-    z.object({ kind: z.literal("lineage"), rootThreadRef: z.string().regex(/^c[1-9][0-9]*$/) }),
-  ]),
-  threadRef: z.string().regex(/^[cp][1-9][0-9]*$/),
-});
-
 export const threadSchema = z.object({
   id: z.string().min(1),
   /** Project this thread belongs to. */
@@ -31,10 +17,6 @@ export const threadSchema = z.object({
   title: z.string().nullable(),
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: z.string().nullable(),
-  /** Prepared owner/thread scope. A document holder never receives this as its scope. */
-  notesScope: z
-    .object({ current: notesLocationSchema.optional(), parent: notesLocationSchema.optional() })
-    .optional(),
   /** First immutable bake for this thread; null until the first request is assembled. */
   initialPromptBakeId: z.string().nullable(),
   agentDefinitionRevisionId: z.string().nullable(),

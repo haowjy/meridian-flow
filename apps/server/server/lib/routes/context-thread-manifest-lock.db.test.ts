@@ -105,6 +105,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const routeDeps = {
         contextPorts,
         threads: {
+          findNotesScope: async () => ({}),
           findById: async (id: string) =>
             id === THREAD_ID
               ? ({ id: THREAD_ID, projectId: PROJECT_ID, userId: USER_ID } as never)

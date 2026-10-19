@@ -1,18 +1,20 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
+
+import { resolvedLinkAddressesSchema } from "@meridian/contracts";
 import {
-  contextUriVariables,
+  hasContextUriVariable,
   parseContextUri,
   parsedContextUriFromSourceLocation,
   sourceLocationFromContextUri,
 } from "@meridian/contracts/context-uri";
 import {
   apiProjectDocumentAddressPath,
+  apiProjectLinksResolvePath,
   type ContextOwner,
   documentAddressReferenceSchema,
   type ProjectContextTreeScheme,
   parseDocumentFilename,
   renderFilename,
-  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
@@ -51,14 +53,21 @@ export async function resolveUri(
 ): Promise<ResolvedUri> {
   const scopedThread =
     chatOverride === undefined ? null : await resolveThreadId(session, chatOverride, projectId);
-  const snapshot = scopedThread
-    ? await session.request("GET", `/api/threads/${scopedThread}/snapshot`, undefined, {
-        decode: jsonResponse(threadSnapshotSchema),
-      })
-    : null;
-  const parsed = parseContextUri(raw, {
-    variables: contextUriVariables(snapshot?.thread.notesScope ?? {}),
-  });
+  if (hasContextUriVariable(raw)) {
+    if (!scopedThread) throw usageError("Variable addresses require --chat <handle>");
+    const response = await session.request(
+      "POST",
+      apiProjectLinksResolvePath(projectId),
+      { scopedThreadId: scopedThread, baseUri: null, links: [{ ref: null, href: raw }] },
+      { decode: jsonResponse(resolvedLinkAddressesSchema) },
+    );
+    if (response.answers.length !== 1) throw usageError("Link resolution answered out of shape");
+    const answer = response.answers[0];
+    if (answer?.state === "document") raw = answer.document.uri;
+    else if (answer?.state === "missing") raw = answer.uri;
+    else throw usageError("The variable address could not be resolved in this chat");
+  }
+  const parsed = parseContextUri(raw);
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
   const { scheme, authority } = parsed.value;
   const path = sourceLocationFromContextUri(parsed.value);

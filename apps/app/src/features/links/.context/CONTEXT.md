@@ -12,10 +12,9 @@ cache (the Editor passes the per-editor cache its decorations draw from):
 ```ts
 resolution.registerResolver(
   createProjectLinkResolver(scope, index, settlements), // settlements: the account's memo
-  { baseUri, projectId, variables },
+  { baseUri, projectId },
 );
-// variables: prepared chat notes scope only (Editor holders have none).
-// Scope changes register a new generation. Raw syntax is canonical before cache keys.
+// Scope changes register a new generation. Variables remain raw until a click.
 // local, synchronously, per question: `resolveStoredLink` over the scope's catalog
 // (`project-link-catalog.ts`: the complete index, the memo as `settlement()`):
 //   malformed ref                          -> gone (never the address)
@@ -261,9 +260,11 @@ from a path or label.
 
 [link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
 
-`ChatScreen` retains the project list's optimistic title/Work projection but
-sources `notesScope` from the validated thread snapshot. A Work mismatch clears
-the map until that same snapshot query catches up. The binding cache also
-refreshes cached child/fork/handoff snapshots whose prepared parent identity
-names a rebound chat. No link click fetches a parent, and no Editor holder
-receives this map.
+Chat variable addresses are not browser locations. `hasContextUriVariable`
+recognizes first-segment variable syntax without expansion. Transcript scans
+leave these unasked; each click bypasses cached answers and sends the raw href
+with the chat's `scopedThreadId`. The server proves that chat and reads current
+Work membership, including the derivation source for `$PARENT`, before expansion.
+A remote parent rebind needs no child subscription or snapshot invalidation.
+Editor holders have no variable scope. Typed tool results keep their canonical
+path even when a later rebind changes the same variable's destination.

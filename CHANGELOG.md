@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Resolve chat `$THREAD` and `$PARENT` links only on the server at click time, including `./mf` reads. Remove browser notes-scope snapshots, readiness and dependent rebind invalidation so remote parent rebinds cannot open an old Work’s notes (#978). Tool names use canonical result paths when available.
+
 - Extend the thread-notes probe recipe with root-as-file refusal, client moves into notes, identity continuity and delayed scope refresh.
 
 - Read-only file viewers also derive their visible path from catalog labels. While labels load, visible ancestry never falls back to storage basenames.

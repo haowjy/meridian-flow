@@ -42,7 +42,7 @@ export interface ThreadContextResolutionDeps {
   /** Absent only in fixtures that never read uploads. */
   topPrimaryChats?: TopPrimaryChatResolver;
   uploadChats?: ChatUploadsOwners;
-  threads: Pick<ThreadRepository, "findById">;
+  threads: Pick<ThreadRepository, "findById" | "findNotesScope">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
@@ -78,7 +78,7 @@ export async function resolveThreadContext(
   const topChat = await deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id);
   return {
     thread,
-    variables: contextUriVariables(thread.notesScope ?? {}),
+    variables: contextUriVariables(await deps.threads.findNotesScope(thread.id)),
     uploadChats: deps.uploadChats,
     uploadsOwner: topChat ? { chatId: topChat.chatId, chatRef: topChat.chatRef } : null,
     scratchLineages: deps.scratchLineages,

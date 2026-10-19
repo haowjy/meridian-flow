@@ -15,6 +15,7 @@
  * document inside the answer and lands on the anchor if the open result allows. No lookup
  * stands between the answer and the open.
  */
+import { hasContextUriVariable } from "@meridian/contracts/context-uri";
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -178,6 +179,20 @@ export function ProjectChatContextNavigationProvider({
   const prepare = useCallback(
     (uri: string, passage?: ContextPassageAnchor): PreparedDoor | null => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return null;
+      if (hasContextUriVariable(uri)) {
+        const link = classifyLinkTarget(uri);
+        if (!link) return null;
+        passages.retire();
+        const door: Placement = {
+          workId: activeWork.id,
+          passage,
+          claim: besideChat ? useDockDocumentStore.getState().claim() : null,
+        };
+        return {
+          link,
+          policy: { open: (document, gesture) => openFound(door, document, gesture) },
+        };
+      }
       const uploadsChatId = chatIdForUploadsUri(uri, chats);
       if (uploadsChatId) {
         // An upload is found in its chat's catalog by its explicit spelling, and opens only
@@ -265,9 +280,10 @@ export function ProjectChatContextNavigationProvider({
       !!activeWork &&
       !!noWorkId &&
       // An upload opens only where the host has a viewer for it (beside the centered chat).
-      (chatIdForUploadsUri(uri, chats) !== null
-        ? besideChat !== null
-        : isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages)),
+      (hasContextUriVariable(uri) ||
+        (chatIdForUploadsUri(uri, chats) !== null
+          ? besideChat !== null
+          : isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages))),
     [activeWork, availableWorks, noWorkId, lineages, chats, besideChat],
   );
   const doors = useMemo(

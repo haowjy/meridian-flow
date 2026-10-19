@@ -9,9 +9,8 @@
  */
 
 import { draftItemKey } from "@meridian/contracts";
-import type { ContextUriScheme } from "@meridian/contracts/context-uri";
+import { type ContextUriScheme, hasContextUriVariable } from "@meridian/contracts/context-uri";
 import {
-  classifyLinkTarget,
   type DocumentAnswer as DocumentEntry,
   type LinkAnswerCache,
   type LinkFollowDisposition,
@@ -103,7 +102,7 @@ export async function followProjectLink({
   scopeReady?: Promise<void>;
 }): Promise<void> {
   if (signal.aborted) return;
-  let link = { ref, href: linkTargetHref(target) };
+  const link = { ref, href: linkTargetHref(target) };
   const outcome = (state: LinkFollowOutcome["state"]): LinkFollowOutcome => ({
     state,
     target,
@@ -121,15 +120,10 @@ export async function followProjectLink({
 
   if (scopeReady) await scopeReady;
   if (signal.aborted) return settle();
-  const canonical = resolution.canonicalLink(link);
-  if (!canonical) return settle();
-  link = canonical;
-  target = classifyLinkTarget(canonical.href) ?? target;
-
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
   const known = resolution.read(link);
-  if (known?.state === "document") {
+  if (known?.state === "document" && !(link.ref === null && hasContextUriVariable(link.href))) {
     settle();
     reporter.clear();
     await open(documentRef(known), gesture);

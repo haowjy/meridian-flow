@@ -64,3 +64,15 @@ export type ResolveDocumentLinksResponse = {
   /** The pinned holder's current canonical URI, when it differs from `baseUri` (it moved). */
   holderUri?: string;
 };
+
+/** URI-only projection for clients that need the resolved address, not document metadata. */
+export const resolvedLinkAddressesSchema = z.object({
+  answers: z.array(
+    z.discriminatedUnion("state", [
+      z.object({ state: z.literal("document"), document: z.object({ uri: z.string() }) }),
+      z.object({ state: z.literal("missing"), uri: z.string() }),
+      z.object({ state: z.literal("gone") }),
+      z.object({ state: z.literal("unresolvable") }),
+    ]),
+  ),
+});

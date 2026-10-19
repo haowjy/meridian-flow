@@ -2,6 +2,7 @@
  * context-uri — canonical frontend parsing, formatting, and route adaptation for context URIs.
  */
 import {
+  hasContextUriVariable,
   isWorkScopedScheme,
   type ParseContextUriOptions,
   type ParsedContextUri,
@@ -73,6 +74,7 @@ export function contextUriFromWritePath(
   path: string,
   options: ParseContextUriOptions = {},
 ): string | null {
+  if (hasContextUriVariable(path)) return path;
   const parsed = parseUnifiedContextUri(path, options);
   return parsed.ok ? parsed.value.normalized : null;
 }

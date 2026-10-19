@@ -185,6 +185,8 @@ interface ProjectVisibilityRepository {
 
 interface WorkProjectionRepository {
   findById(id: string): Promise<{
+    isNoWork?: boolean;
+    slug?: import("@meridian/contracts/works").WorkSlug | null;
     id: string;
     name: string;
     projectId: string;
@@ -315,6 +317,32 @@ export function createInMemoryRepositories(
       };
       threads.set(id, updated);
       return projectThread(updated);
+    },
+    async findNotesScope(id) {
+      const location = async (threadId: string | null | undefined) => {
+        const thread = threadId ? threads.get(threadId) : null;
+        const workId = thread ? primaryWorkIdForThread(thread.id) : null;
+        const work = workId ? await options.works?.findById(workId) : null;
+        const root = thread ? threads.get(thread.rootThreadId) : null;
+        if (!thread?.ref || !work) return undefined;
+        if (work.isNoWork) {
+          if (!root?.ref) return undefined;
+          return {
+            threadRef: thread.ref,
+            owner: { kind: "lineage" as const, rootThreadRef: root.ref },
+          };
+        }
+        if (!work.slug) return undefined;
+        return { threadRef: thread.ref, owner: { kind: "work" as const, workSlug: work.slug } };
+      };
+      const thread = threads.get(id);
+      const parentId =
+        thread?.originType === "fork" || thread?.originType === "handoff"
+          ? thread.originTurnId
+            ? turns.get(thread.originTurnId)?.threadId
+            : null
+          : thread?.parentThreadId;
+      return { current: await location(id), parent: await location(parentId) };
     },
     async findById(id) {
       const thread = threads.get(id);

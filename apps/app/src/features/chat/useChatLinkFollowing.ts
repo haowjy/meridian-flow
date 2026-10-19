@@ -6,7 +6,7 @@
  *
  * Scope: the thread's Work, and its lineage while the thread is on No Work (a
  * bare `scratch://` is the lineage's), with no base URI (so relative links are
- * text). It is pending while the thread, prepared notes scope or Works snapshot is loading; a click
+ * text). It is pending while the thread or Works snapshot is loading; a click
  * then waits, showing checking, and is never answered from a guessed Work.
  * A null thread binding remains pending rather than guessing No Work. A No
  * Work thread uses the locked row id whichever snapshot names it first, so
@@ -44,7 +44,6 @@
  * deleted document turns its references dashed without a reload.
  */
 
-import { contextUriVariables } from "@meridian/contracts/context-uri";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -80,7 +79,7 @@ function chatLinkScope({
   projectId: string;
   /** The thread's Work from the Works snapshot; null when unknown or missing. */
   activeWork: Pick<Work, "id"> | null;
-  thread: (Pick<Thread, "workId"> & Partial<Pick<Thread, "id" | "notesScope">>) | null;
+  thread: (Pick<Thread, "workId"> & Partial<Pick<Thread, "id">>) | null;
   /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
   rootThreadId: string | null;
   /** The chat that owns the uploads a bare `uploads://` names. */
@@ -89,8 +88,7 @@ function chatLinkScope({
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
-  if (!thread?.notesScope) return "pending";
-  const scoped = { threadId: thread.id, variables: contextUriVariables(thread.notesScope) };
+  const scoped = { threadId: thread?.id };
   if (activeWork)
     return { projectId, workId: activeWork.id, rootThreadId, chatId, baseUri: null, ...scoped };
   if (!worksSettled || !thread?.workId) return "pending";
@@ -127,7 +125,6 @@ export function useChatLinkFollowing({
   } | null;
 } {
   const { status: worksStatus, noWork } = useWorks(projectId);
-  const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
   const noWorkId = noWork?.id ?? null;
   // The first chat's id: a No Work chat's Scratch is its lineage's.
@@ -146,17 +143,7 @@ export function useChatLinkFollowing({
         noWorkId,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
       }),
-    [
-      activeWork,
-      activeThread,
-      projectId,
-      threadKnown,
-      threadWorkId,
-      noWorkId,
-      lineageId,
-      chatId,
-      worksStatus,
-    ],
+    [activeWork, activeThread, projectId, threadWorkId, noWorkId, lineageId, chatId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,

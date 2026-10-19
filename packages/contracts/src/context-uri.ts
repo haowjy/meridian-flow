@@ -474,10 +474,14 @@ export {
   sourceLocationFromContextUri,
 } from "./context-source-location.js";
 
+/** A variable in the first URI segment needs current server chat scope, not a local address. */
+export function hasContextUriVariable(uri: string): boolean {
+  const parsed = parseContextUri(uri);
+  return !parsed.ok && parsed.error.unresolvedVariable !== undefined;
+}
+
 /** Prepared owner/thread locations; variables are input shorthand, never stored authority. */
 export type ContextNotesLocation = {
-  /** Scope refresh dependency, never part of URI authority. */
-  threadId?: string;
   owner: Extract<ParsedContextAuthority, { kind: "work" | "lineage" }>;
   threadRef: string;
 };

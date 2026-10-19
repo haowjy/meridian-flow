@@ -124,13 +124,6 @@ export function useLinkFollower({
   const chatId = ready?.chatId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const threadId = ready?.threadId;
-  const currentNotes = ready?.variables?.THREAD;
-  const parentNotes = ready?.variables?.PARENT;
-  const variables = useMemo(
-    () => (currentNotes || parentNotes ? { THREAD: currentNotes, PARENT: parentNotes } : undefined),
-    [currentNotes, parentNotes],
-  );
-  const variablesKey = JSON.stringify(variables ?? {});
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
   // The latest host callbacks, read when a follow needs them. A host passing a
@@ -165,11 +158,11 @@ export function useLinkFollower({
     };
     const unregister = resolution.registerResolver(
       createProjectLinkResolver(
-        { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId, threadId, variables },
+        { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId, threadId },
         registered,
         settlements,
       ),
-      { baseUri, projectId, variables },
+      { baseUri, projectId },
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();
@@ -183,7 +176,6 @@ export function useLinkFollower({
     // how an answer about the old one becomes unreachable.
   }, [
     baseUri,
-    variables,
     threadId,
     holderDocumentId,
     projectId,
@@ -238,7 +230,7 @@ export function useLinkFollower({
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
   const scopeKey = ready
-    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatId ?? ""}\u0000${threadId ?? ""}\u0000${variablesKey}`
+    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatId ?? ""}\u0000${threadId ?? ""}`
     : pending
       ? null
       : "";

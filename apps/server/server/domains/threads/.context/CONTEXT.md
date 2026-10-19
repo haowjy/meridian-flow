@@ -325,15 +325,11 @@ source owners available to a live fork and report `owners[].trashed`.
 
 ## Notes address scope
 
-The ordinary validated thread projection carries `notesScope` (current and
-optional parent Scratch owner/thread locations). Its SQL reads primary Work
-membership and the lineage handle in the same query. A fork or handoff uses
-its origin turn's thread as parent; otherwise a subagent uses its spawning
-thread. This is not the top-primary uploads owner. Browser and mf consume
-this projection; they never fetch a parent on each link click. Rebinding a
-chat changes its projected current location and moves no notes.
-The prepared locations also carry source-thread identity as a cache dependency,
-not URI authority. Work-binding convergence clears a stale current location and
-refreshes snapshots whose parent location names the rebound thread. Until that
-ordinary snapshot read returns, the missing variable is unasked, never resolved
-against its previous owner.
+`ThreadRepository.findNotesScope` reads current and optional parent Scratch
+owner/thread locations only for server consumers; no thread DTO or snapshot
+carries them. Its SQL reads primary Work membership and the lineage handle. A
+fork or handoff uses its origin turn's thread as parent; otherwise a subagent
+uses its spawning thread. This is not the top-primary uploads owner. Browser
+and mf send raw variable hrefs with a proved chat scope to link resolution.
+Rebinding changes the next resolution and moves no notes; it requires no
+dependent snapshot refresh or parent event delivery.
