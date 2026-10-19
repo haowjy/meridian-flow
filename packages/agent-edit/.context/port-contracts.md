@@ -25,6 +25,15 @@ client.
 
 ### `DocumentCoordinator` (`src/ports/document-coordinator.ts`)
 
+`resolveRevertSource({ threadId, documentId, edit, destination })` reads this
+thread's immutable agent receipt, independently of destination write admission.
+It returns A (after the write), B (before it), and the receipt's effect ranges;
+the caller destroys both gc-off docs. The host reuses the supplied destination
+copy for a same-room source, otherwise reads the recorded source room. Both
+snapshots must be contained there. Unknown handles, receipts without cuts,
+unavailable rooms and uncontained cuts are explicit refusals, never an identity
+inverse fallback. These cuts belong to the receipt, not the observation frontier.
+
 `readRoom(docId, staged, access)` is every model call's read: a disposable
 copy of the room the host holds (`doc`, the `room` label it read, its
 `generation`), with the edit scope's staged entries reconciled against the

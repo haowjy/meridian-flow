@@ -123,6 +123,9 @@ export function harness(
 }
 
 export class MemoryCoordinator implements DocumentCoordinator {
+  resolveRevertSource: DocumentCoordinator["resolveRevertSource"] = async () => ({
+    refusal: "invalid_write",
+  });
   readonly docs = new Map<string, Y.Doc>();
   concurrentUpdatesSince?: DocumentCoordinator["concurrentUpdatesSince"];
   private journal?: UpdateJournal;

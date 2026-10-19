@@ -80,6 +80,23 @@ export function finalizeAppend(
     return done({ status: "preconditionFailed" });
   const moved = !prefixHeld || read.tail.length > 0;
 
+  // Canonical logical writes are contiguous. Reconcile drops whole writes and their
+  // dependents without reordering survivors; cuts bracket only the novel surviving rows.
+  const groups = new Map<string, { rowIndexes: number[]; cuts?: AppendReceiptGroup["cuts"] }>();
+  let active:
+    | {
+        key: string;
+        group: { rowIndexes: number[]; cuts?: AppendReceiptGroup["cuts"] };
+        before?: Uint8Array;
+      }
+    | undefined;
+  const finishGroup = () => {
+    if (active?.before)
+      active.group.cuts = {
+        before: active.before,
+        after: Y.encodeSnapshotV2(Y.snapshot(doc)),
+      };
+  };
   const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
   for (const row of input.rows) {
     if (input.containment.contains(doc, row.updateData)) continue;
@@ -95,6 +112,16 @@ export function finalizeAppend(
         restorationAliases: certifyWriterRestorations(doc, novel),
       };
     }
+    const key = row.documentEditKey ?? `${row.threadId}:${row.wId ?? `#${kept.length}`}`;
+    if (key !== active?.key) {
+      finishGroup();
+      if (groups.has(key)) throw new Error("Noncontiguous logical append write");
+      active = { key, group: { rowIndexes: [] } };
+      groups.set(key, active.group);
+    }
+    if (row.source === "agent" && row.threadId && !active.before)
+      active.before = Y.encodeSnapshotV2(Y.snapshot(doc));
+    active.group.rowIndexes.push(kept.length);
     Y.applyUpdate(doc, novel);
     const missing = pendingClocks(doc);
     if (missing.length) return done({ status: "prefixMissing", clocks: missing });
@@ -107,13 +134,10 @@ export function finalizeAppend(
   if (!kept.length)
     return { ...done({ status: "contained" }), cut: { beforeState: before, afterState: before } };
 
-  const groups = new Map<string, number[]>();
-  for (const [index, { row }] of kept.entries()) {
-    const key = row.documentEditKey ?? `${row.threadId}:${row.wId ?? `#${index}`}`;
-    groups.set(key, [...(groups.get(key) ?? []), index]);
-  }
-  const receipts: AppendReceiptGroup[] = [...groups.values()].map((rowIndexes) => ({
+  finishGroup();
+  const receipts: AppendReceiptGroup[] = [...groups.values()].map(({ rowIndexes, cuts }) => ({
     rowIndexes,
+    cuts,
     parts: captureEditParts(
       doc,
       rowIndexes.map((index) => ({
