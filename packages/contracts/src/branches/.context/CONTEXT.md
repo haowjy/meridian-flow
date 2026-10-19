@@ -9,7 +9,7 @@ The contracts name five things; never let one stand in for another.
 |---|---|---|
 | **branch** | The Work's one active branch (a `branches` row). Closes only on Discard all and purge. | `branchId` |
 | **item** | One document's reviewable change inside the branch, with or without a text draft (an empty create and a created image have none). | `itemKey` (`${branchId}:${documentId}`) |
-| **draft** | The server's per-document text draft in a branch. Never on the wire. | `hasDraft` and the opaque `reviewRoomName` only |
+| **draft** | The server's per-document text draft in a branch. Stable for one room lifetime. | addressed `draftId`, `hasDraft` and opaque `reviewRoomName` |
 | **command** | One writer action (Apply, Discard, per item, per change or for all). | a client-made `commandId` |
 | **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }`. | `item=` and `change=` in the URL, the API review selector `reviewWorkId` + `itemKey` |
 
@@ -35,7 +35,7 @@ The client never reads `branchId` as a document draft id. The server alone maps 
 
 ## Commands
 
-`ApplyClick` carries a UUID command id, a base64 `Y.encodeSnapshotV2` snapshot,
+`ApplyClick` carries a UUID command id, the captured stable `draftId`, a base64 `Y.encodeSnapshotV2` snapshot,
 one block-range `baseViewDelta` and unique nonempty projection group ids. Patch
 blocks are ProseMirror node JSON; the server constructs and validates the nodes.
 The reply is for that id only: `applied`, `closed` (including a removal record
@@ -62,6 +62,6 @@ the ordinary class rules. Such effects need item-level Apply or Discard.
 Trail evidence and peer marks are read-only. Undo of an AI change is the model's
 `write undo` or the receipt's Undo, never a review command.
 
-The contracts expose no durable storage identity or table name. The collab
+The contracts expose the stable draft identity, not storage table names. The collab
 domain maps an `itemKey` to `document_drafts` and owns
 `draft_write_journal` and `push_lineage` integration.

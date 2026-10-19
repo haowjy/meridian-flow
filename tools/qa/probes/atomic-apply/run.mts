@@ -10,7 +10,9 @@ import {
   measureApplyAppend,
 } from "../../../../apps/server/server/domains/collab/adapters/drizzle-apply-click.ts";
 import { createDrizzleBranchCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-commands.ts";
+import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
 import { createDrizzleChangeTrailAggregateWriter } from "../../../../apps/server/server/domains/collab/adapters/drizzle-change-trail-aggregate.ts";
+import { createDraftClose } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-close.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createStaticDocumentLinkScopes } from "../../../../apps/server/server/domains/collab/adapters/in-memory/static-document-link-scopes.ts";
@@ -91,8 +93,9 @@ async function fixture(
   baseText: string[],
   draftText: string[] = baseText,
   existing?: { documentId: string; live: Y.Doc },
+  existingWork?: Awaited<ReturnType<typeof h.seedWork>>,
 ) {
-  const work = await h.seedWork(`apply-${client++}`);
+  const work = existingWork ?? (await h.seedWork(`apply-${client++}`));
   const document = existing ?? (await h.seedDocument(`apply-${client++}`, baseText.join("\n\n")));
   // The old harness live helper writes one paragraph. Make the requested blocks through the journal.
   if (!existing) {
@@ -201,6 +204,7 @@ async function fixture(
       );
       const request = {
         commandId: randomUUID(),
+        draftId: snapshot.draftId,
         snapshot: Buffer.from(Y.encodeSnapshotV2(Y.snapshot(room))).toString("base64"),
         baseViewDelta: baseViewDelta(
           schema,
@@ -480,6 +484,43 @@ try {
     next.request.commandId = randomUUID();
     assert.equal((await f.send(next)).status, "closed");
     f.close();
+  });
+  await row("delayed deletion click stays bound to discarded draft after replacement", async () => {
+    const a = await fixture(["The big black cat sat."], ["The cat sat."]);
+    const click = a.click();
+    const discard = createDrizzleBranchDiscard(h.db, {
+      workProjection: h.projection,
+      branches: h.branches,
+      close: createDraftClose(),
+      removal: createTestDocumentRemoval(h.db),
+      catalog: { refreshSources: async () => "0" },
+    });
+    await discard.discardLocked({
+      workId: a.workId,
+      kernel: { branchId: a.branchId, userId: h.ids.user, selection: { kind: "whole" } },
+    });
+    const branch = await h.projection.mutate({ works: [a.workId] }, () =>
+      h.branches.ensureActiveLocked({
+        workId: a.workId,
+        projectId: h.ids.project,
+        createdBy: h.ids.user,
+        originThreadId: a.threadId,
+      }),
+    );
+    const b = await fixture(
+      ["The big black cat sat."],
+      ["The cat sat."],
+      { documentId: a.documentId, live: clone(a.live) },
+      { ...a, branchId: branch.id },
+    );
+    assert.notEqual(a.draftId, b.draftId);
+    assert.notEqual(a.branchId, b.branchId);
+    const answer = await a.send(click);
+    console.log("delayed replacement answer", answer.status, await a.liveText());
+    assert.equal(answer.status, "closed");
+    assert.deepEqual(await a.liveText(), ["The big black cat sat."]);
+    a.close();
+    b.close();
   });
   await row("two Works merge distinct changes into one live paragraph", async () => {
     const a = await fixture(["The cat sat."], ["A cat sat."]);

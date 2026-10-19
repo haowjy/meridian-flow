@@ -2,8 +2,8 @@
 
 This directory owns review wire vocabulary. `branchId` names the Work's pending
 file tree, `itemKey` names one document review, and `commandId` names one writer
-action. A draft is one document's pending version; its storage ID stays behind
-the server boundary.
+action. A draft is one document's pending version; addressed metadata supplies its stable
+`draftId`, which text Apply captures so it cannot target a replacement room.
 
 - Rows carry `contextLocation: { scheme, path } | null`; preserve the scheme
   and the leading slash in the path.
@@ -11,8 +11,8 @@ the server boundary.
   application identity.
 - The list contains current reviewable work only; completed review is not a
   durable draft-list receipt.
-- Keep storage identities behind the DTOs; the server maps an `itemKey` to its
-  document draft and owns draft integration.
+- The server maps an `itemKey` to its current document draft; text Apply instead
+  binds the captured `draftId` to its Work and document and never retargets it.
 - Apply is a frozen snapshot click with a command-id outcome, never a revision
   fence. Preview and persisted settlement results retain their older vocabulary
   until those paths are retired.

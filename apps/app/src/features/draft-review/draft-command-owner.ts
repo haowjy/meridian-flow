@@ -392,6 +392,7 @@ export class DraftCommandOwner {
     );
     const body: ApplyClick = {
       commandId: crypto.randomUUID(),
+      draftId: this.identities.get(ref.itemKey),
       snapshot: base64(Y.encodeSnapshotV2(Y.snapshot(entry.session.document))),
       groupIds: [...ids],
       baseViewDelta: baseViewDelta(

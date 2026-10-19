@@ -25,6 +25,8 @@ export type ApplySpanPatch = {
 /** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
 export type ApplyClick = {
   commandId: BranchCommandId;
+  /** Stable room identity; omitted only for a no-room creation reveal. */
+  draftId?: string;
   /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted only for a no-room creation reveal. */
   snapshot?: string;
   baseViewDelta: ApplySpanPatch[];

@@ -40,7 +40,7 @@ export type CompiledClick = {
 };
 export interface ApplyClickStore {
   closed(command: ApplyClickCommand): Promise<ApplyClickResult>;
-  loadBase(draftId: string): Promise<DraftBase | null>;
+  loadBase(command: ApplyClickCommand): Promise<DraftBase | null>;
   execute(
     command: ApplyClickCommand,
     prepared:
@@ -190,12 +190,12 @@ export function createApplyClickService(input: {
     if (first) return first;
     await testHook("apply.beforeCompile");
     try {
-      const resolved = await input.identity.resolveReviewItemByDocument(command);
       const revealOnly =
         !command.request.snapshot &&
         !command.request.groupIds.length &&
         !command.request.baseViewDelta.length;
       if (revealOnly) {
+        const resolved = await input.identity.resolveReviewItemByDocument(command);
         if (
           !resolved ||
           resolved.draftId ||
@@ -206,18 +206,15 @@ export function createApplyClickService(input: {
         return await input.store.execute(command, { kind: "reveal", branchId: resolved.branchId });
       }
       if (!command.request.groupIds.length) throw new ApplyClickRefused("malformed");
-      if (!resolved?.draftId) {
-        const result = await input.store.closed(command);
-        return (await lookup()) ?? result;
-      }
+      if (!command.request.draftId) throw new ApplyClickRefused("malformed");
       const start = performance.now();
-      const base = await input.store.loadBase(resolved.draftId);
+      const base = await input.store.loadBase(command);
       if (!base || base.snapshot.status === "closed") {
         const result = await input.store.closed(command);
         return (await lookup()) ?? result;
       }
       // Receipts are captured after this replica, so they cover every item a contained click can name.
-      const captured = await input.evidence.capture(resolved.draftId);
+      const captured = await input.evidence.capture(command.request.draftId);
       if (!captured || captured.draft.documentDraft.status === "closed") {
         const result = await input.store.closed(command);
         return (await lookup()) ?? result;
