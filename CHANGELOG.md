@@ -11,6 +11,9 @@
 - Protect draft review's server-owned roots at writer and agent admission, admit server journal rows,
   and replace Apply requests with frozen snapshot clicks (execution follows in the Apply lane).
 
+- Draft receipt readers derive pending, applied and discarded status from one captured text review, including retained closed drafts.
+
+- Draft Apply evidence recognizes Undo-restored AI items and preserves unnamed receipt membership after a conversation or turn is deleted.
 
 - Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
 
