@@ -16,7 +16,7 @@ import {
 } from "@/client/query/branch-command-executor";
 import type { DraftRef } from "@/client/query/branch-command-record";
 import { getContextTabs, matchesReviewItem } from "@/client/stores";
-import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import { useOptionalRemovedNotices } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
   useIsCurrentContextRoute,
@@ -40,7 +40,7 @@ export function useWorkBranchCommands({
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
   const lifecycle = useDraftOnlyLifecycle(projectId);
-  const removal = useContextRemovalCoordinator();
+  const notices = useOptionalRemovedNotices();
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
   const frozen = !work || isWorkArchived(work);
@@ -76,8 +76,8 @@ export function useWorkBranchCommands({
      * (no outcome: it failed).
      */
     const ownDiscard = (mode: "apply" | "discard", documentId: string) => {
-      if (mode !== "discard") return () => undefined;
-      const settle = removal.markOwnRemoval(projectId, [documentId], "discarded");
+      if (mode !== "discard" || !notices) return () => undefined;
+      const settle = notices.markOwnRemoval(projectId, [documentId]);
       return (outcome?: BranchCommandOutcome) =>
         settle(
           outcome?.kind === "discarded" ||
@@ -221,7 +221,7 @@ export function useWorkBranchCommands({
     frozen,
     queryClient,
     lifecycle,
-    removal,
+    notices,
     openContextRoute,
     isCurrentContextRoute,
   ]);

@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
+import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
@@ -37,7 +38,7 @@ export type ContextTabBarProps = {
    * expand toggle when the dock is collapsed). Same render rule as `leading`.
    */
   trailing?: ReactNode;
-  /** Feedback in the strip's free end, where a closed tab's width went; never takes a tab's width. */
+  /** Feedback in the strip's free end, where a closed tab's width went. */
   notice?: ReactNode;
 };
 
@@ -150,11 +151,9 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       </div>
-      {/* The strip's free end: tabs keep their width and a notice takes what is
-          left, never less than its glyph and dismiss. */}
-      <div className="@container flex min-w-0 flex-1 basis-0 items-stretch has-[[data-removed-document-notice]]:min-w-16">
-        {notice}
-      </div>
+      {/* The strip's free end: tabs keep their width until a notice needs its
+          short sentence, then they scroll. */}
+      <RemovedNoticeSlot>{notice}</RemovedNoticeSlot>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
   );

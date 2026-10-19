@@ -32,7 +32,7 @@ import {
   useAccountId,
   useAccountResourceProjection,
 } from "@/features/project/context/account-feature-context";
-import { useRemovedRoomCheck } from "@/features/project/context/use-removed-room-check";
+import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -147,7 +147,13 @@ function ActiveSessionEditorView({
   const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
   const inReview = identity.surface === "review";
-  const removedCheck = useRemovedRoomCheck(projectId ?? "", documentId, session);
+  // A room the server closed as removed (4208) says why while its tab stays open.
+  const removal = useRemovalRecord(
+    projectId ?? "",
+    snapshot.connectionState?.kind === "reset" && snapshot.connectionState.disposition === "removed"
+      ? documentId
+      : null,
+  );
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -385,7 +391,7 @@ function ActiveSessionEditorView({
           <SyncStatus
             session={session}
             onReopen={onReopen}
-            removal={removedCheck?.status === "removed" ? removedCheck.record : undefined}
+            removal={removal?.kind === "removed" ? removal.record : undefined}
           />
         </div>
         {snapshot.schemaFence ? <SchemaFenceNotice fence={snapshot.schemaFence} /> : null}

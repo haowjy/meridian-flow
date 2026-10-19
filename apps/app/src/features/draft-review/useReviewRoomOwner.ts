@@ -2,7 +2,15 @@
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type Dispatch, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type Dispatch,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   type ChangeCommandRecords,
   currentChangeCommandRecords,
@@ -16,7 +24,7 @@ import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/
 import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
 import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
-import { useRemovedRoomCheck } from "@/features/project/context/use-removed-room-check";
+import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { reviewChangesOfPreview } from "./review-changes";
@@ -295,7 +303,7 @@ export function useReviewRoomOwner({
               return;
             case "removed":
               // The document is gone: keep the terminal session, read-only, until
-              // availability closes the tab or the writer does (`removedCheck`).
+              // availability closes the tab or the writer does (`removal`).
               return;
             case "superseded":
               rebuilding = true;
@@ -338,15 +346,22 @@ export function useReviewRoomOwner({
 
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
-  // The server closed the draft room because its document was removed: the
-  // lookup closes the tab with the record; the Work's drafts drop the closed draft.
-  const removedCheck = useRemovedRoomCheck(projectId, documentId, session);
+  // The server closed the draft room because its document was removed: asking
+  // availability closes the tab; the Work's drafts drop the closed draft.
+  const roomRemoved = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => session?.subscribe(listener) ?? (() => undefined),
+      [session],
+    ),
+    () => session?.resetDisposition === "removed",
+  );
+  const removal = useRemovalRecord(projectId, roomRemoved ? documentId : null);
   useEffect(() => {
-    if (removedCheck)
+    if (removal?.kind === "removed")
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
       });
-  }, [projectId, queryClient, removedCheck, workId]);
+  }, [projectId, queryClient, removal, workId]);
   return {
     session,
     /** The writer's unsent edits of a retired generation have not all reached the room yet. */
