@@ -151,7 +151,7 @@ export function DraftReviewBand({
             size="xs"
             className="identity-apply h-5.5"
             aria-label={t`Apply draft`}
-            disabled={locked || !controller.canApplyReviewedDraft}
+            disabled={locked || !header.canApply}
             onClick={header.applyDraft}
           >
             {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}

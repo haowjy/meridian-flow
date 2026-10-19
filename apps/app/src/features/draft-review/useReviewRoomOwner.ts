@@ -2,7 +2,7 @@
 import { type Dispatch, useEffect, useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
-import { useRoomReview } from "./useRoomReview";
+import { useRoomBindings } from "./useRoomReview";
 
 export function useReviewRoomOwner(input: {
   projectId: string;
@@ -26,27 +26,36 @@ export function useReviewRoomOwner(input: {
         unsentText: command.unsentText,
       });
   }, [command.hidden, command.closed, review?.itemKey, dispatch]);
-  const read = useRoomReview(
-    review ? { projectId: input.projectId, workId: input.workId, ...review } : null,
-  );
+  const read = useRoomBindings(
+    review
+      ? [
+          {
+            projectId: input.projectId,
+            workId: input.workId,
+            documentId: review.documentId,
+            itemKey: review.itemKey,
+          },
+        ]
+      : [],
+  )[0];
   useEffect(() => {
     if (!review || command.closed) return;
-    if (read.roomName)
+    if (read?.roomName)
       dispatch({
         type: "roomResolved",
         documentId: review.documentId,
         itemKey: review.itemKey,
         roomName: read.roomName,
       });
-    else if (read.status === "error")
+    else if (read?.status === "error")
       dispatch({ type: "roomFailed", documentId: review.documentId, itemKey: review.itemKey });
-  }, [read.roomName, read.status, command.closed, review?.documentId, review?.itemKey, dispatch]);
+  }, [read?.roomName, read?.status, command.closed, review?.documentId, review?.itemKey, dispatch]);
   return {
-    session: read.session,
-    roomName: read.roomName,
-    runtime: read.runtime,
-    reopen: read.retry,
-    inputEligible: read.usable !== null,
+    session: read?.session ?? null,
+    roomName: read?.roomName ?? null,
+    runtime: read?.runtime ?? null,
+    reopen: read?.retry ?? (() => {}),
+    inputEligible: read?.usable != null,
     carryPending: false,
   };
 }

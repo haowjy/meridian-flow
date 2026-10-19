@@ -5,10 +5,9 @@ import {
   REVIEW_BASE_FRAGMENT,
   type ReviewGroup,
   type ReviewProjection,
-  readBlocks,
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import type { Node as PMNode } from "@tiptap/pm/model";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import { initProseMirrorDoc, refreshProseMirrorDoc } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import type { ProjectedReview } from "@/core/editor/extensions/inline-review";
@@ -23,9 +22,28 @@ export function groupAnchor(group: ReviewGroup): number {
   return Math.min(...group.hunks.map((hunk) => hunk.inserted?.from ?? hunk.anchor));
 }
 
-/** The base blocks of a room's `review_base`: read once per base change by whoever keeps them. */
+const bases = new WeakMap<
+  Y.XmlFragment,
+  { content: ReturnType<typeof retainFragment>; root: PMNode | null; blocks: PMNode[] }
+>();
+
+/** Retain the base's unchanged nodes and block array, just as the mounted draft binding does. */
 export function readBase(doc: Y.Doc, blockSchema = roomContent(doc).doc.type.schema): PMNode[] {
-  return readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), blockSchema);
+  const fragment = doc.getXmlFragment(REVIEW_BASE_FRAGMENT);
+  let base = bases.get(fragment);
+  if (!base || base.content.doc.type.schema !== blockSchema) {
+    base?.content.dispose();
+    base = { content: retainFragment(fragment, blockSchema), root: null, blocks: [] };
+    bases.set(fragment, base);
+  }
+  if (base.root !== base.content.doc) {
+    base.root = base.content.doc;
+    base.blocks = [];
+    base.root.forEach((node) => {
+      base.blocks.push(node);
+    });
+  }
+  return base.blocks;
 }
 
 /**
@@ -47,27 +65,31 @@ export function roomContent(doc: Y.Doc) {
   let content = roomContents.get(doc);
   if (!content) {
     const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    const retained = initProseMirrorDoc(fragment, roomSchema());
+    const retained = retainFragment(fragment, roomSchema());
     roomContents.set(doc, retained);
-    const refresh = (_events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
-      const next = refreshProseMirrorDoc(
-        fragment,
-        retained.doc.type.schema,
-        retained.meta,
-        transaction,
-      );
-      retained.doc = next.doc;
-    };
-    // Observe Yjs, not PM steps: remote writes and Undo are one whole-document replace step,
-    // even though the binding preserves every untouched node's identity inside that replacement.
-    fragment.observeDeep(refresh);
-    doc.once("destroy", () => {
-      fragment.unobserveDeep(refresh);
-      roomContents.delete(doc);
-    });
+    doc.once("destroy", () => roomContents.delete(doc));
     content = retained;
   }
   return content;
+}
+
+function retainFragment(fragment: Y.XmlFragment, schema: Schema) {
+  const retained = initProseMirrorDoc(fragment, schema);
+  const refresh = (_events: Y.YEvent<Y.AbstractType<unknown>>[], transaction: Y.Transaction) => {
+    retained.doc = refreshProseMirrorDoc(
+      fragment,
+      retained.doc.type.schema,
+      retained.meta,
+      transaction,
+    ).doc;
+  };
+  const dispose = () => {
+    fragment.unobserveDeep(refresh);
+    fragment.doc?.off("destroy", dispose);
+  };
+  fragment.observeDeep(refresh);
+  fragment.doc?.on("destroy", dispose);
+  return Object.assign(retained, { dispose });
 }
 
 /** Adopt the editor's schema and retained identities off the typing path, including after detach. */

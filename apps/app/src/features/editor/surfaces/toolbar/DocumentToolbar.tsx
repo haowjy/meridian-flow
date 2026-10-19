@@ -12,6 +12,7 @@
  * apply. This file renders that matrix and dispatches; it decides nothing.
  */
 import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
@@ -74,6 +75,7 @@ export const DocumentToolbar = memo(function DocumentToolbar({
   onUploadFigure,
   uploadAvailable = true,
 }: DocumentToolbarProps) {
+  useLingui();
   const selectToolbarState = useCallback(
     ({ editor: target }: { editor: Editor | null }) => ({
       controls: documentToolbarControls({

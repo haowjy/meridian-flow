@@ -53,7 +53,6 @@ export type DraftReviewController = {
   reviewRoomName: string | null;
   reviewRoomError: boolean;
   isApplying: boolean;
-  canApplyReviewedDraft: boolean;
   /** Dispatch the normalized target through this review's Work authority. */
   commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
@@ -146,8 +145,6 @@ export function useDraftReviewController({
   const isApplying = commands.owner.state(inlineReview?.itemKey ?? "").applying;
   const dispositionLocked = commands.dispositionLocked;
   const changesLocked = commands.changesLocked;
-  const canApplyReviewedDraft =
-    state.surface.kind === "inline" && commands.owner.canApply(state.surface.itemKey);
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
@@ -279,7 +276,6 @@ export function useDraftReviewController({
       reviewRoomName: inlineReview?.roomName ?? null,
       reviewRoomError: inlineReview?.roomError ?? false,
       isApplying,
-      canApplyReviewedDraft,
       commandChange: commands.commandChange,
       dispositionLocked,
       changesLocked,
@@ -309,7 +305,6 @@ export function useDraftReviewController({
       threadId,
       inlineReview,
       isApplying,
-      canApplyReviewedDraft,
       dispositionLocked,
       changesLocked,
       state.marksVisible,

@@ -39,6 +39,7 @@ export type ReviewHeaderModel = {
   /** The next draft in the switcher, if the Work has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
+  canApply: boolean;
   /** Nothing left to apply: the server closed the draft, so its commands go. */
   finished: boolean;
   /** The draft is open but lists no change: formatting remains, handled by Apply draft or Discard draft. */
@@ -121,6 +122,7 @@ export function useReviewHeader({
     view,
     next,
     locked,
+    canApply: ready && view.items.length > 0,
     finished,
     completing,
     commandError,

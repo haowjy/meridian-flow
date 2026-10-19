@@ -40,7 +40,7 @@ export function useReviewChanges(
   const { documentId, itemKey, changes, items, completing, finished, status, retry } =
     useOpenReviewChanges(controller, options);
   // Focus belongs to the review; this only resolves its group id.
-  const focused = resolveFocusedChange(changes, controller.focus);
+  const focused = resolveFocusedChange(changes, controller.focus) ?? changes[0] ?? null;
   const focusedIndex = focused ? changes.indexOf(focused) : -1;
 
   const review = useMemo(

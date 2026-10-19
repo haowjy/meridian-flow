@@ -15,8 +15,9 @@ import { type Command, Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
-import { Mapping } from "@tiptap/pm/transform";
+import { Mapping, StepMap } from "@tiptap/pm/transform";
 import { DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 import { CHANGE_ATTR, paintDecorations } from "./decorations";
 import { mapReview, type ProjectedReview } from "./model";
 import { matchRenderKeys } from "./paint-identity";
@@ -230,11 +231,26 @@ export function buildInlineReviewPlugin() {
         const meta = tr.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
         if (!meta && !tr.docChanged) return previous;
         const next = { ...previous };
+        let mapping = tr.mapping;
+        if (tr.docChanged && isRemoteDocumentRebuild(tr)) {
+          // The binding replaces the PM root even for one peer key. Its step map
+          // erases every range; the actual changed content keeps untouched paint in place.
+          mapping = new Mapping();
+          const start = _oldState.doc.content.findDiffStart(newState.doc.content);
+          if (start !== null) {
+            const end = _oldState.doc.content.findDiffEnd(newState.doc.content);
+            if (!end) throw new Error("A changed document must have a diff end");
+            const overlap = Math.max(0, start - Math.min(end.a, end.b));
+            mapping.appendMap(
+              new StepMap([start, end.a + overlap - start, end.b + overlap - start]),
+            );
+          }
+        }
         let repaint = false;
         // Every repaint and scroll reads current positions through `currentReview`, so the review follows the
         // text without a keystroke paying to map every change.
         if (tr.docChanged && meta?.kind !== "set-review" && next.review)
-          next.edits = { mapping: tr.mapping, doc: newState.doc, earlier: previous.edits };
+          next.edits = { mapping, doc: newState.doc, earlier: previous.edits };
         switch (meta?.kind) {
           case "set-review": {
             // A projection of another document would place marks on the wrong text; the next one is coming.
@@ -300,7 +316,19 @@ export function buildInlineReviewPlugin() {
             repaint = next.barSlot;
             break;
         }
-        if (tr.docChanged) next.decorations = previous.decorations.map(tr.mapping, tr.doc);
+        if (tr.docChanged) {
+          // Yjs rebuilds the whole PM document. Inclusive marks whose edges were both
+          // erased would otherwise expand to the entire replacement until the next frame.
+          const erased = previous.decorations
+            .find()
+            .filter(
+              (span) =>
+                span.from < span.to &&
+                mapping.mapResult(span.from, 1).deleted &&
+                mapping.mapResult(span.to, -1).deleted,
+            );
+          next.decorations = previous.decorations.remove(erased).map(mapping, tr.doc);
+        }
         if (repaint && !next.composing) Object.assign(next, paint(next));
         return next;
       },

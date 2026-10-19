@@ -136,14 +136,23 @@ export class DraftCommandOwner {
     state: Partial<DraftCommandState>,
     id = this.identities.get(itemKey) ?? itemKey,
   ) {
-    this.records.set(id, { ...(this.records.get(id) ?? EMPTY), ...state });
+    const previous = this.records.get(id) ?? EMPTY;
+    if (
+      Object.entries(state).every(
+        ([key, value]) => previous[key as keyof DraftCommandState] === value,
+      )
+    )
+      return;
+    this.records.set(id, { ...previous, ...state });
     this.publish();
   }
 
   bind(ref: DraftRef, session: DocumentSession): () => void {
     const address = parseYjsRoomName(session.roomKey);
     if (address?.kind !== "draft") throw new Error("Commands require a draft room");
+    const previousId = this.identities.get(ref.itemKey);
     this.identities.set(ref.itemKey, address.draftId);
+    if (previousId !== address.draftId) this.publish();
     let entry = this.entries.get(address.draftId);
     if (!entry) {
       const owned: Entry = {
@@ -351,10 +360,6 @@ export class DraftCommandOwner {
     this.detach(entry);
     this.entries.delete(id);
     if (this.byItem.get(entry.ref.itemKey) === entry) this.byItem.delete(entry.ref.itemKey);
-  }
-  canApply(itemKey: string): boolean {
-    const state = this.byItem.get(itemKey)?.binding?.runtime.state();
-    return Boolean(state?.ready && state.changes.length);
   }
 
   reveal(ref: DraftRef): { sent: boolean; outcome: Promise<CommandOutcome> } {
