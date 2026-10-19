@@ -100,13 +100,16 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     key: string,
     bytes: Uint8Array,
     mimeType: string,
+    signal?: AbortSignal,
   ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
     const target = this.objectPath(key);
     if (!target.ok) return target;
 
     try {
+      signal?.throwIfAborted();
       await mkdir(path.dirname(target.value), { recursive: true });
-      await writeFile(target.value, bytes);
+      signal?.throwIfAborted();
+      await writeFile(target.value, bytes, { signal });
       await writeFile(
         this.metadataPath(target.value),
         JSON.stringify(
@@ -119,6 +122,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
           null,
           2,
         ),
+        { signal },
       );
       return ok({ storageUrl: createObjectStorageUrl(key) });
     } catch (error) {
@@ -126,14 +130,17 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
+  async get(
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
     const target = this.objectPath(key);
     if (!target.ok) return target;
 
     try {
       const [bytes, metadata] = await Promise.all([
-        readFile(target.value),
-        readFile(this.metadataPath(target.value), "utf8"),
+        readFile(target.value, { signal }),
+        readFile(this.metadataPath(target.value), { encoding: "utf8", signal }),
       ]);
       const parsed = JSON.parse(metadata) as LocalObjectMetadata;
       return ok({ bytes: new Uint8Array(bytes), mimeType: parsed.mimeType });
@@ -211,11 +218,12 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
     return ok(`${this.signedUrlBasePath}/${payload}.${signature}`);
   }
 
-  async delete(key: string): Promise<ObjectStoreResult<void>> {
+  async delete(key: string, signal?: AbortSignal): Promise<ObjectStoreResult<void>> {
     const target = this.objectPath(key);
     if (!target.ok) return target;
 
     try {
+      signal?.throwIfAborted();
       await unlink(target.value).catch((error: unknown) => {
         if (
           typeof error === "object" &&
@@ -226,6 +234,7 @@ export class LocalObjectStoreAdapter implements ObjectStorePort {
           return;
         throw error;
       });
+      signal?.throwIfAborted();
       await unlink(this.metadataPath(target.value)).catch((error: unknown) => {
         if (
           typeof error === "object" &&

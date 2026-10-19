@@ -30,8 +30,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
     serializeVersionedDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
-    readCopySource: (documentId) =>
-      scopes.within(by(documentId), () => engine.readCopySource(documentId)),
+    readCopySource: (documentId, signal) =>
+      scopes.within(by(documentId), () => engine.readCopySource(documentId, signal)),
     seedFromNodes: (documentId, nodes) =>
       scopes.within(by(documentId), () => engine.seedFromNodes(documentId, nodes)),
     readVersionedMarkdown: (documentId) =>

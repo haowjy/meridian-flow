@@ -13,7 +13,7 @@ import {
   handoffSeedMetadata,
   type ThreadRepositories,
 } from "../../threads/index.js";
-import type { EventJournalWriter, LiveEventWriter } from "../../threads/ports/event-journal.js";
+import type { LiveEventWriter } from "../../threads/ports/event-journal.js";
 import type {
   HandoffBriefHold,
   HandoffBriefLauncher,
@@ -71,6 +71,10 @@ type HandoffBriefServiceDeps = {
   generate: BriefGeneration;
   publishStatus(threadId: ThreadId): Promise<void>;
   schedulePostCommit(task: () => Promise<void>): void;
+};
+
+type BriefLaunch = Parameters<HandoffBriefLauncher["launchAfterCommit"]>[0] & {
+  prepared?: () => void;
 };
 
 type LiveBrief = { controller: AbortController; threadId: ThreadId };
@@ -142,7 +146,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         try {
           await claim.release();
         } finally {
-          await wakeAfterRelease(threadId);
+          backgroundTasks.track(wakeAfterRelease(threadId), "handoff release wake");
         }
       },
     };
@@ -223,20 +227,58 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     if (settled) publishStatus(threadId);
   }
 
-  async function launch(input: {
-    threadId: ThreadId;
-    seedTurnId: TurnId;
-    claim: HandoffBriefHold;
-  }): Promise<void> {
+  async function launch(input: BriefLaunch): Promise<void> {
     const controller = new AbortController();
     const holder: LiveBrief = { controller, threadId: input.threadId };
     live.set(input.seedTurnId, holder);
     const removeLost = input.claim.onLost(() => controller.abort("lost_claim"));
     let poll: ReturnType<typeof setInterval> | undefined;
     try {
+      poll = setInterval(() => {
+        backgroundTasks.track(
+          deps.repos.turns
+            .findById(input.seedTurnId)
+            .then((seed) => {
+              if (!seed) controller.abort("lost_claim");
+              else if (seed.status !== "pending")
+                controller.abort(seed.status === "cancelled" ? "stop" : "lost_claim");
+            })
+            .catch((error) => {
+              emitEvent(deps.eventSink, {
+                level: "warn",
+                source: "runtime.handoff",
+                name: "stop_poll.failed",
+                correlation: { threadId: input.threadId, turnId: input.seedTurnId },
+                payload: unknownToEventPayload(error),
+              });
+            }),
+          "handoff stop poll",
+        );
+      }, REMOTE_STOP_POLL_MS);
+      poll.unref();
+
+      const preparation = await input.prepare?.(controller.signal);
+      // Stop has already settled the seed. Shutdown/lost ownership leave recovery evidence.
+      if (controller.signal.aborted) return;
+      if (preparation === "cancelled") {
+        // Copy rollback has drained. Seed reporting must not retain the conversation
+        // if its ending transaction encounters an unrelated lifecycle lock.
+        await input.claim.release();
+        input.prepared?.();
+        await finish(input.threadId, input.seedTurnId, {
+          outcome: {
+            kind: "failed",
+            error: new Error("Notes copy deadline exceeded"),
+            modelResponses: [],
+          },
+          failure: { reason: "interrupted", phase: "launch" },
+        });
+        return;
+      }
       const initial = await currentSeed(input.seedTurnId);
       if (!initial || initial.thread.id !== input.threadId || initial.seed.status !== "pending")
         return;
+      input.prepared?.();
       publishStatus(initial.thread.id);
       if (!(await deps.billingUsage.canStartTurn(initial.thread.userId))) {
         await finish(input.threadId, input.seedTurnId, {
@@ -263,29 +305,6 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         );
         return;
       }
-      poll = setInterval(() => {
-        backgroundTasks.track(
-          deps.repos.turns
-            .findById(input.seedTurnId)
-            .then((seed) => {
-              if (!seed) controller.abort("lost_claim");
-              else if (seed.status !== "pending")
-                controller.abort(seed.status === "cancelled" ? "stop" : "lost_claim");
-            })
-            .catch((error) => {
-              emitEvent(deps.eventSink, {
-                level: "warn",
-                source: "runtime.handoff",
-                name: "stop_poll.failed",
-                correlation: { threadId: input.threadId, turnId: input.seedTurnId },
-                payload: unknownToEventPayload(error),
-              });
-            }),
-          "handoff stop poll",
-        );
-      }, REMOTE_STOP_POLL_MS);
-      poll.unref();
-
       let generated: Awaited<ReturnType<BriefGeneration>>;
       try {
         generated = await deps.generate({
@@ -334,25 +353,26 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
           correlation: { threadId: input.threadId },
           payload: unknownToEventPayload(error),
         });
+      } finally {
+        input.prepared?.();
       }
     }
   }
 
-  function startLaunch(input: {
-    threadId: ThreadId;
-    seedTurnId: TurnId;
-    claim: HandoffBriefHold;
-  }): Promise<void> {
+  function startLaunch(input: BriefLaunch): Promise<void> {
     if (shutdown.started) {
-      return input.claim.release().catch((error) => {
-        emitEvent(deps.eventSink, {
-          level: "error",
-          source: "runtime.handoff",
-          name: "claim.release_failed",
-          correlation: { threadId: input.threadId },
-          payload: unknownToEventPayload(error),
-        });
-      });
+      return input.claim
+        .release()
+        .catch((error) => {
+          emitEvent(deps.eventSink, {
+            level: "error",
+            source: "runtime.handoff",
+            name: "claim.release_failed",
+            correlation: { threadId: input.threadId },
+            payload: unknownToEventPayload(error),
+          });
+        })
+        .finally(() => input.prepared?.());
     }
     return launch(input).catch((error) => {
       emitEvent(deps.eventSink, {
@@ -365,13 +385,11 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
     });
   }
 
-  function launchAfterCommit(input: {
-    threadId: ThreadId;
-    seedTurnId: TurnId;
-    claim: HandoffBriefHold;
-  }) {
-    deps.schedulePostCommit(async () => {
-      backgroundTasks.track(startLaunch(input), "handoff brief launch");
+  function launchAfterCommit(input: BriefLaunch): Promise<void> {
+    return new Promise((prepared) => {
+      deps.schedulePostCommit(async () => {
+        backgroundTasks.track(startLaunch({ ...input, prepared }), "handoff brief launch");
+      });
     });
   }
 

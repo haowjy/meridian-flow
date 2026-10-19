@@ -15,10 +15,11 @@ export interface LiveDocumentCoordinator {
    * rollback leaves the room as it was (LOCK-WS). Rejects with DocumentNotFoundError when the
    * document is missing.
    */
+  /** readOnly uses a disposable live-room-plus-journal cut, without room opening or delivery. */
   withDocument<T>(
     docId: string,
     fn: (doc: Y.Doc) => Promise<T>,
-    options?: { timeoutMs?: number; signal?: AbortSignal },
+    options?: { timeoutMs?: number; signal?: AbortSignal; readOnly?: boolean },
   ): Promise<T>;
   /**
    * The committed journal's obligation to the open room, owned here: coalesced per document,

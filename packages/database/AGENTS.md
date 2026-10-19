@@ -1,7 +1,7 @@
 # @meridian/database
 
 This package owns the Drizzle schema, migrations, SQL functions, and Postgres
-connection factory. It has no business logic or ambient transaction context;
+connection factory and scoped query cancellation. It has no business logic or ambient transaction context;
 domain persistence and transaction propagation live in the server.
 
 ## Rules

@@ -12,5 +12,6 @@ export interface HandoffBriefLauncher {
     threadId: ThreadId;
     seedTurnId: TurnId;
     claim: HandoffBriefHold;
-  }): void;
+    prepare?: (signal: AbortSignal) => Promise<"ready" | "cancelled">;
+  }): Promise<void>;
 }

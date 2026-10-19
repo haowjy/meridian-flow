@@ -8,7 +8,7 @@ import type { ObjectStoreError, ObjectStorePort } from "./ports/object-store.js"
 
 export type ObjectRelease = {
   /** Delete these object keys. */
-  keys(keys: readonly string[]): Promise<void>;
+  keys(keys: readonly string[], signal?: AbortSignal): Promise<void>;
   /** Delete the objects these `object://` storage URLs name; other URLs are skipped. */
   storageUrls(storageUrls: readonly string[]): Promise<void>;
 };
@@ -18,10 +18,11 @@ export function createObjectRelease(deps: {
   /** A failed delete: the store's error, or a thrown error's message. */
   onFailure(key: string, error: ObjectStoreError | string): void;
 }): ObjectRelease {
-  async function keys(keys: readonly string[]): Promise<void> {
+  async function keys(keys: readonly string[], signal?: AbortSignal): Promise<void> {
     for (const key of new Set(keys)) {
       try {
-        const result = await deps.objectStore.delete(key);
+        signal?.throwIfAborted();
+        const result = await deps.objectStore.delete(key, signal);
         if (!result.ok && result.error.code !== "not_found") deps.onFailure(key, result.error);
       } catch (cause) {
         deps.onFailure(key, cause instanceof Error ? cause.message : String(cause));

@@ -13,8 +13,11 @@ one transaction. The held claim has no lease. A competing holder creates
 neither seed nor thread and returns `handoff_in_progress`; Retry uses the same
 sequence and returns `handoff_retry_unavailable` when unavailable.
 
-After commit creation awaits best-effort notes copying, then transfers the
-claim to detached brief work before returning. The brief never races copying. The brief keeps it
+After commit the brief service registers cancellation and remote Stop polling
+before notes copying. Creation awaits that bounded preparation, not generation.
+A copy deadline settles S as interrupted (retaining the original-notes pointer)
+and releases the claim; ordinary copy errors still allow generation. Stop
+cancels preparation and releases only after rollback. The brief keeps the claim
 through its ending transaction; a destination wake cannot start while S is
 pending. Release calls the shared `wakeIfRunnable`, which rereads the queue so
 messages, controls, and Work notices run after S without a seed-specific gate.

@@ -374,8 +374,20 @@ function createCoordinator(
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: { timeoutMs?: number; signal?: AbortSignal },
+      options?: { timeoutMs?: number; signal?: AbortSignal; readOnly?: boolean },
     ): Promise<T> {
+      if (options?.readOnly) {
+        return (async () => {
+          options.signal?.throwIfAborted();
+          const copy = await liveRoomCopy(deps, docId);
+          try {
+            options.signal?.throwIfAborted();
+            return await fn(copy.doc);
+          } finally {
+            copy.doc.destroy();
+          }
+        })();
+      }
       return mutex.run(
         docId,
         async () => {

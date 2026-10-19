@@ -10,7 +10,7 @@ import type { AgentPermission } from "@meridian/contracts/agents";
 import { contextUriVariables } from "@meridian/contracts/context-uri";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Database } from "@meridian/database";
+import { type Database, withDatabaseSignal } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
 import {
@@ -322,7 +322,11 @@ export type AppServices = {
   runStarter: RunStarter;
   delivery: DeliveryProducer & import("../domains/runtime/loop/runtime-delivery.js").ThreadControls;
   handoffBriefs: HandoffBriefs;
-  inheritThreadNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void>;
+  inheritThreadNotes(
+    sourceId: ThreadId,
+    destinationId: ThreadId,
+    signal?: AbortSignal,
+  ): Promise<"ready" | "cancelled">;
   shutdown(): Promise<void>;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   recovery: {
@@ -621,17 +625,29 @@ export async function createProductionAppPorts(input: {
     arrivals,
     catalog: contextCatalog,
   });
-  async function inheritThreadNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void> {
+  async function inheritThreadNotes(
+    sourceId: ThreadId,
+    destinationId: ThreadId,
+    cancellation?: AbortSignal,
+  ): Promise<"ready" | "cancelled"> {
+    const deadline = Date.now() + 12_000;
+    const timeout = AbortSignal.timeout(12_000);
+    const signal = cancellation ? AbortSignal.any([cancellation, timeout]) : timeout;
     try {
-      const source = await threadRepos.threads.findById(sourceId);
-      const destination = await threadRepos.threads.findById(destinationId);
-      if (!source?.notesScope?.current || !destination?.notesScope?.current) return;
-      await notesCopy.copy({
-        projectId: source.projectId,
-        userId: source.userId,
-        source: source.notesScope.current,
-        destination: destination.notesScope.current,
+      await withDatabaseSignal(signal, async () => {
+        const source = await threadRepos.threads.findById(sourceId);
+        const destination = await threadRepos.threads.findById(destinationId);
+        if (!source?.notesScope?.current || !destination?.notesScope?.current) return;
+        await notesCopy.copy({
+          projectId: source.projectId,
+          userId: source.userId,
+          source: source.notesScope.current,
+          destination: destination.notesScope.current,
+          signal,
+          deadline,
+        });
       });
+      return "ready";
     } catch (error) {
       emitEvent(eventSink, {
         level: "warn",
@@ -644,6 +660,7 @@ export async function createProductionAppPorts(input: {
           ...unknownToEventPayload(error),
         },
       });
+      return signal.aborted ? "cancelled" : "ready";
     }
   }
   const uploadIntake = createUploadIntake({
@@ -1313,7 +1330,7 @@ export function createInMemoryAppServices(): AppServices {
     async hold() {
       return null;
     },
-    launchAfterCommit() {},
+    async launchAfterCommit() {},
     async stop() {
       return false;
     },
@@ -1710,7 +1727,7 @@ export function createInMemoryAppServices(): AppServices {
     delivery,
     recovery,
     handoffBriefs,
-    inheritThreadNotes: async () => {},
+    inheritThreadNotes: async () => "ready",
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };

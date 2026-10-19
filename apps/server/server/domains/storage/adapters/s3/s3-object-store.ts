@@ -95,10 +95,11 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     key: string,
     bytes: Uint8Array,
     mimeType: string,
+    signal?: AbortSignal,
   ): Promise<ObjectStoreResult<{ storageUrl: string }>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
-    const ensured = await this.ensureBucket();
+    const ensured = await this.ensureBucket(signal);
     if (!ensured.ok) return ensured;
 
     try {
@@ -109,6 +110,7 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
           Body: bytes,
           ContentType: mimeType,
         }),
+        { abortSignal: signal },
       );
       return ok({ storageUrl: createObjectStorageUrl(key) });
     } catch (error) {
@@ -116,16 +118,31 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  async get(key: string): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
+  async get(
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<ObjectStoreResult<{ bytes: Uint8Array; mimeType: string }>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
     try {
       const response = await this.client.send(
         new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        { abortSignal: signal },
       );
       const body = response.Body;
       if (!body) return err("not_found", "Object not found");
-      const bytes = await body.transformToByteArray();
+      const destroy = () => {
+        if ("destroy" in body) body.destroy(new Error("Object read cancelled"));
+      };
+      signal?.addEventListener("abort", destroy, { once: true });
+      let bytes: Uint8Array;
+      try {
+        if (signal?.aborted) destroy();
+        bytes = await body.transformToByteArray();
+        signal?.throwIfAborted();
+      } finally {
+        signal?.removeEventListener("abort", destroy);
+      }
       return ok({
         bytes,
         mimeType: response.ContentType ?? "application/octet-stream",
@@ -196,22 +213,26 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     }
   }
 
-  async delete(key: string): Promise<ObjectStoreResult<void>> {
+  async delete(key: string, signal?: AbortSignal): Promise<ObjectStoreResult<void>> {
     if (!isSafeKey(key)) return err("invalid_key", "Object key is invalid");
 
     try {
-      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }), {
+        abortSignal: signal,
+      });
       return ok(undefined);
     } catch (error) {
       return err("io_error", error instanceof Error ? error.message : "Failed to delete object");
     }
   }
 
-  private async ensureBucket(): Promise<ObjectStoreResult<void>> {
+  private async ensureBucket(signal?: AbortSignal): Promise<ObjectStoreResult<void>> {
     if (this.bucketEnsured) return ok(undefined);
 
     try {
-      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }), {
+        abortSignal: signal,
+      });
       this.bucketEnsured = true;
       return ok(undefined);
     } catch (error) {
@@ -226,7 +247,9 @@ export class S3ObjectStoreAdapter implements ObjectStorePort {
     }
 
     try {
-      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }), {
+        abortSignal: signal,
+      });
       this.bucketEnsured = true;
       return ok(undefined);
     } catch (error) {

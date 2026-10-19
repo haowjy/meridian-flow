@@ -199,9 +199,12 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   }
 
   async function roomCopy(docId: string): Promise<{ doc: Y.Doc; room: string | null }> {
+    const state = await loadDocumentState(journal, docId);
+    const room = docs.get(docId);
+    if (!room && !state) throw new DocumentNotFoundError(docId);
     const copy = createCollabYDoc({ gc: false });
-    Y.applyUpdate(copy, Y.encodeStateAsUpdate(requireDoc(docId)));
-    await applyPersisted(docId, copy);
+    if (room) Y.applyUpdate(copy, Y.encodeStateAsUpdate(room));
+    if (state) Y.applyUpdate(copy, state);
     bindDocumentAuthority(copy, { authorityId: docId as never, generation: 1n });
     return { doc: copy, room: liveRoomFor(docId, copy) };
   }
@@ -226,8 +229,19 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
-      options?: { timeoutMs?: number; signal?: AbortSignal },
+      options?: { timeoutMs?: number; signal?: AbortSignal; readOnly?: boolean },
     ): Promise<T> {
+      if (options?.readOnly) {
+        return (async () => {
+          options.signal?.throwIfAborted();
+          const copy = await roomCopy(docId);
+          try {
+            return await fn(copy.doc);
+          } finally {
+            copy.doc.destroy();
+          }
+        })();
+      }
       return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },
     deliver,

@@ -40,8 +40,12 @@ export interface ThreadAgentSwapDeps {
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
-  /** Best-effort notes inheritance, after creation commits; never rejects. */
-  inheritNotes(sourceId: ThreadId, destinationId: ThreadId): Promise<void>;
+  /** Best-effort inheritance after commit. Cancellation settles before the destination can run. */
+  inheritNotes(
+    sourceId: ThreadId,
+    destinationId: ThreadId,
+    signal?: AbortSignal,
+  ): Promise<"ready" | "cancelled">;
   /** The mode the writer sees on the source chat: a derived chat starts in it. */
   effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
 }
@@ -201,11 +205,12 @@ export async function handoffThreadAgent(
     if (result.created && seedTurnId) {
       // After-commit callbacks run concurrently. Launch only after copying finishes,
       // outside the creation transaction, so the brief and first run see the new notes.
-      await deps.inheritNotes(source.id as ThreadId, result.thread.id as ThreadId);
-      deps.handoffBriefs.launchAfterCommit({
+      await deps.handoffBriefs.launchAfterCommit({
         threadId: result.thread.id as ThreadId,
         seedTurnId,
         claim,
+        prepare: (signal) =>
+          deps.inheritNotes(source.id as ThreadId, result.thread.id as ThreadId, signal),
       });
     } else await claim.release();
     return result;

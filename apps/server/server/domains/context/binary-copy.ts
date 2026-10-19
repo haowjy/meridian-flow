@@ -90,16 +90,21 @@ export async function copyBinaryDocument(
 export async function prepareBinaryCopy(
   objectStore: ObjectStorePort,
   source: Pick<BinaryFileRef, "storageUrl" | "mimeType" | "uri">,
+  signal?: AbortSignal,
+  allocated?: (key: string) => void,
 ): Promise<
   Result<{ key: string; storageUrl: string; mimeType: string; sizeBytes: number }, ContextError>
 > {
   const sourceKey = objectStoreKeyFromStorageUrl(source.storageUrl);
   if (!sourceKey) return ioError(source.uri, "The source file has no stored object.");
-  const object = await objectStore.get(sourceKey);
+  signal?.throwIfAborted();
+  const object = await objectStore.get(sourceKey, signal);
   if (!object.ok) return ioError(source.uri, object.error.message);
   const key = `copies/${crypto.randomUUID()}`;
   const mimeType = source.mimeType ?? object.value.mimeType;
-  const put = await objectStore.put(key, object.value.bytes, mimeType);
+  allocated?.(key);
+  signal?.throwIfAborted();
+  const put = await objectStore.put(key, object.value.bytes, mimeType, signal);
   if (!put.ok) return ioError(source.uri, put.error.message);
   return Ok({
     key,

@@ -123,6 +123,7 @@ export type MarkdownDocumentEngine = {
   /** Live nodes and revision from one durable cut, without copying its journal or frontier. */
   readCopySource(
     documentId: DocumentId,
+    signal?: AbortSignal,
   ): Promise<Result<{ nodes: readonly PMNode[]; revision: string }, SyncError>>;
   /** Initialize-only fresh identity/history from stored nodes, preserving their link refs. */
   seedFromNodes(documentId: DocumentId, nodes: readonly PMNode[]): Promise<void>;
@@ -502,8 +503,7 @@ export function createMarkdownDocumentEngine(
         Y.encodeStateAsUpdate(doc),
       );
       if (!seeded) return;
-      const deliver = () => deps.coordinator.deliver(documentId);
-      if (!deps.deferUntilCommit?.(deliver)) await deliver();
+      // Creation-bound seeds install before the row is visible; cold loads read authority.
       await deps.afterWrite?.({ documentId, markdown });
     } finally {
       doc.destroy();
@@ -571,15 +571,19 @@ export function createMarkdownDocumentEngine(
       }
     },
 
-    async readCopySource(documentId) {
+    async readCopySource(documentId, signal) {
       try {
-        const result = await deps.coordinator.withDocument(documentId, async (doc) => {
-          const links = await spelling(documentId, [doc]);
-          const cut = versioned(doc, links, (current) =>
-            projectBlocks(documentId, current, (blocks) => blocks),
-          );
-          return { nodes: cut.content, revision: cut.revision };
-        });
+        const result = await deps.coordinator.withDocument(
+          documentId,
+          async (doc) => {
+            const links = await spelling(documentId, [doc]);
+            const cut = versioned(doc, links, (current) =>
+              projectBlocks(documentId, current, (blocks) => blocks),
+            );
+            return { nodes: cut.content, revision: cut.revision };
+          },
+          { signal, readOnly: true },
+        );
         return Ok(result);
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });

@@ -49,12 +49,13 @@ export interface ObjectStorePort {
     key: string,
     bytes: Uint8Array,
     mimeType: string,
+    signal?: AbortSignal,
   ): Promise<ObjectStoreResult<ObjectStorePutOutput>>;
-  get(key: string): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
+  get(key: string, signal?: AbortSignal): Promise<ObjectStoreResult<ObjectStoreGetOutput>>;
   list(
     prefix: string,
     options?: ObjectStoreListOptions,
   ): Promise<ObjectStoreResult<ObjectStoreListOutput>>;
   getSignedUrl(key: string): Promise<ObjectStoreResult<string>>;
-  delete(key: string): Promise<ObjectStoreResult<void>>;
+  delete(key: string, signal?: AbortSignal): Promise<ObjectStoreResult<void>>;
 }

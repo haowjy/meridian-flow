@@ -19,9 +19,7 @@ else
     const { createBoundAgentCatalog, createDrizzleAgentRevisionStore } = await import(
       "../../packages/index.js"
     );
-    const { createDrizzleEventJournalReader, createDrizzleEventJournalWriter } = await import(
-      "../index.js"
-    );
+    const { createDrizzleEventJournalReader } = await import("../index.js");
     const { hashPromptBakeContent } = await import("./prompt-bake-hash.js");
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const {
@@ -122,7 +120,7 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
-        inheritNotes: async () => {},
+        inheritNotes: async () => "ready" as const,
         effectiveWriteMode: (id: string) => runtime.delivery.effectiveWriteMode(id as never),
       };
       const firstTurn = await repos.turns.create({
@@ -612,7 +610,7 @@ else
                   },
                 };
               },
-              launchAfterCommit() {},
+              async launchAfterCommit() {},
             },
           },
           {
@@ -664,7 +662,7 @@ else
                 },
               };
             },
-            launchAfterCommit(input) {
+            async launchAfterCommit(input) {
               launchRequests.push({ threadId: input.threadId, seedTurnId: input.seedTurnId });
             },
           },
@@ -764,7 +762,7 @@ else
             },
           };
         },
-        launchAfterCommit() {},
+        async launchAfterCommit() {},
       };
       const input = {
         id,
@@ -782,7 +780,7 @@ else
             async hold() {
               throw new Error("Replay must not acquire a claim");
             },
-            launchAfterCommit() {},
+            async launchAfterCommit() {},
           },
         },
         input,
@@ -805,7 +803,7 @@ else
               async hold() {
                 return null;
               },
-              launchAfterCommit() {},
+              async launchAfterCommit() {},
             },
           },
           {
@@ -849,7 +847,7 @@ else
             threads,
             handoffBriefs: {
               hold: (threadId) => runClaim.hold(threadId),
-              launchAfterCommit({ claim }) {
+              async launchAfterCommit({ claim }) {
                 transferredClaims.push(claim);
               },
             },
@@ -905,7 +903,7 @@ else
                   },
                 };
               },
-              launchAfterCommit() {},
+              async launchAfterCommit() {},
             },
           },
           {

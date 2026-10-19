@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { Options } from "postgres";
 import postgres from "postgres";
+import { installQueryCancellation } from "./query-cancellation";
 import { schema } from "./schema/index";
 
 export type Database = ReturnType<typeof createDb>;
@@ -11,10 +12,12 @@ export type CreateDbOptions = {
 };
 
 export function createDb(databaseUrl: string, options?: CreateDbOptions) {
-  const client = postgres(databaseUrl, {
-    max: options?.max ?? 10,
-    ...options?.postgres,
-  });
+  const client = installQueryCancellation(
+    postgres(databaseUrl, {
+      max: options?.max ?? 10,
+      ...options?.postgres,
+    }),
+  );
   const db = drizzle(client, { schema });
   return Object.assign(db, {
     close: () => client.end(),

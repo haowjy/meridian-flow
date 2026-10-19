@@ -118,7 +118,7 @@ async function fixture(
     agentCatalog,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
-    inheritNotes: async () => {},
+    inheritNotes: async () => "ready" as const,
     effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
     handoffBriefs: {
       async hold() {
@@ -129,7 +129,7 @@ async function fixture(
           },
         };
       },
-      launchAfterCommit() {},
+      async launchAfterCommit() {},
     },
   };
   async function run(threadId = thread.id, tools?: Tool[]) {

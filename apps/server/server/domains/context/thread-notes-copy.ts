@@ -11,7 +11,7 @@ import {
 import type { Database } from "@meridian/database";
 import { threads, works } from "@meridian/database/schema";
 import type { PMNode } from "@meridian/markup";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { MarkdownDocumentStore } from "../collab/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../storage/index.js";
@@ -36,6 +36,8 @@ export interface ThreadNotesCopy {
     userId: string;
     source: ContextNotesLocation;
     destination: ContextNotesLocation;
+    signal: AbortSignal;
+    deadline: number;
   }): Promise<void>;
 }
 
@@ -74,6 +76,7 @@ export function createThreadNotesCopy(deps: {
   }
   return {
     async copy(input) {
+      input.signal.throwIfAborted();
       const source = await owner(input.projectId, input.source);
       const sourceId = await source.store.existingContextSourceId();
       if (!sourceId) return;
@@ -109,19 +112,24 @@ export function createThreadNotesCopy(deps: {
       try {
         // Read live content before holding namespace locks: collab pulls on its own connection.
         for (const document of cut.documents) {
+          input.signal.throwIfAborted();
           const filetype = filetypeSchema.parse(document.fileType);
           const classification = classifyFiletype(filetype);
           if (classification.kind === "binary" || classification.kind === "custom") {
             if (!document.storageUrl)
               throw new Error(`Binary note ${document.id} has no stored object`);
-            const copy = await prepareBinaryCopy(deps.objectStore, {
-              storageUrl: document.storageUrl,
-              mimeType: document.mimeType ?? undefined,
-              uri: `${formatParsedContextUri("scratch", "", input.source.owner, input.source)}${renderFilename(document.name, document.extension)}`,
-            });
+            const copy = await prepareBinaryCopy(
+              deps.objectStore,
+              {
+                storageUrl: document.storageUrl,
+                mimeType: document.mimeType ?? undefined,
+                uri: `${formatParsedContextUri("scratch", "", input.source.owner, input.source)}${renderFilename(document.name, document.extension)}`,
+              },
+              input.signal,
+              (key) => objects.push(key),
+            );
             if (!copy.ok)
               throw new Error("message" in copy.error ? copy.error.message : copy.error.code);
-            objects.push(copy.value.key);
             prepared.push({
               id: crypto.randomUUID() as DocumentId,
               source: document,
@@ -131,7 +139,7 @@ export function createThreadNotesCopy(deps: {
               revision: null,
             });
           } else {
-            const copy = await deps.documents.readCopySource(document.id);
+            const copy = await deps.documents.readCopySource(document.id, input.signal);
             if (!copy.ok)
               throw new Error(`Cannot copy notes document ${document.id}: ${copy.error.code}`);
             prepared.push({
@@ -145,6 +153,11 @@ export function createThreadNotesCopy(deps: {
           }
         }
         installed = await runInDrizzleTransaction(db, async () => {
+          input.signal.throwIfAborted();
+          const remaining = Math.max(1, input.deadline - Date.now());
+          await currentDrizzleDb(db).execute(
+            sql`select set_config('lock_timeout', ${`${remaining}ms`}, true), set_config('statement_timeout', ${`${remaining}ms`}, true)`,
+          );
           await lockContextNamespaces(
             db,
             input,
@@ -171,6 +184,7 @@ export function createThreadNotesCopy(deps: {
           const folders = new Map<FolderId, FolderId>([[cutRoot.id, placed.value.folderId]]);
           const paths = new Map<FolderId, string>([[cutRoot.id, ""]]);
           for (const folder of cut.folders.slice(1)) {
+            input.signal.throwIfAborted();
             const parentPath = folder.parent_id ? paths.get(folder.parent_id) : undefined;
             if (parentPath === undefined) throw new Error("Copied folder lost its parent");
             const path = [parentPath, folder.name].filter(Boolean).join("/");
@@ -191,6 +205,7 @@ export function createThreadNotesCopy(deps: {
           );
           const created: DocumentId[] = [];
           for (const copy of prepared) {
+            input.signal.throwIfAborted();
             const document = copy.source;
             const folderId = document.folderId ? folders.get(document.folderId) : undefined;
             if (!folderId) throw new Error("Copied document lost its parent");
@@ -230,7 +245,7 @@ export function createThreadNotesCopy(deps: {
           return true;
         });
       } finally {
-        if (!installed) await deps.objects.keys(objects);
+        if (!installed) await deps.objects.keys(objects, input.signal);
       }
     },
   };

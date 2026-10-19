@@ -239,6 +239,7 @@ export type MarkdownDocumentStore = LinkBinder & {
   /** Live nodes and revision from one durable cut, without copying its journal or frontier. */
   readCopySource(
     documentId: DocumentId,
+    signal?: AbortSignal,
   ): Promise<Result<{ nodes: readonly PMNode[]; revision: string }, SyncError>>;
   /** Initialize-only fresh identity/history from stored nodes, preserving their link refs. */
   seedFromNodes(documentId: DocumentId, nodes: readonly PMNode[]): Promise<void>;

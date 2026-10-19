@@ -11,8 +11,10 @@ and No Work is a real Work row.
 child conversations. It retains Agent configuration and optional Work
 membership. `derive-conversation.ts` owns fork and handoff creation; required
 history and provenance are written in the outer transaction. After commit,
-creation awaits best-effort notes copying before returning; handoff brief work
-launches only after copying finishes. It remains detached (creation does not
+creation awaits bounded best-effort notes copying before returning. The handoff
+brief lifecycle registers Stop before copying and starts generation only after
+copying finishes; a copy deadline settles the seed as interrupted and releases
+the claim without generation. It remains detached (creation does not
 wait for a model-generated brief). After-commit callbacks run concurrently,
 so registering copy and launch callbacks in order would not sequence them.
 

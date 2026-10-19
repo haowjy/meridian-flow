@@ -4,6 +4,16 @@ This page covers the database contracts that cross the schema, migration
 runner, and server adapters. Generated schema and SQL are authoritative for
 field shape; keep this page for invariants and migration safety.
 
+## Query cancellation
+
+`withDatabaseSignal` scopes driver cancellation across independently composed
+adapters. It cancels actual lazy postgres queries (including pool waits), not
+only the promise returned to the caller. Scoped transactions reserve their
+connection through explicit cancellable COMMIT and unconditional ROLLBACK;
+returning from a cancelled install means rollback has drained. A cancelled
+pool reservation starts no SQL and releases if granted later. Ordinary
+transactions continue using postgres's native transaction implementation.
+
 ## Migration integrity
 
 A merged migration is immutable because already-applied databases cannot see an
