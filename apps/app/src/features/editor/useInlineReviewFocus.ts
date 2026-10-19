@@ -43,11 +43,12 @@ export function useInlineReviewFocus({
 
   // The focused change's emphasis.
   const active = view.focused?.id ?? null;
+  const activeProjection = view.focused?.frame?.diff;
   useEffect(() => {
     if (!live || !reviewing) return;
     if (getInlineReviewPluginState(live.state)?.activeChangeId === active) return;
     live.commands.setReviewActiveChange(active);
-  }, [live, reviewing, active]);
+  }, [live, reviewing, active, activeProjection]);
 
   // A click on a mark focuses its change.
   useEffect(() => {
@@ -58,7 +59,8 @@ export function useInlineReviewFocus({
       transaction: Parameters<typeof inlineReviewFocusIntent>[0];
     }) => {
       const changeId = inlineReviewFocusIntent(transaction);
-      if (changeId) reportFocusedChange({ documentId, itemKey }, { id: changeId });
+      const frame = getInlineReviewPluginState(live.state)?.review;
+      if (changeId && frame) reportFocusedChange({ documentId, itemKey }, { id: changeId, frame });
     };
     live.on("transaction", onTransaction);
     return () => {

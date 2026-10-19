@@ -3,7 +3,7 @@ import type { Author, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff"
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { groupAnchor, type ReviewFrame } from "./review-frame";
 
-export type ReviewFocus = { id: string };
+export type ReviewFocus = { id: string; frame: ReviewFrame | null };
 export type ChatRef = {
   chatId: string;
   title: string;
@@ -75,7 +75,8 @@ export const changeTone = (change: Pick<ReviewChange, "excerpt">): "add" | "remo
   change.excerpt.inserted ? "add" : "remove";
 
 export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: ReviewFocus | null) =>
-  changes.find((change) => change.id === focus?.id) ?? null;
+  changes.find((change) => change.id === focus?.id && change.frame?.diff === focus.frame?.diff) ??
+  null;
 
 /** A frozen frame is the command seam, never operation IDs or a later runtime read. */
 export type ChangeTarget =
