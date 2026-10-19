@@ -37,9 +37,22 @@ class MemoryJournal implements UpdateJournal {
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
     const results: JournalBatchAppendResult[] = [];
+    const before = new Map<string, Uint8Array>();
+    for (const { docId } of entries) {
+      const { checkpoint, updates } = await this.read(docId);
+      if (!before.has(docId))
+        before.set(
+          docId,
+          Y.mergeUpdates([
+            ...(checkpoint ? [checkpoint] : []),
+            ...updates.map((row) => row.update),
+          ]),
+        );
+    }
     for (const batchEntry of entries) {
+      const beforeState = before.get(batchEntry.docId) as Uint8Array;
       const seq = await this.append(batchEntry.docId, batchEntry.update, batchEntry.meta);
-      results.push({ seq, journalCommitKind: "durable" });
+      results.push({ seq, journalCommitKind: "durable", beforeState });
     }
     return results;
   }

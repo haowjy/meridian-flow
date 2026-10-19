@@ -30,23 +30,28 @@ never stored. Two enforcement points:
 
 **An agent-edit save** applies nothing to a live room. Its `persist` appends the
 kept entries to the journal under the document's advisory lock (taken by the
-reply's save, else by the append) and resolves the cut that append followed:
-the journal below the batch's first row, which the lock makes exactly the rows
-before it, merged with the prepared copy. A writer frame that landed between
+reply's save, else by the append), and `appendBatch` returns, from inside that
+operation, the document as it found it under the lock; the save's cut is that
+state merged with the prepared copy. A writer frame that landed between
 preparing and appending is in that cut, so the receipt names what the rows
 swept of it. A frame that races the append waits on the lock and journals
-after.
+after. No storage read runs between the append committing and the save
+learning it did.
 
 **Delivery** of committed rows to the open room is `deliver`, an owned
-obligation: one chain per document coalesces requests made while it runs, a
-failed pass is retried after 250 ms, 1 s and 4 s, and one more failure retires
-the room (handle retired, connections closed, dropped from Hocuspocus) so its
-clients reconnect and cold-load the journal. A room left behind would take a
-writer's keystrokes into text the journal already deleted, and Hocuspocus
-reuses a warm room for every new connection without reloading it. Each failure
-is logged once, as what it led to (`collab.room_delivery`
-`delivery.retrying` / `delivery.room_retired`). `deliver` resolves after its
-first attempt and never rejects; `recover` is the single attempt it runs.
+obligation that only retries: one chain per document coalesces requests made
+while it runs. A failed pass starts an outage against the room that is behind,
+retried after 250 ms, 1 s, 4 s and then every 30 s for as long as Hocuspocus
+holds that same room. It ends with a pass that catches the room up, or when
+Hocuspocus unloads or replaces the room (a load reads the journal); a retry
+never delivers into a replacement. Room lifetime is Hocuspocus's alone:
+delivery never closes connections, removes a room from the registry or retires
+a handle. A delivery that keeps failing means the journal can't be read, and a
+writer's frames are journal-first, so they fail too: the stale-editing window
+is the database outage itself. An outage is logged once at each end
+(`collab.room_delivery` `delivery.failing` warn, `delivery.recovered` info).
+`deliver` resolves after its first attempt and never rejects; `recover` is one
+pass into whatever room is open.
 
 Push settlement rechecks inside its completion transaction under document locks
 and applies to warm rooms only after commit. A writer admitted after the

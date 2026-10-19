@@ -47,15 +47,20 @@ transaction), or an explicit `{ kind: "no-effect" }`, which the committer
 refuses when it kept entries. The result's before and after states are the
 prepared candidate's, read before any lock; only a check that must refuse
 before anything persists reads them (a create that lands only in an empty
-document). `persist` resolves the append's actual cut (`SaveCut`), read where
-the host serializes the append: someone else's rows that landed after
-preparing are in its before state. Receipts, commit-time detection, revision
-and frontier read that cut, for both hosts; the rows are Yjs updates and land
-the same either way, so a moved base refreshes the report rather than the
-write. A live host's `persist` appends the kept entries as one journal batch
-and reads the journal below it; its install is delivery to open editors,
+document). `persist` resolves the append's actual cut (`SaveCut`), captured
+inside the append where the host serializes it, before its transaction
+commits, for every outcome (appended, contained, or nothing new): someone
+else's rows that landed after preparing are in its before state. Nothing
+fallible runs between the rows becoming durable and `persist` resolving, so a
+stored write is never reported as a failed one. Receipts, commit-time
+detection, revision and frontier read that cut, for both hosts; the rows are
+Yjs updates and land the same either way, so a moved base refreshes the report
+rather than the write. A live host's `persist` appends the kept entries as one
+journal batch, and `appendBatch` returns each document's state as it found it
+under the lock (`beforeState`); its install is delivery to open editors,
 whenever entries were kept. A draft host's append is finalized under the draft
-row lock against the committed prefix, which is its cut. Neither host fences a WebSocket transport from
+row lock against the committed prefix, which is its cut; a fully contained
+append's before and after are both that prefix. Neither host fences a WebSocket transport from
 this port: nothing applies to a live room inside a transaction (LOCK-WS, collab
 `websocket-concurrency.md`). An ordinary CRDT write commits as an unfenced
 append. Whole Discard

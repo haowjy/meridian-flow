@@ -163,14 +163,16 @@ export type PreparedDraftWrite = {
   /** The content the write was prepared as, before any lock; read it, never mutate it. */
   readonly candidate: Y.Doc;
   persist(): Promise<boolean>;
-  /**
-   * Once an append persisted rows, the draft as it found it under the draft row lock and with
-   * them; null before that, for a contained append, and for a rewrite.
-   */
-  appendCut(): SaveCut | null;
   transfer(): void;
   dispose(): void;
 };
+
+/**
+ * An append's prepared write. Once `persist` resolved, `cut` is the draft as the append found
+ * it under the draft row lock and with its kept rows, captured while finalizing, before the
+ * attempt commits: for a contained append both are that same committed prefix.
+ */
+export type PreparedDraftAppend = PreparedDraftWrite & { cut(): SaveCut };
 
 /** Every other exact-predicate write: four commit attempts, then the caller's own outcome. */
 const COMMIT_ATTEMPTS = 4;
@@ -260,7 +262,7 @@ export type DraftCoordinator = {
       snapshot: StagedDraftView,
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
-  ): Promise<{ result: T; write: PreparedDraftWrite | null }>;
+  ): Promise<{ result: T; write: PreparedDraftAppend | null }>;
   /** A writer frame (`draft-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { draftId: string; generation: number }): void;
@@ -553,7 +555,6 @@ export function createDraftCoordinator(input: {
     owned?(): readonly Y.Doc[];
     /** The append's rows committed: told once its attempt completed. */
     appended?(): void;
-    appendCut?(): SaveCut | null;
   }): PreparedDraftWrite {
     let state: "prepared" | "persisted" | "transferred" | "disposed" = "prepared";
     let committed: Transition | { resetTo: number } | { contained: true } | undefined;
@@ -564,7 +565,6 @@ export function createDraftCoordinator(input: {
     return {
       draftId: write.draftId,
       candidate: write.candidate,
-      appendCut: () => write.appendCut?.() ?? null,
       async persist() {
         if (state !== "prepared") throw new Error(`Draft ${write.draftId} write is ${state}`);
         committed = await write.persist();
@@ -607,7 +607,7 @@ export function createDraftCoordinator(input: {
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
     admitted?: Y.Doc,
-  ): PreparedDraftWrite {
+  ): PreparedDraftAppend {
     const { snapshot, replica } = base;
     let prefix: Y.Doc;
     try {
@@ -618,12 +618,11 @@ export function createDraftCoordinator(input: {
     }
     let finalized: FinalizedAppend | undefined;
     let committedDoc: Y.Doc | undefined;
-    let cut: SaveCut | null = null;
-    return preparedWrite({
+    let cut: SaveCut | undefined;
+    const write = preparedWrite({
       draftId: snapshot.draftId,
       candidate: admitted ?? prefix,
       owned: () => [prefix, ...(committedDoc ? [committedDoc] : [])],
-      appendCut: () => cut,
       appended: () => {
         if (snapshot.kind !== "work_draft") return;
         const mark = () => input.onAppendCommitted(snapshot.draftId);
@@ -644,6 +643,7 @@ export function createDraftCoordinator(input: {
             });
             committedDoc = judged.doc;
             finalized = judged.result;
+            cut = judged.cut;
             return judged.finalization;
           },
         });
@@ -659,7 +659,6 @@ export function createDraftCoordinator(input: {
         }
         if (!finalized) throw new Error(`Draft ${snapshot.draftId} append was not finalized`);
         const { doc, prefixHeld, prefixRows, checkpointSeq } = finalized;
-        cut = { beforeState: finalized.before, afterState: Y.encodeStateAsUpdate(doc) };
         const rows = [
           ...prefixRows.map((row) => row.update),
           ...finalized.rows.map((row) => row.updateData),
@@ -691,6 +690,13 @@ export function createDraftCoordinator(input: {
         };
       },
     });
+    return {
+      ...write,
+      cut() {
+        if (!cut) throw new Error(`Draft ${snapshot.draftId} append has not persisted`);
+        return cut;
+      },
+    };
   }
 
   /** `candidate` committed through shape B as `rewrite` describes it. */
@@ -836,7 +842,7 @@ export function createDraftCoordinator(input: {
   function prepareRows(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
-  ): PreparedDraftWrite {
+  ): PreparedDraftAppend {
     const admitted = cloneReplica(base.replica);
     try {
       admitSegmentRows(admitted, base.snapshot.documentId, journals);
@@ -854,7 +860,7 @@ export function createDraftCoordinator(input: {
       snapshot: StagedDraftView,
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
-  ): Promise<{ result: T; write: PreparedDraftWrite | null }> {
+  ): Promise<{ result: T; write: PreparedDraftAppend | null }> {
     const base = await loadBase(draftId);
     const { snapshot } = base;
     assertWritableDraft(snapshot);

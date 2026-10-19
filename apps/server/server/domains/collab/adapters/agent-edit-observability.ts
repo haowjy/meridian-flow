@@ -71,19 +71,29 @@ export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiag
 }
 
 /**
- * A failed delivery of committed rows to an open live room: a warning while it is retried, an
- * error when the room was retired instead.
+ * A delivery outage of committed rows to an open live room: a warning when it begins, and
+ * notice of how it ended (the room caught up, or unloaded so a load reads the journal).
  */
 export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDeliveryDiagnostics {
   return {
-    failed({ documentId, attempt, outcome, cause }) {
+    failed({ documentId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
-        level: outcome === "retired" ? "error" : "warn",
+        level: "warn",
         source: "collab.room_delivery",
-        name: outcome === "retired" ? "delivery.room_retired" : "delivery.retrying",
+        name: "delivery.failing",
         correlation: { documentId },
-        payload: { attempt, ...unknownToEventPayload(cause) },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+    recovered({ documentId, attempts, outcome }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.room_delivery",
+        name: "delivery.recovered",
+        correlation: { documentId },
+        payload: { attempts, outcome },
       });
     },
   };
