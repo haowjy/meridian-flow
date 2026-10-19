@@ -17,7 +17,7 @@ import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.
 /** Works whose branches use these documents, in the caller's transaction. */
 async function usingWorks(tx: DrizzleDb, ids: readonly DocumentId[]): Promise<WorkId[]> {
   const uses = await loadActiveBranchUses(tx, ids);
-  return uses.flatMap(({ originWorkId }) => (originWorkId ? [originWorkId] : []));
+  return [...new Set(uses.flatMap(({ originWorkId }) => (originWorkId ? [originWorkId] : [])))];
 }
 
 export function createDocumentRemoval(
