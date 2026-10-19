@@ -1,5 +1,10 @@
 /** Detached historical draft and receipt evidence from one database snapshot. */
-import type { AttributionPart, ItemRange, Provenance } from "@meridian/agent-edit/diff";
+import type {
+  AttributionPart,
+  ItemRange,
+  Provenance,
+  WriterReceipt,
+} from "@meridian/agent-edit/diff";
 import type { EditOrigin } from "@meridian/contracts";
 import type { DraftRead } from "../draft-store.js";
 
@@ -17,11 +22,7 @@ export interface DraftReceiptPart extends AttributionPart {
   owner: OwnerThread | null;
 }
 
-export interface WriterReceipt {
-  userId: string;
-  inserted: readonly ItemRange[];
-  deleted: readonly ItemRange[];
-}
+export type { WriterReceipt } from "@meridian/agent-edit/diff";
 
 export interface DraftProvenance extends Provenance {
   /** Apply evidence only; a non-applied part may ultimately be discarded. Use view.parts[].disposition. */
