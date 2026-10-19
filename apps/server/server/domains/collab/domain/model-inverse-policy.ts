@@ -181,7 +181,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const now =
           eligible(part) && !held && changed
             ? blockTextAt(fragmentOf(view), [...part.effect.inserted, ...part.effect.deleted])
-            : "";
+            : null;
         const reason = !eligible(part)
           ? "already removed"
           : held
@@ -192,7 +192,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? "already removed"
                 : !changed
                   ? null
-                  : now
+                  : now !== null
                     ? `edited since; now ${JSON.stringify(now)}`
                     : "its paragraph was replaced or removed";
         if (reason) {

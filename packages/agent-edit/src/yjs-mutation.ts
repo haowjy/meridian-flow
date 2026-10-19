@@ -250,15 +250,16 @@ export function textInRanges(
 
 /**
  * Plain text of the visible top-level blocks that still hold these items (inserted or
- * tombstoned), one line per block in document order. A block that was itself removed or rebuilt
- * contributes nothing: no surviving identity says which current block replaced it.
+ * tombstoned), one line per block in document order; `null` when none survives. A block that
+ * was itself removed or rebuilt contributes nothing: no surviving identity says which current
+ * block replaced it.
  */
 export function blockTextAt(
   fragment: Y.XmlFragment,
   ranges: readonly { client: number; clock: number; len: number }[],
-): string {
+): string | null {
   const doc = fragment.doc;
-  if (!doc) return "";
+  if (!doc) return null;
   const blocks = new Set<Y.Item>();
   for (const range of ranges)
     for (let clock = range.clock; clock < range.clock + range.len; ) {
@@ -288,7 +289,7 @@ export function blockTextAt(
   const lines: string[] = [];
   for (let item = fragment._start; item; item = item.right)
     if (blocks.has(item)) lines.push(text(item.content.getContent()[0]));
-  return lines.join("\n");
+  return lines.length ? lines.join("\n") : null;
 }
 
 /** Transaction deltas only; state-vector encoding would repeat old tombstones. */
