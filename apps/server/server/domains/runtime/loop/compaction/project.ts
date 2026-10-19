@@ -38,6 +38,17 @@ export interface ProjectedActiveHistory {
   blocks: Block[];
 }
 
+/**
+ * The projection plus the ids whose observation frontiers may credit the model
+ * (C10): the blocks after the latest complete compaction, or every effective
+ * block when there is none. The retained tail before the compaction credits
+ * nothing, though it is carried verbatim: its rows may fold credit from rows
+ * the summary replaced.
+ */
+export interface ActiveHistoryProjection extends ProjectedActiveHistory {
+  creditedBlockIds: ReadonlySet<string>;
+}
+
 function compactionPropsForTurn(turnId: string, blocks: readonly Block[]): CompactionProps {
   const compactionBlock = blocks.find(
     (block) => block.turnId === turnId && block.blockType === "custom",
@@ -114,10 +125,13 @@ function projectActiveHistory(
   effectiveBlocks: readonly Block[],
   threadRef: string | null,
   compactionBake?: Pick<PromptBake, "id" | "bakedTools"> | null,
-): ProjectedActiveHistory {
-  if (!effectiveTurns.some((turn) => turn.role === "compaction")) {
-    return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
-  }
+): ActiveHistoryProjection {
+  const uncompacted = (): ActiveHistoryProjection => ({
+    turns: [...effectiveTurns],
+    blocks: [...effectiveBlocks],
+    creditedBlockIds: new Set(effectiveBlocks.map((block) => block.id)),
+  });
+  if (!effectiveTurns.some((turn) => turn.role === "compaction")) return uncompacted();
 
   const turns = orderTurnsByPosition(effectiveTurns);
   const blocksByTurn = new Map<string, Block[]>();
@@ -136,7 +150,7 @@ function projectActiveHistory(
       props: compactionPropsForTurn(turn.id, effectiveBlocks),
     }));
   const activeCompaction = completeCompactions.at(-1);
-  if (!activeCompaction) return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
+  if (!activeCompaction) return uncompacted();
   if (!threadRef)
     throw new Error(`Thread ${activeCompaction.turn.threadId} has no ref for compaction summary`);
 
@@ -189,7 +203,10 @@ function projectActiveHistory(
       : (blocksByTurn.get(turn.id) ?? []);
   });
 
-  return { turns: projectedTurns, blocks: projectedBlocks };
+  const creditedBlockIds = new Set(
+    afterCompaction.flatMap((turn) => (blocksByTurn.get(turn.id) ?? []).map((block) => block.id)),
+  );
+  return { turns: projectedTurns, blocks: projectedBlocks, creditedBlockIds };
 }
 
 /** The cold summary replaces only the cut, never the pin or the verbatim retained tail. */
@@ -216,7 +233,7 @@ export async function projectActiveHistoryWithBakes(
   blocks: readonly Block[],
   threadRef: string | null,
   promptBakes: Pick<PromptBakeRepository, "findById">,
-): Promise<ProjectedActiveHistory> {
+): Promise<ActiveHistoryProjection> {
   const compaction = activeCompaction(turns);
   const bake = compaction?.promptBakeId
     ? await promptBakes.findById(compaction.promptBakeId)

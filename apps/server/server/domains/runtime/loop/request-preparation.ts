@@ -12,6 +12,7 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
+import { projectActiveHistoryWithBakes } from "./compaction/index.js";
 import { frontierLookup } from "./frontier-recording.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -72,6 +73,16 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
   };
 }
 
+async function requestCreditedIds(input: PrepareRequestInput): Promise<string[]> {
+  const projection = await projectActiveHistoryWithBakes(
+    input.turns,
+    input.blocks,
+    input.thread.ref,
+    input.promptBakes ?? input.deps.repos.promptBakes,
+  );
+  return [...projection.creditedBlockIds];
+}
+
 async function prepareBaseRequest(
   input: PrepareRequestInput,
 ): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
@@ -85,12 +96,11 @@ async function prepareBaseRequest(
           assistantTurnId: input.currentTurnId,
           reader: input.deps.referenceReader,
           signal: input.signal,
-          // The request's own blocks are the conversation the read is shown in.
-          recordingFrontier: frontierLookup(
-            input.deps,
-            () => input.blocks.map((block) => block.id),
-            { threadId: input.threadId, turnId: input.currentTurnId },
-          ),
+          // The read is shown beside what this request carries, so only that credits it (C10).
+          recordingFrontier: frontierLookup(input.deps, () => requestCreditedIds(input), {
+            threadId: input.threadId,
+            turnId: input.currentTurnId,
+          }),
         });
   const referenceUpdates = references.blocks;
   const referencesById = new Map(referenceUpdates.map((block) => [block.id, block]));

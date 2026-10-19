@@ -14,6 +14,7 @@ export type {
 } from "./plan.js";
 export { DEFAULT_COMPACTION_TAIL_FRACTION, planCompaction } from "./plan.js";
 export type {
+  ActiveHistoryProjection,
   CompactionBlockContent,
   CompactionProps,
   ProjectedActiveHistory,
