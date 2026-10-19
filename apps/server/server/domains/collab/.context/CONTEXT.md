@@ -114,8 +114,8 @@ otherwise arrives as `1000`. Failures are logged as
 `collab.retirement.after_commit.failed`.
 
 A discarded document's closed draft rows remain as lifecycle records, but their
-journals are deleted, `state`/`state_vector` are zero-length bytea and
-`live_cut`/`discarded_state_vector` are NULL. Zero-length state is deliberately
+journals are deleted and `state`/`state_vector` are zero-length bytea.
+Zero-length state is deliberately
 invalid Yjs: `readDraftAt` omits its checkpoint and `materializeDraftRead`
 rejects it, including a raw zero-length checkpoint. It is never an empty document.
 A `deleted` removal retains all bytes. Restoring the document does not reopen
@@ -360,8 +360,9 @@ Tests that assert membership right after a write read through
 
 New drafts use `seedDraftState`: live's blocks written twice as fresh client-1
 items into `prosemirror` and `review_base`, equal at revision 0, with no
-`live_cut`. Existing draft conversion belongs to the migration lane; there is
-no null-baseline repair arm or fingerprint cache in the runtime.
+`live_cut`. Migrations 0075–0081 convert existing drafts restartably, then drop
+the retired baseline and settlement storage. There is no null-baseline repair
+arm or fingerprint cache in the runtime.
 
 A writer frame takes no lease, mutex or document lock. It is judged once on the
 committed replica (admissible, its room, the echo exit, authorship as an early

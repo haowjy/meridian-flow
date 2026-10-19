@@ -29,5 +29,6 @@ an ambiguous relocation chain.
 Journal and receipt signal triggers still run inside an append's draft row
 hold. `change_trail_owners` retains JIT off and primary-key journal lookups;
 migration 0076 removes push-journal, placement and settlement ownership reads.
-Apply explicitly signals all selected member owners. Historical Apply conversion
-and physical settlement-table drops remain with the migration lane.
+Apply explicitly signals all selected member owners. The merged 0075–0081
+migration series preserves historical Apply evidence, completes conversion
+before its barriers, and drops the retired settlement tables.

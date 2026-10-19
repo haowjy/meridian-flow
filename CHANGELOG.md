@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Correct draft collaboration references for the completed cutover and frontier-compaction probe.
+
 - Remove obsolete server-preview contracts, legacy restoration claims, dead review helpers and unreachable trail notices; the append probe uses the same restoration recorder as the editor.
 
 - Take the Work lock before claiming Discard commands, matching Apply and preventing conflicting-delivery deadlocks.
