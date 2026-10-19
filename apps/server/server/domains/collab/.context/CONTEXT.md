@@ -86,6 +86,17 @@ write against a different version from the thread's last read returns
 `read_required`. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
+A call whose caller passes `recordingFrontier` (the read and write tools, and
+reference reads) records an observation frontier keyed by its room: the pulled
+peer's upstream Work draft (`draft:<upstreamDraftId>`, never the peer id or the
+draft generation) or `live:<documentId>:<authorityGeneration>`, the generation
+read before the call so a restore in between leaves the frontier on the old
+epoch. The pool passes agent-edit the previous frontier and returns
+`frontiers` beside the outcome; a save reads each pinned document's room and
+previous frontier before its transaction opens and returns each saved
+document's post-commit frontier. Undo, redo, revert and `format: "edits"`
+reads record none. See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
 Yjs peers. A planning-visible item disappearing is not by itself rollback
 evidence. Only retired-generation structs or immutable inverse removals after
