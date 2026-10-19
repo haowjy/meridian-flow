@@ -51,6 +51,7 @@ export function createReviewRuntime(
 ): ReviewRuntime {
   const yDoc = room.document;
   const listeners = new Set<() => void>();
+  const painted = new WeakMap<Editor, ReviewFrame | null>();
   const attachments: { editor: Editor; surface: ReviewSurface }[] = [];
   let state = EMPTY_REVIEW_STATE;
   let baseBlocks = new WeakMap<Schema, readonly PMNode[]>();
@@ -59,6 +60,7 @@ export function createReviewRuntime(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let queued = false;
   let destroyed = false;
+  let dirty = true;
   let remoteArrival = false;
   let arrivalSequence = 0;
   let synced = room.getSnapshot().status === "synced";
@@ -72,11 +74,15 @@ export function createReviewRuntime(
   };
   const publish = (frame: ReviewFrame | null) => {
     for (const { editor } of attachments) {
-      if (editor.isDestroyed) continue;
+      if (editor.isDestroyed || painted.get(editor) === frame) continue;
       // Each editor owns its positions. Another binding can have equal prose with different schema objects.
-      if (!frame || frame.doc === editor.state.doc) editor.commands.setReviewProjection(frame);
-      else if (sameContent(frame.doc, editor.state.doc))
+      if (!frame || frame.doc === editor.state.doc) {
+        editor.commands.setReviewProjection(frame);
+        painted.set(editor, frame);
+      } else if (sameContent(frame.doc, editor.state.doc)) {
         editor.commands.setReviewProjection({ ...frame, doc: editor.state.doc });
+        painted.set(editor, frame);
+      }
     }
     const previous = new Map(state.changes.map((change) => [change.id, change]));
     const sequence = remoteArrival && state.frame ? ++arrivalSequence : undefined;
@@ -96,16 +102,18 @@ export function createReviewRuntime(
   const projectNow = (): ReviewFrame | null => {
     clearTimeout(timer);
     timer = undefined;
-    if (destroyed) return state.frame;
+    if (destroyed || !dirty) return state.frame;
     const attached = attachments[0]?.editor;
     if (attached && !attached.isDestroyed) {
       const bound = relativePositionRuntimeFromState(attached.state);
       if (!bound || bound.yDoc !== yDoc) return state.frame;
+      dirty = false;
       const frame = buildFrame(yDoc, baseFor(attached.schema), attached.state.doc);
       publish(frame);
     } else {
       // Headless frames may paint cached content before sync, but ready never authorizes commands then.
       headlessSchema ??= roomContent(yDoc).doc.type.schema;
+      dirty = false;
       const frame = projectRoom(yDoc, baseFor(headlessSchema));
       headlessSchema = frame.doc.type.schema;
       publish(frame);
@@ -125,6 +133,7 @@ export function createReviewRuntime(
     timer = setTimeout(projectNow, REVIEW_DEBOUNCE_MS);
   };
   const invalidateBase = () => {
+    dirty = true;
     baseBlocks = new WeakMap();
     flushSoon();
   };
@@ -136,6 +145,7 @@ export function createReviewRuntime(
     _doc: Y.Doc,
     transaction: Y.Transaction,
   ) => {
+    dirty = true;
     if (!transaction.local) remoteArrival = true;
     if (attachments.length) return;
     if (transaction.local) schedule();
@@ -145,6 +155,7 @@ export function createReviewRuntime(
   const unsubscribe = room.subscribe((snapshot) => {
     if (snapshot.status === "synced" && !synced) {
       synced = true;
+      dirty = true;
       flushSoon();
     }
   });
@@ -154,6 +165,7 @@ export function createReviewRuntime(
     transaction: Parameters<typeof isRemoteDocumentRebuild>[0];
   }) => {
     if (!transaction.docChanged) return;
+    dirty = true;
     if (isRemoteDocumentRebuild(transaction)) flushSoon();
     else schedule();
   };
@@ -179,6 +191,7 @@ export function createReviewRuntime(
     attachEditor(editor, surface = "editor") {
       const attachment = { editor, surface };
       attachments.push(attachment);
+      dirty = true;
       editor.on("transaction", onTransaction);
       const bound = relativePositionRuntimeFromState(editor.state);
       if (bound) {
@@ -190,6 +203,8 @@ export function createReviewRuntime(
         editor.off("transaction", onTransaction);
         const at = attachments.indexOf(attachment);
         if (at >= 0) attachments.splice(at, 1);
+        painted.delete(editor);
+        dirty = true;
         flushSoon();
       };
     },

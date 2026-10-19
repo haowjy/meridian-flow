@@ -44,7 +44,7 @@ export function MobileReviewHeader({
               finished
                 ? undefined
                 : {
-                    canApply: controller.canApplyReviewedDraft,
+                    canApply: header.canApply,
                     applying: controller.isApplying,
                     onApply: header.applyDraft,
                     onDiscard: header.discardDraft,

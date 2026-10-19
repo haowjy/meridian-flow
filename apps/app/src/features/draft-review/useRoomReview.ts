@@ -1,5 +1,5 @@
 /** Headless and open surfaces retain the rooms on screen and subscribe to one projection per room. */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDraftMetadata } from "@/client/query/useDraftMetadata";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { type DraftRoomRead, readDraftRoom } from "@/core/editor/draft-room-read";
@@ -8,22 +8,16 @@ import {
   useLiveDocumentSessionRegistry,
 } from "@/features/project/context/account-feature-context";
 import type { DraftRef } from "./review-command-types";
-import {
-  EMPTY_REVIEW_STATE,
-  type ReviewRuntime,
-  type ReviewState,
-  retainReviewRuntime,
-} from "./review-runtime";
+import { EMPTY_REVIEW_STATE, type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 import { retainRoomAttribution } from "./room-attribution";
 
 type HeldReview = {
-  state: ReviewState;
   runtime: ReviewRuntime | null;
   read: DraftRoomRead;
   session: DocumentSession | null;
 };
-export function useRoomReviews(drafts: readonly DraftRef[]) {
+export function useRoomBindings(drafts: readonly DraftRef[]) {
   const registry = useLiveDocumentSessionRegistry();
   const owner = useDraftCommandOwner();
   const metadata = useDraftMetadata(drafts);
@@ -32,7 +26,15 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
   );
   const namesKey = JSON.stringify(names);
   const metadataKey = JSON.stringify(
-    metadata.map((result, index) => [drafts[index], result.dataUpdatedAt, result.data?.status]),
+    metadata.map((result, index) => [
+      drafts[index].projectId,
+      drafts[index].workId,
+      drafts[index].documentId,
+      drafts[index].itemKey,
+      result.dataUpdatedAt,
+      result.data?.status,
+      result.isError,
+    ]),
   );
   useEffect(() => {
     for (const [index, result] of metadata.entries())
@@ -66,7 +68,6 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
       let session: DocumentSession | null = null;
       let runtime: ReviewRuntime | null = null;
       let release = () => {};
-      let unwatchRuntime = () => {};
       let releaseAttribution = () => {};
       const publish = () =>
         setHeld((prior) =>
@@ -74,13 +75,11 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
             read,
             session,
             runtime,
-            state: runtime?.state() ?? EMPTY_REVIEW_STATE,
           }),
         );
       const follow = () => {
         const next = read.session();
         if (next !== session) {
-          unwatchRuntime();
           releaseAttribution();
           release();
           session = next;
@@ -94,7 +93,6 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
           };
           releaseAttribution =
             next && runtime ? retainRoomAttribution(next, runtime, draft) : () => {};
-          unwatchRuntime = runtime?.subscribe(publish) ?? (() => {});
         }
         publish();
       };
@@ -102,39 +100,70 @@ export function useRoomReviews(drafts: readonly DraftRef[]) {
       follow();
       leases.current.set(name, () => {
         unwatch();
-        unwatchRuntime();
         releaseAttribution();
         release();
         read.dispose();
       });
     }
   }, [namesKey, registry, owner]);
-  return drafts.map((_draft, index) => {
-    const name = names[index];
-    const current = name ? held.get(name) : null;
-    const meta = metadata[index];
-    const state = current?.state ?? EMPTY_REVIEW_STATE;
-    const fault = current?.read.state().kind;
-    const status =
-      meta?.data?.status === "gone"
-        ? "gone"
-        : meta?.isError || fault === "error" || fault === "unavailable"
-          ? "error"
-          : state.ready
-            ? "ready"
-            : "loading";
+  return useMemo(
+    () =>
+      drafts.map((_draft, index) => {
+        const name = names[index];
+        const current = name ? held.get(name) : null;
+        const meta = metadata[index];
+        const fault = current?.read.state().kind;
+        const status =
+          meta?.data?.status === "gone"
+            ? "gone"
+            : meta?.isError || fault === "error" || fault === "unavailable"
+              ? "error"
+              : current?.session
+                ? "ready"
+                : "loading";
+        return {
+          status,
+          runtime: current?.runtime ?? null,
+          roomName: name ?? null,
+          session: current?.session ?? null,
+          usable: current?.read.usable() ?? null,
+          retry:
+            current?.read.retry ??
+            (meta?.isError ? () => void meta.refetch() : undefined) ??
+            (() => {}),
+        } as const;
+      }),
+    [held, metadataKey, namesKey],
+  );
+}
+
+export function useRoomReviews(drafts: readonly DraftRef[]) {
+  const bindings = useRoomBindings(drafts);
+  const store = useMemo(() => {
+    const runtimes = bindings.map((binding) => binding.runtime);
+    let states = runtimes.map((runtime) => runtime?.state() ?? EMPTY_REVIEW_STATE);
     return {
+      subscribe(listener: () => void) {
+        const stops = runtimes.map((runtime) => runtime?.subscribe(listener));
+        return () => {
+          for (const stop of stops) stop?.();
+        };
+      },
+      snapshot() {
+        const next = runtimes.map((runtime) => runtime?.state() ?? EMPTY_REVIEW_STATE);
+        if (next.some((state, i) => state !== states[i])) states = next;
+        return states;
+      },
+    };
+  }, [bindings]);
+  const states = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
+  return bindings.map((binding, index) => {
+    const state = states[index];
+    return {
+      ...binding,
       ...state,
-      status,
-      runtime: current?.runtime ?? null,
-      roomName: name ?? null,
-      session: current?.session ?? null,
-      usable: current?.read.usable() ?? null,
-      retry:
-        current?.read.retry ??
-        (meta?.isError ? () => void meta.refetch() : undefined) ??
-        (() => {}),
-    } as const;
+      status: binding.status === "ready" && !state.ready ? ("loading" as const) : binding.status,
+    };
   });
 }
 export function useRoomReview(draft: DraftRef | null) {

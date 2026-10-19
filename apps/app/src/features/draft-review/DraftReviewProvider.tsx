@@ -25,7 +25,6 @@ import {
   useDraftReviewController,
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
-import { useReconcileReviewFocus } from "./useReconcileReviewFocus";
 import { useReviewRefresh } from "./useReviewRefresh";
 import { type ReviewRoomOwner, useReviewRoomOwner } from "./useReviewRoomOwner";
 
@@ -134,7 +133,6 @@ export function useDraftReviewScopeValue({
     dispatch: reviewState.dispatch,
     presented,
   });
-  useReconcileReviewFocus(controller);
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth

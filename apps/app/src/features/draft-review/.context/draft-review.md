@@ -6,9 +6,10 @@ owns diffing, grouping, move pairing and formatting context.
 
 ## One room, one runtime
 
-`useRoomReviews` retains the rooms of the rows on screen through
-`readDraftRoom`. Open reviews and headless dock/Work readers share the runtime
-by session object; a replacement account/session cannot inherit another
+`useRoomBindings` retains rooms through `readDraftRoom` and publishes lifecycle
+changes, not text frames. `useRoomReviews` subscribes to those runtimes through
+`useSyncExternalStore`; frames stay in the runtime rather than queued React state.
+Open reviews and headless dock/Work readers share the runtime by session object; a replacement account/session cannot inherit another
 room's frame. The final holder destroys its runtime. The pool keeps room
 sessions through its normal release grace and drains unacknowledged edits;
 IndexedDB keeps the local text across reloads.
@@ -18,14 +19,20 @@ PM nodes using the same Yjs mapping invalidation as the binding, exported by
 the scoped y-tiptap patch. Attaching an editor adopts its schema and retained
 nodes off the typing path. Editor projection uses the editor's own mapping;
 another attached editor receives positions only if its full content agrees.
-Removal widgets never enter either Yjs fragment.
+Base reads also retain PM nodes and their block array. Each base fragment has one
+current-schema reader; a schema replacement disposes the old observer while frozen
+frames keep their immutable nodes. Removal widgets never enter either Yjs fragment.
 
 `review-runtime.ts` caches base blocks per schema until `review_base` changes
 or the provider is invalidated. Keystrokes project against that cache after a
 120 ms trailing debounce. Peer writes and base changes coalesce into an immediate
 microtask projection, after Yjs/editor bindings have settled. The painter maps
-existing marks while the next frame waits. `projectNow()` cancels that wait.
-Ready requires first room sync; cached changes alone are not authority to
+existing marks while the next frame waits. A binding's whole-root PM replacement
+uses the actual content-diff map, not its whole-document step map; fully erased
+ranges retire instead of expanding inclusive marks across the replacement.
+`projectNow()` cancels the wait and reuses a clean frame. Any Yjs update invalidates
+the captured cut, including root-only changes; attribution-only publication does
+not repaint an already installed text frame. Ready requires first room sync; cached changes alone are not authority to
 Discard. Once synced, temporary offline status does not forget that history.
 
 ## Commands and attribution
@@ -46,10 +53,13 @@ Discard. Once synced, temporary offline status does not forget that history.
   Replaced/aborted reads never publish. `review-attribution.ts` joins the
   classifier's byline/membership to owner conversations; a subagent link asks
   the existing conversation reveal controller for its spawn card.
-- The controller's focus is a group id paired with its immutable frame. A new
-  projection invalidates that address and reconciles to the first remaining
-  group; a click reads the painter's current frame synchronously. Launch requests carry the id and frame all the way into focus. Persisted
-  bare ids never restore selection into a newer projection.
+- The controller retains explicit focus intent as a group id and immutable frame.
+  A new projection invalidates that address; each subscribed leaf derives the first
+  remaining group without writing a fresh frame back through the project scope.
+  Header Apply eligibility comes from that same leaf projection, not a controller
+  snapshot. A click reads the painter's current frame synchronously. Launch requests
+  carry id and frame together. Persisted bare ids never restore selection into a
+  newer projection.
   An empty frame shows “No changes left”; only the close contract can end the
   draft room or send the editor to live.
 
@@ -83,7 +93,9 @@ A record alone proves landing; an applied answer without
 the record keeps its contribution. Closed/refused answers remove only their
 own contribution. A terminal close cancels unsent clicks and observes a sent
 head's durable outcome; applied then needs no room record. Feedback starts at
-500 ms in reserved footer space. No queue or optimistic base persists.
+500 ms in reserved footer space. No queue or optimistic base persists. Queue changes invalidate its optimistic
+contribution independently of account UI notifications; the account publishes only
+changed command state or a changed item-to-draft binding.
 
 The base provider folds `applyBase` over unrecorded clicks in order. Base,
 record and queue changes invalidate it; typing only reprojects. Group targets

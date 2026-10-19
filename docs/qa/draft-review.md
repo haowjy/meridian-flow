@@ -174,3 +174,25 @@ and sends empty `groupIds` and `baseViewDelta`. Verify that it reveals the same
 document id, removes the pending item, and a same-id replay returns `applied`.
 The same empty click on a text draft or an already revealed item is malformed.
 A creation with a text room continues through the ordinary frozen text click.
+
+## Burst allocation and peer paint
+
+Use a 500-paragraph, roughly 50,000-word draft with 100 separated changes.
+The [preserved burst harness][burst-harness] seeds this fixture and drives the real
+browser command owner with two independent 10-key/s room clients.
+
+1. Observe a peer key before the fresh review projection. Unchanged small green
+   ranges stay small and in place; no range expands over the whole manuscript.
+2. Capture 100 Apply clicks without waiting for prior answers. Every captured
+   group leaves the review, each body stays frozen, and only the head dispatches.
+   After captures stop, queue depth falls to zero and queue-held operands release.
+3. Record request bytes, first/tenth/hundredth click-to-terminal times, browser
+   resident/swap/high-water counts and both senders' durable acknowledgement counts
+   against the work item's unchanged budgets. Do not call a capped or interrupted
+   run passing. Profile allocations separately from latency runs.
+4. Discard the sole change, then Ctrl+Z. Its prose, review group and enabled Apply
+   control return together. Repeat after navigating away and back to the draft.
+5. With unchanged toolbar availability, review paint/focus updates must not rebuild
+   the toolbar. Center-to-right alignment and Undo/Redo still update its real state.
+
+[burst-harness]: https://github.com/haowjy/meridian-flow-docs/tree/main/work/diff-based-review/b/burst/harness
