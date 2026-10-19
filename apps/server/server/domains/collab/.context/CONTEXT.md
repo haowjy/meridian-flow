@@ -80,7 +80,8 @@ refuses that document stale when the pin no longer holds (closed peer, reset or
 closed draft, closed branch). A peer is identity only until M4: a draft-mode
 write ensures it (an existing active peer, or a new one forked from the Work
 draft) before its room read, pins it, and binds the reply's lifetime to it;
-nothing reads peer content and no save writes it. A read never ensures a peer
+nothing reads peer content and no save writes it. The ensure snapshots live only
+when it has to make the branch's Work draft, which that snapshot seeds. A read never ensures a peer
 or a Work draft (S1): a draft-mode read of a document with no Work draft reads
 live. A drafted write with no reply runs as a one-entry reply through the
 save's fences and admission.

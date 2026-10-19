@@ -19,12 +19,9 @@ export type WorkDraftLookup = {
     documentId: DocumentId;
     threadId: ThreadId;
     branchId?: BranchId;
-    liveDoc: Y.Doc;
-  }): Promise<{
-    documentDraft: Pick<DraftSnapshot, "draftId" | "upstreamDraftId">;
-    /** The peer's content as the ensure left it. */
-    state: Uint8Array;
-  }>;
+    /** Live as it stands, asked for only when the ensure makes a Work draft to seed. */
+    liveDoc: () => Promise<Y.Doc>;
+  }): Promise<{ documentDraft: Pick<DraftSnapshot, "draftId" | "upstreamDraftId"> }>;
 };
 
 export type DraftPullService = {
@@ -271,14 +268,21 @@ export function createDraftPullService(input: {
 
     ensureThreadPeer(inputPeer) {
       return runOutsideResponseTransaction(async () => {
-        // The live snapshot seeds a peer (and its Work draft) only when the ensure makes one.
-        const liveDoc = await liveSnapshot(inputPeer.documentId);
+        // An existing peer takes no live snapshot: it seeds only a Work draft the ensure makes.
+        let seed: Y.Doc | undefined;
         let peer: Awaited<ReturnType<WorkDraftLookup["ensureThreadPeerDraft"]>>["documentDraft"];
         try {
-          peer = (await input.drafts.ensureThreadPeerDraft({ ...inputPeer, liveDoc }))
-            .documentDraft;
+          peer = (
+            await input.drafts.ensureThreadPeerDraft({
+              ...inputPeer,
+              liveDoc: async () => {
+                seed ??= await liveSnapshot(inputPeer.documentId);
+                return seed;
+              },
+            })
+          ).documentDraft;
         } finally {
-          liveDoc.destroy();
+          seed?.destroy();
         }
         const upstreamDraftId = peer.upstreamDraftId;
         if (!upstreamDraftId)
