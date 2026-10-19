@@ -119,6 +119,16 @@ restoration chains recover insertion origin only. Without deletion evidence, the
 its footprint keeps all candidate parts, and uncertain naming contributes no author. A state vector alone cannot fence deletion-only writes. The classifier also returns the unresolved item
 ranges so the browser requests evidence revisions rather than every text snapshot.
 
+`appliedParts(doc, parts, record?)` associates positive Apply evidence with
+immutable receipt ranges. Insertions match `base`, including validated Undo
+restoration ancestry; deletions match `settled` by current ID only. Any overlap
+is evidence, not full receipt coverage (a receipt can include structural or
+writer-deleted units). A partially applied part can still have pending review
+membership. The host combines that evidence with lifecycle and membership to
+distinguish pending from discarded; absence of a change alone never proves Apply.
+A part with a deleted conversation or turn keeps its ranges and membership but
+has no byline.
+
 ## Apply and local Discard are the same operation on two sides
 
 `composeGroups` selects hunks by group id and returns block-range patches, each

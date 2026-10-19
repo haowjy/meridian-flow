@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft Apply evidence recognizes Undo-restored AI items and preserves unnamed receipt membership after a conversation or turn is deleted.
+
 - Draft review merging keeps one copy of a shared insertion even when live also changes an adjacent word; dependent deletions still remove that text.
 
 - Shared frozen Apply merging and optimistic base deltas now use the draft review kernel; low-similarity flat rewrites retain their paragraph identity.
