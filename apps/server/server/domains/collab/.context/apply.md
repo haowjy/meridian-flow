@@ -30,7 +30,13 @@ recovery wait for the root commit through the existing append lifetime.
 
 Trail changes compare the actual live before/after identities and visible
 content, with navigation built from the committed result. Owners are the
-selected groups' receipt members, not draft journal playback. Apply explicitly
+selected groups' receipt members, not draft journal playback. Compilation
+keeps each selected hunk's support in P and fully removed base blocks. The one
+actual live rebase's correspondence joins that support to committed output and
+removed live identities, then intersects with the actual live changes. The
+whole-click owner union is only for signaling, never passage attribution.
+The Apply answer's `overrode` comes from the kernel, not the conflict report.
+Apply explicitly
 signals each owner turn and shared conversation after recording its trail.
 Migration 0076 removes push-journal, placement and settlement ownership reads
 from the installed signal functions; ordinary row signals retain JIT off.
