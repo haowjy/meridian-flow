@@ -7,7 +7,10 @@ cannot be mixed in the merge kernel. Receipt membership is classified at that
 cut, not replayed onto live. Unknown groups refuse before any command claim.
 
 The command lookup precedes resolution, validation and every fresh refusal.
-The whole envelope and body are digested. A committed result wins even after
+The whole envelope and body are digested, including the stable `draftId` captured
+with text clicks. That exact draft must belong to the addressed Work and document;
+a replacement draft never inherits an old click. Identity and closure are rechecked
+inside the atomic boundary. A committed result wins even after
 the draft closes; a duplicate that loses the unique claim rolls back before
 reading the winner. Pending commands are observations, not a second scheduler.
 

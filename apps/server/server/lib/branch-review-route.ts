@@ -112,18 +112,21 @@ const RangeBody = z
     to: z.number().int().nonnegative().safe(),
   })
   .refine((range) => range.to >= range.from);
-const ApplyClickBody = z.strictObject({
-  commandId: BranchCommandIdSchema,
-  snapshot: z.string().min(1).optional(),
-  baseViewDelta: z.array(
-    z.strictObject({
-      base: RangeBody,
-      draft: RangeBody,
-      blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
-    }),
-  ),
-  groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
-});
+const ApplyClickBody = z
+  .strictObject({
+    draftId: z.string().min(1).max(128).optional(),
+    commandId: BranchCommandIdSchema,
+    snapshot: z.string().min(1).optional(),
+    baseViewDelta: z.array(
+      z.strictObject({
+        base: RangeBody,
+        draft: RangeBody,
+        blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
+      }),
+    ),
+    groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
+  })
+  .refine((body) => Boolean(body.snapshot) === Boolean(body.draftId));
 const DiscardBody = z.strictObject(Base);
 
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {

@@ -18,6 +18,7 @@ import type { ApplyClickAnswer, ApplyClickResult } from "@meridian/contracts/bra
 import type { Database } from "@meridian/database";
 import {
   branchCommands,
+  branches,
   changeTrailDirtyLog,
   documentDrafts,
   pushLineage,
@@ -124,7 +125,24 @@ export function createDrizzleApplyClick(
   }
   return {
     closed,
-    async loadBase(draftId) {
+    async loadBase(command) {
+      const draftId = command.request.draftId;
+      if (!draftId) return null;
+      const [identity] = await currentDrizzleDb(db)
+        .select({ id: documentDrafts.id })
+        .from(documentDrafts)
+        .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
+        .where(
+          and(
+            eq(documentDrafts.id, draftId),
+            eq(documentDrafts.documentId, command.documentId),
+            eq(documentDrafts.kind, "work_draft"),
+            eq(documentDrafts.status, "active"),
+            eq(branches.originWorkId, command.workId),
+            eq(branches.status, "active"),
+          ),
+        );
+      if (!identity) return null;
       try {
         return await deps.coordinator.loadBase(draftId);
       } catch (cause) {
@@ -190,10 +208,22 @@ export function createDrizzleApplyClick(
                       await acquireEndUseScope(db, { documentIds: [command.documentId] });
                     else await lockDocumentMutation(tx, command.documentId);
                     if (draftId) {
+                      if (draftId !== command.request.draftId) return finish(await closed(command));
                       const [row] = await tx
                         .select({ status: documentDrafts.status })
                         .from(documentDrafts)
-                        .where(eq(documentDrafts.id, draftId));
+                        .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
+                        .where(
+                          and(
+                            eq(documentDrafts.id, draftId),
+                            eq(branches.originWorkId, command.workId),
+                            eq(branches.status, "active"),
+                            eq(documentDrafts.documentId, command.documentId),
+                            eq(documentDrafts.branchId, branchId),
+                            eq(documentDrafts.kind, "work_draft"),
+                          ),
+                        )
+                        .for("update");
                       if (!row || row.status === "closed") return finish(await closed(command));
                     }
                     const removed = await livingDocumentRefusal(tx, command.documentId);

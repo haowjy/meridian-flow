@@ -24,6 +24,9 @@ kernel; they do not certify the replacement rebase scheduler.
   `unsynced`, then the same click lands once acknowledged.
 - A duplicate and a paused original produce one lineage and return their own
   stored outcome. A landed retry remains `applied` after the draft closes.
+- A delayed deletion-only click answers `closed` after production Discard all
+  and replacement-draft creation, even when the replacement repeats the same
+  client-1 clocks and deletion. Live remains unchanged.
 - A throw after the live half leaves no live effect, base record, claim or room
   recovery; same-id retry then executes once.
 - Pending optimistic bases preserve adjacent clicks, a refused predecessor,
