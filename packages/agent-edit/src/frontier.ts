@@ -61,7 +61,7 @@ export function nextObservationFrontier(
     const carried = new Set(prev.unshown);
     const changed = Y.equalSnapshots(previous, current)
       ? new Set<string>()
-      : changedBlocks(doc, previous, current);
+      : changedSince(doc, previous, current);
     unshown = (id) => carried.has(id) || changed.has(id);
   }
   return {
@@ -71,7 +71,7 @@ export function nextObservationFrontier(
   };
 }
 
-function decodeSnapshot(bytes: Uint8Array): Y.Snapshot | null {
+export function decodeSnapshot(bytes: Uint8Array): Y.Snapshot | null {
   try {
     return Y.decodeSnapshotV2(bytes);
   } catch {
@@ -87,7 +87,7 @@ type Range = readonly [start: number, end: number];
  * vector alone accepts a snapshot whose staged deletion was refused, since a
  * delete-only update allocates no clock.
  */
-function containsSnapshot(current: Y.Snapshot, previous: Y.Snapshot): boolean {
+export function containsSnapshot(current: Y.Snapshot, previous: Y.Snapshot): boolean {
   for (const [client, clock] of previous.sv) {
     if (clock > 0 && (current.sv.get(client) ?? 0) < clock) return false;
   }
@@ -104,9 +104,41 @@ function containsSnapshot(current: Y.Snapshot, previous: Y.Snapshot): boolean {
  * the clocks born since and still visible; only their structs are visited,
  * never the rest of the history.
  */
-function changedBlocks(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): Set<string> {
-  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+export function changedSince(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): Set<string> {
   const changed = new Set<string>();
+  walkChangedRanges(doc, previous, current, (block) => {
+    changed.add(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }));
+  });
+  return changed;
+}
+
+/** Words whose visibility flipped, clipped to the changed part of each retained item. */
+export function changedWords(
+  doc: Y.Doc,
+  previous: Y.Snapshot,
+  current: Y.Snapshot,
+  region: ReadonlySet<string>,
+): number {
+  let words = 0;
+  walkChangedRanges(doc, previous, current, (block, item, start, end) => {
+    if (!region.has(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }))) return;
+    // Formats and container items have no prose; inline atoms still count as a fragment.
+    if (item.content instanceof Y.ContentString) {
+      const text = item.content.str.slice(start - item.id.clock, end - item.id.clock);
+      if (text.length) words += Math.max(1, text.trim().split(/\s+/u).filter(Boolean).length);
+    } else if (item.content instanceof Y.ContentEmbed) words += 1;
+  });
+  return words;
+}
+
+/** One flipped-range walk serves both credit and the region check. */
+function walkChangedRanges(
+  doc: Y.Doc,
+  previous: Y.Snapshot,
+  current: Y.Snapshot,
+  visit: (block: Y.Item, item: Y.Item, start: number, end: number) => void,
+): void {
+  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   for (const [client, clock] of current.sv) {
     const before = previous.sv.get(client) ?? 0;
     const deletedNow = deleteRanges(current.ds.clients.get(client) ?? []);
@@ -124,11 +156,15 @@ function changedBlocks(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): S
         if (!(struct instanceof Y.Item)) continue;
         const block = topLevelItem(struct, fragment);
         if (block)
-          changed.add(frontierBlockId({ clientID: block.id.client, clock: block.id.clock }));
+          visit(
+            block,
+            struct,
+            Math.max(start, struct.id.clock),
+            Math.min(end, struct.id.clock + struct.length),
+          );
       }
     }
   }
-  return changed;
 }
 
 /** The fragment child whose subtree holds `item`, or null outside the document fragment. */
@@ -189,4 +225,30 @@ function below(ranges: readonly Range[], limit: number): Range[] {
   return ranges.flatMap(([start, end]): Range[] =>
     start < limit ? [[start, Math.min(end, limit)]] : [],
   );
+}
+
+/** A planning frontier is usable only in its room and when all its history survives. */
+export function planningSnapshot(
+  doc: Y.Doc,
+  room: string,
+  frontier: ObservationFrontier | null,
+): Y.Snapshot | null {
+  if (!frontier || frontier.room !== room) return null;
+  const snapshot = decodeSnapshot(frontier.snapshot);
+  return snapshot && containsSnapshot(Y.snapshot(doc), snapshot) ? snapshot : null;
+}
+
+/** A disposable offline peer of what this request saw, plus this reply's surviving writes. */
+export function createPlanningView(
+  room: Y.Doc,
+  snapshot: Y.Snapshot,
+  ownUpdates: readonly Uint8Array[],
+): Y.Doc | null {
+  const view = Y.createDocFromSnapshot(room, snapshot, new Y.Doc({ gc: false }));
+  for (const update of ownUpdates) Y.applyUpdate(view, update);
+  if (view.store.pendingStructs || view.store.pendingDs) {
+    view.destroy();
+    return null;
+  }
+  return view;
 }
