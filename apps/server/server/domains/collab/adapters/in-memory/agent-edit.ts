@@ -218,6 +218,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
 
   return {
     ensureEmpty,
+    resolveRevertSource: async () => ({ refusal: "invalid_write" }),
     readRoom: async (docId, staged) => withStaged(await roomCopy(docId), staged),
     prepareSave: async (input) =>
       liveSave(await roomCopy(input.docId).catch(emptyWhenMissing), input, journal, () => {

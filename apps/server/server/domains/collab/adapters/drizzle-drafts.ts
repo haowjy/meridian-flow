@@ -8,7 +8,6 @@ import { randomUUID } from "node:crypto";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
-import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts, draftWriteJournal, threadWorks } from "@meridian/database/schema";
@@ -55,6 +54,7 @@ import {
   type RewriteOutcome,
   type StaleEffectCursor,
 } from "../domain/draft-store.js";
+import { draftRoom } from "../domain/observation-rooms.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
@@ -725,6 +725,7 @@ async function recordAppendReceipts(
         : {};
     await recordDocumentEdit(db, {
       documentId: input.documentId,
+      cuts: group.cuts ? { room: draftRoom(input.draftId), ...group.cuts } : undefined,
       wId: journal.wId ?? undefined,
       threadId: journal.threadId,
       turnId: journal.turnId as import("@meridian/contracts").TurnId | null | undefined,

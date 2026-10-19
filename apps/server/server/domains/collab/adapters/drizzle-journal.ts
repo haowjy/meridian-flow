@@ -7,6 +7,7 @@ import type {
   UpdateMeta,
 } from "@meridian/agent-edit/integration";
 import {
+  captureEditFrontier,
   captureEditParts,
   isDocumentNotFoundError,
   SavePreconditionRefused,
@@ -38,6 +39,7 @@ import { requireLivingDocument } from "../../context/tree/living-document.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { documentContainsUpdate } from "../domain/document-containment.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
+import { liveRoom } from "../domain/observation-rooms.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
@@ -681,6 +683,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
               : {}),
           })),
           updateRows,
+          new Map([...admissions].map(([id, head]) => [id, head.generation])),
         );
 
         return updateRows.map((row, index) => ({
@@ -1082,36 +1085,65 @@ async function captureLiveEdits(
   states: Map<string, Uint8Array>,
   entries: readonly import("@meridian/agent-edit/integration").JournalBatchAppendEntry[],
   rows: readonly { id: number }[],
+  generations: ReadonlyMap<string, bigint>,
 ): Promise<void> {
   for (const [docId, state] of states) {
+    const generation = generations.get(docId);
+    if (generation === undefined) throw new Error("Missing live receipt authority generation");
     const doc = createCollabYDoc({ gc: false }),
       groups = new Map<
         string,
         {
+          cuts?: { room: string; before: Uint8Array; after: Uint8Array };
           mutation: NonNullable<(typeof entries)[number]["mutation"]>;
-          receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+          receipts: {
+            update: Uint8Array;
+            frontier: ReturnType<typeof captureEditFrontier>;
+            origin: { kind: "live"; seq: number };
+          }[];
         }
       >();
     try {
       Y.applyUpdate(doc, state);
       for (const [i, entry] of entries.entries()) {
         if (entry.docId !== docId) continue;
-        const receipts = captureReceiptRows(
-          doc,
-          (entry.mutation?.editParts ?? [entry.update]).map((update) => ({
-            update,
-            origin: { kind: "live", seq: rows[i].id },
-          })),
-        );
-        if (!entry.mutation) continue;
+        const before =
+          entry.mutation?.actorKind === "agent" ? Y.encodeSnapshotV2(Y.snapshot(doc)) : null;
+        const receipts: {
+          update: Uint8Array;
+          frontier: ReturnType<typeof captureEditFrontier>;
+          origin: { kind: "live"; seq: number };
+        }[] = [];
+        for (const update of entry.mutation?.editParts ?? [entry.update]) {
+          const frontier = captureEditFrontier(doc);
+          // The transaction event contains only novel structs and newly applied deletes,
+          // never a retry's already-held prefix or cumulative tombstones.
+          const capture = (delta: Uint8Array) =>
+            receipts.push({ update: delta, frontier, origin: { kind: "live", seq: rows[i].id } });
+          doc.on("update", capture);
+          try {
+            Y.applyUpdate(doc, update);
+          } finally {
+            doc.off("update", capture);
+          }
+        }
+        if (!entry.mutation || !receipts.length) continue;
         const key = entry.mutation.writeId ?? String(rows[i].id),
           group = groups.get(key) ?? { mutation: entry.mutation, receipts: [] };
+        // Logical writes are contiguous; survivor filtering preserves their order.
+        if (before)
+          group.cuts = {
+            room: liveRoom(docId, generation),
+            before: group.cuts?.before ?? before,
+            after: Y.encodeSnapshotV2(Y.snapshot(doc)),
+          };
         group.receipts.push(...receipts);
         groups.set(key, group);
       }
-      for (const { mutation, receipts } of groups.values())
+      for (const { mutation, receipts, cuts } of groups.values())
         await recordDocumentEdit(db, {
           documentId: asDocumentId(docId),
+          cuts,
           threadId: asThreadId(mutation.threadId),
           turnId: asOptionalTurnId(mutation.turnId ?? undefined),
           responseId: asModelResponseId(mutation.authoringResponseId),

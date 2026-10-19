@@ -150,6 +150,22 @@ Apply record; a `system:reconcile` row carries causal replay coverage
 without becoming a semantic author or inverse target. Immutable edit parts keep
 authored identity through settlement.
 
+Model write receipts retain their source room and exact before/after Yjs V2
+snapshot cuts on `document_edits`, independent of compactable journal rows.
+Live captures each logical write during sequential locked apply; draft append
+captures each contiguous surviving logical group in `finalizeAppend` and passes
+its cuts through `AppendReceiptGroup`. Reconcile preserves survivor order.
+Contained retries retain the original immutable receipt; partial containment
+brackets only novel rows, and rejected writes get no cuts. Writer receipts do
+not allocate cuts.
+
+`createRevertSourceResolver` materializes those cuts only after containment of
+both against the source room. Its Drizzle reads are thread/document/agent/wId
+scoped, not destination write admission. A draft reset may retain both cuts
+when live replicated all their history (including a drained Apply); selective
+Discard can lose them. Closed or missing drafts and changed live authority
+generations refuse explicitly. An open draft ID alone proves nothing.
+
 Pending counts (the Works badge) are distinct pending documents per Work (the active
 branch's drafts with reviewable rows plus its change rows, so a created
 document counts before it has text), never raw journal-row totals; each Work stores its count (`works.pending_document_count`), reconciled by the Works boundary. Tree
