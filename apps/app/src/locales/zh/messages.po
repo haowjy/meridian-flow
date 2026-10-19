@@ -3070,6 +3070,10 @@ msgstr "未找到"
 msgid "Not reported"
 msgstr "未报告"
 
+#: src/features/chat/ToolRow.tsx
+msgid "Not run during the notes step"
+msgstr "记录笔记期间未运行"
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Not saved yet (keep this tab open until you're back online)"
 msgstr ""
