@@ -49,8 +49,3 @@
   prompt bake and tools, the switch notice, the leaf and position chain), and a
   missed seam runs a reply in the wrong mode, which is why it was rejected for
   now.
-
-- `observation_frontiers`' primary key is `(source_block_id, room_key)`, but a
-  block now records at most one frontier (one document per tool call or
-  reference block). Narrow it to `source_block_id` in a later migration if a
-  second room per block never appears (`packages/database/src/schema/agent-threads.ts`).
