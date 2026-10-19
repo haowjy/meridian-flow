@@ -18,6 +18,8 @@ export type DocumentEditResult =
       room: string | null;
       before?: Uint8Array;
       after?: Uint8Array;
+      /** An inverse's committed bytes, exactly as journaled, in order: the reply replays them. */
+      updates?: readonly Uint8Array[];
     };
 export interface DocumentEdits {
   execute(

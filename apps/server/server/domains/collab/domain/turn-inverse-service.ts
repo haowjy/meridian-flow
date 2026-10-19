@@ -81,7 +81,7 @@ export interface TurnInverseStore {
     kind: "undo" | "redo" | "revert" | "rollback";
     userId?: UserId;
     query: TurnInverseQuery;
-  }): Promise<string[]>;
+  }): Promise<{ handles: string[]; updates: Uint8Array[] }>;
   describePart(
     document: InverseDocument,
     part: StoredInversePart,

@@ -13,7 +13,13 @@ export { createAgentEditCodecFactory } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
-export type { FrontierLookup, FrontierLookups, ObservationFrontier } from "./frontier.js";
+export type {
+  FrontierLookup,
+  FrontierLookups,
+  ObservationFrontier,
+  ReplyMutations,
+} from "./frontier.js";
+export { createReplyMutations } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";

@@ -40,8 +40,11 @@ The room copy is the host's document plus the edit scope's staged writes the
 host kept against the scope's first-stage snapshot cut; entries it refuses
 leave the scope for their receipts and never reappear in a later view. A read
 renders from the room copy. A write plans on the view: the room copy at the
-model's planning frontier plus the reply's own updates (its settled saves and
-the scope's kept staged writes). `preOwnSnapshot`, the concurrency baseline,
+model's planning frontier plus the reply's own updates, in execution order: the
+reply's `ReplyMutations` (settled saves, immediate writes and its own undo, redo
+and revert, as the exact bytes committed) then the scope's kept staged writes.
+Only updates the current room contains replay, so a rolled-back or retired one
+never enters a view. `preOwnSnapshot`, the concurrency baseline,
 is the view before the write. The captured update applies to the room copy for
 the echo. Each captured segment takes a fresh client absent from both the view
 and the room copy, so parallel calls and write/undo/write in one reply never

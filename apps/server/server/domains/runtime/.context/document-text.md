@@ -90,7 +90,11 @@ agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/
   block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
   reads the run's credited ids live, so a sibling call's result counts as seen,
   and `planning` reads the ids as they stood when the authoring request was
-  built (calls in one response share the view from before it; every write plans on it). **Credit follows
+  built (calls in one response share the view from before it; every write plans on it). The
+  third, `reply`, is the provider reply's `ReplyMutations`: its own accepted writes and
+  inverses, which the view replays after that frontier. The reply's response scope
+  (`createResponseScope`) creates it, it outlives edit-scope rotations, and the reply
+  clears it in a `finally` however it ends. **Credit follows
   what the request carries** (C10): the block set is the projector's
   `creditedBlockIds` (`compaction/project.ts`), the blocks after the latest
   complete compaction plus that compaction's re-shown documents, or every
