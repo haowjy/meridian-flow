@@ -21,7 +21,13 @@
  *   server.
  */
 
-import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
+import {
+  type DocumentLinkAnswer,
+  parseLinkRef,
+  resolveDocumentHref,
+  resolveStoredLink,
+} from "@meridian/contracts";
+import type { ContextUriVariables } from "@meridian/contracts/context-uri";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -44,6 +50,8 @@ import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocum
  * (the index's revision).
  */
 export type LinkResolutionScope = {
+  threadId?: string;
+  variables?: ContextUriVariables;
   projectId: string;
   /** Resolved Work row id, including No Work; unresolved surfaces use a pending scope. */
   workId: string;
@@ -86,6 +94,11 @@ export function createProjectLinkResolver(
   return {
     index,
     local({ ref, target }) {
+      if (ref === null && target.kind === "scheme") {
+        const resolved = resolveDocumentHref(target.uri, null, { variables: scope.variables });
+        if (!resolved) return UNASKED;
+        target = { kind: "scheme", uri: resolved.uri + resolved.suffix };
+      }
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.
       if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
@@ -117,8 +130,16 @@ export function createProjectLinkResolver(
       const response = await resolveDocumentLinks(projectId, {
         ...(rootThreadId ? { rootThreadId } : { workId }),
         ...(chatId ? { chatId } : {}),
+        ...(scope.threadId ? { scopedThreadId: scope.threadId } : {}),
         baseUri,
-        links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
+        links: questions.map(({ ref, target }) => {
+          const href = linkTargetHref(target);
+          const resolved =
+            ref === null && baseUri === null
+              ? resolveDocumentHref(href, null, { variables: scope.variables })
+              : null;
+          return { ref, href: resolved ? resolved.uri + resolved.suffix : href };
+        }),
       });
       if (response.answers.length !== questions.length)
         throw new Error("link resolution answered out of shape");

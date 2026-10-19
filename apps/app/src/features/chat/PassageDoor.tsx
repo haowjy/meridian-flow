@@ -6,6 +6,7 @@ import {
   type ContextPassageAnchor,
   useChatContextNavigation,
   useChatContextRoutability,
+  useChatContextVariables,
 } from "./ChatContextNavigation";
 import { documentDisplayName } from "./document-display-name";
 import type { ExcerptSpan } from "./tool-result-preview";
@@ -22,7 +23,8 @@ export function PassageDoor({ path, excerpt, passage }: PassageDoorProps) {
   const openContextUri = useChatContextNavigation();
   const canOpenContextUri = useChatContextRoutability();
 
-  const uri = contextUriFromWritePath(path);
+  const variables = useChatContextVariables();
+  const uri = contextUriFromWritePath(path, { variables });
   const isDoor =
     uri !== null &&
     passage !== undefined &&

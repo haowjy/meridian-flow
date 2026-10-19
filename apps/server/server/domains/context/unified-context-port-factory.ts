@@ -92,6 +92,7 @@ const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
 const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["scratch"];
 
 export interface UnifiedContextPortFactory {
+  threadFolders?: ThreadFolders;
   lineages: ScratchLineages;
   topPrimaryChats: TopPrimaryChatResolver;
   /** Chats by handle, for `uploads://@/c12/` addresses. */
@@ -394,7 +395,11 @@ function buildUnifiedContextPort(input: {
       scope.kind === "work" && scope.authority.workSlug === null
         ? scope.authority.workId
         : await storeResolvers.resolveNoWorkId(scope.projectId),
-    parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
+    parseOptions: {
+      ...(scope.kind === "work" ? { variables: scope.thread?.variables } : {}),
+      barePathDefault: "manuscript",
+      schemes: UNIFIED_CONTEXT_SCHEMES,
+    },
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
     ...(input.resolveForward ? { resolveForward: input.resolveForward } : {}),
@@ -611,6 +616,7 @@ export function createInMemoryUnifiedContextPortFactory(
     };
 
   return {
+    threadFolders: storeResolvers.threadFolders,
     lineages: storeResolvers.lineages,
     chats: storeResolvers.chats,
     topPrimaryChats: options.topPrimaryChats ?? { resolveTopPrimaryChat: async () => null },
@@ -753,6 +759,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   }
 
   return {
+    threadFolders: storeResolvers.threadFolders,
     lineages: storeResolvers.lineages,
     chats: storeResolvers.chats,
     topPrimaryChats,

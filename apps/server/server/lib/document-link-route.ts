@@ -9,6 +9,7 @@
 
 import {
   type CatalogDocument,
+  contextUriVariables,
   type DocumentLinkAnswer,
   documentTitleFromUri,
   type LinkResolution,
@@ -31,6 +32,7 @@ import type { ProjectRepository } from "../domains/projects/ports/project-reposi
 import { throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export interface DocumentLinkRouteDeps {
+  threads?: Pick<import("../domains/threads/index.js").ThreadRepository, "findById">;
   projectRepo: ProjectRepository;
   documentLinks: DocumentLinkResolver;
   linkScopes: DocumentLinkScopes;
@@ -46,8 +48,23 @@ export async function handleDocumentLinkResolveRequest(
   deps: DocumentLinkRouteDeps,
   input: { projectId: string; userId: UserId; request: ResolveDocumentLinksRequest },
 ): Promise<ResolveDocumentLinksResponse> {
-  const { projectId, userId, request } = input;
+  const { projectId, userId } = input;
+  let request = input.request;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
+  if (request.scopedThreadId && request.baseUri === null && !request.holderDocumentId) {
+    const thread = await deps.threads?.findById(request.scopedThreadId);
+    if (!thread || thread.projectId !== projectId || thread.userId !== userId)
+      throw createError({ statusCode: 400, message: "Invalid chat link scope" });
+    const variables = contextUriVariables(thread.notesScope ?? {});
+    request = {
+      ...request,
+      links: request.links.map((link) => {
+        const resolved =
+          link.ref === null ? resolveDocumentHref(link.href, null, { variables }) : null;
+        return resolved ? { ...link, href: resolved.uri + resolved.suffix } : link;
+      }),
+    };
+  }
   // Lineage is Scratch's owner, not a replacement for the chat's No Work
   // branch view: project-document refs still read in that Work's branch view.
   const workId = request.rootThreadId

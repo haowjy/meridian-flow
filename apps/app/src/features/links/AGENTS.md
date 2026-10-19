@@ -41,3 +41,9 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) for scope, answer, creation,
 and document-index contracts.
 
 [link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
+
+Chat syntax links receive prepared notes variables from the validated thread
+projection. Canonicalize them at address intake before cache keys, lookups or
+follow outcomes; include that scope in resolver generations. Editor holders
+supply no variables. The server derives any raw chat substitution from a proved
+`scopedThreadId`, never from a client-supplied map or an Editor holder.

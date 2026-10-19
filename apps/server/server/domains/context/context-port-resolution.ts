@@ -4,6 +4,7 @@
  */
 
 import type { DocumentVersion } from "@meridian/agent-edit";
+import { type ContextUriVariables, contextUriVariables } from "@meridian/contracts/context-uri";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
@@ -20,6 +21,8 @@ import { scratchOwnerFor } from "./scratch-owner.js";
 import type { UnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
 export interface ThreadContextResolution {
+  variables?: ContextUriVariables;
+  threadFolders?: import("./ports/thread-folders.js").ThreadFolders;
   thread: Thread;
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
@@ -75,6 +78,7 @@ export async function resolveThreadContext(
   const topChat = await deps.topPrimaryChats?.resolveTopPrimaryChat(thread.id);
   return {
     thread,
+    variables: contextUriVariables(thread.notesScope ?? {}),
     uploadChats: deps.uploadChats,
     uploadsOwner: topChat ? { chatId: topChat.chatId, chatRef: topChat.chatRef } : null,
     scratchLineages: deps.scratchLineages,
@@ -114,6 +118,7 @@ export function contextPortForThread(
       }),
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
+      variables: resolution.variables,
       responseId: options.responseId,
       branchWork: options.liveWrites ? null : resolution.primaryBranchWork,
       ...(options.version ? { version: options.version } : {}),

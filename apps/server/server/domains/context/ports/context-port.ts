@@ -43,6 +43,7 @@ export type ContextScheme = ContextUriScheme;
  * live text, without draft changes, when `version` is `live`.
  */
 export interface ThreadContextView {
+  variables?: import("@meridian/contracts/context-uri").ContextUriVariables;
   scratchOwner?: import("../scratch-owner.js").ScratchOwner;
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Chat address inputs accept `$THREAD` for their own notes and `$PARENT` for their originating chat’s notes. Tool results, AI-written links and returned artifacts keep canonical addresses; variables outside chat scope fail instead of becoming filenames.
+
 - Scratch addresses can name a chat notes folder with an explicit owner and `@/c15/` (or `@/p7/`) qualifier. Associated roots are allocated lazily by create, mkdir and move destinations. Roots stay fixed; their contents remain editable, and deleting a root allows the next write to recreate it.
 
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.

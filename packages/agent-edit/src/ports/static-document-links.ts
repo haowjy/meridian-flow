@@ -106,6 +106,7 @@ export function createStaticDocumentLinks(
         request.written ?? [],
         holderUri,
         request.context?.uploadsChat,
+        request.context?.variables,
       )) {
         loaded.addresses.add(uri);
       }

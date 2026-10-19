@@ -74,7 +74,10 @@ const pendingWriteMode = sql<AiWriteMode | null>`(
   LIMIT 1
 )`;
 
+import { threadNotesScope } from "./thread-notes-scope.js";
+
 const threadColumns = {
+  notesScope: threadNotesScope,
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,

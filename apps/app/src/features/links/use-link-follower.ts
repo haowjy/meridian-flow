@@ -33,6 +33,7 @@
  * opens; once it opens, the navigation completes.
  */
 
+import { resolveDocumentHref } from "@meridian/contracts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -123,6 +124,9 @@ export function useLinkFollower({
   const rootThreadId = ready?.rootThreadId ?? null;
   const chatId = ready?.chatId ?? null;
   const baseUri = ready?.baseUri ?? null;
+  const threadId = ready?.threadId;
+  const variables = ready?.variables;
+  const variablesKey = JSON.stringify(variables ?? {});
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
   // The latest host callbacks, read when a follow needs them. A host passing a
@@ -157,11 +161,11 @@ export function useLinkFollower({
     };
     const unregister = resolution.registerResolver(
       createProjectLinkResolver(
-        { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId },
+        { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId, threadId, variables },
         registered,
         settlements,
       ),
-      { baseUri, projectId },
+      { baseUri, projectId, variables },
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();
@@ -175,6 +179,8 @@ export function useLinkFollower({
     // how an answer about the old one becomes unreachable.
   }, [
     baseUri,
+    variables,
+    threadId,
     holderDocumentId,
     projectId,
     resolution,
@@ -228,7 +234,7 @@ export function useLinkFollower({
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
   const scopeKey = ready
-    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatId ?? ""}`
+    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}\u0000${ready.chatId ?? ""}\u0000${threadId ?? ""}\u0000${variablesKey}`
     : pending
       ? null
       : "";
@@ -254,6 +260,11 @@ export function useLinkFollower({
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
+      if (ref === null && baseUri === null && target.kind === "scheme") {
+        const parsed = resolveDocumentHref(target.uri, null, { variables });
+        if (!parsed) return;
+        target = { kind: "scheme", uri: parsed.uri + parsed.suffix };
+      }
       const controller = new AbortController();
       if (gesture === "current") {
         if (currentFollow.current) abortFollow(currentFollow.current);
@@ -303,7 +314,7 @@ export function useLinkFollower({
         if (currentFollow.current === controller) currentFollow.current = null;
       });
     },
-    [abortFollow, active, clearShown, pending, projectId, resolution],
+    [abortFollow, active, clearShown, pending, projectId, resolution, baseUri, variables],
   );
 
   const follow = useCallback(

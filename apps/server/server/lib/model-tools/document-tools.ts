@@ -205,6 +205,7 @@ async function writeUnderGrant(
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
+  variables?: import("@meridian/contracts/context-uri").ContextUriVariables,
 ): Promise<
   | (WriteOutcome & { isError: false; evidence: ResultEvidence })
   | (WriteToolErrorOutput & { evidence?: ResultEvidence })
@@ -223,6 +224,7 @@ async function writeUnderGrant(
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
         ...(uploadsChat ? { uploadsChat } : {}),
+        variables,
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
         ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
@@ -381,6 +383,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied,
       ctx,
       context.resolution.uploadsOwner?.chatRef,
+      context.resolution.variables,
     );
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;

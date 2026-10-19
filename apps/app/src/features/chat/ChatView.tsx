@@ -15,8 +15,10 @@
  * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
  * editor bar share one controller so preview selection cannot drift.
  */
+
 import { t } from "@lingui/core/macro";
 import type { ProjectId, UserId } from "@meridian/contracts";
+import { contextUriVariables } from "@meridian/contracts/context-uri";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import {
   answeredControlIds,
@@ -629,6 +631,7 @@ export function ChatView({
       <TranscriptLinkNavigationContext.Provider value={links.navigation}>
         <ReferenceAvailabilityContext.Provider value={links.references}>
           <ChatContextNavigationProvider
+            variables={contextUriVariables(activeThread?.notesScope ?? {})}
             onOpenContextUri={links.doors?.open}
             canOpenContextUri={links.doors?.canOpen}
           >

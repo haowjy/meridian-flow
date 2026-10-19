@@ -1,6 +1,10 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
 
-import { isOwnedContextScheme, parseContextUri } from "@meridian/contracts/context-uri";
+import {
+  isOwnedContextScheme,
+  parseContextUri,
+  sourceLocationFromContextUri,
+} from "@meridian/contracts/context-uri";
 import type {
   CatalogFileClassification,
   CatalogFileEntry,
@@ -68,12 +72,13 @@ export function catalogEntryLocation(
     !parsed.ok ||
     parsed.value.normalized !== entry.uri ||
     parsed.value.scheme !== source.scheme ||
-    parsed.value.path !== entry.path.join("/") ||
+    sourceLocationFromContextUri(parsed.value) !== entry.path.join("/") ||
     entry.path.at(-1) !== entry.name
   )
     throw new Error("Catalog file URI is inconsistent with its source or path");
 
-  const { authority, scheme, path } = parsed.value;
+  const { authority, scheme } = parsed.value;
+  const path = sourceLocationFromContextUri(parsed.value);
   if (view.scope.kind === "project") {
     if (authority.kind !== "contextual" || isOwnedContextScheme(scheme))
       throw new Error("Catalog file URI has invalid project authority");

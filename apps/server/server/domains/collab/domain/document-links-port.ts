@@ -26,6 +26,7 @@ export function createScopedDocumentLinks(input: {
         docs: request.docs,
         written: request.written,
         ...(request.context?.uploadsChat ? { uploadsChat: request.context.uploadsChat } : {}),
+        variables: request.context?.variables,
         stored: request.stored,
         refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
         addresses: request.addresses,

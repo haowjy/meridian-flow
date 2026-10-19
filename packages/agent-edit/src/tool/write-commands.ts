@@ -339,7 +339,13 @@ export function createWriteCommands(deps: {
       shown,
       context,
     });
-    const assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+    const assigner = linkAssigner(
+      address.documentId,
+      links.scope,
+      shown,
+      context.uploadsChat,
+      context.variables,
+    );
     const existingBlocks = options.model.getBlocks(toDocHandle(planDoc));
     if (existingBlocks.length > 0 && !overwriting) return alreadyExists;
     let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
@@ -456,6 +462,7 @@ export function createWriteCommands(deps: {
             links.scope,
             shown,
             context.uploadsChat,
+            context.variables,
           );
           const resolved = plan.ok ? plan.assign(assigner) : plan;
           if (!resolved.ok) {
@@ -777,11 +784,13 @@ export function createWriteCommands(deps: {
     scope: Parameters<typeof createWriteLinkAssigner>[0]["scope"],
     shown: Parameters<typeof createWriteLinkAssigner>[0]["shown"],
     uploadsChat: string | undefined,
+    variables: import("@meridian/contracts/context-uri").ContextUriVariables | undefined,
   ): WriteLinkAssigner {
     return createWriteLinkAssigner({
       scope,
       shown,
       ...(uploadsChat ? { uploadsChat } : {}),
+      variables,
       ...(options.onLinkSpliceFallback
         ? {
             onSpliceFallback: (reason) => options.onLinkSpliceFallback?.({ documentId, reason }),

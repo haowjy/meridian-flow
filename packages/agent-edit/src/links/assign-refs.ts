@@ -14,6 +14,7 @@
 import {
   type AheadRef,
   aheadAddress,
+  type ContextUriVariables,
   documentRef,
   mintAheadRef,
   parseLinkRef,
@@ -53,6 +54,7 @@ export interface AssignInput {
   mint?: () => AheadRef;
   /** The writing thread's top chat; a freshly written bare `uploads://` link is stored qualified to it. */
   uploadsChat?: string;
+  variables?: ContextUriVariables;
 }
 
 export interface AssignResult {
@@ -74,6 +76,7 @@ export interface AssignOccurrencesInput {
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
   uploadsChat?: string;
+  variables?: ContextUriVariables;
 }
 
 /**
@@ -106,6 +109,7 @@ export function assignOccurrences(input: AssignOccurrencesInput): {
       mint,
       minted,
       ...(input.uploadsChat ? { uploadsChat: input.uploadsChat } : {}),
+      variables: input.variables,
     });
     writtenIndexes.forEach(({ index }, position) => {
       attrs[index] = assigned[position] as OccurrenceAttrs;
@@ -165,6 +169,7 @@ function assignKind(input: {
   mint: () => AheadRef;
   minted: AheadMint[];
   uploadsChat?: string;
+  variables?: ContextUriVariables;
 }): OccurrenceAttrs[] {
   const { grammar, scope } = input;
   const holderUri = scope.holder.uri;
@@ -310,12 +315,13 @@ function fresh(
     mint: () => AheadRef;
     minted: AheadMint[];
     uploadsChat?: string;
+    variables?: ContextUriVariables;
   },
   occurrence: LinkOccurrence,
 ): OccurrenceAttrs {
   const { grammar, scope } = input;
   const { title } = occurrence.attrs;
-  const href = qualifyWrittenHref(occurrence.attrs.href, input.uploadsChat);
+  const href = qualifyWrittenHref(occurrence.attrs.href, input.uploadsChat, input.variables);
   if (grammar.kind === "source") {
     const asset = assetFor(scope, href);
     if (asset) return { ref: null, href: `asset:${asset}`, title };
@@ -395,6 +401,7 @@ export function createWriteLinkAssigner(input: {
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
   uploadsChat?: string;
+  variables?: ContextUriVariables;
   /** Hears each splice that fell back to whole-group assignment (possible format churn there). */
   onSpliceFallback?: (reason: SpliceFallback) => void;
 }): WriteLinkAssigner {
@@ -404,6 +411,7 @@ export function createWriteLinkAssigner(input: {
     shown: input.shown,
     ...(input.mint ? { mint: input.mint } : {}),
     ...(input.uploadsChat ? { uploadsChat: input.uploadsChat } : {}),
+    variables: input.variables,
   };
   const assignSpan = (old: readonly PMNode[], written: readonly PMNode[]) => {
     const result = assignLinkRefs({ ...common, old: walkLinkOccurrences(old), written });

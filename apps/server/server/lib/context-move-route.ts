@@ -1,3 +1,4 @@
+import { sourceLocationFromContextUri } from "@meridian/contracts/context-uri";
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
 import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
@@ -475,7 +476,8 @@ export async function handleContextMoveRequest(
   async function resolveDestinationLocator(uri: string): Promise<ResolvedContextMoveLocator> {
     const parsed = parseUnifiedContextUri(uri);
     if (!parsed.ok) contextErrorToHttp(parsed.error);
-    const { scheme, path, authority } = parsed.value;
+    const { scheme, authority } = parsed.value;
+    const path = sourceLocationFromContextUri(parsed.value);
     if (scheme === "uploads") throw uploadsNotMovable();
     if (authority.kind === "work" || authority.kind === "none") {
       const resolved =

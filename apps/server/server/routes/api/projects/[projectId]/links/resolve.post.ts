@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   const response = await handleDocumentLinkResolveRequest(
     {
       projectRepo: app.projectRepo,
+      threads: app.repos.threads,
       documentLinks: app.documentLinks,
       linkScopes: app.linkScopes,
       workAuthorityResolver: app.workAuthorityResolver,

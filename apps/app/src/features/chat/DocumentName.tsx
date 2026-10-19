@@ -2,7 +2,11 @@
 import { t } from "@lingui/core/macro";
 
 import { contextUriFromWritePath } from "@/lib/context-uri";
-import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
+import {
+  useChatContextNavigation,
+  useChatContextRoutability,
+  useChatContextVariables,
+} from "./ChatContextNavigation";
 import { documentDisplayName } from "./document-display-name";
 
 export type DocumentNameProps = {
@@ -20,7 +24,8 @@ export function DocumentName({ path, insideDoor = false, label = "name" }: Docum
 
   // Bare paths (`chapter.md`) are what `write` input carries most of the time;
   // the route predicate requires a scheme, so normalize before asking.
-  const uri = contextUriFromWritePath(path);
+  const variables = useChatContextVariables();
+  const uri = contextUriFromWritePath(path, { variables });
   const isDoor =
     uri !== null && !insideDoor && openContextUri !== null && canOpenContextUri?.(uri) === true;
 

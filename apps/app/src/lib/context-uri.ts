@@ -2,8 +2,8 @@
  * context-uri — canonical frontend parsing, formatting, and route adaptation for context URIs.
  */
 import {
-  canonicalContextUri,
   isWorkScopedScheme,
+  type ParseContextUriOptions,
   type ParsedContextUri,
   parseUnifiedContextUri,
   sourceLocationFromContextUri,
@@ -54,8 +54,11 @@ export function chatIdForUploadsUri(uri: string, chats: ChatUploadOwners): strin
   return parsed.authority.kind === "contextual" ? chats.own : null;
 }
 
-export function parseContextUri(uri: string): ContextUri | null {
-  const parsed = parseUnifiedContextUri(uri);
+export function parseContextUri(
+  uri: string,
+  options: ParseContextUriOptions = {},
+): ContextUri | null {
+  const parsed = parseUnifiedContextUri(uri, options);
   if (!parsed.ok) return null;
   return { ...parsed.value, path: formatContextPath(sourceLocationFromContextUri(parsed.value)) };
 }
@@ -66,17 +69,12 @@ export function parseContextUri(uri: string): ContextUri | null {
  * which must never be filed under the manuscript, and for a path that parses
  * to no address (`uploads://@c1/notes`, `a/../b`). Never throws.
  */
-export function contextUriFromWritePath(path: string): string | null {
-  const parsed = parseUnifiedContextUri(path);
-  if (parsed.ok) return parsed.value.normalized;
-  if (parsed.error.unknownScheme !== undefined) return null;
-  // A model-written path is untrusted: the serializer throws on reserved or
-  // traversing segments, and a render path must show such a path as text.
-  try {
-    return canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
-  } catch {
-    return null;
-  }
+export function contextUriFromWritePath(
+  path: string,
+  options: ParseContextUriOptions = {},
+): string | null {
+  const parsed = parseUnifiedContextUri(path, options);
+  return parsed.ok ? parsed.value.normalized : null;
 }
 
 export function contextRouteTargetFromUri(

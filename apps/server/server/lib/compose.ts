@@ -5,6 +5,7 @@
  */
 
 import type { AgentPermission } from "@meridian/contracts/agents";
+import { contextUriVariables } from "@meridian/contracts/context-uri";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -258,11 +259,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import {
-  currentDrizzleDb,
-  runAfterDrizzleCommit,
-  runInDrizzleSavepoint,
-} from "../shared/drizzle-transaction.js";
+import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
@@ -512,7 +509,6 @@ export async function createProductionAppPorts(input: {
     ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
   });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
-  let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const accountSettings = createDrizzleAccountSettingsRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
@@ -599,7 +595,7 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
-  contextPorts = createProductionUnifiedContextPortFactory({
+  const contextPorts = createProductionUnifiedContextPortFactory({
     links: documentLinks,
     db,
     documentSync,
@@ -874,7 +870,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
   }))
     toolRegistry.register(registration);
-  for (const registration of createSpawnToolRegistrations()) {
+  for (const registration of createSpawnToolRegistrations(async (threadId) =>
+    contextUriVariables((await ports.threadRepos.threads.findById(threadId))?.notesScope ?? {}),
+  )) {
     toolRegistry.register(registration);
   }
   const toolExecutor = createToolExecutor(toolRegistry);

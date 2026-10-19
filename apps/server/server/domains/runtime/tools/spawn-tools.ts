@@ -4,12 +4,10 @@
  * ChildRunCoordinator owns lifecycle. Each registration's zod input is parsed by
  * the executor before its handler runs.
  */
+
 import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
-import {
-  type ReturnResultCapture,
-  returnResultCaptureSchema,
-  type SpawnResult,
-} from "@meridian/contracts/spawn";
+import { type ContextUriVariables, parseContextUri } from "@meridian/contracts/context-uri";
+import { returnResultCaptureSchema, type SpawnResult } from "@meridian/contracts/spawn";
 import { z } from "zod";
 import { TOOL_CATALOG } from "../loop/permissions/tool-policy.js";
 import { renderSpawnOutput, spawnToolResult } from "../spawn/model-spawn-result.js";
@@ -124,9 +122,12 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
 const ReturnResultInputSchema = returnResultCaptureSchema.extend({
   summary: returnResultCaptureSchema.shape.summary.describe("Report for the parent."),
   payload: z.unknown().describe("Optional JSON result.").optional(),
-  artifacts: returnResultCaptureSchema.shape.artifacts.describe(
-    "Meridian document URIs produced by this child.",
-  ),
+  artifacts: z
+    .array(z.string())
+    .describe(
+      "Meridian document URIs produced by this child. $THREAD and $PARENT expand in this chat scope.",
+    )
+    .optional(),
 });
 
 const THREAD_MESSAGE_DESCRIPTION = "Send a message to a thread.";
@@ -157,7 +158,9 @@ const ThreadReportInputSchema = z
   .strict();
 export type ThreadReportArgs = z.output<typeof ThreadReportInputSchema>;
 
-export function createSpawnToolRegistrations(): ToolRegistration[] {
+export function createSpawnToolRegistrations(
+  resolveVariables?: (threadId: string) => Promise<ContextUriVariables>,
+): ToolRegistration[] {
   return [
     {
       source: "spawn",
@@ -233,8 +236,23 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       input: ReturnResultInputSchema,
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) =>
-          ctx.returnResult(input as ReturnResultCapture),
+        handler: async (input: unknown, ctx: ReturnResultToolHandlerContext) => {
+          const raw = input as z.output<typeof ReturnResultInputSchema>;
+          const variables = await resolveVariables?.(ctx.threadId);
+          const artifacts: string[] = [];
+          for (const uri of raw.artifacts ?? []) {
+            const parsed = parseContextUri(uri, { variables });
+            if (!parsed.ok) return { ok: false, message: parsed.error.reason };
+            artifacts.push(parsed.value.normalized);
+          }
+          const capture = returnResultCaptureSchema.safeParse({
+            ...raw,
+            ...(raw.artifacts ? { artifacts } : {}),
+          });
+          return capture.success
+            ? ctx.returnResult(capture.data)
+            : { ok: false, message: capture.error.message };
+        },
       },
       capability: "return_result",
       // The child's saved report renders in its place (D6); history withholds its arguments.

@@ -206,7 +206,12 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const holder = request.holders[0];
     if (holder && request.written?.length) {
       const holderUri = await holderAddress(snapshot, holder);
-      for (const uri of writtenAddresses(request.written, holderUri, request.uploadsChat))
+      for (const uri of writtenAddresses(
+        request.written,
+        holderUri,
+        request.uploadsChat,
+        request.variables,
+      ))
         addresses.add(uri);
     }
     // A deleted picture keeps its path only while no other image holds it. Loading by the

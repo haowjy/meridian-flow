@@ -47,7 +47,13 @@
  * publishes.
  */
 
-import { classifyWrittenSource, storedHref, storedLinkRef } from "@meridian/contracts";
+import {
+  type ContextUriVariables,
+  classifyWrittenSource,
+  resolveDocumentHref,
+  storedHref,
+  storedLinkRef,
+} from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
@@ -195,7 +201,11 @@ export type LinkAnswerCache = {
    */
   registerResolver: (
     resolve: InternalLinkResolver,
-    options?: { baseUri?: string | null; projectId?: string | null },
+    options?: {
+      baseUri?: string | null;
+      projectId?: string | null;
+      variables?: ContextUriVariables;
+    },
   ) => () => void;
   destroy: () => void;
 };
@@ -250,6 +260,7 @@ type Request = {
 /** Everything true of one registration of the port. */
 type Generation = {
   readonly resolver: InternalLinkResolver;
+  readonly variables?: ContextUriVariables;
   readonly baseUri: string | null;
   readonly assignment: LinkAssignmentScope;
   /** Answers, keyed by the link's ref and the classifier's spelling of its href. */
@@ -277,7 +288,12 @@ export function createLinkAnswerCache(): LinkAnswerCache {
 
   /** The cache key of an internal link, or null for anything else. */
   const internalLink = (link: LinkKey): { key: string; question: LinkQuestion } | null => {
-    const target = classifyLinkTarget(link.href);
+    let target = classifyLinkTarget(link.href);
+    if (link.ref === null && current?.baseUri === null && target?.kind === "scheme") {
+      const resolved = resolveDocumentHref(target.uri, null, { variables: current.variables });
+      if (!resolved) return null;
+      target = { kind: "scheme", uri: storedHref(resolved.uri, resolved.suffix) };
+    }
     if (!target || !isInternalLinkTarget(target)) return null;
     return {
       key: linkCacheKey({ ref: link.ref, href: linkTargetHref(target) }),
@@ -476,6 +492,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       const baseUri = options?.baseUri ?? null;
       current = {
         resolver: resolve,
+        variables: baseUri === null ? options?.variables : undefined,
         baseUri,
         assignment: {
           holderUri: baseUri,

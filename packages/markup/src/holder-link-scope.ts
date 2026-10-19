@@ -11,6 +11,7 @@ import {
   type AheadRef,
   aheadAddress,
   type CatalogDocument,
+  type ContextUriVariables,
   classifyWrittenLink,
   classifyWrittenSource,
   type DocumentRef,
@@ -191,15 +192,20 @@ export function assignFreshLink(input: {
  * (`assignFreshLink` callers) both read the href through here, so the address loaded is the
  * address bound.
  */
-export function qualifyWrittenHref(href: string, uploadsChat: string | undefined): string {
-  if (!uploadsChat) return href;
-  const resolved = resolveDocumentHref(href, null);
+export function qualifyWrittenHref(
+  href: string,
+  uploadsChat: string | undefined,
+  variables?: ContextUriVariables,
+): string {
+  const resolved = resolveDocumentHref(href, null, { variables });
   if (!resolved) return href;
-  const uri = qualifyContextUriByHolder(
-    resolved.uri,
-    formatParsedContextUri("uploads", "_", { kind: "chat", chatRef: uploadsChat }),
-  );
-  return uri === resolved.uri ? href : storedHref(uri, resolved.suffix);
+  const uri = !uploadsChat
+    ? resolved.uri
+    : qualifyContextUriByHolder(
+        resolved.uri,
+        formatParsedContextUri("uploads", "_", { kind: "chat", chatRef: uploadsChat }),
+      );
+  return uri === resolved.uri && !variables ? href : storedHref(uri, resolved.suffix);
 }
 
 /**
@@ -212,10 +218,11 @@ export function writtenAddresses(
   blocks: readonly PMNode[],
   holderUri: string | null,
   uploadsChat?: string,
+  variables?: ContextUriVariables,
 ): string[] {
   const out = new Set<string>();
   for (const { kind, attrs } of walkLinkOccurrences(blocks)) {
-    const href = qualifyWrittenHref(attrs.href, uploadsChat);
+    const href = qualifyWrittenHref(attrs.href, uploadsChat, variables);
     const uri =
       kind === "link" ? internalUri(classifyWrittenLink(href, holderUri)) : writtenSourceUri(href);
     if (uri) out.add(uri);

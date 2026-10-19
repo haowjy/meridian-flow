@@ -10,6 +10,7 @@
  * `uri`, `aheadAddress`, registry keys) is a decoded canonical Context URI. A
  * stored `href`/`src` is an escaped wire spelling, built only by `storedHref`.
  */
+import type { ParseContextUriOptions } from "./context-uri.js";
 import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
   documentPathKey,
@@ -158,8 +159,12 @@ export function storedHref(uri: string, suffix: string): string {
  * `@` authority, and a project-scheme link inside a personal `user://` holder,
  * are `contextual`: their meaning depends on the reading scope.
  */
-export function classifyWrittenLink(href: string, holderUri: string | null): WrittenLinkClass {
-  const resolved = resolveDocumentHref(href, holderUri);
+export function classifyWrittenLink(
+  href: string,
+  holderUri: string | null,
+  options: ParseContextUriOptions = {},
+): WrittenLinkClass {
+  const resolved = resolveDocumentHref(href, holderUri, options);
   if (!resolved) return { kind: "external" };
   const target = parseContextUri(resolved.uri);
   if (!target.ok) return { kind: "external" };

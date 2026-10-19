@@ -187,7 +187,7 @@ export async function resolveContextPort(
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
   return {
-    resolution,
+    resolution: { ...resolution, threadFolders: deps.contextPorts.threadFolders },
     port: contextPortForThread(deps.contextPorts, resolution, {
       responseId,
       ...(version ? { version } : {}),

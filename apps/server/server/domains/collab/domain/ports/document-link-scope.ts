@@ -56,6 +56,7 @@ export interface ScopePrepareRequest {
   written?: readonly PMNode[];
   /** The writing chat: a bare written `uploads://` is loaded at the address it will be bound to. */
   uploadsChat?: string;
+  variables?: import("@meridian/contracts/context-uri").ContextUriVariables;
   /** Views a `reader` will resolve in, beside the holders' (their branches' settlements load too). */
   views?: readonly LinkView[];
 }

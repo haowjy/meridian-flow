@@ -1,5 +1,6 @@
 /** URI → project context route inputs and live document identity, via the app's own address route. */
 import {
+  contextUriVariables,
   parseContextUri,
   parsedContextUriFromSourceLocation,
   sourceLocationFromContextUri,
@@ -11,6 +12,7 @@ import {
   type ProjectContextTreeScheme,
   parseDocumentFilename,
   renderFilename,
+  threadSnapshotSchema,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
@@ -47,7 +49,16 @@ export async function resolveUri(
   workOverride?: string,
   chatOverride?: string,
 ): Promise<ResolvedUri> {
-  const parsed = parseContextUri(raw);
+  const scopedThread =
+    chatOverride === undefined ? null : await resolveThreadId(session, chatOverride, projectId);
+  const snapshot = scopedThread
+    ? await session.request("GET", `/api/threads/${scopedThread}/snapshot`, undefined, {
+        decode: jsonResponse(threadSnapshotSchema),
+      })
+    : null;
+  const parsed = parseContextUri(raw, {
+    variables: contextUriVariables(snapshot?.thread.notesScope ?? {}),
+  });
   if (!parsed.ok) throw usageError(`Invalid URI ${raw}: ${parsed.error.reason}`);
   const { scheme, authority } = parsed.value;
   const path = sourceLocationFromContextUri(parsed.value);
@@ -130,5 +141,8 @@ export async function resolveDocumentId(
 export const PROJECT_OPTION = {
   project: { type: "string" as const, description: "Project id, or `default` (default)" },
   work: { type: "string" as const, description: "Work for scratch URIs: @slug or @/" },
-  chat: { type: "string" as const, description: "Chat handle for uploads URIs: c12" },
+  chat: {
+    type: "string" as const,
+    description: "Chat scope for $THREAD/$PARENT and uploads: c12 or p7",
+  },
 };

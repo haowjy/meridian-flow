@@ -66,6 +66,8 @@ export async function threadContainerTarget(
   works: Pick<WorkRepository, "findNoWork">,
   resolution: Pick<
     ThreadContextResolution,
+    | "variables"
+    | "threadFolders"
     | "thread"
     | "primaryWorkId"
     | "workAuthorities"
@@ -76,10 +78,20 @@ export async function threadContainerTarget(
   >,
   path: string,
 ): Promise<FileTarget | null> {
-  const parsed = parseUnifiedContextUri(splitDocumentFile(path).filePath);
+  const parsed = parseUnifiedContextUri(splitDocumentFile(path).filePath, {
+    variables: resolution.variables,
+  });
   if (!parsed.ok) return null;
   const { scheme, authority } = parsed.value;
   const { thread, primaryWorkId, workAuthorities } = resolution;
+  if (parsed.value.threadRef) {
+    const owner = authority.kind === "work" ? workAuthorities.get(authority.workSlug) : authority;
+    if (
+      !owner ||
+      !(await resolution.threadFolders?.resolve(thread.projectId, owner, parsed.value.threadRef))
+    )
+      return null;
+  }
   if (isProjectScopedScheme(scheme)) {
     return {
       kind: "container",

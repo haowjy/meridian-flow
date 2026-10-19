@@ -186,6 +186,7 @@ export interface WriteContext {
   workDraftId?: string;
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
+  variables?: import("@meridian/contracts/context-uri").ContextUriVariables;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
   /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */

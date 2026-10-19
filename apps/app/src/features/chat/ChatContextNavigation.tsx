@@ -17,24 +17,35 @@ export type ContextPassageAnchor = { blockHash: string; term: string };
 export type OpenContextUri = (uri: string, passage?: ContextPassageAnchor) => void;
 export type CanOpenContextUri = (uri: string) => boolean;
 
+const ChatContextVariables = createContext<
+  import("@meridian/contracts/context-uri").ContextUriVariables | undefined
+>(undefined);
+export function useChatContextVariables() {
+  return useContext(ChatContextVariables);
+}
+
 const ChatContextNavigationContext = createContext<OpenContextUri | null>(null);
 const ChatContextRoutabilityContext = createContext<CanOpenContextUri | null>(null);
 
 export function ChatContextNavigationProvider({
   onOpenContextUri,
+  variables,
   canOpenContextUri,
   children,
 }: {
   onOpenContextUri?: OpenContextUri | null;
+  variables?: import("@meridian/contracts/context-uri").ContextUriVariables;
   canOpenContextUri?: CanOpenContextUri | null;
   children: ReactNode;
 }) {
   return (
-    <ChatContextNavigationContext.Provider value={onOpenContextUri ?? null}>
-      <ChatContextRoutabilityContext.Provider value={canOpenContextUri ?? null}>
-        {children}
-      </ChatContextRoutabilityContext.Provider>
-    </ChatContextNavigationContext.Provider>
+    <ChatContextVariables.Provider value={variables}>
+      <ChatContextNavigationContext.Provider value={onOpenContextUri ?? null}>
+        <ChatContextRoutabilityContext.Provider value={canOpenContextUri ?? null}>
+          {children}
+        </ChatContextRoutabilityContext.Provider>
+      </ChatContextNavigationContext.Provider>
+    </ChatContextVariables.Provider>
   );
 }
 

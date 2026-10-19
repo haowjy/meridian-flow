@@ -4,6 +4,8 @@ import { z } from "zod";
 export const ResolveDocumentLinksRequestSchema = z
   .object({
     rootThreadId: z.string().uuid().nullable().optional(),
+    /** Raw chat syntax link scope; never used by an Editor holder. */
+    scopedThreadId: z.string().uuid().optional(),
     workId: z.string().uuid().nullable().optional(),
     /** The chat holding the links (a chat message): its uploads answer a bare `uploads://`. */
     chatId: z.string().uuid().nullable().optional(),
