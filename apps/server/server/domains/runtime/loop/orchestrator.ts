@@ -670,7 +670,7 @@ async function runDrainTurn(
         skillBody = null;
         plan = makePlan([]);
       }
-      const imageUpdateTurn = preflight?.turns.at(-1);
+      const preparedUpdateTurn = preflight?.turns.at(-1);
       const reservedTurn = reservationTurn(
         {
           id:
@@ -678,9 +678,9 @@ async function runDrainTurn(
               ? crypto.randomUUID()
               : (input.replyTurnId ?? reservedTurnId),
           threadId: input.threadId,
-          prevTurnId: imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+          prevTurnId: preparedUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
           position: nextTurnPosition(
-            imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+            preparedUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
           ),
           identity: {
             executionId: input.lease.executionId,

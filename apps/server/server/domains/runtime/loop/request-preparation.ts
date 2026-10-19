@@ -12,6 +12,7 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
+import { prepareCompactionHeadsUp } from "./compaction/heads-up.js";
 import { projectActiveHistoryWithBakes } from "./compaction/index.js";
 import { frontierLookup } from "./frontier-recording.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
@@ -25,7 +26,11 @@ import {
   NO_REFERENCE_EVIDENCE,
   type ReferenceEvidence,
 } from "./reference-context.js";
-import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
+import {
+  type AssembledNextTurnContext,
+  type AssembleNextTurnContextInput,
+  assembleNextTurnContext,
+} from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
   deps: OrchestratorDeps;
@@ -61,21 +66,14 @@ export type PreparedRequest = {
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
   const control = input.control;
   const compact = control?.body.kind === "compact" ? { id: control.id, body: control.body } : null;
-  const prepared = await prepareBaseRequest({
+  return prepareBaseRequest({
     ...input,
     controlMessageId: compact?.id ?? input.controlMessageId,
     instructions: compact?.body.instructions ?? input.instructions,
   });
-  return {
-    ...prepared,
-    turns: prepared.assembled.imageContextUpdates.turns,
-    blocks: prepared.assembled.imageContextUpdates.blocks,
-  };
 }
 
-async function prepareBaseRequest(
-  input: PrepareRequestInput,
-): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
+async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedRequest> {
   // Projected on first use and shared by every lookup: most runs read no reference at all.
   let creditedIds: Promise<string[]> | undefined;
   const requestCreditedIds = () =>
@@ -116,7 +114,7 @@ async function prepareBaseRequest(
       status: "complete",
     }),
   }));
-  const assembled = await assembleNextTurnContext({
+  const assemblyInput: AssembleNextTurnContextInput = {
     thread: input.thread,
     turns: input.turns,
     blocks,
@@ -146,7 +144,8 @@ async function prepareBaseRequest(
       events.push(...updates.events);
       return { turns: updates.turns, blocks: updates.blocks };
     },
-  });
+  };
+  let assembled = await assembleNextTurnContext(assemblyInput);
   const baseline =
     assembled.compactionTriggerTokens === null || input.skipCompaction
       ? null
@@ -211,7 +210,40 @@ async function prepareBaseRequest(
     }
     compaction = { kind: "generate" };
   }
-  return { assembled, events, compaction, evidence: references.evidence };
+  const updates = {
+    turns: [...assembled.imageContextUpdates.turns],
+    blocks: [...assembled.imageContextUpdates.blocks],
+  };
+  const threshold = assembled.compactionTriggerTokens;
+  const tokenizer = assembled.resolvedModel?.tokenizer;
+  if (
+    compaction.kind === "generate" &&
+    !input.skipCompaction &&
+    threshold !== null &&
+    tokenizer &&
+    estimateRequestTokens({ request: assembled.generateRequest, baseline, tokenizer }) >=
+      Math.floor(0.85 * threshold)
+  ) {
+    const imageUpdates = assembled.imageContextUpdates;
+    const headsUp = prepareCompactionHeadsUp({
+      threadId: input.threadId,
+      turns: [...input.turns, ...imageUpdates.turns],
+    });
+    if (headsUp.turns.length > 0) {
+      events.push(...headsUp.events);
+      // Render the durable suffix through the ordinary history path, including user merging
+      // and cache marks. Image decisions were already staged by the first assembly.
+      assembled = await assembleNextTurnContext({
+        ...assemblyInput,
+        turns: [...input.turns, ...imageUpdates.turns, ...headsUp.turns],
+        blocks: [...blocks, ...imageUpdates.blocks, ...headsUp.blocks],
+        persistImageProjection: undefined,
+      });
+      updates.turns.push(...headsUp.turns);
+      updates.blocks.push(...headsUp.blocks);
+    }
+  }
+  return { ...updates, assembled, events, compaction, evidence: references.evidence };
 }
 
 function buildImageProjectionEvents(input: {

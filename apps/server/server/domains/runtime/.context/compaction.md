@@ -141,6 +141,20 @@ the model's input pricing tier and usable window, capped at 400,000 tokens.
 Explicit token/percentage limits are not scaled. The estimator excludes
 elision payloads from C's header.
 
+When a generate request reaches 85% of its resolved trigger, preparation stages
+one hidden `system_update` turn (`section: "compaction_near"`) asking the model
+to record working notes before compaction. It uses the same estimator and
+response baseline as the trigger. Deduplication scans raw turns after the latest
+complete compaction, not the projected retained tail. No trigger, skipped
+compaction, or a decision to compact produces no reminder. A jump past the
+trigger can therefore compact without warning; the trigger is not deferred.
+
+The request is assembled again with the durable suffix, so the reminder renders
+exactly as it will in later requests. At run start its events commit with the
+reserved assistant. Mid-loop they use the existing split boundary: the current
+assistant completes and a successor is reserved after the reminder, within the
+same writer reply. Image updates, when present, precede the reminder.
+
 Every registry model declares a required tokenizer family (`anthropic`,
 `o200k`, `gemini`, or `deepseek`); there is no fallback family. CJK rates are
 family-specific and must be refreshed through the compaction-estimate probe,
