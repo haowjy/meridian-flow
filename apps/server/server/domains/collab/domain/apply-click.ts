@@ -42,9 +42,9 @@ export interface ApplyClickStore {
   loadBase(draftId: string): Promise<DraftBase | null>;
   execute(
     command: ApplyClickCommand,
-    base: DraftBase | null,
-    click: CompiledClick | null,
-    branchId: import("@meridian/contracts").BranchId,
+    prepared:
+      | { kind: "text"; base: DraftBase; click: CompiledClick }
+      | { kind: "reveal"; branchId: import("@meridian/contracts").BranchId },
   ): Promise<ApplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
@@ -172,7 +172,7 @@ export function createApplyClickService(input: {
           resolved.item.origin !== "created"
         )
           throw new ApplyClickRefused("malformed");
-        return await input.store.execute(command, null, null, resolved.branchId);
+        return await input.store.execute(command, { kind: "reveal", branchId: resolved.branchId });
       }
       if (!command.request.groupIds.length) throw new ApplyClickRefused("malformed");
       if (!resolved?.draftId) {
@@ -207,7 +207,7 @@ export function createApplyClickService(input: {
       } finally {
         input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
       }
-      const result = await input.store.execute(command, base, click, resolved.branchId);
+      const result = await input.store.execute(command, { kind: "text", base, click });
       return result.status === "closed" || result.status === "refused"
         ? ((await lookup()) ?? result)
         : result;
