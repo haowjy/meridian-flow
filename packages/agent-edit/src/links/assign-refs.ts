@@ -103,13 +103,17 @@ export function assignOccurrences(input: AssignOccurrencesInput): {
     const assigned = assignKind({
       grammar,
       old,
-      written: writtenIndexes.map(({ occurrence }) => occurrence),
+      written: writtenIndexes.map(({ occurrence }) => ({
+        ...occurrence,
+        attrs: {
+          ...occurrence.attrs,
+          href: qualifyWrittenHref(occurrence.attrs.href, input.uploadsChat, input.variables),
+        },
+      })),
       scope: input.scope,
       shown: input.shown,
       mint,
       minted,
-      ...(input.uploadsChat ? { uploadsChat: input.uploadsChat } : {}),
-      variables: input.variables,
     });
     writtenIndexes.forEach(({ index }, position) => {
       attrs[index] = assigned[position] as OccurrenceAttrs;
@@ -168,8 +172,6 @@ function assignKind(input: {
   shown: readonly ShownLink[];
   mint: () => AheadRef;
   minted: AheadMint[];
-  uploadsChat?: string;
-  variables?: ContextUriVariables;
 }): OccurrenceAttrs[] {
   const { grammar, scope } = input;
   const holderUri = scope.holder.uri;
@@ -314,14 +316,12 @@ function fresh(
     scope: HolderLinkScope;
     mint: () => AheadRef;
     minted: AheadMint[];
-    uploadsChat?: string;
-    variables?: ContextUriVariables;
   },
   occurrence: LinkOccurrence,
 ): OccurrenceAttrs {
   const { grammar, scope } = input;
   const { title } = occurrence.attrs;
-  const href = qualifyWrittenHref(occurrence.attrs.href, input.uploadsChat, input.variables);
+  const href = occurrence.attrs.href;
   if (grammar.kind === "source") {
     const asset = assetFor(scope, href);
     if (asset) return { ref: null, href: `asset:${asset}`, title };

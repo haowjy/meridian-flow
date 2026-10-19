@@ -8,6 +8,9 @@ holder scope, then applies assigned nodes without a Markdown round trip.
 
 `assignLinkRefs` runs after parse and in three conceptual passes:
 
+Scoped written hrefs expand before all three passes. Stored occurrences and shown
+evidence remain canonical-only; neither is expanded at assignment.
+
 1. Continue identity-bearing old occurrences in the replaced span, including
    `asset:<id>` pictures, while keeping links and sources in their own address
    grammars.

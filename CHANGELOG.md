@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- AI-written scoped links expand before identity correspondence, preserving links when a writer moves a target and reuses its old path.
+
 - Editor link identity, wikilink ranking, namespace availability and recent-document routes retain complete thread-folder locations.
 
 - Chat notes folders display chat titles (subagents use their spawning parent’s title), independently of their stable paths. Title changes publish only affected folder labels, not entire source trees.
