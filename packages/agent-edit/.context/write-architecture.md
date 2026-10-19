@@ -121,10 +121,17 @@ between them. A write is refused (`region_changed`) when the room has no valid
 planning frontier or the view is incomplete, when a region block is in the
 frontier's `unshown`, or when more than `REGION_CHANGE_BUDGET_WORDS` (10)
 changed words lie in the region between the view's cut and the room copy's.
-Never refused: creating a document, initializing an empty one, a host that
-passes no planning lookup, undo and redo. The refusal shows the region's blocks
-in full from the room copy and goes through the same recording as a read, so
-the next attempt proceeds unless the passage changes again. Past
+Its one sentence says which: "Not applied: you haven't seen all of this passage
+yet." for no frontier or an unshown region block, "Not applied: this passage
+changed since you last saw it." for changed words; both end "Current text:".
+Exempt (`Planned = "exempt"`, never `undefined`): creating a document,
+initializing an empty one, and every write when the host passes no lookups at
+all (a host that keeps no frontiers; utility, seed and import writes). A reply's
+model write whose lookups lack `planning` is a host bug and throws. Undo and
+redo are never refused. The
+refusal shows the region's blocks in full from the room copy and goes through
+the same recording as a read, so the next attempt proceeds unless the passage
+changes again. Past
 `REFUSAL_REGION_MAX_BYTES` (16 KB) it names the first and last block, asks for
 a read of that range, and records nothing. With no frontier and a target the
 room can't place (`not_found`, `ambiguous_match`, such as a live hash in a new
@@ -141,8 +148,8 @@ the view a write plans on. An undo, redo or revert names the room its inverse
 committed into (`DocumentEditResult.room`) and the echo records there from the
 inverse's `after` cut. With `ResponseCommitOptions.recordingFrontier` each
 saved document's result carries one at the post-commit cut, in the room the
-save committed into, crediting what its accepted receipts show; journal-replay
-recovery leaves the cut unknown and records none. A staged result records
+save committed into, crediting what its accepted receipts show. A write outside
+a reply records from its save's after state, merged into its room copy. A staged result records
 nothing: its save does. Shown in full: a read's rendered blocks (an outline
 read credits none) and `extent: full` changed blocks (never prefix context,
 copy edges or swept bodies). A result reported with `awarenessDegraded` still
@@ -152,9 +159,11 @@ records, crediting nothing. A failure is reported through
 
 ### Commit-time detection
 
-`captureConcurrentDetection` reads the room's updates that the first write's
-view (`preOwnSnapshot`) doesn't contain, the only skip, and applies them one at
-a time to record which lineage each first made visible and who wrote it. That
+`commit-detection.ts` `reportAcceptedMutation(before, after)` is the same for
+both hosts and every save: it reads the updates the save's before state holds
+that the first write's view (`preOwnSnapshot`) doesn't contain, the only skip,
+and applies them one at a time to record which lineage each first made visible
+and who wrote it. That
 lineage is the swept classification's only input (until M3 replaces swept);
 nothing from it renders. The draft host reads its Work draft's journal rows for
 the generation, with no floor, and attributes the residual the journal can't

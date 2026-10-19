@@ -31,6 +31,7 @@ export type FrontierLookup = (room: string) => Promise<ObservationFrontier | nul
  */
 export interface FrontierLookups {
   recording: FrontierLookup;
+  /** Required for a model reply's write; a read plans nothing. */
   planning?: FrontierLookup;
   reply?: ReplyMutations;
 }

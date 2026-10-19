@@ -822,8 +822,8 @@ msgid "Caption"
 msgstr "Caption"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Caught up on changes in"
-msgstr "Caught up on changes in"
+#~ msgid "Caught up on changes in"
+#~ msgstr "Caught up on changes in"
 
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Center"
@@ -2228,6 +2228,10 @@ msgstr "Goal saved"
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Goal: {0}. "
 msgstr "Goal: {0}. "
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Got the latest text of"
+msgstr "Got the latest text of"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "grid"
