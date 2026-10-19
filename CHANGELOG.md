@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 - End dock Discard notices when their room session retires, so Undo never targets a replaced document.
+- Hide the empty-paragraph placeholder while removed review prose occupies its line, preventing overlapping glyphs.
+
+- Name a removed paragraph from its proven block deleter when rebased words have no character witness, withholding ambiguous bylines.
+
+- Scope draft-review focus to its projection so successive identical changes cannot apply the wrong occurrence.
 
 - Correct draft collaboration references for the completed cutover and frontier-compaction probe.
 

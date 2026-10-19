@@ -42,6 +42,12 @@
   padding-inline-end: 0.15em;
 }
 
+/* An empty manuscript paragraph may still display removed prose. Its placeholder
+   would occupy the same line as that widget. */
+.meridian-editor .ProseMirror p.is-empty:has(.meridian-review-removal)::before {
+  content: none;
+}
+
 /* A struck removal beside the text that replaced it must read as two things,
    not "his" fused into "one". The air is a margin on the widget, never a space
    character, so it is not text and cannot be selected or saved. Before a

@@ -1,19 +1,7 @@
-/**
- * FocusOpenedReview — opens a review on a given change.
- *
- * A launch that names operations (`focusGroupIds`) makes the Editor scope's
- * claimant mount this once it has entered the review. It applies the request
- * once, when the review it names is the open one, has painted
- * (`inlineReview.shown`) and its preview has loaded: the change holding any of
- * the operations is focused and scrolled to. A review that is not the one
- * requested (the one being left, still painted during the handover) is never
- * focused. If no operation is in the preview any more the review stays at the
- * top, as a launch without a focus does. Mounted only while a request is
- * pending, so no preview is read otherwise.
- */
+/** A launch focuses its clicked group only while the same projection still paints. */
 import { useEffect, useRef } from "react";
-
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { type ReviewFocus, resolveFocusedChange } from "@/features/draft-review/review-model";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 
 export type ReviewFocusRequest = {
@@ -21,7 +9,7 @@ export type ReviewFocusRequest = {
   sequence: number;
   documentId: string;
   itemKey: string;
-  groupIds: readonly string[];
+  focus: ReviewFocus;
 };
 
 export function FocusOpenedReview({
@@ -46,8 +34,7 @@ export function FocusOpenedReview({
     if (!open.shown) return;
     if (status === "gone") return onDone();
     if (status !== "ready") return;
-    const wanted = new Set(request.groupIds);
-    const change = changes.find((candidate) => wanted.has(candidate.id));
+    const change = resolveFocusedChange(changes, request.focus);
     if (change) {
       const { documentId, itemKey } = request;
       controller.focusReviewChange({ documentId, itemKey }, change, { scroll: true });

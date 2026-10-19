@@ -7,6 +7,7 @@ import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFrame } from "@/features/draft-review/review-frame";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewAddressOwner } from "../ReviewAddressOwner";
@@ -21,7 +22,7 @@ type Open = { documentId: string; itemKey: string; shown: boolean } | null;
 type Model = {
   inline: Open;
   preview: { status: "active" | "gone" } | null;
-  changes: { id: string }[];
+  changes: { id: string; frame: ReviewFrame | null }[];
 };
 
 // The preview read is the one boundary that needs a query client; the claimant
@@ -33,10 +34,13 @@ const target: AiDraftLaunchTarget = {
   documentId: "doc-1",
   itemKey: "draft-1",
   contextLocation: { scheme: "manuscript", path: "chapters/one.md" },
-  focusGroupIds: ["g2"],
+  focus: { id: "g2", frame: null },
 };
 const other = { documentId: "doc-0", itemKey: "draft-0" };
-const changes = [{ id: "g1" }, { id: "g2" }];
+const changes = [
+  { id: "g1", frame: null },
+  { id: "g2", frame: null },
+];
 
 function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = false) {
   const focusReviewChange = vi.fn();
@@ -183,9 +187,9 @@ describe("opening a review on given group ids", () => {
     );
   });
 
-  it("opens at the top when none of the group ids is in the review any more", async () => {
+  it("opens at the top when a new projection reuses the requested group id", async () => {
     await launch(
-      { ...target, focusGroupIds: ["op-gone"] },
+      { ...target, focus: { id: "g2", frame: { diff: {} } as ReviewFrame } },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ enterInlineReview, focusReviewChange, update }) => {
         expect(enterInlineReview).toHaveBeenCalledOnce();
@@ -223,7 +227,7 @@ describe("opening a review on given group ids", () => {
 
   it("does not focus a launch that names no group", async () => {
     await launch(
-      { ...target, focusGroupIds: undefined },
+      { ...target, focus: undefined },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ focusReviewChange }) => expect(focusReviewChange).not.toHaveBeenCalled(),
     );
