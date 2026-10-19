@@ -218,14 +218,16 @@ restart smoke check.
 
   ```bash
   ./mf thread context "$T" --all --view raw --json > "$E/before.json"
-  ./mf mock script '[{"text":"Short earlier context."},{"text":"Continue after C."}]' --json
+  ./mf mock script '[{"text":"Notes done."},{"text":"Short earlier context."},{"text":"Continue after C."}]' --json
   ./mf thread send "$T" 'Continue the story' --json > "$E/trigger.ndjson"
   ./mf thread context "$T" --all --view raw --json > "$E/after.json"
   ./mf thread send "$T" 'And then?' --mock '[{"text":"Next beat."}]' --json
   ./mf thread context "$T" --all --view raw --json > "$E/following.json"
   ```
 
-- **Expect:** C then B in the same run; summary plus retained tail in the next
+- **Expect:** an eligible automatic decision first runs notes, then C and B in
+  the same run. Manual, overflow, ineligible room/iterations, or an attempted
+  marker in this cycle skip notes. Summary plus retained tail in the next
   request. The following request extends the identical serialized prefix.
 - **Evidence:** C metadata, before/after/following requests, prefix comparison;
   real-provider variant also records usage, cache reads and actual spend.
@@ -972,32 +974,62 @@ restart smoke check.
 
 ## C14: Working notes across compaction
 
-- **Protects:** one durable heads-up per compaction cycle, byte-stable request
-  rendering, working-notes priority, and bounded recovery from stray summary calls.
-- **Stack:** mock provider with request capture and a small explicit Agent
-  compaction trigger. Discover the stack URL with `pnpm portless:list`.
-- **Steps:** grow a conversation to below 85% of the trigger, then between
-  85% and the trigger, both at run start and through tool output mid-reply.
-  Continue below the trigger for another request. Inspect the raw turn chain
-  and requests: exactly one complete system turn with
-  `{ kind: "system_update", section: "compaction_near" }` appears after the
-  existing leaf, before the reserved assistant, and its text is present in
-  the request that first crossed the mark. Compare its rendered message to
-  the next request (allowing only normal cache-mark movement). Repeat with
-  image-removal events at the same boundary: the image turn precedes the
-  reminder and both commit with the reservation.
-- **Cycle checks:** compact, retaining the old reminder in the tail, then grow
-  past the mark again. Expect a new reminder despite the replayed old one.
-  A jump straight past the trigger compacts without a reminder. No resolved
-  trigger means no reminder. A failed or incomplete compaction does not reset
-  deduplication. Forks inherit the reminder and complete compaction at their
-  cutoff. Manual and overflow compaction do not emit a reminder for their
-  summary request.
-- **Notes:** after the heads-up, script a scratch-note write and list that URI
-  before a manuscript URI under `## Documents to keep open`. Cross the
-  trigger while still writing notes. Expect compaction without deferral,
-  the scratch note re-shown first in full, and the same task continuing after
-  the summary. Check the successor's actual request, not just the summary list.
+- **Protects:** bounded notes before eligible automatic compaction, committed-only
+  continuation ownership, canonical own-folder admission, and ordinary save/Undo.
+- **Stack:** owned mock stack and database. Use `./mf mock script` to queue the
+  whole notes/summary/successor sequence globally. `send --mock` matches that
+  writer text, which a rolling summary replaces, so it cannot script the summary.
+  Stock mock reports fixed tiny input usage. For deterministic threshold/room
+  probes, temporarily use full estimation instead of its carried baseline on
+  this owned mock only; record and remove that fixture before committing. This
+  proves control flow, never provider cache behavior or billing.
+- **Entry:** assemble a compactable older pair and small retained suffix. Calibrate
+  the actual automatic decision, not just a token threshold. At T and above T,
+  expect one hidden system marker `section: "compaction_notes"`, followed by an
+  ordinary assistant. Below T, no marker. No model response after latest complete
+  C, one slot remaining, manual `/compact`, forced overflow, and insufficient room
+  skip entry. For U usable input and E full estimate, check admission at
+  `U-E-4000 = 4000`, one above and one below. The marker render must fit too.
+- **Happy path:** queue two `write create` responses to
+  `scratch://$THREAD/one.md` and `two.md`, then `Notes done.` with no calls,
+  summary listing the echoed canonical note paths first, then ordinary B. Expect
+  two saved ordinary receipts, one marker and one C. Inspect the actual successor
+  request: the saved current note text is re-shown first. No-tools text remains
+  on its assistant and never closes/releases the reply before compaction.
+- **Bounds:** queue four tool responses and distinguish the summary from the
+  fourth. Only three ordinary notes generations run, then fresh compaction and
+  one ordinary successor slot remains. With two total slots left, exactly one
+  notes generation precedes C/B; with one, C/B directly. At zero, no new C. Grow
+  a whole note/tool group beyond allowance A, then separately beyond U-4000;
+  every call/result/save settles before the next boundary exits notes. A fresh
+  warm branch above U rolls before a paid branch. Crossing the reserve alone
+  need not overflow the branch's actual measured suffix.
+- **Gate:** in both named Work and No Work, exercise own canonical/variable paths,
+  nonexistent create, nested paths, inverse writes and in-folder copy. Other
+  thread/owner-root/manuscript/skills paths, out-of-folder `from.path`, omitted
+  `ls.path`/`search.scope`, malformed addresses and all non-file calls are held.
+  Include spawn, ask_user, thread_message and child return_result: no child,
+  interrupt or report; each gets `{ refusal: "notes_step" }`, `isError: false`,
+  exact held notice and no permission event. Confirm admitted paths still reach
+  ordinary Agent/file denials. Existing files outside the folder stay unchanged.
+- **Lifecycle:** check run-start and mid-loop entry. Late input spends existing
+  room, never resets E/A/count. Discard a proposal on moved leaf and failed
+  commit; only the winning marker/request/count installs. If late pins destroy
+  the cut, preserve below-U generation/no-fit failure rather than a stale C.
+  Check exhausted credits and tree budget after a compact-eligible response:
+  neither may reserve/pay C; summary spend is checked again before B. Check
+  queue-switch yield and Stop precedence, both retaining saved notes/marker.
+  A later run sees the marker but does not resume run-local notes counters.
+- **Prefix exception:** while notes is active, break an included image or join
+  an activated skill at a late boundary. Inspect actual requests: one resolution
+  per attempt, image update before marker when simultaneous, no extra notes-only
+  prefix mutation. Ordinary image/skill changes can change the prefix. Without
+  them compare the second notes request's prefix/cache marks to the first.
+- **Cycle:** raw-history dedup resets only after complete C, even when an old
+  marker survives in projected tail. Failed/incomplete C and Stop do not reset.
+  Over-trigger B gets one ordinary response before the next automatic decision.
+  Large listed notes use ordinary C13 room: skipped notes are named as not
+  re-shown, receive no frontier credit from C, and must be read before writing.
 - **Summary recovery:** return text plus calls on warm and rolling paths;
   expect text kept and no tool execution. On the warm path return only two
   calls with reasoning, then text. Expect the retry to preserve its original
@@ -1024,10 +1056,19 @@ restart smoke check.
   never paid cache reuse or billing. Remove it before committing. For real cache
   comparisons, exclude an ordinary image break or first skill-tool join between
   compared requests; notes/summary introduce no additional prefix mutations.
-- **Browser:** the reminder never draws a chat row. A mid-reply reminder
-  still reads as one reply, with the compaction divider and continued text
-  intact. Capture screenshots before and after compaction.
+- **Browser:** the marker has no bubble. Expand/reload ordinary write receipts
+  and Undo; inspect each held-tool kind's neutral “Not run during the notes step”
+  row (no success/error/action card), one reply through splits, the divider and
+  re-show omission list, continued task, Stop, Copy and Fork. Capture before C,
+  after C, and after reload.
 - **Evidence:** raw turns and positions, complete request messages and tool
   definitions, re-shown file blocks, response rows and debits, and screenshots.
-- **Last run:** not run here; implementation verification used existing tests
-  and in-process checks, not a live stack.
+- **Last run:** 2026-10-19, owned `c14-notes` mock stack. Two saved notes and
+  re-show order, nine held call kinds, three-generation bound, Stop/resume,
+  named-Work copy, manual compact, late-room/no-fit fallback and queue-switch
+  yield exercised through `./mf`; neutral rows and expanded saved receipts/divider
+  checked in the browser, including reload. Exact room/trigger equalities,
+  credit/tree/iteration exhaustion and active image-prefix exception used a
+  disposable component harness. Paid-provider cache/billing, complete failed-commit
+  proposal races and the full remaining design matrix are **not certified**.
+  Evidence: docs repository `work/concurrent-edit-design/compaction-build/phase2-verification.md`.

@@ -37,6 +37,8 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Expand C14 and RP-4 probes for bounded notes, held calls, interruption and fresh compaction planning.
+
 - Measure complete summary branches and stray-call retries before sending; roll oversized retries without losing the paid branch, and keep one neutral result per call.
 - Summaries name what each listed notes file holds, without changing exact-match keep-open URI lines.
 
