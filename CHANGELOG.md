@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Extend the thread-notes probe recipe with root-as-file refusal, client moves into notes, identity continuity and delayed scope refresh.
+
 - Read-only file viewers also derive their visible path from catalog labels. While labels load, visible ancestry never falls back to storage basenames.
 
 - Remove the unused server `toCanonical` serializer alias; source locations use the shared codec.

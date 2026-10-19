@@ -80,6 +80,39 @@ arguments or use JSON files).
    documents without resets; compare counts, text and addresses before/after.
    Exercise interrupted concurrent-index migration recovery with the real runner.
 
+## Review regression schedules
+
+- **A root is never a file.** On a fresh chat, issue model
+  `write create scratch://$THREAD/` and writer HTTP
+  `POST context/scratch/create` with `{"type":"file","path":"@cN"}`.
+  Both refuse a missing filename. Repeat through tracked ensure and binary
+  dispatch. No document or root allocation occurs. Creating `@cN/plan` next
+  succeeds. Folder mkdir, list, delete and move destinations still accept
+  `@cN`.
+- **Client identity and routing.** Put `plan` in owner-wide Scratch and two
+  chat folders. In Editor, Ctrl+K to the second chat's canonical address,
+  save, reload and read back: the stored link keeps that document identity.
+  Paste `[[plan]]` beside it; it chooses the sibling, not the first catalog
+  match. Recent-document navigation reopens that same source path.
+- **Browser move into notes.** Make an owner-wide Scratch file. In Work Files,
+  choose its Actions, Move, a title-labelled chat folder, then Move to that
+  folder. The move must settle without an availability-location error.
+  Read back under the canonical qualified URI; content and document id stay
+  unchanged. Opening the moved note and reloading retains its route.
+- **Variable continuity after path reuse.** Show an AI a link to A at
+  `scratch://@notes/@/c12/plan`; move A and create B at that path. Rewriting
+  the link with either that canonical spelling or
+  `scratch://$THREAD/plan#part` retains A and the written suffix. Stored
+  occurrences and shown-address evidence contain no variable.
+- **Delayed scope refresh.** Hold the chat's snapshot response after own
+  Work rebind. Click a `$THREAD` link once: it shows checking, not missing;
+  release the snapshot and it opens the new owner's note without another
+  click. Repeat for a cached child's `$PARENT` after parent rebind:
+  invalidate the complete prepared scope, not only its parent field.
+  A genuinely settled root with no parent still cannot resolve `$PARENT`.
+  Exercise the ready → pending → changed-ready follower transition, not
+  only the initial pending load.
+
 ## Labels and targeted publication
 
 Take a Work catalog snapshot and save its cursor. Rename a chat with
