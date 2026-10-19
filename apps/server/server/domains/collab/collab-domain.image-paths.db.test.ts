@@ -127,7 +127,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const LOST = "00000000-0000-4000-8000-000000000719";
       const cover = { contextSourceId: SOURCE_ID, name: "cover", extension: "png" };
       await db.insert(documents).values([
-        { ...cover, id: OLD_COVER, fileType: "image", deletedAt: new Date() },
+        {
+          ...cover,
+          id: OLD_COVER,
+          fileType: "image",
+          deletionReason: "deleted",
+          deletedAt: new Date(),
+        },
         { ...cover, id: "00000000-0000-4000-8000-00000000071a", fileType: "image" },
       ]);
       await writeMarkdown(collab, {

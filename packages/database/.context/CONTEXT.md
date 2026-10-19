@@ -44,6 +44,18 @@ fixture can be retired only after a later frozen migration supersedes it.
 
 ## Schema contracts
 
+A document tombstone has a non-null deletion reason exactly when it has
+`deleted_at`. User, Work and system-cause fields identify its actor; legacy
+actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
+remains its restore marker. Restore clears all removal fields. A closed draft
+has its own `closed_cause`, independent of the document's current removal
+(`discarded` or `document_removed`), so Work restore does not erase why a
+draft closed. Migrations 0070–0072 add the record, backfill in bounded,
+re-runnable no-transaction pages, retire existing tombstones' active drafts
+and tree uses, then validate. The pending-part pass is independently paged;
+an interrupted cutover must finish before serving traffic.
+
+
 A `branches` row is a Work's pending file tree. `document_drafts` stores each
 document version, with writes in `draft_write_journal`; `branch_tree_changes`
 and `branch_commands` belong to the whole branch. The `branch_push_*` tables

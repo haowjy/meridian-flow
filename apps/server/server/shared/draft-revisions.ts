@@ -13,6 +13,7 @@ export type DraftRevisionChange = {
   blocking?: boolean;
   /** Closes the draft; one already closed is left alone. */
   status?: "closed";
+  closedCause?: "discarded" | "document_removed";
   /** The draft must still be active at exactly this revision, or nothing is written. */
   expectedRevision?: number;
 };
@@ -47,7 +48,7 @@ export async function bumpDraftRevisions(
     .update(documentDrafts)
     .set({
       ...set,
-      ...(set.status ? { updatedAt: new Date() } : {}),
+      ...(set.status ? { updatedAt: new Date(), closedCause: set.closedCause ?? "discarded" } : {}),
       revision: sql`${documentDrafts.revision} + 1`,
     })
     .where(

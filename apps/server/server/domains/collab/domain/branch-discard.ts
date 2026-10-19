@@ -54,11 +54,10 @@ export type DiscardItem = {
   origin: "created" | "edited";
 };
 
-export type DiscardKernelInput =
-  /**
-   * Item text resets need the live documents they reset from, and the attempt that owns
-   * each reset until it completes.
-   */
+export type DiscardKernelInput = { userId?: UserId } /**
+ * Item text resets need the live documents they reset from, and the attempt that owns
+ * each reset until it completes.
+ */ & (
   | {
       branchId: BranchId;
       selection: { kind: "items"; items: readonly DiscardItem[] };
@@ -66,7 +65,8 @@ export type DiscardKernelInput =
       attempt: Attempt;
     }
   /** A whole Discard closes every draft and resets no text (purge passes this). */
-  | { branchId: BranchId; selection: { kind: "whole" } };
+  | { branchId: BranchId; selection: { kind: "whole" } }
+);
 
 export type DiscardKernelResult = {
   branchClosed: boolean;
@@ -214,10 +214,11 @@ export function createBranchDiscard(deps: {
     workId: WorkId,
     branchId: BranchId,
     command: CommandClaim | undefined,
+    userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
     return commitDiscard(attempt, after, {
       workId,
-      kernel: { branchId, selection: { kind: "whole" } },
+      kernel: { userId, branchId, selection: { kind: "whole" } },
       ...(command ? { command } : {}),
     });
   }
@@ -229,12 +230,19 @@ export function createBranchDiscard(deps: {
     branchId: BranchId,
     selected: readonly DiscardItem[],
     command: CommandClaim | undefined,
+    userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
     const textDocuments = selected.flatMap((item) => (item.draftId ? [item.documentId] : []));
     return withLiveDocuments(textDocuments, (liveDocs) =>
       commitDiscard(attempt, after, {
         workId,
-        kernel: { branchId, selection: { kind: "items", items: selected }, liveDocs, attempt },
+        kernel: {
+          userId,
+          branchId,
+          selection: { kind: "items", items: selected },
+          liveDocs,
+          attempt,
+        },
         ...(command ? { command } : {}),
       }),
     );
@@ -250,7 +258,7 @@ export function createBranchDiscard(deps: {
       const after = afterRootCommit();
       if (input.selection.kind === "whole") {
         const ended = await attempts((attempt) =>
-          whole(attempt, after, workId, branchId, input.command),
+          whole(attempt, after, workId, branchId, input.command, input.userId),
         );
         await after.returned();
         return ended ? { status: "discarded", branchId, branchClosed: true } : gone;
@@ -259,7 +267,7 @@ export function createBranchDiscard(deps: {
       const selected = input.selection.items;
       if (selected.length === 0) return { status: "discarded", branchId, branchClosed: false };
       const ended = await attempts((attempt) =>
-        items(attempt, after, workId, branchId, selected, input.command),
+        items(attempt, after, workId, branchId, selected, input.command, input.userId),
       );
       await after.returned();
       return ended ? { status: "discarded", branchId, branchClosed: false } : gone;

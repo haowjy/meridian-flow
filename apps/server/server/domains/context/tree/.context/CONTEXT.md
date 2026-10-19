@@ -46,6 +46,16 @@ repair uses the same seam in its own transaction and reports after commit.
 Tree writes return changed identities; ContextFS, the mover, Apply, and Discard
 refresh the catalog in their own surrounding transaction.
 
+## Removal facts
+
+`DocumentRemovals` is the context-owned port for current tombstone records;
+`tree/document-removals.ts` joins actor names in the caller's transaction.
+Callers must authorize identity access before exposing its result (availability
+does so through its existing classification). `DocumentRemovedError` lives
+with the port, so collab need not import a context adapter. A writer's Discard
+never sets the Work-cascade restore marker. Retractions name
+`reply_rolled_back` or `create_failed`; both repair paths name `repair`.
+
 ## Lock and identity contracts
 
 Before the first document lock, callers take in-process leases, thread/Work and

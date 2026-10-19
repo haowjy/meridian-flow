@@ -190,7 +190,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(replacement).not.toBeNull();
       await db
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DOC_AMBIENT_DELETE_ID));
       await store.ensureFolderPath(["beta"]);
       expect(await history()).toEqual([]);
@@ -203,7 +203,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DOC_DELETE_ID));
       expect(await resolver.resolve({ ...address, path: "gamma" })).toEqual({
         kind: "unavailable",

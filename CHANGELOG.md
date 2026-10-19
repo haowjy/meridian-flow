@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removed documents record whether they were deleted or discarded, who acted (a writer, Work, or system cleanup), and when. Existing tombstones are classified on upgrade; their active drafts close with a removal cause and obsolete pending tree uses retire (#854).
+
 - The draft/branch rename upgrade now includes all-zero command IDs and nonpositive receipt IDs. Renaming receipt placement keys no longer generates recursive change-trail work; real placement changes still signal normally (#880).
 
 - The draft/branch rename preserves command replay fingerprints and opaque document IDs. Its online backfill commits complete receipt and settlement rows in indexed batches and refreshes shown-link digests without creating duplicate showings (#880).

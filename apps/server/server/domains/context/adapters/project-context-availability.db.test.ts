@@ -540,7 +540,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
       const generation = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[0]));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOCS[0]));
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
       let result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[0], DOCS[2]] as never },
@@ -555,7 +558,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[2]));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOCS[2]));
       await expect(
         availability.lookup(
           { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
@@ -680,7 +686,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
       };
       await assertInconsistent();
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[0]));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOCS[0]));
       await assertInconsistent();
       expect(evidence.events).toEqual([
         expect.objectContaining({

@@ -107,7 +107,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(chapter)).toBeNull();
       const first = await create("manuscript://ch1");
       expect(await settlement(chapter)).toBe(first);
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, first));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, first));
       const second = await create("manuscript://ch1");
       expect(second).not.toBe(first);
       expect(await settlement(chapter)).toBe(first);

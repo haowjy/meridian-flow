@@ -165,7 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const applied = await catalog.snapshot(scope);
       await db
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DRAFT_DOCUMENT_ID));
       await catalog.refreshProject(PROJECT_ID);
       await expect(catalog.changes(scope, applied.cursor)).resolves.toMatchObject({
@@ -258,7 +258,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DOCUMENT_ID));
       await catalog.refreshSources([SOURCE_ID], [DOCUMENT_ID]);
       const removed = await catalog.changes(scope, replay.nextCursor);

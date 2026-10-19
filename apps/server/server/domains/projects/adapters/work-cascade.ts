@@ -79,6 +79,9 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
         .update(documents)
         .set({
           deletedAt: at,
+          deletionReason: "deleted",
+          deletedByUserId: null,
+          deletionCause: null,
           deletedByWorkId: workId,
           locationVersion: sql`${documents.locationVersion} + 1`,
         })
@@ -91,6 +94,9 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
         .update(documents)
         .set({
           deletedAt: null,
+          deletionReason: null,
+          deletedByUserId: null,
+          deletionCause: null,
           deletedByWorkId: null,
           locationVersion: sql`${documents.locationVersion} + 1`,
         })

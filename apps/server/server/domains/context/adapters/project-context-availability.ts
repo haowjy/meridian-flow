@@ -1,5 +1,7 @@
 /** Drizzle project-final identity lookup and global availability watermarks. */
+
 import { randomUUID } from "node:crypto";
+import type { DocumentId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
   canonicalContextUri,
@@ -37,6 +39,7 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
+import { createDrizzleDocumentRemovals } from "../tree/document-removals.js";
 import {
   identityDocumentFields,
   identityDocuments,
@@ -465,6 +468,7 @@ export function createDrizzleProjectContextAvailability(
             : [];
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
+          const removals = await createDrizzleDocumentRemovals(db).lookup(ids as DocumentId[]);
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);
             if (!row) return { kind: "not-visible", documentId, checkedGeneration } as never;
@@ -509,6 +513,7 @@ export function createDrizzleProjectContextAvailability(
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
+                removal: removals.get(documentId as DocumentId),
               };
             }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
@@ -557,6 +562,7 @@ export function createDrizzleProjectContextAvailability(
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
+                removal: removals.get(documentId as DocumentId),
               } as never;
             }
             try {

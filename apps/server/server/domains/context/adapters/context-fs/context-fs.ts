@@ -11,7 +11,6 @@ import {
   type Filetype,
   filetypeForKnownPath,
   filetypeForPath,
-  folderDocumentName,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   type YjsTrackedSchemaType,
@@ -544,8 +543,9 @@ export class ContextFS implements ContextSchemeAdapter {
   retractCreate(
     _path: string,
     documentId: string,
+    cause: "reply_rolled_back" | "create_failed",
   ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
-    return this.placement.retract(documentId);
+    return this.placement.retract(documentId, cause);
   }
 
   writeBinary(
@@ -804,6 +804,7 @@ export class ContextFS implements ContextSchemeAdapter {
       const committed = await this.mutationStore.commitMove({
         source,
         linkNoteProjectId: prepared.linkNoteProjectId,
+        actorUserId: prepared.actorUserId,
         destinationSourceId: prepared.destinationSourceId,
         destinationParentToken: prepared.destinationParentToken,
         destinationCreateFolders: prepared.destinationCreateFolders,
@@ -825,6 +826,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const committed = await this.mutationStore.commitMove({
       source,
       linkNoteProjectId: prepared.linkNoteProjectId,
+      actorUserId: prepared.actorUserId,
       destinationSourceId: prepared.destinationSourceId,
       destinationParentToken: prepared.destinationParentToken,
       destinationCreateFolders: prepared.destinationCreateFolders,

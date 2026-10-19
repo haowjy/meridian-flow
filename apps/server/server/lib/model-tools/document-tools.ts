@@ -369,6 +369,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             port: context.port,
             path: parsed.path,
             documentId: address.documentId,
+            cause: "create_failed",
           });
         } catch (error) {
           return writeToolError(

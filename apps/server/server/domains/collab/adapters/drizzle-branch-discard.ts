@@ -14,7 +14,7 @@
  * source it touched inside the transaction (F23), as Apply does.
  */
 
-import type { BranchId, ThreadId, WorkId } from "@meridian/contracts";
+import type { BranchId, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentDrafts, draftWriteJournal } from "@meridian/database/schema";
@@ -68,9 +68,14 @@ async function endUseReconciled(
   branchId: BranchId,
   request: EndUseRequest,
   cause: PeerRetirementCause,
+  userId?: UserId,
 ) {
   const scope = await readEndUseScope(db, request);
-  const ended = await endUse(db, { branchId, documentIds: scope.documentIds });
+  const ended = await endUse(db, {
+    branchId,
+    documentIds: scope.documentIds,
+    actor: userId ? { userId } : { cause: "repair" },
+  });
   if (ended.tombstoned.length > 0 && scope.sourceIds.length > 0) {
     await deps.catalog.refreshSources(
       scope.sourceIds,
@@ -147,6 +152,7 @@ async function discardWholeLocked(
   db: Database,
   deps: KernelDeps,
   branchId: BranchId,
+  userId?: UserId,
 ): Promise<DiscardKernelResult> {
   const ended = await endUseReconciled(
     db,
@@ -154,6 +160,7 @@ async function discardWholeLocked(
     branchId,
     { branches: [{ branchId }] },
     "branch_closed",
+    userId,
   );
   const closed = await closeBranchDrafts(db, branchId, "branch_closed");
   await deps.branches.close(branchId, new Date());
@@ -259,7 +266,7 @@ export function createDrizzleBranchDiscard(
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { branchId } = input;
     // Only the items arm carries live documents.
-    if (!("liveDocs" in input)) return discardWholeLocked(db, deps, branchId);
+    if (!("liveDocs" in input)) return discardWholeLocked(db, deps, branchId, input.userId);
     const { items } = input.selection;
     // Created or edited is the document's visibility now, read under the locks the caller
     // holds: another Work's Apply may have revealed a create since the item was resolved, and
@@ -275,6 +282,7 @@ export function createDrizzleBranchDiscard(
       branchId,
       { branches: [{ branchId, documentIds: withRows }] },
       "document_discarded",
+      input.userId,
     );
     // A hidden create another branch still uses stays, but this branch's drafts on it end.
     const retiredDrafts: RetiredDraft[] = [

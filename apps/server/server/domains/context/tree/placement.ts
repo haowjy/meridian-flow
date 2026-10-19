@@ -195,7 +195,15 @@ export async function place(
           folderId: parentId,
           name: target.at.name,
           extension: target.at.extension ?? "",
-          ...(clear === "hidden" ? { hidden: false } : { deletedAt: null }),
+          ...(clear === "hidden"
+            ? { hidden: false }
+            : {
+                deletedAt: null,
+                deletionReason: null,
+                deletedByWorkId: null,
+                deletedByUserId: null,
+                deletionCause: null,
+              }),
           updatedAt: new Date(),
         })
         .where(eq(documents.id, target.node.id));

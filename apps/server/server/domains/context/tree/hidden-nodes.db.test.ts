@@ -335,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const branch = await scenario.branchOf(drafting);
       const ids = order === "one first" ? [one, two] : [two, one];
       await runInDrizzleTransaction(db, () =>
-        endUse(db, { branchId: branch.id, documentIds: ids }),
+        endUse(db, { branchId: branch.id, documentIds: ids, actor: { cause: "repair" } }),
       );
       expect(await foldersNamed(scenario, "root"), "root pruned").toEqual([]);
       expect(await foldersNamed(scenario, "one")).toEqual([]);
