@@ -140,7 +140,8 @@ async function fixture(
     branches: h.branches,
     reviewItems: createBranchReviewItems({
       tree: createTreeReader(h.db),
-      drafts: pending.listBranchDraftEvidence,
+      drafts: pending.listBranchDraftMetadata,
+      pendingThreadIds: pending.pendingThreadIds,
       creators: pending.listCreators,
     }),
   });

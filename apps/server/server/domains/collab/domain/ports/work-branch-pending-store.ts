@@ -10,28 +10,26 @@ export type DocumentBranchOrigin = {
   originWorkName: string | null;
 };
 
-export type WorkBranchPendingEvidence = {
-  documentDraft: {
-    draftId: string;
-    documentId: DocumentId;
-    branchId: BranchId;
-    updatedAt: Date;
-    /** The pulled-live-cut effect predicate (§3.1): the draft differs from live. */
-    hasEffect: boolean;
-  };
-  /** Chats whose agent writes are pending on the draft, most recent write first, distinct. */
-  agentThreadIds: string[];
+export type WorkBranchDraftMetadata = {
+  draftId: string;
+  documentId: DocumentId;
+  branchId: BranchId;
+  updatedAt: Date;
+  /** Whether the draft differs from its review base. */
+  hasEffect: boolean;
 };
 
 export type WorkBranchPendingStore = {
   /**
    * Every active `work_draft` draft of the branch (only these documents' when given), each
-   * with its pending text membership.
+   * with metadata only: no materialization or receipt classification.
    */
-  listBranchDraftEvidence(
+  listBranchDraftMetadata(
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
-  ): Promise<WorkBranchPendingEvidence[]>;
+  ): Promise<WorkBranchDraftMetadata[]>;
+  /** Receipt members for list/report enrichment only, latest first and distinct. */
+  pendingThreadIds(draftId: string): Promise<string[]>;
   /** The chat that created each document the branch created (§3.3); a writer's create is absent. */
   listCreators(
     branchId: BranchId,

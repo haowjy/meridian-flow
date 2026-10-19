@@ -124,7 +124,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         ),
       );
     },
-    async listBranchDraftEvidence(branchId, documentIds) {
+    async listBranchDraftMetadata(branchId, documentIds) {
       const rows = await currentDrizzleDb(db)
         .select({
           draftId: documentDrafts.id,
@@ -143,22 +143,18 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         )
         .orderBy(asc(documentDrafts.id));
 
-      return Promise.all(
-        rows.map(async (row) => {
-          const view = await readDisposition(row.draftId);
-          const members = new Set<number>();
-          for (const classification of view?.classifications.values() ?? [])
-            for (const member of classification.members) members.add(member);
-          const agentThreadIds = new Set<string>();
-          // Receipt order is newest first; classification member order need not be.
-          for (const [index, part] of (view?.parts ?? []).entries())
-            if (members.has(index) && part.owner) agentThreadIds.add(part.owner.threadId);
-          return {
-            documentDraft: { ...row, branchId },
-            agentThreadIds: [...agentThreadIds],
-          };
-        }),
-      );
+      return rows.map((row) => ({ ...row, branchId }));
+    },
+    async pendingThreadIds(draftId) {
+      const view = await readDisposition(draftId);
+      const members = new Set<number>();
+      for (const classification of view?.classifications.values() ?? [])
+        for (const member of classification.members) members.add(member);
+      const agentThreadIds = new Set<string>();
+      // Receipt order is newest first; classification member order need not be.
+      for (const [index, part] of (view?.parts ?? []).entries())
+        if (members.has(index) && part.owner) agentThreadIds.add(part.owner.threadId);
+      return [...agentThreadIds];
     },
   };
 }

@@ -12,7 +12,7 @@ import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
-import type { WorkBranchPendingEvidence } from "./ports/work-branch-pending-store.js";
+import type { WorkBranchDraftMetadata } from "./ports/work-branch-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 
 export type DraftReviewItem = {
@@ -61,12 +61,14 @@ export function createBranchReviewItems(deps: {
   tree: Pick<TreeReader, "treeState">;
   /**
    * The branch's active `work_draft` drafts (only these documents' when given), each
-   * with its pending text membership.
+   * metadata only.
    */
   drafts(
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
-  ): Promise<readonly WorkBranchPendingEvidence[]>;
+  ): Promise<readonly WorkBranchDraftMetadata[]>;
+  /** Expensive receipt membership, read only for listed items. */
+  pendingThreadIds(draftId: string): Promise<string[]>;
   /** The chat that created each document the branch created; absent for a writer's create. */
   creators(
     branchId: BranchId,
@@ -78,12 +80,10 @@ export function createBranchReviewItems(deps: {
     documentIds?: readonly DocumentId[],
   ): Promise<ResolvedDraftItem[]> {
     const drafts = await deps.drafts(branchId, documentIds);
-    const draftOf = new Map(
-      drafts.map((evidence) => [evidence.documentDraft.documentId, evidence]),
-    );
+    const draftOf = new Map(drafts.map((evidence) => [evidence.documentId, evidence]));
     const nodes = await deps.tree.treeState(
       branchId,
-      drafts.map((evidence) => evidence.documentDraft.documentId),
+      drafts.map((evidence) => evidence.documentId),
       documentIds,
     );
     const creators = await deps.creators(branchId, documentIds);
@@ -98,7 +98,13 @@ export function createBranchReviewItems(deps: {
 
   return {
     async list(branchId) {
-      return (await items(branchId)).flatMap(({ item, listed }) => (listed ? [item] : []));
+      const listed = (await items(branchId)).flatMap(({ item, listed }) => (listed ? [item] : []));
+      return Promise.all(
+        listed.map(async (item) => {
+          const members = item.draftId ? await deps.pendingThreadIds(item.draftId) : [];
+          return { ...item, actorThreadIds: [...new Set([...members, ...item.actorThreadIds])] };
+        }),
+      );
     },
     async resolve(branchId, documentId) {
       return (await items(branchId, [documentId]))[0] ?? null;
@@ -107,25 +113,24 @@ export function createBranchReviewItems(deps: {
 }
 
 /** The §3.1 predicate for a document the branch only edited. */
-function isEdited(evidence: WorkBranchPendingEvidence | undefined): boolean {
-  return evidence?.documentDraft.hasEffect ?? false;
+function isEdited(evidence: WorkBranchDraftMetadata | undefined): boolean {
+  return evidence?.hasEffect ?? false;
 }
 
 function toItem(
   branchId: BranchId,
   node: TreeStateNode,
-  evidence: WorkBranchPendingEvidence | undefined,
+  evidence: WorkBranchDraftMetadata | undefined,
   creatorThreadId: string | undefined,
 ): DraftReviewItem {
   const deletedLive = !node.hidden && node.deleted;
   const isNew = node.origin === "created" && node.hidden;
-  const writers = evidence?.agentThreadIds ?? [];
   const path = node.target.uri;
   return {
     branchId,
     itemKey: draftItemKey(branchId, node.nodeId),
     documentId: node.nodeId,
-    draftId: evidence?.documentDraft.draftId ?? null,
+    draftId: evidence?.draftId ?? null,
     origin: node.origin,
     isNew,
     binary: node.binary,
@@ -135,11 +140,8 @@ function toItem(
     path,
     conflict: conflictOf(node),
     deletedLive,
-    actorThreadIds:
-      creatorThreadId && !writers.includes(creatorThreadId)
-        ? [...writers, creatorThreadId]
-        : writers,
-    updatedAt: evidence?.documentDraft.updatedAt ?? new Date(),
+    actorThreadIds: creatorThreadId ? [creatorThreadId] : [],
+    updatedAt: evidence?.updatedAt ?? new Date(),
   };
 }
 

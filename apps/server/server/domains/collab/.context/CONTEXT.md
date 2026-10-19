@@ -121,6 +121,14 @@ rejects it, including a raw zero-length checkpoint. It is never an empty documen
 A `deleted` removal retains all bytes. Restoring the document does not reopen
 its old drafts.
 
+## Review identity and enrichment
+
+`branch-review-identity.ts` resolves through metadata-only `reviewItems.resolve`: active
+draft metadata and tree/existence facts. `reviewItems.list` enriches only listed
+items with receipt-based chat membership. Addressed metadata and Apply grant
+selection never materialize or classify current text; text Apply classifies its
+frozen clicked cut only.
+
 ## Historical draft disposition
 
 `domain/draft-disposition.ts` is the read-only receipt view for PR B's two-fragment

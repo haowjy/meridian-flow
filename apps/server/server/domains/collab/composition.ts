@@ -429,7 +429,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const reviewItems = createBranchReviewItems({
     tree: createTreeReader(deps.db),
     drafts: (branchId, documentIds) =>
-      workBranchPendingStore.listBranchDraftEvidence(branchId, documentIds),
+      workBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
+    pendingThreadIds: workBranchPendingStore.pendingThreadIds,
     creators: (branchId, documentIds) => workBranchPendingStore.listCreators(branchId, documentIds),
   });
   // Exactly what each committed transaction ended: its closed drafts' rooms and thread peers.

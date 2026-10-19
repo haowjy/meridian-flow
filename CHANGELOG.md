@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Resolve draft addresses from metadata only; classify receipt membership only for review lists and frozen Apply cuts.
+
 - Stop computing and shipping unused live fingerprints on draft review lists.
 
 - Bind frozen Apply clicks to their original draft so delayed delivery cannot apply a replacement after Discard.
