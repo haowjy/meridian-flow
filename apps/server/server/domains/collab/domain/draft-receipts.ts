@@ -35,6 +35,7 @@ import {
   type DraftTailRow,
   materializeDraftRead,
 } from "./draft-store.js";
+import { DraftSaveCut } from "./immutable-draft-state.js";
 import { validateClientUpdateAdmission, validateRestorationRanges } from "./provenance.js";
 
 // LateTyping retains PM nodes between frames; their schema identity must remain stable.
@@ -249,17 +250,10 @@ export async function finalizeAppend(
     }));
     const rows = kept.map((entry) => entry.row);
     // Finalization is over: this document is immutable for both the save cut and the replica.
-    let after: Uint8Array | undefined;
     return {
       finalization: { status: "appended", rows, receipts },
       doc,
-      cut: {
-        beforeState: before,
-        get afterState() {
-          after ??= Y.encodeStateAsUpdate(doc);
-          return after;
-        },
-      },
+      cut: new DraftSaveCut(before, doc),
       result: {
         status: "appended",
         rows,

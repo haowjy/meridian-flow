@@ -429,6 +429,11 @@ read and no rebase- or Apply-specific persistence/install door.
 `drizzle-draft-storage.ts` still owns storage primitives; `drizzle-drafts.ts`
 wraps them with receipt persistence and savepoint rollback.
 
+Finalized immutable documents share one lazy encoding through
+`immutable-draft-state.ts`, weakly keyed by the document. Save cuts retain before
+bytes and the final document, never an append callback or its previous replica;
+the replica itself owns no encoding accessor.
+
 Every draft write runs through `runBoundedAttempts`
 (`domain/draft-attempts.ts`), the one owner of a candidate's lifetime: capture
 and compute off every lock, one commit scope per attempt (a root transaction,

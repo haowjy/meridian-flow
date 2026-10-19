@@ -39,10 +39,11 @@ import {
   type RewritePolicy,
 } from "./draft-store.js";
 import type { WriterFrameDiagnostics } from "./draft-writer-frames.js";
+import { encodeImmutableDraft } from "./immutable-draft-state.js";
 /**
  * The draft as committed at `revision`: replaced, never mutated. `seq` is the highest journal
  * id it contains; `tail` counts the rows (and their bytes) it holds past its checkpoint;
- * `encoded` is its update bytes, computed once when first needed.
+ * its immutable document shares lazy update bytes with any save cut.
  */
 export type CommittedReplica = {
   readonly revision: number;
@@ -50,7 +51,6 @@ export type CommittedReplica = {
   readonly seq: number;
   readonly doc: Y.Doc;
   readonly tail: TailSize;
-  encoded?: Uint8Array;
 };
 
 /**
@@ -269,7 +269,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           seq: Math.max(current.seq, ...read.tail.map((row) => row.id)),
           doc,
           tail: grownTail(current.tail, rows),
-          ...(rows.length ? {} : { encoded: current.encoded }),
         };
         install(documentDraft.draftId, { next, from: current, rows });
         return next;
@@ -364,8 +363,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   }
 
   function encodedOf(replica: CommittedReplica): Uint8Array {
-    replica.encoded ??= Y.encodeStateAsUpdate(replica.doc);
-    return replica.encoded;
+    return encodeImmutableDraft(replica.doc);
   }
 
   /** A private, mutable copy of a replica: one apply of its cached bytes. */
@@ -525,7 +523,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         }
         if (!finalized || !cut)
           throw new Error(`Draft ${snapshot.draftId} append was not finalized`);
-        const committedCut = cut;
         const { doc, prefixHeld, prefixRows, checkpointSeq } = finalized;
         const rows = [
           ...prefixRows.map((row) => row.update),
@@ -540,9 +537,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               checkpointRevision: outcome.checkpointRevision,
               seq: Math.max(checkpointSeq, seq),
               doc,
-              get encoded() {
-                return committedCut.afterState;
-              },
               tail: grownTail(EMPTY_TAIL, rows),
             },
           };
@@ -552,9 +546,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
             checkpointRevision: replica.checkpointRevision,
             seq: Math.max(replica.seq, seq),
             doc,
-            get encoded() {
-              return committedCut.afterState;
-            },
             tail: grownTail(replica.tail, rows),
           },
           from: replica,
