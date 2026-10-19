@@ -71,8 +71,7 @@ cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
 `{ documentRemoved: record }`. It prelocks Work drafts in ID order, then thread
 peers in ID order (a pull's upstream-before-peer order), derives the durable
-`closed_cause` (`document_removed` for a removal, else `discarded`), settles
-each Work draft's current generation, and joins the root transaction's
+`closed_cause` (`document_removed` for a removal, else `discarded`), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
 (`domain/draft-retirement.ts`): a draft whose document the same transaction
@@ -119,7 +118,7 @@ its old drafts.
 review. `createDraftDispositionReader` consumes `DraftDispositionStore.capture`;
 `adapters/drizzle-draft-disposition.ts` captures bytes, revision, project owner
 and AI receipts in one root repeatable-read transaction, with no room reads,
-live merge, provisioning or write admission. Consumers are not switched yet.
+live merge, provisioning or write admission. Inverse planning, immutable turn targets and pending owner membership consume this reader.
 Do not reuse active-only `ReadReviewCut` for historical disposition.
 
 Receipt selection is `document_edit_parts.origin->>'draftId' = $draftId`,
@@ -267,11 +266,11 @@ query there is keystroke latency for every writer on the draft (see
 Every rewrite is fenced by the row's `revision`, under one of two policies.
 An **exact** rewrite commits only at the revision it was computed at: a
 checkpoint rewrite through `commitRewrite` (a peer's catch-up, an inverse's
-destination), and every metadata change (a close, a hold, a
-journal row's status) through the one door
-`bumpDraftRevisions` (`shared/draft-revisions.ts`), which locks the rows in
-ID order and bumps their revision with the change. A miss surfaces as
-`DraftCasConflictError`, and the attempt captures again. A **fold** (a pull,
+destination). A miss surfaces as `DraftCasConflictError`, and the attempt
+captures again. Close locks active draft rows in ID order, writes only their
+closed status and cause, and bumps revision; it does not settle receipts or
+journal statuses. `rollback_pending` remains a journal diagnostic, not part
+disposition. A **fold** (a pull,
 compaction) commits over the replica's
 cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
@@ -467,8 +466,8 @@ the edit already reversed (probe `d22-concurrent-undo` in
 [the lock-free probe index](../../../../../../docs/qa/drafts-lock-free-probes.md)). Any moved revision or head unwinds the attempt and
 recaptures; after four attempts one more capture is classified without
 writing, so a plan that still applies is a `ReversalConflictError`, never a
-semantic refusal. `markBlocking` (a held draft found by the plan) is its own short write
-after the capture (Works, then the held rows, then the bump).
+semantic refusal. Historical disposition reads include closed drafts; the
+active planning capture remains the only source of write admission.
 
 Each pull attempt is its own root transaction, outside a caller's response
 and database transactions, and holds nothing between attempts: its candidate
@@ -572,9 +571,10 @@ update. Manifest membership mutations still journal cumulative sync bytes
 
 Forward inverses append ordinary immutable journal parts with restoration
 aliases. They do not rewrite target rows, mark them reversed, or use a reserved
-undo client. Card actions and model undo/redo share immutable edit and
-placement targets but retain their own authorization and stack policy. Model
-revert is a new edit in the current destination.
+undo client. Card actions and model undo/redo share immutable edit origins and captured
+text-derived disposition, but retain their own authorization and stack policy.
+Draft-origin Revert never targets live. Applied parts revert in an active draft
+as pending changes; closed drafts supply disposition but never write admission.
 
 Response helpers are private to agent-edit's committer. Every tool and scoped
 read obtains a prepare lease; reporting uses disposable replicas. Rollback

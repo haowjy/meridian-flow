@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
+- Removed inverse holds and their refusal statuses. Revert keeps applied changes in the draft until the writer applies them.
+
+- Turn and model inverses use text-derived draft dispositions and immutable origins, keeping applied draft reverts out of live text.
+
+- Work Discard all closes drafts without rewriting receipts; pending lists and counts follow active text effects, with conversation membership derived from the shared review.
 
 - Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.
 

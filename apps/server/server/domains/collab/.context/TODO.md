@@ -3,6 +3,16 @@
 Open follow-ups must preserve immutable edit identity, durable authority fences,
 and the close/end-use kernel.
 
+## Draft-review migration handoff
+
+The migration lane must remove the final legacy insert assignments atomically
+with dropping their NOT NULL columns: `placement: p.origin` in
+`adapters/drizzle-document-edits.ts` and `draftBaseUpdateSeq: 0` in
+`adapters/drizzle-draft-storage.ts`. Neither column has a database default;
+omission before migration fails `23502`. They have no disposition authority.
+Remove the unused replay DTO's `draftBaseUpdateSeq` field and its adapter mapping
+with that column drop. No receipt placement mutators or readers remain.
+
 ## Per-change Apply Undo
 
 Expose per-change Apply Undo through the existing immutable edit-part and

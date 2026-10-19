@@ -13,7 +13,6 @@ import {
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
-import { prepareHolds } from "./inverse-holds.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
 import type {
   InverseDocument,
@@ -24,8 +23,7 @@ import type {
 
 type Query = TurnInverseQuery & { model: true; draftId: string | null };
 type Entry = { id: string; handle: string; parts: StoredInversePart[] };
-const eligible = (part: StoredInversePart) =>
-  part.placement.kind === "live" || part.placement.kind === "pending";
+const eligible = (part: StoredInversePart) => part.disposition !== "discarded";
 function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
   for (const part of document.history) {
@@ -88,17 +86,15 @@ type Inspection = ReturnType<typeof inspectionContext>;
 
 export function createModelInversePolicy(store: TurnInverseStore) {
   function planner(document: InverseDocument, query: Query) {
-    const context = prepareHolds([document]).get(document.documentId);
-    if (!context) throw new Error("Missing inverse hold context");
+    const liveIndex = prepareEditRoots(document.live, document.history);
     const draft = query.draftId ? document.drafts.get(query.draftId) : undefined;
     const view = draft?.doc ?? document.live;
     const own = entries(document, query.threadId);
     const actions = inspectionActions(document.history, own);
     const inspections = new Map<Y.Doc, Inspection>();
-    inspections.set(document.live, inspectionContext(context.liveIndex, actions));
-    for (const [id, documentDraft] of document.drafts) {
-      const index = context.views.get(id);
-      if (!index) throw new Error("Missing inverse draft index");
+    inspections.set(document.live, inspectionContext(liveIndex, actions));
+    for (const documentDraft of document.drafts.values()) {
+      const index = liveIndex.forView(documentDraft.doc);
       inspections.set(documentDraft.doc, inspectionContext(index, actions));
     }
     const inspect = (current = view) => {
@@ -106,12 +102,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (!inspection) throw new Error("Missing immutable-view inspection");
       return inspection;
     };
-    const blocking = new Set<string>();
-    const holder = (part: StoredInversePart) =>
-      context.liveIndex
-        .roots(part.effect)
-        .flatMap((root) => [...(context.holds.get(root) ?? [])])
-        .find((id) => id !== query.draftId);
     const version = (draftId: string | null) =>
       draftId ? `draft (${document.drafts.get(draftId)?.name ?? "unavailable"})` : "live";
     function refusal(
@@ -126,7 +116,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: "work_archived",
           message: `This draft is archived. Write to an active draft or live version of ${document.uri}.`,
         };
-      if (part.origin.kind === "pending" && part.placement.kind === "live")
+      if (part.origin.kind === "pending" && part.disposition === "applied")
         return {
           status: `cant_${direction}_applied`,
           message: `The user applied ${handle} to the manuscript. ${follow}`,
@@ -134,26 +124,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (!eligible(part))
         return {
           status: `cant_${direction}_discarded`,
-          message: `The user ${part.placement.kind === "discarded" ? "discarded" : "settled"} ${handle}; it is already gone. ${follow}`,
+          message: `The user discarded ${handle}; it is already gone. ${follow}`,
         };
-      const draftId = part.placement.kind === "pending" ? part.placement.draftId : null;
-      if (
-        draftId !== query.draftId ||
-        (part.placement.kind === "pending" &&
-          part.placement.generation !== draft?.documentDraft.generation)
-      )
+      const draftId = part.origin.kind === "pending" ? part.origin.draftId : null;
+      if (draftId !== query.draftId)
         return {
           status: `cant_${direction}_elsewhere`,
           message: `${handle} is in another version (${version(draftId)}). You can ${direction} only in the version you write to. ${follow}`,
         };
-      const held = holder(part);
-      if (held) {
-        blocking.add(held);
-        return {
-          status: `cant_${direction}_held`,
-          message: `Another draft (${document.drafts.get(held)?.name ?? "unavailable"}) holds a restored copy of ${handle}'s text. The user can apply or discard that draft. ${follow}`,
-        };
-      }
       const state = inspection.states([part])[0];
       if (state.state !== (direction === "undo" ? "active" : "undone")) {
         const excerpt = store.describePart(document, part);
@@ -169,22 +147,26 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         selection: InverseSelection[] = [];
       const states = inspection.states(entry.parts);
       for (const [i, part] of entry.parts.entries()) {
-        const held = holder(part),
-          state = states[i];
-        if (held) blocking.add(held);
-        const reason = !eligible(part)
-          ? "already removed"
-          : held
-            ? `held by the draft in ${document.drafts.get(held)?.name ?? "unavailable"}`
-            : inspection.rolledBack(part)
-              ? "rolled back"
-              : state.state === "undone"
-                ? "already removed"
-                : state.reasons.includes("inaccessible ancestor")
-                  ? "its paragraph was removed"
-                  : state.state !== "active"
-                    ? "edited since"
-                    : null;
+        const state = states[i];
+        const originDraft = part.origin.kind === "pending" ? part.origin.draftId : null;
+        const kernelReason =
+          state.state === "undone"
+            ? "already removed"
+            : state.reasons.includes("inaccessible ancestor")
+              ? "its paragraph was removed"
+              : state.state !== "active"
+                ? "edited since"
+                : null;
+        const reason =
+          (query.draftId && !draft) || (originDraft && !document.drafts.has(originDraft))
+            ? "discarded"
+            : originDraft && originDraft !== query.draftId
+              ? "in another draft"
+              : inspection.rolledBack(part)
+                ? "rolled back"
+                : kernelReason && part.disposition === "discarded"
+                  ? "discarded"
+                  : kernelReason;
         if (reason) {
           const excerpt = store.describePart(document, part);
           skipped.push(
@@ -194,7 +176,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       }
       return { selection, skipped };
     }
-    return { view, draft, own, inspect, refusal, revertSelection, version, blocking };
+    return { view, draft, own, inspect, refusal, revertSelection, version };
   }
   async function plan(
     document: InverseDocument | undefined,
@@ -212,11 +194,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,
       actionId = randomUUID();
-    if (query.draftId && !policy.draft)
-      return {
-        status: "cant_undo_elsewhere",
-        message: `The draft is unavailable. Read ${document.uri} and make a new replace in your current destination.`,
-      };
     if (policy.draft?.frozen)
       return {
         status: "work_archived",
@@ -280,14 +257,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                     rowId: 0,
                   }
                 : { kind: "live", seq: 0 },
-              placement: query.draftId
-                ? {
-                    kind: "pending",
-                    draftId: query.draftId,
-                    generation: policy.draft?.documentDraft.generation ?? 0,
-                    rowId: 0,
-                  }
-                : { kind: "live", seq: 0 },
+              disposition: "pending",
             });
           }
         }
@@ -386,7 +356,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 );
                 if (!inverse) throw new Error("Undo action has no inverse for its target");
                 const refused = policy.refusal(
-                  { ...original, origin: inverse.origin, placement: inverse.placement },
+                  { ...original, origin: inverse.origin, disposition: inverse.disposition },
                   entry.handle,
                   "redo",
                   current,
@@ -422,7 +392,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 computed,
                 consumes,
                 skips: [],
-                heldDraftIds: [],
               },
             ],
           });
@@ -440,11 +409,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             : `${command.command === "undo" ? "undone" : "redone"}: ${handles.join(", ")}`,
       };
     } finally {
-      try {
-        if (!preview) await store.markBlocking([...policy.blocking]);
-      } finally {
-        scratch.destroy();
-      }
+      scratch.destroy();
     }
   }
   return {
@@ -493,8 +458,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           : null;
         const displayInspection = (part: StoredInversePart) =>
           policy.inspect(
-            part.placement.kind === "pending"
-              ? (document.drafts.get(part.placement.draftId)?.doc ?? policy.view)
+            part.origin.kind === "pending"
+              ? (document.drafts.get(part.origin.draftId)?.doc ?? policy.view)
               : document.live,
           );
         const displayParts = new Map<Inspection, StoredInversePart[]>();
@@ -506,7 +471,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             displayParts.set(context, parts);
           }
         for (const [context, parts] of displayParts) context.states(parts);
-        // Revert and Undo are evaluated in the current destination, not the displayed placement.
+        // Revert and Undo are evaluated in the current destination, not the historical view.
         inspection.states(page.flatMap((entry) => entry.parts));
         const index = inspection.actions;
         const lines = page.map((entry) => {
@@ -518,7 +483,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
 
           const states = entry.parts.map((part) => displayInspection(part).states([part])[0]),
             applied = entry.parts.filter(
-              (part) => part.origin.kind === "pending" && part.placement.kind === "live",
+              (part) => part.origin.kind === "pending" && part.disposition === "applied",
             ).length;
           const state = entry.parts.every((part) => inspection.rolledBack(part))
             ? "rolled back"
@@ -540,7 +505,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                     ? "undone"
                     : states.some((state) => state.state === "changed")
                       ? "changed"
-                      : entry.parts.some((part) => part.placement.kind === "pending")
+                      : entry.parts.some((part) => part.origin.kind === "pending")
                         ? "pending"
                         : "live";
           let command = "none";
