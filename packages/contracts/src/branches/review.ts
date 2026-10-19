@@ -37,11 +37,10 @@ export type ApplyClickRefusalReason =
   | "work_archived"
   | "work_deleted"
   | "not_found"
-  | "forbidden"
-  | "unavailable";
+  | "forbidden";
 
 export type ApplyClickResult =
-  | { status: "applied"; commandId: BranchCommandId }
+  | { status: "applied"; commandId: BranchCommandId; overrode?: number }
   | { status: "closed"; commandId: BranchCommandId; removal?: DocumentRemovalRecord }
   | { status: "refused"; commandId: BranchCommandId; reason: ApplyClickRefusalReason };
 

@@ -40,11 +40,13 @@ for integer, non-overlapping link and known-range bounds after integration;
 content kinds and tombstone text never certify them. Browser restoration
 certificates are no longer written into journal metadata.
 
-Apply has one HTTP door per document: `draft/apply`. The stub preserves command
-lookup before resolution and before a fresh refusal, checks the frozen snapshot's
-encoding, then refuses `unavailable`. Lane A replaces this with atomic Apply;
-there is no settlement executor, worker recovery or ingress barrier behind it.
-Work Apply all will be a browser loop of per-document clicks.
+Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
+snapshot off-lock, then commits live, the prefix-authored review base and Apply
+record, lineage, trail and terminal command outcome atomically. A stored result
+wins over every fresh refusal, including a retry after close. See [Apply](apply.md)
+for the storage boundary and diagnostic timing contract. Work Apply all is a
+browser loop of per-document clicks; there is no settlement executor or recovery
+worker behind the route.
 
 The server preview route and review-cut/attribution/selection engine are deleted.
 The app's legacy preview reader returns empty data until lane B2 builds review

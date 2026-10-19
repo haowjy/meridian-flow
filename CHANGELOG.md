@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Apply freezes the clicked draft text, commits live and review-base changes atomically, and records exactly-once command outcomes and committed change trails.
+
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
 
 - Removed server review, staged Apply settlement and draft resets. Hidden-created-document Discard and Work Discard all remain; room-based review and atomic Apply follow in their feature lanes.

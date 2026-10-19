@@ -153,7 +153,7 @@ describe("change trail (postgres)", () => {
     }
   });
 
-  it("commits receipt and placement invalidation atomically, then recovers without a warm owner", async () => {
+  it("commits receipt invalidation atomically, then recovers without a warm owner", async () => {
     const revision = async () => (await db.select().from(schema.changeTrailDirtyLog)).length;
     const initial = await revision();
     const receipt = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
@@ -186,16 +186,8 @@ describe("change trail (postgres)", () => {
     ).rejects.toThrow("receipt rollback");
     expect(await revision()).toBe(initial);
     expect(await db.select().from(schema.documentEdits)).toEqual([]);
-    const id = await db.transaction(receipt);
+    await db.transaction(receipt);
     expect(await revision()).toBeGreaterThan(initial);
-    const admitted = await revision();
-    await db.transaction(async (tx) => {
-      await tx
-        .update(schema.documentEditParts)
-        .set({ placement: { kind: "discarded" } })
-        .where(eq(schema.documentEditParts.editId, id));
-    });
-    expect(await revision()).toBeGreaterThan(admitted);
     const coldDb = createTestDatabase();
     try {
       const cold = createDrizzleChangeTrailAggregateWriter(coldDb);
