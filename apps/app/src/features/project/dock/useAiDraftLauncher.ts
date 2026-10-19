@@ -13,6 +13,7 @@
 import { createContext, useCallback, useContext } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useContextTabsActions } from "@/client/stores";
+import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDestination } from "@/features/links";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
@@ -46,7 +47,7 @@ export function useAiDraftLauncher() {
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, workId: string, focusGroupIds?: readonly string[]) =>
+    (row: ReviewFileTarget, workId: string, focus?: ReviewFocus) =>
       row.contextLocation &&
       openAiDraft({
         workId,
@@ -55,7 +56,7 @@ export function useAiDraftLauncher() {
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
         isNew: row.isNew,
-        ...(focusGroupIds?.length ? { focusGroupIds } : {}),
+        ...(focus ? { focus } : {}),
       }),
     [openAiDraft],
   );

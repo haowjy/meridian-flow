@@ -46,8 +46,10 @@ Discard. Once synced, temporary offline status does not forget that history.
   Replaced/aborted reads never publish. `review-attribution.ts` joins the
   classifier's byline/membership to owner conversations; a subagent link asks
   the existing conversation reveal controller for its spawn card.
-- The controller's focus is one group id. Missing ids reconcile to the first
-  remaining group. Launch requests carry group ids all the way into focus.
+- The controller's focus is a group id paired with its immutable frame. A new
+  projection invalidates that address and reconciles to the first remaining
+  group; a click reads the painter's current frame synchronously. Launch requests carry the id and frame all the way into focus. Persisted
+  bare ids never restore selection into a newer projection.
   An empty frame shows “No changes left”; only the close contract can end the
   draft room or send the editor to live.
 

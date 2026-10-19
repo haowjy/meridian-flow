@@ -238,6 +238,21 @@ export class AttributionEvidence {
     );
   }
 
+  /** Undo removed a known Discard base copy, not manuscript text the draft deleted. */
+  isUndoneWriteBack(client: number, clock: number): boolean {
+    return this.undone.get(client, clock) >= 0 && this.isWriteBack(client, clock);
+  }
+
+  /** A pending base tombstone, not an accepted deletion or an old restoration source. */
+  isBaseDeletion(client: number, clock: number): boolean {
+    return (
+      this.settled.get(client, clock) < 0 &&
+      !this.isUndoneWriteBack(client, clock) &&
+      this.origin(client, clock) === BASE &&
+      this.superseded.get(client, clock) < 0
+    );
+  }
+
   /** Deletion evidence belongs to this item, never to its restored insertion's source. */
   deleter(client: number, clock: number): number {
     const part = this.deleted.get(client, clock);
