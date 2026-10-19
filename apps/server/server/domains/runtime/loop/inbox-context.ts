@@ -34,12 +34,17 @@ import {
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { formatNotices } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { PersistenceDeps } from "./persistence.js";
 import type { InboxMessage } from "./ports.js";
+import {
+  hasReferenceEvidence,
+  mergeReferenceEvidence,
+  NO_REFERENCE_EVIDENCE,
+  type ReferenceEvidence,
+} from "./reference-context.js";
 import type { RenderedWorkContext } from "./work-context.js";
 
 /** The rich blocks (and any hidden sibling turns) an adopted turn's preparation resolved. */
@@ -54,8 +59,8 @@ export interface AdoptedTurnPreparation {
    * model-only content must live on its own turn.
    */
   extraTurns?: readonly { turn: Turn; blocks: readonly Block[] }[];
-  /** Host-only reference-read candidates, recorded only by the commit that persists `events`. */
-  shown?: readonly ShownLinkShowing[];
+  /** Host-only reference-read evidence, recorded only by the commit that persists `events`. */
+  evidence?: ReferenceEvidence;
 }
 
 /** The loop's view of one drained batch: durable turns/blocks for the loop's in-memory accumulator. */
@@ -67,8 +72,8 @@ export interface InboxDrain {
   events: OrchestratorEvent[];
   /** Ids of the whole claimed batch, acked with the response that carries it. */
   ackIds: string[];
-  /** Host-only candidates from adopted turns' reference reads, recorded with `events`. */
-  shown?: ShownLinkShowing[];
+  /** Host-only evidence from adopted turns' reference reads, recorded with `events`. */
+  evidence?: ReferenceEvidence;
 }
 
 /**
@@ -106,7 +111,7 @@ export async function drainInbox(input: {
   const adoptedTurnsByMessageId = new Map<string, Turn[]>();
   const adoptedBlocks: Block[] = [];
   const adoptedEventsByMessageId = new Map<string, OrchestratorEvent[]>();
-  const shown: ShownLinkShowing[] = [];
+  let evidence: ReferenceEvidence = NO_REFERENCE_EVIDENCE;
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
       fresh.push(message);
@@ -127,7 +132,7 @@ export async function drainInbox(input: {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
         adoptedEventsByMessageId.set(message.id, [...(prepared.events ?? [])]);
-        shown.push(...(prepared.shown ?? []));
+        evidence = mergeReferenceEvidence(evidence, prepared.evidence);
         for (const extra of prepared.extraTurns ?? []) {
           extraTurns.push(extra.turn);
           adoptedBlocks.push(...extra.blocks);
@@ -222,7 +227,7 @@ export async function drainInbox(input: {
     blocks: [...adoptedBlocks, ...plannedBlocks],
     events,
     ackIds: batch.map((message) => message.id),
-    ...(shown.length > 0 ? { shown } : {}),
+    ...(hasReferenceEvidence(evidence) ? { evidence } : {}),
   };
 }
 

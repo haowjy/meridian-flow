@@ -2,6 +2,7 @@
 import type {
   createAgentEditCore,
   LinkSpliceFallbackDetail,
+  ObservationFailedDetail,
   ResponseLifecycleClaimDiscardedDetail,
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
@@ -372,6 +373,7 @@ export function createAgentEditObservabilityOptions(input: {
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onLinkSpliceFallback"
+  | "onObservationFailed"
 > {
   return {
     onResponseLifecycleError: responseLifecycleObserver(input.eventSink),
@@ -380,6 +382,26 @@ export function createAgentEditObservabilityOptions(input: {
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
     onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
+    onObservationFailed: observationFailedObserver(input.eventSink),
+  };
+}
+
+/**
+ * A result's observation frontier could not be computed: it goes out without
+ * one, and the model's next frontier for the room chains from an older row.
+ */
+function observationFailedObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onObservationFailed"]> {
+  return (event: ObservationFailedDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "warn",
+      source: "collab.agent_edit",
+      name: "observation_frontier.compute_failed",
+      correlation: { documentId: event.documentId },
+      payload: unknownToEventPayload(event.cause),
+    });
   };
 }
 

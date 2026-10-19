@@ -31,6 +31,7 @@ export {
 } from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress } from "./document-address.js";
+export type { FrontierLookup, ObservationFrontier, ObservationRequest } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export * from "./index.js";
@@ -137,7 +138,7 @@ export {
   type ResponseCommitAttempt,
 } from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
-export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
+export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";
 export type {
   CapturedPart,
   ComputedInverse,

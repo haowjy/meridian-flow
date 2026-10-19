@@ -2,7 +2,9 @@
 import {
   type AgentEditCore,
   type DiscardedWriteReason,
+  type FrontierLookup,
   modelResult,
+  type ObservationRequest,
   parseDocumentAddress,
   type ReadCommand,
   ResponseAttemptStaleError,
@@ -21,6 +23,7 @@ import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
   asThreadPeerAgentEditCore,
+  type FrontierRooms,
   type LiveAgentEditCore,
   type RefusedResponseDocument,
   type ResponseSaveResult,
@@ -111,6 +114,7 @@ export function createThreadPeerCorePool(input: {
    * a reply's save. Authorizes a reversal at the destination its write landed in.
    */
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  frontierRooms: FrontierRooms;
   /** Locks Work rows `FOR NO KEY UPDATE` in one id-ordered select, in the save's transaction. */
   lockWorks(workIds: readonly string[]): Promise<void>;
   /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
@@ -248,6 +252,36 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
+   * The room a call renders from (decision 8): the pulled peer's Work draft, or
+   * the live document at its authority generation. Read before the call, so a
+   * restore in between leaves the frontier keyed to the old epoch. Never the
+   * peer id, never the draft generation. M1 scaffolding: M2 renders from the
+   * room doc, whose authority identity is already bound to it.
+   */
+  async function roomKeyFor(
+    core: AgentEditCore,
+    documentId: DocumentId,
+    context: WriteContext,
+  ): Promise<string | undefined> {
+    const pulled = context.interactionContext;
+    if (pulled?.mode === "threadPeer")
+      return pulled.upstreamDraftId ? `draft:${pulled.upstreamDraftId}` : undefined;
+    return core === input.liveUtilityCore ? liveRoomKey(documentId) : undefined;
+  }
+
+  async function liveRoomKey(documentId: DocumentId): Promise<string | undefined> {
+    const generation = await input.frontierRooms.liveGeneration(documentId);
+    return generation === null ? undefined : `live:${documentId}:${generation}`;
+  }
+
+  async function observation(
+    room: string | undefined,
+    lookup: FrontierLookup,
+  ): Promise<ObservationRequest | undefined> {
+    return room ? { room, prev: await lookup(room) } : undefined;
+  }
+
+  /**
    * A write that commits at once (no reply, or a live reversal): the seams it
    * reaches confirm its grant in their own transaction. A refusal drops the
    * thread's runtime copy of the document and surfaces as the typed error.
@@ -267,7 +301,7 @@ export function createThreadPeerCorePool(input: {
   }
 
   async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
-    const { grant, liveVersion, ...context } = routed;
+    const { grant, liveVersion, recordingFrontier, ...context } = routed;
     const requested = grant.destination;
     const documentId = documentIdFromCommand(command);
     const pinned =
@@ -290,7 +324,13 @@ export function createThreadPeerCorePool(input: {
       command.format === "edits" || noBranch
         ? routedContext
         : await threadPeerContext(core, documentId, routedContext);
-    const outcome = await core.read(command, callContext);
+    // An edits read shows history, not the document: it records no frontier.
+    const room =
+      recordingFrontier && documentId && command.format !== "edits"
+        ? await roomKeyFor(core, documentId, callContext)
+        : undefined;
+    const observe = recordingFrontier ? await observation(room, recordingFrontier) : undefined;
+    const outcome = await core.read(command, observe ? { ...callContext, observe } : callContext);
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
       lastSeen.set(seenKey(context.threadId, documentId), {
@@ -312,7 +352,7 @@ export function createThreadPeerCorePool(input: {
     command: WriteCommand,
     routed: RoutedWriteContext,
   ): Promise<RoutedWriteOutcome> {
-    const { grant, ...context } = routed;
+    const { grant, recordingFrontier, ...context } = routed;
     const documentId = documentIdFromCommand(command);
     const record = context.responseIdentity?.editScopeId
       ? responseFor(context.responseIdentity?.editScopeId, context.threadId)
@@ -356,10 +396,33 @@ export function createThreadPeerCorePool(input: {
       record.documents.set(documentId, entry);
     }
     let callContext: WriteContext = routedContext;
+    /**
+     * What the call records. A staged write records nothing: the reply's save replaces its
+     * echo before the model's next request and records in the room the save derives.
+     * An undo, redo or revert records in the version its result names it ran on; a live
+     * one's generation is read here, before its cut, like every other call's.
+     */
+    const observed = async (target: WriteContext): Promise<WriteContext> => {
+      if (!recordingFrontier || !documentId) return target;
+      if (immediateInverse) {
+        const liveRoom = await liveRoomKey(documentId);
+        return {
+          ...target,
+          observeInverse: (draftId) =>
+            observation(draftId ? `draft:${draftId}` : liveRoom, recordingFrontier),
+        };
+      }
+      if (entry) return target;
+      const observe = await observation(
+        await roomKeyFor(core, documentId, target),
+        recordingFrontier,
+      );
+      return observe ? { ...target, observe } : target;
+    };
     const call = async () => {
       if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
       if (!immediateInverse) pinStaged(entry, callContext);
-      return core.write(command, callContext);
+      return core.write(command, await observed(callContext));
     };
     // An immediate drafted write that lost its branch to a close (Discard all) between the
     // ensure and its commit refuses like a save does, never as a crash.
@@ -526,6 +589,29 @@ export function createThreadPeerCorePool(input: {
     if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
   }
 
+  /**
+   * What each document a reply saves records, chained from the model's latest: its pinned
+   * Work draft, or the live document at its generation. Called before the save's
+   * transaction opens, so the generation is read before the save's cut.
+   */
+  async function savedObservations(
+    record: ResponseRecord,
+    lookup: FrontierLookup | undefined,
+  ): Promise<Map<string, ObservationRequest>> {
+    const observations = new Map<string, ObservationRequest>();
+    if (!lookup) return observations;
+    for (const [documentId, entry] of record.documents) {
+      const room = entry.pin
+        ? `draft:${entry.pin.upstreamDraftId}`
+        : entry.core === input.liveUtilityCore
+          ? await liveRoomKey(documentId)
+          : undefined;
+      const observe = await observation(room, lookup);
+      if (observe) observations.set(documentId, observe);
+    }
+    return observations;
+  }
+
   async function routedTo(
     context: WriteContext,
     destination: FileDestination,
@@ -573,7 +659,12 @@ export function createThreadPeerCorePool(input: {
       // side; only a reply that never wrote falls back to the live core, which closes it.
       const wrote = record.participants.size > 0;
       const participantsNow = () => (wrote ? [...record.participants] : [input.liveUtilityCore]);
-      const saveOptions = finalizeOptions();
+      // Read before the save's transaction opens, so a failed lookup cannot abort it.
+      const observed = await savedObservations(record, options?.recordingFrontier);
+      const saveOptions = {
+        ...finalizeOptions(),
+        observe: (documentId: string) => observed.get(documentId),
+      };
       // The first attempt is prepared before the transaction opens, off every lock. One
       // that cannot be prepared yet (a document `confirm` will refuse) is prepared again
       // after `confirm`, inside the transaction. Until the first attempt takes it, it is

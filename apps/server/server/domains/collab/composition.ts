@@ -76,6 +76,7 @@ import {
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
+import { createDrizzleFrontierRooms } from "./adapters/drizzle-frontier-rooms.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
@@ -411,6 +412,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         const tx = currentDrizzleDb(deps.db);
         for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
       },
+      frontierRooms: createDrizzleFrontierRooms(deps.db, deps.eventSink),
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
       drafts,

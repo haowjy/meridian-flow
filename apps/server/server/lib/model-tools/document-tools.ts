@@ -26,9 +26,9 @@ import {
 } from "../../domains/file-policy/index.js";
 import {
   isSkillsUri,
+  type ResultEvidence,
   readSkill,
   refuseSkillWrite,
-  type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
@@ -50,7 +50,7 @@ import {
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
-import { showingOf, threadShownLinks } from "./shown-link-capture.js";
+import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -203,8 +203,8 @@ async function writeUnderGrant(
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
 ): Promise<
-  | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
-  | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
+  | (WriteOutcome & { isError: false; evidence: ResultEvidence })
+  | (WriteToolErrorOutput & { evidence?: ResultEvidence })
 > {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
@@ -222,6 +222,7 @@ async function writeUnderGrant(
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
+        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
@@ -229,14 +230,16 @@ async function writeUnderGrant(
     return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
-  // was a partial failure's echo. An error without echo text carries no facts.
-  const shown = showingOf(address.documentId, written);
-  if (written.isError) return { isError: true, output: written.result, shown };
-  // The showing is host-only evidence: it leaves here only as `shown`.
-  const { showing: _showing, ...outcome } = written;
-  return { ...withDestination(outcome, grant.destination), shown } as WriteOutcome & {
+  // was a partial failure's echo. An error without echo text carries no facts,
+  // and a refusal records no frontier.
+  const evidence = evidenceOf(address.documentId, written);
+  if (written.isError)
+    return { isError: true, output: written.result, evidence: { shown: evidence.shown } };
+  // Showing and frontier are host-only: they leave here only as `evidence`.
+  const { showing: _showing, frontier: _frontier, ...outcome } = written;
+  return { ...withDestination(outcome, grant.destination), evidence } as WriteOutcome & {
     isError: false;
-    shown: ShownLinkShowing[];
+    evidence: ResultEvidence;
   };
 }
 
@@ -258,7 +261,12 @@ export function createReadHandler(deps: ToolWiringDeps) {
       deps,
       grant,
       address,
-      { selection, format, ...(version ? { version } : {}) },
+      {
+        selection,
+        format,
+        ...(version ? { version } : {}),
+        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+      },
       ctx,
     );
     if (outcome.isError) return { isError: true, output: outcome.result };
@@ -266,7 +274,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     return {
       output: outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
-      shown: showingOf(address.documentId, outcome),
+      evidence: evidenceOf(address.documentId, outcome),
     };
   };
 }
@@ -380,7 +388,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
       }
-      return { isError: true, output: outcome.output, shown: outcome.shown };
+      return { isError: true, output: outcome.output, evidence: outcome.evidence };
     }
     if (stagedCreate) {
       const responseId = ctx.responseIdentity?.editScopeId;
@@ -418,7 +426,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }
           : {}),
       },
-      shown: outcome.shown,
+      evidence: outcome.evidence,
     };
   };
 }

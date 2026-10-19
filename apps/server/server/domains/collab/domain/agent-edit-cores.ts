@@ -2,6 +2,7 @@
 import type {
   AgentEditCore,
   DiscardedWriteReason,
+  FrontierLookup,
   ReadCommand,
   ResponseCommitSuccessResult,
   StagedWriteRejectionReason,
@@ -13,17 +14,37 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
+ * The read that names a live document's frontier room
+ * (`live:<documentId>:<authorityGeneration>`). Answers null when the document
+ * has no live room yet or it can't be read: the call then records no frontier.
+ * M1 scaffolding: M2 renders from the room doc, whose authority identity is
+ * already bound to it.
+ */
+export type FrontierRooms = {
+  /** A live document's authority generation (the version-restore epoch). */
+  liveGeneration(documentId: DocumentId): Promise<bigint | null>;
+};
+
+/**
+ * A call that records what it showed passes the lookup its frontier chains
+ * from (rooms `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`);
+ * its outcome then carries `frontier`.
+ */
+type ObservedCall = { recordingFrontier?: FrontierLookup };
+
+/**
  * A write's context: the edit grant the caller got from the file policy. Its
  * destination routes the call, and the write seams confirm it (file-access §5).
  */
-export type RoutedWriteContext = WriteContext & { grant: FileGrant<"edit"> };
+export type RoutedWriteContext = WriteContext & ObservedCall & { grant: FileGrant<"edit"> };
 
 /**
  * A read's context. `liveVersion` marks a `version: "live"` read (D3): it reads
  * the live document even when this reply already drafted it, where a default
  * read follows the reply's pinned destination.
  */
-export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?: boolean };
+export type RoutedReadContext = WriteContext &
+  ObservedCall & { grant: FileGrant; liveVersion?: boolean };
 
 /** Why the save step left a document out of a reply (D29). */
 export type RefusedResponseDocument =
@@ -54,8 +75,16 @@ export type ResponseSaveResult = ResponseCommitSuccessResult & {
   refused: RefusedResponseDocument[];
 };
 
-type ResponseTransactionOptions = Parameters<AgentEditCore["commitResponse"]>[1] & {
+type ResponseTransactionOptions = Omit<
+  NonNullable<Parameters<AgentEditCore["commitResponse"]>[1]>,
+  "observe"
+> & {
   beforeTransactionCommit?(result: ResponseSaveResult): void | Promise<void>;
+  /**
+   * Record each saved document's frontier at the post-commit cut, chained from
+   * the model's latest frontier for its room (this lookup).
+   */
+  recordingFrontier?: FrontierLookup;
 };
 
 declare const liveAgentEditCoreBrand: unique symbol;
