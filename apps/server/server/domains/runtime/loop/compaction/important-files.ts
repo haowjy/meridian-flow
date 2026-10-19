@@ -138,6 +138,8 @@ function resolveListedUri(
     if (ref) return { documentId: ref.documentId, uri: layer };
   }
   for (const layer of layers) {
+    // Decoration peeling must not turn an incomplete range into a scalar selection.
+    if (/\s+in:\s*\S*\.\.$/u.test(layer)) return undefined;
     const fragment = layer.match(/^(.+)#([^#\s]+)$/u);
     if (fragment && !/\s+in:/u.test(layer)) {
       const ref = byUri.get(fragment[1] as string);
