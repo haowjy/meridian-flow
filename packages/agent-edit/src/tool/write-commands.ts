@@ -453,6 +453,12 @@ export function createWriteCommands(deps: {
     }
     const touchedHashes = new Set(applied.changedBlocks),
       deletedHashes = new Set(applied.deletedBlocks);
+    const blockIds = options.model.getDocumentBlockIds(toDocHandle(runtime.doc));
+    const touchedBlocks = options.model
+      .getBlocks(toDocHandle(runtime.doc))
+      .filter((_, index) => touchedHashes.has(blockIds[index]))
+      .map((block) => options.model.getCanonicalBlockIdentity(block));
+    const deletedBlocks = before.filter((block) => deletedHashes.has(block.hash));
     const copied = edit.copy
       ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
       : undefined;
@@ -509,6 +515,8 @@ export function createWriteCommands(deps: {
           createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
           touchedHashes,
           deletedHashes,
+          touchedBlocks,
+          deletedBlocks,
           preOwnSnapshot,
           semanticEditIr,
           copied,
@@ -594,8 +602,8 @@ export function createWriteCommands(deps: {
             commandName: command.command,
             writeId: identity.handle,
             durableWriteId: identity.durableId,
-            touchedHashes,
-            deletedHashes,
+            touchedBlocks,
+            deletedBlocks,
             copied,
           },
           before,
