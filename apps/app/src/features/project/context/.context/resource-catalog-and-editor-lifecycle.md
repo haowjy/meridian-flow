@@ -226,11 +226,12 @@ before and says so. Three owners, one concept each:
   `useDesktopDockPresentation` for the dock. An entry shows once the cache
   says `removed`; a Work's removal and an authority loss drop it.
 - **The sentence.** `removalSentence` in `RemovedDocumentNotice.tsx` owns
-  every copy rule as plain strings, so tooltips reuse them. Projects are
-  single-owner, so a user actor is the writer ("You deleted <title>
-  elsewhere."); a system rollback reads "removed when the reply that created it
-  didn't finish"; anything else, "<title> was deleted." Name another person
-  only once projects are shared.
+  every copy rule as plain strings, so tooltips reuse them. A removal names
+  its actor from the record, the same for every account, and never says "you":
+  "Ana Ruiz deleted <title>.", "<title> was deleted with the Work <name>."; a
+  system rollback reads "removed when the reply that created it didn't
+  finish"; a user with no display name or a purged actor, "<title> was
+  deleted."
 
 Placement follows "feedback never displaces content": a chip in the tab
 strip's free end (`RemovedDocumentChip` in a `RemovedNoticeSlot`), the

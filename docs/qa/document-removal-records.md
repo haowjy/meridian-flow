@@ -124,8 +124,8 @@ known-id denial can include its record without allowing content access.
    creates a document and parks there; `./mf doc rm` the first). The staged
    write's tool result reads "This file was deleted by <name> before this reply
    was saved, so this change wasn't made." with no retry, and its chat card
-   reads "You deleted <title> before this reply saved its change.", never
-   "You discarded this new document".
+   reads "<name> deleted <title> before this reply saved its change." (passive
+   without a name), never "You discarded this new document".
 10. A Work Restore that commits before a Work delete's retirement runs keeps
    the restored live room. Restart with `HOOK_PAUSE_AT=draft.beforeRetirement
    HOOK_PAUSE_FILE=<file>`, touch the file, delete a Work whose scratch holds an
@@ -156,12 +156,12 @@ removed document's live and draft rooms with `4208` after the removal commits.
 
 - A shows a document with a long one beside it; B deletes it from Files. A
   falls back to the long document and the tab strip's free end shows a dashed
-  chip "You deleted <title> elsewhere."; nothing covers the text. B says
+  chip "<name> deleted <title>." ("<title> was deleted." without a name); nothing covers the text. B says
   nothing. Selecting another tab clears the chip; so does Dismiss.
 - A's only tab is deleted (`./mf doc rm`): the landing's top margin says the
   sentence; the Recently opened list does not move.
-- B deletes a folder holding three of A's open tabs: one chip, "You deleted 3
-  documents elsewhere.", the names in its tooltip.
+- B deletes a folder holding three of A's open tabs: one chip, "<name> deleted 3
+  documents (one, two, and three).", the names in its tooltip.
 - Hold B's delete (route `**/context/*/delete*` to abort in both tabs, delete,
   wait 15 s, unroute, toggle B offline and online): A's tab closes at once with
   no chip, and the chip appears once the delete commits and A is focused, as
@@ -179,8 +179,8 @@ removed document's live and draft rooms with `4208` after the removal commits.
   browsing a folder clears it.
 - A deletes from its own Files menu (a document in a tab, or in the dock), or
   Discards a created document from its review: nothing is said.
-- B Discards a created document A is reviewing: A says "You discarded <title>
-  from the draft elsewhere." Reopen its review address: the pane says the
+- B Discards a created document A is reviewing: A says "<name> discarded <title>
+  from the draft." Reopen its review address: the pane says the
   same in place of "This destination is unavailable".
 - Apply during a removal: restart with `HOOK_PAUSE_AT=applyItems.afterStaging
   HOOK_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
@@ -196,8 +196,8 @@ removed document's live and draft rooms with `4208` after the removal commits.
 - Discard a draft of an existing document open in a tab or the dock, then
   `./mf doc rm` it: the removal's chip shows (the Discard left no mark).
 - B Discards a created document A reviews in the dock beside Chat: A's dock
-  says "You discarded <title> from the draft elsewhere." beside "Recent".
-- A folder delete closing several tabs reads "You deleted 3 documents
-  elsewhere (one, two, and three)." (names in the locale's list form).
+  says "<name> discarded <title> from the draft." beside "Recent".
+- A folder delete closing several tabs reads "<name> deleted 3 documents
+  (one, two, and three)." (names in the locale's list form).
 - A holds unsent text (block its `/ws/yjs` sockets, type), B deletes: A closes
   with the notice and the unsent text is lost (a recorded divergence).

@@ -35,6 +35,6 @@ it("shows why an item was held or refused, and never nothing for an unknown code
       time: "",
     },
   });
-  expect(deleted).toMatch(/You deleted this document elsewhere, so this draft can.+t be applied\./);
+  expect(deleted).toMatch(/Ana deleted this document, so this draft can.+t be applied\./);
   expect(deleted).not.toMatch(/apply again|Couldn.+t apply/);
 });
