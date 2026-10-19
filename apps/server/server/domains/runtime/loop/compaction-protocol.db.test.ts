@@ -1563,7 +1563,8 @@ else
         ],
         onStream: async (call) => {
           if (call === 1) rig.setThreshold(undefined);
-          if (call === 2) rig.setThreshold(2500);
+          // Leave room for the re-show after reserving half-headroom and estimator slack.
+          if (call === 2) rig.setThreshold(5000);
           if (call === 3) {
             const latest = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
             expect(latest?.role).toBe("assistant");
