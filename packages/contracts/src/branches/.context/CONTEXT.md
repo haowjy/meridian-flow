@@ -24,12 +24,15 @@ The client never reads `branchId` as a document draft id. The server alone maps 
   candidates: a chat's writes may have been overwritten; previews confirm
   visible changes. Writer and threadless rows are excluded; applied/discarded
   journal rows no longer contribute.
-- Preview responses carry `branchId` and `itemKey`, the generation-fenced
-  `reviewRoomName`, live markdown, draft markdown, review operations and
-  hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the
-  chat title at preview time); writer operations carry neither. A preview that
-  cannot be read answers a refusal (`corrupt` carries the `branchId` so the
-  writer can discard the whole branch).
+- The legacy metadata-only preview response carries the generation-fenced
+  `reviewRoomName`; the deleted server preview no longer supplies operations,
+  hunks or actor fields. Browser review comes from the room's text.
+- `DraftProvenanceResponse` carries encoded snapshot bytes, the project user,
+  AI receipt ranges and nullable owner/reveal metadata. A provenance read
+  addresses an already admitted room, not a new room lookup. It accepts only
+  unresolved clock ranges for writer receipts; single-user projects omit them
+  and never query human history. Missing owner metadata must not drop a part's
+  item ranges. Byline names and membership come from the kernel classifier.
 - `draftGeneration` (list row and preview) is the draft's generation; it is
   null for an item with no draft. A reset keeps the draft and the item and
   moves the generation up, so the number orders proposals of one item and never

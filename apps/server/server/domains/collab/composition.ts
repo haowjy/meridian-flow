@@ -66,6 +66,7 @@ import {
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import type { DraftClose } from "./adapters/drizzle-draft-close.js";
+import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleFrontierRooms } from "./adapters/drizzle-frontier-rooms.js";
@@ -105,6 +106,7 @@ import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { createDraftProjection } from "./domain/draft-projection.js";
+import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
@@ -593,9 +595,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lineage,
     responses: responseFinalizer,
     checkpoints,
-    attribution: createDocumentAttribution({
-      latestUpdate: persistence.store.latestUpdate,
-    }),
+    attribution: createDocumentAttribution({ latestUpdate: persistence.store.latestUpdate }),
+    draftAttribution: {
+      readDraftProvenance: createDraftProvenanceReader(createDrizzleDraftDispositionStore(deps.db)),
+    },
     draftPeers,
     branches,
     branchResolver: {

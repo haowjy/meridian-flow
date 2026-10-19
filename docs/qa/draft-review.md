@@ -103,6 +103,35 @@ not replayed per key. Record phone handshake costs for twenty Work drafts.
 - `4409` admission refusal and `4207` missing prefix are not terminal closure.
   Archived Works stay read-only; another draft's command never locks this one.
 
+## Attribution and snapshot-bounded provenance
+
+Use a real mock-model write to an existing manuscript draft; open it from the
+Work's Files screen. Capture the `draft/provenance` POST in browser network tools:
+its encoded snapshot, project user and AI ranges must cover the visible write,
+with owner/reveal metadata for the conversation. A single-user project omits
+`writers`, even when unresolved clock ranges are supplied. A wrong Work or
+file cannot return evidence; a malformed room or clock range returns 400.
+
+Type locally inside and beside a change: "You" appears without one provenance
+request per keystroke. A new remote unresolved range requests evidence; an
+Apply/restoration-root revision refreshes it. Disconnect/reconnect and reload:
+unknown evidence leaves the text and candidate dock rows on screen without
+inventing names. Release the room while an evidence response is delayed, then
+open a different room: the delayed response must not publish there.
+
+For #945, remove a paragraph in draft, then edit its live counterpart to
+`abc LIVE def`. After the live pull, review must show that full paragraph red,
+"You", and enabled Apply/Discard.
+
+- Review groups come from text alone. A mixed-author group stays one row and
+  one red/green box even when unchanged text separates its authors' edits.
+- Every known byline keeps "You" and at least the first conversation link.
+  Names may truncate, but their accessible names and tooltips retain the full
+  title. Later conversations go into +N; narrow containers never hide all authors.
+- +N opens the remaining conversation links, including their producing-turn
+  targets. A subagent link opens its parent conversation at its spawn card.
+  Check desktop, phone, and Show changes off (the list still has its bylines).
+
 ## Wire checks
 
 `draft/apply` accepts exactly `commandId`, base64 `Y.encodeSnapshotV2`, one

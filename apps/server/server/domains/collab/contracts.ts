@@ -462,6 +462,12 @@ export type DraftPeerShadowAccess = {
   }): Promise<"stands" | "retracted">;
 };
 
+export type DraftAttributionAccess = {
+  readDraftProvenance: ReturnType<
+    typeof import("./domain/draft-provenance.js").createDraftProvenanceReader
+  >;
+};
+
 export type DocumentAttribution = {
   getLastUpdateAttribution(documentId: DocumentId): Promise<{
     originType: string | null;
@@ -490,6 +496,7 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
+  DraftAttributionAccess &
   DraftPeerShadowAccess &
   CollabBranches &
   CollabBranchResolver &
