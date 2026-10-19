@@ -400,7 +400,7 @@ describe("writer frames racing rewrites (postgres)", () => {
       expect(await cardUndo()).toMatchObject({
         status: "expired",
         acceptedParts: 0,
-        skips: [expect.objectContaining({ reason: "Stayed as you edited it" })],
+        skips: [expect.objectContaining({ reason: "discarded" })],
       });
     } finally {
       frames.remove();

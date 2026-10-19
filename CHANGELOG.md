@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.
+
 - Align the peer-retraction probe with the upstream-first refusal check.
 
 - Read committed live authority and tail atomically without repeating checkpoint bytes for each journal row.

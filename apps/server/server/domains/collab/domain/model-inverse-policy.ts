@@ -23,7 +23,6 @@ import type {
 
 type Query = TurnInverseQuery & { model: true; draftId: string | null };
 type Entry = { id: string; handle: string; parts: StoredInversePart[] };
-const eligible = (part: StoredInversePart) => part.disposition !== "discarded";
 function entries(document: InverseDocument, threadId: string): Entry[] {
   const map = new Map<string, Entry>();
   for (const part of document.history) {
@@ -111,6 +110,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       inspection: Inspection,
     ): Exclude<DocumentEditResult, { status: "success" }> | null {
       const follow = `Use revert on ${document.uri}, or read it and make a new replace.`;
+      const discarded = {
+        status: `cant_${direction}_discarded` as const,
+        message: `The user discarded ${handle}; it is already gone. ${follow}`,
+      };
       if (draft?.frozen)
         return {
           status: "work_archived",
@@ -121,19 +124,18 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: `cant_${direction}_applied`,
           message: `The user applied ${handle} to the manuscript. ${follow}`,
         };
-      if (!eligible(part))
-        return {
-          status: `cant_${direction}_discarded`,
-          message: `The user discarded ${handle}; it is already gone. ${follow}`,
-        };
+      if (part.origin.kind === "pending" && !document.drafts.has(part.origin.draftId))
+        return discarded;
       const draftId = part.origin.kind === "pending" ? part.origin.draftId : null;
       if (draftId !== query.draftId)
         return {
           status: `cant_${direction}_elsewhere`,
           message: `${handle} is in another version (${version(draftId)}). You can ${direction} only in the version you write to. ${follow}`,
         };
+      // Restoring the review base can hide an effective Undo from review membership.
       const state = inspection.states([part])[0];
       if (state.state !== (direction === "undo" ? "active" : "undone")) {
+        if (part.disposition === "discarded") return discarded;
         const excerpt = store.describePart(document, part);
         return {
           status: `cant_${direction}_changed`,
@@ -499,7 +501,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? applied === entry.parts.length
                   ? "applied"
                   : `partly applied (${applied} of ${entry.parts.length})`
-                : entry.parts.every((part) => !eligible(part))
+                : entry.parts.every((part) => part.disposition === "discarded")
                   ? "discarded"
                   : states.every((state) => state.state === "undone")
                     ? "undone"
