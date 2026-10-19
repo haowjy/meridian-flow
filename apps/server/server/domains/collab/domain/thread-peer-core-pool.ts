@@ -49,7 +49,12 @@ import { type EnsuredThreadPeer, peerLossReason } from "./draft-pulls.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import { DraftCasConflictError } from "./draft-store.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
+import {
+  pinStaged,
+  type ReplyDocument,
+  type ReplyRecord,
+  type ReplySaveFences,
+} from "./reply-save-fences.js";
 
 type ResponseRecord = ReplyRecord;
 
@@ -245,29 +250,42 @@ export function createThreadPeerCorePool(input: {
     throw result.refusal;
   }
 
+  /**
+   * Where a read goes, for a tool read and an effective read alike: the reply's pinned
+   * participant with its edit scope (an explicit live read never takes a draft pin), else the
+   * thread's core for a draft read of a document the thread has a Work draft of, else live. A
+   * read never makes a branch, a draft or a peer (S1).
+   */
+  async function routeRead(request: {
+    documentId: DocumentId | null;
+    threadId?: string | null;
+    responseId?: string | null;
+    version: "live" | "draft";
+  }): Promise<{ core: AgentEditCore; pinned?: ReplyDocument; scope?: string }> {
+    const { documentId, threadId, responseId, version } = request;
+    const entry =
+      documentId && responseId ? responses.get(responseId)?.documents.get(documentId) : undefined;
+    if (entry && (version === "draft" || entry.grant.destination.kind === "live"))
+      return { core: entry.core, pinned: entry, ...(responseId ? { scope: responseId } : {}) };
+    const drafted =
+      version === "draft" && documentId && threadId && (await hasWorkDraft(documentId, threadId));
+    return { core: drafted && threadId ? lookupCore(threadId) : input.liveUtilityCore };
+  }
+
   async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
     const { grant, liveVersion, ...context } = routed;
-    const requested = grant.destination;
-    const documentId = documentIdFromCommand(command);
-    const pinned =
-      documentId && context.responseIdentity?.editScopeId && !liveVersion
-        ? responses.get(context.responseIdentity?.editScopeId)?.documents.get(documentId)
-        : undefined;
-    const destination = liveVersion
-      ? ({ kind: "live" } as const)
-      : (pinned?.grant.destination ?? requested);
+    const version = liveVersion ? "live" : grant.destination.kind;
+    const { core, pinned } = await routeRead({
+      documentId: documentIdFromCommand(command),
+      threadId: context.threadId,
+      responseId: context.responseIdentity?.editScopeId,
+      version,
+    });
+    const destination =
+      pinned?.grant.destination ??
+      (version === "live" ? ({ kind: "live" } as const) : grant.destination);
     evictIdleCores();
     const routedContext = await routedTo(context, destination, pinned?.linkView);
-    // A read never makes a branch, a draft or a peer (S1): a draft destination with no Work
-    // draft of the document reads the live document through the live core.
-    const drafted =
-      pinned ||
-      (destination.kind === "draft" &&
-        routedContext.linkView.kind === "branch" &&
-        documentId &&
-        context.threadId &&
-        (await hasWorkDraft(documentId, context.threadId)));
-    const core = pinned?.core ?? (drafted ? lookupCore(context.threadId) : input.liveUtilityCore);
     // An edits read shows history, not the document: it records no frontier.
     const outcome = await core.read(
       command,
@@ -651,25 +669,20 @@ export function createThreadPeerCorePool(input: {
       ]).then(() => {});
     },
     commitResponse,
-    responseDestination(responseId, docId) {
-      return responses.get(responseId)?.documents.get(docId as DocumentId)?.grant.destination;
-    },
     hasResponseDocument(responseId, docId) {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);
       return pinned?.core.hasResponseDocument(responseId, docId) ?? false;
     },
     async readRoom({ documentId, threadId, responseId, live }) {
-      const pinned =
-        responseId && !live ? responses.get(responseId)?.documents.get(documentId) : undefined;
-      const core =
-        pinned?.core ??
-        (!live && threadId && (await hasWorkDraft(documentId, threadId))
-          ? lookupCore(threadId)
-          : input.liveUtilityCore);
-      const scope = threadId ? { threadId } : { threadId: "" };
+      const { core, scope } = await routeRead({
+        documentId,
+        threadId,
+        responseId,
+        version: live ? "live" : "draft",
+      });
       return core.readRoom(documentId, {
-        ...scope,
-        ...(pinned && responseId ? { responseId } : {}),
+        threadId: threadId ?? "",
+        ...(scope ? { responseId: scope } : {}),
       });
     },
     async rollbackResponse(responseId) {

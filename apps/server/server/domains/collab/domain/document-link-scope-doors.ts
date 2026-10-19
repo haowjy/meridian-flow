@@ -77,7 +77,6 @@ export function scopeAgentEdit(
     readRoom: core.readRoom,
     refuseStaged: core.refuseStaged,
     retirePeer: core.retirePeer,
-    responseDestination: core.responseDestination,
     dropStaged: core.dropStaged,
     retireThreadPeers: core.retireThreadPeers,
     read: (command, context) => scopes.within(byGrant(context), () => core.read(command, context)),

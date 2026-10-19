@@ -59,19 +59,6 @@ export function createEffectiveDocumentReader(input: {
   }
 
   /**
-   * Whether this reply's staged writes to the document belong to the version
-   * being read. A reply that drafted a document must not show those writes in
-   * a live read, and the reverse.
-   */
-  function stagedInVersion(command: EffectiveReadInput): command is EffectiveReadInput & {
-    responseId: string;
-  } {
-    if (!command.responseId) return false;
-    const staged = input.agentEdit.responseDestination(command.responseId, command.documentId);
-    return staged === undefined || staged.kind === command.destination;
-  }
-
-  /**
    * Reads the document's effective Y.Doc for this command: the room copy a model call would
    * read (the reply's pinned destination with its staged writes, the thread's Work draft, or
    * live). Choosing the content source never chooses the view: every source renders through
@@ -86,7 +73,7 @@ export function createEffectiveDocumentReader(input: {
       room = await input.agentEdit.readRoom({
         documentId: command.documentId,
         threadId: command.threadId,
-        responseId: stagedInVersion(command) ? command.responseId : null,
+        responseId: command.responseId ?? null,
         live: command.destination === "live",
       });
     } catch (cause) {

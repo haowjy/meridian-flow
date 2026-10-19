@@ -102,7 +102,11 @@ the room without the document mutex. A room is named from what was read:
 `draft:<workDraftId>` (never the peer id or the generation) or
 `live:<documentId>:<authorityGeneration>` from the copy's bound authority
 (`domain/observation-rooms.ts`). The effective reader reads through the same
-door.
+door and the same route: the pool's `routeRead` serves the tool read and
+`readRoom` alike. The reply's pinned participant wins with its edit scope (so a
+live read keeps the reply's staged live writes); an explicit live read never
+takes a draft pin; otherwise a draft read goes to the thread's core when the
+thread has a Work draft of the document, else live.
 
 A call whose caller passes `frontiers` (the read and write tools, and
 reference reads, which pass `recording` only) records an observation frontier

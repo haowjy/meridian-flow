@@ -181,12 +181,14 @@ describe("reasoned refusal and retirement through the pool", () => {
       "discarded_draft",
       undefined,
     );
-    expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
+    // The pool answers for a reply's document only through its pin's core.
+    threadCore.hasResponseDocument.mockReturnValue(true);
+    expect(pool.hasResponseDocument("reply-1", "ch12")).toBe(false);
 
     await pool.write(insertCh12, context(draftA, "reply-1"));
     expect(branches.ensureActiveForWrite).toHaveBeenCalledTimes(2);
     expect(ensureThreadPeer).toHaveBeenCalledTimes(2);
-    expect(pool.responseDestination("reply-1", "ch12")).toMatchObject({ kind: "draft" });
+    expect(pool.hasResponseDocument("reply-1", "ch12")).toBe(true);
   });
 
   it("retires one peer without touching the replacement peer's entry (U6)", async () => {
@@ -194,6 +196,9 @@ describe("reasoned refusal and retirement through the pool", () => {
     // Reply 1 stages on peer-1; reply 2, in the same thread, on its replacement peer-2.
     await pool.write(insertCh12, replyContext("reply-1"));
     await pool.write(insertCh12, replyContext("reply-2"));
+    // The pool answers for a reply's document only through its pin's core.
+    threadCore.hasResponseDocument.mockReturnValue(true);
+    const pinned = (responseId: string) => pool.hasResponseDocument(responseId, "ch12");
 
     await pool.retireThreadPeers("ch12", [
       { threadId: THREAD_ID, peerDraftId: "peer-1", reason: "discarded_edit" },
@@ -205,12 +210,12 @@ describe("reasoned refusal and retirement through the pool", () => {
       peerDraftId: "peer-1",
       reason: "discarded_edit",
     });
-    expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
-    expect(pool.responseDestination("reply-2", "ch12")).toMatchObject({ kind: "draft" });
+    expect(pinned("reply-1")).toBe(false);
+    expect(pinned("reply-2")).toBe(true);
     await pool.retireThreadPeers("ch12", [
       { threadId: THREAD_ID, peerDraftId: "peer-2", reason: "discarded_edit" },
     ]);
-    expect(pool.responseDestination("reply-2", "ch12")).toBeUndefined();
+    expect(pinned("reply-2")).toBe(false);
   });
 
   it("reaches a response-pinned owner the cache evicted (U6)", async () => {
