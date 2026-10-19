@@ -9,7 +9,7 @@ import type { CommandLinks } from "./command-links.js";
 import type { DestructiveSweepReport } from "./commit-detection.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { modelResult, type WriteRejection } from "./model-result.js";
+import { modelBlockItem, modelResult, type WriteRejection } from "./model-result.js";
 import { removalPhrase, removedWriteMessage } from "./removal-copy.js";
 import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName, ResponseCommitDocumentResult } from "./types.js";
@@ -19,6 +19,7 @@ interface ReceiptIdentity {
   writeId: string;
   durableWriteId: string;
   rejectionReason?: StagedWriteRejectionReason;
+  refusedPassages?: readonly (readonly BlockItemId[])[];
 }
 interface AcceptedEdit extends ReceiptIdentity {
   touchedBlocks: readonly BlockItemId[];
@@ -66,27 +67,31 @@ export function renderReceipt(
     agentTouchedBlocks: edit.touchedBlocks,
     agentDeletedBlocks: edit.deletedBlocks,
   });
-  return formatApplySuccess({
-    ...outcome,
-    echo:
-      echo.length || edit.commandName !== "create"
-        ? echo
-        : [
-            {
-              mode: "truncated",
-              blocks: after.map((block) => truncateSerializedBlock(block.serialized)),
-            },
-          ],
-    deletedBlocks: before
-      .filter((block) => deletedIds.has(`${block.clientID}:${block.clock}`))
-      .map((block) => block.hash),
-    ...(after.length <= 1 && after.every((block) => !block.body.trim())
-      ? { documentEmpty: true }
-      : {}),
-    ...(edit.copied
-      ? { copied: { summary: edit.copied, edges: copyEdgeLines(edit.copied, after) } }
-      : {}),
-  });
+  return withRefusedPassages(
+    formatApplySuccess({
+      ...outcome,
+      echo:
+        echo.length || edit.commandName !== "create"
+          ? echo
+          : [
+              {
+                mode: "truncated",
+                blocks: after.map((block) => truncateSerializedBlock(block.serialized)),
+              },
+            ],
+      deletedBlocks: before
+        .filter((block) => deletedIds.has(`${block.clientID}:${block.clock}`))
+        .map((block) => block.hash),
+      ...(after.length <= 1 && after.every((block) => !block.body.trim())
+        ? { documentEmpty: true }
+        : {}),
+      ...(edit.copied
+        ? { copied: { summary: edit.copied, edges: copyEdgeLines(edit.copied, after) } }
+        : {}),
+    }),
+    edit.refusedPassages,
+    after,
+  );
 }
 
 export function renderSettledReceipts(
@@ -116,9 +121,7 @@ export function renderSettledReceipts(
   }
   return [
     ...receipts,
-    ...rejected.map((edit) =>
-      settledReceipt(edit, null, rejectedWriteResult(edit.rejectionReason)),
-    ),
+    ...rejected.map((edit) => settledReceipt(edit, null, rejectedReceipt(edit))),
   ];
 }
 
@@ -127,12 +130,15 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
     settledReceipt(
       edit,
       revision,
-      formatApplySuccess({
-        phase: "committed",
-        writeId: edit.writeId,
-        echo: [],
-        awarenessDegraded: true,
-      }),
+      withRefusedPassages(
+        formatApplySuccess({
+          phase: "committed",
+          writeId: edit.writeId,
+          echo: [],
+          awarenessDegraded: true,
+        }),
+        edit.refusedPassages,
+      ),
     ),
   );
 }
@@ -201,4 +207,58 @@ export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): s
     default:
       return "the staged write could not integrate with the current draft";
   }
+}
+
+/** Refused passages render only from the result's cut, never from staging-time text. */
+export function withRefusedPassages(
+  result: InternalWriteResult,
+  passages: readonly (readonly BlockItemId[])[] | undefined,
+  after?: readonly BlockSnapshot[],
+): InternalWriteResult {
+  if (!passages?.length) return result;
+  const byId = new Map(after?.map((block, index) => [`${block.clientID}:${block.clock}`, index]));
+  return {
+    ...result,
+    model: {
+      ...result.model,
+      blocks: [
+        ...(result.model?.blocks ?? []),
+        ...passages.map((passage) => {
+          const indexes = passage.flatMap((id) => {
+            const index = byId.get(`${id.clientID}:${id.clock}`);
+            return index === undefined ? [] : [index];
+          });
+          // New paragraphs between surviving passage anchors belong to the saved passage too.
+          const blocks = indexes.length
+            ? (after?.slice(Math.min(...indexes), Math.max(...indexes) + 1) ?? [])
+            : [];
+          return {
+            extent: "full" as const,
+            relation: "not_reverted" as const,
+            items: blocks.map((block) => modelBlockItem(block.serialized)),
+          };
+        }),
+      ],
+    },
+  };
+}
+
+function rejectedReceipt(edit: ReceiptIdentity): InternalWriteResult {
+  const result = rejectedWriteResult(edit.rejectionReason);
+  if (!edit.refusedPassages?.length) return result;
+  return {
+    ...result,
+    model: {
+      ...result.model,
+      message: [
+        result.model?.message,
+        ...edit.refusedPassages.map(
+          () =>
+            "Not reverted: this passage changed since you last saw it. Current text:\nCurrent text unavailable. Re-read this document.",
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    },
+  };
 }

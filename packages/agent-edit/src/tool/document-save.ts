@@ -52,6 +52,7 @@ export interface StagedResponseUpdate extends JournaledUpdate {
   stageSeq: number;
   touchedBlocks: readonly BlockItemId[];
   deletedBlocks: readonly BlockItemId[];
+  refusedPassages?: readonly (readonly BlockItemId[])[];
   /** The view this write planned on, immediately before it was applied. */
   preOwnSnapshot: Uint8Array;
   copied?: CopySummary;

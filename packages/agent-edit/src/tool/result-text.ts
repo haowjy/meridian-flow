@@ -34,6 +34,16 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
   }
   const body = bodyLines(groups, outline);
   if (body.length > 0) sections.push(body.join("\n"));
+  for (const group of groups.filter((group) => group.relation === "not_reverted")) {
+    sections.push(
+      [
+        "Not reverted: this passage changed since you last saw it. Current text:",
+        ...(group.items.length
+          ? group.items.map(blockLine)
+          : ["Current text unavailable. Re-read this document."]),
+      ].join("\n"),
+    );
+  }
   return sections.join("\n\n");
 }
 
@@ -151,7 +161,7 @@ function outlineFile(result: AgentEditResultV1): string | undefined {
 
 function bodyLines(groups: readonly AgentEditBlockGroup[], outline: string | undefined): string[] {
   const items = groups
-    .filter((group) => group.relation !== "swept")
+    .filter((group) => group.relation !== "swept" && group.relation !== "not_reverted")
     .flatMap((group) => group.items);
   if (!outline) return items.map(blockLine);
   // A heading whose slug looks like a hash is read by its hash.

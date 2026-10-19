@@ -6,7 +6,9 @@ import { snapshotBlocks } from "../apply/echo.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { toDocHandle, toRef } from "../handles.js";
+import { intersectLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
+import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
@@ -17,14 +19,14 @@ import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import { modelBlockItem } from "./model-result.js";
 import { type ListingSource, recordObservation } from "./observation.js";
-import { renderReceipt } from "./receipt.js";
+import { renderReceipt, withRefusedPassages } from "./receipt.js";
 import {
+  createRegionCheck,
   REFUSAL_REGION_MAX_BYTES,
   type RegionRefusalReason,
-  regionRefusal,
 } from "./region-check.js";
 import type { ResponseCommitter, RoomCopy } from "./response-committer.js";
-import { formatApplySuccess, status } from "./response-format.js";
+import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
 import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import { errorResponse, mutationMeta } from "./write-helpers.js";
@@ -49,6 +51,12 @@ function stagedWriteDescription(command: WriteCommand): string {
  */
 export type Planned = { unshown: readonly string[] } | null | "exempt";
 
+/** An atomic passage; groups have independent, non-overlapping target windows. */
+export interface PreparedEditGroup {
+  edits: readonly ResolvedEdit[];
+  targets: readonly number[] | "all";
+}
+
 export interface PreparedEdit {
   command: WriteCommand;
   session: ActorSession;
@@ -59,15 +67,15 @@ export interface PreparedEdit {
   planDoc: Y.Doc;
   /** What the region check reads; `exempt` skips it. */
   planned: Planned;
-  /** The write's target block indexes on `planDoc`, or every block. */
-  targets: readonly number[] | "all";
   /** Refs the write minted, registered once the write is past its region check. */
   assigner: WriteLinkAssigner;
   links: CommandLinks;
   actor: MutationActor;
   docId: string;
   filePath: string;
-  plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
+  plan:
+    | { groups: readonly PreparedEditGroup[]; ir: SemanticEditIRV1 }
+    | { blocks: readonly Block[] };
   creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
   copy?: { from: string; edges: boolean };
 }
@@ -75,13 +83,7 @@ export interface PreparedEdit {
 export function createWriteAcceptance(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    | "model"
-    | "codec"
-    | "coordinator"
-    | "semanticProvenance"
-    | "links"
-    | "onLinkSpliceFallback"
-    | "onObservationFailed"
+    "model" | "semanticProvenance" | "links" | "onObservationFailed"
   >;
   journal: CreateWriteToolOptions["journal"];
   responseCommitter: ResponseCommitter;
@@ -91,14 +93,52 @@ export function createWriteAcceptance(deps: {
   /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
   async function finishPreparedEdit(edit: PreparedEdit): Promise<InternalWriteResult> {
     const { command, session, context, room, planDoc, links, actor, docId, filePath, plan } = edit;
-    if (edit.planned !== "exempt") {
-      const region = regionRefusal({
-        planDoc,
-        room: room.doc,
-        targets: edit.targets,
-        planned: edit.planned,
-      });
-      if (region) return refuseRegion(edit, region.blocks, region.reason);
+    const accepted: PreparedEditGroup[] = [];
+    const refusals: Array<{ blocks: Y.XmlElement[]; reason: RegionRefusalReason }> = [];
+    // Empty-document creation is the one unchecked plan; each ordinary command has one group.
+    if ("groups" in plan) {
+      const check =
+        edit.planned === "exempt"
+          ? null
+          : createRegionCheck({
+              planDoc,
+              room: room.doc,
+              planned: edit.planned,
+            });
+      for (const group of plan.groups) {
+        if (!group.edits.length) continue;
+        const refusal = check?.(group.targets);
+        if (refusal) refusals.push(refusal);
+        else accepted.push(group);
+      }
+      if (!accepted.length) {
+        if (!refusals.length) return formatUnchangedSuccess();
+        const refused = new Set(refusals.flatMap((refusal) => refusal.blocks));
+        const blocks = getTopLevelXmlBlocks(room.doc).filter((block) => refused.has(block));
+        return refuseRegion(edit, blocks, refusals[0].reason);
+      }
+    }
+    const refusedPassages = refusals.map(({ blocks }) =>
+      blocks.map((block) => options.model.getCanonicalBlockIdentity(toRef(block))),
+    );
+    const edits = accepted.flatMap((group) => group.edits);
+    let semanticEditIr = "ir" in plan ? plan.ir : undefined;
+    if (semanticEditIr && refusals.length) {
+      if (semanticEditIr.intent.kind !== "mappedEdits")
+        throw new Error("A partially accepted plan requires mapped semantic edits");
+      // Groups are independent passages; only accepted targets can declare deleted lineage.
+      const acceptedScope = edits.flatMap((part) =>
+        part.kind === "insert" ? [] : options.model.getVisibleContentLineage(part.block),
+      );
+      const acceptedEdits = new Set(edits);
+      semanticEditIr = {
+        ...semanticEditIr,
+        deleted: intersectLineageRanges(semanticEditIr.deleted, acceptedScope),
+        intent: {
+          kind: "mappedEdits",
+          edits: semanticEditIr.intent.edits.filter(({ edit }) => acceptedEdits.has(edit)),
+        },
+      };
     }
     await registerMinted(edit.assigner, docId, context);
     const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
@@ -120,19 +160,18 @@ export function createWriteAcceptance(deps: {
         ? undefined
         : new Set(Y.decodeStateVector(Y.encodeStateVector(room.doc)).keys());
     const origin = "agent-write";
-    const semanticEditIr = "ir" in plan ? plan.ir : undefined;
     const captured = captureWriteUpdate<import("../apply/types.js").ApplyResult>(
       planDoc,
       roomClients,
       (beforeSegment) => {
-        if ("edits" in plan)
+        if ("groups" in plan)
           return applyEdits(
             toDocHandle(planDoc),
             options.model,
-            plan.edits,
+            edits,
             origin,
             beforeSegment,
-            certifySegment(planDoc, plan.ir, beforeVector),
+            certifySegment(planDoc, semanticEditIr as SemanticEditIRV1, beforeVector),
           );
         beforeSegment?.();
         let insertedBlocks: string[] = [];
@@ -188,13 +227,14 @@ export function createWriteAcceptance(deps: {
         createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
         touchedBlocks,
         deletedBlocks,
+        refusedPassages,
         preOwnSnapshot,
         semanticEditIr,
         copied,
         interactionContext,
         ...(context.frontiers?.reply ? { reply: context.frontiers.reply } : {}),
       });
-      if (rejected) return rejected;
+      if (rejected) return withRefusedPassages(rejected, refusedPassages);
       phase = "staged";
     } else {
       if (!cut) throw new Error(`A write outside a reply on ${docId} took no room cut`);
@@ -228,7 +268,7 @@ export function createWriteAcceptance(deps: {
         refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
         interactionContext,
       });
-      if (isInternalWriteResult(saved)) return saved;
+      if (isInternalWriteResult(saved)) return withRefusedPassages(saved, refusedPassages);
       // The echo and frontier show the room as the save left it, as a reply's receipt does.
       Y.applyUpdate(room.doc, saved.afterState);
       context.frontiers?.reply?.append(docId, [update]);
@@ -261,6 +301,7 @@ export function createWriteAcceptance(deps: {
             durableWriteId: identity.durableId,
             touchedBlocks,
             deletedBlocks,
+            refusedPassages,
             copied,
           },
           planned,
@@ -275,7 +316,10 @@ export function createWriteAcceptance(deps: {
         room,
         docId,
         recorded,
-        formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
+        withRefusedPassages(
+          formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true }),
+          refusedPassages,
+        ),
         { ownRemoved },
       );
     }
@@ -301,7 +345,12 @@ export function createWriteAcceptance(deps: {
       reason === "changed"
         ? "Not applied: this passage changed since you last saw it"
         : "Not applied: you haven't seen all of this passage yet";
-    if (bytes > REFUSAL_REGION_MAX_BYTES && first && last)
+    if (
+      bytes > REFUSAL_REGION_MAX_BYTES &&
+      first &&
+      last &&
+      (!("groups" in edit.plan) || edit.plan.groups.length === 1)
+    )
       return status(
         "region_changed",
         `${why}, and it is too long to show here. Read it with read({"path": ${JSON.stringify(edit.filePath)}, "in": [${JSON.stringify(first.hash)}, ${JSON.stringify(last.hash)}]}), then write again.`,
