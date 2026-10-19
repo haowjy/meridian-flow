@@ -1557,7 +1557,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .where(eq(schema.draftWriteJournal.status, "active"));
       if (!owned) throw new Error("missing owned journal row");
       await db.insert(schema.draftWriteJournal).values({
-        generation: 1,
         draftId: owned.draftId,
         wId: owned.wId,
         source: owned.source,
@@ -1565,7 +1564,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         turnId: null,
         actorUserId: owned.actorUserId,
         updateData: owned.updateData,
-        draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
         updateMeta: owned.updateMeta,
       });
     },

@@ -54,6 +54,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
           )
           .where(
             and(
+              sql`${documentEditParts.origin}->>'kind' = 'pending'`,
               sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
               eq(documentEdits.actor, "agent"),
             ),

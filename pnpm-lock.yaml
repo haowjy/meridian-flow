@@ -712,6 +712,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@meridian/agent-edit':
+        specifier: workspace:*
+        version: link:../agent-edit
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -724,6 +727,9 @@ importers:
       postgres:
         specifier: 'catalog:'
         version: 3.4.9
+      yjs:
+        specifier: 13.6.31
+        version: 13.6.31
     devDependencies:
       drizzle-kit:
         specifier: 'catalog:'

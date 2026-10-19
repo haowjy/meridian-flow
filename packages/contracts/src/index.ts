@@ -8,7 +8,7 @@ export * from "./document-href.js";
 export * from "./document-link.js";
 export * from "./document-link-api.js";
 export * from "./document-ref.js";
-export type { EditOrigin, EditPlacement } from "./edit-placement.js";
+export type { EditOrigin } from "./edit-origin.js";
 export * from "./enums";
 export * from "./ids";
 export * from "./jsonb";

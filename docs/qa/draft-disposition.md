@@ -35,8 +35,8 @@ An assertion failure exits nonzero. No new test-suite case is registered.
 Fixtures explicitly create the two review fragments following DV's fixture
 pattern. They write immutable AI receipts and construct Apply records directly:
 production fresh seeding and HTTP Apply belong to separate implementation lanes.
-The legacy journal's required `draft_base_update_seq` receives fixture constant
-zero, not a live-state subquery. This runner does not verify seeding or Apply.
+Receipts retain immutable origins; current text and Apply evidence decide their
+disposition. This runner does not verify seeding or Apply.
 Room delivery and catalog notifications are inert fixture ports; database
 policy, inverse compute/commit, captured disposition and close are real.
 
@@ -68,3 +68,42 @@ Undo/Redo responses and empty list. Record any unavailable intermediate-lane con
 never a successful browser flow. Close only the named browser session and stop
 only the stack you started. Store the date, commit, exact observations and
 screenshot paths in the active work item's `b/g1/` evidence.
+
+## Populated review cutover (0077–0081)
+
+Prepare an owned database using the previous release, not SQL-only draft seeds:
+
+1. Use `./mf` to create named Works and draft-mode chats with a mock-model Agent.
+   Edit existing documents, Apply one of two independent changes, Discard the
+   remainder, then edit the reset draft again. Apply another document and close
+   its Work. Keep one Work active. Preserve one released creation as well.
+2. In the browser, type into a draft and type at least 520 keys. Check that its
+   checkpoint advanced and that a tail remains; save the acknowledged prose.
+3. Fail one owned Apply's completion after staging. The accepted batch/member
+   must survive. Preflight must refuse it with the drain instruction. Remove
+   the fault, run the previous release with `DRAIN_APPLY_SETTLEMENT=1`, wait for
+   that command id to read done/applied, then stop the old server.
+4. Clone the stopped populated database through `cloneDatabaseForUrl`. In the
+   clone, temporarily clear one active Work draft's cut: migration 0077 must
+   refuse, and its ledger entry must remain absent. Restore the cut and retry.
+5. Hold the second eligible draft row from another connection. Run 0078's
+   companion in a child process, wait for the first row's revision to advance,
+   then kill it. Release the hold and start two converter processes. Each
+   eligible row must advance exactly once. A subsequent run must leave state
+   bytes and revisions identical. Do not replace this with SKIP LOCKED scans.
+6. Before and after retirement, compare every prose fragment, immutable receipt
+   range, journal id/update, lineage receipt and command result. Check historical
+   Apply entries on retained closed drafts and older generations, even when
+   their items are absent from current text. Released bytes must remain empty.
+   Run PR B's inverse readers on both sides of the drops; compare dispositions,
+   refusal/skip copy and revert availability, ignoring only fresh action UUIDs.
+7. Run EXPLAIN with the reader's actual pending-origin/draft-id predicate and
+   agent filter. It must use `document_edit_parts_pending_origin_idx` without
+   disabling sequential scans. Verify the active draft's `review_base` and
+   writer-visible text through the app after cutover. An intermediate branch
+   without room-backed review is a coverage gap, not a browser pass.
+
+Run `pnpm check`, `pnpm test:db`, migration lint/history, Drizzle check and a
+second schema generation (no changes). Keep raw logs outside the work directory;
+record the populated proof and screenshots in the active work item. Drop only
+owned clones, remove faults and fixtures, and stop stacks/browser sessions.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Existing Work drafts retain their text and historical Apply evidence when upgrading to text-derived review. Cutover refuses unrepaired drafts and unfinished Apply, converts restartably under row locks, builds replacement indexes online, then retires draft generations, placement and settlement storage.
+
 - Database migrations can run digest-pinned TypeScript conversions in ledger order, on the migration runner's locked session, before their SQL completion barriers.
 
 - Keep model Redo and failed-reply rollback available when Undo restores a draft to its review base; review membership no longer decides inverse history.

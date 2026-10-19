@@ -87,7 +87,6 @@ function fixture(existingUpstream?: Y.Doc) {
       turnId: null,
       actorUserId: null,
       updateData,
-      draftBaseUpdateSeq: 0,
       status: "active",
     };
   }

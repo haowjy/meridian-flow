@@ -88,9 +88,7 @@ async function fixture() {
     const [row] = await db
       .insert(schema.draftWriteJournal)
       .values({
-        generation: 1,
         draftId,
-        draftBaseUpdateSeq: 0,
         updateData: Buffer.from(Y.mergeUpdates(updates)),
         source: "agent",
         threadId,
@@ -156,7 +154,6 @@ it("reads applied and discarded historical parts after close, independent of pla
     );
     const visibleClosed = await f.ai(23, "The bright mountain glows.");
     await f.save("closed");
-    await db.update(schema.documentEditParts).set({ placement: { kind: "retired" } });
     const historical = await review(f.draftId, { writerRanges: [[99, 0, 100]] });
     expect(historical.draft.status).toBe("closed");
     expect(historical.parts.map((p) => [p.editId, p.disposition])).toEqual([

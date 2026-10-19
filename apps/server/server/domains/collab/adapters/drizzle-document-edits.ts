@@ -66,7 +66,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       targets: p.targets ?? [],
       origin: p.origin,
       // Required by the legacy NOT NULL column until the migrations lane drops it.
-      placement: p.origin,
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {
