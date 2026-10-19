@@ -14,7 +14,7 @@ import {
 import type { ApplyClick, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
-import { ySyncPluginKey, yUndoPluginKey } from "@tiptap/y-tiptap";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -83,6 +83,7 @@ export type DiscardNotice = {
   undo?: () => void;
   end(): void;
 };
+const EDITOR_DISCARD_ORIGIN = Symbol("editor-draft-discard");
 const histories = new WeakSet<Y.UndoManager>();
 function installRestorations(history: Y.UndoManager) {
   if (!histories.has(history)) {
@@ -500,10 +501,12 @@ export class DraftCommandOwner {
         const attached = binding.runtime.editor(surface);
         if (attached) yUndoPluginKey.getState(attached.state)?.undoManager.stopCapturing();
       }
-    const origin = editor ? ySyncPluginKey : {};
+    const origin = editor ? EDITOR_DISCARD_ORIGIN : {};
     const history: Y.UndoManager = editor
       ? yUndoPluginKey.getState(editor.state).undoManager
-      : new Y.UndoManager(fragment, { trackedOrigins: new Set([origin]), captureTimeout: 0 });
+      : new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
+    // Direct writes are not binding repairs, but still belong in the chosen history.
+    history.addTrackedOrigin(origin);
     installRestorations(history);
     history.stopCapturing();
     const blocks = applySpanPatches(

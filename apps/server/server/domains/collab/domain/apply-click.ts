@@ -80,8 +80,11 @@ export function compileClick(
   } catch {
     throw new ApplyClickRefused("malformed");
   }
-  if (!containsSnapshot(Y.snapshot(doc), snapshot)) throw new ApplyClickRefused("unsynced");
-  const cut = Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }));
+  const current = Y.snapshot(doc);
+  if (!containsSnapshot(current, snapshot)) throw new ApplyClickRefused("unsynced");
+  const cut = Y.equalSnapshots(current, snapshot)
+    ? doc
+    : Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }));
   try {
     const base = readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
     let patches: SpanPatch[];
@@ -165,7 +168,7 @@ export function compileClick(
       owners: [...owners.values()],
     };
   } finally {
-    cut.destroy();
+    if (cut !== doc) cut.destroy();
   }
 }
 

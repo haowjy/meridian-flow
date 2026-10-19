@@ -31,7 +31,14 @@ import {
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
 import { settleWhitespace, subsequenceSources, unionInsertions } from "./merge-settle.js";
-import { buildBlocks, buildSide, isWordTok, type Tok, tokenizeBlock } from "./tokens.js";
+import {
+  buildBlocks,
+  buildSide,
+  isWordTok,
+  shareBlockTokens,
+  type Tok,
+  tokenizeBlock,
+} from "./tokens.js";
 
 export interface Conflict {
   kind: "overlap" | "moved-text" | "move";
@@ -128,6 +135,7 @@ export function rebase(
   live: readonly PMNode[],
   draft: readonly PMNode[],
 ): RebaseResult {
+  shareBlockTokens([base, live, draft]);
   const alignAll = (
     baseBlocks: readonly PMNode[],
     liveBlocks: readonly PMNode[],

@@ -19,7 +19,12 @@ boundary locks the Work and confirms the route's bound edit grants before the
 first write (the command claim). A hidden-create reveal verifies its tree namespace before taking live's
 mutation lock. A source moving during that acquisition rolls back and retries
 the transaction, without re-compiling the click. Ordinary text Apply takes only
-live's mutation lock, so unrelated tree changes do not serialize it. Live is
+live's mutation lock, so unrelated tree changes do not serialize it. The append
+door is the sole draft-row lock and active-state check: live preparation and its
+staged journal write precede it inside the same Work transaction. A late draft
+closure unwinds that whole transaction before answering `closed`, so no live
+half or claim escapes admission. Draft/document/Work identity is bound by the
+addressed load and never changes during a draft's lifetime. Live is
 read from the committed checkpoint and journal under its mutation lock, never
 from a room. A still-hidden creation is revealed through the tree's placement
 kernel, and its arrival and catalog changes join the same transaction.
@@ -47,6 +52,7 @@ from the installed signal functions; ordinary row signals retain JIT off.
 `apply.measured` emits compile and Work-boundary times by command id. The append
 door's lock-to-root-commit `holdMs` is associated with that command through an
 async diagnostic scope; server-author CPU time is not reported as row hold time.
+There is no earlier draft lock outside that door to hide part of Apply's hold.
 
 The API-core recipe is [atomic Apply](../../../../../../docs/qa/atomic-apply.md).
 It uses a scratch database and the real route core, file policy, command store,

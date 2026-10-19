@@ -70,7 +70,11 @@ an unchanged group's hash and excerpt by those content identities. Cached hunk c
 includes removed JSON and kind; token-to-character offsets are per retained draft node.
 Grouping, move pairing, occurrence ranks and global hunk coordinates still recompute. A
 changed group still hashes its whole content (the existing hash/wire contract is unchanged).
-No schema-bound token or node is reused by text across schemas.
+No schema-bound token or node is reused by text across schemas. A rebase fed
+independent document cuts shares equal blocks' immutable tokens within that
+call, checking PM node equality as well as full keys. It primes the existing
+node-owned token cache without replacing input nodes or arrays, so warm
+side/unit cache identities survive. There is no global content-key interner.
 
 Pure character-refinement scripts also reuse retained draft nodes and the base
 array, keyed by their exact input strings. Their cache is bounded to the 64k

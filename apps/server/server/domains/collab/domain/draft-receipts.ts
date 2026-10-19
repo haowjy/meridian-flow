@@ -60,6 +60,8 @@ export type FinalizeAppendInput = {
    * it becomes the committed prefix; when a rewrite moved it, it is destroyed.
    */
   candidate: Y.Doc;
+  /** The immutable base encoding already used to clone candidate. */
+  candidateState: Uint8Array;
   rows: readonly AppendDraftJournalInput[];
   containment: ReturnType<typeof createDocumentContainment>;
   /**
@@ -113,7 +115,8 @@ export async function finalizeAppend(
     if (input.work !== "any" && read.documentDraft.lifecycle !== "active")
       return done({ status: "refused" });
 
-    const before = Y.encodeStateAsUpdate(doc);
+    const before =
+      prefixHeld && !read.tail.length ? input.candidateState : Y.encodeStateAsUpdate(doc);
     if (input.precondition && !input.precondition(before))
       return done({ status: "preconditionFailed" });
 
@@ -204,7 +207,7 @@ export async function finalizeAppend(
       // operations, under the hold, so client 1 allocates clocks after every committed row.
       const authoring = createCollabYDoc({ gc: false });
       try {
-        Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
+        Y.applyUpdate(authoring, kept.length ? Y.encodeStateAsUpdate(doc) : before);
         authoring.clientID = DRAFT_SERVER_CLIENT_ID;
         for (const updateData of await input.authorServerRows(authoring)) {
           const refused = admit({
@@ -245,10 +248,18 @@ export async function finalizeAppend(
       }),
     }));
     const rows = kept.map((entry) => entry.row);
+    // Finalization is over: this document is immutable for both the save cut and the replica.
+    let after: Uint8Array | undefined;
     return {
       finalization: { status: "appended", rows, receipts },
       doc,
-      cut: { beforeState: before, afterState: Y.encodeStateAsUpdate(doc) },
+      cut: {
+        beforeState: before,
+        get afterState() {
+          after ??= Y.encodeStateAsUpdate(doc);
+          return after;
+        },
+      },
       result: {
         status: "appended",
         rows,

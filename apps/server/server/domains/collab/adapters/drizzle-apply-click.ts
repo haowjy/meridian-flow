@@ -48,6 +48,7 @@ import {
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
 import { describeTrailBlocks, trailBlockChanges } from "../domain/document-difference.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
+import { DraftStaleUpdateError } from "../domain/draft-store.js";
 import {
   persistDurableTrailRecords,
   preparedTrailChanges,
@@ -161,7 +162,6 @@ export function createDrizzleApplyClick(
       const click = prepared.kind === "text" ? prepared.click : null;
       const branchId =
         prepared.kind === "text" ? prepared.base.snapshot.branchId : prepared.branchId;
-      const draftId = base?.snapshot.draftId;
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
@@ -207,25 +207,6 @@ export function createDrizzleApplyClick(
                     if (initialNode?.hidden)
                       await acquireEndUseScope(db, { documentIds: [command.documentId] });
                     else await lockDocumentMutation(tx, command.documentId);
-                    if (draftId) {
-                      if (draftId !== command.request.draftId) return finish(await closed(command));
-                      const [row] = await tx
-                        .select({ status: documentDrafts.status })
-                        .from(documentDrafts)
-                        .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-                        .where(
-                          and(
-                            eq(documentDrafts.id, draftId),
-                            eq(branches.originWorkId, command.workId),
-                            eq(branches.status, "active"),
-                            eq(documentDrafts.documentId, command.documentId),
-                            eq(documentDrafts.branchId, branchId),
-                            eq(documentDrafts.kind, "work_draft"),
-                          ),
-                        )
-                        .for("update");
-                      if (!row || row.status === "closed") return finish(await closed(command));
-                    }
                     const removed = await livingDocumentRefusal(tx, command.documentId);
                     if (removed)
                       return finish({
@@ -470,6 +451,9 @@ export function createDrizzleApplyClick(
           }
         }
       } catch (cause) {
+        // The append door alone locks and rechecks the addressed draft. Closure rolls
+        // back the claim and live half with it before the service reads a stored outcome.
+        if (cause instanceof DraftStaleUpdateError) return closed(command);
         if (cause instanceof WorkLifecycleUnavailableError)
           throw new ApplyClickRefused(
             cause.state === "archived"

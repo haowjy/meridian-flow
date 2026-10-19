@@ -107,6 +107,19 @@ export function tokenizeBlock(node: PMNode): Tok[] {
   return out;
 }
 
+/** Independent cuts can carry equal blocks with different identities. Reuse their immutable
+ * tokens within this operation without replacing input arrays or crossing schemas. */
+export function shareBlockTokens(sides: readonly (readonly PMNode[])[]): void {
+  const canonical = new Map<string, PMNode>();
+  for (const blocks of sides)
+    for (const block of blocks) {
+      const key = blockKey(block);
+      const existing = canonical.get(key);
+      if (existing?.eq(block)) tokCache.set(block, tokenizeBlock(existing));
+      else canonical.set(key, block);
+    }
+}
+
 /** A document side: its blocks and flattened tokens, with the maps between them. */
 export interface Side {
   blocks: readonly PMNode[];
