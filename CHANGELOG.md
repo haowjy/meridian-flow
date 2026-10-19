@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A draft review link whose document was deleted no longer tells an account that can't read the document that it was deleted: it answers as an unknown draft. Every editor connection decides `4208 document-deleted` in one place, only for someone who may read the document (#854).
+
 - The document-removal upgrade now finishes draft closure even when Work Restore races its pages, bounds tree-use deletion separately, and corrects stored Work counts. Cascade removal preserves creation membership for Restore without reopening drafts. Existing drafts return without taking Work or document locks; discarded creation records remain available to authorized file-access denials (#854).
 
 - Removing a document now closes its drafts, settles pending edits and closes live and draft connections after commit. Draft creation cannot race a removal, and discarded creations release content without deleting their closed draft records (#854).
