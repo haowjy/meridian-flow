@@ -60,12 +60,10 @@ it("says why a write failed, and gives every undo and redo refusal its own copy"
     "cant_undo_applied",
     "cant_undo_discarded",
     "cant_undo_changed",
-    "cant_undo_held",
     "cant_undo_elsewhere",
     "cant_redo_applied",
     "cant_redo_discarded",
     "cant_redo_changed",
-    "cant_redo_held",
     "cant_redo_elsewhere",
     "cant_redo_users_undo",
   ];
