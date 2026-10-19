@@ -17,11 +17,20 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
-import { type ApplyEntry, readApplyRecord } from "./apply-record.js";
-import { DRAFT_SERVER_CLIENT_ID } from "./draft-base.js";
+import type { ApplyEntry } from "./apply-record.js";
+import {
+  AttributionEvidence,
+  type AttributionPart,
+  BASE,
+  type Provenance,
+  UNKNOWN,
+  USER,
+} from "./attribution-evidence.js";
+
+export type { AttributionPart, Provenance, WriterReceipt } from "./attribution-evidence.js";
+
 import type { Hunk } from "./hunks.js";
-import { IdIndex, type ItemRange, indexRanges } from "./id-index.js";
-import { type RestorationLink, readRestorations } from "./restorations.js";
+import type { ItemRange } from "./id-index.js";
 import type { ReviewProjection } from "./review.js";
 import { isBlockTok, type Side, type Tok, textDiff } from "./tokens.js";
 
@@ -31,32 +40,6 @@ export type Author =
   | { kind: "user"; userId: string }
   | { kind: "thread"; threadId: string; turnId: string; toolCallId?: string };
 
-/** One AI write: the item ranges it inserted and deleted. Parts are listed latest first. */
-export interface AttributionPart {
-  /** Receipt evidence survives deletion of its conversation or turn. Such parts remain members but have no byline. */
-  threadId: string | null;
-  turnId: string | null;
-  toolCallId?: string;
-  inserted: readonly ItemRange[];
-  deleted: readonly ItemRange[];
-}
-export interface WriterReceipt {
-  userId: string;
-  inserted: readonly ItemRange[];
-  deleted: readonly ItemRange[];
-}
-export interface Provenance {
-  /** The human who owns the draft's browser clients (`projects.user_id` while a project has one user). */
-  userId: string;
-  parts: readonly AttributionPart[];
-  writers?: readonly WriterReceipt[];
-  /** The room revision whose AI parts have been read, including deletion-only writes. */
-  snapshot: Y.Snapshot;
-  /** Only this browser can positively identify its own unacknowledged insertions. */
-  localClientId?: number;
-  /** Deletions this browser witnessed in its own local transactions. */
-  localDeletions?: Y.Snapshot["ds"];
-}
 export interface ChangeClassification {
   /** The user first, then each writing thread once (linking to its latest write). */
   byline: Author[];
@@ -78,7 +61,7 @@ export interface ClassifyOptions {
   slide?: number;
 }
 
-// Cache only pure character scripts, never Yjs evidence or names. A retained node can acquire
+// Cache pure character scripts independently of evidence indexes, never names. A retained node can acquire
 // different spans after neighbouring edits; bound its entries, and retire them when the base changes.
 const characterDiffs = new WeakMap<
   readonly PMNode[],
@@ -90,10 +73,6 @@ const SLIDE_SCAN = 4096;
 /** Alignment work (alignments times characters) one op may cost before it is left unnamed. */
 const SLIDE_WORK = 200_000;
 const OBJECT = "￼";
-const BASE = -1;
-const USER = -2;
-/** Provenance a restoration chain could not settle. Names no one, and is never the writer's. */
-const UNKNOWN = -3;
 const isUnknown = (who: number) => who === UNKNOWN;
 
 const tokStr = (t: Tok) => (t.kind === "text" ? t.ws + t.core : t.kind === "inline" ? OBJECT : "");
@@ -268,37 +247,14 @@ const pushRange = (out: ItemRange[], client: number, clock: number, len = 1) => 
   else out.push([client, clock, len]);
 };
 
-/** Resolved provenance by item id. */
-class IdMemo {
-  private readonly byClient = new Map<number, Map<number, number>>();
-  get(client: number, clock: number): number | undefined {
-    return this.byClient.get(client)?.get(clock);
-  }
-  set(client: number, clock: number, who: number) {
-    const clocks = this.byClient.get(client);
-    if (clocks) clocks.set(clock, who);
-    else this.byClient.set(client, new Map([[clock, who]]));
-  }
-}
-
 class Classifier {
   private readonly parts: readonly AttributionPart[];
-  private readonly inserted: IdIndex;
-  private readonly deleted: IdIndex;
-  private readonly applied: IdIndex;
-  private readonly writeBack: IdIndex;
-  private readonly undone: IdIndex;
-  private readonly settled: IdIndex;
-  private readonly links: IdIndex;
-  private readonly superseded: IdIndex;
-  private readonly linkList: readonly RestorationLink[];
   private budget: number;
   private readonly slide: number;
   private readonly blocks: { items: Y.Item[]; gaps: Y.Item[][] };
   private readonly indexes = new Map<number, BlockIx>();
   private readonly texts = [new Map<number, SideText>(), new Map<number, SideText>()] as const;
-  private readonly originMemo = new IdMemo();
-  private readonly writeBackMemo = new IdMemo();
+  private readonly evidence: AttributionEvidence;
 
   constructor(
     doc: Y.Doc,
@@ -309,17 +265,7 @@ class Classifier {
     this.parts = provenance.parts;
     this.budget = options.budget ?? DIFF_BUDGET;
     this.slide = options.slide ?? SLIDE_SCAN;
-    this.inserted = indexRanges(this.parts.map((p) => p.inserted));
-    this.deleted = indexRanges(this.parts.map((p) => p.deleted));
-    const record = readApplyRecord(doc);
-    this.applied = indexRanges([record.flatMap((e) => e.base)]);
-    this.settled = indexRanges([record.flatMap((e) => e.settled)]);
-    const restored = readRestorations(doc);
-    this.writeBack = indexRanges([restored.base]);
-    this.undone = indexRanges([restored.undone]);
-    this.linkList = restored.links;
-    this.links = new IdIndex(this.linkList.map((l, i) => [l[0], l[1], l[2], i] as const));
-    this.superseded = indexRanges([this.linkList.map((l) => [l[3], l[4], l[2]] as const)]);
+    this.evidence = new AttributionEvidence(doc, provenance);
     const items: Y.Item[] = [];
     const gaps: Y.Item[][] = [[]];
     for (let it = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)._start; it; it = it.right) {
@@ -335,102 +281,6 @@ class Classifier {
   /** Whether the fragment still lines up block for block with the projection. */
   get aligned() {
     return this.blocks.items.length === this.projection.diff.draft.blocks.length;
-  }
-
-  // ---- provenance ----
-
-  private link(client: number, clock: number): [number, number] | null {
-    const l = this.links.get(client, clock);
-    if (l < 0) return null;
-    const link = this.linkList[l];
-    return [link[3], link[4] + (clock - link[1])];
-  }
-
-  /**
-   * Follows restoration links from an item to the item that wrote it. Links point at earlier items, so
-   * the walk ends; what it proves is kept, so a long chain is walked once.
-   */
-  private chase(
-    client: number,
-    clock: number,
-    memo: IdMemo,
-    end: (client: number, clock: number) => number | undefined,
-    unlinked: (client: number, clock: number) => number,
-  ): number {
-    let c = client;
-    let k = clock;
-    let path: Array<[number, number]> | null = null;
-    let who: number;
-    for (let hops = 0; ; hops++) {
-      const known = memo.get(c, k) ?? end(c, k);
-      if (known !== undefined) {
-        who = known;
-        break;
-      }
-      const to = this.link(c, k);
-      if (!to) {
-        who = unlinked(c, k);
-        break;
-      }
-      if (hops > this.linkList.length) {
-        who = UNKNOWN;
-        break;
-      }
-      path ??= [];
-      path.push([c, k]);
-      [c, k] = to;
-    }
-    if (path) for (const [pc, pk] of path) memo.set(pc, pk, who);
-    return who;
-  }
-
-  /** `BASE`, `USER`, `UNKNOWN`, or the index of the AI part that wrote the item. */
-  private origin(client: number, clock: number): number {
-    return this.chase(
-      client,
-      clock,
-      this.originMemo,
-      (c, k) => {
-        if (this.applied.get(c, k) >= 0) return BASE;
-        // A restoration link takes precedence over a write-back record: Undo keeps its source.
-        if (this.links.get(c, k) < 0 && this.writeBack.get(c, k) >= 0) return BASE;
-        const part = this.inserted.get(c, k);
-        if (part >= 0) return part;
-        return c === DRAFT_SERVER_CLIENT_ID ? BASE : undefined;
-      },
-      (c, k) =>
-        c === this.provenance.localClientId || k < (this.provenance.snapshot.sv.get(c) ?? 0)
-          ? USER
-          : UNKNOWN,
-    );
-  }
-
-  /** A Discard copy (including Redo copies), unless Apply has since made it real base. */
-  private isWriteBack(client: number, clock: number): boolean {
-    return (
-      this.chase(
-        client,
-        clock,
-        this.writeBackMemo,
-        (c, k) => {
-          if (this.applied.get(c, k) >= 0) return 0;
-          if (this.links.get(c, k) < 0 && this.writeBack.get(c, k) >= 0) return 1;
-          return undefined;
-        },
-        () => 0,
-      ) === 1
-    );
-  }
-
-  /** Deletion evidence belongs to this item, never to its restored insertion's source. */
-  private deleter(client: number, clock: number): number {
-    const part = this.deleted.get(client, clock);
-    if (part >= 0) return part;
-    const id = Y.createID(client, clock);
-    return Y.isDeleted(this.provenance.snapshot.ds, id) ||
-      (this.provenance.localDeletions && Y.isDeleted(this.provenance.localDeletions, id))
-      ? USER
-      : UNKNOWN;
   }
 
   private keyOf = (who: number) => (who === USER ? "user" : `thread:${this.parts[who].threadId}`);
@@ -493,7 +343,7 @@ class Classifier {
       if (who === UNKNOWN) footprint.unresolved = true;
     };
     const live = (client: number, clock: number) => {
-      const who = this.origin(client, clock);
+      const who = this.evidence.origin(client, clock);
       if (who === BASE) return;
       include(who);
       if (who === UNKNOWN) pushRange(footprint.unresolvedItems, client, clock);
@@ -503,9 +353,9 @@ class Classifier {
       for (let k = 0; k < item.length; k++) {
         const c = item.id.client;
         const clock = item.id.clock + k;
-        if (this.settled.get(c, clock) >= 0) continue;
+        if (this.evidence.settled.get(c, clock) >= 0) continue;
         if (this.options.record) pushRange(footprint.settled, c, clock);
-        const who = this.deleter(c, clock);
+        const who = this.evidence.deleter(c, clock);
         include(who);
         if (who === UNKNOWN) pushRange(footprint.unresolvedItems, c, clock);
       }
@@ -583,7 +433,7 @@ class Classifier {
         const start = raw.at + head;
         let replaced = true;
         this.eachChar(this.index(b), start, start + added.length, (c, k) => {
-          const who = this.origin(c, k);
+          const who = this.evidence.origin(c, k);
           if (who === BASE || who === UNKNOWN) replaced = false;
         });
         // Equal letters in recreated words are not retained base anchors: sword → sabre shares
@@ -595,8 +445,8 @@ class Classifier {
         if (!name) return;
         for (const item of items) {
           const who = item.deleted
-            ? this.deleter(item.id.client, item.id.clock)
-            : this.origin(item.id.client, item.id.clock);
+            ? this.evidence.deleter(item.id.client, item.id.clock)
+            : this.evidence.origin(item.id.client, item.id.clock);
           if (who !== BASE && !isUnknown(who) && (!item.deleted || who >= 0)) this.name(acc, who);
         }
       },
@@ -627,7 +477,7 @@ class Classifier {
     for (let p = lo; p <= hi; p++) {
       const origins = new Set<number>();
       this.eachChar(ix, p, p + n, (c, k) => {
-        const who = this.origin(c, k);
+        const who = this.evidence.origin(c, k);
         origins.add(who);
       });
       all.push(origins);
@@ -650,12 +500,12 @@ class Classifier {
           const c = item.id.client;
           const clock = item.id.clock + k;
           if (
-            this.settled.get(c, clock) < 0 &&
-            !(this.undone.get(c, clock) >= 0 && this.isWriteBack(c, clock)) &&
-            this.origin(c, clock) === BASE &&
-            this.superseded.get(c, clock) < 0
+            this.evidence.settled.get(c, clock) < 0 &&
+            !(this.evidence.undone.get(c, clock) >= 0 && this.evidence.isWriteBack(c, clock)) &&
+            this.evidence.origin(c, clock) === BASE &&
+            this.evidence.superseded.get(c, clock) < 0
           )
-            deleters.push(this.deleter(c, clock));
+            deleters.push(this.evidence.deleter(c, clock));
         }
       if (deleters.length === weight) {
         const names = this.keyed(deleters);
@@ -960,7 +810,7 @@ class Classifier {
           boundaries.text(db, now, was, now, was);
           const element = this.blocks.items[db];
           boundaries.subtree(element);
-          if (this.origin(element.id.client, element.id.clock) !== BASE) removed++;
+          if (this.evidence.origin(element.id.client, element.id.clock) !== BASE) removed++;
           continue;
         }
         const changed = this.blockItems(db, B.toks[r[0]], D.toks[i[0]]);
@@ -1014,7 +864,7 @@ class Classifier {
   private blockItems(db: number, was: Tok, now: Tok): Y.Item[] {
     if (was.kind !== "block" || now.kind !== "block" || was.key === now.key) return [];
     const item = this.blocks.items[db];
-    if (this.origin(item.id.client, item.id.clock) !== BASE) return [item];
+    if (this.evidence.origin(item.id.client, item.id.clock) !== BASE) return [item];
     const a = was.node.attrs as Record<string, unknown>;
     const b = now.node.attrs as Record<string, unknown>;
     const type = (item.content as Y.ContentType).type;
