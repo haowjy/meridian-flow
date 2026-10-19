@@ -1,8 +1,3 @@
-import {
-  type AccountSettingsRepository,
-  createDrizzleAccountSettingsRepository,
-  createInMemoryAccountSettingsRepository,
-} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -25,6 +20,8 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
+import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -42,6 +39,7 @@ import {
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
+  createDocumentRemoval,
   createDocumentRevisions,
   createDraftUploadVerifier,
   createDrizzleChatUploadsOwners,
@@ -64,9 +62,11 @@ import {
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
+  createRemovalRecords,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
+  type DocumentRemovals,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -115,7 +115,12 @@ import {
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createDrizzleProjectPreferencesRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 import {
   createDrizzleProjectBootstrapRepository,
   createDrizzleProjectRepository,
@@ -253,7 +258,11 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runAfterDrizzleCommit,
+  runInDrizzleSavepoint,
+} from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
@@ -408,6 +417,8 @@ export type ProductionAppPorts = {
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
   shownLinks: ShownLinkStore;
+  /** The removal record behind a missing file the model asked for. */
+  documentRemovals: DocumentRemovals;
   /** What each transcript block showed the model of a document, per room. */
   observationFrontiers: ObservationFrontiers;
 };
@@ -474,6 +485,7 @@ export async function createProductionAppPorts(input: {
     availability: projectContextAvailability,
     catalog: contextCatalog,
     pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    eventSink,
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
@@ -530,9 +542,18 @@ export async function createProductionAppPorts(input: {
       });
     },
   });
+  // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
+  // thread peers) exists only once the collab domain does, which binds it; nothing retires
+  // before a commit, so the late binding is never observed unbound in production.
+  const draftClose = createDraftClose();
+  const documentRemoval = createDocumentRemoval(db, {
+    collab: createDrizzleDocumentRemovalCollab(db, draftClose),
+    workProjection: workProjectionMutation,
+  });
   // One repair on touch for every production tree reader and create (§12.4).
   const hiddenNodeRepair = createHiddenNodeRepair({
     db,
+    removal: documentRemoval,
     eventSink,
     objects: objectRelease,
     backgroundTasks,
@@ -556,6 +577,8 @@ export async function createProductionAppPorts(input: {
     notices,
     workProjectionMutation,
     objects: objectRelease,
+    draftClose,
+    documentRemoval,
     drainSettlement: environment.DRAIN_APPLY_SETTLEMENT === "1",
     threadContext: {
       async requireThreadOwner(input) {
@@ -585,6 +608,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     arrivals,
     hiddenNodeRepair,
+    removal: documentRemoval,
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
   });
@@ -624,6 +648,7 @@ export async function createProductionAppPorts(input: {
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
+    removal: documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
@@ -713,6 +738,7 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
+    documentRemovals: createRemovalRecords(db),
     observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
@@ -825,6 +851,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
     shownLinks: ports.shownLinks,
+    documentRemovals: ports.documentRemovals,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);

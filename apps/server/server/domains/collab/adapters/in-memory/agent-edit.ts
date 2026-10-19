@@ -2,7 +2,6 @@
 
 import {
   type DocumentCoordinator,
-  type DocumentLifecycle,
   DocumentNotFoundError,
   type PersistedUpdate,
   type UpdateJournal,
@@ -232,16 +231,6 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
       return mutex.run(docId, async () => fn(requireDoc(docId)), options);
     },
     deliver,
-  };
-}
-
-export function createInMemoryDocumentLifecycle(coordinator: {
-  ensureEmpty(docId: string): Y.Doc;
-}): DocumentLifecycle {
-  return {
-    async ensureDocument(docId) {
-      coordinator.ensureEmpty(docId);
-    },
   };
 }
 

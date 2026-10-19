@@ -14,8 +14,8 @@ import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { insertFolder, tombstoneFolders } from "./node-rows.js";
-import { treeHook } from "./test-hooks.js";
 import type { NodeRef } from "./tree-view.js";
 import {
   findHiddenFolder,
@@ -35,7 +35,7 @@ export async function absorbHiddenFolder(
   db: Database,
   input: { hidden: FolderId; into: FolderId },
 ): Promise<void> {
-  await treeHook("absorb.beforeRepoint");
+  await testHook("absorb.beforeRepoint");
   await fold(db, input.hidden, input.into);
 }
 
@@ -163,7 +163,7 @@ export function planSplit(input: {
 
 /** Writes a split plan: twins, then the boundary nodes under them. */
 export async function applySplit(db: Database, plan: SplitPlan): Promise<SplitResult> {
-  await treeHook("split.beforeRepoint");
+  await testHook("split.beforeRepoint");
   const tx = currentDrizzleDb(db);
   const twins = new Map<FolderId, FolderId>();
   for (const twin of plan.twins) {

@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
@@ -14,7 +15,6 @@ import { createDrizzleTopPrimaryChatResolver } from "../../threads/adapters/driz
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import {
   classifyHistoryItem,
-  createDrizzleEventJournalWriter,
   hashPromptBakeContent,
   isSystemUpdateMetadata,
 } from "../../threads/index.js";
@@ -38,6 +38,7 @@ else
     const db = createDb(url, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),

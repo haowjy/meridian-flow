@@ -14,6 +14,7 @@ import type {
   UserId,
 } from "@meridian/contracts";
 import type {
+  DocumentRemovalRecord,
   ReversalOutcome,
   TurnInverseSkip,
   TurnReceiptChip,
@@ -51,6 +52,8 @@ export type InverseDocument = {
   live: Y.Doc;
   /** The live room `live` was captured from, by its authority; null when it has none yet. */
   liveRoom: string | null;
+  /** Removed documents are skipped with the record, never planned against. */
+  removal: DocumentRemovalRecord | null;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,

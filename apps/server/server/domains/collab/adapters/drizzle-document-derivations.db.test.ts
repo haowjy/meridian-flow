@@ -35,10 +35,7 @@ import {
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
-import {
-  ensureAndReadDocumentAuthorityHead,
-  replaceDocumentAuthorityHeadGeneration,
-} from "./drizzle-document-authority-head.js";
+import { readDocumentAuthorityHead, replaceGeneration } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence, createDrizzleJournal } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
@@ -90,7 +87,7 @@ describe("durable document derivations", () => {
     await db
       .insert(documentMarkdownProjections)
       .values({ documentId: documentId, markdown: "last good" });
-    await persistence.lifecycle.ensureDocument(documentId);
+    await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(new Y.Doc()));
   });
   afterAll(async () => {
     await service.stop();
@@ -107,7 +104,7 @@ describe("durable document derivations", () => {
   async function checkpointCut() {
     const cut = await persistence.journal.captureCheckpoint(
       documentId,
-      await ensureAndReadDocumentAuthorityHead(db, documentId),
+      await readDocumentAuthorityHead(db, documentId),
     );
     if (!cut) throw new Error("Current authority did not produce a checkpoint cut");
     return cut;
@@ -125,7 +122,7 @@ describe("durable document derivations", () => {
     "explicit",
   ] as const)("%s checkpoints preserve an admitted writer row before the room applies it", async (path) => {
     const room = new Y.Doc({ gc: false });
-    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
+    bindDocumentAuthority(room, await readDocumentAuthorityHead(db, documentId));
     const transport = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
@@ -380,7 +377,7 @@ describe("durable document derivations", () => {
     const room = new Y.Doc({ gc: false });
     await append(room, "Before");
     await persistence.journal.storeCheckpoint(await checkpointCut());
-    const authority = await ensureAndReadDocumentAuthorityHead(db, documentId);
+    const authority = await readDocumentAuthorityHead(db, documentId);
     const checkpointId = await persistence.store.createCheckpoint(await checkpointCut(), "saved");
     if (!checkpointId) throw new Error("Missing checkpoint");
     await append(room, "After");
@@ -609,7 +606,7 @@ describe("durable document derivations", () => {
     const retiredSeq = await append(doc, " After writer typing.");
     await service.derive(documentId);
     expect(await projection()).toBe("Before typing. After writer typing.");
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const replaced = await replaceGeneration(db, {
       documentId,
       checkpointId: checkpoint.id,
       expectedGeneration: 1n,
@@ -651,7 +648,7 @@ describe("durable document derivations", () => {
       .where(eq(documentYjsCheckpoints.upToSeq, beforeSeq));
     if (!saved) throw new Error("Missing saved checkpoint");
     await append(room, " After");
-    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
+    bindDocumentAuthority(room, await readDocumentAuthorityHead(db, documentId));
     const hp = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => null,
@@ -695,7 +692,7 @@ describe("durable document derivations", () => {
       }
       throw new Error(`Expected ${count} queued mutation locks`);
     }
-    const replacement = replaceDocumentAuthorityHeadGeneration(db, {
+    const replacement = replaceGeneration(db, {
       documentId,
       checkpointId: saved.id,
       expectedGeneration: 1n,
@@ -768,7 +765,7 @@ describe("durable document derivations", () => {
     const admission = explicit.checkpoint(documentId, "pre-capture restore");
     await ready;
     try {
-      await replaceDocumentAuthorityHeadGeneration(db, {
+      await replaceGeneration(db, {
         documentId,
         checkpointId: Number(saved.id),
         expectedGeneration: 1n,

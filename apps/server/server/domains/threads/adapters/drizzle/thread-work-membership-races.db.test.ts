@@ -3,7 +3,9 @@
 import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { createDraftClose } from "../../../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 import {
@@ -49,12 +51,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const control = postgres(DATABASE_URL, { max: 1 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const drafts = createDrizzleDraftStore(db, {
+      close: createDraftClose(),
       workProjection: createTestWorkProjectionMutation(db),
       branches: createDrizzleBranchStore(db),
     });

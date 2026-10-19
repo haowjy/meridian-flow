@@ -13,11 +13,11 @@ import type {
 import {
   documentNotFoundMessage,
   formatDocumentFile,
+  isDocumentNotFoundError,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -31,6 +31,7 @@ import {
   refuseSkillWrite,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
+import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import {
   binaryCopySelectionMessage,
@@ -43,10 +44,12 @@ import {
 } from "./copy-source.js";
 import {
   documentGrant,
+  documentNotFoundError,
   fileAccessDeniedError,
   firstRefusal,
   inContainer,
   keptDraftReader,
+  removalBehind,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
@@ -208,7 +211,7 @@ async function writeUnderGrant(
 > {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
-  let written: RoutedWriteOutcome;
+  let written: WriteOutcome;
   try {
     written = await deps.documentSync
       .agentEdit()
@@ -226,8 +229,20 @@ async function writeUnderGrant(
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
+    // A removal that won the document's lock after the grant (a pull, a staged or immediate
+    // commit): the model's interim answer is `document_not_found`, with the record's sentence.
+    if (isDocumentNotFoundError(cause))
+      return cause.removal
+        ? removedFileResult(parsed.command, cause.removal, address.filePath)
+        : documentNotFoundError(parsed.command, address.filePath);
     if (!(cause instanceof FileEditRefusedError)) throw cause;
-    return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
+    const refusal = firstRefusal(cause);
+    return fileAccessDeniedError(
+      parsed.command,
+      refusal,
+      address.filePath,
+      await removalBehind(deps, principal, refusal),
+    );
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
   // was a partial failure's echo and a region refusal's current text. Whatever
@@ -376,6 +391,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             port: context.port,
             path: parsed.path,
             documentId: address.documentId,
+            cause: "create_failed",
           });
         } catch (error) {
           return writeToolError(

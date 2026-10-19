@@ -463,6 +463,27 @@
       "when": 1792373857879,
       "tag": "0071_observation_frontiers_room_index",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1792387204652,
+      "tag": "0072_document_removal_record",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792387204653,
+      "tag": "0073_document_removal_cutover_online",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792387204654,
+      "tag": "0074_document_removal_validate",
+      "breakpoints": true
     }
   ]
 }

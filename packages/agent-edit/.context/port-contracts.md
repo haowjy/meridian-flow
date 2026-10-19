@@ -38,8 +38,8 @@ copies the Work draft replica. A bound call whose draft a Discard took throws
 `prepareSave` is the one way any write lands, a reply's save and an immediate
 save (`saveNow`, a write outside a reply) alike, for both hosts: the same
 reconcile as `readRoom` against the scope's cut (a live host keeps every
-entry), the `room` it saves into (null for a document the save creates, which
-records no frontier), and a required `write`: either a `StagedWriteCommit` the
+entry), the `room` it saves into (null records no frontier when the host cannot
+name it), and a required `write`: either a `StagedWriteCommit` the
 caller owns (`persist` inside the commit scope, `transfer` once that scope
 completed, `dispose` on any unwind; the host installs the write at root commit,
 never at `transfer`, or at once outside a transaction), or an explicit
@@ -74,12 +74,6 @@ append. Whole Discard
 retires only the addressed peer/document epoch. A host's response-attempt
 surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
 once, from `integration.ts`.
-
-### `DocumentLifecycle` (`src/ports/document-lifecycle.ts`)
-
-`ensureDocument(docId)` idempotently creates a missing document without
-clobbering content. It is optional; a deployment without creation returns
-`invalid_write`, not a thrown not-found. The port carries only a string ID.
 
 ## Content and identity ports
 

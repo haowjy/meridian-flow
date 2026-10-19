@@ -16,6 +16,7 @@ import {
 } from "@/client/query/branch-command-executor";
 import type { DraftRef } from "@/client/query/branch-command-record";
 import { getContextTabs, matchesReviewItem } from "@/client/stores";
+import { useOptionalRemovedNotices } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
   useIsCurrentContextRoute,
@@ -39,6 +40,7 @@ export function useWorkBranchCommands({
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
   const lifecycle = useDraftOnlyLifecycle(projectId);
+  const notices = useOptionalRemovedNotices();
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
   const frozen = !work || isWorkArchived(work);
@@ -68,6 +70,26 @@ export function useWorkBranchCommands({
         }
       })();
     };
+    /**
+     * This tab's own Discard of a created document says nothing when the
+     * document goes: marked before the request, settled once by its outcome
+     * (no outcome: it failed). Discarding an existing document's edits removes
+     * nothing, so it marks nothing.
+     */
+    const ownDiscard = (mode: "apply" | "discard", documentId: string) => {
+      const removes = lifecycle
+        .presentations(projectId)
+        .some((draft) => draft.documentId === documentId && draft.draftOnly);
+      if (mode !== "discard" || !notices || !removes) return () => undefined;
+      const settle = notices.markOwnRemoval(projectId, [documentId]);
+      return (outcome?: BranchCommandOutcome) =>
+        settle(
+          outcome?.kind === "discarded" ||
+            (outcome?.kind === "change-settled" && outcome.itemClosed)
+            ? "removed"
+            : "kept",
+        );
+    };
     const refOf = (draft: DraftReviewSelection): DraftRef => ({
       ...scope,
       documentId: draft.documentId,
@@ -84,6 +106,7 @@ export function useWorkBranchCommands({
       const tab = getContextTabs(projectId).tabs.find((candidate) =>
         matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
       );
+      const settleMark = ownDiscard(mode, draft.documentId);
       const start = startBranchCommand(
         queryClient,
         {
@@ -95,19 +118,27 @@ export function useWorkBranchCommands({
         },
         threadId,
       );
+      if (!start.sent) settleMark();
       return {
         ...start,
-        outcome: start.outcome.then((outcome) => {
-          if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
-          if (outcome.kind === "discarded") {
-            try {
-              lifecycle.remove(target);
-            } catch {
-              /* The committed command must not be resent for route repair. */
+        outcome: start.outcome.then(
+          (outcome) => {
+            settleMark(outcome);
+            if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
+            if (outcome.kind === "discarded") {
+              try {
+                lifecycle.remove(target);
+              } catch {
+                /* The committed command must not be resent for route repair. */
+              }
             }
-          }
-          return outcome;
-        }),
+            return outcome;
+          },
+          (error: unknown) => {
+            settleMark();
+            throw error;
+          },
+        ),
       };
     };
     const selection = (
@@ -117,7 +148,12 @@ export function useWorkBranchCommands({
     ) =>
       frozen
         ? Promise.resolve<BranchCommandOutcome>({ kind: "blocked" })
-        : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
+        : (() => {
+            const settleMark = ownDiscard(mode, draft.documentId);
+            const outcome = runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
+            outcome.then(settleMark, () => settleMark());
+            return outcome;
+          })();
     const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
       runWholeDraftIntent(
         { ...scope, documentId: draft.documentId, itemKey: draft.itemKey },
@@ -166,8 +202,15 @@ export function useWorkBranchCommands({
           generation: newestKnownProposal(queryClient, refOf(draft)),
           tab: tabOf(draft),
         }));
-        const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId);
+        const marks = drafts.map((draft) => ownDiscard(mode, draft.documentId));
+        const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId).catch(
+          (error: unknown) => {
+            for (const settleMark of marks) settleMark();
+            throw error;
+          },
+        );
         outcomes.forEach((outcome, index) => {
+          marks[index]?.(outcome);
           if (outcome.kind === "discarded") lifecycle.remove(refOf(drafts[index]));
           if (outcome.kind === "applied")
             promoteIfSettled(refOf(drafts[index]), before[index].generation, before[index].tab);
@@ -182,6 +225,7 @@ export function useWorkBranchCommands({
     frozen,
     queryClient,
     lifecycle,
+    notices,
     openContextRoute,
     isCurrentContextRoute,
   ]);

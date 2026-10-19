@@ -64,6 +64,7 @@ import {
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type {
+  DocumentRemovalRecord,
   DocumentRevisionEvidence,
   PermissionDeniedReason,
 } from "@meridian/contracts/protocol";
@@ -291,7 +292,13 @@ type ResponseWriteCommitOutcome =
       /** The saved documents' frontiers at the save's after-state, for those that recorded one. */
       frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
       /** Documents the save left out; their writes did not land (D29). */
-      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
+      refused: Array<{
+        documentId: string;
+        message: string;
+        reason?: PermissionDeniedReason;
+        rejected?: WriteRejection;
+        removal?: DocumentRemovalRecord;
+      }>;
     }
   | { status: "branch_closed"; responseId: string; mode: "draft" };
 
@@ -1196,6 +1203,8 @@ async function persistUncommittedWriteResult(input: {
   reason?: PermissionDeniedReason;
   /** Why the host rejected a staged write, so the chat can say it plainly. */
   rejected?: WriteRejection;
+  /** The removal record beside `rejected: "removed"`. */
+  removal?: DocumentRemovalRecord;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
@@ -1209,6 +1218,7 @@ async function persistUncommittedWriteResult(input: {
         ...(staged?.path ? { path: staged.path } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
         ...(input.rejected ? { rejected: input.rejected } : {}),
+        ...(input.removal ? { removal: input.removal } : {}),
         message,
       },
     }),
@@ -1586,6 +1596,7 @@ function createResponseScope(input: {
             text: "the user discarded the text it edited. Re-read and retry.",
             message: receipt.result.message,
             ...(receipt.result.rejected ? { rejected: receipt.result.rejected } : {}),
+            ...(receipt.result.removal ? { removal: receipt.result.removal } : {}),
           });
         // The settled receipt replaces the staged echo; both were shown.
         await recordShown(documentId, receipt);
@@ -1638,6 +1649,10 @@ function createResponseScope(input: {
                     block: write.block,
                     status: "invalid_write",
                     ...(refusal.reason ? { reason: refusal.reason } : {}),
+                    ...(refusal.rejected ? { rejected: refusal.rejected } : {}),
+                    ...(refusal.removal ? { removal: refusal.removal } : {}),
+                    // A removal's sentence stands alone, as the peer path's receipt gives it.
+                    ...(refusal.rejected === "removed" ? { message: refusal.message } : {}),
                     text: refusal.message,
                   })
                 : settled.status === "committed"

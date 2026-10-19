@@ -53,7 +53,6 @@ export function createWriteCommands(deps: {
     CreateWriteToolOptions,
     | "model"
     | "codec"
-    | "lifecycle"
     | "coordinator"
     | "semanticProvenance"
     | "links"
@@ -239,9 +238,6 @@ export function createWriteCommands(deps: {
     const content = command.command === "create" ? (command.content ?? "") : "";
     // A host's bound write (§6.2) arrives as nodes: never parsed or assigned again.
     const boundNodes = command.command === "create" ? context.boundNodes : undefined;
-    if (!options.lifecycle) {
-      return status("invalid_write", "document creation is not supported by this deployment");
-    }
     if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
       responseCommitter.assertCanStage({
         responseId: context.responseIdentity?.editScopeId,
@@ -266,8 +262,7 @@ export function createWriteCommands(deps: {
         "Staged create requires host-resolved createdDocument ownership metadata.",
       );
     }
-    const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
-    if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
+    const createdByThisReply = responseStagedCreate && context.createdDocument === true;
     const alreadyExists = status(
       "invalid_write",
       `File already exists: ${address.filePath}. Read it, then edit it; use overwrite=true only to replace all of its content.`,
@@ -278,14 +273,13 @@ export function createWriteCommands(deps: {
         commandName: command.command,
         session,
         context,
-        ...(deferNewDocumentCreation ? { missing: "empty" as const } : {}),
       },
       async (room) => {
         const responseId = context.responseIdentity?.editScopeId;
-        // A deferred create's first write replaces the empty copy; later ones extend it.
+        // The host already materialized this create; its first write owns the empty copy.
         const overwriting =
           command.overwrite === true ||
-          (deferNewDocumentCreation &&
+          (createdByThisReply &&
             !(responseId && responseCommitter.hasScopeCut(responseId, address.documentId)));
         const existing = options.model.getBlocks(toDocHandle(room.doc)).length > 0;
         if (existing && !overwriting) return alreadyExists;
@@ -620,7 +614,6 @@ export function createWriteCommands(deps: {
         writeOrdinal: identity.ordinal,
         durableWriteId: identity.durableId,
         toolCallId: identity.toolCallId,
-        ensureDocumentBeforeCommit: Boolean(edit.creation),
         createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
         touchedBlocks,
         deletedBlocks,

@@ -1,4 +1,5 @@
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
+
 /** Postgres-backed coverage for independent figure asset identity. */
 
 import { createDb } from "@meridian/database";
@@ -13,6 +14,7 @@ import {
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
@@ -103,6 +105,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
         branches: collab.branches,
       });

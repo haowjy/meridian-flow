@@ -4,8 +4,10 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { releaseDocumentStorage, tombstoneDocuments } from "../context/tree/node-rows.js";
+import { lockDocuments } from "../context/tree/node-rows.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -236,9 +238,13 @@ it("a tombstoned draft document with released storage does not stop another docu
       ).toMatchObject({ status: "success" });
     await harness.commit(responseId);
     // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
-    await db.transaction(async (tx) => {
-      await tombstoneDocuments(tx as never, [BETA_ID]);
-      await releaseDocumentStorage(tx as never, [BETA_ID]);
+    await runInDrizzleTransaction(db, async () => {
+      await lockDocuments(db, [BETA_ID]);
+      await createTestDocumentRemoval(db).remove({
+        documentIds: [BETA_ID],
+        reason: "discarded",
+        cause: "repair",
+      });
     });
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",

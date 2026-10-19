@@ -29,6 +29,7 @@ import {
   currentDrizzleDb,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { typeLink } from "../../test-support/branch-tree-commands.js";
 import {
   type BranchTreeScenario,
@@ -38,7 +39,6 @@ import {
 import { useComposedRuntimes } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
-import { setTreeHook } from "../context/tree/test-hooks.js";
 import { createInMemoryEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 
@@ -99,7 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         : null;
     }
 
-    /** What storage the document still holds (R8): live Yjs rows, drafts, its projection. */
+    /** What storage the document still holds (R8): live Yjs rows, drafts holding inline content, its projection. */
     async function storageOf(id: DocumentId) {
       const count = async (rows: Promise<unknown[]>) => (await rows).length;
       return {
@@ -117,7 +117,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             db.select().from(documentYjsHeads).where(eq(documentYjsHeads.documentId, id)),
           )),
         drafts: await count(
-          db.select().from(documentDrafts).where(eq(documentDrafts.documentId, id)),
+          db
+            .select()
+            .from(documentDrafts)
+            .where(
+              and(
+                eq(documentDrafts.documentId, id),
+                sql`octet_length(${documentDrafts.state}) > 0`,
+              ),
+            ),
         ),
         projection: await count(
           db
@@ -512,12 +520,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const createGate = new Promise<void>((resolve) => {
         releaseCreate = resolve;
       });
-      const removeCreateHook = setTreeHook("createInBranch.afterCandidateLock", async () => {
+      const removeCreateHook = setTestHook("createInBranch.afterCandidateLock", async () => {
         removeCreateHook();
         reachedCreate = true;
         await createGate;
       });
-      const removeEndHook = setTreeHook("endUse.afterRevalidate", async () => {
+      const removeEndHook = setTestHook("endUse.afterRevalidate", async () => {
         removeEndHook();
         const [self] = await currentDrizzleDb(db).execute<{ pid: number }>(
           sql`SELECT pg_backend_pid() AS pid`,

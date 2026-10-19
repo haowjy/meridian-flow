@@ -3,11 +3,14 @@
  * as, the grants it asks the file policy for, and a refusal as the tool's
  * error. Refusal copy lives in `file-access-denial-copy.ts`.
  */
-import type { DocumentCommandName } from "@meridian/agent-edit/integration";
-import { documentNotFoundMessage, modelResult } from "@meridian/agent-edit/integration";
+import {
+  type DocumentCommandName,
+  documentNotFoundMessage,
+  modelResult,
+} from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import {
   type FileAccessDenied,
   type FileEditRefusedError,
@@ -20,9 +23,9 @@ import {
   type WorkRef,
 } from "../../domains/file-policy/index.js";
 import {
-  deletedFileMessage,
   isPermissionDenial,
   permissionDeniedMessage,
+  removedFileResult,
 } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import type {
@@ -82,7 +85,7 @@ export async function keptDraftReader(
 
 /** The file policy's grant on a document; a denial comes back as the tool's error. */
 export async function documentGrant<N extends FileNeed>(
-  deps: Pick<ToolWiringDeps, "fileAccess">,
+  deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
   principal: Principal,
   command: DocumentCommandName,
   address: Pick<ResolvedDocumentAddress, "documentId" | "filePath">,
@@ -94,8 +97,44 @@ export async function documentGrant<N extends FileNeed>(
     need,
   );
   return isFileAccessDenied(grant)
-    ? fileAccessDeniedError(command, grant, address.filePath)
+    ? fileAccessDeniedError(
+        command,
+        grant,
+        address.filePath,
+        await removalBehind(deps, principal, grant),
+      )
     : grant;
+}
+
+/**
+ * The removal record behind a `not_found` the principal could have read: a document id the
+ * model already holds, whose file was removed. A reader without access learns nothing more.
+ */
+export async function removalBehind(
+  deps: Pick<ToolWiringDeps, "fileAccess" | "documentRemovals">,
+  principal: Principal,
+  denial: FileAccessDenied,
+): Promise<DocumentRemovalRecord | undefined> {
+  if (isPermissionDenial(denial) || denial.target.kind !== "document") return undefined;
+  const { documentId } = denial.target;
+  if ((await deps.fileAccess.historyAccess(principal, documentId)) !== "deleted") return undefined;
+  return (await deps.documentRemovals.lookup([documentId])).get(documentId);
+}
+
+/** A missing file as the tool's error. */
+export function documentNotFoundError(
+  command: DocumentCommandName,
+  path?: string,
+): WriteToolErrorOutput {
+  const message = documentNotFoundMessage(command);
+  return {
+    isError: true,
+    output: modelResult({
+      command,
+      status: "document_not_found",
+      payload: { ...(path ? { path } : {}), message },
+    }),
+  };
 }
 
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
@@ -103,18 +142,13 @@ export function fileAccessDeniedError(
   command: DocumentCommandName,
   denial: FileAccessDenied,
   path?: string,
+  removal?: DocumentRemovalRecord,
 ): WriteToolErrorOutput {
+  if (!isPermissionDenial(denial))
+    return removal
+      ? removedFileResult(command, removal, path)
+      : documentNotFoundError(command, path);
   const at = path ? { path } : {};
-  if (!isPermissionDenial(denial)) {
-    return {
-      isError: true,
-      output: modelResult({
-        command,
-        status: "document_not_found",
-        payload: { ...at, message: documentNotFoundMessage(command) },
-      }),
-    };
-  }
   return {
     isError: true,
     output: modelResult({
@@ -161,27 +195,4 @@ export async function containerReadonly(
   const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
   return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
-}
-
-/** A partial undo or redo says which writes stayed, and why, after what it reversed. */
-export function withRefusedWrites(outcome: RoutedWriteOutcome) {
-  const { refusedWrites, ...written } = outcome;
-  if (!refusedWrites?.length) return written;
-  const verb = written.command === "redo" ? "redone" : "undone";
-  const notes = refusedWrites.map(({ writeIds, denial }) => {
-    const why = isPermissionDenial(denial)
-      ? permissionDeniedMessage(denial)
-      : deletedFileMessage("reversal");
-    if (writeIds.length === 0) return why;
-    return `${writeIds.join(", ")} ${writeIds.length === 1 ? "wasn't" : "weren't"} ${verb}. ${why}`;
-  });
-  const [first] = refusedWrites;
-  return {
-    ...written,
-    result: {
-      ...written.result,
-      ...(first && isPermissionDenial(first.denial) ? { reason: first.denial.reason } : {}),
-      message: [written.result.message, ...notes].filter(Boolean).join("\n\n"),
-    },
-  };
 }

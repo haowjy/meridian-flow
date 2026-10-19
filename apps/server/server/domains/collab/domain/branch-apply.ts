@@ -8,8 +8,9 @@
  * branch (§2.4). A writer's command is claimed in the staging transaction and settled by the
  * tree step in completion (§4.6).
  */
-import type { BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, DraftItemKey, UserId, WorkId } from "@meridian/contracts";
 import type { BranchApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/branches";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type {
   BranchPushService,
@@ -22,26 +23,17 @@ import type { BranchReviewItems, DraftReviewItem } from "./branch-review-items.j
 import {
   BRANCH_TREE_STEP,
   type BranchTreePayload,
-  type DraftItemKey,
   encodeBranchTreePayload,
   type HeldReason,
   readBranchTreeHold,
-  readBranchTreeNotes,
   readBranchTreeRefusal,
 } from "./branch-tree-payload.js";
 import type { Branches } from "./branches.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { DraftJournalRow } from "./draft-journal.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
-export {
-  type ApplyNote,
-  BRANCH_TREE_STEP,
-  type DraftItemKey,
-  draftItemKey,
-  type HeldReason,
-} from "./branch-tree-payload.js";
+export { BRANCH_TREE_STEP, type HeldReason } from "./branch-tree-payload.js";
 
 /**
  * What the writer was shown of one item. A token absent (the legacy per-document Apply
@@ -183,7 +175,7 @@ export function createBranchApply(deps: {
       const plan = await input.plan();
       if ("status" in plan) return plan;
       if (deps.drainSettlement) throw new BranchApplyDrainingError();
-      await collabHook("applyItems.beforeStaging");
+      await testHook("applyItems.beforeStaging");
       const pushed = await deps.push
         .pushDraftsToLive({
           draftIds: plan.draftIds,
@@ -220,9 +212,6 @@ export function createBranchApply(deps: {
         };
       }
       const held = new Map(pushed.heldItems.map((hold) => [hold.itemKey, hold.reason]));
-      const notes = new Map(
-        pushed.outcomes.map((outcome) => [outcome.itemKey, readBranchTreeNotes(outcome.detail)]),
-      );
       return {
         status: "completed",
         branchId,
@@ -230,7 +219,7 @@ export function createBranchApply(deps: {
           const reason = held.get(itemKey);
           return reason
             ? { itemKey, status: "held", reason: heldReason(reason) }
-            : { itemKey, status: "applied", notes: notes.get(itemKey) ?? [] };
+            : { itemKey, status: "applied" };
         }),
       };
     }

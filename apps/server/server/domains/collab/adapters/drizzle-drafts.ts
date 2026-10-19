@@ -5,27 +5,21 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { DocumentLifecycle, UpdateJournal } from "@meridian/agent-edit/integration";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  documentDrafts,
-  documentYjsHeads,
-  draftWriteJournal,
-  threadWorks,
-} from "@meridian/database/schema";
+import { documentDrafts, draftWriteJournal, threadWorks } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
   createCollabYDoc,
   packCollabSchemaVersion,
-  unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -35,18 +29,20 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import {
   branchMayHold,
   loadBranchHolder,
   loadDocumentOwner,
 } from "../../context/tree/branch-ownership.js";
+import { requireLivingDocument } from "../../context/tree/living-document.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
 import { DraftNotFoundError, type ResolvedDraft } from "../domain/draft-resolver.js";
+import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import {
   type AppendDraftJournalInput,
   type AppendReceiptGroup,
@@ -59,9 +55,10 @@ import {
   type RewriteOutcome,
   type StaleEffectCursor,
 } from "../domain/draft-store.js";
-import type { PeerRetirementCause, RetiredDraft } from "../domain/peer-retirement.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
+import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
+import { type DraftClose, lockActiveDrafts } from "./drizzle-draft-close.js";
 import {
   appendRowsWithinTx,
   commitRewriteWithinTx,
@@ -99,12 +96,11 @@ const EFFECT_WRITE_LOCK_TIMEOUT = "100ms";
 export function createDrizzleDraftStore(
   db: Database,
   deps: {
-    live?: {
-      journal: UpdateJournal;
-      lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-    };
+    live?: { journal: UpdateJournal };
     /** The one owner of Work-first order and the Works' projection (decision D17). */
     workProjection: WorkProjectionMutation;
+    /** Every close retires what it closed after commit. */
+    close: DraftClose;
     /** A peer ensure relies on its branch staying active; a thread finds its Work's branch. */
     branches: Pick<Branches, "shareActive" | "activeForWork">;
     /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
@@ -158,22 +154,13 @@ export function createDrizzleDraftStore(
     }
   }
 
-  async function liveSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion> {
-    const [row] = await currentDrizzleDb(db)
-      .select({ schemaVersion: documentYjsHeads.schemaVersion })
-      .from(documentYjsHeads)
-      .where(eq(documentYjsHeads.documentId, documentId))
-      .limit(1);
-    return row ? unpackCollabSchemaVersion(row.schemaVersion) : COLLAB_SCHEMA_VERSION;
-  }
-
   async function ensureDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
     liveDoc: Y.Doc;
   }): Promise<DraftSnapshot> {
-    const existing = await activeDocumentDraft(input.documentId, input.branchId);
-    if (existing) return existing;
+    const current = await activeDocumentDraft(input.documentId, input.branchId);
+    if (current) return current;
     const seed = replicatedSnapshotFrom(input.liveDoc);
     // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
@@ -184,6 +171,11 @@ export function createDrizzleDraftStore(
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
+      await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
+      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
+      await testHook("draft.ensure.afterDocumentLock");
+      const existing = await activeDocumentDraft(input.documentId, input.branchId);
+      if (existing) return existing;
       await assertDraftableInBranch(input.documentId, input.branchId);
       // A document create's ensure and a thread peer's racing root ensure get one draft.
       const [inserted] = await currentDrizzleDb(db)
@@ -200,7 +192,10 @@ export function createDrizzleDraftStore(
           liveCut: seed.state,
           hasEffect: false,
           hasEffectRevision: 0,
-          schemaVersion: packCollabSchemaVersion(await liveSchemaVersion(input.documentId)),
+          schemaVersion: packCollabSchemaVersion(
+            (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
+              COLLAB_SCHEMA_VERSION,
+          ),
         })
         .onConflictDoNothing()
         .returning({ id: documentDrafts.id });
@@ -221,59 +216,11 @@ export function createDrizzleDraftStore(
   async function retractCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
-  }): Promise<
-    | { outcome: "stands" }
-    | { outcome: "retracted"; deleted: readonly { draftId: string; threadId: ThreadId | null }[] }
-  > {
+  }): Promise<"stands" | "retracted"> {
     const tx = currentDrizzleDb(db);
-    const drafted = await tx
-      .select({
-        id: documentDrafts.id,
-        generation: documentDrafts.generation,
-        threadId: documentDrafts.threadId,
-      })
-      .from(documentDrafts)
-      .where(
-        and(
-          eq(documentDrafts.documentId, input.documentId),
-          eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "active"),
-          eq(documentDrafts.branchId, input.branchId),
-        ),
-      );
-    const peers =
-      drafted.length === 0
-        ? []
-        : await tx
-            .select({
-              id: documentDrafts.id,
-              generation: documentDrafts.generation,
-              threadId: documentDrafts.threadId,
-            })
-            .from(documentDrafts)
-            .where(
-              inArray(
-                documentDrafts.upstreamDraftId,
-                drafted.map((documentDraft) => documentDraft.id),
-              ),
-            );
-    const drafts = [...peers, ...drafted];
-    await collabHook("retract.beforeLocks");
-    // A frame takes no lock but its draft row: holding the rows (id order, after the
-    // caller's Work and namespace order) makes a contribution that committed first visible
-    // to the recheck below, and makes one that comes later find its row deleted.
-    if (drafts.length > 0)
-      await tx
-        .select({ id: documentDrafts.id })
-        .from(documentDrafts)
-        .where(
-          inArray(
-            documentDrafts.id,
-            drafts.map((documentDraft) => documentDraft.id),
-          ),
-        )
-        .orderBy(asc(documentDrafts.id))
-        .for("update");
+    const selection = { documentIds: [input.documentId], branchId: input.branchId };
+    await testHook("retract.beforeLocks");
+    const drafts = await lockActiveDrafts(tx, selection);
     for (const documentDraft of drafts) {
       const [contribution] = await tx
         .select({ id: draftWriteJournal.id })
@@ -286,24 +233,11 @@ export function createDrizzleDraftStore(
           ),
         )
         .limit(1);
-      if (contribution) return { outcome: "stands" };
+      if (contribution) return "stands";
     }
-    await collabHook("retract.afterRecheck");
-    if (drafts.length > 0) {
-      await tx.delete(documentDrafts).where(
-        inArray(
-          documentDrafts.id,
-          drafts.map((documentDraft) => documentDraft.id),
-        ),
-      );
-    }
-    return {
-      outcome: "retracted",
-      deleted: drafts.map((documentDraft) => ({
-        draftId: documentDraft.id,
-        threadId: (documentDraft.threadId as ThreadId | null) ?? null,
-      })),
-    };
+    await testHook("retract.afterRecheck");
+    await deps.close.closeDrafts(tx, selection, "document_discarded");
+    return "retracted";
   }
 
   /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
@@ -312,7 +246,6 @@ export function createDrizzleDraftStore(
     branchId: BranchId;
   }): Promise<void> {
     if (!live) throw new Error("A created document's draft needs the collab live journal");
-    await live.lifecycle.ensureDocument(input.documentId);
     const snapshot = await live.journal.read(input.documentId);
     const liveDoc = createCollabYDoc({ gc: false });
     try {
@@ -370,6 +303,9 @@ export function createDrizzleDraftStore(
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
+      await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
+      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
+      await testHook("draft.peer.afterDocumentLock");
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId === input.branchId) {
         return { documentDraft: existing };
@@ -377,7 +313,8 @@ export function createDrizzleDraftStore(
       const workDraft = await activeDocumentDraft(input.documentId, input.branchId);
       if (!workDraft) throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       const upstream = await readDraftAt(currentDrizzleDb(db), workDraft.draftId);
-      if (!upstream) throw new Error(`Draft ${workDraft.draftId} does not exist`);
+      if (upstream?.documentDraft.status !== "active")
+        throw new DraftStaleUpdateError(workDraft.draftId);
       const upstreamDoc = materializeDraftRead(upstream);
       let seed: { state: Buffer; stateVector: Buffer };
       try {
@@ -386,7 +323,11 @@ export function createDrizzleDraftStore(
         upstreamDoc.destroy();
       }
       if (existing)
-        await bumpDraftRevisions(currentDrizzleDb(db), [existing.draftId], { status: "closed" });
+        await deps.close.closeDrafts(
+          currentDrizzleDb(db),
+          { draftIds: [existing.draftId] },
+          "edit_discarded",
+        );
       const [row] = await currentDrizzleDb(db)
         .insert(documentDrafts)
         .values({
@@ -454,37 +395,10 @@ export function createDrizzleDraftStore(
 
   async function closeThreadPeersOf(
     upstreamDraftIds: readonly string[],
-    cause: PeerRetirementCause,
-  ): Promise<RetiredDraft[]> {
-    if (upstreamDraftIds.length === 0) return [];
-    const tx = currentDrizzleDb(db);
-    const peers = await tx
-      .select({ id: documentDrafts.id })
-      .from(documentDrafts)
-      .where(
-        and(
-          inArray(documentDrafts.upstreamDraftId, [...upstreamDraftIds]),
-          eq(documentDrafts.kind, "thread_peer"),
-          eq(documentDrafts.status, "active"),
-        ),
-      );
-    const closed = await bumpDraftRevisions(
-      tx,
-      peers.map((row) => row.id),
-      { status: "closed" },
-    );
-    return closed.flatMap((documentDraft) =>
-      documentDraft.threadId
-        ? [
-            {
-              draftId: documentDraft.draftId,
-              documentId: documentDraft.documentId as DocumentId,
-              threadId: documentDraft.threadId as ThreadId,
-              cause,
-            },
-          ]
-        : [],
-    );
+    cause: Exclude<DraftCloseCause, object>,
+  ): Promise<void> {
+    if (upstreamDraftIds.length === 0) return;
+    await deps.close.closeDrafts(currentDrizzleDb(db), { upstreamDraftIds }, cause);
   }
 
   async function getDraftSnapshot(draftId: string): Promise<DraftSnapshot> {
@@ -523,7 +437,7 @@ export function createDrizzleDraftStore(
         });
         if (!finalized) throw new Error(`Draft ${input.draftId} append was not finalized`);
         await recordAppendReceipts(tx, input, finalized, committed.rowIds);
-        await collabHook("draft.append.beforeCommit");
+        await testHook("draft.append.beforeCommit");
         if (onAppendSequenced) {
           const { lockedAt, rowIds } = committed;
           deferUntilDrizzleCommit(() =>
@@ -667,7 +581,7 @@ export function createDrizzleDraftStore(
           outcome.generation - 1,
           operation.editDisposition,
         );
-      await collabHook("draft.rewrite.beforeCommit");
+      await testHook("draft.rewrite.beforeCommit");
       return {
         status: "committed",
         revision: outcome.revision,

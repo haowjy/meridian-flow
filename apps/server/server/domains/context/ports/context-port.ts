@@ -18,6 +18,7 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
+  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -303,6 +304,7 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 }
 
 export interface ContextDeleteOptions extends ContextWriteOptions {
+  removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
 }
@@ -330,7 +332,7 @@ export interface ContextPort {
   /** Read a text file by URI. `not_found` if it does not exist. */
   read(uri: string): Promise<Result<ContextReadResult, ContextError>>;
 
-  /** Write text content to a URI, creating parent folders as needed. */
+  /** Overwrite the document at a URI with text. `not_found` when none lives there: it never creates. */
   write(
     uri: string,
     content: string,
@@ -391,7 +393,10 @@ export interface ContextPort {
    * the document unless the document's draft already holds committed text. A draft-mode
    * port's `delete` never reverses a branch's create.
    */
-  retractCreate(uri: string, options: { documentId: string }): Promise<Result<void, ContextError>>;
+  retractCreate(
+    uri: string,
+    options: { documentId: string; cause: RetractionCause },
+  ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

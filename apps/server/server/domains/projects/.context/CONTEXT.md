@@ -76,8 +76,10 @@ writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 Lifecycle writes lock the Work row and publish `{ workId }` through
 `FileAccessChanges` in the same transaction so Scratch, Uploads, and draft
 rooms reconnect at their new access level. Work context mutations use that
-same lifecycle lock. Archive, unarchive, delete and restore lock no draft row
-and bump no draft revision. Collab's append keeps the Work predicate in its
+same lifecycle lock. Archive, unarchive and restore lock no draft row
+and bump no draft revision. Delete removes Work-owned documents through the tree
+removal kernel, closing their drafts permanently; restore revives documents,
+not those closed drafts. Collab's append keeps the Work predicate in its
 row `UPDATE` and rechecks the lifecycle in a fresh read once it holds the row;
 every other draft write takes the Work through the boundary below and so orders
 itself against the transition. The window that leaves: a writer key whose

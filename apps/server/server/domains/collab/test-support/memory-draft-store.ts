@@ -27,6 +27,7 @@ export function testDraftRow(
     workId: null,
     threadId: null,
     status: "active",
+    closedCause: null,
     generation: 1,
     revision: 0,
     checkpointRevision: 0,

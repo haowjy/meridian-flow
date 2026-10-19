@@ -206,7 +206,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const closeThenSave = await interleave(
         db,
         () => scenario.discard(closeFirst, "all"),
-        "discard.beforeRetirement",
+        "draft.beforeRetirement",
         () => waitingSave.save(),
         { waitMs: 300 },
       );

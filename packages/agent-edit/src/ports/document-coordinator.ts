@@ -1,7 +1,12 @@
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
-export type DiscardedWriteReason = Extract<StagedWriteRejectionReason, `discarded_${string}`>;
+/** Why a retired thread peer's staged writes did not land: a Discard, or the document's removal. */
+export type RetiredWriteReason = Exclude<
+  StagedWriteRejectionReason,
+  "discard" | "inverse" | "integration"
+>;
 
 /**
  * Where a reply's edit scope began writing into a document's room: the room copy's
@@ -15,7 +20,9 @@ export interface StagedCut {
 
 /**
  * Why a staged write did not land. `discarded_*` come from a Discard that retired the thread's peer:
- * the whole branch, this created document, or this edited document's text.
+ * the whole branch, this created document, or this edited document's text. `removed` is the
+ * document's removal, with its record; null when a removal closed the draft but the document
+ * stands again (a Work Restore).
  */
 export type StagedWriteRejectionReason =
   | "discard"
@@ -23,7 +30,8 @@ export type StagedWriteRejectionReason =
   | "integration"
   | "discarded_draft"
   | "discarded_document"
-  | "discarded_edit";
+  | "discarded_edit"
+  | { removed: DocumentRemovalRecord | null };
 
 /** One edit scope's staged entries for one document, with the cut the scope began at. */
 export interface StagedRoomEntries {
@@ -57,7 +65,7 @@ export interface SaveCut {
 
 /** A save of one scope's entries: the kept and refused ones, and where they went. */
 export interface StagedWriteSaveResult extends StagedReconcile {
-  /** The room the rows append into; null records no frontier (a document this save creates). */
+  /** The room the rows append into; null records no frontier when the host cannot name it. */
   room: string | null;
   /**
    * The host's prepared write, always present. `no-effect` says there is nothing to persist,
@@ -107,7 +115,7 @@ export interface StagedWriteCommit {
  */
 export class DocumentAccessLostError extends Error {
   constructor(
-    readonly reason: DiscardedWriteReason,
+    readonly reason: RetiredWriteReason,
     options?: ErrorOptions,
   ) {
     super(`Document access lost: ${reason}`, options);
@@ -117,11 +125,18 @@ export class DocumentAccessLostError extends Error {
 
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
+  /** The document's removal record, when it is missing because it was removed. */
+  readonly removal?: DocumentRemovalRecord;
 
-  constructor(docId: string, message = `Document not found: ${docId}`) {
+  constructor(
+    docId: string,
+    message = `Document not found: ${docId}`,
+    options: { removal?: DocumentRemovalRecord } = {},
+  ) {
     super(message);
     this.name = "DocumentNotFoundError";
     this.docId = docId;
+    if (options.removal) this.removal = options.removal;
   }
 }
 

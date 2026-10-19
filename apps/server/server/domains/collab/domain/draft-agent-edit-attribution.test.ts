@@ -38,6 +38,7 @@ function fixture(existingUpstream?: Y.Doc) {
   const snapshot = (draftId: string): DraftSnapshot =>
     testDraftRow({ draftId, documentId, upstreamDraftId: draftId === "peer" ? "draft" : null });
   const coordinator = createDraftAgentEditCoordinator({
+    removals: { lookup: async () => new Map() },
     threadId,
     draftCoordinator: createDraftCoordinator({
       onAppendCommitted: () => {},

@@ -31,6 +31,7 @@ import {
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
+import { createDraftClose } from "../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
 import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
@@ -452,6 +453,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog,
       });
       const drafts = createDrizzleDraftStore(db, {
+        close: createDraftClose(),
         workProjection: projection,
         branches: createDrizzleBranchStore(db),
       });

@@ -9,22 +9,12 @@
  * advisory locks. A branch's create never seeds live content: a new text row gets an empty
  * live Yjs document, and its text lives in the document's draft.
  */
-import type {
-  BranchId,
-  ContextSourceId,
-  DocumentId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-} from "@meridian/contracts";
+import type { BranchId, ContextSourceId, DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { isUuid } from "../../../shared/uuid.js";
+import { type TestHookPoint, testHook } from "../../../shared/test-hooks.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
-import { branchMayHold, loadProjectHolder } from "./branch-ownership.js";
 import { recordCreated } from "./branch-tree-store.js";
-import { tombstoneUnused } from "./end-use.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
 import type {
   BinaryNode,
@@ -32,12 +22,10 @@ import type {
   CreateFault,
   LiveClaim,
   LiveCreateCandidate,
-  RevealExpectation,
   TrackedNode,
 } from "./hidden-node-types.js";
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
 import { type PlaceResult, place, walkFolders } from "./placement.js";
-import { type TreeHookPoint, treeHook } from "./test-hooks.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
 import {
   type DocumentSlot,
@@ -67,12 +55,14 @@ export async function createInBranch(
     node: TrackedNode | BinaryNode;
     /** The chat that made the create, recorded for the review row (§3.3). */
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
-    /** Empty live Yjs for a new text row (never seeded). */
-    ensureEmptyContent(documentId: DocumentId): Promise<void>;
+    /** A new text row's authority, empty, in this transaction (never seeded). */
+    initializeEmptyContent(documentId: DocumentId): Promise<void>;
+    /** A joined text row whose authority is missing, repaired from its stored projection. */
+    repairContent(documentId: DocumentId): Promise<void>;
     /** The branch's draft of a text document, seeded from its empty live document. */
     ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   },
 ): Promise<Result<BranchCreateResult, CreateFault>> {
   const tree = createTreeReader(db);
@@ -132,7 +122,9 @@ export async function createInBranch(
       ...(id ? { id } : {}),
     });
     if (!documentId) throw new Error(`Hidden document ${slot.name} was not inserted`);
-    if (input.node.kind === "tracked") await input.ensureEmptyContent(documentId);
+    if (input.node.kind === "tracked") await input.initializeEmptyContent(documentId);
+  } else if (joined) {
+    await input.repairContent(documentId);
   }
 
   await recordCreated(db, {
@@ -227,7 +219,7 @@ export async function createLive(
     claim: LiveClaim;
     insert: LiveInsert;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
   const { claim } = input;
@@ -265,7 +257,6 @@ export async function createLive(
           name: input.slot.name,
           extension: input.slot.extension,
         },
-        mode: "reveal",
       },
     ],
   });
@@ -293,8 +284,8 @@ async function pickHiddenCandidate(
   slot: DocumentSlot,
   options: {
     excludeBranchId?: BranchId;
-    lock?: TreeHookPoint;
-    repair?: Pick<HiddenNodeRepair, "report">;
+    lock?: TestHookPoint;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   } = {},
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
   const filter = options.excludeBranchId ? { excludeBranchId: options.excludeBranchId } : {};
@@ -306,14 +297,16 @@ async function pickHiddenCandidate(
   if (!options.lock) return firstUsed(candidates);
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await treeHook(options.lock);
+  await testHook(options.lock);
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ...filter, ids });
-  const repaired = await tombstoneUnused(
-    db,
-    valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
-    { keepFolders: true },
-  );
-  options.repair?.report(repaired, "create");
+  const unused = valid
+    .filter((candidate) => candidate.activeUses === 0)
+    .map((candidate) => candidate.id);
+  if (unused.length) {
+    if (!options.repair) throw new Error("Candidate repair requires the removal protocol");
+    const repaired = await options.repair.tombstoneUnused(unused, { keepFolders: true });
+    options.repair.report(repaired, "create");
+  }
   return firstUsed(valid);
 }

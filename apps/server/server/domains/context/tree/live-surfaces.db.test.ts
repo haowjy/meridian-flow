@@ -106,7 +106,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       ];
       await db
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(inArray(documents.id, tombstones));
       const branch = await scenario.branchOf(ascension);
       // A create moved elsewhere: its row is its place, so every surface spells the row.

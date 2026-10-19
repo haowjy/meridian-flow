@@ -62,7 +62,13 @@ it.each([
       hocuspocus: () => server?.hocuspocus ?? null,
     } as never);
     const gateway = createHocuspocus(
-      { documentSync: { ...persistence, bindHocuspocus: () => undefined } } as never,
+      {
+        documentSync: {
+          ...persistence,
+          bindHocuspocus: () => undefined,
+          roomRemoval: async () => null,
+        },
+      } as never,
       {} as never,
     );
     const onConnect = gateway.configuration.onConnect;

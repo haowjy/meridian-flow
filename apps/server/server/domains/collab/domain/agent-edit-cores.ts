@@ -1,14 +1,15 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
-  DiscardedWriteReason,
   ReadCommand,
   ResponseCommitSuccessResult,
+  RetiredWriteReason,
   StagedWriteRejectionReason,
   WriteCommand,
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
@@ -30,8 +31,17 @@ export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?:
 export type RefusedResponseDocument =
   | {
       documentId: DocumentId;
-      /** The policy's refusal under the save's locks; its copy is the tool's to write. */
+      /** The policy's permission refusal under the save's locks; its copy is the tool's to write. */
       denial: FileAccessDenied;
+    }
+  | {
+      documentId: DocumentId;
+      /**
+       * The document is not found, or its draft closed because it was removed: the writes are
+       * dropped with the record's copy. Null when there is no record: the document went with
+       * its source or Work, or stands again.
+       */
+      removed: DocumentRemovalRecord | null;
     }
   | {
       documentId: DocumentId;
@@ -42,10 +52,7 @@ export type RefusedResponseDocument =
       reason: StagedWriteRejectionReason;
     };
 
-/**
- * A model call's outcome. An undo or redo that reversed some of its writes but
- * was refused for others names the refused ones; the tool writes the copy.
- */
+/** An inverse may reverse some writes and name the policy refusals for the rest. */
 export type RoutedWriteOutcome = WriteOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
@@ -90,7 +97,7 @@ export type ThreadPeerAgentEditCore = Omit<
    */
   retireThreadPeers(
     documentId: string,
-    peers: readonly { threadId: string; peerDraftId: string; reason: DiscardedWriteReason }[],
+    peers: readonly { threadId: string; peerDraftId: string; reason: RetiredWriteReason }[],
   ): Promise<void>;
   commitResponse(
     responseId: string,

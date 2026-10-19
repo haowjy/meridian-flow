@@ -25,4 +25,16 @@ it("shows why an item was held or refused, and never nothing for an unknown code
   expect(text({ code: "apply-refused", serverCode: "brand_new_code" })).toMatch(
     /The server couldn.+t do that/,
   );
+  // A removed document can't take the draft: the record says how, and nothing offers a retry.
+  const deleted = text({
+    code: "apply-refused",
+    serverCode: "deleted_live",
+    removal: {
+      reason: "deleted",
+      actor: { kind: "user", userId: "u1", displayName: "Ana" },
+      time: "",
+    },
+  });
+  expect(deleted).toMatch(/Ana deleted this document, so this draft can.+t be applied\./);
+  expect(deleted).not.toMatch(/apply again|Couldn.+t apply/);
 });

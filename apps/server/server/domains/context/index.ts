@@ -107,6 +107,10 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type {
+  DocumentRemoval,
+  DocumentRemovals,
+} from "./ports/document-removal.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
 export {
   type AheadRegistration,
@@ -146,6 +150,11 @@ export {
   scratchOwnerFor,
 } from "./scratch-owner.js";
 export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
+export {
+  createDocumentRemoval,
+  createRemovalRecords,
+  readRemovalRecords,
+} from "./tree/removal.js";
 export * from "./tree/tree-view.js";
 export {
   createInMemoryUnifiedContextPortFactory,

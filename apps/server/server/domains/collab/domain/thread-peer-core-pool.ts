@@ -1,7 +1,6 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
   type AgentEditCore,
-  type DiscardedWriteReason,
   modelResult,
   parseDocumentAddress,
   type ReadCommand,
@@ -9,7 +8,8 @@ import {
   type ResponseCommitAttempt,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
-  rejectedWriteExplanation,
+  type RetiredWriteReason,
+  rejectedWriteResult,
   splitDocumentFile,
   type WriteCommand,
   type WriteContext,
@@ -17,6 +17,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
@@ -76,6 +77,7 @@ function isSaveAttemptMiss(cause: unknown): boolean {
 export function createThreadPeerCorePool(input: {
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
   drafts: Pick<ApplicationDraftStore, "getDraft" | "resolveWorkDraftForThread">;
+  removals: DocumentRemovals;
   fences: ReplySaveFences;
   liveUtilityCore: LiveAgentEditCore;
   /**
@@ -385,6 +387,7 @@ export function createThreadPeerCorePool(input: {
           input,
           cause,
           view.kind === "branch" ? view.branchId : undefined,
+          documentId,
         );
         // The reply's earlier staged writes stay: the retirement refuses them with their own receipts.
         if (!reason) throw cause;
@@ -508,7 +511,7 @@ export function createThreadPeerCorePool(input: {
     peers: readonly {
       threadId: string;
       peerDraftId: string;
-      reason: import("@meridian/agent-edit/integration").DiscardedWriteReason;
+      reason: import("@meridian/agent-edit/integration").RetiredWriteReason;
     }[],
   ): Promise<void> {
     const errors: unknown[] = [];
@@ -771,9 +774,8 @@ function mergeRollbackResults(
 }
 
 /** A write the Work's Discard retired before it could be staged; the copy a save receipt uses. */
-function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): WriteOutcome {
+function discardedWrite(command: WriteCommand, reason: RetiredWriteReason): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
-  const message = `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`;
   return {
     status: "invalid_write",
     isError: true,
@@ -782,7 +784,7 @@ function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): Wr
     result: modelResult({
       command: command.command,
       status: "invalid_write",
-      payload: { path, message, rejected: reason },
+      payload: { path, ...rejectedWriteResult(reason).model },
     }),
   };
 }
