@@ -54,16 +54,17 @@ export interface PromptCacheDescriptor {
   ttlMs: number | null;
 }
 
+/** Model-specific default trigger, before Agent priority and runtime clamps. */
+export interface ModelCompaction {
+  trigger: { tokens: number; fraction?: never } | { fraction: number; tokens?: never };
+}
+
 /**
  * Static model metadata registered per provider. `provider` is filled in by
  * buildProviderRegistry from the ProviderConfig.id, not from the model's own
  * definition. `hostedTools` lists server-side tools (web_search, code_execution,
  * etc.) that the provider executes without Meridian involvement.
  */
-export interface ModelCompaction {
-  trigger: { tokens: number; fraction?: never } | { fraction: number; tokens?: never };
-}
-
 export interface ModelInfo {
   /** Default compaction point; explicit Agent limits take priority. */
   compaction?: ModelCompaction;

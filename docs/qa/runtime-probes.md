@@ -1001,12 +1001,29 @@ restart smoke check.
 - **Summary recovery:** return text plus calls on warm and rolling paths;
   expect text kept and no tool execution. On the warm path return only two
   calls with reasoning, then text. Expect the retry to preserve its original
-  request, append the exact assistant content, and one tool message with an
-  error result for each call saying "Tools are unavailable during compaction.
-  Write the summary now, as text." Both paid response rows settle on C.
+  request and exact assistant content, then append one non-error tool-result
+  message per deduplicated call id saying "Tools are unavailable while the summary
+  is written. Write the summary now, as text." Check the Anthropic, OpenAI Responses
+  and compatible request mappers each send an answer for every id. Both paid
+  response rows settle on C.
   Repeat with a second call-only response: expect `tool_use` and both rows
   settled. Rolling call-only output fails `tool_use` with one row. Stop
   during the retry settles both attempted rows on cancelled C.
+- **Summary fit:** compose the complete branch (instruction, changed documents,
+  writer directions and retained-scope suffix) before measuring it with the thread
+  tokenizer, no carried baseline. A warm payload exactly at usable input `U` may
+  branch; one above `U` rolls without a paid branch. After tool-only output,
+  measure the exact assistant replay plus every result notice before retrying.
+  Make the retry exceed `U`: the next request must be tool-less rolling, not the
+  oversized retry. The paid branch row remains alongside every rolling row on
+  completion, failure and Stop. Repeat on handoff S, preserving its unanswered
+  writer instruction and settlement owner. A provider rejection of a measured-fit
+  branch remains final; it is not a general fallback.
+- **Cache evidence:** stock mock has cache `none` and cannot script cache usage.
+  An owned temporary automatic-cache descriptor can prove branch/retry selection,
+  never paid cache reuse or billing. Remove it before committing. For real cache
+  comparisons, exclude an ordinary image break or first skill-tool join between
+  compared requests; notes/summary introduce no additional prefix mutations.
 - **Browser:** the reminder never draws a chat row. A mid-reply reminder
   still reads as one reply, with the compaction divider and continued text
   intact. Capture screenshots before and after compaction.
