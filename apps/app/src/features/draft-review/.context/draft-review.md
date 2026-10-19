@@ -96,6 +96,10 @@ or Work notice owns a separate manager and pool lease, retains the runtime,
 and installs `recordRestorations` so Undo writes links in its own transaction.
 Undo restores a cached list item before server discovery catches up. At most
 the surface's latest Discard history is offered; another action ends it.
+The notice belongs to that exact session binding. Retiring the binding or
+closing the draft ends its notice and destroys its history; replacement
+documents never inherit the manager. The surface's end callback removes
+the notice when the owner retires it.
 
 Created-document removal and Work Discard all use the server through the
 same account owner. Their optimistic visibility is lifecycle state, never
