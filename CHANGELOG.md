@@ -59,7 +59,7 @@
 
 - Preserve typed eligibility failures during initial request preparation, including terminal diagnostics and child reports.
 ### Added
-- Incomplete keep-open ranges stay unknown rather than being peeled into single-block selections.
+- Keep-open selectors handle surrounding decoration and separator whitespace without repairing incomplete ranges.
 - Keep-open lines can select a heading, block or range after compaction, with whole-read fallback for unreadable selections and full tail copies preserved after partial re-shows.
 
 - Chat address inputs accept `$THREAD` for their own notes and `$PARENT` for their originating chat’s notes. Tool results, AI-written links and returned artifacts keep canonical addresses; variables outside chat scope fail instead of becoming filenames.

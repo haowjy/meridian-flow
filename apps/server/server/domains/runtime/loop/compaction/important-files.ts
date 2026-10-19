@@ -137,11 +137,12 @@ function resolveListedUri(
     const ref = byUri.get(layer);
     if (ref) return { documentId: ref.documentId, uri: layer };
   }
-  for (const layer of layers) {
-    // Decoration peeling must not turn an incomplete range into a scalar selection.
-    if (/\s+in:\s*\S*\.\.$/u.test(layer)) return undefined;
+  // Decoration peeling must not turn an incomplete range into a scalar selection.
+  if (layers.some((layer) => /\s+in:\s*\S*\.\.$/u.test(layer))) return undefined;
+  // Unlike exact filenames, selectors cannot contain the surrounding prose decoration.
+  for (const layer of layers.reverse()) {
     const fragment = layer.match(/^(.+)#([^#\s]+)$/u);
-    if (fragment && !/\s+in:/u.test(layer)) {
+    if (fragment) {
       const ref = byUri.get(fragment[1] as string);
       if (ref)
         return {
@@ -150,8 +151,8 @@ function resolveListedUri(
           selector: { fragment: fragment[2] as string },
         };
     }
-    const scoped = layer.match(/^(.+)\s+in:\s*(\S+)$/u);
-    if (!scoped || layer.includes("#")) continue;
+    const scoped = layer.match(/^(.+?)\s+in:\s*(\S+)$/u);
+    if (!scoped) continue;
     const ref = byUri.get(scoped[1] as string);
     if (!ref) continue;
     const parts = (scoped[2] as string).split("..");
