@@ -55,6 +55,10 @@ provider cache marks; automatic models receive no marks and `none` models predic
 cold. A nullable TTL means unknown, not infinite. Cache-write pricing follows
 the descriptor tier. `inputTierTokens`, when present, must be positive and below
 the context window; the runtime uses it for compaction planning.
+Optional `compaction.trigger` is exactly one positive finite `tokens` value or
+finite `fraction` in `(0, 1]` of the usable input window. It replaces only the
+default formula, not explicit Agent limits or the usable-window/400k clamps.
+The registry validates and carries it into `ModelInfo`; no model opts in by default.
 
 Every model declares a tokenizer family with no fallback; runtime compaction
 uses it for CJK estimates. Output limits are provider defaults unless a request

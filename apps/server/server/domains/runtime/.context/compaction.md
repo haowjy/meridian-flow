@@ -136,8 +136,10 @@ the blocks it summarizes are intersected with the kept turns.
 ## Trigger and estimator
 
 `request-preparation.ts` measures the assembled request against raw history.
-Without an explicit Agent limit, the default trigger is 90% of the lesser of
-the model's input pricing tier and usable window, capped at 400,000 tokens.
+Without an explicit Agent limit, optional registry `compaction.trigger` supplies
+either `{ tokens }` or `{ fraction }` of the usable window. Without that override,
+the default remains 90% of the lesser of the model's input pricing tier and usable
+window. All forms are clamped to the usable window and 400,000 tokens.
 Explicit token/percentage limits are not scaled. The estimator excludes
 elision payloads from C's header.
 

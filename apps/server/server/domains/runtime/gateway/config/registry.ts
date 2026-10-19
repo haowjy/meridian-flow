@@ -9,6 +9,7 @@ import type {
   BuiltinAdapter,
   Capability,
   GatewayConfig,
+  ModelCompaction,
   ModelInfo,
   PromptCacheDescriptor,
   ProviderConfig,
@@ -31,6 +32,7 @@ export interface ModelPricing {
 }
 
 export interface RegisteredModel {
+  compaction?: ModelCompaction;
   id: string;
   tokenizer: TokenizerFamily;
   displayName: string;
@@ -360,9 +362,30 @@ export const MODEL_REGISTRY: ModelRegistry = {
 const FIVE_MINUTES_MS = 5 * 60 * 1_000;
 const ONE_HOUR_MS = 60 * 60 * 1_000;
 
-/** Reject invalid explicit cache TTLs as soon as a registry is loaded. */
+/** Validate model limits, trigger overrides and explicit cache TTLs at registry load. */
 export function validateModelRegistry(registry: ModelRegistry): void {
   for (const model of registry.providers.flatMap((provider) => provider.models)) {
+    const trigger = model.compaction?.trigger;
+    if (model.compaction !== undefined) {
+      if (
+        !trigger ||
+        typeof trigger !== "object" ||
+        Object.keys(trigger).length !== 1 ||
+        !("tokens" in trigger
+          ? typeof trigger.tokens === "number" &&
+            Number.isFinite(trigger.tokens) &&
+            trigger.tokens > 0
+          : "fraction" in trigger &&
+            typeof trigger.fraction === "number" &&
+            Number.isFinite(trigger.fraction) &&
+            trigger.fraction > 0 &&
+            trigger.fraction <= 1)
+      ) {
+        throw new Error(
+          `Compaction trigger for ${model.id} must specify positive tokens or a fraction in (0, 1]`,
+        );
+      }
+    }
     const tier = model.pricing.inputTierTokens;
     if (
       tier !== undefined &&
@@ -398,6 +421,7 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     contextWindow: model.contextWindow,
     inputTierTokens: model.pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
+    compaction: model.compaction,
     promptCache: model.promptCache,
     capabilities: new Set(model.capabilities),
     hostedTools: model.hostedTools ? new Set(model.hostedTools) : undefined,

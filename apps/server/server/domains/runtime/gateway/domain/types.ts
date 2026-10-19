@@ -60,7 +60,13 @@ export interface PromptCacheDescriptor {
  * definition. `hostedTools` lists server-side tools (web_search, code_execution,
  * etc.) that the provider executes without Meridian involvement.
  */
+export interface ModelCompaction {
+  trigger: { tokens: number; fraction?: never } | { fraction: number; tokens?: never };
+}
+
 export interface ModelInfo {
+  /** Default compaction point; explicit Agent limits take priority. */
+  compaction?: ModelCompaction;
   /** Whole-request input repricing threshold, if the model has one. */
   inputTierTokens?: number;
   /** Underlying tokenizer family; OpenRouter models declare their upstream family. */

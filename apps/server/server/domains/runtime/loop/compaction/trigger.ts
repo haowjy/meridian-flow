@@ -1,8 +1,11 @@
 /** Resolves an Agent's autocompaction policy against the model's usable input window. */
 
+import type { ModelCompaction } from "../../gateway/index.js";
+
 export const FLOW_ABSOLUTE_CEILING = 400_000;
 
 export interface ResolveCompactionTriggerInput {
+  modelTrigger?: ModelCompaction["trigger"];
   autocompact?: number | null;
   autocompact_pct?: number | null;
   inputTierTokens?: number;
@@ -40,9 +43,12 @@ export function resolveCompactionTrigger(input: ResolveCompactionTriggerInput): 
     agentTokens ??
     (percent != null
       ? Math.floor((Math.max(0, percent) / 100) * usableWindowTokens)
-      : Math.floor(
-          0.9 * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
-        ));
+      : (input.modelTrigger?.tokens ??
+        Math.floor(
+          input.modelTrigger?.fraction !== undefined
+            ? input.modelTrigger.fraction * usableWindowTokens
+            : 0.9 * Math.min(input.inputTierTokens ?? usableWindowTokens, usableWindowTokens),
+        )));
   return {
     thresholdTokens: Math.max(0, Math.min(configured, usableWindowTokens, FLOW_ABSOLUTE_CEILING)),
     usableWindowTokens,

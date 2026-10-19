@@ -37,6 +37,8 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Allow per-model compaction token or usable-window fraction defaults, preserving explicit Agent limits and existing caps.
+
 - Give non-executed notes-step calls one neutral tool row, including report and normally hidden tools.
 
 - Render staged compaction reminders from prepared request inputs without resolving images or preparing the prompt twice.
