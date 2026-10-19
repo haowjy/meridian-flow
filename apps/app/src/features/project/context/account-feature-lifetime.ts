@@ -1,6 +1,8 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
+import type { DocumentSession } from "@/core/editor/document-session";
+import type { RetainedLiveDocumentReference } from "@/core/editor/document-session-registry";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { createLinkSettlements } from "@/features/links/link-settlements";
@@ -25,6 +27,8 @@ export class AccountFeatureLifetime {
   /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
+  /** Each removed live room's follow of its removal answer; stopped on close. */
+  private readonly removedRooms = new Set<() => void>();
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
@@ -50,22 +54,7 @@ export class AccountFeatureLifetime {
       sessions: this.registry,
       notices: this.notices,
     });
-    // The one reaction to a live room's 4208, held by an editor or not: ask
-    // availability now. `deleted` closes its tabs (an editor still holding
-    // the room reads the same answer from the record cache); `available` means
-    // a restore won the race, so the room reconnects in place, once per
-    // session so a server that keeps closing it can't make it loop.
-    const restarted = new WeakSet<object>();
-    this.registry.observeRemovedRooms((session, room) => {
-      void this.availability
-        .resolveForOpen(room.projectId, room.documentId)
-        .then((resolution) => {
-          if (resolution.kind !== "available" || restarted.has(session)) return;
-          restarted.add(session);
-          return this.registry.restartRemovedRoom(session);
-        })
-        .catch(() => undefined);
-    });
+    this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
     this.resources =
       typeof window === "undefined"
         ? null
@@ -89,6 +78,45 @@ export class AccountFeatureLifetime {
     this.featureLease = this.removal.createLifetimeLease();
   }
 
+  /**
+   * The one reaction to a live room's 4208, held by an editor or not: the
+   * record cache asks again. `removed` closes its tabs (an editor still holding
+   * the room reads the same answer); `available` means a restore won the race,
+   * so the room reconnects in place. Each close restarts at most once, on an
+   * answer learned after it, so a server that keeps closing the room costs one
+   * lookup per close and never loops on its own. The follow ends on `removed`,
+   * `lost`, a restart or the session's end.
+   */
+  private followRemovedRoom(session: DocumentSession, room: RetainedLiveDocumentReference): void {
+    if (this.state !== "open") return;
+    this.availability.roomRemoved(room.projectId, room.documentId);
+    const record = this.availability.removalRecord(room.projectId, room.documentId);
+    let stopped = false;
+    let unsubscribeRecord: () => void = () => undefined;
+    let unsubscribeSession: () => void = () => undefined;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      unsubscribeRecord();
+      unsubscribeSession();
+      this.removedRooms.delete(stop);
+    };
+    this.removedRooms.add(stop);
+    const answered = () => {
+      const answer = record.get();
+      if (stopped || !answer || answer.kind === "unresolved") return;
+      stop();
+      if (answer.kind === "available")
+        void this.registry.restartRemovedRoom(session).catch(() => undefined);
+    };
+    unsubscribeRecord = record.subscribe(answered);
+    unsubscribeSession = session.subscribe((snapshot) => {
+      if (snapshot.status === "destroyed" || session.resetDisposition !== "removed") stop();
+    });
+    if (stopped) unsubscribeSession();
+    answered();
+  }
+
   resumeFeatureLease(): void {
     if (this.state === "open") this.featureLease.resume();
   }
@@ -100,6 +128,7 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
+    for (const stop of [...this.removedRooms]) stop();
     this.renameOperations?.dispose();
     this.continuity?.dispose();
     this.resources?.beginClose();

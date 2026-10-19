@@ -5,6 +5,7 @@
  * landing's top margin, the dock's header beside "Recent", or the phone's
  * notice row.
  */
+import { i18n } from "@lingui/core";
 import { msg, plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
@@ -15,7 +16,8 @@ import { cn } from "@/lib/utils";
 import { useOptionalRemovedNotices } from "./account-feature-context";
 import type { NoticeSurface, RemovedNoticeSnapshot, ShownRemoval } from "./removed-notice-store";
 
-type Removal = Readonly<{ title: string | null; record: DocumentRemovalRecord | null }>;
+/** One removed document as a sentence names it; a null title reads "this document". */
+export type Removal = Readonly<{ title: string | null; record: DocumentRemovalRecord | null }>;
 
 /**
  * How one removal reads. Projects have one owner, so a person who removed a
@@ -71,17 +73,20 @@ function oneSentence(title: string, voice: RemovalVoice): string {
   }
 }
 
-/** Several documents closed together read as one count; mixed causes read as "removed". */
-function manySentence(count: number, voice: RemovalVoice | null): string {
+/**
+ * Several documents closed together read as one count with their names in
+ * parentheses; mixed causes read as "removed".
+ */
+function manySentence(count: number, names: string, voice: RemovalVoice | null): string {
   if (voice?.kind === "you")
     return voice.reason === "discarded"
-      ? t`You discarded ${count} documents from the draft elsewhere.`
-      : t`You deleted ${count} documents elsewhere.`;
+      ? t`You discarded ${count} documents from the draft elsewhere (${names}).`
+      : t`You deleted ${count} documents elsewhere (${names}).`;
   if (voice?.kind === "anonymous")
     return voice.reason === "discarded"
-      ? t`${count} documents were discarded from the draft.`
-      : t`${count} documents were deleted.`;
-  return t`${count} documents were removed.`;
+      ? t`${count} documents were discarded from the draft (${names}).`
+      : t`${count} documents were deleted (${names}).`;
+  return t`${count} documents were removed (${names}).`;
 }
 
 /** The one sentence for removed documents, wherever it is said; a null title reads "this document". */
@@ -93,8 +98,12 @@ export function removalSentence(documents: readonly Removal[]): string {
     const title = documents[0]?.title ?? null;
     return title === null ? thisDocumentSentence(first) : oneSentence(title, first);
   }
+  const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+    documents.map((document) => document.title ?? t`Untitled`),
+  );
   return manySentence(
     documents.length,
+    names,
     voices.every((voice) => sameVoice(voice, first)) ? first : null,
   );
 }
@@ -209,13 +218,6 @@ export function useRemovedNoticeLifetime(
 
 const trimSlashes = (path: string) => path.replace(/^\/+|\/+$/g, "");
 
-function useNoticeNames(documents: readonly ShownRemoval[]): string {
-  const { i18n } = useLingui();
-  return new Intl.ListFormat(i18n.locale, { type: "conjunction" }).format(
-    documents.map((document) => document.title),
-  );
-}
-
 /** The notice's dismiss control, shared by every placement. */
 function DismissNotice({
   projectId,
@@ -243,7 +245,7 @@ function DismissNotice({
  * strip, or the dock's header beside "Recent"), inside a `RemovedNoticeSlot`.
  * The full sentence shows when the slot has room and the short one
  * ("1 document deleted") otherwise; the tooltip and accessible name always
- * carry the full sentence and every name.
+ * carry the full sentence, every name included.
  */
 export function RemovedDocumentChip({
   projectId,
@@ -266,18 +268,17 @@ function Chip({
   surface: NoticeSurface;
   documents: readonly ShownRemoval[];
 }) {
-  const names = useNoticeNames(documents);
+  useLingui();
   const sentence = removalSentence(documents);
-  const full = documents.length > 1 ? `${sentence} ${names}` : sentence;
   return (
     <div
       role="status"
-      title={full}
+      title={sentence}
       data-removed-document-notice
       className="my-1.5 ml-1 flex min-w-0 max-w-[28rem] items-center gap-1.5 rounded-md border border-border border-dashed pr-0.5 pl-2 text-muted-foreground text-xs"
     >
       <Info aria-hidden className="size-3.5 shrink-0" />
-      <span className="sr-only">{full}</span>
+      <span className="sr-only">{sentence}</span>
       <span aria-hidden className="min-w-0 truncate @max-[13rem]:hidden">
         {sentence}
       </span>
@@ -327,16 +328,16 @@ function LandingNotice({
   documents: readonly ShownRemoval[];
   className?: string;
 }) {
-  const names = useNoticeNames(documents);
+  useLingui();
+  const sentence = removalSentence(documents);
   return (
     <div
       role="status"
       data-removed-document-notice
       className={cn("flex items-center gap-2 text-muted-foreground text-sm", className)}
     >
-      <p className="min-w-0 truncate" title={names}>
-        {removalSentence(documents)}
-        {documents.length > 1 ? <span className="text-ink-subtle"> {names}</span> : null}
+      <p className="min-w-0 truncate" title={sentence}>
+        {sentence}
       </p>
       <DismissNotice projectId={projectId} surface="editor" className="size-6 shrink-0" />
     </div>
@@ -356,13 +357,10 @@ function PhoneNotice({
   projectId: string;
   documents: readonly ShownRemoval[];
 }) {
-  const names = useNoticeNames(documents);
+  useLingui();
   return (
     <div role="status" data-removed-document-notice className="flex items-start gap-2 py-1.5">
-      <p className="min-w-0 flex-1 py-1 text-foreground text-sm">
-        {removalSentence(documents)}
-        {documents.length > 1 ? <span className="text-muted-foreground"> {names}</span> : null}
-      </p>
+      <p className="min-w-0 flex-1 py-1 text-foreground text-sm">{removalSentence(documents)}</p>
       <DismissNotice
         projectId={projectId}
         surface="editor"
