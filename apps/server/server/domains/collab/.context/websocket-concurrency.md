@@ -40,6 +40,12 @@ seen, which its state vector and snapshot leave out. The
 pre-lock check against the room is only a fast refusal for reconnect replays;
 the room lags admissions still in their transaction.
 
+A removed document answers `4208 document-deleted` (terminal) wherever the
+gateway refuses: a failed grant at `beforeSync`, `DocumentRemovedError` from
+live admission, a draft frame's refusal, and a draft room whose draft closed
+because its document was removed. The lookup (`roomRemoval`) runs only on
+those refusal paths; other refusals keep their codes (`4409` for access).
+
 A failed live writer admission closes the raw CrossWS peer with retryable code
 `1013 writer-journal-admission-failed`. Do not rely on a thrown Hocuspocus
 error to preserve that transport code.

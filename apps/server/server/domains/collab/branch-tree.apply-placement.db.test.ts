@@ -85,7 +85,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await s.applyAll(ascension), "one command, one Apply").toEqual({
       status: "completed",
       branchId: reviewed.branchId,
-      items: [{ itemKey: reviewed.itemKey, status: "applied", notes: [] }],
+      items: [{ itemKey: reviewed.itemKey, status: "applied" }],
     });
     const live = s.view("live");
     expect.soft(await live.idAt("characters/kael-fix"), "the rename stands").toBe(kael);
@@ -106,7 +106,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     renameLate();
     expect.soft(raced, "the raced rename stands").toMatchObject({
       httpStatus: 200,
-      body: { item: { status: "applied", notes: [] } },
+      body: { item: { status: "applied" } },
     });
     expect.soft(await live.idAt("notes/renamed")).toBe(notes);
     expect.soft(await live.idAt("notes/original")).toBeNull();
@@ -163,7 +163,7 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
           status: "applied",
           branchId: item?.branchId,
           itemKey: item?.itemKey,
-          item: { itemKey: item?.itemKey, status: "applied", notes: [] },
+          item: { itemKey: item?.itemKey, status: "applied" },
         },
       },
     ]);
@@ -195,96 +195,6 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
       .toContain(fresh);
   });
 
-  it("restores an edited document deleted live with its folder, and holds one whose path a new document took (E-8)", async () => {
-    const { s } = await start();
-    const ascension = await s.work("Ascension", "draft");
-    const harbor = await s.writer.createDocument("lore/harbor", "The harbor.");
-    const map = await s.writer.createDocument("atlas/map", "The map.");
-    await s.model(ascension).edit("lore/harbor", "The harbor.", "The harbor, drafted.");
-    await s.model(ascension).edit("atlas/map", "The map.", "The map, drafted.");
-    expect.soft((await s.writer.delete("lore")).ok, "the folder deleted live").toBe(true);
-    expect.soft((await s.writer.delete("atlas/map")).ok).toBe(true);
-    const newMap = await s.writer.createDocument("atlas/map", "A new map.");
-
-    const items = await s.items(ascension);
-    expect.soft(itemFor(items, harbor), "deleted live, still the branch's").toMatchObject({
-      contextLocation: { scheme: "manuscript", path: "/lore/harbor" },
-      conflict: { code: "deleted_live" },
-    });
-    expect.soft(itemFor(items, map).conflict, "its path taken").toEqual({
-      code: "path_taken",
-      path: "manuscript://atlas/map",
-    });
-    expect.soft(await s.applyAll(ascension)).toMatchObject({
-      status: "completed",
-      items: expect.arrayContaining([
-        {
-          itemKey: itemFor(items, harbor).itemKey,
-          status: "applied",
-          notes: [{ code: "restored", path: "manuscript://lore/harbor" }],
-        },
-        {
-          itemKey: itemFor(items, map).itemKey,
-          status: "held",
-          reason: { code: "path_taken", path: "manuscript://atlas/map" },
-        },
-      ]),
-    });
-    const live = s.view("live");
-    expect.soft(await live.idAt("lore/harbor"), "restored with its folder").toBe(harbor);
-    expect.soft(await live.text("lore/harbor")).toContain("The harbor, drafted.");
-    expect.soft(await live.idAt("atlas/map"), "the new map stays").toBe(newMap);
-    expect.soft(await live.locate(map), "the held one stays deleted").toBeNull();
-  });
-
-  it("projects the restore on the device that deleted the folder, from the server's own receipt, catalog and availability (E-8, F23)", async () => {
-    const { runtime, s } = await start();
-    const { contextCatalog, projectContextAvailability } = runtime.ports;
-    const scope = { kind: "project" as const, projectId: s.project.id };
-    const ascension = await s.work("Ascension", "draft");
-    const harbor = await s.writer.createDocument("lore/harbor", "The harbor.");
-    await s.model(ascension).edit("lore/harbor", "The harbor.", "The harbor, drafted.");
-
-    const device = new ReplicaHarness(s.project.id);
-    const beforeDeletion = await contextCatalog.snapshot(scope);
-    device.install(beforeDeletion);
-    const parent = device.document(harbor).resource.canonicalParent;
-    if (parent?.kind !== "folder") throw new Error("harbor should sit in the lore folder");
-    const lore = parent.folderId;
-    expect(device.projection().ids).toEqual(expect.arrayContaining([lore, harbor]));
-
-    const request = device.requestFolderDeletion(lore);
-    expect((await s.writer.delete("lore", request.body.operationId)).ok).toBe(true);
-    const receipt = await s.writer.operation(request.body.operationId);
-    if (!receipt) throw new Error("the folder delete has no receipt");
-    device.settleFolderDeletion(lore, receipt);
-    expect
-      .soft(device.document(harbor).resource.lifecycle.kind, "receipt's exact ids")
-      .toBe("terminal");
-    device.install(beforeDeletion);
-    expect(device.projection().ids, "a page from before the deletion").not.toContain(lore);
-    expect(device.projection().ids).not.toContain(harbor);
-
-    expect(await s.applyAll(ascension)).toMatchObject({ status: "completed" });
-    device.install(await contextCatalog.snapshot(scope));
-    expect(device.projection().ids, "Apply's restore").toEqual(
-      expect.arrayContaining([lore, harbor]),
-    );
-    expect(device.projection().location(harbor)).toMatchObject({ path: "/lore/harbor" });
-    expect(device.folder(lore).terminal).toBeUndefined();
-
-    // Exact-ID availability reports both present, strictly newer than the deletion.
-    const availability = await projectContextAvailability.lookup(
-      { projectId: s.project.id, documentIds: [harbor], folderIds: [lore] },
-      { userId: s.project.userId },
-    );
-    const folder = availability.folderResolutions?.[0];
-    const document = availability.resolutions[0];
-    if (folder?.kind !== "available" || document?.kind !== "available")
-      throw new Error(`restored identities should be available: ${JSON.stringify(availability)}`);
-    for (const version of [folder.entry.observationVersion, document.entry.observationVersion])
-      expect(BigInt(version) > BigInt(receipt.observationVersion)).toBe(true);
-  });
   /** The editor's exact-ID terminal, as the device's session coordinator publishes it. */
   async function editorTerminal(
     runtime: Awaited<ReturnType<typeof start>>["runtime"],
@@ -365,37 +275,5 @@ describeBranchTreeDb("Apply's tree work (postgres)", (start, db) => {
     installView(device, view);
     expect(device.document(id).resource.lifecycle.kind, "after draining").toBe("terminal");
     expect(device.projection().location(id)).toBeNull();
-  });
-
-  it("revives an editor-terminal document when Apply restores it, with content reacquired", async () => {
-    const { runtime, s } = await start();
-    const catalog = runtime.ports.contextCatalog;
-    const scope = { kind: "project" as const, projectId: s.project.id };
-    const work = await s.work("Restore", "draft");
-    const id = await s.writer.createDocument("chapter", "Text");
-    await s.model(work).edit("chapter", "Text", "Branch text");
-    const before = await catalog.snapshot(scope);
-    const device = new ReplicaHarness(s.project.id);
-    device.install(before);
-
-    expect((await s.writer.delete("chapter")).ok).toBe(true);
-    const deleted = await editorTerminal(runtime, s, device, id);
-    const caughtUp = applyCatalogChanges(
-      catalogViewFromSnapshot(before),
-      await catalog.changes(scope, before.cursor),
-    );
-    if (!caughtUp) throw new Error("the deletion should apply");
-    installView(device, caughtUp);
-    expect(device.document(id).resource.lifecycle.kind).toBe("terminal");
-
-    expect(await s.applyAll(work)).toMatchObject({ status: "completed" });
-    device.install(await catalog.snapshot(scope));
-    const restored = device.document(id).resource;
-    expect(restored.lifecycle.kind).toBe("acknowledged");
-    expect(restored.content.kind).toBe("unacquired");
-    expect(BigInt(restored.observationVersion ?? "0") > BigInt(deleted.observationVersion)).toBe(
-      true,
-    );
-    expect(device.projection().location(id)).toMatchObject({ path: "/chapter" });
   });
 });

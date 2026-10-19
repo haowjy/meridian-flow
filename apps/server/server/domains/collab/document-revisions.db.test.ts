@@ -77,7 +77,7 @@ async function fixture(
     .update(schema.threads)
     .set({ aiWriteMode: mode })
     .where(eq(schema.threads.id, THREAD_ID));
-  await f.persistence.lifecycle.ensureDocument(ALPHA_ID);
+  await f.persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
   await f.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
     const before = Y.encodeStateVector(doc);
     f.model.insertBlocks(

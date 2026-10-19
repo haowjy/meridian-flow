@@ -22,6 +22,7 @@ import {
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
+import { DocumentRemovedError } from "../domains/context/index.js";
 import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
   type FileAccessChanges,
@@ -253,8 +254,9 @@ async function classifyYjsConnectionAdmission(input: {
   room: ParsedYjsRoom;
   userId: UserId;
   clientSchemaVersion: CollabSchemaVersion;
+  context: YjsConnectionContext;
 }): Promise<YjsConnectionAdmission> {
-  const { services, room, userId, clientSchemaVersion } = input;
+  const { services, room, userId, clientSchemaVersion, context } = input;
   let documentId: DocumentId;
   let headSchemaVersion: CollabSchemaVersion | null;
   let admitted: Awaited<ReturnType<typeof roomAccess>>;
@@ -265,7 +267,16 @@ async function classifyYjsConnectionAdmission(input: {
     fileTarget = { kind: "document", documentId };
     admitted = await roomAccess(services, userId, fileTarget);
     if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
+      await refuseIfRemoved(services, context, { documentId });
       throw permissionDenied("permission-denied");
+    }
+    // The room's explicit touch: a living document missing its authority is repaired from
+    // its projection before the first generation read, which never creates one.
+    try {
+      await services.documentSync.repairDocumentAuthority(documentId);
+    } catch (cause) {
+      if (cause instanceof DocumentRemovedError) refuseRemoved(context);
+      throw cause;
     }
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
@@ -273,7 +284,10 @@ async function classifyYjsConnectionAdmission(input: {
       room.draftId,
       room.generation,
     );
-    if (!documentDraft) throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+    if (!documentDraft) {
+      await refuseIfRemoved(services, context, { draftId: room.draftId });
+      throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+    }
     documentId = documentDraft.documentId;
     headSchemaVersion = documentDraft.schemaVersion;
     fileTarget = { kind: "draft", documentId, workId: documentDraft.workId };
@@ -416,6 +430,7 @@ async function admitDraftSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
+    await refuseIfRemoved(input.services, input, room);
     // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
     if (cause instanceof DraftPrefixMissingError) {
       const { code, reason } = WS_CLOSE.DRAFT_PREFIX_MISSING;
@@ -450,6 +465,8 @@ async function admitLiveSync(
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
+    // Admission refuses a removed document under its mutation lock: nothing was journaled.
+    if (cause instanceof DocumentRemovedError) refuseRemoved(input);
     input.closeTransport?.({ code: 1013, reason: "writer-journal-admission-failed" });
     throw permissionDenied("writer-journal-admission-failed", 1013);
   }
@@ -478,6 +495,28 @@ function admittedTargetForSync(
   return target;
 }
 
+function roomOf(target: YjsAdmissionTarget) {
+  return target.kind === "live" ? { documentId: target.documentId } : { draftId: target.draftId };
+}
+
+/** Terminal: the room's document was removed. The client never reconnects into it. */
+function refuseRemoved(context: {
+  closeTransport?(input: { code: number; reason: string }): void;
+}): never {
+  const { code, reason } = WS_CLOSE.DOCUMENT_DELETED;
+  context.closeTransport?.({ code, reason });
+  throw permissionDenied(reason, code);
+}
+
+/** Where the gateway is already refusing: a removed document answers `4208` instead. */
+async function refuseIfRemoved(
+  services: Pick<YjsGatewayServices, "documentSync">,
+  context: { closeTransport?(input: { code: number; reason: string }): void },
+  room: { documentId: DocumentId } | { draftId: string },
+): Promise<void> {
+  if (await services.documentSync.roomRemoval(room)) refuseRemoved(context);
+}
+
 function refuseAccessChanged(context: YjsConnectionContext): never {
   const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
   context.closeTransport({ code, reason });
@@ -504,6 +543,7 @@ export function createHocuspocus(
           room,
           userId,
           clientSchemaVersion: context.clientSchemaVersion,
+          context,
         });
         if (admission.kind === "refused") {
           refuseSchemaAdmission({
@@ -581,7 +621,10 @@ export function createHocuspocus(
           return;
         }
         const admitted = await runWithEditGrants(services.fileAccess, [access.grant], admit);
-        if (!admitted.ok) refuseAccessChanged(context);
+        if (!admitted.ok) {
+          await refuseIfRemoved(services, context, roomOf(target));
+          refuseAccessChanged(context);
+        }
       });
     },
     async onLoadDocument({ documentName, document, context }) {

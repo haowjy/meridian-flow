@@ -46,7 +46,8 @@ import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
 import {
   allocateDocumentAdmission,
-  ensureAndReadDocumentAuthorityHead,
+  findDocumentAuthorityHead,
+  refusedAuthority,
 } from "./drizzle-document-authority-head.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
@@ -293,7 +294,7 @@ export async function admitSettlementMemberWithinTx(
   if (derivation.status !== "derived")
     throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
   const { stateVector } = derivation;
-  await upsertHead(db, documentId, canonicalRow.id, stateVector);
+  await advanceHead(db, documentId, canonicalRow.id, stateVector);
   await deps.projectionEffects.applyPushCompletion({
     documentId,
     ...(draftWork?.workId ? { workId: draftWork.workId } : {}),
@@ -308,31 +309,25 @@ export async function admitSettlementMemberWithinTx(
   });
 }
 
-async function upsertHead(
+/** The admission above proved the head exists; completion only advances it. */
+async function advanceHead(
   db: DrizzleDb,
   documentId: DocumentId,
   latestUpdateSeq: number,
   latestStateVector: Uint8Array,
 ): Promise<void> {
-  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId,
-      schemaVersion: packedSchemaVersion,
+  const [updated] = await db
+    .update(documentYjsHeads)
+    .set({
+      // Monotonic, so a downgraded server cannot erase the stale-schema fence.
+      schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)})`,
       latestUpdateSeq,
       latestStateVector: Buffer.from(latestStateVector),
-      latestCheckpointId: null,
+      updatedAt: sql`now()`,
     })
-    .onConflictDoUpdate({
-      target: documentYjsHeads.documentId,
-      set: {
-        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packedSchemaVersion})`,
-        latestUpdateSeq,
-        latestStateVector: Buffer.from(latestStateVector),
-        updatedAt: sql`now()`,
-      },
-    });
+    .where(eq(documentYjsHeads.documentId, documentId))
+    .returning({ documentId: documentYjsHeads.documentId });
+  if (!updated) throw await refusedAuthority(db, documentId);
 }
 
 function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {
@@ -427,7 +422,7 @@ export async function readSettlementMember(
             .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
             .limit(1)
         )[0]
-      : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
+      : await findDocumentAuthorityHead(db, row.outbox.documentId);
     if (!authority) {
       throw new ProvenanceMaterializationError(
         `Pending branch push settlement ${pushId} has no authority admission`,

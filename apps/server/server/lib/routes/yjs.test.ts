@@ -38,6 +38,8 @@ function services(stale: boolean) {
     },
     eventSink: {} as never,
     documentSync: {
+      roomRemoval: vi.fn(async () => null),
+      repairDocumentAuthority: vi.fn(async () => {}),
       rejectStaleDraftSyncStep1: vi.fn(async () => stale),
       admitDraftWriterUpdate: vi.fn(async () => undefined),
     } as never,
@@ -52,7 +54,10 @@ function gatewayServices() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: {} as never,
-    documentSync: { bindHocuspocus: () => undefined } as never,
+    documentSync: {
+      bindHocuspocus: () => undefined,
+      roomRemoval: async () => null,
+    } as never,
   };
 }
 
@@ -114,6 +119,8 @@ describe("Yjs draft handshake route guard", () => {
         fileAccess: createAllowAllFileAccess(),
         fileAccessChanges: createLocalFileAccessChanges(),
         documentSync: {
+          roomRemoval: vi.fn(async () => null),
+          repairDocumentAuthority: vi.fn(async () => {}),
           bindHocuspocus: vi.fn(),
           resolveDraftHocuspocusRoom: vi.fn(async () => ({
             draftId: "draft_1",
@@ -169,7 +176,7 @@ describe("Yjs draft handshake route guard", () => {
       admitWriterSync({
         services: {
           ...services(false),
-          documentSync: { admitDraftWriterUpdate } as never,
+          documentSync: { admitDraftWriterUpdate, roomRemoval: async () => null } as never,
         },
         documentName,
         document,
@@ -206,7 +213,7 @@ describe("Yjs draft handshake route guard", () => {
     const admission = admitWriterSync({
       services: {
         ...services(false),
-        documentSync: { admitDraftWriterUpdate } as never,
+        documentSync: { admitDraftWriterUpdate, roomRemoval: async () => null } as never,
       },
       documentName,
       document: new Y.Doc(),
@@ -318,6 +325,8 @@ describe("Yjs draft handshake route guard", () => {
       },
       eventSink: { emit: vi.fn() } as never,
       documentSync: {
+        roomRemoval: vi.fn(async () => null),
+        repairDocumentAuthority: vi.fn(async () => {}),
         bindHocuspocus: () => undefined,
         getPersistenceQueueMetrics: () => ({}),
         drainHocuspocusPersistence: () => persistenceDrain,
@@ -490,6 +499,8 @@ describe("Yjs room access", () => {
   function roomServices(input: { readOnly?: boolean } = {}) {
     const allowAll = createAllowAllFileAccess();
     const documentSync = {
+      roomRemoval: vi.fn(async () => null),
+      repairDocumentAuthority: vi.fn(async () => {}),
       bindHocuspocus: vi.fn(),
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),

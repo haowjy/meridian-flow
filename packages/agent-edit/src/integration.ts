@@ -76,7 +76,6 @@ export type {
   DocumentEdits,
   ModelInverseCommand,
 } from "./ports/document-edits.js";
-export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   AheadMint,
   DocumentLinksPort,

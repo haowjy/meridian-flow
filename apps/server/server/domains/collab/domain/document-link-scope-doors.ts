@@ -41,6 +41,9 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    // Neither spells a link: the repair reads its projection with links unbound.
+    initializeEmptyDocument: engine.initializeEmptyDocument,
+    repairDocumentAuthority: engine.repairDocumentAuthority,
     // The lease spells nothing; the held write spells as the document it admits.
     withLiveDocument: engine.withLiveDocument,
     writeDocumentHeld: (input) =>

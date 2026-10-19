@@ -663,7 +663,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(documents)
         .values({ id: holder, contextSourceId: sourceId, name: "holder", extension: "" });
       const persistence = createDrizzleCollabPersistence(committed);
-      await persistence.lifecycle.ensureDocument(holder as never);
+      await persistence.seeds.seedInitialDocument(
+        holder as never,
+        Y.encodeStateAsUpdate(new Y.Doc()),
+      );
       const tree = new DrizzleContextTreeMutationStore(committed);
       const source = await tree.inspect(sourceId, "holder");
       if (source?.kind !== "file") throw new Error("Missing holder");
