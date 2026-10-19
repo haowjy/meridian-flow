@@ -1,10 +1,9 @@
-/** Review room binding while B2 replaces settlement-era command ownership. */
-import type { Dispatch } from "react";
-import type { DraftPreviewRead } from "@/client/query/useDraftPreview";
-import type { DocumentSession } from "@/core/editor/document-session";
+/** Open review ownership holds a stable room; projection readiness is independent of command delivery. */
+import { type Dispatch, useEffect } from "react";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
+import { useRoomReview } from "./useRoomReview";
 
-export function useReviewRoomOwner(_input: {
+export function useReviewRoomOwner(input: {
   projectId: string;
   workId: string;
   review: InlineDraftReview | null;
@@ -12,19 +11,29 @@ export function useReviewRoomOwner(_input: {
   disposing: boolean;
   presented?: unknown;
 }) {
+  const { review, dispatch } = input;
+  const read = useRoomReview(
+    review ? { projectId: input.projectId, workId: input.workId, ...review } : null,
+  );
+  useEffect(() => {
+    if (!review) return;
+    if (read.roomName)
+      dispatch({
+        type: "roomResolved",
+        documentId: review.documentId,
+        itemKey: review.itemKey,
+        roomName: read.roomName,
+      });
+    else if (read.status === "error" || read.status === "gone")
+      dispatch({ type: "roomFailed", documentId: review.documentId, itemKey: review.itemKey });
+  }, [read.roomName, read.status, review?.documentId, review?.itemKey, dispatch]);
   return {
-    session: null as DocumentSession | null,
+    session: read.session,
+    roomName: read.roomName,
+    runtime: read.runtime,
+    reopen: read.retry,
+    inputEligible: read.usable !== null,
     carryPending: false,
-    reopen: () => undefined,
-    inputEligible: false,
-  } as const;
-}
-
-export function reviewRoomObservations(
-  _rows: import("@meridian/contracts/branches").ThreadDraftListItem[] | undefined,
-  _preview: DraftPreviewRead | undefined,
-  _draft: { documentId: string; itemKey: string },
-): DraftReviewAction[] {
-  return [];
+  };
 }
 export type ReviewRoomOwner = ReturnType<typeof useReviewRoomOwner>;

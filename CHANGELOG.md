@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.
+
 - Removed the settlement-era draft-review command client in preparation for the per-draft command owner.
 ### Changed
 - Protect draft review's server-owned roots at writer and agent admission, admit server journal rows,

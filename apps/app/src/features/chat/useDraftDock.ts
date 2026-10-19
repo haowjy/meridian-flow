@@ -1,19 +1,22 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
 import { useCallback, useMemo, useState } from "react";
-import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   type DraftImagePreviewTarget,
   isDraftImagePath,
 } from "@/features/draft-review/DraftImagePreview";
-import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
 import type {
   BranchCommandFailure,
   ChangeCommandState,
 } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
+import {
+  itemChange,
+  type ReviewChange,
+  targetOfChanges,
+} from "@/features/draft-review/review-model";
+import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
@@ -28,7 +31,6 @@ export type DockFileFailure =
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
   const controller = useBoundWorkBranchCommands();
   const listedFiles = useWorkBranchDrafts(controller.projectId, controller.workId).files ?? [];
-  const presented = usePresentedDraftReview().controller;
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
@@ -54,24 +56,29 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     [candidates, projectId, workId],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
-  const open = presented.workId === workId ? presented.inlineReview : null;
-  const entries = useDraftPreviews(targets, { openReview: open });
-
+  const reads = useRoomReviews(targets);
   const untitled = t`Document`;
-  const files = useMemo(
-    () =>
-      candidates
-        .map((row, _index) =>
-          dockFile(
-            row,
-            reviewFileTargetName(row, untitled),
-            entries[targets.findIndex((target) => target.itemKey === row.draft.itemKey)],
-            threadId,
-          ),
-        )
-        .filter(isOnStrip),
-    [candidates, entries, targets, threadId, untitled],
-  );
+  const files = candidates
+    .map((row) => {
+      const read = reads[targets.findIndex((target) => target.itemKey === row.draft.itemKey)];
+      const withoutText = row.draft.draftGeneration === null;
+      return dockFile(
+        row,
+        reviewFileTargetName(row, untitled),
+        {
+          status: withoutText ? "ready" : (read?.status ?? "loading"),
+          items: (withoutText ? [itemChange(row.draft)] : (read?.changes ?? [])).map((change) => ({
+            change,
+            failure: null,
+          })),
+
+          retry: read?.retry,
+        },
+        threadId,
+      );
+    })
+    .filter(isOnStrip);
+
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
   const review = useCallback(
@@ -82,7 +89,11 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;
       }
-      openReviewFile(file.row, workId, change?.operationIds ?? file.changes[0]?.operationIds);
+      openReviewFile(
+        file.row,
+        workId,
+        change ? [change.id] : file.changes[0] ? [file.changes[0].id] : undefined,
+      );
     },
     [openReviewFile, projectId, workId],
   );

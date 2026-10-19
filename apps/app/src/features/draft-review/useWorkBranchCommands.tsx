@@ -3,7 +3,7 @@ import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import type { DraftReviewSelection } from "./draft-review-session";
-import type { ChangeTarget } from "./review-changes";
+import type { ChangeTarget } from "./review-model";
 
 export type BranchCommandOutcome = { kind: "blocked" } | { kind: "change-refused"; code: string };
 export type CommandStart = { sent: false; outcome: Promise<BranchCommandOutcome> };

@@ -36,7 +36,7 @@ describe("DraftRoomPool.rebuild", () => {
       },
     });
 
-    pool.retain("owner", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
+    pool.retain("owner", [room]);
     pool.get(room);
     resetListener({
       connectionState: { kind: "reset", reason: "draft-stale-doc", disposition: "rebuild" },
@@ -76,7 +76,7 @@ describe("DraftRoomPool.rebuild", () => {
         } as never;
       },
     });
-    pool.retain("owner", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
+    pool.retain("owner", [room]);
     pool.get(room);
     resetListener({
       connectionState: { kind: "reset", reason: "draft-stale-doc", disposition: "rebuild" },
@@ -116,8 +116,8 @@ describe("DraftRoomPool.release", () => {
         } as never;
       },
     });
-    pool.retain("editor", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
-    pool.retain("refresh", [{ roomKey: room, currentRoom: async () => room, changed: () => {} }]);
+    pool.retain("editor", [room]);
+    pool.retain("refresh", [room]);
     pool.get(room);
     resetListener({
       connectionState: { kind: "reset", reason: "draft-stale-doc", disposition: "rebuild" },

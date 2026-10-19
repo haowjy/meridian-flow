@@ -12,7 +12,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { PresentedDocument } from "@/features/project/presented-document";
-import { resolveFocusedChange } from "./review-changes";
+import { resolveFocusedChange } from "./review-model";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
@@ -34,13 +34,12 @@ export function useReconcileReviewFocus(
       restored.current = identity;
       if (presented?.review?.itemKey === itemKey && presented.review.changeId && !focus) {
         // Stable part-key classes survive reload; a handled class falls back silently.
-        const change =
-          changes.find((item) => item.classId === presented.review?.changeId) ?? changes[0];
+        const change = changes.find((item) => item.id === presented.review?.changeId) ?? changes[0];
         if (change) controller.focusReviewChange({ documentId, itemKey }, change);
         return;
       }
     }
-    const resolved = resolveFocusedChange(changes, focus);
+    const resolved = resolveFocusedChange(changes, focus) ?? changes[0];
     if (!resolved) return;
     reportFocusedChange({ documentId, itemKey }, resolved);
   }, [

@@ -70,7 +70,7 @@ export function ReviewStateInline({
   touch = false,
   ...state
 }: ReviewStateProps & { touch?: boolean }) {
-  if (!state.finished && !state.completing && !state.unlisted) return null;
+  if (!state.finished && !state.completing) return null;
   return (
     <span
       role="status"
@@ -80,9 +80,7 @@ export function ReviewStateInline({
       <span
         className={cn(
           "text-muted-foreground",
-          state.unlisted
-            ? "min-w-0 truncate"
-            : "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+          "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
         )}
       >
         <ReviewStatusContent {...state} />

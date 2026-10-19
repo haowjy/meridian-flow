@@ -9,9 +9,3 @@ export type ChangeCommandState = {
   code: ChangeFailureCode;
   mode: ChangeCommandMode;
 } & ServerRefusal;
-export type ChangeSelection = {
-  classIds: readonly string[];
-  admissionTokens: readonly string[];
-  operationIds: readonly string[];
-  keys?: readonly string[];
-};
