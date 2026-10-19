@@ -273,7 +273,7 @@ export function createRuntimeStore(deps: {
       staleLiveDocs.delete(docId);
       return null;
     } catch (cause) {
-      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName);
+      if (isDocumentNotFoundError(cause)) return documentNotFound(commandName, cause);
       throw cause;
     }
   }

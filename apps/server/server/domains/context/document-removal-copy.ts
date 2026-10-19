@@ -24,3 +24,8 @@ export function removalPhrase(removal: DocumentRemovalRecord | null | undefined)
   const name = actor?.kind === "work" ? actor.name : actor?.displayName;
   return name ? `${verb} by ${name}` : verb;
 }
+
+/** The model's sentence for a file removed under a call: "This file was deleted by Ana." */
+export function removedFileSentence(removal: DocumentRemovalRecord | null | undefined): string {
+  return `This file was ${removalPhrase(removal)}.`;
+}

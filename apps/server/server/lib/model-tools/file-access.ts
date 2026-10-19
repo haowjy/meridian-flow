@@ -9,7 +9,7 @@ import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
-import { removalPhrase } from "../../domains/context/index.js";
+import { removedFileSentence } from "../../domains/context/index.js";
 import {
   type FileAccessDenied,
   type FileEditRefusedError,
@@ -120,6 +120,23 @@ export async function removalBehind(
   return (await deps.documentRemovals.lookup([documentId])).get(documentId);
 }
 
+/** A missing file as the tool's error, with why it is gone when the caller knows. */
+export function documentNotFoundError(
+  command: DocumentCommandName,
+  path?: string,
+  reason?: string,
+): WriteToolErrorOutput {
+  const message = documentNotFoundMessage(command, reason);
+  return {
+    isError: true,
+    output: modelResult({
+      command,
+      status: "document_not_found",
+      payload: { ...(path ? { path } : {}), message },
+    }),
+  };
+}
+
 /** A refused grant as the tool's error: `permission_denied` with its reason (§9). */
 export function fileAccessDeniedError(
   command: DocumentCommandName,
@@ -127,16 +144,9 @@ export function fileAccessDeniedError(
   path?: string,
   removal?: DocumentRemovalRecord,
 ): WriteToolErrorOutput {
+  if (!isPermissionDenial(denial))
+    return documentNotFoundError(command, path, removal && removedFileSentence(removal));
   const at = path ? { path } : {};
-  if (!isPermissionDenial(denial)) {
-    const message = removal
-      ? `${documentNotFoundMessage(command)} This file was ${removalPhrase(removal)}.`
-      : documentNotFoundMessage(command);
-    return {
-      isError: true,
-      output: modelResult({ command, status: "document_not_found", payload: { ...at, message } }),
-    };
-  }
   return {
     isError: true,
     output: modelResult({

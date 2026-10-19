@@ -186,7 +186,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       } catch {
         // Host diagnostics must never change the model-facing write outcome.
       }
-      result = writeError(cause);
+      result = writeError(cause, commandName);
     }
     const outcome = toOutcome(commandName, result, validCommand.file);
     if (

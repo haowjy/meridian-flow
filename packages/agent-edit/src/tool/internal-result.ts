@@ -25,15 +25,20 @@ interface InternalWriteResultBase {
   error?: WriteErrorDetail;
 }
 
-export function documentNotFound(commandName: DocumentCommandName): InternalWriteResult {
-  return status("document_not_found", documentNotFoundMessage(commandName));
+export function documentNotFound(
+  commandName: DocumentCommandName,
+  cause?: { modelReason?: string },
+): InternalWriteResult {
+  return status("document_not_found", documentNotFoundMessage(commandName, cause?.modelReason));
 }
 
-/** The one sentence every missing-document result gives the model. */
-export function documentNotFoundMessage(commandName: DocumentCommandName): string {
-  return commandName === "read"
-    ? "File not found. Check the path with `ls`."
-    : "File not found. Read the project to find the right path.";
+/** The one sentence every missing-document result gives the model, then why, when known. */
+export function documentNotFoundMessage(commandName: DocumentCommandName, reason?: string): string {
+  const missing =
+    commandName === "read"
+      ? "File not found. Check the path with `ls`."
+      : "File not found. Read the project to find the right path.";
+  return reason ? `${missing} ${reason}` : missing;
 }
 
 export function isInternalWriteResult(value: unknown): value is InternalWriteResult {

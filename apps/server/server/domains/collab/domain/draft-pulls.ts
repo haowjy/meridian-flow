@@ -2,7 +2,6 @@
 
 import {
   type DocumentCoordinator,
-  DocumentNotFoundError,
   type UpdateJournal,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
@@ -109,17 +108,12 @@ export function createDraftPullService(input: {
     // Releasing the room checkpoints it under the document's mutation lock. In
     // a caller's transaction that lock would outlive the snapshot and block the
     // root pull in `run` that the caller then waits on.
-    const state = await input
-      .outsideTransaction(() =>
-        input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
-          Y.encodeStateAsUpdate(liveDoc),
-        ),
-      )
-      .catch((cause: unknown) => {
-        if (cause instanceof DocumentNotFoundError)
-          return Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
-        throw cause;
-      });
+    // A missing or removed document is never an empty upstream: nothing pulls it.
+    const state = await input.outsideTransaction(() =>
+      input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
+        Y.encodeStateAsUpdate(liveDoc),
+      ),
+    );
     const doc = new Y.Doc({ gc: false });
     Y.applyUpdate(doc, state);
     return doc;
