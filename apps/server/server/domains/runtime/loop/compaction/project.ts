@@ -15,7 +15,7 @@ import type { PromptBakeRepository } from "../../../threads/ports/repositories.j
 import { bakeHasHistoryTool } from "../history-tool-availability.js";
 import { referenceReadText } from "../reference-context.js";
 import type { CompactionPlan } from "./plan.js";
-import { type CompactionCut, resolveCut, retainedTail } from "./tail.js";
+import { resolveCut, retainedTail } from "./tail.js";
 
 /** The durable model-visible summary block written by the compaction protocol. */
 export const CompactionPropsCodec = z
