@@ -17,6 +17,13 @@ text matches; the seam is `src/model/markdown-text-view.ts` and
   host at composition, with required host capabilities
   ([#938](https://github.com/haowjy/meridian-flow/issues/938)).
 
+## Observation frontiers (track M, M2)
+
+- `src/tool/observation.ts` credits only `extent: full` blocks, so a write echo's
+  context line shown whole (a paragraph shorter than the truncation) still lands
+  in `unshown`. Decide when M2 sets the region rule (C3): credit an untruncated
+  context line as shown in full, or accept the one refusal it causes.
+
 ## Deferred until earned
 
 - Remove the remaining ProseMirror shape coupling from parsed-content types;
