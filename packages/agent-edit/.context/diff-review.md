@@ -146,6 +146,9 @@ apply once, insertions at one point keep both (live first). Anything else is a
 diff of the new base (live) against the draft. The server writes the result into
 both fragments as `DRAFT_SERVER_CLIENT_ID` (1) in one transaction. The same
 function plans a content Apply's live update, with the patch as the draft side.
+Shared insertions at either edge of an adjacent replacement peel off before
+clustering, so `The → A big black` and `+big black` keep one copy; a later
+dependent deletion still removes its word.
 
 Move-text matching indexes the complete deleted-content stream by token key,
 extends only matching seeds at the start of a diagonal run, and keeps the

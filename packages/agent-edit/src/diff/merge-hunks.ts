@@ -207,8 +207,8 @@ export function draftAbsorbsLive(
 }
 
 /**
- * Where one side inserts text at a point where the other side's replacement starts, and the
- * replacement's new text starts the same way, split that shared part off as a plain insertion, so
+ * Where one side inserts text at a boundary of the other side's replacement, and the
+ * replacement's new text shares that edge, split that shared part off as a plain insertion, so
  * it merges as one insertion and only the rest can conflict.
  */
 export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
@@ -222,22 +222,50 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]) {
       const insertion = other.find(
         (y) => y.from === hunk.from && y.to === hunk.from && y.ins.length,
       );
-      if (!insertion) continue;
-      if (own.some((x) => x !== hunk && x.from === hunk.from && x.to === hunk.from)) continue;
+      if (insertion && !own.some((x) => x !== hunk && x.from === hunk.from && x.to === hunk.from)) {
+        let shared = 0;
+        while (
+          shared < hunk.ins.length &&
+          shared < insertion.ins.length &&
+          coreKey(hunk.ins[shared]) === coreKey(insertion.ins[shared])
+        )
+          shared++;
+        if (shared > 0) {
+          own.splice(
+            i,
+            1,
+            { from: hunk.from, to: hunk.from, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, shared) },
+            {
+              from: hunk.from,
+              to: hunk.to,
+              sfrom: hunk.sfrom + shared,
+              ins: hunk.ins.slice(shared),
+            },
+          );
+          continue;
+        }
+      }
+      // An adjacent replacement can absorb an insertion at its end too ("The" → "A big black").
+      const suffix = other.find((y) => y.from === hunk.to && y.to === hunk.to && y.ins.length);
+      if (!suffix || own.some((x) => x !== hunk && x.from === hunk.to && x.to === hunk.to))
+        continue;
       let shared = 0;
       while (
         shared < hunk.ins.length &&
-        shared < insertion.ins.length &&
-        coreKey(hunk.ins[shared]) === coreKey(insertion.ins[shared])
+        shared < suffix.ins.length &&
+        coreKey(hunk.ins[hunk.ins.length - 1 - shared]) ===
+          coreKey(suffix.ins[suffix.ins.length - 1 - shared])
       )
         shared++;
-      if (shared > 0)
+      if (shared > 0) {
+        const cut = hunk.ins.length - shared;
         own.splice(
           i,
           1,
-          { from: hunk.from, to: hunk.from, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, shared) },
-          { from: hunk.from, to: hunk.to, sfrom: hunk.sfrom + shared, ins: hunk.ins.slice(shared) },
+          { from: hunk.from, to: hunk.to, sfrom: hunk.sfrom, ins: hunk.ins.slice(0, cut) },
+          { from: hunk.to, to: hunk.to, sfrom: hunk.sfrom + cut, ins: hunk.ins.slice(cut) },
         );
+      }
     }
   }
 }
