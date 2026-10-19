@@ -843,7 +843,9 @@ restart smoke check.
   `meridian_detached-689678a032-p13652-m1-probe`), all seven cells passed. Evidence:
   `work/concurrent-edit-design/m1/probe/p13652/` in the docs repository. Browser: none
   (no writer-visible change). Recipe change this run: step 5 now includes the write-then-read
-  commands; step 7 has the undo send commands.
+  commands; step 7 has the undo send commands. Steps 5 and 7 passed again on `77667d7e1b`
+  (the save derives its room; a live undo reads its generation before the call), on the branch
+  worktree's own stack; evidence `work/concurrent-edit-design/m1/probe/r3-fix-cells-5-7.md`.
 
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
