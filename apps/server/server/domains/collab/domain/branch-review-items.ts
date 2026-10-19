@@ -2,8 +2,8 @@
  * The review list (contract §13.1, sync 8 §3.1): a branch's items are its tree state (every
  * document it created, listed with no text yet, and the documents it edited) merged by
  * document with its `work_draft` drafts. A created document is always an item; an edited
- * one is when its draft has reviewable rows and `hasEffect OR blocking`, so a write and its
- * undo net to no item and a held restoration stays. That one predicate feeds the list, the
+ * one is when its active draft has `hasEffect`, so a write and its
+ * undo net to no item. That one predicate feeds the list, the
  * Work counts and the D40 confirmation. A draft with no effect is still addressable
  * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${branchId}:${documentId}` (F12) and carries the
  * tokens Apply checks (§11.3): its location version from the same tree read that spells
@@ -73,7 +73,7 @@ export function createBranchReviewItems(deps: {
   tree: Pick<TreeReader, "treeState">;
   /**
    * The branch's active `work_draft` drafts (only these documents' when given), each
-   * with its reviewable rows (maybe none).
+   * with its pending text membership.
    */
   drafts(
     branchId: BranchId,
@@ -137,9 +137,7 @@ export function createBranchReviewItems(deps: {
 
 /** The §3.1 predicate for a document the branch only edited. */
 function isEdited(evidence: WorkBranchPendingEvidence | undefined): boolean {
-  return Boolean(
-    evidence?.hasRows && (evidence.documentDraft.hasEffect || evidence.documentDraft.blocking),
-  );
+  return evidence?.documentDraft.hasEffect ?? false;
 }
 
 function toItem(
