@@ -131,13 +131,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("records direct identity history and permanently consumes reused file and folder paths", async () => {
       await insertDocument(DOC_DELETE_ID, "alpha");
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        undefined,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       async function move(from: string, to: string) {
         const source = await tree.inspect(SOURCE_ID, from);
         if (source?.kind !== "file") throw new Error("missing source");
@@ -228,13 +224,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         filetype: "markdown",
         markdown: "",
       });
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        undefined,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       const source = await tree.inspect(SOURCE_ID, "before");
       if (source?.kind !== "directory") throw new Error("missing folder");
       expect(
@@ -295,13 +287,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
       const path = [...names, "chapter"].join("/");
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        undefined,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       const source = await tree.inspect(SOURCE_ID, path);
       if (source?.kind !== "file") throw new Error("missing document");
       expect(
@@ -375,13 +363,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         availabilityMutations: availability,
       });
       await catalog.refreshSources([SOURCE_ID]);
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        catalog,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: catalog,
+      });
       const empty = await tree.inspect(SOURCE_ID, "empty");
       const occupied = await tree.inspect(SOURCE_ID, "occupied");
       if (!empty || !occupied) throw new Error("expected folder tokens");
@@ -418,13 +403,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("returns no receipt when delete CAS becomes stale or the transaction rolls back", async () => {
       await insertDocument(DOC_STALE_DELETE_ID, "stale-delete");
       await insertDocument(DOC_ROLLBACK_DELETE_ID, "rollback-delete");
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        createDrizzleContextCatalog(db),
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: createDrizzleContextCatalog(db),
+      });
       const stale = await tree.inspect(SOURCE_ID, "stale-delete");
       const rollbackToken = await tree.inspect(SOURCE_ID, "rollback-delete");
       if (!stale || !rollbackToken) throw new Error("expected file tokens");
@@ -476,13 +458,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           throw failure;
         },
       };
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        failingCatalog,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: failingCatalog,
+      });
       const token = await tree.inspect(SOURCE_ID, folderId);
       if (!token) throw new Error("expected folder token");
 
@@ -590,13 +569,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ]);
         const before = await committedPublications();
         outerPublish.mockClear();
-        const outerTree = new DrizzleContextTreeMutationStore(
-          committed,
-          outerCatalog,
-          undefined,
-          undefined,
-          createTestDocumentRemoval(committed),
-        );
+        const outerTree = new DrizzleContextTreeMutationStore(committed, {
+          removal: createTestDocumentRemoval(committed),
+          catalogMutations: outerCatalog,
+        });
         const parent = await outerTree.inspect(sourceId, "parent");
         if (!parent) throw new Error("expected committed folder token");
         const outerFailure = new Error("abort after successful delete");
@@ -710,13 +686,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder as never,
         Y.encodeStateAsUpdate(new Y.Doc()),
       );
-      const tree = new DrizzleContextTreeMutationStore(
-        committed,
-        undefined,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(committed),
-      );
+      const tree = new DrizzleContextTreeMutationStore(committed, {
+        removal: createTestDocumentRemoval(committed),
+      });
       const source = await tree.inspect(sourceId, "holder");
       if (source?.kind !== "file") throw new Error("Missing holder");
       let paused!: () => void;

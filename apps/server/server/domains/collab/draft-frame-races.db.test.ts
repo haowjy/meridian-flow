@@ -206,13 +206,13 @@ describe("writer frames racing rewrites (postgres)", () => {
         // Paused after its unlocked read found no contribution; the frame commits meanwhile.
         const run = await interleave(db, retract, "retract.beforeLocks", frame.send);
         expect(run.b).toEqual({ ok: true, value: { admitted: true } });
-        expect(run.a).toEqual({ ok: true, value: { outcome: "stands" } });
+        expect(run.a).toEqual({ ok: true, value: "stands" });
         expect(await writerRows(draftId)).toHaveLength(1);
       } else {
         // The retraction holds the rows and found nothing; the frame's append waits on them.
         const run = await interleave(db, retract, "retract.afterRecheck", frame.send);
         expect(run.bWaited).toBe(true);
-        expect(run.a).toMatchObject({ ok: true, value: { outcome: "retracted" } });
+        expect(run.a).toEqual({ ok: true, value: "retracted" });
         expect(run.b.ok && run.b.value.admitted).toBe(false);
         expect((await readDraftAt(db, draftId))?.documentDraft.status).toBe("closed");
       }

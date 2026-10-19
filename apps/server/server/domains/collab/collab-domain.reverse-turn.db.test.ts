@@ -73,13 +73,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(
-          db,
-          undefined,
-          undefined,
-          undefined,
-          createTestDocumentRemoval(db),
-        ),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         documentCreation: collab,
         documentSync: {
           ...collab,

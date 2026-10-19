@@ -8,7 +8,7 @@ import { documentDrafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { DrizzleDb } from "./drizzle-transaction.js";
 
-export type DraftRevisionChange = (
+type DraftRevisionChange = (
   | { status: "closed"; closedCause: "discarded" | "document_removed" }
   | { status?: never; closedCause?: never }
 ) & {
@@ -60,6 +60,7 @@ export async function bumpDraftRevisions(
     .returning({
       draftId: documentDrafts.id,
       documentId: documentDrafts.documentId,
+      branchId: documentDrafts.branchId,
       threadId: documentDrafts.threadId,
       kind: documentDrafts.kind,
       generation: documentDrafts.generation,

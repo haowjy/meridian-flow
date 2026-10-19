@@ -32,7 +32,7 @@ import {
   type ThreadContextResolution,
 } from "../../domains/context/context-port-resolution.js";
 import type { ContextError, ContextPort } from "../../domains/context/ports/context-port.js";
-import type { DocumentRemovals } from "../../domains/context/ports/document-removals.js";
+import type { DocumentRemovals } from "../../domains/context/ports/document-removal.js";
 import type { UnifiedContextPortFactory } from "../../domains/context/unified-context-port-factory.js";
 import type { AgentChain, FileAccess, Principal } from "../../domains/file-policy/index.js";
 import {

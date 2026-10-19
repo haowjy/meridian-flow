@@ -298,13 +298,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const targetId = await add("manuscript", "old");
       const [target] = await db.select().from(documents).where(eq(documents.id, targetId));
       if (!target) throw new Error("target fixture missing");
-      const tree = new DrizzleContextTreeMutationStore(
-        db,
-        undefined,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       const source = await tree.inspect(target.contextSourceId, "old");
       if (source?.kind !== "file") throw new Error("source fixture missing");
       expect(

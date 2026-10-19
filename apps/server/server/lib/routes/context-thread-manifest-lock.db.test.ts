@@ -18,7 +18,10 @@ import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
-import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -76,6 +79,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
       });
@@ -94,6 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
         branches: collab.branches,
       });

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -36,15 +37,13 @@ import {
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import {
-  type DocumentRemovals,
-  DocumentRemovedError,
-} from "../../context/ports/document-removals.js";
+import { DocumentRemovedError } from "../../context/ports/document-removal.js";
 import {
   branchMayHold,
   loadBranchHolder,
   loadDocumentOwner,
 } from "../../context/tree/branch-ownership.js";
+import { readRemovalRecords } from "../../context/tree/removal.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -52,6 +51,7 @@ import type { Branches } from "../domain/branches.js";
 import { collabHook } from "../domain/collab-test-hooks.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
 import { DraftNotFoundError, type ResolvedDraft } from "../domain/draft-resolver.js";
+import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import {
   type AppendDraftJournalInput,
   type AppendReceiptGroup,
@@ -64,10 +64,9 @@ import {
   type RewriteOutcome,
   type StaleEffectCursor,
 } from "../domain/draft-store.js";
-import type { PeerRetirementCause, RetiredDraft } from "../domain/peer-retirement.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
-import { closeDrafts, lockActiveDrafts } from "./drizzle-draft-close.js";
+import { type DraftClose, lockActiveDrafts } from "./drizzle-draft-close.js";
 import {
   appendRowsWithinTx,
   commitRewriteWithinTx,
@@ -108,7 +107,8 @@ export function createDrizzleDraftStore(
     live?: { journal: UpdateJournal };
     /** The one owner of Work-first order and the Works' projection (decision D17). */
     workProjection: WorkProjectionMutation;
-    removals: DocumentRemovals;
+    /** Every close retires what it closed after commit. */
+    close: DraftClose;
     /** A peer ensure relies on its branch staying active; a thread finds its Work's branch. */
     branches: Pick<Branches, "shareActive" | "activeForWork">;
     /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
@@ -123,9 +123,8 @@ export function createDrizzleDraftStore(
     const [row] = await loadDocumentIdentityRows(currentDrizzleDb(db), [documentId]);
     if (!row) throw new DraftStaleUpdateError(`Document ${documentId}`);
     if (row.deleted) {
-      const removal = (await deps.removals.lookup([documentId])).get(documentId);
-      if (!removal) throw new Error(`Missing removal record for ${documentId}`);
-      throw new DocumentRemovedError(documentId, removal);
+      const records = await readRemovalRecords(currentDrizzleDb(db), [documentId]);
+      throw new DocumentRemovedError(documentId, records.get(documentId) as DocumentRemovalRecord);
     }
   }
 
@@ -240,19 +239,11 @@ export function createDrizzleDraftStore(
   async function retractCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
-  }): Promise<
-    | { outcome: "stands" }
-    | { outcome: "retracted"; closed: readonly { draftId: string; threadId: ThreadId | null }[] }
-  > {
+  }): Promise<"stands" | "retracted"> {
     const tx = currentDrizzleDb(db);
+    const selection = { documentIds: [input.documentId], branchId: input.branchId };
     await collabHook("retract.beforeLocks");
-    const drafts = await lockActiveDrafts(
-      tx,
-      and(
-        eq(documentDrafts.documentId, input.documentId),
-        eq(documentDrafts.branchId, input.branchId),
-      ),
-    );
+    const drafts = await lockActiveDrafts(tx, selection);
     for (const documentDraft of drafts) {
       const [contribution] = await tx
         .select({ id: draftWriteJournal.id })
@@ -265,25 +256,11 @@ export function createDrizzleDraftStore(
           ),
         )
         .limit(1);
-      if (contribution) return { outcome: "stands" };
+      if (contribution) return "stands";
     }
     await collabHook("retract.afterRecheck");
-    await closeDrafts(
-      tx,
-      and(
-        eq(documentDrafts.documentId, input.documentId),
-        eq(documentDrafts.branchId, input.branchId),
-      ),
-      "discarded",
-      "document_discarded",
-    );
-    return {
-      outcome: "retracted",
-      closed: drafts.map((documentDraft) => ({
-        draftId: documentDraft.id,
-        threadId: (documentDraft.threadId as ThreadId | null) ?? null,
-      })),
-    };
+    await deps.close.closeDrafts(tx, selection, "document_discarded");
+    return "retracted";
   }
 
   /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
@@ -368,10 +345,9 @@ export function createDrizzleDraftStore(
         upstreamDoc.destroy();
       }
       if (existing)
-        await closeDrafts(
+        await deps.close.closeDrafts(
           currentDrizzleDb(db),
-          eq(documentDrafts.id, existing.draftId),
-          "discarded",
+          { draftIds: [existing.draftId] },
           "edit_discarded",
         );
       const [row] = await currentDrizzleDb(db)
@@ -453,16 +429,10 @@ export function createDrizzleDraftStore(
 
   async function closeThreadPeersOf(
     upstreamDraftIds: readonly string[],
-    cause: PeerRetirementCause,
-  ): Promise<RetiredDraft[]> {
-    if (upstreamDraftIds.length === 0) return [];
-    const tx = currentDrizzleDb(db);
-    return closeDrafts(
-      tx,
-      inArray(documentDrafts.upstreamDraftId, [...upstreamDraftIds]),
-      "discarded",
-      cause,
-    );
+    cause: Exclude<DraftCloseCause, object>,
+  ): Promise<void> {
+    if (upstreamDraftIds.length === 0) return;
+    await deps.close.closeDrafts(currentDrizzleDb(db), { upstreamDraftIds }, cause);
   }
 
   async function getDraftSnapshot(draftId: string): Promise<DraftSnapshot> {

@@ -2,21 +2,18 @@
  * The reply's write lifecycle (D42): staged creates to discard, the commit
  * that saves every staged write in one transaction, and the rollback.
  */
-import type {
-  ConcurrentEditInfo,
-  ResponseCommitWriteReceipt,
-  ResponseStagedCreateOutcome,
+import {
+  type ConcurrentEditInfo,
+  type ResponseCommitWriteReceipt,
+  type ResponseStagedCreateOutcome,
+  removedWriteMessage,
 } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type { DocumentRemovalCause, PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { RefusedResponseDocument } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
-import {
-  deletedFileMessage,
-  isPermissionDenial,
-  permissionDeniedMessage,
-} from "../file-access-denial-copy.js";
+import { isPermissionDenial, permissionDeniedMessage } from "../file-access-denial-copy.js";
 import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
 
 type StagedCreateCleanup = {
@@ -54,9 +51,10 @@ function refusedAtSave(refusal: Exclude<RefusedResponseDocument, { reason: unkno
   message: string;
   reason?: PermissionDeniedReason;
 } {
-  if ("removed" in refusal) return { message: deletedFileMessage("save", refusal.removed) };
+  if ("removed" in refusal) return { message: removedWriteMessage(refusal.removed, "save") };
   const { denial } = refusal;
-  if (!isPermissionDenial(denial)) return { message: deletedFileMessage("save", refusal.removal) };
+  // The fence turns every `not_found` into `removed`; only permission refusals remain here.
+  if (!isPermissionDenial(denial)) return { message: removedWriteMessage(null, "save") };
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
@@ -68,7 +66,7 @@ export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
   path: string;
   documentId: string;
-  cause: "reply_rolled_back" | "create_failed";
+  cause: Exclude<DocumentRemovalCause, "repair">;
 }): Promise<void> {
   const retracted = await input.port.retractCreate(input.path, {
     documentId: input.documentId,

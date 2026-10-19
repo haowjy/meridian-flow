@@ -4,6 +4,7 @@
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
@@ -134,11 +135,13 @@ describe("inverse integration (postgres)", () => {
     // The inverse ran: the reply's accepted Undo part is out of the draft.
     expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
     expect(
-      await fixture.draftStore.retractCreatedDocumentDraft({
-        documentId: NEW_ID as never,
-        branchId: branchId as never,
-      }),
-    ).toMatchObject({ outcome: "retracted" });
+      await runInDrizzleTransaction(db, () =>
+        fixture.draftStore.retractCreatedDocumentDraft({
+          documentId: NEW_ID as never,
+          branchId: branchId as never,
+        }),
+      ),
+    ).toBe("retracted");
     expect(
       (await peersOfCreate()).every(
         (row) => row.status === "closed" && row.closedCause === "discarded",

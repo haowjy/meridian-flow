@@ -472,13 +472,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(
-          db,
-          failingCatalog,
-          undefined,
-          undefined,
-          createTestDocumentRemoval(db),
-        ),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+          catalogMutations: failingCatalog,
+        }),
         scheme: "manuscript",
         documentSync: {
           readAsMarkdown: async () => Ok(""),
@@ -522,13 +519,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(
-          db,
-          failingCatalog,
-          undefined,
-          undefined,
-          createTestDocumentRemoval(db),
-        ),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+          catalogMutations: failingCatalog,
+        }),
         scheme: "kb",
         documentSync: {
           readAsMarkdown: async () => Ok(""),
@@ -674,13 +668,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID, KB_SOURCE_ID]);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const before = await catalog.snapshot(scope);
-      const mutationStore = new DrizzleContextTreeMutationStore(
-        db,
-        catalog,
-        undefined,
-        undefined,
-        createTestDocumentRemoval(db),
-      );
+      const mutationStore = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: catalog,
+      });
       await expect(
         mutationStore.commitProvisionalGraduation({
           kind: "file",

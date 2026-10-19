@@ -110,8 +110,8 @@ export function branchTreeHold(path: string): ApplyRefusal {
   return { code: "path_taken", detail: { path } };
 }
 
-/** The item's live document was removed: Apply revives nothing (W52). */
-export function branchTreeRemovedHold(removal: DocumentRemovalRecord | null): ApplyRefusal {
+/** The item's live document was removed: a document exists only by being created, so Apply revives nothing. */
+export function branchTreeRemovedHold(removal: DocumentRemovalRecord): ApplyRefusal {
   return { code: "deleted_live", detail: { removal } as unknown as JsonValue };
 }
 

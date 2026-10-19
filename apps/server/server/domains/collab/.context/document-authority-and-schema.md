@@ -51,10 +51,10 @@ Journal-row edit links (`document_yjs_updates.edit_id`) are written only beside
 the admission that inserted the row. Reads of a deleted document's history stay
 open; only purge deletes it.
 
-`DocumentRemovedError` is a `DocumentNotFoundError` carrying the record's
-sentence (`modelReason`), so every not-found mapping, the model's included,
-answers a removal as `document_not_found` with who removed it until the model
-gets its own `document_deleted` answer.
+`DocumentRemovedError` is a `DocumentNotFoundError` carrying the removal
+record, so every not-found mapping, the model's included, answers a removal as
+`document_not_found` with who removed it (worded once, by agent-edit's
+`removal-copy.ts`) until the model gets its own `document_deleted` answer.
 
 ## Schema-aware document engine
 

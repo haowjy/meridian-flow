@@ -39,7 +39,7 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
-import { createDrizzleDocumentRemovals } from "../tree/document-removals.js";
+import { readRemovalRecords } from "../tree/removal.js";
 import {
   identityDocumentFields,
   identityDocuments,
@@ -468,7 +468,8 @@ export function createDrizzleProjectContextAvailability(
             : [];
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
-          const removals = await createDrizzleDocumentRemovals(db).lookup(
+          const removals = await readRemovalRecords(
+            tx,
             rows
               .filter((row) => row.document.deletedAt)
               .map((row) => row.document.id as DocumentId),

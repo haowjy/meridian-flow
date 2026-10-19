@@ -86,18 +86,77 @@ function rollback(code: ContextTreeMutationError["code"]): never {
   throw new ContextTreeMutationRollback(code);
 }
 
+/** The node at `path` in the selected tree, as a location token; null when nothing is there. */
+export async function inspectTreeLocation(
+  db: Database,
+  sourceId: string,
+  path: string,
+  view: TreeView = LIVE_TREE,
+): Promise<ContextLocationToken | null> {
+  const normalized = normalizeTreePath(path);
+  if (!normalized) {
+    return {
+      kind: "directory",
+      nodeId: CONTEXT_ROOT_DIRECTORY_ID,
+      sourceId,
+      path: "",
+    };
+  }
+  // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
+  const tree = createTreeReader(db);
+  const documentPath = canonicalDocumentPath(normalized);
+  const asDocument =
+    documentPath === null
+      ? null
+      : await tree.resolvePath(view, {
+          contextSourceId: sourceId as ContextSourceId,
+          path: documentPath,
+        });
+  if (asDocument?.kind === "found" && asDocument.node.kind === "document") {
+    const document = asDocument.node.document;
+    return {
+      kind: "file",
+      nodeId: document.id,
+      sourceId,
+      path: documentPath as string,
+      filetype: isStorageBackedDocument(document) ? null : document.fileType,
+    };
+  }
+  const found =
+    documentPath === normalized && asDocument
+      ? asDocument
+      : await tree.resolvePath(view, {
+          contextSourceId: sourceId as ContextSourceId,
+          path: normalized,
+        });
+  if (found.kind !== "found" || found.node.kind !== "folder") return null;
+  return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
+}
+
 /** Drizzle implementation of the backing-scoped atomic ContextFS tree mutator. */
 export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
 
+  private readonly catalogMutations?: ContextCatalogMutationPort;
+  private readonly arrivals?: Pick<DocumentArrivals, "settle">;
+  /** Repair on touch (§12.4): the move's link count reads identity with it. */
+  private readonly repair?: Pick<HiddenNodeRepair, "schedule">;
+  private readonly removal: DocumentRemoval;
+
   constructor(
     private readonly db: Database,
-    private readonly catalogMutations?: ContextCatalogMutationPort,
-    private readonly arrivals?: Pick<DocumentArrivals, "settle">,
-    /** Repair on touch (§12.4): the move's link count reads identity with it. */
-    private readonly repair?: Pick<HiddenNodeRepair, "schedule">,
-    private readonly removal?: DocumentRemoval,
-  ) {}
+    options: {
+      removal: DocumentRemoval;
+      catalogMutations?: ContextCatalogMutationPort;
+      arrivals?: Pick<DocumentArrivals, "settle">;
+      repair?: Pick<HiddenNodeRepair, "schedule">;
+    },
+  ) {
+    this.removal = options.removal;
+    this.catalogMutations = options.catalogMutations;
+    this.arrivals = options.arrivals;
+    this.repair = options.repair;
+  }
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
@@ -145,49 +204,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   }
 
   /** Reads the selected tree; mutation callers default to live and cannot touch hidden nodes. */
-  async inspect(
-    sourceId: string,
-    path: string,
-    view: TreeView = LIVE_TREE,
-  ): Promise<ContextLocationToken | null> {
-    const normalized = normalizeTreePath(path);
-    if (!normalized) {
-      return {
-        kind: "directory",
-        nodeId: CONTEXT_ROOT_DIRECTORY_ID,
-        sourceId,
-        path: "",
-      };
-    }
-    // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
-    const tree = createTreeReader(this.db);
-    const documentPath = canonicalDocumentPath(normalized);
-    const asDocument =
-      documentPath === null
-        ? null
-        : await tree.resolvePath(view, {
-            contextSourceId: sourceId as ContextSourceId,
-            path: documentPath,
-          });
-    if (asDocument?.kind === "found" && asDocument.node.kind === "document") {
-      const document = asDocument.node.document;
-      return {
-        kind: "file",
-        nodeId: document.id,
-        sourceId,
-        path: documentPath as string,
-        filetype: isStorageBackedDocument(document) ? null : document.fileType,
-      };
-    }
-    const found =
-      documentPath === normalized && asDocument
-        ? asDocument
-        : await tree.resolvePath(view, {
-            contextSourceId: sourceId as ContextSourceId,
-            path: normalized,
-          });
-    if (found.kind !== "found" || found.node.kind !== "folder") return null;
-    return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
+  inspect(sourceId: string, path: string, view: TreeView = LIVE_TREE) {
+    return inspectTreeLocation(this.db, sourceId, path, view);
   }
 
   private async expectationStillMatches(
@@ -274,7 +292,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       ]);
       await this.runBeforeDestructiveWrite();
       if (targetToken?.kind === "file") {
-        if (!this.removal) throw new Error("Tree removal requires the removal protocol");
         await this.removal.remove({
           documentIds: [targetToken.nodeId as DocumentId],
           reason: "deleted",
@@ -363,19 +380,17 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       if (token.kind === "file") {
         await lockDocuments(this.db, [token.nodeId]);
         await this.runBeforeDestructiveWrite();
-        if (!this.removal) throw new Error("Tree removal requires the removal protocol");
-        await this.removal.remove({
+        const deletedDocumentIds = await this.removal.remove({
           documentIds: [token.nodeId as DocumentId],
           reason: command.removal?.reason ?? "deleted",
           cause: command.removal?.cause,
           userId: command.actorUserId as UserId,
         });
-        const deletedDocument = { id: token.nodeId as DocumentId };
         const availabilityGeneration = await catalogMutations.refreshSources(
           [token.sourceId],
           [token.nodeId],
         );
-        return Ok({ deletedDocumentIds: [deletedDocument.id], availabilityGeneration });
+        return Ok({ deletedDocumentIds: [...deletedDocumentIds], availabilityGeneration });
       }
 
       // Splitting also updates hidden boundary document rows. Lock the complete
@@ -414,12 +429,9 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             isNull(documents.deletedAt),
           ),
         );
-      const deletedDocumentIds = documentClosure.map((row) => row.id).sort();
-
       await this.runBeforeDestructiveWrite();
-      if (!this.removal) throw new Error("Tree removal requires the removal protocol");
-      await this.removal.remove({
-        documentIds: deletedDocumentIds,
+      const deletedDocumentIds = await this.removal.remove({
+        documentIds: documentClosure.map((row) => row.id),
         reason: command.removal?.reason ?? "deleted",
         cause: command.removal?.cause,
         userId: command.actorUserId as UserId,
@@ -443,7 +455,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         [token.sourceId],
         [token.nodeId],
       );
-      return Ok({ deletedDocumentIds, availabilityGeneration });
+      return Ok({ deletedDocumentIds: [...deletedDocumentIds], availabilityGeneration });
     });
   }
 }

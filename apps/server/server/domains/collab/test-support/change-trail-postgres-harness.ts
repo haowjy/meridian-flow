@@ -20,12 +20,12 @@ import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
-import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
+import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
+import { readRemovalRecords } from "../../context/tree/removal.js";
 import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
@@ -45,8 +45,8 @@ import {
 import { createBranchDiscard } from "../domain/branch-discard.js";
 import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
+import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
-import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementApplyStep } from "../domain/ports/settlement-apply.js";
 import { writeMarkdown } from "./bound-writes.js";
@@ -359,7 +359,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     store: createDrizzleBranchStore(db),
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
+  // One closer for the harness's drafts, Discard and removals; its retirement binds below.
+  const { draftClose, documentRemoval } = createTestRemovalDeps(db);
   const realDraftStore = createFixtureDraftStore(db, {
+    close: draftClose,
     workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
@@ -684,7 +687,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-      removals: createDrizzleDocumentRemovals(db),
+      removals: { lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds) },
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
@@ -717,7 +720,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     links,
   );
   const turnInverse = createDrizzleTurnInverseService({
-    removals: createDrizzleDocumentRemovals(db),
     db,
     journal: persistence.journal,
     drafts: draftStore,
@@ -761,16 +763,25 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
   // the pooled cores' thread state.
-  const retirePeers = createPeerRetirement({
-    closeDraftRoom: (draftId) => {
-      for (const roomId of [...hocuspocus.documents.keys()]) {
-        if (!roomId.startsWith(`draft:${draftId}:gen:`)) continue;
-        hocuspocus.documents.get(roomId)?.destroy();
-        hocuspocus.documents.delete(roomId);
-      }
+  const closeDraftRoom = (draftId: string) => {
+    for (const roomId of [...hocuspocus.documents.keys()]) {
+      if (!roomId.startsWith(`draft:${draftId}:gen:`)) continue;
+      hocuspocus.documents.get(roomId)?.destroy();
+      hocuspocus.documents.delete(roomId);
+    }
+  };
+  draftClose.bindRetirement(
+    createDraftRetirement({
+      closeDraftRoom,
+      async closeRemovedRooms(_documentIds, draftIds) {
+        for (const draftId of draftIds) closeDraftRoom(draftId);
+      },
+      agentEdit,
+    }),
+    (error) => {
+      throw error;
     },
-    agentEdit,
-  });
+  );
   const lookups = createDrizzleCollabLookups(db);
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
@@ -785,14 +796,15 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
-        removal: createTestDocumentRemoval(db),
+        removal: documentRemoval,
+        close: draftClose,
         branches: workBranches,
         drafts: draftStore,
         coordinator: draftCoordinator,
         workProjection: createTestWorkProjectionMutation(db),
         catalog: { refreshSources: async () => "" },
       }),
-      retire: retirePeers,
+      holdRetirement: draftClose.holdRetirement,
       releaseObjects: async () => {},
     }),
     draftReview,

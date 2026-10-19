@@ -6,8 +6,8 @@ import type { Database } from "@meridian/database";
 import { documentYjsHeads } from "@meridian/database";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { DocumentRemovedError } from "../../context/ports/document-removals.js";
-import { createDrizzleDocumentRemovals } from "../../context/tree/document-removals.js";
+import { DocumentRemovedError } from "../../context/ports/document-removal.js";
+import { readRemovalRecords } from "../../context/tree/removal.js";
 import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
@@ -112,9 +112,9 @@ export async function refusedAuthority(
   db: AuthorityHeadDb,
   documentId: string,
 ): Promise<DocumentRemovedError | DocumentNotFoundError> {
-  const removal = (
-    await createDrizzleDocumentRemovals(db as Database).lookup([documentId as DocumentId])
-  ).get(documentId as DocumentId);
+  const removal = (await readRemovalRecords(db, [documentId as DocumentId])).get(
+    documentId as DocumentId,
+  );
   return removal
     ? new DocumentRemovedError(documentId as DocumentId, removal)
     : new DocumentNotFoundError(documentId, `Document ${documentId} has no authority head`);

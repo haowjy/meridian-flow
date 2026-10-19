@@ -18,7 +18,6 @@ import {
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -32,6 +31,7 @@ import {
   type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
+import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import {
   binaryCopySelectionMessage,
@@ -211,7 +211,7 @@ async function writeUnderGrant(
 > {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
-  let written: RoutedWriteOutcome;
+  let written: WriteOutcome;
   try {
     written = await deps.documentSync
       .agentEdit()
@@ -231,7 +231,9 @@ async function writeUnderGrant(
     // A removal that won the document's lock after the grant (a pull, a staged or immediate
     // commit): the model's interim answer is `document_not_found`, with the record's sentence.
     if (isDocumentNotFoundError(cause))
-      return documentNotFoundError(parsed.command, address.filePath, cause.modelReason);
+      return cause.removal
+        ? removedFileResult(parsed.command, cause.removal, address.filePath)
+        : documentNotFoundError(parsed.command, address.filePath);
     if (!(cause instanceof FileEditRefusedError)) throw cause;
     const refusal = firstRefusal(cause);
     return fileAccessDeniedError(

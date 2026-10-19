@@ -1,7 +1,6 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
   type AgentEditCore,
-  type DiscardedWriteReason,
   modelResult,
   parseDocumentAddress,
   type ReadCommand,
@@ -9,7 +8,8 @@ import {
   type ResponseCommitAttempt,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
-  rejectedWriteExplanation,
+  type RetiredWriteReason,
+  rejectedWriteResult,
   splitDocumentFile,
   type WriteCommand,
   type WriteContext,
@@ -17,7 +17,10 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { DocumentRemovedError } from "../../context/ports/document-removals.js";
+import {
+  type DocumentRemovals,
+  DocumentRemovedError,
+} from "../../context/ports/document-removal.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
@@ -27,7 +30,6 @@ import {
   type ResponseSaveResult,
   type RoutedReadContext,
   type RoutedWriteContext,
-  type RoutedWriteOutcome,
   sameDestination,
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
@@ -81,6 +83,8 @@ function isSaveAttemptMiss(cause: unknown): boolean {
 export function createThreadPeerCorePool(input: {
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
   drafts: Pick<ApplicationDraftStore, "getDraft">;
+  /** A pull that lost its closed draft names the document's removal when there is one. */
+  removals: DocumentRemovals;
   fences: ReplySaveFences;
   liveUtilityCore: LiveAgentEditCore;
   /**
@@ -309,10 +313,7 @@ export function createThreadPeerCorePool(input: {
       : outcome;
   }
 
-  async function write(
-    command: WriteCommand,
-    routed: RoutedWriteContext,
-  ): Promise<RoutedWriteOutcome> {
+  async function write(command: WriteCommand, routed: RoutedWriteContext): Promise<WriteOutcome> {
     const { grant, ...context } = routed;
     const documentId = documentIdFromCommand(command);
     const record = context.responseIdentity?.editScopeId
@@ -381,13 +382,17 @@ export function createThreadPeerCorePool(input: {
         return branchClosed(command);
       }
     };
-    // A staged write whose peer pull lost to Discard all or an item Discard: the same named
-    // refusal its save receipt would carry, never the store's raw error.
+    // A staged write whose peer pull lost to Discard all, an item Discard or the document's
+    // removal: the same named refusal its save receipt would carry, never the store's raw error.
     const staged = async (): Promise<WriteOutcome> => {
       try {
         return await call();
       } catch (cause) {
-        const reason = await discardLossReason(cause, entry?.linkView ?? routedContext.linkView);
+        const reason = await retirementLossReason(
+          cause,
+          entry?.linkView ?? routedContext.linkView,
+          documentId,
+        );
         // The reply's earlier staged writes stay: the retirement refuses them with their own receipts.
         if (!reason) throw cause;
         // An entry this attempt installed and never pinned routes the reply to the closed
@@ -415,16 +420,17 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * Why a failed peer pull is Discard's doing, in the save fence's precedence: the branch it
-   * pulled for is closed, else the upstream it captured is closed or gone, else its peer is.
-   * Any other failure, or a pull whose branch and drafts are all still active, is not a Discard.
+   * Why a failed peer pull lost its draft: the document was removed, else (in the save fence's
+   * precedence) the branch it pulled for is closed, else the upstream it captured is closed or
+   * gone, else its peer is. Any other failure, or a pull whose branch and drafts are all still
+   * active, retired nothing.
    */
-  async function discardLossReason(
+  async function retirementLossReason(
     cause: unknown,
     view: LinkView,
-  ): Promise<DiscardedWriteReason | undefined> {
-    if (cause instanceof DocumentRemovedError && cause.removal.reason === "discarded")
-      return "discarded_document";
+    documentId: string | null,
+  ): Promise<RetiredWriteReason | undefined> {
+    if (cause instanceof DocumentRemovedError) return { removed: cause.removal };
     const lost = cause instanceof ThreadPeerPullLost;
     if (
       !lost &&
@@ -438,8 +444,17 @@ export function createThreadPeerCorePool(input: {
       const documentDraft = await input.drafts.getDraft(draftId);
       return !documentDraft || documentDraft.status === "closed";
     };
-    if (await gone(cause.upstreamDraftId)) return "discarded_document";
-    return (await gone(cause.peerDraftId)) ? "discarded_edit" : undefined;
+    const reason = (await gone(cause.upstreamDraftId))
+      ? "discarded_document"
+      : (await gone(cause.peerDraftId))
+        ? "discarded_edit"
+        : undefined;
+    if (!reason || !documentId) return reason;
+    // A closed draft over a removed document is the removal's, as the save fence judges it.
+    const removal = (await input.removals.lookup([documentId as DocumentId])).get(
+      documentId as DocumentId,
+    );
+    return removal ? { removed: removal } : reason;
   }
 
   /**
@@ -500,7 +515,7 @@ export function createThreadPeerCorePool(input: {
     peers: readonly {
       threadId: string;
       peerDraftId: string;
-      reason: import("@meridian/agent-edit/integration").DiscardedWriteReason;
+      reason: import("@meridian/agent-edit/integration").RetiredWriteReason;
     }[],
   ): Promise<void> {
     const errors: unknown[] = [];
@@ -804,10 +819,9 @@ function branchClosed(command: WriteCommand): WriteOutcome {
   };
 }
 
-/** A write the Work's Discard retired before it could be staged; the copy a save receipt uses. */
-function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): WriteOutcome {
+/** A write a Discard or a removal retired before it could be staged; the copy a save receipt uses. */
+function discardedWrite(command: WriteCommand, reason: RetiredWriteReason): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
-  const message = `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`;
   return {
     status: "invalid_write",
     isError: true,
@@ -816,7 +830,7 @@ function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): Wr
     result: modelResult({
       command: command.command,
       status: "invalid_write",
-      payload: { path, message, rejected: reason },
+      payload: { path, ...rejectedWriteResult(reason).model },
     }),
   };
 }

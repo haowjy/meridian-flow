@@ -94,9 +94,12 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   // No Work branches exist in memory, so the pool routes both destinations to the live core.
   const fileAccess = createAllowAllFileAccess();
+  // Nothing is removed in memory.
+  const removals = { lookup: async () => new Map() };
   const agentEdit = createThreadPeerCorePool({
     branches,
     drafts: { getDraft: async () => null },
+    removals,
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
     pullThreadPeer: async () => undefined,
@@ -106,7 +109,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drafts: { getDraft: async () => null },
       branches,
       fileAccess,
-      removals: { lookup: async () => new Map() },
+      removals,
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
     }),
@@ -150,16 +153,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 
   return createCollabFacade({
-    removal: {
-      documentRemoval: {
-        recount() {
-          throw new Error("Document recount requires the persistent tree");
-        },
-        async remove() {
-          throw new Error("Document removal requires the persistent tree");
-        },
-      },
-    },
     lifecycle: { dispose: () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
@@ -170,7 +163,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
-      roomRemoval: hocuspocusPersistence.roomRemoval,
+      // Nothing is removed in memory.
+      roomRemoval: async () => null,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,

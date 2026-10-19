@@ -9,7 +9,7 @@ import {
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import { DocumentRemovedError } from "../../context/ports/document-removals.js";
+import { DocumentRemovedError } from "../../context/ports/document-removal.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { DraftConcurrentJournalWatermarks } from "./draft-agent-edit.js";
 import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";

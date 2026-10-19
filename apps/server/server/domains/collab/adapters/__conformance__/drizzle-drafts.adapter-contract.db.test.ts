@@ -4,12 +4,12 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
-import { createDrizzleDocumentRemovals } from "../../../context/tree/document-removals.js";
 import {
   commitJournaledUpdate,
   resetDraftFromDoc,
 } from "../../test-support/draft-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
+import { createDraftClose } from "../drizzle-draft-close.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -154,7 +154,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     let livePersistence = createDrizzleCollabPersistence(db);
     function createDraftStore() {
       return createDrizzleDraftStore(db, {
-        removals: createDrizzleDocumentRemovals(db),
+        close: createDraftClose(),
         workProjection: createTestWorkProjectionMutation(db),
         live: { journal: livePersistence.journal },
         branches: createDrizzleBranchStore(db),
@@ -314,7 +314,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalog,
       });
       const measuredStore = createDrizzleDraftStore(db, {
-        removals: createDrizzleDocumentRemovals(db),
+        close: createDraftClose(),
         live: { journal: livePersistence.journal },
         workProjection: projection,
         branches: createDrizzleBranchStore(db),

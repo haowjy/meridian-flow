@@ -61,7 +61,7 @@ export interface WriteTool {
     documentId: string;
     threadId: string;
     peerDraftId: string;
-    reason: import("../ports/document-coordinator.js").DiscardedWriteReason;
+    reason: import("../ports/document-coordinator.js").RetiredWriteReason;
   }): Promise<void>;
   /** Drop one thread/document pair's runtimes and staged writes, for the request that owns them. */
   invalidateThreadDocument(docId: string, threadId: string): Promise<void>;

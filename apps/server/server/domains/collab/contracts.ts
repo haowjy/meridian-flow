@@ -23,15 +23,13 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { DocumentRemoval } from "../context/ports/document-removal.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type {
   RefusedResponseDocument,
-  RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type { RefusedResponseDocument, RoutedWriteOutcome };
+export type { RefusedResponseDocument };
 
 import type { ApplyItemRef } from "./domain/branch-apply.js";
 import type {
@@ -520,13 +518,12 @@ export type DraftPeerShadowAccess = {
   /**
    * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
    * `stands` when the branch's draft on the document (or a thread peer of it) holds a
-   * contribution; otherwise closes the drafts. The caller invokes retirement after
-   * commit only if the document survives; a tombstone belongs to removal retirement.
+   * contribution; otherwise closes the drafts, which retire after commit.
    */
   retractCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
-  }): Promise<{ outcome: "stands" } | { outcome: "retracted"; retire(): Promise<void> }>;
+  }): Promise<"stands" | "retracted">;
 };
 
 export type DocumentAttribution = {
@@ -547,7 +544,7 @@ export type CollabLifecycle = {
   dispose(): void;
 };
 
-export type CollabDomain = { documentRemoval: DocumentRemoval } & CollabTransport &
+export type CollabDomain = CollabTransport &
   CollabLifecycle &
   AgentEditAccess &
   TurnReversalAccess &

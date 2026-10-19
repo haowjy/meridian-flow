@@ -5,7 +5,6 @@ import { draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { DocumentRemovals } from "../context/ports/document-removals.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
@@ -64,8 +63,6 @@ type HocuspocusPersistenceDeps = {
    */
   afterCallerCommit?(callback: () => void): void;
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
-  /** Removal records, for the gateway's `4208`; absent where nothing is ever removed. */
-  removals?: DocumentRemovals;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
@@ -80,7 +77,6 @@ export type HocuspocusPersistenceService = Pick<
   | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
   | "currentLiveGeneration"
-  | "roomRemoval"
   | "validateHocuspocusDocument"
   | "admitDraftWriterUpdate"
   | "persistConnectionUpdate"
@@ -369,16 +365,6 @@ export function createHocuspocusPersistenceService(
     validateHocuspocusDocument,
     async currentLiveGeneration(documentId) {
       return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
-    },
-
-    async roomRemoval(room) {
-      if (!deps.removals) return null;
-      const documentId =
-        "documentId" in room
-          ? room.documentId
-          : (await requireDraftStore().getDraft(room.draftId))?.documentId;
-      if (!documentId) return null;
-      return (await deps.removals.lookup([documentId])).get(documentId) ?? null;
     },
 
     async resolveDraftHocuspocusRoom(draftId, generation) {
