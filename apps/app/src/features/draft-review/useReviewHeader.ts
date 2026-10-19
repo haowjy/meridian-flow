@@ -10,9 +10,10 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
+import { useEffect, useSyncExternalStore } from "react";
+import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { useDraftReview } from "./DraftReviewProvider";
 import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
@@ -64,10 +65,16 @@ export type ReviewHeaderModel = {
  * the other drafts' separately. Pure reads of the command records, so the
  * identity row's notices can read them beside the header model.
  */
-export function useReviewFailures(_input: { documentId: string; itemKey: string }) {
+export function useReviewFailures(input: { documentId: string; itemKey: string }) {
+  const owner = useDraftCommandOwner();
+  const { files } = useDraftReview();
+  useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
   return {
-    commandError: null,
-    failedElsewhere: [] as { row: ReviewFileTarget; failure: BranchCommandFailure }[],
+    commandError: owner.state(input.itemKey).failure,
+    failedElsewhere: files.flatMap((row) => {
+      const failure = owner.state(row.draft.itemKey).failure;
+      return row.draft.itemKey !== input.itemKey && failure ? [{ row, failure }] : [];
+    }),
   };
 }
 
@@ -81,9 +88,7 @@ export function useReviewHeader({
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
   const next = nextReviewFile(files, documentId, null);
-  // The draft Apply draft, Discard draft and Next draft move to is read while
-  // the writer is still here (once this review's own read is in), so opening it
-  // finds its preview already in the cache.
+  // Warm the next addressed room lookup without fetching a server text preview.
   const queryClient = useQueryClient();
   const nextDocumentId = next?.documentId;
   const nextItemKey = next?.draft.itemKey;
@@ -91,7 +96,7 @@ export function useReviewHeader({
   useEffect(() => {
     if (!ready || !nextDocumentId || !nextItemKey) return;
     void queryClient.prefetchQuery(
-      draftPreviewQueryOptions({
+      draftMetadataQueryOptions({
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: nextDocumentId,
@@ -99,21 +104,17 @@ export function useReviewHeader({
       }),
     );
   }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.workId, queryClient]);
-  const locked = controller.dispositionLocked;
+  const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
-  /**
-   * Run a whole-draft command, then move to the next draft (or live) without
-   * waiting on it. Offline the command is refused before it is sent, so the
-   * writer stays on this draft, where the refusal shows.
-   */
+  // Local Discard stays in this draft. Only Apply may advance to another file.
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
     const start = controller.startDraft(mode, { documentId, itemKey });
     void start.outcome;
-    if (next && start.sent) onOpenDraft(next);
+    if (mode === "apply" && next && start.sent) onOpenDraft(next);
   };
   return {
     controller,

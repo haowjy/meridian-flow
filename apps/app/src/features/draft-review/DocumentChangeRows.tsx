@@ -1,7 +1,7 @@
 /**
  * DocumentChangeRows — one draft's changes as rows, from any `DraftChangesView`:
  * the open review's (`useReviewChanges`) or an unopened draft's
- * (`useDraftView`). Loading shows a skeleton, an unreadable preview shows
+ * (`useDraftView`). Loading shows a skeleton, an unreadable room shows
  * Retry (never "no changes"), a ready draft shows its rows in document order
  * and pulses a change that arrived while the writer was looking.
  *
@@ -75,6 +75,7 @@ export function DocumentChangeRows({
           focused={view.focused?.id === change.id}
           arrived={arrived.has(change.id)}
           disabled={view.locked}
+          canApply={view.canApply}
           failure={failure}
           draftFailure={draftFailure}
           onFocus={() => onSelect(change)}

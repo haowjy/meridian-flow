@@ -88,6 +88,11 @@ export class ApplyClickQueue {
     const head = this.clicks[0];
     const cancelled = this.clicks.splice(head?.sent ? 1 : 0);
     for (const click of cancelled) click.finish({ status: "cancelled" });
+    if (!this.clicks.length) {
+      clearTimeout(this.feedbackTimer);
+      this.feedbackTimer = undefined;
+      this.applying = false;
+    }
     if (head?.sent) {
       if (head.answer?.status === "applied") this.settle(head, head.answer);
       else if (!this.request) void this.lookupClosed(head);
@@ -146,7 +151,7 @@ export class ApplyClickQueue {
   private async lookupClosed(click: Click): Promise<void> {
     try {
       const result = await this.port.lookup(click.body);
-      if (this.clicks[0] !== click) return;
+      if (this.clicks[0] !== click || result.commandId !== click.body.commandId) return;
       if (
         result.status === "applied" ||
         result.status === "closed" ||

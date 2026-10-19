@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Text Discard now edits the same draft locally in one undoable step. Dock and Work notices have isolated Undo history; terminal closes leave review and clear the room cache. Removed the server-preview client.
+
 - Apply clicks now keep their frozen meaning in a per-draft browser FIFO, retry the same command after a lost answer, and wait only for the edits captured by the click to be acknowledged.
 
 - Draft review now computes text groups in the browser, shared by the editor, dock and Work rows. Removed text is red and new text green, including writer and formatting edits; draft rooms keep a local IndexedDB copy.

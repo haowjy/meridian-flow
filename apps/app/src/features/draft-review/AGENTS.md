@@ -7,9 +7,13 @@ it never partitions the text.
 
 ## Ownership
 
-- The room runtime owns projection and its cached base. Commands call
-  `projectNow()` and can supply an optimistic base provider; never hide ids or
-  translate old operation selections.
+- The room runtime owns projection. The account command owner supplies its
+  cached optimistic base and freezes each Apply at the click, one FIFO per
+  stable draft id. Never hide ids, translate selections or recut at dispatch.
+- Text Discard is one local transaction. Its caller owns history: editor
+  Ctrl+Z, or a pool-held surface notice with its own UndoManager. A dock
+  Discard never enters editor history. Notice history ends on Undo, the next
+  action or leaving the surface.
 - Room readers retain the rooms on screen, even without an editor. Cached
   text may paint before first sync, but a row is ready only after sync.
 - The editor extension is a passive painter. Every frame addresses the actual

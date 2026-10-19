@@ -5,6 +5,7 @@ import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import * as branchesApi from "@/client/api/branches-api";
+import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 
 type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
 
@@ -323,7 +324,7 @@ export function createReviewScopeFixture(
   });
   const network = {
     listWorkBranchDrafts: vi.spyOn(branchesApi, "listWorkBranchDrafts"),
-    getDraftPreview: vi.spyOn(branchesApi, "getDraftPreview"),
+    getDraftMetadata: vi.spyOn(branchesApi, "getDraftMetadata"),
   };
   // Unconfigured requests stay pending, never accidentally reach a real server.
   for (const endpoint of Object.values(network))
@@ -346,7 +347,9 @@ export function createReviewScopeFixture(
         return room;
       },
     } as unknown as LiveDocumentSessionRegistry);
+  const commands = new DraftCommandOwner(registry);
   const seams = [
+    vi.spyOn(account, "useDraftCommandOwner").mockReturnValue(commands),
     vi.spyOn(account, "useOptionalAccountEpochSignal").mockReturnValue(epoch.signal),
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
     vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),
@@ -361,6 +364,7 @@ export function createReviewScopeFixture(
     render: renderReviewScopes,
     dispose() {
       epoch.abort();
+      commands.close();
       notifyManager.setNotifyFunction((notify) => notify());
       for (const spy of [...Object.values(network), ...seams]) spy.mockRestore();
       if (!options.removal) removal.dispose();

@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
 import {
   type DraftChangesView,
@@ -34,16 +35,22 @@ export function WorkChangeFile({
   const [previewing, setPreviewing] = useState(false);
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
-  if (expanded && (view.status === "gone" || (view.status === "ready" && view.items.length === 0)))
+  if (
+    !controller.owner.state(file.draft.itemKey).pending &&
+    expanded &&
+    (view.status === "gone" || (view.status === "ready" && view.items.length === 0))
+  )
     return null;
   const wholeDocument = expanded && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
-  const review = (focusGroupIds?: readonly string[]) =>
-    file.draft.draftGeneration !== null
+  const review = (focusGroupIds?: readonly string[]) => {
+    controller.dismissNotice();
+    return file.draft.draftGeneration !== null
       ? openReviewFile(file, workId, focusGroupIds)
       : imageOpenable && setPreviewing(true);
+  };
 
   return (
     <>
@@ -55,7 +62,10 @@ export function WorkChangeFile({
             type="button"
             aria-expanded={expanded}
             aria-label={t`Changes in ${name}`}
-            onClick={() => setExpanded((open) => !open)}
+            onClick={() => {
+              controller.dismissNotice();
+              setExpanded((open) => !open);
+            }}
             className={cn(
               "focus-ring grid shrink-0 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-dropdown-hover motion-reduce:transition-none",
               touch ? "size-11" : "size-8",
@@ -87,6 +97,7 @@ export function WorkChangeFile({
           </button>
         )}
       </div>
+      <DraftCommandStatus itemKey={file.draft.itemKey} />
       <DraftImagePreview
         target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}

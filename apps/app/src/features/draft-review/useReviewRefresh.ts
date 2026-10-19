@@ -61,7 +61,7 @@ export function useReviewRefresh({
         ),
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
+            queryKey: projectQueryKeys.workDraftMetadata(projectId, workId, documentId, itemKey),
           },
           { cancelRefetch: false },
         ),

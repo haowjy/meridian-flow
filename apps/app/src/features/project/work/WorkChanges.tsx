@@ -24,6 +24,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
+import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
@@ -43,8 +45,29 @@ export function WorkChanges({
   const workId = work.id;
   const controller = useWorkBranchCommands({ projectId, work });
   const drafts = useWorkBranchDrafts(projectId, workId);
+  const held = useRoomReviews(
+    (drafts.files ?? [])
+      .filter((file) => file.draft.draftGeneration !== null)
+      .map((file) => ({
+        projectId,
+        workId,
+        documentId: file.documentId,
+        itemKey: file.draft.itemKey,
+      })),
+  );
+  const textRows = (drafts.files ?? []).filter((file) => file.draft.draftGeneration !== null);
   const touch = usePhoneShell() === true;
-  const files = drafts.files ?? [];
+  const files = (drafts.files ?? []).filter((file) => {
+    if (controller.owner.state(file.draft.itemKey).hidden) return false;
+    const read = held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)];
+    return (
+      file.draft.wholeItem ||
+      read?.status !== "ready" ||
+      read.changes.length > 0 ||
+      controller.owner.state(file.draft.itemKey).pending ||
+      controller.owner.state(file.draft.itemKey).failure
+    );
+  });
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {
@@ -64,7 +87,7 @@ export function WorkChanges({
       </WorkFileGroup>
     );
   }
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && !controller.notice) return null;
 
   const everyDraft = files.map((file) => ({
     documentId: file.documentId,
@@ -89,12 +112,21 @@ export function WorkChanges({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem
-                disabled={controller.dispositionLocked}
-                onSelect={() => dispose("apply")}
-              >
-                <Trans>Apply all changes</Trans>
-              </DropdownMenuItem>
+              {files.every(
+                (file) =>
+                  file.draft.draftGeneration !== null &&
+                  (held[textRows.findIndex((row) => row.draft.itemKey === file.draft.itemKey)]
+                    ?.frame?.groups.length ?? 0) > 0,
+              ) ? (
+                <DropdownMenuItem
+                  disabled={
+                    controller.dispositionLocked || held.some((read) => read.status !== "ready")
+                  }
+                  onSelect={() => dispose("apply")}
+                >
+                  <Trans>Apply all changes</Trans>
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem
                 variant="destructive"
                 disabled={controller.dispositionLocked}
@@ -150,6 +182,7 @@ export function WorkChanges({
           ),
         }))}
       />
+      <DiscardNotice commands={controller} />
     </WorkFileGroup>
   );
 }

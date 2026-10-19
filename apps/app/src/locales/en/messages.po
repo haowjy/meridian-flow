@@ -757,6 +757,15 @@ msgstr "Apply couldn't finish"
 msgid "Apply draft"
 msgstr "Apply draft"
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Apply is temporarily unavailable."
+msgstr "Apply is temporarily unavailable."
+
+#: src/features/draft-review/DraftCommandStatus.tsx
+msgid "Apply is waiting for confirmation."
+msgstr "Apply is waiting for confirmation."
+
+#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr "Applying"
@@ -1293,6 +1302,10 @@ msgstr "Copy reference"
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
 msgstr "Copy removed text"
+
+#: src/features/draft-review/ReviewToast.tsx
+msgid "Copy unsent text"
+msgstr "Copy unsent text"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -1929,12 +1942,17 @@ msgstr "Discard this chat's changes?"
 #~ msgid "Discard with your edits"
 #~ msgstr "Discard with your edits"
 
+#: src/features/draft-review/DiscardNotice.tsx
+msgid "Discarded"
+msgstr "Discarded"
+
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
 msgstr "Discarding"
 
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
+#: src/features/draft-review/ReviewToast.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -3483,6 +3501,10 @@ msgstr "Remove link"
 msgid "Remove reference"
 msgstr "Remove reference"
 
+#: src/features/draft-review/DiscardNotice.tsx
+msgid "Removed"
+msgstr "Removed"
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -3586,6 +3608,7 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -4335,6 +4358,10 @@ msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
 
 #: src/features/draft-review/ReviewMessageText.tsx
+msgid "The review updated. Choose the change again."
+msgstr "The review updated. Choose the change again."
+
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "The server couldn't do that. Try again."
 msgstr "The server couldn't do that. Try again."
 
@@ -4619,6 +4646,10 @@ msgstr "This draft is no longer here. It may have been applied or discarded alre
 msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
 msgstr "This draft was discarded, so the change wasn't kept. The AI will read it again."
 
+#: src/features/draft-review/ReviewToast.tsx
+msgid "This draft was discarded."
+msgstr "This draft was discarded."
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
 msgstr "This file holds code only."
@@ -4879,6 +4910,7 @@ msgid "Undid change to Work {0}."
 msgstr "Undid change to Work {0}."
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/DiscardNotice.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"

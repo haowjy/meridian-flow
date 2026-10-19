@@ -20,7 +20,7 @@ import { type ChangeAttribution, type ReviewChange, reviewChanges } from "./revi
 export const REVIEW_DEBOUNCE_MS = 120;
 export type ReviewRoom = Pick<DocumentSession, "document" | "subscribe" | "getSnapshot">;
 export type ReviewSurface = "editor" | "dock";
-/** B2b folds its queue here. Called only after base/provider invalidation, never per keystroke. */
+/** The command owner folds its queue here. Called only after base/provider invalidation, never per keystroke. */
 export type ReviewBaseProvider = (room: ReviewRoom, schema: Schema) => readonly PMNode[];
 /** B3c supplies names and membership independently of text grouping. */
 export type ReviewAttributionProvider = (

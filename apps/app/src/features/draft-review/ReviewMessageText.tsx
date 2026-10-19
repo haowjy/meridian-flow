@@ -9,6 +9,10 @@ import type { BranchCommandFailure, ServerRefusal } from "./review-command-types
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {
   switch (serverCode) {
+    case "review_updated":
+      return msg`The review updated. Choose the change again.`;
+    case "unavailable":
+      return msg`Apply is temporarily unavailable.`;
     case "work_archived":
       return msg`This Work is archived. Unarchive it to apply or discard its changes.`;
     case "work_not_found":
@@ -50,7 +54,7 @@ export function RefusalReason({ serverCode, serverReason, removal }: Partial<Ser
     return (
       <>
         {" "}
-        <RemovedDocumentApplyRefusal record={null} />
+        <RemovedDocumentApplyRefusal record={removal ?? null} />
       </>
     );
   const known = serverCode ? knownRefusal(serverCode) : undefined;
@@ -72,7 +76,7 @@ export function ReviewMessageText({
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={null} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={removal} />
         </>
       );
     case "apply-server-error":

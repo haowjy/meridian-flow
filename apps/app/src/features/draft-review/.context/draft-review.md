@@ -28,7 +28,7 @@ existing marks while the next frame waits. `projectNow()` cancels that wait.
 Ready requires first room sync; cached changes alone are not authority to
 Discard. Once synced, temporary offline status does not forget that history.
 
-## Commands and attribution are separate seams
+## Commands and attribution
 
 - `setBaseProvider(baseOf)` and `invalidateBase()` let the command owner fold
   queued Apply clicks into the base. The provider receives the room and schema;
@@ -36,7 +36,7 @@ Discard. Once synced, temporary offline status does not forget that history.
   exists beside this projection.
 - Every displayed group carries its immutable `frame`. `targetOfChanges`
   supplies that frame and group ids to command callbacks, not a later read of
-  the runtime. Apply/Discard delivery remains the command owner's job.
+  the runtime. The owner validates the frame before interpreting projection-local ids.
 - `setAttributionProvider()` joins a per-group byline/membership map without
   changing boxes. An absent map entry is explicitly unknown, so candidate chat
   rows remain visible without a byline. The attribution lane owns fetching,
@@ -57,3 +57,45 @@ A draft-only editor is the document's single workspace tab in its review Work,
 not a second tab. Closing its review is not Discard. Catalog removal and
 promotion remain `DraftOnlySettlement`/the context lifecycle's responsibility;
 list omission alone must not infer local Discard or successful Apply.
+
+## Account command lifetime
+
+`AccountFeatureLifetime.draftCommands` is shared by editor, chat and Work
+surfaces. `bind(ref, session)` joins one stable draft-row owner and installs
+its cached base provider. `apply(ref, target)` synchronously freezes the Yjs
+snapshot, O/P blocks, selected ids and one room-base-to-O delta. The queue
+retains a `readDraftRoom` lease independently of React until terminal.
+
+`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
+then an item Retry. A record alone proves landing; an applied answer without
+the record keeps its contribution. Closed/refused answers remove only their
+own contribution. A terminal close cancels unsent clicks and observes a sent
+head's durable outcome; applied then needs no room record. Feedback starts at
+500 ms in reserved footer space. No queue or optimistic base persists.
+
+The base provider folds `applyBase` over unrecorded clicks in order. Base,
+record and queue changes invalidate it; typing only reprojects. Group targets
+must still describe equal base and prose at capture; a changed pre-click
+projection is refreshed and reported locally, never reinterpreted by its
+old occurrence suffix. No post-click edit changes a frozen command.
+
+`discard(ref, target, surface)` composes against that optimistic base and
+calls `writeDiscardBlocks` (including `recordWriteBack`) in one transaction.
+Editor history uses the binding origin with stop-capture boundaries. A dock
+or Work notice owns a separate manager and pool lease, retains the runtime,
+and installs `recordRestorations` so Undo writes links in its own transaction.
+Undo restores a cached list item before server discovery catches up. At most
+the surface's latest Discard history is offered; another action ends it.
+
+Created-document removal and Work Discard all use the server through the
+same account owner. Their optimistic visibility is lifecycle state, never
+text-group hiding. Discard all includes bound empty drafts as well as listed
+items. Removed rooms ask the existing availability owner for the record;
+there is no second removal cache. `4205` maps to terminal `closed` (including
+in-band code-1000 delivery), `4208` to `removed`; session teardown clears
+the exact IndexedDB cache. One-document text Discard clears neither.
+
+Addressed room lookup is `useDraftMetadata`, never a server text preview.
+The metadata GET and no-text creation Apply capability are integration
+requirements: the browser cannot derive a draft id from the list item key,
+nor manufacture a text snapshot for an image. Such an Apply is not offered.
