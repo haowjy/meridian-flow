@@ -46,7 +46,6 @@ export type DraftSnapshot = {
   /** Derived from the origin Work as read, never stored: anything but `active` is frozen. */
   lifecycle: DraftWorkLifecycle;
   hasEffect: boolean;
-  blocking: boolean;
   discardedStateVector?: Uint8Array | null;
   schemaVersion: CollabSchemaVersion;
 };

@@ -1,4 +1,4 @@
-/** Loads current-generation Work-draft journal evidence for pending-review classification. */
+/** Loads active Work-draft membership and text-derived conversation evidence. */
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 
@@ -19,11 +19,7 @@ export type WorkBranchPendingEvidence = {
     updatedAt: Date;
     /** The pulled-live-cut effect predicate (§3.1): the draft differs from live. */
     hasEffect: boolean;
-    /** A held restoration keeps an item listed with no effect. */
-    blocking: boolean;
   };
-  /** The draft has at least one reviewable journal row. */
-  hasRows: boolean;
   /** Chats whose agent writes are pending on the draft, most recent write first, distinct. */
   agentThreadIds: string[];
 };
@@ -31,7 +27,7 @@ export type WorkBranchPendingEvidence = {
 export type WorkBranchPendingStore = {
   /**
    * Every active `work_draft` draft of the branch (only these documents' when given), each
-   * with its reviewable rows (maybe none).
+   * with its pending text membership.
    */
   listBranchDraftEvidence(
     branchId: BranchId,
@@ -44,8 +40,8 @@ export type WorkBranchPendingStore = {
   ): Promise<ReadonlyMap<DocumentId, string>>;
   /**
    * Distinct pending documents per Work, by the canonical draft → branch → Work mapping:
-   * its active branch's drafts with reviewable rows and (`hasEffect` or `blocking`), plus
-   * that branch's change rows. The one membership predicate of `branch-review-items.ts`.
+   * its active branch's active drafts with `hasEffect`, plus
+   * that branch's created nodes. The one membership predicate of `branch-review-items.ts`.
    */
   listBranchesChangingDocument(input: {
     projectId: ProjectId;

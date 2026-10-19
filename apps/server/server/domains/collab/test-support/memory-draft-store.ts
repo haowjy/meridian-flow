@@ -33,7 +33,6 @@ export function testDraftRow(
     checkpointSeq: 0,
     lifecycle: "active",
     hasEffect: false,
-    blocking: false,
     schemaVersion: COLLAB_SCHEMA_VERSION,
     ...input,
   };

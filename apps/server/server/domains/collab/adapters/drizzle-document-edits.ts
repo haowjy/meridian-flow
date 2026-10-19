@@ -1,4 +1,4 @@
-// Immutable edit capture and placement shared by writer inverses and the model stack.
+// Immutable edit capture shared by writer inverses and the model stack.
 import {
   type CapturedPart,
   captureEditFrontier,
@@ -13,11 +13,9 @@ import {
   documentYjsUpdates,
   draftWriteJournal,
   type EditOrigin,
-  type EditPlacement,
 } from "@meridian/database";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -67,6 +65,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       aliases: p.aliases,
       targets: p.targets ?? [],
       origin: p.origin,
+      // Required by the legacy NOT NULL column until the migrations lane drops it.
       placement: p.origin,
     })),
   );
@@ -105,53 +104,4 @@ export function captureReceiptRows(
     ...captureEditParts(doc, [receipt])[0],
     origin: rows[i].origin,
   }));
-}
-export async function placeDraftRows(
-  db: Db,
-  draftId: string,
-  generation: number,
-  rowIds: readonly number[],
-  placement: EditPlacement,
-): Promise<void> {
-  if (!rowIds.length) return;
-  const placed = await db
-    .update(documentEditParts)
-    .set({ placement })
-    .where(
-      and(
-        sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'draftId' = ${draftId}`,
-        sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
-        sql`(${documentEditParts.placement}->>'rowId')::bigint IN (${sql.join(
-          rowIds.map((id) => sql`${id}`),
-          sql`,`,
-        )})`,
-      ),
-    )
-    .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
-  // Clearing a hold is a review-membership change, written through the metadata door.
-  if (placed.length) await bumpDraftRevisions(db, [draftId], { blocking: false });
-  if (placement.kind === "live" && placed.length === 1) {
-    await db
-      .update(documentYjsUpdates)
-      .set({ editId: placed[0].editId, editPartOrdinal: placed[0].ordinal })
-      .where(eq(documentYjsUpdates.id, placement.seq));
-  }
-}
-export async function settleDraftGeneration(
-  db: Db,
-  draftId: string,
-  generation: number,
-  kind: "discarded" | "retired",
-): Promise<void> {
-  await db
-    .update(documentEditParts)
-    .set({ placement: { kind } })
-    .where(
-      and(
-        sql`${documentEditParts.placement}->>'kind' = 'pending'`,
-        sql`${documentEditParts.placement}->>'draftId' = ${draftId}`,
-        sql`(${documentEditParts.placement}->>'generation')::integer = ${generation}`,
-      ),
-    );
 }

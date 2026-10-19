@@ -42,23 +42,21 @@ use the ambient transaction, including the reply's uncommitted receipts.
 A draft's content is its checkpoint (`state`, `state_vector`) replayed with its
 tail. `readDraftAt` reads the row, the checkpoint, and the tail in one
 statement, and nothing else reads `state`. Every committed write moves
-`revision`: appends, checkpoint rewrites, closes, and changes to `blocking` or
-a row's status. Rewrites and metadata changes are fenced by it; appends bump it
+`revision`: appends, checkpoint rewrites and closes. Rewrites and metadata changes are fenced by it; appends bump it
 without checking it. The projection job's `has_effect` write is the one
 exception: it writes at the judged revision and never bumps it, so it never
-makes an exact rewrite miss. `generation` still names rooms and groups rows and placements; lane G removes
+makes an exact rewrite miss. `generation` still names rooms and groups journal rows; lane G2 removes
 that legacy state. No operation bumps it through reset.
 
 The contract (row, read and write types, the `DraftStore` port, the
 materialization of one read) is `domain/draft-store.ts`. Its Drizzle storage
 half is `adapters/drizzle-draft-storage.ts`: the row with its derived Work
 lifecycle, `readDraftAt`, and the content primitives `appendRowsWithinTx`,
-`commitRewriteWithinTx` and `insertJournalRows`. Every metadata write outside
-content (a close, the hold flag, a journal row's status flip, Apply staging's
-revision check) goes through one door,
-`bumpDraftRevisions` in `shared/draft-revisions.ts`: lock the rows in id
-order, bump `revision` with the change, optionally only at an expected
-revision. `createDrizzleDraftStore` wraps them with each write's application
+`commitRewriteWithinTx` and `insertJournalRows`. The only metadata mutation
+outside content is the shared close (`drizzle-draft-close.ts`): lock active
+Work drafts before peers, each in id order, then set closed status and cause
+while bumping `revision`. Closing writes no receipt disposition or journal status;
+Apply evidence and the retained text decide each part's disposition. `createDrizzleDraftStore` wraps them with each write's application
 half (Work admission and the Works mutation boundary for every write except an
 append, the live advisory lock, the projection job's effect write, edit
 receipts). An append takes only its draft row. These draft writes stand outside the doors,
@@ -123,3 +121,13 @@ and delegates this ordering.
 A peer reconstructed from journal rows is integrable only after every row has applied with no pending structs and no pending delete set. State-vector equality, or a pending-struct check before applying, is not enough.
 
 [#862]: https://github.com/haowjy/meridian-flow/pull/862
+
+## Pending review membership
+
+An edited document is listed exactly while its Work draft is active and
+`has_effect`; a created document remains listed independently of text.
+`branch-review-items.ts` and `drizzle-work-branch-pending.ts` share that rule.
+Counts and document hints read only this metadata and created tree nodes, never
+receipt history or full review diffs. The review list's conversation membership
+comes from the shared captured disposition reader's classification members and
+receipt owners, once per draft, not journal statuses or generation.
