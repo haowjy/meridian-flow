@@ -42,8 +42,9 @@ the room lags admissions still in their transaction.
 
 A removed document answers `4208 document-deleted` (terminal) wherever the
 gateway refuses. Every refusing room hook (`onConnect`, `beforeSync`,
-`onLoadDocument`) runs inside `withRemovalRefusal`, the one place that decides
-it, with authorization: the refusal's cause is a `DocumentRemovedError` (raised
+`onLoadDocument`, `connected`) runs inside `withRemovalRefusal`, the one place that decides
+it, with authorization: the refusal's cause is a `DocumentNotFoundError` with a
+`removal` record (raised
 only past admission, under the document's mutation lock, so nothing was
 journaled), or the room's document has a removal record (`roomRemoval`: a draft
 room's by its retained draft, never reopened) and the principal may read the

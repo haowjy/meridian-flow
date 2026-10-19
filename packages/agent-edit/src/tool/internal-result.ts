@@ -5,7 +5,7 @@ import type { Block } from "../codec-types.js";
 import type { ObservationFrontier } from "../frontier.js";
 import type { LinkShowing } from "../links/shown.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
-import { removedFileMessage } from "./removal-copy.js";
+import { removedFile } from "./removal-copy.js";
 import type {
   DocumentCommandName,
   WriteErrorDetail,
@@ -35,10 +35,9 @@ export function documentNotFound(
   commandName: DocumentCommandName,
   cause?: { removal?: DocumentRemovalRecord },
 ): InternalWriteResult {
-  return status(
-    "document_not_found",
-    cause?.removal ? removedFileMessage(cause.removal) : documentNotFoundMessage(commandName),
-  );
+  if (!cause?.removal) return status("document_not_found", documentNotFoundMessage(commandName));
+  const removed = removedFile(cause.removal);
+  return status(removed.status, removed.message);
 }
 
 /** The one sentence every missing-document result gives the model; a removed file has its own. */

@@ -73,7 +73,16 @@ its peers' staged writes are refused `{ removed: record }`), so a Discard that
 closes a created document's drafts and then tombstones it still closes their
 rooms `4208`; any other closed draft's room closes stale and its peers are
 refused with their cause's `discarded_*` reason. A removal's selection names its
-documents, whose live rooms close `4208` even with no draft. The closer is
+documents, whose live rooms close `4208` even with no draft, but only while the
+removal still stands: after every matching room load settles, one batched record
+read outside DB locks drops live rooms a Work Restore has since made living
+again (draft rooms close by exact draft id; a closed draft stays closed). A
+Restore that commits while that read is in flight can still have its new live
+connection closed `4208`; the app's stale-4208 recovery reconnects it. Why a
+reply's closed pin lost its write is one pure rule, `closedPinReason`
+(`domain/closed-pin-reason.ts`), shared by the save fence and a failed peer
+pull: a draft closed `document_removed` is the removal's even when its document
+stands again (`removed: null`). The closer is
 built at the composition root and its retirement bound by the collab domain once
 rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as in
 fixtures without rooms, it retires nothing. A caller whose commit happens inside

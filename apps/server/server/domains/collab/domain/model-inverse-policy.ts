@@ -8,7 +8,7 @@ import {
   type ModelInverseCommand,
   type PreparedEditRoots,
   prepareEditRoots,
-  removedFileMessage,
+  removedFile,
 } from "@meridian/agent-edit/integration";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -208,11 +208,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         status: "document_not_found",
         message: "File not found. Read the project to find the right path.",
       };
-    if (document.removal)
-      return {
-        status: "document_not_found",
-        message: removedFileMessage(document.removal),
-      };
+    if (document.removal) return removedFile(document.removal);
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,
       actionId = randomUUID();

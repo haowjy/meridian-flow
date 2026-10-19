@@ -17,7 +17,8 @@ export interface StagedHelperCut {
 /**
  * Why a staged write did not land. `discarded_*` come from a Discard that retired the thread's peer:
  * the whole branch, this created document, or this edited document's text. `removed` is the
- * document's removal, with its record.
+ * document's removal, with its record; null when a removal closed the draft but the document
+ * stands again (a Work Restore).
  */
 export type StagedWriteRejectionReason =
   | "discard"
@@ -26,7 +27,7 @@ export type StagedWriteRejectionReason =
   | "discarded_draft"
   | "discarded_document"
   | "discarded_edit"
-  | { removed: DocumentRemovalRecord };
+  | { removed: DocumentRemovalRecord | null };
 
 /** A response's staged entries for one document, replayed against an explicit helper cut. */
 export interface StagedWriteReplayInput {

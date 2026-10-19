@@ -6,7 +6,7 @@
 import {
   type DocumentCommandName,
   modelResult,
-  removedFileMessage,
+  removedFile,
 } from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord, FileAccessDenial } from "@meridian/contracts/protocol";
 import type { FileAccessDenied } from "../domains/file-policy/index.js";
@@ -32,21 +32,18 @@ const AGENT_READ_ONLY_OTHER_SCRATCH_MESSAGE =
   "Your permission is read, so you can change only this chat's scratch://, not another Work's.";
 
 /**
- * A call on a file that was removed: `document_not_found`, saying who removed it and how. The
- * words are agent-edit's (`removedFileMessage`), which its own receipts and refusals share.
+ * A call on a file that was removed, saying who removed it and how. Status and words are
+ * agent-edit's (`removedFile`), which its own receipts and refusals share.
  */
 export function removedFileResult(
   command: DocumentCommandName,
   removal: DocumentRemovalRecord,
   path?: string,
 ): WriteToolErrorOutput {
+  const { status, message } = removedFile(removal);
   return {
     isError: true,
-    output: modelResult({
-      command,
-      status: "document_not_found",
-      payload: { ...(path ? { path } : {}), message: removedFileMessage(removal) },
-    }),
+    output: modelResult({ command, status, payload: { ...(path ? { path } : {}), message } }),
   };
 }
 

@@ -25,7 +25,7 @@ import { grantedJournal, testFileGrant } from "../../../test-support/file-grants
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import { readRemovalRecords } from "../../context/tree/removal.js";
+import { createRemovalRecords } from "../../context/tree/removal.js";
 import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
@@ -688,7 +688,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
-      removals: { lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds) },
+      removals: createRemovalRecords(db),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
       frontierRooms: { liveGeneration: async () => null },

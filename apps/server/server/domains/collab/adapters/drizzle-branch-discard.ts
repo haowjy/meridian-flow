@@ -120,11 +120,7 @@ async function discardWholeLocked(
   await closeBranchDrafts(db, deps, branchId, "branch_closed");
   const ended = await endUseReconciled(db, deps, branchId, { branches: [{ branchId }] }, userId);
   await deps.branches.close(branchId, new Date());
-  return {
-    branchClosed: true,
-    tombstoned: ended.tombstoned,
-    releasedObjects: ended.releasedObjects,
-  };
+  return { releasedObjects: ended.releasedObjects };
 }
 
 /** The verified scope, as Discard's callers retry it: a moved scope is a changed branch. */
@@ -245,11 +241,7 @@ export function createDrizzleBranchDiscard(
       if (item.draftId && !isCreated(item))
         await resetItemText(input, { documentId: item.documentId, draftId: item.draftId });
     }
-    return {
-      branchClosed: false,
-      tombstoned: ended.tombstoned,
-      releasedObjects: ended.releasedObjects,
-    };
+    return { releasedObjects: ended.releasedObjects };
   }
 
   return {

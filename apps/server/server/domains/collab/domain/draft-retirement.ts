@@ -1,12 +1,13 @@
 /**
  * Retiring what a committed transaction ended: the drafts it closed, each with its cause, and
- * the documents it removed. A removed document's rooms, live and draft, close `4208`; any other
- * closed draft's room closes stale. Each retired thread peer's staged writes are refused with
+ * the documents it removed. A removed document's rooms, live and draft, close `4208` (its live
+ * room only while the removal still stands, since a Work Restore may have committed after it);
+ * any other closed draft's room closes stale. Each retired thread peer's staged writes are refused with
  * the reason its cause names (a removal's carries the record) before the thread state the
  * pooled cores hold for that peer goes. It names the peer it retired, so a delayed retirement
  * never reaches a replacement peer of the same thread, and another Work's peers on a shared
  * document keep their staged replies. Durable changes are the closer's, in its transaction;
- * this runs after commit and touches nothing else.
+ * this runs after commit and writes nothing.
  */
 import type { RetiredWriteReason } from "@meridian/agent-edit/integration";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
@@ -47,7 +48,11 @@ const REASON_OF_CAUSE = {
 export function createDraftRetirement(deps: {
   /** A closed draft's rooms on a generation it left. */
   closeDraftRoom(draftId: string): void;
-  /** Removed documents' live rooms and these drafts' rooms, `4208`, including rooms still loading. */
+  /**
+   * These drafts' rooms and the removed documents' live rooms, `4208`, including rooms still
+   * loading. A live room closes only while its document's removal still stands: a Work Restore
+   * may have committed since, and its document's new connections are valid.
+   */
   closeRemovedRooms(documentIds: readonly string[], draftIds: readonly string[]): Promise<void>;
   agentEdit: Pick<ThreadPeerAgentEditCore, "retireThreadPeers">;
 }): DraftRetirement {
@@ -62,11 +67,11 @@ export function createDraftRetirement(deps: {
     for (const draft of closed) {
       if (!draft.threadId) continue;
       const record = removed.get(draft.documentId);
+      // A removal registers every document it selects before closing their drafts, so a draft
+      // closed by a removal always finds its record here.
       const reason: RetiredWriteReason = record
         ? { removed: record }
-        : typeof draft.cause === "string"
-          ? REASON_OF_CAUSE[draft.cause]
-          : { removed: draft.cause.documentRemoved };
+        : REASON_OF_CAUSE[draft.cause as Exclude<DraftCloseCause, object>];
       peersByDocument.set(draft.documentId, [
         ...(peersByDocument.get(draft.documentId) ?? []),
         { threadId: draft.threadId, peerDraftId: draft.draftId, reason },

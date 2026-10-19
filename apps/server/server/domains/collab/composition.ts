@@ -21,8 +21,8 @@ import {
 } from "../context/document-uri-resolver.js";
 import type { ContextCatalogMutationPort } from "../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
-import type { DocumentRemoval, DocumentRemovals } from "../context/ports/document-removal.js";
-import { readRemovalRecords } from "../context/tree/removal.js";
+import type { DocumentRemoval } from "../context/ports/document-removal.js";
+import { createRemovalRecords, readRemovalRecords } from "../context/tree/removal.js";
 import { createTreeReader } from "../context/tree/tree-view.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
@@ -203,9 +203,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   // Every bounded draft-store attempt's rollback boundary (decision D13).
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
   // Removal records for the reply save that answers with them.
-  const removalRecords: DocumentRemovals = {
-    lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(deps.db), documentIds),
-  };
+  const removalRecords = createRemovalRecords(deps.db);
   const workBranches = createBranches({
     store: createDrizzleBranchStore(deps.db),
     boundary: createDrizzleBranchWriteBoundary(deps.db, deps.workProjectionMutation),
@@ -558,7 +556,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     createDraftRetirement({
       closeDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
       closeRemovedRooms: (documentIds, draftIds) =>
-        closeRemovedDocumentRooms(hocuspocusBinding.current(), documentIds, draftIds),
+        closeRemovedDocumentRooms(
+          hocuspocusBinding.current(),
+          documentIds,
+          draftIds,
+          removalRecords.lookup,
+        ),
       agentEdit,
     }),
     (error) => {

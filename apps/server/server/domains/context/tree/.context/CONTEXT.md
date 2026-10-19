@@ -55,11 +55,12 @@ writes it, `restoreWorkDocuments` clears it for a Work Restore, and
 `readRemovalRecords` reads it (actor names joined as they read now) through the
 handle its caller gives. Adapters call the reader directly; domain code that
 needs a seam (the reply save fence, the model's file tools) takes the narrow
-`DocumentRemovals` port, built over it at a composition root. Callers must
+`DocumentRemovals` port, built by `createRemovalRecords`. Callers must
 authorize identity access before exposing a record (availability does so through
-its existing classification). `ports/document-removal.ts` holds the kernel, the
-collab port and `DocumentRemovedError`, so collab need not import a context
-adapter. A writer's Discard never sets the Work-cascade restore marker.
+its existing classification). `ports/document-removal.ts` holds the kernel and the
+collab port, so collab need not import a context adapter. A removed document
+refuses as agent-edit's `DocumentNotFoundError` carrying its record in
+`removal`. A writer's Discard never sets the Work-cascade restore marker.
 Retractions name `reply_rolled_back` or `create_failed`; both repair paths name
 `repair` (one `DocumentRemovalCause`, from contracts).
 

@@ -5,6 +5,7 @@ import {
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
+import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -22,7 +23,6 @@ import {
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
-import { DocumentRemovedError } from "../domains/context/index.js";
 import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
   type FileAccessChanges,
@@ -211,8 +211,8 @@ async function removedForReader(
 ): Promise<boolean> {
   // Raised only past the room's admission: the principal already reached the document, and
   // the write was refused under its mutation lock, so nothing was journaled.
-  if ((cause instanceof RoomRefusal ? cause.cause : cause) instanceof DocumentRemovedError)
-    return true;
+  const refused = cause instanceof RoomRefusal ? cause.cause : cause;
+  if (isDocumentNotFoundError(refused) && refused.removal) return true;
   const removed = await services.documentSync.roomRemoval(
     room.kind === "live" ? { documentId: room.documentId } : { draftId: room.draftId },
   );
@@ -696,28 +696,34 @@ export function createHocuspocus(
     },
     async connected({ documentName, connection, context }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind === "draft") {
-        // As for a live room: a reset can commit between this connection's admission and
-        // its room's registration, and the old generation's room must not take the tab.
-        if (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId, room.generation))
+      // This hook's refusal also closes the connection Hocuspocus has already made.
+      const closing = {
+        closeTransport(close: RoomClose) {
+          context.closeTransport?.(close);
+          connection.close(close);
+        },
+      };
+      await withRemovalRefusal(services, room, context.userId, closing, async () => {
+        if (room.kind === "draft") {
+          // As for a live room: a reset can commit between this connection's admission and
+          // its room's registration, and the old generation's room must not take the tab.
+          if (
+            !(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId, room.generation))
+          )
+            refuse(WS_CLOSE.DRAFT_GENERATION_STALE);
           return;
-        const { code, reason } = WS_CLOSE.DRAFT_GENERATION_STALE;
-        connection.close({ code, reason });
-        context.closeTransport?.({ code, reason });
-        throw permissionDenied(reason, code);
-      }
-      try {
-        // The room can finish loading after restore's disconnection. Validate
-        // after connection creation too, so the late join is closed and retries.
-        await services.documentSync.validateHocuspocusDocument(
-          room.documentId,
-          connection.document,
-        );
-      } catch {
-        connection.close({ code: 1013, reason: "retired-durable-authority-generation" });
-        context.closeTransport?.({ code: 1013, reason: "retired-durable-authority-generation" });
-        throw permissionDenied("retired-durable-authority-generation", 1013);
-      }
+        }
+        try {
+          // The room can finish loading after restore's disconnection. Validate
+          // after connection creation too, so the late join is closed and retries.
+          await services.documentSync.validateHocuspocusDocument(
+            room.documentId,
+            connection.document,
+          );
+        } catch (cause) {
+          refuse({ code: 1013, reason: "retired-durable-authority-generation" }, cause);
+        }
+      });
     },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const operation = () => {

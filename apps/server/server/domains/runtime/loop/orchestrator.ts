@@ -1671,6 +1671,8 @@ function createResponseScope(input: {
                     ...(refusal.reason ? { reason: refusal.reason } : {}),
                     ...(refusal.rejected ? { rejected: refusal.rejected } : {}),
                     ...(refusal.removal ? { removal: refusal.removal } : {}),
+                    // A removal's sentence stands alone, as the peer path's receipt gives it.
+                    ...(refusal.rejected === "removed" ? { message: refusal.message } : {}),
                     text: refusal.message,
                   })
                 : settled.status === "committed"

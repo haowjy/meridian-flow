@@ -1,6 +1,7 @@
 /** Helpers for managing generated Hocuspocus rooms. */
 import type { Document, Hocuspocus } from "@hocuspocus/server";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 
 /** Closes the draft's rooms; with `olderThan`, only those of an earlier generation. */
 export function closeDraftRooms(
@@ -40,11 +41,17 @@ export function whenRoomRegistered(hocuspocus: Hocuspocus, document: Document): 
   return loading.then(registered, () => false);
 }
 
-/** After commit only: retire the whole removal batch, including rooms still loading. */
+/**
+ * After commit only: retire the whole removal batch, including rooms still loading. Draft rooms
+ * close by exact draft id (a closed draft stays closed). A live room closes only if `stillRemoved`,
+ * read once after every matching load settled, still holds its document's record: a Work Restore
+ * that committed since makes that room's new connections valid. Outside database locks.
+ */
 export async function closeRemovedDocumentRooms(
   hocuspocus: Hocuspocus | null,
   documentIds: readonly string[],
   draftIds: readonly string[],
+  stillRemoved: (documentIds: readonly DocumentId[]) => Promise<ReadonlyMap<DocumentId, unknown>>,
 ): Promise<void> {
   if (!hocuspocus) return;
   const live = new Set(documentIds);
@@ -55,18 +62,20 @@ export async function closeRemovedDocumentRooms(
     return live.has(name) || (room?.kind === "draft" && drafts.has(room.draftId));
   });
   await Promise.all(
-    matching.map(async (name) => {
-      const loading = hocuspocus.loadingDocuments.get(name);
-      if (loading) await loading.catch(() => undefined);
-      const document = hocuspocus.documents.get(name);
-      if (!document) return;
-      for (const connection of document.getConnections()) {
-        // Hocuspocus's protocol CLOSE loses the code (the provider reports 1000).
-        // Send the transport close first, as Work access revocation does.
-        connection.context.closeTransport?.(WS_CLOSE.DOCUMENT_DELETED);
-        connection.close(WS_CLOSE.DOCUMENT_DELETED);
-      }
-      await hocuspocus.unloadDocument(document);
-    }),
+    matching.map((name) => hocuspocus.loadingDocuments.get(name)?.catch(() => undefined)),
   );
+  const liveNames = matching.filter((name) => live.has(name) && hocuspocus.documents.has(name));
+  const standing = liveNames.length ? await stillRemoved(liveNames as DocumentId[]) : new Map();
+  const closing = matching.flatMap((name) => {
+    const document = hocuspocus.documents.get(name);
+    if (!document || (live.has(name) && !standing.has(name as DocumentId))) return [];
+    for (const connection of document.getConnections()) {
+      // Hocuspocus's protocol CLOSE loses the code (the provider reports 1000).
+      // Send the transport close first, as Work access revocation does.
+      connection.context.closeTransport?.(WS_CLOSE.DOCUMENT_DELETED);
+      connection.close(WS_CLOSE.DOCUMENT_DELETED);
+    }
+    return [document];
+  });
+  await Promise.all(closing.map((document) => hocuspocus.unloadDocument(document)));
 }

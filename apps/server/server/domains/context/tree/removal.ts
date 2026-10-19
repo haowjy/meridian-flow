@@ -9,7 +9,11 @@ import { branchTreeChanges, documents, users, works } from "@meridian/database/s
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type { DocumentRemoval, DocumentRemovalCollab } from "../ports/document-removal.js";
+import type {
+  DocumentRemoval,
+  DocumentRemovalCollab,
+  DocumentRemovals,
+} from "../ports/document-removal.js";
 import { bumpLocationVersions } from "./node-locations.js";
 import { releaseDocumentStorage } from "./node-rows.js";
 import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.js";
@@ -95,6 +99,11 @@ export async function restoreWorkDocuments(db: Database, workId: WorkId): Promis
     tx,
     restored.map(({ id }) => id as DocumentId),
   );
+}
+
+/** The `DocumentRemovals` port: `readRemovalRecords` in the caller's transaction, if any. */
+export function createRemovalRecords(db: DrizzleDb): DocumentRemovals {
+  return { lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds) };
 }
 
 /**

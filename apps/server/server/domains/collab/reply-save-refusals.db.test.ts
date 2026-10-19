@@ -3,7 +3,7 @@
  * or an archive lands before the save. A refusal is a receipt, never a thrown save.
  */
 
-import { removedWriteMessage } from "@meridian/agent-edit/integration";
+import { removedWriteRefusal } from "@meridian/agent-edit/integration";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -64,7 +64,7 @@ function refused(saved: Saved) {
     ),
     ...("refused" in saved ? saved.refused : []).flatMap((refusal) =>
       "removed" in refusal
-        ? [[refusal.documentId, removedWriteMessage(refusal.removed, "save")]]
+        ? [[refusal.documentId, removedWriteRefusal(refusal.removed).message]]
         : [],
     ),
   ];

@@ -31,7 +31,7 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    draft-mode chat creates a file; Discard all the Work's branch; resume. PASS:
    the hidden row is a `discarded` tombstone with no head, no checkpoint, no
    other row at its name. Then compaction, the generation reader, provenance and
-   seed on that id refuse with `DocumentRemovedError`, and no head appears.
+   seed on that id refuse with `DocumentNotFoundError` carrying `removal`, and no head appears.
 5. **Repair.** `./mf doc put` a document, delete its updates, checkpoints and
    head in SQL, then open a tab cold. PASS: the room shows the projection's text;
    the head has one `seed` checkpoint; typing journals.
