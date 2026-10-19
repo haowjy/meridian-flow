@@ -69,13 +69,6 @@ export type DraftRead = {
   tail: readonly DraftTailRow[];
 };
 
-/**
- * A work draft's effect baseline (`live_cut`), the live state its `has_effect` is measured
- * against. `state` is null for a legacy draft created
- * before every creator stored one; the projection job establishes it with a pull.
- */
-export type EffectBaseline = { state: Uint8Array | null };
-
 /** One logical write's edit receipts, captured on the document the append commits into. */
 export type AppendReceiptGroup = {
   /** The rows of the write, by index into the finalized rows. */
@@ -129,11 +122,12 @@ export type AppendRowsInput = {
   draftId: string;
   documentId: DocumentId;
   expectedGeneration: number;
+  /** Background rebases keep archived drafts current; incoming edits require active Work. */
+  work?: "active" | "any";
   /** The checkpoint and highest row the caller's base replica holds. */
   base: DraftReadSince;
   /**
-   * Runs under the row lock. Production's is synchronous: nothing awaits while the row is
-   * held. A test fixture may reserve write ordinals here.
+   * Runs under the row lock, including async committed-live and recovery receipt reads.
    */
   finalize(read: DraftRead): AppendFinalization | Promise<AppendFinalization>;
 };
@@ -163,24 +157,11 @@ export type RewriteOperation =
    */
   | { kind: "compact" }
   /**
-   * Live (or the upstream) merged into the draft. A work draft's `effect` was computed on the
-   * candidate against `liveCut`, its new baseline, before the rewrite locked anything.
+   * A thread peer merges its captured upstream draft; Work drafts use content appends.
    */
-  | { kind: "pull"; effect?: PullEffect }
+  | { kind: "pull" }
   /** A content rewrite the draft's owning Work must admit: a thread peer catching up its upstream. */
   | { kind: "checkpoint" };
-
-/**
- * A pull's effect against its new baseline, judged on the candidate. When a `fold` applies
- * rows the candidate lacked, the checkpoint is no longer the candidate: `refolded` judges the
- * folded checkpoint instead, under the row lock, and only then (frames rarely land inside a
- * pull's short commit window).
- */
-export type PullEffect = {
-  hasEffect: boolean;
-  liveCut: Uint8Array;
-  refolded?(doc: Y.Doc): boolean;
-};
 
 export type CommitRewriteInput = {
   draftId: string;
@@ -200,7 +181,7 @@ export type RewriteOutcome =
       seq: number;
       generation: number;
     }
-  | { status: "moved" | "fenced" | "blocked" | "closed" | "upstreamMoved" };
+  | { status: "moved" | "closed" | "upstreamMoved" };
 
 /**
  * A stale draft and its keyset position in the sweep's order. `updatedAt` is the stored
@@ -213,7 +194,10 @@ export type DraftStore = {
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
   /** A work draft's effect baseline; null for a draft that carries no effect. */
-  readEffectBaseline(draftId: string): Promise<EffectBaseline | null>;
+  serverDeletedBlocks(
+    draftId: string,
+    ids: readonly { client: number; clock: number }[],
+  ): Promise<ReadonlySet<string>>;
   /**
    * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
    * rolled back the revision bump and everything registered inside it before it returns.

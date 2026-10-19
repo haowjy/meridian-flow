@@ -239,20 +239,20 @@ describe("writer frames racing rewrites (postgres)", () => {
   it.each([
     "pull",
     "frame",
-  ] as const)("a frame and a pull's rewrite (%s first) land the frame exactly once, as serialized", async (first) => {
+  ] as const)("a frame and a rebase append (%s first) land the frame exactly once, as serialized", async (first) => {
     const draftId = await draftBehindLive();
     const frame = await writerFrame(draftId, appendParagraph("Extra."));
     const pull = () => fixture.view.draftPulls.flushLivePull(ALPHA_ID);
     try {
       const run =
         first === "pull"
-          ? // The pull holds the draft row between its checkpoint UPDATE and COMMIT.
-            await interleave(db, pull, "draft.rewrite.beforeCommit", frame.send)
+          ? // The rebase holds the draft row between its append and COMMIT.
+            await interleave(db, pull, "draft.append.beforeCommit", frame.send)
           : await interleave(db, frame.send, "draft.append.afterCommit", pull);
       const sent = (first === "pull" ? run.b : run.a) as Settled<{ admitted: boolean }>;
       expect(sent).toEqual({ ok: true, value: { admitted: true } });
       expect(first === "pull" ? run.a : run.b).toMatchObject({ ok: true });
-      // The frame's append waited on the rewrite's row lock, then judged against the result.
+      // The frame's append waited on the rebase's row lock, then judged against the result.
       if (first === "pull") expect(run.bWaited).toBe(true);
     } finally {
       frame.destroy();
@@ -265,14 +265,9 @@ describe("writer frames racing rewrites (postgres)", () => {
     const read = await readDraftAt(db, draftId);
     const [row] = rows;
     if (!read || !row) throw new Error("the draft or its frame row is missing");
-    // Either re-judged after the checkpoint (in the tail) or folded into it, never both.
-    if (first === "pull") {
-      expect(read.documentDraft.checkpointSeq).toBeLessThan(row.id);
-      expect(read.tail.map((tail) => tail.id)).toContain(row.id);
-    } else {
-      expect(read.documentDraft.checkpointSeq).toBeGreaterThanOrEqual(row.id);
-      expect(read.tail.map((tail) => tail.id)).not.toContain(row.id);
-    }
+    // Rebase and writer are both tail appends; neither rewrites the checkpoint.
+    expect(read.documentDraft.checkpointSeq).toBeLessThan(row.id);
+    expect(read.tail.map((tail) => tail.id)).toContain(row.id);
   });
 
   /** A created document's fresh draft, with no contribution yet. */

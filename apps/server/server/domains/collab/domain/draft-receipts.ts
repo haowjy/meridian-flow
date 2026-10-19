@@ -5,9 +5,19 @@
  * and their receipts, or why nothing is written.
  */
 
-import { DRAFT_SERVER_CLIENT_ID } from "@meridian/agent-edit/diff";
+import {
+  DRAFT_SERVER_CLIENT_ID,
+  findLostEdits,
+  type LateTyping,
+  NO_LATE_TYPING,
+  recoverLatePeerEdits,
+} from "@meridian/agent-edit/diff";
 import { captureEditParts, type EditFrontier } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { createDocumentContainment } from "./document-containment.js";
 import { assertFreshAgentUpdate } from "./document-mutation-policy.js";
@@ -21,12 +31,22 @@ import {
 } from "./draft-store.js";
 import { validateClientUpdateAdmission, validateRestorationRanges } from "./provenance.js";
 
-/** Runs synchronously under the row hold, after incoming rows. Capture each server transaction
+// LateTyping retains PM nodes between frames; their schema identity must remain stable.
+const recoverySchema = buildDocumentSchema();
+
+/** Runs under the row hold, after incoming rows. Capture each server transaction
  * as an update and return it in order. The runtime owns and destroys this private prefix copy. */
-export type AuthorServerRows = (prefix: Y.Doc) => readonly Uint8Array[];
+export type AuthorServerRows = (
+  prefix: Y.Doc,
+) => readonly Uint8Array[] | Promise<readonly Uint8Array[]>;
 
 export type FinalizeAppendInput = {
+  work?: "active" | "any";
   authorServerRows?: AuthorServerRows;
+  recovery?: {
+    memory: LateTyping;
+    serverDeletedBlocks(ids: readonly Y.ID[]): Promise<ReadonlySet<string>>;
+  };
   /**
    * A private clone of the caller's base replica, made off the lock. When the checkpoint held
    * it becomes the committed prefix; when a rewrite moved it, it is destroyed.
@@ -49,6 +69,7 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
   prefixHeld: boolean;
   prefixRows: readonly DraftTailRow[];
   checkpointSeq: number;
+  lateTyping?: LateTyping;
 };
 
 /**
@@ -57,10 +78,10 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
  * applies them requiring complete integration, and captures one receipt per logical write on
  * the final document. Any outcome but `appended` leaves `doc` unusable: the caller destroys it.
  */
-export function finalizeAppend(
+export async function finalizeAppend(
   read: DraftRead,
   input: FinalizeAppendInput,
-): { finalization: AppendFinalization; doc: Y.Doc; result?: FinalizedAppend } {
+): Promise<{ finalization: AppendFinalization; doc: Y.Doc; result?: FinalizedAppend }> {
   const prefixHeld = read.checkpoint === null;
   let doc = input.candidate;
   if (prefixHeld) {
@@ -74,8 +95,10 @@ export function finalizeAppend(
   }
   try {
     const done = (finalization: AppendFinalization) => ({ finalization, doc });
-    if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
+    if (input.work !== "any" && read.documentDraft.lifecycle !== "active")
+      return done({ status: "refused" });
 
+    let lateTyping = input.recovery?.memory ?? NO_LATE_TYPING;
     const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
     function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
       if (input.containment.contains(doc, row.updateData)) return;
@@ -99,8 +122,64 @@ export function finalizeAppend(
       });
     }
     for (const row of input.rows) {
+      const lost =
+        row.source === "server" || !input.recovery
+          ? { typed: [], deleted: [] }
+          : findLostEdits(doc, row.updateData);
       const refused = admit(row);
       if (refused) return done(refused);
+      if (input.recovery && (lost.typed.length || lost.deleted.length)) {
+        const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+        const blocks = new Map<string, Y.ID>();
+        const blockOf = (id: Y.ID): Y.ID | null => {
+          let item: Y.Item | Y.GC | null = Y.getItem(doc.store, id);
+          while (item instanceof Y.Item) {
+            const parent = item.parent as Y.AbstractType<unknown>;
+            if (parent === fragment) return item.id;
+            item = parent._item;
+          }
+          return null;
+        };
+        for (const edit of lost.typed) {
+          const id = blockOf(edit.id);
+          if (id) blocks.set(`${id.client}:${id.clock}`, id);
+        }
+        const deleted = blocks.size
+          ? await input.recovery.serverDeletedBlocks([...blocks.values()])
+          : new Set<string>();
+        const typed = lost.typed.filter((edit) => {
+          const block = blockOf(edit.id);
+          return block && deleted.has(`${block.client}:${block.clock}`);
+        });
+        {
+          // Without typing the helper only advances deletion memory; no clone or server row.
+          const authoring = typed.length ? createCollabYDoc({ gc: false }) : doc;
+          try {
+            if (authoring !== doc) Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
+            const recovery = recoverLatePeerEdits({
+              doc: authoring,
+              update: row.updateData,
+              lost: { ...lost, typed },
+              memory: lateTyping,
+              schema: recoverySchema,
+              fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+              clientId: DRAFT_SERVER_CLIENT_ID,
+            });
+            lateTyping = recovery.memory;
+            if (recovery.update) {
+              const refused = admit({
+                draftId: row.draftId,
+                generation: row.generation,
+                source: "server",
+                updateData: recovery.update,
+              });
+              if (refused) return done(refused);
+            }
+          } finally {
+            if (authoring !== doc) authoring.destroy();
+          }
+        }
+      }
     }
     if (input.authorServerRows) {
       // Authoring must not mutate the receipt before-view. This copy is made only for server
@@ -109,7 +188,7 @@ export function finalizeAppend(
       try {
         Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
         authoring.clientID = DRAFT_SERVER_CLIENT_ID;
-        for (const updateData of input.authorServerRows(authoring)) {
+        for (const updateData of await input.authorServerRows(authoring)) {
           const refused = admit({
             draftId: read.documentDraft.draftId,
             generation: read.documentDraft.generation,
@@ -159,6 +238,7 @@ export function finalizeAppend(
         prefixHeld,
         prefixRows: read.tail,
         checkpointSeq: read.documentDraft.checkpointSeq,
+        lateTyping,
       },
     };
   } catch (cause) {

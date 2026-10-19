@@ -39,16 +39,6 @@ export function createDraftProjectionDiagnostics(
         payload: unknownToEventPayload(cause),
       });
     },
-    projectionBaselineBlocked({ draftId, documentId }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft",
-        name: "projection_baseline_blocked",
-        correlation: { draftId, documentId },
-        payload: {},
-      });
-    },
   };
 }
 

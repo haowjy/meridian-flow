@@ -25,6 +25,7 @@ import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
+  unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -757,37 +758,60 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
     async read(docId, opts: JournalReadOptions = {}): Promise<JournalSnapshot> {
       const readDb = currentDrizzleDb(db as Database) as JournalDb;
-      await assertReadableHead(readDb, docId);
-
-      // Capture once: neither a checkpoint nor retained history may choose
-      // authority for this read. Sequence bounds stay within this generation.
-      const authorityHead = await findDocumentAuthorityHead(readDb, docId);
-      if (!authorityHead) return { checkpoint: null, updates: [] };
       const checkpointBound =
         opts.since === undefined
           ? opts.until
           : Math.min(opts.until ?? Number.MAX_SAFE_INTEGER, opts.since - 1);
-      const checkpoint = await latestCheckpoint(readDb, docId, authorityHead, checkpointBound);
-      const conditions = [
-        eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-        eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-        eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
-        gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
-      ];
-      if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));
-      if (opts.until !== undefined) conditions.push(lte(documentYjsUpdates.id, opts.until));
-
+      const checkpoint = readDb
+        .select({ state: documentYjsCheckpoints.state, upToSeq: documentYjsCheckpoints.upToSeq })
+        .from(documentYjsCheckpoints)
+        .where(
+          and(
+            eq(documentYjsCheckpoints.documentId, documentYjsHeads.documentId),
+            eq(documentYjsCheckpoints.authorityId, documentYjsHeads.authorityId),
+            eq(documentYjsCheckpoints.authorityGeneration, documentYjsHeads.authorityGeneration),
+            checkpointBound === undefined
+              ? undefined
+              : lte(documentYjsCheckpoints.upToSeq, checkpointBound),
+          ),
+        )
+        .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+        .limit(1)
+        .as("checkpoint");
+      // One statement observes authority, checkpoint and tail together. A compaction may
+      // delete the folded rows, or a restore replace the authority, between separate reads.
       const rows = await readDb
-        .select(journalTransportColumns)
-        .from(documentYjsUpdates)
-        .where(and(...conditions))
+        .select({
+          authorityId: documentYjsHeads.authorityId,
+          generation: documentYjsHeads.authorityGeneration,
+          schemaVersion: documentYjsHeads.schemaVersion,
+          checkpoint: { state: checkpoint.state, upToSeq: checkpoint.upToSeq },
+          update: journalTransportColumns,
+        })
+        .from(documentYjsHeads)
+        .leftJoinLateral(checkpoint, sql`true`)
+        .leftJoin(
+          documentYjsUpdates,
+          and(
+            eq(documentYjsUpdates.documentId, documentYjsHeads.documentId),
+            eq(documentYjsUpdates.authorityId, documentYjsHeads.authorityId),
+            eq(documentYjsUpdates.authorityGeneration, documentYjsHeads.authorityGeneration),
+            gt(documentYjsUpdates.id, sql`coalesce(${checkpoint.upToSeq}, 0)`),
+            opts.since === undefined ? undefined : gte(documentYjsUpdates.id, opts.since),
+            opts.until === undefined ? undefined : lte(documentYjsUpdates.id, opts.until),
+          ),
+        )
+        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
         .orderBy(asc(documentYjsUpdates.id));
-
+      const head = rows[0];
+      if (!head) return { checkpoint: null, updates: [] };
+      assertHeadSchemaCurrent(docId, unpackCollabSchemaVersion(head.schemaVersion));
+      const updates = rows.flatMap((row) => (row.update ? [mapUpdate(row.update)] : []));
       return {
-        authority: { authorityId: authorityHead.authorityId, generation: authorityHead.generation },
-        checkpoint: checkpoint ? toBytes(checkpoint.state) : null,
-        updates: rows.map((row) => mapUpdate(row)),
-        persistenceWatermark: Math.max(checkpoint?.upToSeq ?? 0, rows.at(-1)?.id ?? 0),
+        authority: { authorityId: head.authorityId, generation: head.generation },
+        checkpoint: head.checkpoint?.state ? toBytes(head.checkpoint.state) : null,
+        updates,
+        persistenceWatermark: Math.max(head.checkpoint?.upToSeq ?? 0, updates.at(-1)?.seq ?? 0),
       };
     },
 

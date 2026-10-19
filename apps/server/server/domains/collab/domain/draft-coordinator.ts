@@ -2,7 +2,6 @@
 
 import { bytesEqual } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import { documentEffectsEqual } from "./document-content.js";
 import {
   admitSegmentRows,
   assertSegmentRowsComplete,
@@ -29,7 +28,6 @@ import {
   DraftMissingError,
   type DraftSnapshot,
   DraftStaleUpdateError,
-  type RewriteOperation,
 } from "./draft-store.js";
 import { createWriterFrames, type WriterFrameInput } from "./draft-writer-frames.js";
 
@@ -70,7 +68,7 @@ export type PullInput = {
  * A completed pull, a closed draft, or a changed upstream. The legacy fenced/blocked
  * arms have no producer after settlement deletion; lane R owns the Work-pull contract cut.
  */
-export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed" | "upstreamMoved";
+export type PullOutcome = "pulled" | "closed" | "upstreamMoved";
 
 export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> & {
   /**
@@ -183,20 +181,9 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
    */
   function preparePull(base: DraftBase, candidate: Y.Doc, pull: PullInput): PreparedDraftWrite {
     const { snapshot } = base;
-    const operation: RewriteOperation =
-      snapshot.kind === "work_draft"
-        ? {
-            kind: "pull",
-            effect: {
-              hasEffect: !documentEffectsEqual(pull.upstream, candidate),
-              liveCut: Y.encodeStateAsUpdate(pull.upstream),
-              refolded: (folded) => !documentEffectsEqual(pull.upstream, folded),
-            },
-          }
-        : { kind: "pull" };
     return prepareRewrite(snapshot.draftId, candidate, {
       policy: foldPolicy(base.replica),
-      operation,
+      operation: { kind: "pull" },
       ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
     });
   }
@@ -210,6 +197,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     const base = await loadBase(pull.draftId);
     const { snapshot } = base;
     if (snapshot.status !== "active") return "closed";
+    if (snapshot.kind !== "thread_peer") throw new Error("Work drafts must use a content rebase");
     // A durable thread peer has already saved its writes into the Work draft. If the parent
     // no longer contains them, merging cannot repair the lost lineage. Refuse the pull;
     // its caller translates this outcome to ThreadPeerPullLost without re-forking.

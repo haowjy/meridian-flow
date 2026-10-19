@@ -56,14 +56,12 @@ captured view. Only intersecting holds can select a holding draft. A skipped hol
 the draft blocking so Apply/Discard remains reachable even when visible prose
 equals live.
 
-`hasEffect` compares prose and managed manifest membership with the draft's
-last pulled live cut; pending lists, counts, and Work notifications read that
-effect or `blocking`, never raw journal-row count. Pull snapshot, effect, and projection updates commit in
-their own root transaction. Root pulls must not be awaited while holding Work
-locks.
+`hasEffect` compares the committed draft's `review_base` and `prosemirror` blocks; pending lists, counts, and Work notifications read that
+effect or `blocking`, never raw journal-row count. The projection job is dirtied
+after inverse commit; the inverse writes neither effect nor baseline.
 
 An inverse is an attempt. It captures its documents in one read snapshot with
-no lock or lease (live state, live heads, drafts merged over live) and plans
+no lock or lease (live state, live heads, committed drafts alone) and plans
 off every lock. Its commit scope takes the live mutexes, then one savepoint
 whose first locks are the Work rows (the captured drafts' Works and the bound
 grants' Works in id order, the grants confirmed: a seam boundary), then its
@@ -89,3 +87,7 @@ Failed-response rollback selects immutable parts by `editScopeId`, records
 accepted parts as terminal rollback edits, and keeps only uninvertible pending
 targets in `rollback_pending`. A failed checkpoint or report cannot reject a
 durable save.
+
+A released closed draft has no bytes from which to describe a receipt's prose.
+Live has unrelated Yjs identity, so skipped inverse parts can retain their reason
+without before/after snippets; never merge live to manufacture them.

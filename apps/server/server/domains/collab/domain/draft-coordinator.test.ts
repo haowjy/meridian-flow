@@ -132,7 +132,7 @@ describe("DraftCoordinator", () => {
   it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
     const store = new MemoryDraftStore();
     const live = docWithText("live prose");
-    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: live }));
+    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: live, kind: "thread_peer" }));
 
     live.getText("content").delete(0, 5);
     const before = storedDraft(store, "work");
@@ -205,7 +205,7 @@ describe("DraftCoordinator", () => {
       }),
     ).rejects.toThrow(/injected journal failure/);
 
-    await pull(coordinator, "work", new Y.Doc({ gc: false }));
+    await coordinator.deliverCommitted("work");
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedDraft(store, "work")).getText("content").toString()).toBe("");
   });

@@ -68,7 +68,9 @@ function connectionConfig() {
 describe("Yjs draft handshake route guard", () => {
   it("pulls live changes into a Work draft without blocking draft-room connection", async () => {
     const live = new Y.Doc({ gc: false });
-    live.getText("content").insert(0, "live advanced");
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("live advanced")]);
+    live.getXmlFragment("prosemirror").insert(0, [paragraph]);
     const loadedRoom = new Y.Doc({ gc: false });
     let releasePull: (() => void) | undefined;
     const pullBlocked = new Promise<void>((resolve) => {
@@ -86,10 +88,10 @@ describe("Yjs draft handshake route guard", () => {
       ),
     ]);
     // The pull's rewrite waits here, so the room connects before the pull commits.
-    const commitRewrite = store.commitRewrite.bind(store);
-    store.commitRewrite = async (rewrite) => {
+    const appendRows = store.appendRows.bind(store);
+    store.appendRows = async (append) => {
       await pullBlocked;
-      return commitRewrite(rewrite);
+      return appendRows(append);
     };
     const draftCoordinator = createDraftCoordinator({
       onAppendCommitted: () => {},
@@ -105,6 +107,7 @@ describe("Yjs draft handshake route guard", () => {
         recover: async () => {},
       },
       draftCoordinator,
+      liveJournal: { read: async () => ({ checkpoint: Y.encodeStateAsUpdate(live), updates: [] }) },
       drafts: {
         listActiveWorkDraftIds: async () => ["draft_1"],
         ensureThreadPeerDraft: async () => ({
@@ -153,16 +156,20 @@ describe("Yjs draft handshake route guard", () => {
       } as never),
     ).resolves.toBeUndefined();
     expect(flushDraftLivePull).toHaveBeenCalledWith("document-1");
-    expect(loadedRoom.getText("content").toString()).toBe("");
+    expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe("");
 
     releasePull?.();
     await flushDraftLivePull.mock.results[0]?.value;
     await vi.waitFor(() => {
-      expect(loadedRoom.getText("content").toString()).toBe("live advanced");
+      expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe(
+        "<paragraph>live advanced</paragraph>",
+      );
     });
     const persisted = new Y.Doc({ gc: false });
     Y.applyUpdate(persisted, await readDraftContent(store, "draft_1"));
-    expect(persisted.getText("content").toString()).toBe("live advanced");
+    expect(persisted.getXmlFragment("prosemirror").toString()).toBe(
+      "<paragraph>live advanced</paragraph>",
+    );
   });
 
   it("rejects hostile draft payloads before returning them to Hocuspocus", async () => {

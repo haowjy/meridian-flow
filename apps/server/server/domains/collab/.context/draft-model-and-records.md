@@ -74,11 +74,14 @@ finalizes the update against the committed prefix there (see the append
 contract in [CONTEXT.md](CONTEXT.md#transaction-and-lock-contracts)). `commitRewrite` writes
 a new checkpoint covering every row of the draft, under an `exact` policy (the
 revision it was computed at) or a `fold` policy (any appends since its cursor are
-applied). Pulls, inverses, peer checkpoints and compaction are rewrites.
+applied). Thread-peer pulls, inverses, peer checkpoints and compaction are rewrites.
+Live-to-Work content rebases are server appends, not Yjs pulls.
 No rewrite resets generations, accumulates discarded clocks or marks journal
 rows discarded through reset. Compaction folds the tail with unchanged content
 and leaves `updated_at`; the runtime schedules it after every committed append at 512 rows or
-2 MiB, only after its root commit. Lane R owns the surviving Work pull and `live_cut` effect projection.
+2 MiB, only after its root commit. Work drafts seed two fresh client-1 fragments,
+`prosemirror` and `review_base`, with no `live_cut`. The effect job compares their
+blocks; a live commit rebases content through the same append finalizer.
 
 A draft's `lifecycle` (`active`, `archived`, `deleted`, `missing`) is read from
 its branch's origin Work with the row; anything but `active` is frozen. The
