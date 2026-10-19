@@ -102,14 +102,12 @@ describe("Yjs draft handshake route guard", () => {
       outsideTransaction: (operation) => operation(),
       liveCoordinator: {
         withDocument: async (_documentId, fn) => fn(live),
-        recover: async () => {},
       },
       draftCoordinator,
       drafts: {
         listActiveWorkDraftIds: async () => ["draft_1"],
         ensureThreadPeerDraft: async () => ({
           documentDraft: { draftId: "thread-peer", upstreamDraftId: "draft_1" },
-          state: new Uint8Array(),
         }),
       },
     });

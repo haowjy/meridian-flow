@@ -1,10 +1,11 @@
 /** Draft pull service conformance for live-to-work and work-to-thread cadence. */
-import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
+
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import { createDraftPullService } from "./draft-pulls.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000701" as DocumentId;
 
@@ -38,7 +39,6 @@ describe("DraftPullService", () => {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
             documentDraft: { draftId: "peer", upstreamDraftId: "work" },
-            state: new Uint8Array(),
           }),
         },
         debounceMs: 10,
@@ -84,7 +84,6 @@ describe("DraftPullService", () => {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
             documentDraft: { draftId: "peer", upstreamDraftId: "work" },
-            state: new Uint8Array(),
           }),
         },
         diagnostics: { backgroundFailed: () => {} },
@@ -131,7 +130,6 @@ describe("DraftPullService", () => {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
             documentDraft: { draftId: "peer", upstreamDraftId: "work" },
-            state: new Uint8Array(),
           }),
         },
         diagnostics: { backgroundFailed: failed },
@@ -150,10 +148,9 @@ describe("DraftPullService", () => {
     }
   });
 });
-function coordinatorFor(doc: Y.Doc): DocumentCoordinator {
+function coordinatorFor(doc: Y.Doc): Pick<LiveDocumentCoordinator, "withDocument"> {
   return {
     withDocument: async (_documentId, fn) => fn(doc),
-    recover: async () => {},
   };
 }
 

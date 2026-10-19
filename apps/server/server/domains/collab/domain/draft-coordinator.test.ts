@@ -4,7 +4,11 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { appendDraftRows } from "../test-support/draft-store-seam.js";
-import { commitJournaledUpdate, resetDraftFromDoc } from "../test-support/draft-update-writes.js";
+import {
+  commitDraftRows,
+  commitJournaledUpdate,
+  resetDraftFromDoc,
+} from "../test-support/draft-update-writes.js";
 import { captureHistoricalDraftRow } from "../test-support/historical-draft-row.js";
 import {
   type MemoryDraft,
@@ -159,7 +163,7 @@ describe("DraftCoordinator", () => {
 
     const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
     await expect(
-      coordinator.commitSegmentRows({
+      commitDraftRows(coordinator, {
         draftId: "work",
         sourceDoc: sourceDoc,
         expectedGeneration: beforeWork.generation,
@@ -303,7 +307,7 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
     onDraftUpdate: () => broadcasts++,
   });
   await expect(
-    coordinator.commitSegmentRows({
+    commitDraftRows(coordinator, {
       draftId: "work",
       expectedGeneration: 1,
       sourceDoc,
@@ -311,7 +315,7 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
     }),
   ).rejects.toThrow("unjournaled residual");
   expect(store.journal).toHaveLength(0);
-  await coordinator.commitSegmentRows({
+  await commitDraftRows(coordinator, {
     draftId: "work",
     expectedGeneration: 1,
     sourceDoc,
@@ -321,7 +325,7 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   expect(broadcasts).toBe(1);
   expect(storedDraft(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   await expect(
-    coordinator.commitSegmentRows({
+    commitDraftRows(coordinator, {
       draftId: "work",
       expectedGeneration: 1,
       sourceDoc,

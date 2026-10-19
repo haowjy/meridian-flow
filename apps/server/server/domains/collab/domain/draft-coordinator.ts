@@ -2,11 +2,16 @@
  * The draft runtime and the operations on it. The runtime holds one immutable committed
  * replica per draft, prepares every write on a private candidate (append, rewrite, reset) and
  * installs it only once its attempt completes; the operations (pull, reset, a reply's staged
- * rows, a peer's catch-up, segment batches) are attempts over it. Writer frames and the tail
+ * rows, segment batches) are attempts over it. Writer frames and the tail
  * fold they trigger are `draft-writer-frames.ts`, over the same runtime surface.
  */
 
-import { bytesEqual } from "@meridian/agent-edit/integration";
+import {
+  bytesEqual,
+  type SaveCut,
+  type SavePrecondition,
+  SavePreconditionRefused,
+} from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { type CollabSchemaVersion, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -14,7 +19,6 @@ import { createDocumentContainment } from "./document-containment.js";
 import { documentEffectsEqual } from "./document-content.js";
 import {
   admitSegmentRows,
-  assertSegmentRowsComplete,
   assertWriterAuthorship,
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
@@ -168,30 +172,20 @@ export type PreparedDraftWrite = {
   dispose(): void;
 };
 
+/**
+ * An append's prepared write. Once `persist` resolved, `cut` is the draft as the append found
+ * it under the draft row lock and with its kept rows, captured while finalizing, before the
+ * attempt commits: for a contained append both are that same committed prefix.
+ */
+export type PreparedDraftAppend = PreparedDraftWrite & { cut(): SaveCut };
+
 /** Every other exact-predicate write: four commit attempts, then the caller's own outcome. */
 const COMMIT_ATTEMPTS = 4;
 
-/** The pre-replay view a save's staged rows are reconciled against. */
-export type StagedDraftView = DraftSnapshot & {
-  /** The committed draft bytes at `revision`, captured before any replay. */
-  readonly encoded: Uint8Array;
-};
-
-export type SegmentRowsInput = {
-  draftId: string;
-  expectedGeneration: number;
-  sourceDoc: Y.Doc;
-  rows: readonly Omit<AppendDraftJournalInput, "generation">[];
-};
-
-/**
- * A pull merges `upstream` into the draft. A peer's pull names the upstream epoch it read
- * `upstream` at: the commit locks that row `FOR SHARE` and loses to a re-fork of it.
- */
+/** A pull merges `upstream` into the draft. */
 export type PullInput = {
   draftId: string;
   upstream: Y.Doc;
-  upstreamEpoch?: { draftId: string; generation: number };
 };
 
 /**
@@ -199,17 +193,16 @@ export type PullInput = {
  * document (`fenced`: nothing was written, and the caller tries again later); a settlement
  * terminally blocked on it freezes the pull (`blocked`: nothing written, nothing to retry
  * until something new arrives, since no transition lifts a blocked batch); a closed
- * draft has nothing to pull into; a peer whose upstream re-forked since its read is
- * `upstreamMoved`, its capture abandoned. An archived Work's draft keeps pulling, so it applies
+ * draft has nothing to pull into. An archived Work's draft keeps pulling, so it applies
  * cleanly after unarchive.
  */
-export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed" | "upstreamMoved";
+export type PullOutcome = "pulled" | "fenced" | "blocked" | "closed";
 
 /** A rewrite refused for a reason other than a moved revision: never retried. */
 class DraftRewriteRefused extends Error {
   constructor(
     readonly draftId: string,
-    readonly status: Extract<RewriteOutcome["status"], "fenced" | "blocked" | "upstreamMoved">,
+    readonly status: Extract<RewriteOutcome["status"], "fenced" | "blocked">,
   ) {
     super(`Draft ${draftId} rewrite was refused: ${status}`);
     this.name = "DraftRewriteRefused";
@@ -253,13 +246,10 @@ export type DraftCoordinator = {
     draftId: string,
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
   ): Promise<T>;
-  // A reply's save (contract §2.3) prepares through these and acquires nothing: every write
+  /** A private copy of the committed draft, the caller's to change and destroy. */
+  copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot }>;
+  // A reply's save (contract §2.3) prepares through this and acquires nothing: every write
   // is an attempt fenced by the revision it was prepared at.
-  /** A private copy of the draft for `fn` to change; nothing it does is kept or installed. */
-  withTransient<T>(
-    draftId: string,
-    fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
-  ): Promise<T>;
   /**
    * Replays a response's rows on a candidate of the committed draft. With `commit`, the rows
    * come back as a prepared write (null when there are none) for the caller's commit scope.
@@ -268,13 +258,11 @@ export type DraftCoordinator = {
     draftId: string,
     run: (
       doc: Y.Doc,
-      snapshot: StagedDraftView,
+      snapshot: DraftSnapshot,
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
-  ): Promise<{ result: T; write: PreparedDraftWrite | null }>;
-  /** `source` merged into the draft as a checkpoint write; null when it holds `source` already. */
-  prepareCatchUp(draftId: string, source: Y.Doc): Promise<PreparedDraftWrite | null>;
-  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
+    precondition?: SavePrecondition,
+  ): Promise<{ result: T; write: PreparedDraftAppend | null }>;
   /** A writer frame (`draft-writer-frames.ts`). */
   commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   notifyReset(input: { draftId: string; generation: number }): void;
@@ -619,7 +607,8 @@ export function createDraftCoordinator(input: {
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
     admitted?: Y.Doc,
-  ): PreparedDraftWrite {
+    precondition?: SavePrecondition,
+  ): PreparedDraftAppend {
     const { snapshot, replica } = base;
     let prefix: Y.Doc;
     try {
@@ -630,7 +619,8 @@ export function createDraftCoordinator(input: {
     }
     let finalized: FinalizedAppend | undefined;
     let committedDoc: Y.Doc | undefined;
-    return preparedWrite({
+    let cut: SaveCut | undefined;
+    const write = preparedWrite({
       draftId: snapshot.draftId,
       candidate: admitted ?? prefix,
       owned: () => [prefix, ...(committedDoc ? [committedDoc] : [])],
@@ -651,13 +641,17 @@ export function createDraftCoordinator(input: {
               rows: journals,
               containment: documentContainment,
               validateWriter: assertWriterAuthorship,
+              precondition,
             });
             committedDoc = judged.doc;
             finalized = judged.result;
+            cut = judged.cut;
             return judged.finalization;
           },
         });
         if (outcome.status === "contained") return { contained: true };
+        if (outcome.status === "preconditionFailed")
+          throw new SavePreconditionRefused(snapshot.documentId);
         if (outcome.status === "refused")
           throw new DraftStaleUpdateError(`Draft ${snapshot.draftId}`);
         if (outcome.status === "prefixMissing") {
@@ -700,6 +694,13 @@ export function createDraftCoordinator(input: {
         };
       },
     });
+    return {
+      ...write,
+      cut() {
+        if (!cut) throw new Error(`Draft ${snapshot.draftId} append has not persisted`);
+        return cut;
+      },
+    };
   }
 
   /** `candidate` committed through shape B as `rewrite` describes it. */
@@ -713,11 +714,7 @@ export function createDraftCoordinator(input: {
       candidate,
       async persist() {
         const outcome = await input.store.commitRewrite({ draftId, doc: candidate, ...rewrite });
-        if (
-          outcome.status === "fenced" ||
-          outcome.status === "blocked" ||
-          outcome.status === "upstreamMoved"
-        )
+        if (outcome.status === "fenced" || outcome.status === "blocked")
           throw new DraftRewriteRefused(draftId, outcome.status);
         if (outcome.status !== "committed") throw new DraftCasConflictError(draftId);
         if (rewrite.operation.kind === "reset") return { resetTo: outcome.generation };
@@ -725,16 +722,6 @@ export function createDraftCoordinator(input: {
         // documents rather than trusting anything computed before the lock.
         return { next: { ...outcome, doc: candidate, tail: EMPTY_TAIL } };
       },
-    });
-  }
-
-  /** `candidate` as the draft's checkpoint at the base's exact revision: a peer's catch-up. */
-  function prepareCheckpoint(base: DraftBase, candidate: Y.Doc): PreparedDraftWrite {
-    const { snapshot } = base;
-    return prepareRewrite(snapshot.draftId, candidate, {
-      policy: { kind: "exact", revision: snapshot.revision },
-      fence: { kind: "none" },
-      operation: { kind: "checkpoint" },
     });
   }
 
@@ -762,7 +749,6 @@ export function createDraftCoordinator(input: {
       // A live pull's checkpoint would move the revision a pending Apply's completion resets at.
       fence: snapshot.kind === "work_draft" ? { kind: "pending-settlement" } : { kind: "none" },
       operation,
-      ...(pull.upstreamEpoch ? { upstream: pull.upstreamEpoch } : {}),
     });
   }
 
@@ -775,10 +761,7 @@ export function createDraftCoordinator(input: {
   function prepareReset(
     snapshot: DraftSnapshot,
     upstream: Y.Doc,
-    reset: Pick<ResetInput, "schemaVersion" | "editDisposition"> & {
-      policy: RewritePolicy;
-      upstreamEpoch?: PullInput["upstreamEpoch"];
-    },
+    reset: Pick<ResetInput, "schemaVersion" | "editDisposition"> & { policy: RewritePolicy },
   ): PreparedDraftWrite {
     const candidate = createCollabYDoc({ gc: false });
     replicatedInto(upstream, candidate);
@@ -790,7 +773,6 @@ export function createDraftCoordinator(input: {
         editDisposition: reset.editDisposition ?? "discarded",
         schemaVersion: reset.schemaVersion ?? snapshot.schemaVersion,
       },
-      ...(reset.upstreamEpoch ? { upstream: reset.upstreamEpoch } : {}),
     });
   }
 
@@ -820,10 +802,7 @@ export function createDraftCoordinator(input: {
       snapshot.kind === "thread_peer" &&
       !Y.snapshotContainsUpdate(Y.snapshot(pull.upstream), encodedOf(base.replica))
     ) {
-      const write = prepareReset(snapshot, pull.upstream, {
-        policy: foldPolicy(base.replica),
-        ...(pull.upstreamEpoch ? { upstreamEpoch: pull.upstreamEpoch } : {}),
-      });
+      const write = prepareReset(snapshot, pull.upstream, { policy: foldPolicy(base.replica) });
       attempt.own(write);
       await attempt.commit(() => write.persist());
       return "pulled";
@@ -854,30 +833,21 @@ export function createDraftCoordinator(input: {
     return fn(base.replica.doc, base.snapshot);
   }
 
-  /** A private copy for `fn`: whatever it changes stays with the copy (decision F6). */
-  async function transient<T>(
-    draftId: string,
-    fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
-  ): Promise<T> {
+  /** A private copy: whatever its owner changes stays with it (decision F6). */
+  async function copyDraft(draftId: string): Promise<{ doc: Y.Doc; snapshot: DraftSnapshot }> {
     const base = await loadBase(draftId);
-    assertWritableDraft(base.snapshot);
-    const doc = cloneReplica(base.replica);
-    try {
-      return await fn(doc, base.snapshot);
-    } finally {
-      doc.destroy();
-    }
+    return { doc: cloneReplica(base.replica), snapshot: base.snapshot };
   }
 
   /**
    * `journals` admitted on a fresh copy of the base (the pre-lock policy check, kept as the
-   * write's candidate) and prepared as an append: the one way a save's replay and a segment
-   * batch prepare rows.
+   * write's candidate) and prepared as an append: the one way a save's replay prepares rows.
    */
   function prepareRows(
     base: DraftBase,
     journals: readonly AppendDraftJournalInput[],
-  ): PreparedDraftWrite {
+    precondition?: SavePrecondition,
+  ): PreparedDraftAppend {
     const admitted = cloneReplica(base.replica);
     try {
       admitSegmentRows(admitted, base.snapshot.documentId, journals);
@@ -885,27 +855,29 @@ export function createDraftCoordinator(input: {
       admitted.destroy();
       throw cause;
     }
-    return prepareAppend(base, journals, admitted);
+    return prepareAppend(base, journals, admitted, precondition);
   }
 
   async function prepareStagedRows<T>(
     draftId: string,
     run: (
       doc: Y.Doc,
-      snapshot: StagedDraftView,
+      snapshot: DraftSnapshot,
     ) => Promise<{ result: T; rows: readonly Omit<AppendDraftJournalInput, "generation">[] }>,
     commit: boolean,
-  ): Promise<{ result: T; write: PreparedDraftWrite | null }> {
+    precondition?: SavePrecondition,
+  ): Promise<{ result: T; write: PreparedDraftAppend | null }> {
     const base = await loadBase(draftId);
     const { snapshot } = base;
     assertWritableDraft(snapshot);
     const replay = cloneReplica(base.replica);
     try {
-      const { result, rows } = await run(replay, { ...snapshot, encoded: encodedOf(base.replica) });
+      const { result, rows } = await run(replay, snapshot);
       if (!commit || !rows.length) return { result, write: null };
       const write = prepareRows(
         base,
         rows.map((row) => ({ ...row, generation: snapshot.generation })),
+        precondition,
       );
       if (!bytesEqual(Y.encodeStateAsUpdate(write.candidate), Y.encodeStateAsUpdate(replay))) {
         write.dispose();
@@ -915,33 +887,6 @@ export function createDraftCoordinator(input: {
     } finally {
       replay.destroy();
     }
-  }
-
-  async function prepareCatchUp(
-    draftId: string,
-    source: Y.Doc,
-  ): Promise<PreparedDraftWrite | null> {
-    const base = await loadBase(draftId);
-    assertWritableDraft(base.snapshot);
-    const update = Y.encodeStateAsUpdate(source);
-    if (documentContainment.contains(base.replica.doc, update)) return null;
-    const candidate = cloneReplica(base.replica);
-    Y.applyUpdate(candidate, update);
-    return prepareCheckpoint(base, candidate);
-  }
-
-  async function segmentRowsAttempt(attempt: Attempt, batch: SegmentRowsInput): Promise<boolean> {
-    const base = await loadBase(batch.draftId);
-    const { snapshot } = base;
-    assertWritableDraft(snapshot);
-    if (snapshot.generation !== batch.expectedGeneration)
-      throw new DraftStaleUpdateError(`Draft ${batch.draftId}`);
-    const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
-    const write = journals.length ? attempt.own(prepareRows(base, journals)) : null;
-    assertSegmentRowsComplete(batch.sourceDoc, write?.candidate ?? base.replica.doc);
-    if (!write) return false;
-    await attempt.commit(() => write.persist());
-    return true;
   }
 
   const frames = createWriterFrames(
@@ -962,12 +907,8 @@ export function createDraftCoordinator(input: {
   return {
     notifyReset,
     readDraft: readCommitted,
-    withTransient: transient,
+    copyDraft,
     prepareStagedRows,
-    prepareCatchUp,
-    // An append is sequenced, never fenced: one attempt; a generation change refuses it.
-    commitSegmentRows: (batch) =>
-      commitAttempts((attempt) => segmentRowsAttempt(attempt, batch), { bound: 1 }),
 
     pullFromDoc(pull) {
       return commitAttempts((attempt) => pullAttempt(attempt, pull)).catch((cause: unknown) => {

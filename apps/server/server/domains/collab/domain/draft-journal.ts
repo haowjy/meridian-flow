@@ -41,7 +41,7 @@ export type DraftJournalReadStore = {
   listConcurrentJournalRows(
     draftId: string,
     generation: number,
-    options: { afterJournalId?: number; documentId: DocumentId },
+    options: { documentId: DocumentId },
   ): Promise<DraftJournalRow[]>;
   listJournalRowsForTurn(input: {
     draftId?: string;

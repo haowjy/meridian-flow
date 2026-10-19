@@ -44,19 +44,26 @@ An observation frontier records what document state a block showed the model:
 `room_key`), on the source block: a `tool_result`, or a writer turn's reference
 block whose materialized read the model is sent. A block records at most one
 (`source_block_id` is the primary key).
-The room is `draft:<workDraftId>` (the thread peer's upstream, never the peer)
-or `live:<documentId>:<authorityGeneration>`; collab names it. `snapshot` is
-`Y.encodeSnapshotV2` of the doc the result was rendered from; `unshown` lists
-blocks changed since the model's previous frontier and not shown in full
-(`@meridian/agent-edit/integration` computes both). Nothing plans on them yet:
-today's concurrent-edit reporting still runs on in-memory watermarks until
-writes plan on the frontier ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)).
+The room is `draft:<workDraftId>` (the Work draft the call read, never a peer)
+or `live:<documentId>:<authorityGeneration>`; collab names it from what the
+call read. `snapshot` is `Y.encodeSnapshotV2` of the doc the result was
+rendered from; `unshown` lists blocks changed since the model's previous
+frontier and not shown in full (`@meridian/agent-edit/integration` computes
+both). Every write plans on the `planning` frontier of its room plus the
+reply's own writes ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)),
+and is refused with the passage's current text (`region_changed`) when that
+passage changed since the model saw it. Every result that shows document text
+lists, under `concurrent edits:`, the blocks changed since the model's frontier
+that it doesn't show; the listing and `unshown` are one computation in
+agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/write-architecture.md#the-listing)).
 
 - **What records.** Only results the model receives: reads, immediate write
   echoes, undo, redo and revert echoes, settled save receipts, and reference
   reads. A staged write's echo records nothing: the step's save replaces it
-  before the next request is built. Refusals, `format: "edits"` reads and copy
-  source reads record none. A result reported with `awarenessDegraded` records
+  before the next request is built. A `region_changed` refusal that shows the
+  passage records like a read; other refusals, `format: "edits"` reads and copy
+  source reads record none. Dispatch records whatever frontier a result
+  carries, error or not. A result reported with `awarenessDegraded` records
   a frontier that counts no block as shown in full: its snapshot advances and
   every changed block is unshown.
 - **Recording.** A handler returns its host-only `evidence` (`ResultEvidence`:
@@ -69,30 +76,41 @@ writes plan on the frontier ([decision](https://github.com/haowjy/meridian-flow-
   (`observation_frontier.record_failed`) and the result commits with no
   frontier, never the stale one.
 - **Saves.** The save records on each committed document's last settled
-  result a frontier at the post-commit cut, chained like any result from the
+  result a frontier at the save's after-state, chained like any result from the
   `recording` lookup, crediting what the settled receipts show in full (nothing
-  when they are degraded or textless). The latest row may be a sibling read's
+  when they are degraded or textless) and what the last one lists. The latest row may be a sibling read's
   from the same step: its snapshot holds the step's staged structs, so it
   validates only if they landed, and it credits only what that read showed.
   Recovery's journal replay leaves the cut unknown and records none; a failed
   save, a refused write and a typed rejection record none. Replacing a result
-  replaces its row. Concurrent-run backfill keeps the settled row and is not
-  credited.
+  replaces its row.
 - **Selection.** The model's frontier for a room is the row with the greatest
   `recorded_seq` among a block set (rooms only grow, so recording order is cut
   order). `frontierLookup` (`loop/frontier-recording.ts`) builds one lookup per
   block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
-  reads the run's current blocks, so a sibling call's result counts as seen,
-  and `planning` reads the blocks the authoring request was built from (calls
-  in one response share the view from before it; nothing calls it until writes
-  plan on the frontier). The block set is the effective conversation (fork
-  lineage through the cutoff, forgotten turns removed), not the compaction
-  projection: credit survives a summarized or elided result. A failed lookup is
-  logged and answers null, the empty frontier; it runs in a savepoint inside a
-  transaction, so the caller's stays usable. Its `ORDER BY recorded_seq DESC
-  NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS LAST)` index, so
-  the scan walks the room newest first and stops at the first row among the
-  blocks.
+  reads the run's credited ids live, so a sibling call's result counts as seen,
+  and `planning` reads the ids as they stood when the authoring request was
+  built (calls in one response share the view from before it; every write plans on it). The
+  third, `reply`, is the provider reply's `ReplyMutations`: its own accepted writes and
+  inverses, which the view replays after that frontier. The reply's response scope
+  (`createResponseScope`) creates it, it outlives edit-scope rotations, and the reply
+  clears it in a `finally` however it ends. **Credit follows
+  what the request carries** (C10): the block set is the projector's
+  `creditedBlockIds` (`compaction/project.ts`), the blocks after the latest
+  complete compaction plus that compaction's re-shown documents, or every
+  effective block (fork lineage through the cutoff, forgotten turns removed)
+  when there is no compaction. The retained tail before the compaction credits
+  nothing: its rows may fold credit from rows the summary replaced, and no row
+  records what it folded. The chain therefore restarts at each compaction for
+  every document, and a fork whose cutoff precedes the compaction counts the
+  earlier rows again. The run's `CreditedBlocks` is reseeded from each request's
+  projection and takes the tool results and adopted writer blocks that persist
+  after it; run-start reference reads project the request's blocks for theirs.
+  A failed lookup is logged and answers null, the empty frontier; it runs in a
+  savepoint inside a transaction, so the caller's stays usable. Its `ORDER BY
+  recorded_seq DESC NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS
+  LAST)` index, so the scan walks the room newest first and stops at the first
+  row among the blocks.
 - **Lifecycle.** Rows cascade with their block. A fork renders inherited block
   ids and finds their rows with nothing copied; a retry has new blocks.
 
@@ -109,6 +127,11 @@ and pinned requests; failed, pending, and superseded owners do not apply them.
 Forks inherit elisions only when their cutoff includes C. Never write elisions
 onto source block rows or derive stubs at render time, or a later source
 compaction/deploy would rewrite a fork's frozen prefix.
+
+A document the compaction re-shows after its summary
+([important files](compaction.md#important-files)) elides every tail copy of it
+as `reshown`, stale or not, with a stub pointing at the text after the summary;
+a block that also holds some other stale document keeps the `stale` stub.
 
 Successor preparation queries current revisions from raw retained blocks once
 per attempt. Stale text in pinned unanswered messages is replaced while writer

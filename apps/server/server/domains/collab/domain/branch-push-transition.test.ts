@@ -92,7 +92,6 @@ function fixture() {
     withDocument<T>(_id: string, run: (doc: Y.Doc) => Promise<T>) {
       return mutex.run(documentId, () => run(live));
     },
-    async recover() {},
   };
   const transition = () =>
     createBranchPushTransition({

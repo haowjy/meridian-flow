@@ -11,6 +11,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ReplyMutations } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -36,7 +37,7 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { frontierLookup, recordFrontier } from "./frontier-recording.js";
+import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
@@ -67,8 +68,12 @@ export interface ToolDispatchContext {
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   allTurns: Turn[];
-  /** The blocks the request that produced this call was built from (C4's planning cut). */
+  /** The ids that credited the request that produced this call (C4's planning cut). */
   planningBlockIds: readonly string[];
+  /** The provider reply's own accepted mutations, replayed after the planning cut. */
+  replyMutations: ReplyMutations;
+  /** The run's credited ids, live: a sibling call's result counts as seen. */
+  credited: CreditedBlocks;
 }
 
 export type ToolDispatchResult =
@@ -282,12 +287,9 @@ export async function dispatchToolCall(
       threadReport,
       returnResult,
       frontiers: {
-        recording: frontierLookup(
-          deps,
-          () => ctx.state.allBlocks.map((block) => block.id),
-          correlation,
-        ),
+        recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        reply: ctx.replyMutations,
       },
     },
   );
@@ -362,6 +364,7 @@ export async function dispatchToolCall(
     },
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
+  ctx.credited.add(persistedToolResult.result.id);
 
   const resultBlock = persistedToolResult.result;
   const resultMetadata = execResult.metadata;

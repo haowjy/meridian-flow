@@ -115,10 +115,11 @@ describe("inverse integration (postgres)", () => {
       ),
     ).toMatchObject({ phase: "staged" });
     await seedSecondWork(fixture);
-    await core.read(
-      { file: "created", documentId: NEW_ID as never },
-      { sessionId: THREAD_B_ID, threadId: THREAD_B_ID, turnId: TURN_ID, grant: grantFor(NEW_ID) },
-    );
+    await fixture.draftPulls.ensureThreadPeer({
+      documentId: NEW_ID as never,
+      threadId: THREAD_B_ID,
+      branchId: branchId as never,
+    });
     const peersOfCreate = async () =>
       (await db.select().from(schema.documentDrafts)).filter(
         (documentDraft) => documentDraft.documentId === NEW_ID,

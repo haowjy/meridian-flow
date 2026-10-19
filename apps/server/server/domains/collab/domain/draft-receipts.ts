@@ -4,7 +4,12 @@
  * The store calls it with its post-lock read; it returns the rows to insert (their novel bytes)
  * and their receipts, or why nothing is written.
  */
-import { captureEditParts, type EditFrontier } from "@meridian/agent-edit/integration";
+import {
+  captureEditParts,
+  type EditFrontier,
+  type SaveCut,
+  type SavePrecondition,
+} from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 import type { createDocumentContainment } from "./document-containment.js";
 import { assertFreshAgentUpdate } from "./document-mutation-policy.js";
@@ -31,6 +36,8 @@ export type FinalizeAppendInput = {
    * the base the pre-lock check judged; throws the authorship errors.
    */
   validateWriter(prefix: Y.Doc, update: Uint8Array): void;
+  /** The save's precondition, judged on the committed prefix before any row. */
+  precondition?: SavePrecondition;
 };
 
 /** A finalized append: what the store inserts, and the document it commits into. */
@@ -48,11 +55,13 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
  * the novel trim, held deletes, the restoration certificate, authorship when the prefix moved),
  * applies them requiring complete integration, and captures one receipt per logical write on
  * the final document. Any outcome but `appended` leaves `doc` unusable: the caller destroys it.
+ * An appended or contained outcome carries its cut: the prefix as found under the lock, and
+ * with the kept rows (the same prefix, when every row was contained).
  */
 export function finalizeAppend(
   read: DraftRead,
   input: FinalizeAppendInput,
-): { finalization: AppendFinalization; doc: Y.Doc; result?: FinalizedAppend } {
+): { finalization: AppendFinalization; doc: Y.Doc; cut?: SaveCut; result?: FinalizedAppend } {
   const prefixHeld = read.checkpoint === null;
   let doc = input.candidate;
   if (prefixHeld) {
@@ -66,6 +75,9 @@ export function finalizeAppend(
   }
   const done = (finalization: AppendFinalization) => ({ finalization, doc });
   if (read.documentDraft.lifecycle !== "active") return done({ status: "refused" });
+  const before = Y.encodeStateAsUpdate(doc);
+  if (input.precondition && !input.precondition(before))
+    return done({ status: "preconditionFailed" });
   const moved = !prefixHeld || read.tail.length > 0;
 
   const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
@@ -92,7 +104,8 @@ export function finalizeAppend(
       held,
     });
   }
-  if (!kept.length) return done({ status: "contained" });
+  if (!kept.length)
+    return { ...done({ status: "contained" }), cut: { beforeState: before, afterState: before } };
 
   const groups = new Map<string, number[]>();
   for (const [index, { row }] of kept.entries()) {
@@ -121,6 +134,7 @@ export function finalizeAppend(
   return {
     finalization: { status: "appended", rows, receipts },
     doc,
+    cut: { beforeState: before, afterState: Y.encodeStateAsUpdate(doc) },
     result: {
       status: "appended",
       rows,

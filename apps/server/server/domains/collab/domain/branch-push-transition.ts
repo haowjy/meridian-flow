@@ -1,8 +1,8 @@
 /** Sole ordering owner for durable branch-push batch settlement and recovery. */
+
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AgentEditCodecFactory,
-  DocumentCoordinator,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -28,6 +28,7 @@ import { trailContributionReplacement } from "./draft-trail-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
 import type { ApplyItemHold, ApplyRefusal } from "./ports/settlement-apply.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -68,7 +69,7 @@ type SettleResult =
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
-  liveCoordinator: DocumentCoordinator;
+  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Settlement runs in its documents' scope, so nested document doors join it. */

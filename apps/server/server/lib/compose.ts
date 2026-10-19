@@ -423,31 +423,8 @@ export type ProductionAppPorts = {
   observationFrontiers: ObservationFrontiers;
 };
 
-const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
-
 /** Max threads one wake sweep starts; the sweep repeats on its interval. */
 const WAKE_SWEEP_LIMIT = 100;
-
-function concurrentRenderBudgetBytes(request: {
-  model?: string;
-  messages: unknown;
-  tools?: unknown;
-}): number {
-  const modelId = request.model ?? MODEL_REGISTRY.defaultModel;
-  const model = MODEL_REGISTRY.providers
-    .flatMap((provider) => provider.models)
-    .find((candidate) => candidate.id === modelId);
-  if (!model) return 0;
-  const fixedRequestBytes = new TextEncoder().encode(
-    JSON.stringify({ messages: request.messages, tools: request.tools }),
-  ).byteLength;
-  // Three UTF-8 bytes per remaining token deliberately underestimates capacity.
-  const capacityBytes = Math.max(
-    0,
-    (model.contextWindow - model.maxOutputTokens - CONCURRENT_RENDER_SAFETY_TOKENS) * 3,
-  );
-  return Math.max(0, capacityBytes - fixedRequestBytes);
-}
 
 export async function createProductionAppPorts(input: {
   db: Database;
@@ -1118,7 +1095,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
-    concurrentRenderBudgetBytes,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;
