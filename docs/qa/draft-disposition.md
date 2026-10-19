@@ -55,8 +55,16 @@ AI-edited documents using `./mf` and inspect that Work in the browser:
 4. Make pending edits in both documents and click Discard all. Both disappear
    from the Work's pending list without rewriting their receipt history.
 
-Capture and inspect screenshots of the relevant refusal, pending revert, and
-empty list. Record any unavailable intermediate-lane controls as coverage gaps,
+Also exercise model inverse history on a production fresh-seeded draft: replace
+one passage, Undo back to the review base, then Redo. Redo must restore the edit
+even though the Undo contributes no shown review change. Repeat with two edits:
+Undo count 2, Redo count 3 must report only two available and change nothing,
+then Redo count 2 succeeds. Use the same chat/Work and verify live stays untouched.
+A failed reply's durable Undo or Revert must itself roll back and remain terminal
+on retry; the existing inverse-rollback DB cases cover that error seam.
+
+Capture and inspect screenshots of the relevant refusal, pending revert, model
+Undo/Redo responses and empty list. Record any unavailable intermediate-lane controls as coverage gaps,
 never a successful browser flow. Close only the named browser session and stop
 only the stack you started. Store the date, commit, exact observations and
 screenshot paths in the active work item's `b/g1/` evidence.

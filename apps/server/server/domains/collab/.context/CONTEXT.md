@@ -441,7 +441,7 @@ pulls retry a moved draft up to four times, then refuse `stale`.
 
 An inverse (Undo, Redo, revert, rollback, and the model's `undo`/`redo`)
 captures without any lock: one read-only snapshot of each document's live
-head, each affected draft at its revision merged with that live state, the
+head, each committed draft at its revision without merging live identity, the
 history and each draft's lifecycle. It plans on that capture, then commits in
 one scope: the live mutexes of its live destinations, then a seam boundary
 (`mutate` with `seam`): the captured drafts' Works and the bound

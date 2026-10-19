@@ -50,10 +50,14 @@ drafts, and matches receipts by edit id and ordinal. Active draft write admissio
 is separate; a revision mismatch between the evidence and planning captures
 retries the bounded attempt. A removed document's record takes precedence.
 
-Model Undo/Redo keep `cant_*_applied`; discarded parts use discarded copy.
-Revert eligibility remains the inverse kernel's classification, with disposition
-choosing the skipped copy. Applied draft parts revert only in their active
-origin draft, leaving live untouched and making a pending change against base.
+Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
+eligibility: an effective Undo that restores the review base has no shown change
+and can read discarded. In an active draft the kernel decides Undo/Redo, Revert
+and failed-scope rollback eligibility; discarded disposition chooses the copy
+only when the kernel skips a part. Closed origin drafts refuse without planning.
+Effective action consumption follows immutable receipts, regardless of whether
+those receipts currently contribute to review. Applied draft parts revert only
+in their active origin draft, leaving live untouched and making a pending change against base.
 Closed drafts are never writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.
 

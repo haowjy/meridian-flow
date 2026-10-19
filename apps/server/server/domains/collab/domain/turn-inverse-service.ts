@@ -80,7 +80,6 @@ export interface TurnInverseStore {
     part: StoredInversePart,
   ): { before: string; after: string };
 }
-const reversible = (part: StoredInversePart) => part.disposition === "pending";
 const targetsTurn = (part: StoredInversePart, query: TurnInverseQuery) =>
   (query.responseIdentity
     ? part.actor === "agent" && part.kind !== "rollback"
@@ -102,12 +101,7 @@ function prepare(
   );
   const keys = new Set(originals.map(partKey));
   const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
-  const selected =
-    direction === "redo"
-      ? effectiveActionIndex(all, keys, reversible).actions.find((action) =>
-          action.parts.some(reversible),
-        )
-      : undefined;
+  const selected = direction === "redo" ? effectiveActionIndex(all, keys).actions[0] : undefined;
   const selectedAction = selected?.id;
   const accepted = selected?.targets ?? new Set<string>();
   return documents.map((document) => {
@@ -119,6 +113,13 @@ function prepare(
       direction === "undo"
         ? targets.filter((part) => !rolledBack(part))
         : document.history.filter((part) => part.actionId === selectedAction && !rolledBack(part));
+    const disposition = (part: StoredInversePart) =>
+      (direction === "redo"
+        ? destinations.find((candidate) =>
+            candidate.targets.some((target) => partKey(target) === partKey(part)),
+          )
+        : part
+      )?.disposition ?? part.disposition;
     const pending = destinations.find((part) => part.origin.kind === "pending");
     const draftId = pending?.origin.kind === "pending" ? pending.origin.draftId : null;
     const draft = draftId ? document.drafts.get(draftId) : undefined;
@@ -145,15 +146,8 @@ function prepare(
         );
         continue;
       }
-      const inverse =
-        direction === "redo"
-          ? destinations.find((candidate) =>
-              candidate.targets.some((target) => partKey(target) === partKey(part)),
-            )
-          : undefined;
-      const disposition = (inverse ?? part).disposition;
-      if (disposition !== "pending") {
-        skip(part, disposition === "applied" ? "Applied to the manuscript" : "discarded");
+      if (disposition(part) === "applied") {
+        skip(part, "Applied to the manuscript");
         continue;
       }
       if (draft?.frozen) {
@@ -167,6 +161,7 @@ function prepare(
       }
       selection.push({ part, direction: direction === "undo" ? "invert" : "reapply" });
     }
+    // Review membership does not decide inverse eligibility, including failed-scope rollback.
     const computed = index.compute(selection, {
       actionId,
       allocateClient: allocateDocumentClient,
@@ -176,11 +171,13 @@ function prepare(
       if (part)
         skip(
           part,
-          classified.reasons.includes("inaccessible ancestor")
-            ? "Its paragraph was removed"
-            : classified.state === "undone"
-              ? "Already undone"
-              : "Stayed as you edited it",
+          disposition(part) === "discarded"
+            ? "discarded"
+            : classified.reasons.includes("inaccessible ancestor")
+              ? "Its paragraph was removed"
+              : classified.state === "undone"
+                ? "Already undone"
+                : "Stayed as you edited it",
         );
     }
     return {
