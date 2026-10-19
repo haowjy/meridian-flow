@@ -6,6 +6,7 @@
 import type { DraftApplyPending } from "@meridian/contracts/branches";
 import { createError } from "nitro/h3";
 import {
+  BranchApplyDrainingError,
   BranchApplyPendingError,
   DuplicateApplyItemError,
 } from "../domains/collab/domain/branch-apply.js";
@@ -14,6 +15,9 @@ import {
 export function branchApplyHttpAnswer(cause: unknown): DraftApplyPending | undefined {
   if (cause instanceof BranchApplyPendingError) {
     return { status: "pending", branchId: cause.branchId };
+  }
+  if (cause instanceof BranchApplyDrainingError) {
+    throw createError({ statusCode: 503, message: cause.message });
   }
   if (cause instanceof DuplicateApplyItemError) {
     throw createError({ statusCode: 400, message: cause.message });

@@ -49,10 +49,12 @@ import {
   type AgentEditResultV1,
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
+  type FrontierLookup,
   isAgentEditResultEnvelope,
   type LinkShowing,
   modelConcurrentResult,
   modelResult,
+  type ObservationFrontier,
   type ResponseCommitWriteReceipt,
   renderAgentEditResult,
   type WriteRejection,
@@ -87,7 +89,6 @@ import { isCacheReset } from "../../threads/domain/cache-reset.js";
 import type {
   ActiveDocumentResolver,
   BlockRepository,
-  EventJournalWriter,
   LiveEventWriter,
   ModelResponseRepository,
   ThreadRepositories,
@@ -109,7 +110,8 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
-import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
+import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
@@ -139,6 +141,7 @@ import {
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
+import { frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -166,7 +169,11 @@ import {
 } from "./persistence.js";
 import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
-import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
+import {
+  loadReferenceReads,
+  type ReferenceEvidence,
+  type ReferenceReader,
+} from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
 import {
@@ -266,10 +273,12 @@ export interface OrchestratorDeps {
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
   /** Shown-link evidence: tool results, reference reads, settled receipts and backfilled concurrent runs record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
+  /** What each tool result, settled receipt and reference read showed of a document, per room. */
+  observationFrontiers: ObservationFrontiers;
   responseWrites: {
     commitResponse(
       responseIdentity: ModelResponseIdentity,
-      ctx: { threadId: ThreadId; turnId: TurnId },
+      ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier: FrontierLookup },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
@@ -283,6 +292,8 @@ type ResponseWriteCommitOutcome =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
+      /** The saved documents' frontiers at the post-commit cut, for those that recorded one. */
+      frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out; their writes did not land (D29). A removal's carry its record. */
       refused: Array<{
@@ -741,10 +752,6 @@ async function runDrainTurn(
             selection.activeLeafTurnId,
             async () => {
               await reconcileOrphanedPendingWrites(deps, input.threadId);
-              // The reference blocks in `events` are what this turn's request
-              // shows; a discarded or retried preparation never gets here.
-              if (preflight)
-                await recordShownLinks(deps, input.threadId, reservedTurn.id, preflight.shown);
               if (preflight)
                 await persistPreparedPromptBake(
                   preflight.assembled,
@@ -760,6 +767,15 @@ async function runDrainTurn(
             {
               expectedForgetting: forgetting,
               afterEvents: async () => {
+                // The reference blocks in `events` are what this turn's request
+                // shows; a discarded or retried preparation never gets here.
+                if (preflight)
+                  await recordReferenceEvidence(
+                    deps,
+                    input.threadId,
+                    reservedTurn.id,
+                    preflight.evidence,
+                  );
                 if (selection.outstanding.length > 0 || input.replyTurnId)
                   await admitRunExecution(
                     deps,
@@ -1211,26 +1227,42 @@ async function persistUncommittedWriteResult(input: {
       },
     }),
   );
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const block = contentForBlockInput({
-      id: input.block.id,
-      turnId: input.block.turnId,
-      responseId: input.block.responseId,
-      blockType: "tool_result",
-      sequence: input.block.sequence,
-      content: { toolCallId, output, result, isError: true },
-      provider: input.block.provider,
-      status: "complete",
-    });
-    return {
-      result: localBlockFromEvent(block),
-      events: [
-        { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output, result, isError: true },
-      ],
-    };
-  });
+  const persisted = await persistAndAppendEvents(
+    input.deps,
+    input.threadId,
+    async () => {
+      const block = contentForBlockInput({
+        id: input.block.id,
+        turnId: input.block.turnId,
+        responseId: input.block.responseId,
+        blockType: "tool_result",
+        sequence: input.block.sequence,
+        content: { toolCallId, output, result, isError: true },
+        provider: input.block.provider,
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [
+          { type: "block.upserted", block },
+          { type: "tool.result", toolCallId, output, result, isError: true },
+        ],
+      };
+    },
+    // The failure shows no document: whatever the result recorded goes with the text it replaced.
+    { afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, undefined) },
+  );
   return { block: persisted.result };
+}
+
+/** A replaced result's frontier is its new rendering's, in the transaction that replaces it. */
+function replaceFrontier(
+  deps: OrchestratorDeps,
+  threadId: ThreadId,
+  block: Block,
+  frontier: ObservationFrontier | undefined,
+): Promise<void> {
+  return recordFrontier(deps, block.id, frontier, { threadId, turnId: block.turnId });
 }
 
 async function persistCommittedWriteResult(input: {
@@ -1239,6 +1271,8 @@ async function persistCommittedWriteResult(input: {
   block: Block;
   result: AgentEditResultV1;
   documentRevision: DocumentRevisionEvidence;
+  /** The save's post-commit frontier, on the document's last settled result only. */
+  frontier: ObservationFrontier | undefined;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
     toolCallId?: string;
@@ -1255,36 +1289,50 @@ async function persistCommittedWriteResult(input: {
     ...(staged?.destination ? { destination: staged.destination } : {}),
     ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
   });
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const block = contentForBlockInput({
-      id: input.block.id,
-      turnId: input.block.turnId,
-      responseId: input.block.responseId,
-      blockType: "tool_result",
-      sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output, result, metadata }),
-      provider: input.block.provider,
-      status: "complete",
-    });
-    return {
-      result: localBlockFromEvent(block),
-      events: [
-        { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output, result },
-      ],
-    };
-  });
+  const persisted = await persistAndAppendEvents(
+    input.deps,
+    input.threadId,
+    async () => {
+      const block = contentForBlockInput({
+        id: input.block.id,
+        turnId: input.block.turnId,
+        responseId: input.block.responseId,
+        blockType: "tool_result",
+        sequence: input.block.sequence,
+        content: toJsonValue({ toolCallId, output, result, metadata }),
+        provider: input.block.provider,
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [
+          { type: "block.upserted", block },
+          { type: "tool.result", toolCallId, output, result },
+        ],
+      };
+    },
+    {
+      afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, input.frontier),
+    },
+  );
   return { block: persisted.result };
 }
 
-/** Records accepted reference-read candidates; callers run it inside the commit persisting their blocks. */
-async function recordShownLinks(
-  deps: Pick<OrchestratorDeps, "shownLinks">,
+/**
+ * Records accepted reference reads' evidence: shown links under the turn whose
+ * request shows them, frontiers on each reference block. Callers run it inside
+ * the commit persisting those blocks, after they are projected.
+ */
+async function recordReferenceEvidence(
+  deps: Pick<OrchestratorDeps, "shownLinks" | "observationFrontiers" | "eventSink">,
   threadId: string,
   turnId: string,
-  shown: readonly ShownLinkShowing[],
+  evidence: ReferenceEvidence,
 ): Promise<void> {
-  for (const showing of shown) await deps.shownLinks.record({ ...showing, threadId, turnId });
+  for (const showing of evidence.shown)
+    await deps.shownLinks.record({ ...showing, threadId, turnId });
+  for (const { sourceBlockId, frontier } of evidence.frontiers)
+    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
 }
 
 /**
@@ -1299,17 +1347,24 @@ async function prepareReferenceReads(input: {
   userTurnId: string;
   assistantTurnId: string;
   blocks: readonly Block[];
+  /** The run's blocks the reads are shown beside: their frontiers chain from these. */
+  runBlocks: readonly Block[];
   signal?: AbortSignal;
-}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; shown: ShownLinkShowing[] }> {
-  const { blocks: loaded, shown } = await loadReferenceReads({
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; evidence: ReferenceEvidence }> {
+  const { blocks: loaded, evidence } = await loadReferenceReads({
     blocks: input.blocks,
     userTurnId: input.userTurnId,
     threadId: input.threadId,
     assistantTurnId: input.assistantTurnId,
     reader: input.deps.referenceReader,
     signal: input.signal,
+    recordingFrontier: frontierLookup(
+      input.deps,
+      () => [...input.runBlocks, ...input.blocks].map((block) => block.id),
+      { threadId: input.threadId, turnId: input.assistantTurnId },
+    ),
   });
-  if (loaded.length === 0) return { blocks: [...input.blocks], events: [], shown };
+  if (loaded.length === 0) return { blocks: [...input.blocks], events: [], evidence };
   const events = loaded.map((block) => ({
     type: "block.upserted" as const,
     block: contentForBlockInput({
@@ -1326,7 +1381,7 @@ async function prepareReferenceReads(input: {
   return {
     blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
     events,
-    shown,
+    evidence,
   };
 }
 
@@ -1547,6 +1602,7 @@ function createResponseScope(input: {
         documentId: string,
         write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
+        frontier: ObservationFrontier | undefined,
       ) => {
         if (receipt.result.status !== "success")
           return persistUncommittedWriteResult({
@@ -1567,17 +1623,43 @@ function createResponseScope(input: {
           block: write.block,
           documentRevision: { documentId, uri: write.uri, revision: receipt.revision },
           result: receipt.result,
+          frontier,
         });
       };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
         { providerResponseId: input.responseId, editScopeId: id },
-        { threadId, turnId },
+        {
+          threadId,
+          turnId,
+          // The settled receipts are a result like any other: their frontier chains from the
+          // model's latest row, which may be a sibling read's in this step.
+          recordingFrontier: frontierLookup(deps, () => allBlocks.map((block) => block.id), {
+            threadId,
+            turnId,
+          }),
+        },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
             const refusal =
               settled.status === "committed"
                 ? settled.refused.find((refused) => refused.documentId === documentId)
+                : undefined;
+            // The document's frontier records on its last settled receipt, the step's latest
+            // result there.
+            const frontier =
+              settled.status === "committed" && !refusal
+                ? settled.frontiers?.find((entry) => entry.documentId === documentId)?.frontier
+                : undefined;
+            const lastSettled =
+              settled.status === "committed" && !refusal
+                ? [...blocks]
+                    .reverse()
+                    .find(
+                      (write) =>
+                        settledReceipt(settled.receipts, documentId, write.settlementId).result
+                          .status === "success",
+                    )
                 : undefined;
             for (const write of blocks) {
               const result = refusal
@@ -1596,6 +1678,7 @@ function createResponseScope(input: {
                       documentId,
                       write,
                       settledReceipt(settled.receipts, documentId, write.settlementId),
+                      write === lastSettled ? frontier : undefined,
                     )
                   : await persistUncommittedWriteResult({
                       deps,
@@ -1799,7 +1882,8 @@ async function executeLoop({
       signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
-      recordShown: (turnId, shown) => recordShownLinks(deps, input.threadId, turnId, shown),
+      recordEvidence: (turnId, evidence) =>
+        recordReferenceEvidence(deps, input.threadId, turnId, evidence),
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
@@ -1807,6 +1891,7 @@ async function executeLoop({
           userTurnId: turn.id,
           assistantTurnId: currentTurn.id,
           blocks,
+          runBlocks: allBlocks,
           signal: input.signal,
         });
         const skillBody = await prepareSkillBodies({
@@ -1820,7 +1905,7 @@ async function executeLoop({
         return {
           blocks: withReferences.blocks,
           events: withReferences.events,
-          shown: withReferences.shown,
+          evidence: withReferences.evidence,
           extraTurns:
             skillBody.kind === "created"
               ? [{ turn: skillBody.turn, blocks: [skillBody.block] }]
@@ -2138,6 +2223,8 @@ async function executeLoop({
         });
         const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
         preparedContext = undefined;
+        // The effective conversation this request was built from: every call it produces plans on it (C4).
+        const planningBlockIds = allBlocks.map((block) => block.id);
         thread = built.thread;
         const request = built.request;
         const gatewayCallId = crypto.randomUUID();
@@ -2462,6 +2549,7 @@ async function executeLoop({
                 readSnapshot: deps.repos.readSnapshot,
                 runClaim: deps.runClaim,
                 shownLinks: deps.shownLinks,
+                observationFrontiers: deps.observationFrontiers,
               },
               call,
               {
@@ -2476,6 +2564,7 @@ async function executeLoop({
                 treeBudget,
                 blockSeqRef: interruptState.blockSeqRef,
                 allTurns,
+                planningBlockIds,
               },
             );
             currentTurn = interruptState.currentTurn;

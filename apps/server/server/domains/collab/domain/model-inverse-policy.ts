@@ -434,6 +434,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       return {
         status: "success",
         actionId,
+        draftId: query.draftId,
         before,
         after,
         ...(command.command === "revert" ? { writeId: writeHandles[0] } : {}),
@@ -579,6 +580,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         return {
           status: "success",
           actionId: randomUUID(),
+          draftId: query.draftId,
           message: [
             `your edits to ${document.uri}, newest first (version: ${policy.version(query.draftId)})`,
             ...lines,

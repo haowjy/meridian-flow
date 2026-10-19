@@ -57,6 +57,36 @@ transaction-origin identity. Model handles are reserved through
 ordinals independently of transport compaction. Certified aliases are the only
 persisted restoration correspondence, never text or length guesses.
 
+## Observation frontiers
+
+`src/frontier.ts` is pure Yjs and host-agnostic. A frontier is a snapshot of
+the doc a result was rendered from plus `unshown`: top-level block ids
+(`client:clock`) changed since the previous frontier and not shown in full.
+A block changed when an item in its subtree is visible at exactly one of the
+two cuts; given containment those items are exactly the clocks born before
+the previous cut and deleted since, plus the clocks born since and still
+visible, so the fold visits only those structs plus one `Y.snapshot` walk
+(about 4 ms at 440k structs). Containment needs every state-vector clock and
+every deleted range of the snapshot: a delete-only staged update allocates no
+clock, so the state vector alone accepts a refused staged deletion. An absent,
+undecodable or uncontained previous frontier is the empty snapshot.
+
+The host names rooms; agent-edit carries the label. When the host passes
+`WriteContext.observe = { room, prev }`, read results and write receipts carry
+a host-only `frontier` (`{ room, snapshot, unshown }`) from the doc they
+rendered. An undo, redo or revert renders from the version the host's inverse
+ran on, which only its result names (`DocumentEditResult.draftId`), so the host
+passes `observeInverse(draftId)` and the echo records from the inverse's
+`after` cut. With `ResponseCommitOptions.observe(documentId)` each saved
+document's result carries one at the post-commit cut (`saveObservation`),
+crediting what its accepted receipts show; journal-replay recovery leaves the
+cut unknown and records none. Shown in full: a read's rendered blocks (an
+outline read credits none) and `extent: full` changed blocks (never prefix context, copy
+edges or swept bodies). A result reported with `awarenessDegraded` still
+records, crediting nothing. A failure is reported through
+`onObservationFailed` and the result goes out without one; `frontier` never
+reaches `AgentEditResultV1`.
+
 ## CRDT and content boundaries
 
 Resolver/apply code is CRDT-neutral through opaque `DocHandle` and `BlockRef`

@@ -111,6 +111,7 @@ export function toOutcome(
     ...(result.error ? { error: result.error } : {}),
     ...(result.nodes ? { nodes: result.nodes } : {}),
     ...(result.showing ? { showing: result.showing } : {}),
+    ...(result.frontier ? { frontier: result.frontier } : {}),
     result: model,
   };
   if (result.status === "success") {

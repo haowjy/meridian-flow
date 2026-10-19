@@ -4,6 +4,8 @@
  */
 import {
   type ConcurrentEditInfo,
+  type FrontierLookup,
+  type ObservationFrontier,
   type ResponseCommitWriteReceipt,
   type ResponseStagedCreateOutcome,
   removedWriteRefusal,
@@ -32,7 +34,7 @@ export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
   commitResponse(
     responseIdentity: ModelResponseIdentity,
-    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    ctx: SaveContext,
     beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
@@ -41,10 +43,17 @@ export interface AgentEditResponseWriteLifecycle {
   ): Promise<void>;
 }
 
+/** A save records each document's frontier, chained from the model's latest one (this lookup). */
+type SaveContext = Pick<ToolHandlerContext, "threadId" | "turnId"> & {
+  recordingFrontier?: FrontierLookup;
+};
+
 type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
+      /** Host-only: the saved documents' frontiers at the post-commit cut, for those that recorded one. */
+      frontiers: Array<{ documentId: string; frontier: ObservationFrontier }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string } & SaveRefusal>;
@@ -119,7 +128,7 @@ export function createAgentEditResponseWriteLifecycle(
 
     async commitResponse(
       responseIdentity: ModelResponseIdentity,
-      ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+      ctx: SaveContext,
       beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
       const responseId = responseIdentity.editScopeId;
@@ -133,6 +142,11 @@ export function createAgentEditResponseWriteLifecycle(
           status: "committed",
           receipts: result.documents.flatMap((document) =>
             document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
+          ),
+          frontiers: result.documents.flatMap((document) =>
+            document.frontier
+              ? [{ documentId: document.documentId, frontier: document.frontier }]
+              : [],
           ),
           concurrentEdits: result.documents.flatMap((document) =>
             document.concurrentEdits

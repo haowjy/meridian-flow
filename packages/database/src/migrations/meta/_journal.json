@@ -453,22 +453,36 @@
     {
       "idx": 64,
       "version": "7",
-      "when": 1792370423387,
-      "tag": "0070_document_removal_record",
+      "when": 1792290050000,
+      "tag": "0070_observation_frontiers",
       "breakpoints": true
     },
     {
       "idx": 65,
       "version": "7",
-      "when": 1792370423388,
-      "tag": "0071_document_removal_cutover_online",
+      "when": 1792373857879,
+      "tag": "0071_observation_frontiers_room_index",
       "breakpoints": true
     },
     {
       "idx": 66,
       "version": "7",
-      "when": 1792370423389,
-      "tag": "0072_document_removal_validate",
+      "when": 1792387204652,
+      "tag": "0072_document_removal_record",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792387204653,
+      "tag": "0073_document_removal_cutover_online",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792387204654,
+      "tag": "0074_document_removal_validate",
       "breakpoints": true
     }
   ]

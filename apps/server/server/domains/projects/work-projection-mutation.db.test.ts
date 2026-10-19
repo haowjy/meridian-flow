@@ -27,7 +27,6 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkBranchPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
@@ -35,6 +34,7 @@ import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizz
 import { createDraftClose } from "../collab/adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
 import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
+import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { appendDraftRows, proseDraftUpdate } from "../collab/test-support/draft-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";

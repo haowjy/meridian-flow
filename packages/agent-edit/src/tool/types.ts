@@ -4,6 +4,7 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { LinkView } from "@meridian/contracts";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
+import type { ObservationFrontier, ObservationRequest } from "../frontier.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -55,6 +56,12 @@ interface WriteOutcomeBase {
    * from. Never copied into `result`.
    */
   showing?: LinkShowing;
+  /**
+   * Host-only: the frontier of what this result showed, present when the
+   * caller asked (`WriteContext.observe` or `observeInverse`). Never copied
+   * into `result`.
+   */
+  frontier?: ObservationFrontier;
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -226,6 +233,19 @@ export interface WriteContext {
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   /**
+   * Host-only: record the result's observation frontier in this room, chained
+   * from the model's previous frontier there. Absent for callers that record
+   * no frontier.
+   */
+  observe?: ObservationRequest;
+  /**
+   * Host-only, for an undo, redo or revert: the room is the version the host's
+   * inverse rendered `after` from, which only its result names
+   * (`DocumentEditResult.draftId`, null for the live document). Answers the
+   * request to record under, or undefined to record none.
+   */
+  observeInverse?(draftId: string | null): Promise<ObservationRequest | undefined>;
+  /**
    * The link view the host routed this command to: the Work branch or live
    * version its destination names. A host that routes between versions sets
    * it on every command; links, sources and the revision spell in it.
@@ -250,6 +270,11 @@ export interface ResponseCommitDocumentResult {
   receipts: ResponseCommitWriteReceipt[];
   concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
+  /**
+   * Host-only, when the commit asked (`ResponseCommitOptions.observe`): the
+   * frontier at the post-commit cut, crediting every accepted receipt.
+   */
+  frontier?: ObservationFrontier;
 }
 
 export interface ResponseCommitWriteReceipt {

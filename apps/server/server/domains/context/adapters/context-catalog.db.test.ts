@@ -18,7 +18,7 @@ import { Ok } from "../../../shared/result.js";
 import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";

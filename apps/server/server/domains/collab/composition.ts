@@ -60,7 +60,6 @@ import {
 import {
   createDrizzleDraftJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkBranchPendingStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchTreeStep } from "./adapters/drizzle-branch-tree-step.js";
 import {
@@ -77,6 +76,7 @@ import {
 } from "./adapters/drizzle-document-derivations.js";
 import type { DraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
+import { createDrizzleFrontierRooms } from "./adapters/drizzle-frontier-rooms.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
@@ -86,6 +86,7 @@ import {
 import { createDrizzleReviewCut, readLiveDoc } from "./adapters/drizzle-review-cut.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
@@ -184,6 +185,8 @@ type CollabDomainDeps = {
   draftClose: DraftClose;
   /** The tree's removal kernel, built at the composition root over `draftClose`. */
   documentRemoval: DocumentRemoval;
+  /** Stops staging new Applies while settlement drains (cutover); staged ones complete. */
+  drainSettlement?: boolean;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -417,6 +420,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         const tx = currentDrizzleDb(deps.db);
         for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
       },
+      frontierRooms: createDrizzleFrontierRooms(deps.db, deps.eventSink),
       journal: persistence.journal,
       drafts,
       draftCoordinator,
@@ -547,6 +551,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches: workBranches,
     reviewItems,
     push: branchPush,
+    ...(deps.drainSettlement ? { drainSettlement: true } : {}),
   });
   // Exactly what each committed transaction ended: its closed drafts' rooms and thread peers.
   deps.draftClose.bindRetirement(

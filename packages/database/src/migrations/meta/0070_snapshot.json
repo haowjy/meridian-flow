@@ -1,5 +1,5 @@
 {
-  "id": "1a963ca2-0675-4ec6-bede-37f79e9f306a",
+  "id": "0340638c-f0bd-48c6-83e8-b3253891d5ca",
   "prevId": "ab0643ca-69b1-4469-944b-9f0f1d65e276",
   "version": "7",
   "dialect": "postgresql",
@@ -1329,6 +1329,74 @@
           "value": "\"model_responses\".\"predicted_cache_reason\" IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable')"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.observation_frontiers": {
+      "name": "observation_frontiers",
+      "schema": "",
+      "columns": {
+        "source_block_id": {
+          "name": "source_block_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "room_key": {
+          "name": "room_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unshown": {
+          "name": "unshown",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_seq": {
+          "name": "recorded_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "observation_frontiers_recorded_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "observation_frontiers_source_block_id_turn_blocks_id_fk": {
+          "name": "observation_frontiers_source_block_id_turn_blocks_id_fk",
+          "tableFrom": "observation_frontiers",
+          "tableTo": "turn_blocks",
+          "columnsFrom": [
+            "source_block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.project_thread_counters": {
@@ -5310,24 +5378,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "deletion_reason": {
-          "name": "deletion_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted_by_user_id": {
-          "name": "deleted_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deletion_cause": {
-          "name": "deletion_cause",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "deleted_by_work_id": {
           "name": "deleted_by_work_id",
           "type": "uuid",
@@ -5528,19 +5578,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "documents_deleted_by_user_id_users_id_fk": {
-          "name": "documents_deleted_by_user_id_users_id_fk",
-          "tableFrom": "documents",
-          "tableTo": "users",
-          "columnsFrom": [
-            "deleted_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "documents_deleted_by_work_id_works_id_fk": {
           "name": "documents_deleted_by_work_id_works_id_fk",
           "tableFrom": "documents",
@@ -5559,18 +5596,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "documents_removal_presence": {
-          "name": "documents_removal_presence",
-          "value": "(\"documents\".\"deleted_at\" IS NOT NULL) = (\"documents\".\"deletion_reason\" IS NOT NULL)"
-        },
-        "documents_deletion_reason_valid": {
-          "name": "documents_deletion_reason_valid",
-          "value": "\"documents\".\"deletion_reason\" IN ('deleted', 'discarded')"
-        },
-        "documents_deletion_cause_valid": {
-          "name": "documents_deletion_cause_valid",
-          "value": "\"documents\".\"deletion_cause\" IN ('reply_rolled_back', 'create_failed', 'repair')"
-        },
         "documents_size_bytes_nonneg": {
           "name": "documents_size_bytes_nonneg",
           "value": "\"documents\".\"size_bytes\" IS NULL OR \"documents\".\"size_bytes\" >= 0"
@@ -9803,12 +9828,6 @@
           "notNull": true,
           "default": "'active'"
         },
-        "closed_cause": {
-          "name": "closed_cause",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "state": {
           "name": "state",
           "type": "bytea",
@@ -10039,14 +10058,6 @@
         "document_drafts_kind_valid": {
           "name": "document_drafts_kind_valid",
           "value": "\"document_drafts\".\"kind\" IN ('work_draft', 'thread_peer')"
-        },
-        "document_drafts_closed_cause_presence": {
-          "name": "document_drafts_closed_cause_presence",
-          "value": "(\"document_drafts\".\"status\" = 'closed') = (\"document_drafts\".\"closed_cause\" IS NOT NULL)"
-        },
-        "document_drafts_closed_cause_valid": {
-          "name": "document_drafts_closed_cause_valid",
-          "value": "\"document_drafts\".\"closed_cause\" IN ('discarded', 'document_removed')"
         },
         "document_drafts_status_valid": {
           "name": "document_drafts_status_valid",

@@ -6,7 +6,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
-import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
 import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";

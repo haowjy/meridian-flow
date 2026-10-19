@@ -190,7 +190,9 @@ describe("response helper replay (Postgres)", () => {
         workId: WORK_ID,
       }),
     ).toEqual([]);
-    const { createDrizzleWorkBranchPendingStore } = await import("./drizzle-branch-push.js");
+    const { createDrizzleWorkBranchPendingStore } = await import(
+      "./drizzle-work-branch-pending.js"
+    );
     expect(await createDrizzleWorkBranchPendingStore(db).countPendingByWorkIds([WORK_ID])).toEqual(
       new Map(),
     );

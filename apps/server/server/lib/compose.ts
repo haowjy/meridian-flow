@@ -19,10 +19,10 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
-import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
 import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -161,6 +161,7 @@ import {
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
+  createDrizzleObservationFrontiers,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
@@ -189,6 +190,7 @@ import {
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
+  type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -417,6 +419,8 @@ export type ProductionAppPorts = {
   shownLinks: ShownLinkStore;
   /** The removal record behind a missing file the model asked for. */
   documentRemovals: DocumentRemovals;
+  /** What each transcript block showed the model of a document, per room. */
+  observationFrontiers: ObservationFrontiers;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -598,6 +602,7 @@ export async function createProductionAppPorts(input: {
     objects: objectRelease,
     draftClose,
     documentRemoval,
+    drainSettlement: environment.DRAIN_APPLY_SETTLEMENT === "1",
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -759,6 +764,7 @@ export async function createProductionAppPorts(input: {
     documentRemovals: {
       lookup: (documentIds) => readRemovalRecords(currentDrizzleDb(db), documentIds),
     },
+    observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
 
@@ -1080,6 +1086,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
