@@ -82,3 +82,13 @@ then applies the unchanged canonical capture schema before saving object refs.
 `persistToolOutcome` owns persisted and live non-executed results. Permission
 denials remain errors with `permission.denied`; notes-held results use
 `{ refusal: "notes_step" }`, a non-error notice and no denial event.
+
+## Notes-step gate
+
+During an accepted notes continuation, the sequential dispatch loop consults
+`notesStepAddresses` before save boundaries or ordinary tool policy. The adapter
+proves every path against scoped variables and canonical owner/thread coordinates
+without allocating folders. Only read/write/ls/search qualify; search needs an
+explicit scope and writes check source paths too. Out-of-folder or malformed
+addresses and other calls get the neutral typed held result, not execution or
+a permission event. Admission grants no Agent or file permission.

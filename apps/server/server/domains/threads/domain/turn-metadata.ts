@@ -211,7 +211,7 @@ export type HistoryItemClass =
   | { kind: "work_update" }
   | { kind: "notice" }
   | { kind: "skill_body" }
-  | { kind: "compaction_near" }
+  | { kind: "compaction_notes" }
   | { kind: "image_update" }
   | { kind: "fork_or_handoff_seed"; derivation: "fork" | "handoff" }
   | { kind: "compaction"; metadata?: CompactionMetadata }
@@ -283,13 +283,13 @@ export function skillBodyMetadata(): JsonObject {
   return systemUpdateMetadata("skill_body");
 }
 
-export function compactionNearMetadata(): JsonObject {
-  return systemUpdateMetadata("compaction_near");
+export function compactionNotesMetadata(): JsonObject {
+  return systemUpdateMetadata("compaction_notes");
 }
 
-export function isCompactionNearTurn(turn: Pick<Turn, "role" | "metadata">): boolean {
+export function isCompactionNotesTurn(turn: Pick<Turn, "role" | "metadata">): boolean {
   const parsed = SystemUpdateMetadataCodec.safeParse(turn.metadata);
-  return turn.role === "system" && parsed.success && parsed.data.section === "compaction_near";
+  return turn.role === "system" && parsed.success && parsed.data.section === "compaction_notes";
 }
 
 export function compactionSummaryMetadata(): JsonObject {
@@ -443,7 +443,7 @@ export function classifyHistoryItem(
   if (systemUpdate.success) {
     if (systemUpdate.data.section === "work_context") return { kind: "work_update" };
     if (systemUpdate.data.section === "notices") return { kind: "notice" };
-    if (systemUpdate.data.section === "compaction_near") return { kind: "compaction_near" };
+    if (systemUpdate.data.section === "compaction_notes") return { kind: "compaction_notes" };
     if (systemUpdate.data.section === "skill_body") return { kind: "skill_body" };
     return { kind: "system_update" };
   }

@@ -94,7 +94,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     blocks: Block[];
     requiresSplit: boolean;
     compaction?: CompactionDecision;
-    context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+    context?: import("./request-preparation.js").PreparedContinuation;
     successorFailure?: unknown;
   }>;
 };
@@ -128,7 +128,7 @@ export type AdoptedBatch<TCurrent = undefined> = {
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;
-  context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+  context?: import("./request-preparation.js").PreparedContinuation;
   /**
    * The reply ends at this request boundary for a queued switch. An assistant
    * exits through a success close; a placeholder comes back `terminal`.

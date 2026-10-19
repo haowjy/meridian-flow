@@ -144,19 +144,38 @@ window. All forms are clamped to the usable window and 400,000 tokens.
 Explicit token/percentage limits are not scaled. The estimator excludes
 elision payloads from C's header.
 
-When a generate request reaches 85% of its resolved trigger, preparation stages
-one hidden `system_update` turn (`section: "compaction_near"`) asking the model
-to record working notes before compaction. It uses the same estimator and
-response baseline as the trigger. Deduplication scans raw turns after the latest
-complete compaction, not the projected retained tail. No trigger, skipped
-compaction, or a decision to compact produces no reminder. A jump past the
-trigger can therefore compact without warning; the trigger is not deferred.
+An automatic **compact decision**, after ordinary no-fit handling, may first
+reserve an ordinary assistant with a hidden `compaction_notes` system marker.
+There must be an ordinary model response since the latest complete C, no marker
+after that C, and at least two unspent ordinary slots. With full request estimate
+E and usable input U, admission requires `U-E-4000 >= 4000`; the growth allowance
+is `min(32000, U-E-4000)`. The marker rerender must also fit that allowance and
+`U-4000`. No manual/forced overflow attempt enters notes.
 
-The prepared inputs are rendered again with the durable suffix, so the reminder renders
-exactly as it will in later requests. At run start its events commit with the
-reserved assistant. Mid-loop they use the existing split boundary: the current
-assistant completes and a successor is reserved after the reminder, within the
-same writer reply. Image updates, when present, precede the reminder.
+The run loop owns the accepted continuation (entry estimate, allowance, at most
+`min(3, remaining-1)` generations). Delivery transports the request and continuation
+as one opaque prepared payload, returning only the committed proposal. No
+preparation mutates loop state. Eligibility checks precede boundaries that may
+pay for compaction; only an actual ordinary generation spends an iteration.
+
+Each notes response and all its writes/results settle normally. A no-tools
+response, exhausted count, growth at the allowance, or request above `U-4000`
+ends the step at a fresh late-inclusive compaction preparation. If pins destroy
+the cut, the usual below-U generation/no-fit failure applies, not a stale cut.
+Active notes suppress otherwise automatic compaction without resetting room on
+late input. Summary successors get one ordinary response before reconsideration.
+
+The sequential dispatch seam holds every non-file or out-of-folder call before
+save-boundary/policy work. The injected composition adapter uses the same scoped
+variables and canonical thread-folder proof as execution, including copy sources
+and explicit search scope. Held results are neutral, not permission denials;
+ordinary Agent and file policies still apply to admitted addresses.
+
+The prepared inputs are rendered again with the durable marker suffix, without
+re-resolving images or skills. Image updates precede the marker, which commits
+atomically with its assistant reservation. Stop/failure never removes that marker
+or committed writes. A later run does not reconstruct the run-local continuation.
+Raw-history dedup resets only after a complete C, not a failed/incomplete one.
 
 Every registry model declares a required tokenizer family (`anthropic`,
 `o200k`, `gemini`, or `deepseek`); there is no fallback family. CJK rates are

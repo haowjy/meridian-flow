@@ -333,3 +333,11 @@ uses its spawning thread. This is not the top-primary uploads owner. Browser
 and mf send raw variable hrefs with a proved chat scope to link resolution.
 Rebinding changes the next resolution and moves no notes; it requires no
 dependent snapshot refresh or parent event delivery.
+
+## Response stream boundary
+
+The AG-UI projector closes open text/reasoning messages when a model response
+is received, not only when a tool or assistant turn ends. A text-only notes
+response may continue to another model request on the same assistant if fresh
+compaction planning generates instead; its next stream must use the next durable
+block position, never append to the previous response's positional message id.

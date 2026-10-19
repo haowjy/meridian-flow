@@ -74,3 +74,10 @@ image decisions and cache-key owner once per preparation attempt.
 without more reads or image resolution. Staged suffixes use this renderer over
 those inputs; they do not re-enter assembly. `preparationUpdates` owns staged
 history updates, including image breaks and the compaction reminder.
+
+## Notes marker rendering
+
+At an eligible automatic compact decision, render the marker over the prepared
+inputs and measure it full-to-full with the thread tokenizer and no baseline.
+The returned request/continuation is a proposal until reservation commits. Image
+decisions and skill loading do not rerun for this marker render.

@@ -639,7 +639,7 @@ export function createDeliveryAdapter(
     return {
       drain,
       preparedCurrent: adoption.preparedCurrent,
-      context: prepared.context,
+      ...(!terminal && preparationFailure === undefined ? { context: prepared.context } : {}),
       next,
       split,
       terminal,

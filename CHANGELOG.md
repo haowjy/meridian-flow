@@ -44,13 +44,15 @@
 
 - Give non-executed notes-step calls one neutral, localized tool row, including report and normally hidden tools.
 
+- Keep consecutive text-only responses distinct when a notes exit continues without compaction.
+
 - Render staged compaction reminders from prepared request inputs without resolving images or preparing the prompt twice.
 
 - A compaction summary keeps text returned alongside tool calls. A warm summary that returns only calls gets one text-only reminder retry; both attempts settle, and no tools execute (C14).
 
 - Compaction asks for working-notes files first in its list of documents to re-show in full (C14).
 
-- Before compaction, a hidden system reminder asks the model to record its working notes once the request reaches 85% of the compaction trigger (C14).
+- Eligible automatic compaction first gives the model up to three ordinary notes responses under its own thread folder, bounded by input room and remaining iterations. Other calls are held with a neutral notice; a fresh boundary then prepares compaction (C14).
 
 - Compaction re-shows documents ranked by the summarizing model, then the 3 most recent, within its token budget. Its summary names documents it could not re-show and reminds the model to read them before writing (#871).
 

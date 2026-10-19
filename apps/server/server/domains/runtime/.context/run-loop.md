@@ -124,3 +124,12 @@ the same shutdown hook sequence.
   destructive effects are echoed and trail evidence stays lifecycle-neutral.
 - Production runners hold the cross-process claim through completion delivery;
   process loss therefore leaves work for [recovery](recovery.md).
+
+## Notes generation admission
+
+The loop owns one notes continuation. Preparation proposes, delivery commits,
+and acceptance installs it. Yield and cancellation precede non-mutating budget
+and remaining-slot eligibility, which precedes a potentially paid compaction.
+An actual ordinary generation alone increments/spends the iteration. Recheck
+budget after summary spend before the successor call. Notes no-tools output
+is persisted then continues to a fresh boundary, never successful reply closure.

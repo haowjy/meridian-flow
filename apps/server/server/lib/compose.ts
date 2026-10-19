@@ -1,3 +1,4 @@
+import { createNotesStepAddresses } from "./model-tools/notes-step-addresses.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -1071,6 +1072,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       works: coreToolDeps.works,
     }),
     toolExecutor,
+    notesStepAddresses: createNotesStepAddresses(coreToolDeps),
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     agentRevisions: ports.agentRevisions,

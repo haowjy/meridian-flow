@@ -301,3 +301,10 @@ only while message/control work remains; notices alone do not sustain a block.
 Balance restoration is retried by the ordinary wake sweep, not client polling.
 
 [kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
+
+## Prepared continuation ownership
+
+`prepareNextContext` proposes an assembled request and run-local notes continuation
+as one `context` payload. Delivery does not interpret its counters. Only the
+winning commit returns it, including a no-split adoption; terminal, failed and
+yield paths never install it. The loop accepts it after disposition checks.

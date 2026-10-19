@@ -270,6 +270,11 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      case "model.response_received":
+        // A no-tools notes response can continue without closing the assistant.
+        // End its stream before persisted blocks advance the next response's position.
+        return event.response.turnId === state.activeRunId ? closeOpenMessages() : [];
+
       case "block.upserted": {
         advancePastProjectedBlock(event.block);
         if (event.block.blockType !== "custom") return [];

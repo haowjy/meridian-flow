@@ -144,6 +144,11 @@ export function createRuntimeHarness(
     summarizer: scriptedSummarizer(),
     gateway,
     toolExecutor: overrides.toolExecutor ?? createToolExecutor(toolRegistry),
+    notesStepAddresses: overrides.notesStepAddresses ?? {
+      async admits() {
+        return false;
+      },
+    },
     documentRevisions: {
       async current({ documentIds }) {
         return new Map(documentIds.map((id) => [id, null]));

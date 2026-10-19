@@ -108,6 +108,7 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
+import type { NotesStepAddresses } from "../ports/notes-step-addresses.js";
 import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
@@ -131,6 +132,7 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
+import type { NotesContinuation } from "./compaction/notes-step.js";
 import {
   CompactionCancelledError,
   executeCompaction,
@@ -236,6 +238,7 @@ export interface OrchestratorDeps {
   summarizer: ConversationSummarizer;
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
+  notesStepAddresses: NotesStepAddresses;
   referenceReader: ReferenceReader;
   documentRevisions: DocumentRevisions;
   repos: OrchestratorRepositories;
@@ -639,6 +642,7 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
+            remainingIterations: MAX_TURN_ITERATIONS,
             // A Retry-led compaction pins what it retries: those messages are not in the summary's words.
             pinnedRequestTurnIds: new Set([
               ...selection.outstanding.map((row) => row.id),
@@ -827,6 +831,7 @@ async function runDrainTurn(
         ],
         inheritedBlocks,
         initialContext: preflight?.assembled,
+        initialContinuation: preflight?.continuation ?? { kind: "ordinary" },
         initialCompaction: preflight?.compaction ?? { kind: "generate" },
         initialExecutionAdmitted: setup.executionAdmitted,
         carriedReservedFor: setup.carriedReservedFor,
@@ -1714,6 +1719,7 @@ async function executeLoop({
   inheritedBlocks,
   initialContext,
   initialCompaction,
+  initialContinuation,
   initialExecutionAdmitted,
   carriedReservedFor: initialCarriedReservedFor,
   treeBudget,
@@ -1728,6 +1734,7 @@ async function executeLoop({
   inheritedBlocks: Block[];
   initialContext: AssembledNextTurnContext | undefined;
   initialCompaction: CompactionDecision;
+  initialContinuation: NotesContinuation;
   initialExecutionAdmitted: boolean;
   carriedReservedFor: readonly string[];
   treeBudget: TreeBudget;
@@ -1765,6 +1772,7 @@ async function executeLoop({
       ? requestedReplyTurnId
       : undefined;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
+  let continuation = initialContinuation;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
   let pendingSummary:
     | {
@@ -1875,6 +1883,7 @@ async function executeLoop({
         if (
           !forcedDecision &&
           preparedContext &&
+          continuation.kind !== "compaction_due" &&
           drain.turns.length === 0 &&
           drain.blocks.length === 0
         ) {
@@ -1909,6 +1918,8 @@ async function executeLoop({
           blocks: [...allBlocks, ...drain.blocks, ...skillBlocks],
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
           readReferences: false,
+          continuation,
+          remainingIterations: MAX_TURN_ITERATIONS - iteration,
           signal: input.signal,
           forcedDecision,
           assertNoResponseScope: () => {
@@ -1917,14 +1928,13 @@ async function executeLoop({
           },
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
-        thread = prepared.assembled.thread;
-        preparedContext = prepared.assembled;
         return {
           events: [...skillEvents, ...prepared.events],
           turns: [...skillTurns, ...prepared.turns],
           blocks: [...skillBlocks, ...prepared.blocks],
           requiresSplit: skillEvents.length + prepared.events.length > 0,
           compaction: prepared.compaction,
+          context: { assembled: prepared.assembled, continuation: prepared.continuation },
         };
       },
     };
@@ -1991,11 +2001,17 @@ async function executeLoop({
     if (result.preparationFailure !== undefined) {
       throw new RequestPreparationError(result.preparationFailure);
     }
+    if (result.context) {
+      preparedContext = result.context.assembled;
+      thread = preparedContext.thread;
+      continuation = result.context.continuation;
+    }
     if (result.compaction) return compact(result.compaction);
     return result.drain;
   }
 
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
+    continuation = { kind: "ordinary" };
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
@@ -2018,7 +2034,6 @@ async function executeLoop({
     });
     pendingSummaryResponses = [];
     pendingSummary = undefined;
-    preparedContext = result.preparedContext;
     return acceptBoundary(result.successor);
   }
 
@@ -2126,10 +2141,6 @@ async function executeLoop({
             (await deps.delivery.yieldsAtBoundary(input.threadId)))
         )
           return yieldExit();
-        iteration += 1;
-        if (iteration > MAX_TURN_ITERATIONS) {
-          return exitRun(false, errorTerminal("exceeded max tool iterations"));
-        }
 
         // A cancel from another process has no local abort; the lease flag is the
         // only signal. Read it before acting so the interrupt's next turn starts
@@ -2140,12 +2151,12 @@ async function executeLoop({
           return cancelExit();
         }
 
-        const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
-        if (budgetError) {
-          return exitRun(false, errorTerminal(budgetError));
-        }
-
-        turnAccounting.recordIterationSpend(treeBudget);
+        // Eligibility precedes any boundary that could reserve and pay for a summary.
+        // Spending a generation slot happens only after that boundary is accepted.
+        if (iteration >= MAX_TURN_ITERATIONS)
+          return exitRun(false, errorTerminal("exceeded max tool iterations"));
+        const eligibilityError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+        if (eligibilityError) return exitRun(false, errorTerminal(eligibilityError));
 
         const gatewayAbort = new AbortController();
         let cancelRequested = isCancelled();
@@ -2160,6 +2171,7 @@ async function executeLoop({
           );
         }
 
+        const boundaryTurnId = currentTurn.id;
         const drain =
           queuedDrain ??
           (await acceptBoundary(await deps.delivery.splitAndContinue(boundaryInput())));
@@ -2167,6 +2179,23 @@ async function executeLoop({
         queuedDrain = undefined;
         if (terminalControl) return false;
         if (yieldRequested) return yieldExit();
+        const acceptedStatus = await deps.runClaim.read(input.threadId);
+        if (acceptedStatus.kind === "awake" && acceptedStatus.cancelRequested)
+          leaseCancelled = true;
+        if (isCancelled()) return cancelExit();
+        iteration += 1;
+        if (iteration > MAX_TURN_ITERATIONS) {
+          return exitRun(false, errorTerminal("exceeded max tool iterations"));
+        }
+
+        // A summary may spend credits while moving to its successor. Ordinary
+        // no-split boundaries have already checked eligibility above.
+        if (currentTurn.id !== boundaryTurnId) {
+          const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+          if (budgetError) return exitRun(false, errorTerminal(budgetError));
+        }
+
+        turnAccounting.recordIterationSpend(treeBudget);
 
         if (!preparedContext)
           throw new Error("Request context must be prepared before assistant generation");
@@ -2347,6 +2376,7 @@ async function executeLoop({
                   error: "Model context overflowed after compaction retry",
                 });
               }
+              continuation = { kind: "ordinary" };
               retriedContextOverflow = true;
               if (usableWindowTokens === null)
                 throw new Error("Context overflow requires a resolved model");
@@ -2454,6 +2484,23 @@ async function executeLoop({
                 return cancelExit();
               }
 
+              if (
+                continuation.kind === "notes" &&
+                !(await deps.notesStepAddresses.admits(input.threadId, call))
+              ) {
+                const held = await persistToolOutcome({
+                  deps,
+                  threadId: input.threadId,
+                  turn: currentTurn,
+                  call,
+                  outcome: { kind: "notes_held" },
+                  blockSeq,
+                });
+                blockSeq = held.nextBlockSeq;
+                allBlocks.push(held.block);
+                continue;
+              }
+
               if (scope.hasWrites && isSaveBoundary(call)) {
                 const boundary = await scope.commit();
 
@@ -2548,6 +2595,11 @@ async function executeLoop({
               return exitRun(true, abortTerminal());
             }
 
+            if (continuation.kind === "notes") {
+              continuation = { ...continuation, remaining: continuation.remaining - 1 };
+              return true;
+            }
+
             if (endTurnRequested) {
               // A child called return_result: the report is captured and persisted,
               // so the turn ends here instead of looping into another model round.
@@ -2561,6 +2613,10 @@ async function executeLoop({
           }
         }
 
+        if (continuation.kind === "notes") {
+          continuation = { kind: "compaction_due" };
+          return true;
+        }
         return exitRun(true, completeTerminal(result));
       }
       while (await iterate()) {
