@@ -658,11 +658,12 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
         }
-        const receiptStates = new Map<string, Uint8Array>();
-        for (const docId of uniqueSortedDocIds(
-          entries.filter((e) => e.mutation).map((e) => e.docId),
-        ))
-          receiptStates.set(docId, encodeJournalSnapshot(await this.read(docId)));
+        // Each document as this append finds it under its lock: the batch's cut and the base
+        // its receipts are captured against.
+        const beforeStates = new Map<string, Uint8Array>();
+        for (const docId of uniqueSortedDocIds(entries.map((e) => e.docId)))
+          beforeStates.set(docId, encodeJournalSnapshot(await this.read(docId)));
+        const mutated = new Set(entries.filter((e) => e.mutation).map((e) => e.docId));
         const batchOrdinals = new Map<string, number>();
 
         const updateRows = await txDb
@@ -718,7 +719,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
 
         await captureLiveEdits(
           txDb,
-          receiptStates,
+          new Map([...beforeStates].filter(([docId]) => mutated.has(docId))),
           entries.map((entry, index) => ({
             ...entry,
             ...(entry.mutation
@@ -731,6 +732,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         return updateRows.map((row, index) => ({
           seq: row.id,
           journalCommitKind,
+          beforeState: beforeStates.get(entries[index].docId) as Uint8Array,
           ...(ordinals.has(index) ? { wId: ordinals.get(index) } : {}),
         }));
       });

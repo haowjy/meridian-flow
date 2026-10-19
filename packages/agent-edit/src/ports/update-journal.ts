@@ -53,6 +53,13 @@ export interface JournalBatchAppendResult {
   journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
+  /**
+   * The entry's document as this batch's append found it, read inside the append under the
+   * document's lock before any of the batch's rows (the same state for every entry of one
+   * document): the cut a save reports, returned with the rows so nothing fallible runs between
+   * the append committing and its caller learning what it followed.
+   */
+  beforeState: Uint8Array;
 }
 
 export interface JournalReadOptions {

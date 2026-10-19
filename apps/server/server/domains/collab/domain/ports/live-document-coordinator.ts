@@ -24,9 +24,10 @@ export interface LiveDocumentCoordinator {
   recover(docId: string): Promise<void>;
   /**
    * The committed journal's obligation to the open room, owned here: coalesced per document,
-   * retried with backoff, and a room that still can't be caught up is retired (its clients
-   * reconnect and cold-load the journal), so nobody keeps editing content the journal no longer
-   * holds. Resolves once the first attempt settled; never rejects.
+   * and after a failure retried with backoff for as long as Hocuspocus holds the room that fell
+   * behind; it ends when a pass catches that room up or the room is unloaded (a load reads the
+   * journal). Never closes or drops a room. Resolves once the first attempt settled; never
+   * rejects.
    */
   deliver(docId: string): Promise<void>;
 }

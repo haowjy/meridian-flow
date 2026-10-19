@@ -259,15 +259,9 @@ export function createDraftAgentEditCoordinator(input: {
           ...result,
           write: {
             kind: "write",
-            // An append that committed nothing new followed the prepared cut.
             async persist() {
               await write.persist();
-              return (
-                write.appendCut() ?? {
-                  beforeState: result.beforeState,
-                  afterState: result.afterState,
-                }
-              );
+              return write.cut();
             },
             // Installing the replica waits for the enclosing root commit: the coordinator defers it.
             transfer: () => write.transfer(),

@@ -28,7 +28,7 @@ import {
 import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
-import { loadDocumentState, storedDocument } from "./document-loader.js";
+import { loadDocumentState } from "./document-loader.js";
 
 type CoordinatorDeps = {
   hocuspocus: () => Hocuspocus;
@@ -40,21 +40,24 @@ type CoordinatorDeps = {
     afterCommit(callback: () => void | Promise<void>): boolean;
   };
   diagnostics?: RoomDeliveryDiagnostics;
-  /** The waits between a failed delivery's attempts; one more failure retires the room. */
+  /** The waits before each retry of a failed delivery; the last repeats until the outage ends. */
   deliveryBackoffMs?: readonly number[];
 };
 
-/** A delivery attempt that failed, classified once: retried, or the room retired. */
+/**
+ * A delivery outage, reported once at each end: the first failed attempt, and the pass that
+ * caught the room up or found Hocuspocus had unloaded it.
+ */
 export type RoomDeliveryDiagnostics = {
-  failed(event: {
+  failed(event: { documentId: string; cause: unknown }): void;
+  recovered(event: {
     documentId: string;
-    attempt: number;
-    outcome: "retrying" | "retired";
-    cause: unknown;
+    attempts: number;
+    outcome: "delivered" | "unloaded";
   }): void;
 };
 
-const DELIVERY_BACKOFF_MS = [250, 1_000, 4_000] as const;
+const DELIVERY_BACKOFF_MS = [250, 1_000, 4_000, 30_000] as const;
 
 type LiveDocHandle = {
   doc: Y.Doc;
@@ -128,13 +131,13 @@ export function emptyWhenMissing(cause: unknown): { doc: Y.Doc; room: null } {
  * A live save of one scope's entries onto `copy` (the room's committed state, consumed): every
  * entry is kept, since a live room has no retirement or inverse to reconcile against. `persist`
  * appends them as one journal batch bound to the copy's authority, joining the caller's
- * transaction when there is one, and resolves the cut that append followed; `transfer` hands
+ * transaction when there is one, and resolves the cut that append returned; `transfer` hands
  * them to `deliver`.
  */
 export function liveSave(
   copy: { doc: Y.Doc; room: string | null },
   input: StagedRoomEntries & { docId: string },
-  journal: Pick<UpdateJournal, "appendBatch" | "read">,
+  journal: Pick<UpdateJournal, "appendBatch">,
   deliver: () => void,
 ): StagedWriteSaveResult {
   try {
@@ -159,7 +162,7 @@ export function liveSave(
           const appended = await journal.appendBatch(
             input.entries.map((entry) => ({ ...entry, authority })),
           );
-          return appendCut(journal, input, prepared, Math.min(...appended.map((row) => row.seq)));
+          return appendCut(input, prepared, appended[0]?.beforeState ?? prepared);
         },
         transfer: deliver,
         dispose() {},
@@ -171,20 +174,15 @@ export function liveSave(
 }
 
 /**
- * The document as the append of `input`'s rows (the first at `firstSeq`) found it, and with
- * them. A document's rows are inserted only under its mutation lock, so every row below the
- * batch's is one the append followed and none above it is: a writer's frame admitted between
- * preparing and appending is in the cut, and the report names what the rows swept of it. The
- * prepared copy is merged in for the room it read.
+ * The cut the append of `input`'s rows followed: `found`, the journal it read under the
+ * document's lock before them (a writer's frame admitted between preparing and appending is in
+ * it, and the report names what the rows swept of it), with the prepared copy merged in for the
+ * room it read. In-memory Yjs over bytes already in hand: nothing here waits on storage.
  */
-async function appendCut(
-  journal: Pick<UpdateJournal, "read">,
-  input: StagedRoomEntries & { docId: string },
-  prepared: Uint8Array,
-  firstSeq: number,
-): Promise<SaveCut> {
-  const doc = storedDocument(await journal.read(input.docId, { until: firstSeq - 1 }));
+function appendCut(input: StagedRoomEntries, prepared: Uint8Array, found: Uint8Array): SaveCut {
+  const doc = new Y.Doc({ gc: false });
   try {
+    Y.applyUpdate(doc, found);
     Y.applyUpdate(doc, prepared);
     const beforeState = Y.encodeStateAsUpdate(doc);
     for (const entry of input.entries) Y.applyUpdate(doc, entry.update);
@@ -280,7 +278,12 @@ function createCoordinator(
           )
             throw cause;
         }
-        dropRoom(docId, handle);
+        retireDocumentHandle(handle);
+        const hp = deps.hocuspocus();
+        if (hp.documents.get(docId) === handle) {
+          hp.closeConnections(docId);
+          hp.documents.delete(docId);
+        }
       }
       throw cause;
     }
@@ -304,46 +307,47 @@ function createCoordinator(
     }
   }
 
-  /**
-   * Retires `room` and, while it is still the open one, closes it: its clients reconnect and
-   * cold-load the journal, and a retired room stores nothing and admits no frame.
-   */
-  function dropRoom(docId: string, room: Y.Doc): void {
-    retireDocumentHandle(room);
-    const hp = deps.hocuspocus();
-    if (hp.documents.get(docId) !== room) return;
-    hp.closeConnections(docId);
-    hp.documents.delete(docId);
-  }
-
   async function applyMissing(doc: Y.Doc, persisted: Uint8Array): Promise<void> {
     const missing = Y.diffUpdate(persisted, Y.encodeStateVector(doc));
     Y.applyUpdate(doc, missing, RECOVERY_ORIGIN);
   }
 
   const delivery = createRoomDelivery({
-    recover,
-    retire: (docId) =>
-      mutex.run(docId, async () => {
-        const room = liveDoc(docId);
-        if (room) dropRoom(docId, room);
-      }),
+    catchUp,
+    // Without a bound Hocuspocus (a server not serving rooms) no room is loaded to fall behind.
+    loaded: (docId) => {
+      try {
+        return liveDoc(docId);
+      } catch {
+        return undefined;
+      }
+    },
     backoffMs: deps.deliveryBackoffMs ?? DELIVERY_BACKOFF_MS,
     diagnostics: deps.diagnostics,
   });
 
   function recover(docId: string): Promise<void> {
+    return catchUp(docId).then(() => undefined);
+  }
+
+  /**
+   * Applies the committed journal rows the open room lacks. Given `into`, only into that room:
+   * false, reading nothing, once Hocuspocus no longer holds it (unloaded, or replaced by a room
+   * that cold-loaded the journal itself).
+   */
+  function catchUp(docId: string, into?: Y.Doc): Promise<boolean> {
     return mutex.run(docId, async () => {
+      if (into && liveDoc(docId) !== into) return false;
       const snapshot = await deps.journal.read(docId);
       const live = liveDoc(docId);
+      if (into && live !== into) return false;
       if (live) {
         const persisted = await persistedState(docId, live, snapshot);
-        if (!persisted) return;
-        await applyMissing(live, persisted);
-        return;
+        if (persisted) await applyMissing(live, persisted);
+        return true;
       }
 
-      if (!snapshot.checkpoint && snapshot.updates.length === 0) return;
+      if (!snapshot.checkpoint && snapshot.updates.length === 0) return true;
 
       // Cold open runs Hocuspocus onLoadDocument; after WS rewiring that hook must
       // call loadDocumentState. Reapplying the diff is harmless if it already did.
@@ -354,6 +358,7 @@ function createCoordinator(
       } finally {
         await handle.release();
       }
+      return true;
     });
   }
 
@@ -389,15 +394,17 @@ function createCoordinator(
 }
 
 /**
- * Delivery of committed rows to a document's open room as an obligation that is eventually
- * met: one chain per document coalesces every request made while it runs into its next pass,
- * a failed pass is retried after each wait in `backoffMs`, and one failure more retires the
- * room instead, since a room left behind lets a writer keep typing into text the journal
- * already deleted. Each failure is reported once, as what it led to.
+ * Delivery of committed rows to a document's open room, an obligation owned until it is met:
+ * one chain per document folds every request made while it runs into its next pass. A failed
+ * pass starts an outage against the room that is behind; it is retried after each wait in
+ * `backoffMs` (the last repeating) for as long as Hocuspocus holds that same room, and ends with
+ * a pass that catches it up or with the room unloaded or replaced (a load reads the journal).
+ * Room lifetime stays Hocuspocus's: delivery never closes or drops a room. A writer's frames are
+ * journal-first, so while the journal can't be read they fail too.
  */
 function createRoomDelivery(deps: {
-  recover(docId: string): Promise<void>;
-  retire(docId: string): Promise<void>;
+  catchUp(docId: string, into?: Y.Doc): Promise<boolean>;
+  loaded(docId: string): Y.Doc | undefined;
   backoffMs: readonly number[];
   diagnostics: RoomDeliveryDiagnostics | undefined;
 }): { deliver(docId: string): Promise<void> } {
@@ -405,24 +412,32 @@ function createRoomDelivery(deps: {
   const chains = new Map<string, Chain>();
 
   async function run(docId: string, chain: Chain): Promise<void> {
+    // The outage in progress: its failed attempts (0: none), and the room left behind.
     let failures = 0;
+    let behind: Y.Doc | undefined;
+    const end = (outcome: "delivered" | "unloaded") => {
+      if (failures) deps.diagnostics?.recovered({ documentId: docId, attempts: failures, outcome });
+      failures = 0;
+      behind = undefined;
+    };
     try {
-      while (chain.again) {
+      while (chain.again || behind) {
+        // A new request delivers to whatever room is open; a retry only to the one behind.
+        const into = chain.again ? undefined : behind;
         chain.again = false;
         const waiters = chain.waiters.splice(0);
         try {
-          await deps.recover(docId);
-          failures = 0;
+          end((await deps.catchUp(docId, into)) ? "delivered" : "unloaded");
         } catch (cause) {
           // A room retired for a replaced generation was closed by the attempt itself.
-          if (!(cause instanceof RetiredDocumentHandleError)) {
-            const wait = deps.backoffMs[failures];
+          if (cause instanceof RetiredDocumentHandleError) end("unloaded");
+          else {
+            if (!failures) deps.diagnostics?.failed({ documentId: docId, cause });
             failures += 1;
-            const outcome = wait === undefined ? "retired" : "retrying";
-            deps.diagnostics?.failed({ documentId: docId, attempt: failures, outcome, cause });
-            if (wait === undefined) await deps.retire(docId).catch(() => undefined);
+            behind = deps.loaded(docId);
+            if (!behind) end("unloaded");
             else {
-              chain.again = true;
+              const wait = deps.backoffMs[Math.min(failures, deps.backoffMs.length) - 1] ?? 0;
               for (const resolve of waiters) resolve();
               await new Promise((resolve) => setTimeout(resolve, wait).unref?.());
               continue;
