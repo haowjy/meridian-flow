@@ -10,18 +10,11 @@ import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  documentDrafts,
-  documentYjsHeads,
-  draftWriteJournal,
-  threadWorks,
-} from "@meridian/database/schema";
+import { documentDrafts, draftWriteJournal, threadWorks } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
   createCollabYDoc,
   packCollabSchemaVersion,
-  unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -38,15 +31,11 @@ import {
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import {
-  type DocumentRemovals,
-  DocumentRemovedError,
-} from "../../context/ports/document-removals.js";
-import {
   branchMayHold,
   loadBranchHolder,
   loadDocumentOwner,
 } from "../../context/tree/branch-ownership.js";
-import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
+import { requireLivingDocument } from "../../context/tree/living-document.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
@@ -66,6 +55,7 @@ import {
 } from "../domain/draft-store.js";
 import type { PeerRetirementCause, RetiredDraft } from "../domain/peer-retirement.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
+import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
 import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
 import { closeDrafts, lockActiveDrafts } from "./drizzle-draft-close.js";
 import {
@@ -108,7 +98,6 @@ export function createDrizzleDraftStore(
     live?: { journal: UpdateJournal };
     /** The one owner of Work-first order and the Works' projection (decision D17). */
     workProjection: WorkProjectionMutation;
-    removals: DocumentRemovals;
     /** A peer ensure relies on its branch staying active; a thread finds its Work's branch. */
     branches: Pick<Branches, "shareActive" | "activeForWork">;
     /** A `commitRewrite` committed: the row lock's hold (`FOR UPDATE` → `COMMIT`) and its tail. */
@@ -118,17 +107,6 @@ export function createDrizzleDraftStore(
   },
 ): ApplicationDraftStore {
   const { live, workProjection, branches, onRewriteCommitted, onAppendSequenced } = deps;
-  async function admitLivingDocument(documentId: DocumentId): Promise<void> {
-    await lockDocumentMutation(currentDrizzleDb(db), documentId);
-    const [row] = await loadDocumentIdentityRows(currentDrizzleDb(db), [documentId]);
-    if (!row) throw new DraftStaleUpdateError(`Document ${documentId}`);
-    if (row.deleted) {
-      const removal = (await deps.removals.lookup([documentId])).get(documentId);
-      if (!removal) throw new Error(`Missing removal record for ${documentId}`);
-      throw new DocumentRemovedError(documentId, removal);
-    }
-  }
-
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
       .select({ workId: threadWorks.workId })
@@ -173,15 +151,6 @@ export function createDrizzleDraftStore(
     }
   }
 
-  async function liveSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion> {
-    const [row] = await currentDrizzleDb(db)
-      .select({ schemaVersion: documentYjsHeads.schemaVersion })
-      .from(documentYjsHeads)
-      .where(eq(documentYjsHeads.documentId, documentId))
-      .limit(1);
-    return row ? unpackCollabSchemaVersion(row.schemaVersion) : COLLAB_SCHEMA_VERSION;
-  }
-
   async function ensureDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
@@ -199,7 +168,8 @@ export function createDrizzleDraftStore(
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
-      await admitLivingDocument(input.documentId);
+      await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
+      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
       await testHook("draft.ensure.afterDocumentLock");
       const existing = await activeDocumentDraft(input.documentId, input.branchId);
       if (existing) return existing;
@@ -219,7 +189,10 @@ export function createDrizzleDraftStore(
           liveCut: seed.state,
           hasEffect: false,
           hasEffectRevision: 0,
-          schemaVersion: packCollabSchemaVersion(await liveSchemaVersion(input.documentId)),
+          schemaVersion: packCollabSchemaVersion(
+            (await findHeadSchemaVersion(currentDrizzleDb(db), input.documentId)) ??
+              COLLAB_SCHEMA_VERSION,
+          ),
         })
         .onConflictDoNothing()
         .returning({ id: documentDrafts.id });
@@ -349,7 +322,8 @@ export function createDrizzleDraftStore(
       if (!(await branches.shareActive(input.branchId))) {
         throw new DraftStaleUpdateError(`Branch ${input.branchId}`);
       }
-      await admitLivingDocument(input.documentId);
+      await lockDocumentMutation(currentDrizzleDb(db), input.documentId);
+      await requireLivingDocument(currentDrizzleDb(db), input.documentId);
       await testHook("draft.peer.afterDocumentLock");
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.branchId === input.branchId) {

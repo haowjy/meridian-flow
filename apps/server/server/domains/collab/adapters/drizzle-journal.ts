@@ -21,8 +21,6 @@ import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
   createCollabYDoc,
-  packCollabSchemaVersion,
-  unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -36,7 +34,7 @@ import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { DocumentRemovedError } from "../../context/ports/document-removals.js";
-import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
+import { requireLivingDocument } from "../../context/tree/living-document.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { documentContainsUpdate } from "../domain/document-containment.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
@@ -56,11 +54,13 @@ import { resolveCheckpointCut } from "./checkpoint-capability.js";
 import { storedDocument } from "./document-loader.js";
 import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
-  allocateDocumentAdmission,
+  advanceHead,
+  allocateAdmission,
   findDocumentAuthorityHead,
-  findLivingDocumentAuthorityHead,
+  findHeadSchemaVersion,
+  initializeHead,
   readDocumentAuthorityHead,
-  refusedAuthority,
+  retireThrough,
 } from "./drizzle-document-authority-head.js";
 import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
@@ -252,18 +252,6 @@ async function latestCheckpoint(
   return row ?? null;
 }
 
-async function readHeadSchemaVersion(
-  db: JournalDb,
-  documentId: string,
-): Promise<CollabSchemaVersion | null> {
-  const [row] = await db
-    .select({ schemaVersion: documentYjsHeads.schemaVersion })
-    .from(documentYjsHeads)
-    .where(eq(documentYjsHeads.documentId, asDocumentId(documentId)))
-    .limit(1);
-  return row ? unpackCollabSchemaVersion(row.schemaVersion) : null;
-}
-
 function assertHeadSchemaCurrent(docId: string, storedVersion: CollabSchemaVersion | null): void {
   if (storedVersion !== null && isStaleSchema(storedVersion, COLLAB_SCHEMA_VERSION)) {
     throw new DocumentSchemaMajorMismatchError(docId, storedVersion, COLLAB_SCHEMA_VERSION);
@@ -271,37 +259,7 @@ function assertHeadSchemaCurrent(docId: string, storedVersion: CollabSchemaVersi
 }
 
 async function assertReadableHead(db: JournalDb, docId: string): Promise<void> {
-  assertHeadSchemaCurrent(docId, await readHeadSchemaVersion(db, docId));
-}
-
-/**
- * Moves a living document's head to a checkpoint it just installed; a missing head or a
- * removed document is refused, rolling the checkpoint back with it. Every checkpoint insert
- * passes here, so this is the backstop behind each door's own liveness read.
- */
-async function advanceHeadToCheckpoint(
-  db: JournalDb,
-  documentId: string,
-  checkpoint: { upToSeq: number; stateVector: Uint8Array; id: number },
-): Promise<void> {
-  const [updated] = await db
-    .update(documentYjsHeads)
-    .set({
-      // Monotonic, so a downgraded server cannot erase the stale-schema fence.
-      schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)})`,
-      latestUpdateSeq: checkpoint.upToSeq,
-      latestStateVector: toBuffer(checkpoint.stateVector),
-      latestCheckpointId: checkpoint.id,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(
-        eq(documentYjsHeads.documentId, asDocumentId(documentId)),
-        documentNotDeletedSql(documentYjsHeads.documentId),
-      ),
-    )
-    .returning({ documentId: documentYjsHeads.documentId });
-  if (!updated) throw await refusedAuthority(db, documentId);
+  assertHeadSchemaCurrent(docId, await findHeadSchemaVersion(db, docId));
 }
 
 async function insertCheckpoint(
@@ -356,10 +314,10 @@ async function insertCheckpoint(
   const row = inserted ?? adopted;
   if (!row) throw new Error("Failed to insert Yjs checkpoint");
 
-  await advanceHeadToCheckpoint(db, documentId, {
-    upToSeq,
-    stateVector: toBytes(row.stateVector),
-    id: row.id,
+  await advanceHead(db, documentId, {
+    latestUpdateSeq: upToSeq,
+    latestStateVector: toBytes(row.stateVector),
+    checkpointId: row.id,
   });
 
   return row.id;
@@ -396,7 +354,7 @@ async function insertUpdate(
   stored: Y.Doc | undefined,
 ): Promise<AppendedUpdate> {
   const origin = parseOrigin(meta);
-  const authorityHead = await allocateDocumentAdmission(db, documentId);
+  const authorityHead = await allocateAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
     .values({
@@ -595,7 +553,7 @@ async function materializeCurrentCheckpoint(
 
 export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
-    headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
+    headSchemaVersion: (documentId) => findHeadSchemaVersion(db, documentId),
 
     async append(docId, update, meta, authority) {
       return runInDrizzleTransaction(db as Database, async () => {
@@ -647,9 +605,9 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         );
         for (const entry of entries)
           await validateAppendAuthority(txDb, entry.docId, entry.authority);
-        const admissions = new Map<string, Awaited<ReturnType<typeof allocateDocumentAdmission>>>();
+        const admissions = new Map<string, Awaited<ReturnType<typeof allocateAdmission>>>();
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
-          admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
+          admissions.set(docId, await allocateAdmission(txDb, docId));
         }
         const receiptStates = new Map<string, Uint8Array>();
         for (const docId of uniqueSortedDocIds(
@@ -861,7 +819,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
         // A checkpoint captured before a removal stores nothing after it.
-        const current = await findLivingDocumentAuthorityHead(txDb, docId);
+        const current = await findDocumentAuthorityHead(txDb, docId, { living: true });
         if (
           !current ||
           current.authorityId !== captured.authorityId ||
@@ -885,13 +843,14 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        const authorityHead = await findLivingDocumentAuthorityHead(txDb, docId);
-        if (!authorityHead) {
+        const authorityHead = await readDocumentAuthorityHead(txDb, docId, {
+          living: true,
+        }).catch((cause: unknown) => {
           // A removed document keeps its history as the removal left it.
-          const refused = await refusedAuthority(txDb, docId);
-          if (refused instanceof DocumentRemovedError) return { updatesFolded: 0 };
-          throw refused;
-        }
+          if (cause instanceof DocumentRemovedError) return null;
+          throw cause;
+        });
+        if (!authorityHead) return { updatesFolded: 0 };
         const [checkpoint] = await txDb
           .select()
           .from(documentYjsCheckpoints)
@@ -943,12 +902,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         if (compactedThroughSeq > 0) {
           // Advance the head past every retired prefix, even when an ordinary checkpoint
           // already covers it and this compaction folds no new rows.
-          await txDb
-            .update(documentYjsHeads)
-            .set({
-              retiredThroughSeq: sql`greatest(${documentYjsHeads.retiredThroughSeq}, ${compactedThroughSeq})`,
-            })
-            .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
+          await retireThrough(txDb, docId, compactedThroughSeq);
 
           await txDb
             .delete(documentYjsUpdates)
@@ -976,10 +930,7 @@ export function createServerInitialDocumentSeeds(db: JournalDb): InitialDocument
         await lockDocumentMutation(txDb, docId);
         // Prove the living row under the lock a removal takes: nothing writes a removed
         // document into being.
-        const [living] = await txDb.execute<{ living: boolean }>(
-          sql`select ${documentNotDeletedSql(sql`${docId}::uuid`)} as living`,
-        );
-        if (!living?.living) throw await refusedAuthority(txDb, docId);
+        await requireLivingDocument(txDb, asDocumentId(docId));
         await assertReadableHead(txDb, docId);
         const [checkpoint, update] = await Promise.all([
           txDb
@@ -995,13 +946,7 @@ export function createServerInitialDocumentSeeds(db: JournalDb): InitialDocument
         ]);
         if (checkpoint[0] || update[0]) return false;
         // A head with no history (a head-only anomaly) is reused; otherwise this is its birth.
-        await txDb
-          .insert(documentYjsHeads)
-          .values({
-            documentId: asDocumentId(docId),
-            schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-          })
-          .onConflictDoNothing({ target: documentYjsHeads.documentId });
+        await initializeHead(txDb, asDocumentId(docId));
         // An empty authority's checkpoint is a placeholder the first stored checkpoint
         // replaces; a seed with content stays as the document's first version.
         const empty = Y.decodeUpdate(state).structs.length === 0;
@@ -1044,8 +989,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
       return runInDrizzleTransaction(db as Database, async () => {
         const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
-        const current = await findLivingDocumentAuthorityHead(tx, docId);
-        if (!current) throw await refusedAuthority(tx, docId);
+        const current = await readDocumentAuthorityHead(tx, docId, { living: true });
         if (
           current.authorityId !== captured.authorityId ||
           current.generation !== captured.generation

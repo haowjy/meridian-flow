@@ -201,7 +201,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     boundary: createDrizzleBranchWriteBoundary(deps.db, deps.workProjectionMutation),
   });
   const drafts = createDrizzleDraftStore(deps.db, {
-    removals: documentRemovals,
     live: {
       journal: persistence.journal,
     },

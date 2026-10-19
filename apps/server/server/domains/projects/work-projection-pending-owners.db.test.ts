@@ -34,7 +34,6 @@ import { trailContributionReplacement } from "../collab/domain/draft-trail-proje
 import { appendDraftRows, proseDraftUpdate } from "../collab/test-support/draft-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
-import { createDrizzleDocumentRemovals } from "../context/tree/document-removals.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -146,7 +145,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("drives real discard, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
       const drafts = createDrizzleDraftStore(db, {
-        removals: createDrizzleDocumentRemovals(db),
         workProjection: projection,
         branches: createDrizzleBranchStore(db),
       });
