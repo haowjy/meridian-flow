@@ -1,54 +1,86 @@
 # Model revert by identity
 
-Checks the model's `write {command: "revert", edit: "wN"}`: it deletes what edit N inserted and restores what N
-deleted, by Yjs identity, and skips any passage edited since N. A skipped passage whose paragraph still holds N's
-text is listed with that paragraph's current text; one whose paragraph was replaced (turned into a heading, rebuilt)
-or removed is listed as such, with no guessed text, since nothing but content could say which block replaced it. Undo and redo are
-separate commands and are not covered here.
+Checks the model's `write {command: "revert", edit: "w1"}`, which takes back one of the model's earlier edits (here
+`w1`, the handle its write result printed). Revert finds that edit's text by Yjs item identity, never by matching
+text: it deletes what the edit inserted and restores what it deleted. An edit is stored as one or more parts, and each
+part reverts or is skipped on its own. A part someone changed since is skipped:
 
-Use a fresh mock-provider stack (`pnpm dev`, URLs from `pnpm portless:list`). `./mf` sets up documents and drives
-the mocked model; a second mock-model write may stand in for the writer's edit in the API steps. Run every case
-twice: in auto-apply (a thread with no Work, writes land live) and in draft mode (a named Work, writes wait in its
-draft). Use a fresh document and thread per case. Keep evidence in the work directory.
+- if a paragraph still holds the part's text (or the remains of text it deleted), the result line ends
+  `edited since; now "<that paragraph as it reads now>"`;
+- if that paragraph was itself rebuilt (turned into a heading, say) or deleted, the line ends
+  `its paragraph was replaced or removed`, with no text, because nothing but text matching could say which paragraph
+  replaced it.
 
-## Driving a case
+When every part is skipped the tool status is `nothing_to_revert`, and the chat's failed step reads "That change
+wasn't reverted because its text changed or is already gone." Undo and redo are separate commands, not covered here.
 
-Seed with `./mf doc put "manuscript://<name>" --text '<text>' --overwrite`, then send one mocked write per message:
+## Setup
+
+Start a mock-provider stack in the checkout under test (`pnpm dev`; find its URLs with `pnpm portless:list`), then
+from that checkout:
 
 ```bash
-op='{"command":"replace","path":"manuscript://<name>","find":"The cat sat on the mat.","content":"The cat sat on the mat. The dog ran across the yard."}'
-./mf thread send "$T" 'write' --ref "manuscript://<name>" \
-  --mock "[{\"toolCalls\":[{\"name\":\"write\",\"args\":$op}]},{\"text\":\"ok\"}]" --json
+P=$(./mf project default --json | jq -r .projectId)
+SEL=$(./mf api GET "/api/agents?projectId=$P&limit=100" --json | jq -c '.agents[] | select(.slug=="general") | .selection')
+W=$(./mf api POST "/api/projects/$P/works" --data '{"name":"revert check"}' --json | jq -r .id)
+D=manuscript://revert-check-1          # a fresh document per case
+./mf doc put "$D" --text 'The cat sat on the mat.' --overwrite
+
+# Auto-apply: a chat with no Work; writes land in the live document.
+T=$(./mf thread create --title 'revert check' --json | jq -r .threadId)
+# Draft mode instead: a chat bound to the Work; writes wait in the Work's draft until the writer applies them.
+T=$(./mf api POST /api/threads --json --data "$(jq -nc --arg id "$(node -p 'crypto.randomUUID()')" \
+  --arg p "$P" --arg w "$W" --argjson s "$SEL" \
+  '{id:$id,projectId:$p,title:"revert check",agentSelection:$s,workId:$w,aiWriteMode:"draft"}')" | jq -r .id)
 ```
 
-The first write's handle is `w1`; revert it with `{"command":"revert","path":"manuscript://<name>","edit":"w1"}`.
-Read the document afterwards with a mocked `read` in the same version (live or the Work's draft).
+Each model step is one mocked message: a `read`, then a `write`. Read before every write, since a write refuses a
+passage the model hasn't seen:
+
+```bash
+mock() { jq -nc --argjson a "$1" --arg n "$2" '[{toolCalls:[{name:$n,args:$a}]},{text:"ok"}]'; }
+./mf thread send "$T" read  --ref "$D" --mock "$(mock "{\"path\":\"$D\"}" read)" --json >/dev/null
+./mf thread send "$T" write --ref "$D" --json --mock "$(mock "{\"command\":\"replace\",\"path\":\"$D\",\"find\":\"The cat sat on the mat.\",\"content\":\"The cat sat on the mat. The big black dog ran.\"}" write)"
+./mf thread view "$T" --last 1 --full --json   # the tool result: `write: w1`, and the version (live, or draft)
+```
+
+In draft mode the first write into a fresh Work can answer `region_changed`; read again and repeat it. Take the
+handle from the result rather than assuming `w1`. A later `read` in the same chat shows the version the chat writes
+to (the live document, or the Work's draft), and that is the text to check. A second mocked write can stand in for
+the writer's edit; the browser steps use real typing.
 
 ## Cases
 
-Seed `The cat sat on the mat.` unless the row says otherwise. N is `w1`.
+Run each in both modes, in a fresh document and chat. Seed `The cat sat on the mat.` unless the row says otherwise.
+N is the model's first write.
 
-| Case | Between N and the revert | Expect |
+| Case | N, then what changes before the revert | Expected result and text |
 |---|---|---|
-| Plain | nothing | `reverted: w1 (1 of 1 parts)`, a new handle `w2`; the document is the seed again |
-| Typing elsewhere | another paragraph added after N | N removed, the other paragraph kept |
-| Edited inside N | N's `black` changed to `brown` | `nothing_to_revert`; the line `not reverted: "…" → "…": edited since; now "<the edited sentence>"`; text unchanged |
-| Repeated text, original edited | seed `The night was dark.` / `Lin Feng walked on.`; N inserts another `The night was dark.` after the first; the first changed to `cold` | N's copy goes: `The night was cold.` / `Lin Feng walked on.` |
-| Repeated text, N's copy edited | the same, but N's inserted copy changed | skipped and listed; `now` shows N's copy's current text |
-| Paragraph rebuilt | N adds `The dog ran across the yard.` as its own paragraph; the writer turns it into a heading | skipped: `its paragraph was replaced or removed`, no `now`; the heading stays |
-| Emptied paragraph | the writer deletes all of N's inserted paragraph's text, leaving it empty | skipped: `edited since; now ""`; the empty paragraph stays |
-| Existing paragraph rebuilt | N appends ` The dog ran.` to the seed paragraph; the writer turns that paragraph into a heading | the same |
-| N deleted a sentence | N removed `BBB stood still.`; the neighbouring sentences then changed | the sentence comes back between the changed neighbours |
-| Revert of a revert | revert `w1`, then revert that revert's handle | N's text is back |
+| Plain | N appends ` The dog ran across the yard.`; nothing else | `reverted: w1 (1 of 1 parts)` and a new handle; text `The cat sat on the mat.` |
+| Typing elsewhere | the same N; then a new paragraph `Lin Feng drew his sword.` | success; the original sentence and the new paragraph remain |
+| Edited inside N | N appends ` The big black dog ran.`; then `black` → `brown` | `nothing_to_revert`; `edited since; now "The cat sat on the mat. The big brown dog ran."`; text unchanged |
+| Repeated text, original edited | seed `The night was dark.` / `Lin Feng walked on.`; N inserts another `The night was dark.` after the first; the first then becomes `The night was cold.` | success; `The night was cold.` / `Lin Feng walked on.` (N's copy went, not the writer's) |
+| Repeated text, N's copy edited | the same, but N's copy becomes `The night was cold.` | `nothing_to_revert`; `now "The night was cold."`; text unchanged |
+| Emptied paragraph | N adds the paragraph `The dog ran across the yard.`; then its text is deleted, leaving the paragraph empty | `nothing_to_revert`; `edited since; now ""` |
+| Paragraph rebuilt | N adds the paragraph `The dog ran across the yard.`; then it is turned into a heading | `nothing_to_revert`; `its paragraph was replaced or removed`; the heading stays |
+| Existing paragraph rebuilt | N appends ` The dog ran.` to the seed paragraph; then that paragraph is turned into a heading | `nothing_to_revert`; `its paragraph was replaced or removed`; the heading stays |
+| N deleted a sentence | seed `AAA went first. BBB stood still. CCC came last.`; N removes `BBB stood still. `; then `first` → `home`, `last` → `early` | draft: success, `AAA went home. BBB stood still. CCC came early.`; auto-apply: `nothing_to_revert`, `now "AAA went home. CCC came early."` (see below) |
+| Revert of a revert | the Plain case's revert; then revert the handle it printed | N's sentence is back |
+| Two parts | seed three paragraphs; one range replace over all three changes the first and third; then the first is edited | `reverted: w1 (1 of 2 parts)` and one `not reverted:` line naming the first paragraph's current text |
 
-Revert works per receipt part, and a write can have several (a replace across two paragraphs records two): each part
-reverts or is skipped on its own, so the result can read `reverted: w1 (1 of 2 parts)` with one `not reverted:` line.
-A live write rewrites its whole paragraph, so in auto-apply any later change to that paragraph, even to words N kept,
-skips the part; in draft mode only changes to N's own words do.
+**Why auto-apply differs in "N deleted a sentence":** a live write stores its whole paragraph as deleted and
+reinserted text, so any later change in that paragraph, even to words N kept, skips the part. A draft write stores
+only the words it changed ([#969](https://github.com/haowjy/meridian-flow/issues/969)).
 
 ## In the browser
 
-With `agent-browser`, as the writer: run one revert in auto-apply and watch the editor drop N's text; run one in
-draft mode and see the revert as a pending change in the draft's review. For "Edited inside N", type the change in
-the editor yourself, then revert: the chat's tool card reads "That change wasn't reverted because its text changed
-or is already gone." and the text stays. Screenshot the chat card and the editor for each.
+With `agent-browser`, signed in as the writer, with the document open in the editor and the chat beside it:
+
+1. Auto-apply, Plain case: after the revert the editor shows `The cat sat on the mat.` and the chat shows the revert
+   as an "Edited 1 document" step with Undo.
+2. Draft mode, Plain case: before the revert the editor shows N's sentence as a pending change (Show changes, Apply,
+   Discard). After it, the pending change is gone.
+3. Auto-apply, Edited inside N, typing `brown` in the editor yourself: the text keeps `brown`, and expanding the
+   chat's failed step shows "That change wasn't reverted because its text changed or is already gone."
+
+Screenshot the editor with the chat for each step, and attach them with the command output to the PR or run record.
