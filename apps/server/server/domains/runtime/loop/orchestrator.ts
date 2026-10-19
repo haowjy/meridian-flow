@@ -172,6 +172,7 @@ import {
   loadReferenceReads,
   type ReferenceEvidence,
   type ReferenceReader,
+  recordReferenceEvidence,
 } from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
@@ -1306,23 +1307,6 @@ async function persistCommittedWriteResult(input: {
     },
   );
   return { block: persisted.result };
-}
-
-/**
- * Records accepted reference reads' evidence: shown links under the turn whose
- * request shows them, frontiers on each reference block. Callers run it inside
- * the commit persisting those blocks, after they are projected.
- */
-async function recordReferenceEvidence(
-  deps: Pick<OrchestratorDeps, "shownLinks" | "observationFrontiers" | "eventSink">,
-  threadId: string,
-  turnId: string,
-  evidence: ReferenceEvidence,
-): Promise<void> {
-  for (const showing of evidence.shown)
-    await deps.shownLinks.record({ ...showing, threadId, turnId });
-  for (const { sourceBlockId, frontier } of evidence.frontiers)
-    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
 }
 
 /**

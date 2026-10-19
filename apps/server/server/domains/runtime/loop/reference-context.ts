@@ -5,13 +5,25 @@
  * until the commit that persists those blocks.
  */
 
-import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditResultV1,
+  type FrontierLookup,
+  isAgentEditResultEnvelope,
+  type ObservationFrontier,
+  renderAgentEditResult,
+} from "@meridian/agent-edit/integration";
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
-import { historyReadStub, staleReadStub } from "../tools/document-text.js";
+import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
+import {
+  type DocumentTextTreatment,
+  historyReadStub,
+  reshownReadStub,
+  staleReadStub,
+} from "../tools/document-text.js";
 import type { ResultEvidence } from "../tools/types.js";
+import { type FrontierRecordingDeps, recordFrontier } from "./frontier-recording.js";
 
 type ReferenceRead = { result: JsonValue; revision: string | null };
 
@@ -36,6 +48,23 @@ export interface ReferenceEvidence {
   shown: ShownLinkShowing[];
   /** Each reference block's frontier: the block whose materialized read the model is sent. */
   frontiers: { sourceBlockId: string; frontier: ObservationFrontier }[];
+}
+
+/**
+ * Records accepted reference reads' evidence: shown links under the turn whose
+ * request shows them, frontiers on each reference block. Callers run it inside
+ * the commit persisting those blocks, after they are projected.
+ */
+export async function recordReferenceEvidence(
+  deps: FrontierRecordingDeps & { shownLinks: Pick<ShownLinkStore, "record"> },
+  threadId: string,
+  turnId: string,
+  evidence: ReferenceEvidence,
+): Promise<void> {
+  for (const showing of evidence.shown)
+    await deps.shownLinks.record({ ...showing, threadId, turnId });
+  for (const { sourceBlockId, frontier } of evidence.frontiers)
+    await recordFrontier(deps, sourceBlockId, frontier, { threadId, turnId });
 }
 
 export const NO_REFERENCE_EVIDENCE: ReferenceEvidence = { shown: [], frontiers: [] };
@@ -117,17 +146,24 @@ export async function loadReferenceReads(input: {
   return { blocks: updated, evidence };
 }
 
+/** A reference read reaches the model as the same text a `read` call returns (D43). */
+export function referenceReadText(result: JsonValue): string {
+  if (typeof result === "string") return result;
+  return isAgentEditResultEnvelope(result)
+    ? renderAgentEditResult(result as AgentEditResultV1)
+    : JSON.stringify(result);
+}
+
 /** Only the materialized document read changes; writer wording and the mention remain intact. */
 export function elideReferenceRead(
   reference: ReadReferenceOccurrence,
-  treatment: "stale" | "history",
+  treatment: DocumentTextTreatment,
 ): JsonValue {
-  return {
-    ...reference,
-    read: {
-      ...reference.read,
-      result:
-        treatment === "history" ? historyReadStub(reference.uri) : staleReadStub(reference.uri),
-    },
-  };
+  const stub =
+    treatment === "history"
+      ? historyReadStub
+      : treatment === "reshown"
+        ? reshownReadStub
+        : staleReadStub;
+  return { ...reference, read: { ...reference.read, result: stub(reference.uri) } };
 }

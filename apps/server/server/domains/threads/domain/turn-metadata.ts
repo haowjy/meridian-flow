@@ -86,7 +86,7 @@ export const HandoffSeedMetadataCodec = DerivationSeedMetadataCodec.extend({
 const modelElisionsCodec = z.array(
   z.object({
     blockId: z.string(),
-    treatment: z.enum(["stale_read", "stale_write"]),
+    treatment: z.enum(["stale_read", "stale_write", "reshown"]),
     uris: z.array(z.string()),
     content: z.json(),
   }),
@@ -284,6 +284,12 @@ export function skillBodyMetadata(): JsonObject {
 
 export function compactionSummaryMetadata(): JsonObject {
   return systemUpdateMetadata("compaction_summary");
+}
+
+/** The projector's synthetic turn that carries a compaction's summary and its re-shown documents. */
+export function isCompactionSummaryTurn(turn: Pick<Turn, "metadata">): boolean {
+  const metadata = SystemUpdateMetadataCodec.safeParse(turn.metadata);
+  return metadata.success && metadata.data.section === "compaction_summary";
 }
 
 export function savedSubagentReportMetadata(): JsonObject {
