@@ -209,7 +209,7 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * §12.5, O-11: a contribution is any journal row of the draft's current generation that
+   * §12.5, O-11: a contribution is any journal row of the draft that
    * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
   async function retractCreatedDocumentDraft(input: {

@@ -367,18 +367,13 @@ export const effectWatermarkSweep: Probe = {
     }
 
     /** A terminally blocked settlement on the draft's document (D22), as the r3/r4 fixture. */
-    async function blockSettlement(draft: {
-      draftId: string;
-      generation: number;
-      documentId: string;
-      live: Y.Doc;
-    }) {
+    async function blockSettlement(draft: { draftId: string; documentId: string; live: Y.Doc }) {
       const batchId = randomUUID();
       await harness.raw`insert into branch_push_settlement_batches (id, state, blocked_at, last_error_code)
         values (${batchId}, 'blocked', now(), 'corrupt_settlement_authority')`;
       const [push] = await harness.raw<{ id: string }[]>`
         insert into push_lineage (draft_id, draft_generation, document_id, journal_ids, idempotency_key)
-        values (${draft.draftId}, ${draft.generation}, ${draft.documentId}, '{}', ${randomUUID()}) returning id`;
+        values (${draft.draftId}, 1, ${draft.documentId}, '{}', ${randomUUID()}) returning id`;
       const bytes = Buffer.from(Y.encodeStateAsUpdate(draft.live));
       await harness.raw`insert into branch_push_settlement_outbox
         (push_id, batch_id, document_id, document_title, lock_cut_update, push_update, trail_seed)

@@ -108,16 +108,11 @@ export const appendNovelty: Probe = {
         const { u1, u2 } = twoKeys(draft);
         const gateway = openGateway(harness, harness.store);
         try {
-          const room = await gateway.load(draft.draftId, draft.generation);
+          const room = await gateway.load(draft.draftId);
           const before = await durable(harness, draft.draftId);
-          const second = await gateway.send(room, draft.draftId, draft.generation, u2);
+          const second = await gateway.send(room, draft.draftId, u2);
           const afterSecond = await durable(harness, draft.draftId);
-          const merged = await gateway.send(
-            room,
-            draft.draftId,
-            draft.generation,
-            Y.mergeUpdates([u1, u2]),
-          );
+          const merged = await gateway.send(room, draft.draftId, Y.mergeUpdates([u1, u2]));
           const after = await durable(harness, draft.draftId);
           const rows = await journalRows(harness, draft.draftId);
           const edits = await receipts(harness, draft.draftId);
@@ -285,7 +280,6 @@ export const appendNovelty: Probe = {
           const committed = await independently(() =>
             harness.coordinator.commitSegmentRows({
               draftId: draft.draftId,
-              expectedGeneration: draft.generation,
               sourceDoc: source,
               rows: [{ draftId: draft.draftId, source: "agent", updateData: fact }],
             }),
@@ -375,7 +369,6 @@ export const appendNovelty: Probe = {
           });
           const committed = await harness.coordinator.commitSegmentRows({
             draftId: draft.draftId,
-            expectedGeneration: draft.generation,
             sourceDoc: source,
             rows: [
               {
@@ -474,9 +467,9 @@ export const appendNovelty: Probe = {
               const t = firstText(writer);
               t.delete(t.length - 1, 1);
             });
-            const room = await gateway.load(draft.draftId, draft.generation);
+            const room = await gateway.load(draft.draftId);
             const before = await durable(harness, draft.draftId);
-            const sent = await gateway.send(room, draft.draftId, draft.generation, del);
+            const sent = await gateway.send(room, draft.draftId, del);
             const after = await durable(harness, draft.draftId);
             observe("i unknown delete", { sent, before, after });
             assert.deepEqual(sent, { ok: false, closes: [PREFIX_MISSING_CLOSE] });

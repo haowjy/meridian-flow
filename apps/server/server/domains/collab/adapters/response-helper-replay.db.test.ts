@@ -1,4 +1,4 @@
-// Revocable response helpers and accepted replay across draft generation changes.
+// Revocable response helpers and accepted replay across concurrent draft writes.
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {

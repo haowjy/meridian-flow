@@ -109,9 +109,8 @@ export type DraftReviewController = {
   dismissToast: (id: number) => void;
   enterInlineReview: (documentId: string, itemKey: string) => void;
   /**
-   * The editor's room reports it is of a generation the server has closed
-   * (`draft-generation-stale`). The review asks for a fresh read and keeps its
-   * place; it neither exits nor guesses the new room.
+   * The editor reports a closed draft room. The review refreshes its presentation;
+   * it never replays the ended room's contents into a replacement draft.
    */
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -169,7 +168,7 @@ export function useDraftReviewController({
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
-      const draft = { projectId, workId, documentId, itemKey };
+      const _draft = { projectId, workId, documentId, itemKey };
       // The review opens on the newest proposal the caches know of, and a command
       // already in flight on this draft (sent from the strip or the Work page)
       // is its to show: it adopts the claim if it acted on that generation.

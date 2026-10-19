@@ -49,11 +49,6 @@ describe("writer frames racing rewrites (postgres)", () => {
    * the frame carries exactly the update it made.
    */
   async function writerFrame(draftId: string, edit: (fragment: Y.XmlFragment) => void) {
-    const [documentDraft] = await db
-      .select({ generation: schema.documentDrafts.generation })
-      .from(schema.documentDrafts)
-      .where(eq(schema.documentDrafts.id, draftId));
-    if (!documentDraft) throw new Error(`Draft ${draftId} does not exist`);
     const room = new Y.Doc({ gc: false });
     Y.applyUpdate(room, await draftContent(db, draftId));
     room.clientID = allocateDocumentClient(room);

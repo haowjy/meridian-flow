@@ -99,7 +99,7 @@ async function fixture() {
         wId: client,
       })
       .returning();
-    const origin = { kind: "pending" as const, draftId, generation: 1, rowId: row.id };
+    const origin = { kind: "pending" as const, draftId, rowId: row.id };
     const receipts = captureReceiptRows(before, [{ update: Y.mergeUpdates(updates), origin }]);
     before.destroy();
     const editId = await recordDocumentEdit(db, {
@@ -134,7 +134,7 @@ async function fixture() {
   return { doc, draftId, ai, save, apply };
 }
 
-it("reads applied and discarded historical parts after close, independent of placement and generation", async () => {
+it("reads applied and discarded historical parts after close, independent of placement", async () => {
   const f = await fixture();
   try {
     const applied = await f.ai(21, "The bright mountain waits.");
@@ -156,10 +156,6 @@ it("reads applied and discarded historical parts after close, independent of pla
     );
     const visibleClosed = await f.ai(23, "The bright mountain glows.");
     await f.save("closed");
-    await db
-      .update(schema.documentDrafts)
-      .set({ generation: 2 })
-      .where(eq(schema.documentDrafts.id, f.draftId));
     await db.update(schema.documentEditParts).set({ placement: { kind: "retired" } });
     const historical = await review(f.draftId, { writerRanges: [[99, 0, 100]] });
     expect(historical.draft.status).toBe("closed");

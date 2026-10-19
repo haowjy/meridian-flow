@@ -56,7 +56,6 @@ export const d23ArchivedDraftRebases: Probe = {
         const frame = await settled(
           harness.coordinator.commitWriterUpdate({
             draftId: documentDraft.draftId,
-            expectedGeneration: read.documentDraft.generation,
             updateData: Y.encodeStateAsUpdate(room, before),
             roomDocument: room,
           }),

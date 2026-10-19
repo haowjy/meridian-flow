@@ -45,9 +45,8 @@ export function reconcileStagedDraftWrites(
       try {
         for (const row of rows) {
           if (dropped.has(row)) continue;
-          // Absence alone is normal peer concurrency. Only retirement or an
-          // inverse since this cut revokes planning-visible identities. Retired
-          // structs are absent; ordinary deletions of refork survivors retain them.
+          // Absence alone is normal peer concurrency. Only an explicit inverse
+          // since this cut revokes planning-visible identities.
           const decoded = decodeUpdateForDependencies(row.updateData);
           const touched = [...deleteRanges(decoded), ...structDependencies(decoded)];
           const lostIn = (evidence: typeof touched) =>

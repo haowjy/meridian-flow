@@ -7,7 +7,7 @@
  * Work counts and the D40 confirmation. A draft with no effect is still addressable
  * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${branchId}:${documentId}` (F12) and carries the
  * tokens Apply checks (§11.3): its location version from the same tree read that spells
- * its path, the live document's full-state fingerprint, and the draft generation.
+ * its path, the live document's full-state fingerprint, and whether it has a text draft.
  */
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
@@ -22,7 +22,7 @@ export type DraftReviewItem = {
   documentId: DocumentId;
   /** The branch's draft on the document; null for an image or a create with no text yet. */
   draftId: string | null;
-  /** The draft's generation; null without a draft. */
+  /** Whether this item has a text draft. */
   hasDraft: boolean;
   /** created: the branch has a `created` row; edited: draft rows only. */
   origin: "created" | "edited";
