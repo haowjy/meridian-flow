@@ -1,9 +1,9 @@
 /** A review key names one branch and document; a replacement branch opened mid-request never answers for it. */
 import type { BranchId } from "@meridian/contracts";
+import { draftItemKey } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { expect, it, vi } from "vitest";
 import { createBranchReviewIdentity } from "./branch-review-identity.js";
-import { draftItemKey } from "./branch-tree-payload.js";
 
 const WORK = "00000000-0000-4000-8000-000000000001" as WorkId;
 const B1 = "00000000-0000-4000-8000-0000000000b1" as BranchId;

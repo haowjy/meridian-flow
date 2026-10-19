@@ -6,6 +6,7 @@ import {
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
+import { resourceForDocumentIdentity } from "@meridian/resource-replica";
 import { useCallback, useEffect, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
@@ -359,6 +360,17 @@ export function ContextViewerSurfaceController({
     selectedDocumentId,
     tabs,
   ]);
+
+  // A tab closed because the catalog dropped its document waits for the
+  // removal's record; the catalog placing it again proves there was none.
+  const awaitingRecordIds = removalState.awaitingRecordIds;
+  useEffect(() => {
+    for (const documentId of awaitingRecordIds) {
+      const record = resourceForDocumentIdentity(resourceProjection.records, documentId);
+      if (record && resourceProjection.placement.resourceLocation(record))
+        contextRemoval.releaseAwaitedRecord(projectId, documentId);
+    }
+  }, [awaitingRecordIds, contextRemoval, projectId, resourceProjection]);
 
   return (
     <ContextViewer

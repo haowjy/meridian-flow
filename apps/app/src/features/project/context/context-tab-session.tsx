@@ -8,10 +8,7 @@ import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
-import {
-  useAccountResourceReplica,
-  useOptionalProjectContextAvailabilityCoordinator,
-} from "./account-feature-context";
+import { useAccountResourceReplica } from "./account-feature-context";
 import type { DocumentPresentation } from "./document-presentation";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
@@ -188,21 +185,6 @@ function ContextTabSession({
   const liveSession =
     state.kind === "opened" && state.documentId === documentId ? state.session : null;
   const selectedSession = liveSession ?? localSession;
-  const availability = useOptionalProjectContextAvailabilityCoordinator();
-  useEffect(() => {
-    if (!selectedSession || !availability) return;
-    let asked = false;
-    // The server closed the room because the document is gone (4208): ask
-    // availability now, so the tab closes with its record instead of waiting
-    // for the catalog to notice.
-    const check = () => {
-      if (asked || selectedSession.resetDisposition !== "removed") return;
-      asked = true;
-      void availability.recheck(projectId, [documentId]).catch(() => undefined);
-    };
-    check();
-    return selectedSession.subscribe(check);
-  }, [availability, documentId, projectId, selectedSession]);
   const session = useRefusedEditsReopen(selectedSession, onReopen);
   return children(
     session,

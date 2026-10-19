@@ -125,8 +125,9 @@ export type DocumentSessionResetReason =
 
 /**
  * How a terminal room reset treats its unacknowledged writer updates.
- * `removed`: the document is gone, so nothing reconnects, rebuilds or replays;
- * the session stays as it is until its owner closes it.
+ * `removed`: the server says the document is gone, so nothing reconnects,
+ * rebuilds or replays on its own; the session stays read-only until its owner
+ * closes it, or an exact open proves the document present and restarts it.
  */
 export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema" | "removed";
 
@@ -375,9 +376,9 @@ export class DocumentSession {
     if (this.destroyed) {
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
     }
-    if (this.resetDisposition === "refused" || this.resetDisposition === "removed") {
-      // A reconnect would replay the refused edits from this Y.Doc, or reopen a removed document.
-      throw new Error(`Cannot restart a refused or removed room: ${this.roomKey}`);
+    if (this.resetDisposition === "refused") {
+      // A reconnect would replay the refused edits from this Y.Doc.
+      throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
     }
     const previous = this.transportProvider;
     this.unsubscribeTransportStatus?.();

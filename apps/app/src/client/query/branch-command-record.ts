@@ -1,5 +1,6 @@
 /** Shared draft commands, selection outcomes, distinct list/preview read fences. */
 import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/branches";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { replaceEqualDeep } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -32,7 +33,12 @@ export type BranchCommandFailureCode =
  * What a typed server refusal said, as the server sent it: its error code and
  * its own text. Kept so the words are chosen when the failure is shown.
  */
-export type ServerRefusal = { serverCode: string; serverReason?: string };
+export type ServerRefusal = {
+  serverCode: string;
+  serverReason?: string;
+  /** A `deleted_live` hold's record: who removed the document Apply would have written. */
+  removal?: DocumentRemovalRecord | null;
+};
 
 /** A held failure: its code and, for a refusal, what the server said. */
 export type BranchCommandFailure = { code: BranchCommandFailureCode } & Partial<ServerRefusal>;

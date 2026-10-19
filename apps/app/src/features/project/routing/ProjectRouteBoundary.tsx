@@ -3,7 +3,8 @@ import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
-import { type DocumentRemoval, RemovedDocumentSentence } from "../context/RemovedDocumentNotice";
+import type { RemovedDocument } from "../context/context-removal-coordinator";
+import { RemovedDocumentSentence } from "../context/RemovedDocumentNotice";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
@@ -30,7 +31,7 @@ export type ProjectRouteMask = {
   /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
   /** An unavailable destination whose document was removed says who removed it. */
-  removed?: DocumentRemoval;
+  removed?: Pick<RemovedDocument, "title" | "record">;
 };
 
 export function ProjectRouteBoundary({
@@ -84,7 +85,7 @@ export function ProjectRouteBoundary({
               <Trans>This destination couldn’t load.</Trans>
             ) : removed ? (
               <p className="max-w-md break-words">
-                <RemovedDocumentSentence {...removed} />
+                <RemovedDocumentSentence documents={[removed]} />
               </p>
             ) : (
               <Trans>This destination is unavailable.</Trans>

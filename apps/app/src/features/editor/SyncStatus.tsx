@@ -29,6 +29,7 @@
  * the confirmation timer.
  */
 import { Trans } from "@lingui/react/macro";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import {
   type DocumentSessionSnapshot,
   updatesRefused,
 } from "@/core/editor/document-session";
+import { RemovedDocumentSentence } from "@/features/project/context/RemovedDocumentNotice";
 
 /** Matches ConnectionBanner's RECONNECTED_VISIBLE_MS. */
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
@@ -80,9 +82,15 @@ export type SyncStatusProps = {
   session: DocumentSession;
   /** Reopens a room whose updates were refused; only a draft review offers it. */
   onReopen?: () => void;
+  /**
+   * A removed room (4208) whose tab is still open once availability answered:
+   * the removal's record (null: none). Undefined until then, and once the tab
+   * closes the notice beside the strip says it instead.
+   */
+  removal?: DocumentRemovalRecord | null;
 };
 
-export function SyncStatus({ session, onReopen }: SyncStatusProps) {
+export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   const [stored, setStored] = useState<Tracked>(() => trackSession(session));
 
   // A new session starts from its own snapshot with no outage history. Reset
@@ -139,12 +147,16 @@ export function SyncStatus({ session, onReopen }: SyncStatusProps) {
 
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered
-  // as a quiet floating pill by EditorView. A removed document's notice belongs
-  // to the tab that held it, so its room says nothing here.
+  // as a quiet floating pill by EditorView. A removed document says nothing
+  // here while its tab is closing; a tab that stays open says why in place.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
-  const label = removed ? null : snapshot.status === "destroyed" ? (
+  const label = removed ? (
+    removal === undefined ? null : (
+      <RemovedDocumentSentence documents={[{ title: null, record: removal }]} />
+    )
+  ) : snapshot.status === "destroyed" ? (
     <Trans>Closed</Trans>
   ) : snapshot.status === "access-lost" ? (
     <Trans>Access lost (not saving to the server)</Trans>
