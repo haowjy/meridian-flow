@@ -694,15 +694,39 @@ An Apply right after Discard of a new document in the same Work can return 500
 authoring defect, not a review-follows-document failure: use a fresh Work for
 Apply cases that follow a new-document Discard, and record the 500 if you hit it.
 
+## Snapshot-bounded provenance
+
+Use a real mock-model write to an existing manuscript draft; open it from the
+Work's Files screen. Capture the `draft/provenance` POST in browser network tools:
+its encoded snapshot, project user and AI ranges must cover the visible write,
+with owner/reveal metadata for the conversation. A single-user project omits
+`writers`, even when unresolved clock ranges are supplied. A wrong Work or
+file cannot return evidence; a malformed room or clock range returns 400.
+
+Type locally inside and beside a change: “You” appears without one provenance
+request per keystroke. A new remote unresolved range requests evidence; an
+Apply/restoration-root revision refreshes it. Disconnect/reconnect and reload:
+unknown evidence leaves the text and candidate dock rows on screen without
+inventing names. Release the room while an evidence response is delayed, then
+open a different room: the delayed response must not publish there.
+
+For #945, remove a paragraph in draft, then edit its live counterpart to
+`abc LIVE def`. After the live pull, review must show that full paragraph red,
+“You”, and enabled Apply/Discard. For mixed author/subagent/overflow coverage,
+follow the compact checks below. R's review-base seed and the room-metadata
+lookup must exist before these integrated scenarios can pass; a synthetic
+browser fixture is useful debugging evidence, never an integrated pass.
+
 ## Compact review checks
 
-- Existing previews containing an incomplete class keep selective controls on
-  complete classes. The incomplete row/bar has no commands or explanation;
-  the draft dock skips it, while whole-header commands cover it.
-- Document lists show excerpt and controls only. Work rows retain whole chat
-  names at wide widths and hide attribution at narrow container widths.
-- Focused bars never abbreviate a chat name. +N opens the remaining chat links,
-  including their producing-turn targets. Check desktop and phone.
+- Review groups come from text alone. A mixed-author group stays one row and
+  one red/green box even when unchanged text separates its authors' edits.
+- Every known byline keeps “You” and at least the first conversation link.
+  Names may truncate, but their accessible names and tooltips retain the full
+  title. Later conversations go into +N; narrow containers never hide all authors.
+- +N opens the remaining conversation links, including their producing-turn
+  targets. A subagent link opens its parent conversation at its spawn card.
+  Check desktop, phone, and Show changes off (the list still has its bylines).
 - With the 320px dock open, and at narrower editor widths, the bar and both
   commands stay within the manuscript pane (under-change placement when needed).
 - A one-change review has a list button but no stepper.

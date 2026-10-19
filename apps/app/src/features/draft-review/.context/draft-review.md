@@ -39,8 +39,13 @@ Discard. Once synced, temporary offline status does not forget that history.
   the runtime. Apply/Discard delivery remains the command owner's job.
 - `setAttributionProvider()` joins a per-group byline/membership map without
   changing boxes. An absent map entry is explicitly unknown, so candidate chat
-  rows remain visible without a byline. The attribution lane owns fetching,
-  evidence revisions and classification.
+  rows remain visible without a byline. `room-attribution.ts` owns one
+  reference-counted evidence reader per session. It fetches on unresolved
+  clock-range changes, Apply/restoration root revisions and reconnect, not
+  text-frame identity. Local deletion witnesses cover unacknowledged typing.
+  Replaced/aborted reads never publish. `review-attribution.ts` joins the
+  classifier's byline/membership to owner conversations; a subagent link asks
+  the existing conversation reveal controller for its spawn card.
 - The controller's focus is one group id. Missing ids reconcile to the first
   remaining group. Launch requests carry group ids all the way into focus.
   An empty frame shows “No changes left”; only the close contract can end the

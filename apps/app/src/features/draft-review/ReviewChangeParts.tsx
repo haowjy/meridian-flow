@@ -15,15 +15,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
+import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { RefusalReason } from "./ReviewMessageText";
+import { writerIn } from "./review-attribution";
 import type { ChangeFailureCode, ServerRefusal } from "./review-command-types";
-
 import { type ChatRef, changeTone, type ReviewChange } from "./review-model";
-
-const writerIn = (change: Pick<ReviewChange, "byline">) =>
-  change.byline.some((author) => author.kind === "user");
 
 /** A dot in the change's colour: green for text it wrote, red for text it only removed. */
 export function ChangeDot({ change, className }: { change: ReviewChange; className?: string }) {
@@ -274,6 +272,12 @@ function ChatLink({
  */
 function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
   openThread(chat.chatId);
+  if (chat.reveal)
+    requestConversationReveal({
+      kind: "turn",
+      ...chat.reveal,
+      ...(chat.reveal.subagentThreadId ? { subagentBlock: "card" } : {}),
+    });
 }
 
 export function ChangeFailureText({

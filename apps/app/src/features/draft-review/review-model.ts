@@ -4,7 +4,12 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { groupAnchor, type ReviewFrame } from "./review-frame";
 
 export type ReviewFocus = { id: string };
-export type ChatRef = { chatId: string; title: string; subagentTitle?: string };
+export type ChatRef = {
+  chatId: string;
+  title: string;
+  subagentTitle?: string;
+  reveal?: { threadId: string; turnId: string; toolCallId?: string; subagentThreadId?: string };
+};
 export type ChangeAttribution = {
   byline: Author[];
   chats: ChatRef[];
