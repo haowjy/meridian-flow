@@ -71,17 +71,20 @@ every deleted range of the snapshot: a delete-only staged update allocates no
 clock, so the state vector alone accepts a refused staged deletion. An absent,
 undecodable or uncontained previous frontier is the empty snapshot.
 
-When the host passes `WriteContext.observe = { prev }`, read results, write
-receipts and undo, redo and revert echoes carry a host-only `observation` from
-the doc they rendered (a response lease for staged writes, the inverse's
-`after` cut for an inverse). With `ResponseCommitOptions.observe` every saved
-document's result carries one at the post-commit cut, crediting what its
-accepted receipts show; journal-replay recovery leaves the cut unknown and
-records none. Shown in full: a read's rendered blocks (an outline none) and
-`extent: full` changed blocks (never prefix context, copy edges or swept
-bodies). A result reported with `awarenessDegraded` (immediate, staged or
-settled) still records, crediting nothing. A failure is reported through
-`onObservationFailed` and the result goes out without one; `observation` never
+The host names rooms; agent-edit carries the label. When the host passes
+`WriteContext.observe = { room, prev }`, read results and write receipts carry
+a host-only `frontier` (`{ room, snapshot, unshown }`) from the doc they
+rendered. An undo, redo or revert renders from the version the host's inverse
+ran on, which only its result names (`DocumentEditResult.draftId`), so the host
+passes `observeInverse(draftId)` and the echo records from the inverse's
+`after` cut. With `ResponseCommitOptions.observe(documentId)` each saved
+document's result carries one at the post-commit cut (`saveObservation`),
+crediting what its accepted receipts show; journal-replay recovery leaves the
+cut unknown and records none. Shown in full: a read's rendered blocks (an
+outline none) and `extent: full` changed blocks (never prefix context, copy
+edges or swept bodies). A result reported with `awarenessDegraded` still
+records, crediting nothing. A failure is reported through
+`onObservationFailed` and the result goes out without one; `frontier` never
 reaches `AgentEditResultV1`.
 
 ## CRDT and content boundaries

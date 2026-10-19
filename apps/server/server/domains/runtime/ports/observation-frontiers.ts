@@ -1,45 +1,41 @@
 /**
  * Observation frontiers: what document state each transcript block showed the
  * model, per room (`draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`).
- * A tool result or a writer turn's reference block records one per room it
- * rendered, in the transaction that persists the block. The model's frontier
- * for a room is the latest-recorded row among a conversation's blocks: rooms
- * only grow (gc-off), so recording order is cut order. Nothing is copied at
- * fork time; a fork reads the inherited blocks' rows by their ids.
+ * A tool result or a writer turn's reference block records at most one, for
+ * the room it rendered from, in the transaction that persists the block. The
+ * model's frontier for a room is the latest-recorded row among a
+ * conversation's blocks: rooms only grow (gc-off), so recording order is cut
+ * order. Nothing is copied at fork time; a fork reads the inherited blocks'
+ * rows by their ids.
  */
-import type { ObservationFrontier } from "@meridian/agent-edit/integration";
-
-/** One room's frontier, as a block records it. */
-export interface RoomFrontier extends ObservationFrontier {
-  roomKey: string;
-}
+import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
+import type { TurnBlockId } from "@meridian/contracts";
 
 export interface ObservationFrontiers {
   /**
-   * Delete the rows these blocks hold: for `roomKey` only, or every room. Part
-   * of the caller's block write, in its transaction: a failure propagates.
+   * Delete the row a block holds. Part of the caller's block write, in its
+   * transaction: a failure propagates.
    */
-  remove(sourceBlockIds: readonly string[], roomKey?: string): Promise<void>;
+  remove(sourceBlockId: TurnBlockId): Promise<void>;
   /**
-   * Insert a block's rows in a savepoint: a failure throws without aborting
-   * the caller's transaction, and the block keeps no rows.
+   * Insert a block's row in a savepoint: a failure throws without aborting the
+   * caller's transaction, and the block keeps no row.
    */
-  insert(sourceBlockId: string, frontiers: readonly RoomFrontier[]): Promise<void>;
+  insert(sourceBlockId: TurnBlockId, frontier: ObservationFrontier): Promise<void>;
   /**
-   * The latest-recorded row for `roomKey` among `sourceBlockIds`, or null. In a
+   * The latest-recorded row for `room` among `sourceBlockIds`, or null. In a
    * savepoint inside a transaction, so a failure leaves the caller's usable.
    */
-  latest(roomKey: string, sourceBlockIds: readonly string[]): Promise<ObservationFrontier | null>;
+  latest(room: string, sourceBlockIds: readonly TurnBlockId[]): Promise<ObservationFrontier | null>;
 }
 
 /**
- * The frontier lookups a tool call reads. `recording` is the run's current
- * blocks: what a result records chains from it, so a sibling call's result
- * counts as seen. `planning` is the blocks the authoring request was built
- * from (C4): a call plans on the model's view as of that request. Neither
- * throws: an unavailable frontier is null, the empty one.
+ * The lookups a tool call reads. `recording` is the run's current blocks: what
+ * a result records chains from it, so a sibling call's result counts as seen.
+ * `planning` is the blocks the authoring request was built from (C4): a call
+ * plans on the model's view as of that request.
  */
 export interface FrontierLookups {
-  recording(roomKey: string): Promise<ObservationFrontier | null>;
-  planning(roomKey: string): Promise<ObservationFrontier | null>;
+  recording: FrontierLookup;
+  planning: FrontierLookup;
 }

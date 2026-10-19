@@ -9,7 +9,7 @@ import type { ReferenceReader } from "../../domains/runtime/index.js";
 import { resolveDocumentAddress } from "./document-tools.js";
 import { documentGrant } from "./file-access.js";
 import { readDocument } from "./read-document.js";
-import { showingOf } from "./shown-link-capture.js";
+import { evidenceOf } from "./shown-link-capture.js";
 import {
   isToolError,
   recordTouchInBackground,
@@ -57,8 +57,7 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
         result: asJson(outcome.result),
         revision: outcome.revision,
         // The attachment's read text goes to the model as the reference block.
-        shown: showingOf(address.documentId, outcome),
-        ...(outcome.frontiers ? { frontiers: outcome.frontiers } : {}),
+        evidence: evidenceOf(address.documentId, outcome),
       };
     },
   };

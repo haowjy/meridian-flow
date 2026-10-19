@@ -215,13 +215,12 @@ function successResult(
   };
 }
 
-const HOST_ONLY = ["shown", "showing", "frontiers", "observation"] as const;
+const HOST_ONLY = ["evidence", "showing", "frontier"] as const;
 
 /**
- * `value` without the host-only evidence a handler may return beside or
- * inside it (`shown` candidates, an outcome's `showing`, observation
- * `frontiers` and an outcome's `observation`): the persisted result, history
- * and the browser never carry them (contract §7.1).
+ * `value` without host-only evidence: the handler's `evidence` beside it, or
+ * an agent-edit outcome's `showing` and `frontier` inside it. The persisted
+ * result, history and the browser never carry them (contract §7.1).
  */
 function withoutHostOnly(value: unknown): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
@@ -231,14 +230,11 @@ function withoutHostOnly(value: unknown): unknown {
   return rest;
 }
 
-/** The handler's host-only shown-link candidates and frontiers, kept out of every serialized field. */
-function hostEvidence(output: unknown): Pick<ToolExecutionResult, "shown" | "frontiers"> {
-  if (typeof output !== "object" || output === null) return {};
-  const { shown, frontiers } = output as Pick<ToolExecutionResult, "shown" | "frontiers">;
-  return {
-    ...(shown && shown.length > 0 ? { shown } : {}),
-    ...(frontiers && frontiers.length > 0 ? { frontiers } : {}),
-  };
+/** The handler's host-only evidence, kept out of every serialized field. */
+function hostEvidence(output: unknown): Pick<ToolExecutionResult, "evidence"> {
+  if (typeof output !== "object" || output === null || !("evidence" in output)) return {};
+  const evidence = (output as Pick<ToolExecutionResult, "evidence">).evidence;
+  return evidence && (evidence.shown.length > 0 || evidence.frontier) ? { evidence } : {};
 }
 
 /**

@@ -1,19 +1,14 @@
 /**
  * Records observation frontiers with the transcript block that showed them and
- * builds the tool call's frontier lookups. Clearing a block's old rows is part
- * of writing the block and fails it; recording the new rows never does: the
- * store isolates its insert in a savepoint, and a failure is logged and leaves
- * the block with no frontier.
+ * builds frontier lookups. Clearing a block's old row is part of writing the
+ * block and fails it; recording the new row never does: the store isolates its
+ * insert in a savepoint, and a failure is logged and leaves the block with no
+ * frontier.
  */
-import type { Block } from "@meridian/contracts/threads";
+import type { FrontierLookup, ObservationFrontier } from "@meridian/agent-edit/integration";
+import type { TurnBlockId } from "@meridian/contracts";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type {
-  FrontierLookups,
-  ObservationFrontiers,
-  RoomFrontier,
-} from "../ports/observation-frontiers.js";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 
 export interface FrontierRecordingDeps {
   observationFrontiers: ObservationFrontiers;
@@ -21,46 +16,44 @@ export interface FrontierRecordingDeps {
 }
 
 /**
- * Replace a block's frontiers inside the transaction persisting it, after its
+ * Replace a block's frontier inside the transaction persisting it, after its
  * row is projected (`afterEvents`). A result whose content was replaced always
- * calls this, with none when its new rendering showed no document.
+ * calls this, with none when its new rendering records no frontier.
  */
-export async function recordFrontiers(
+export async function recordFrontier(
   deps: FrontierRecordingDeps,
-  sourceBlockId: string,
-  frontiers: readonly RoomFrontier[],
+  sourceBlockId: TurnBlockId,
+  frontier: ObservationFrontier | undefined,
   correlation: { threadId: string; turnId: string },
 ): Promise<void> {
-  await deps.observationFrontiers.remove([sourceBlockId]);
-  if (frontiers.length === 0) return;
+  await deps.observationFrontiers.remove(sourceBlockId);
+  if (!frontier) return;
   try {
-    await deps.observationFrontiers.insert(sourceBlockId, frontiers);
+    await deps.observationFrontiers.insert(sourceBlockId, frontier);
   } catch (error) {
     emitEvent(deps.eventSink, {
       level: "warn",
       source: "runtime.orchestrator",
       name: "observation_frontier.record_failed",
       correlation,
-      payload: { frontierCount: frontiers.length, ...unknownToEventPayload(error) },
+      payload: unknownToEventPayload(error),
     });
   }
 }
 
 /**
- * The lookups over two block sets: `recording` reads the run's blocks as they
- * are when it is called, `planning` the blocks the authoring request was built
- * from. A failed lookup is logged and answers null, the empty frontier, so
- * what records next is conservative rather than missing.
+ * The model's latest frontier for a room among `blockIds`, read when called.
+ * A failed lookup is logged and answers null, the empty frontier, so what
+ * records next is conservative rather than missing.
  */
-export function frontierLookups(
+export function frontierLookup(
   deps: FrontierRecordingDeps,
-  recordingBlocks: () => readonly Block[],
-  planningBlockIds: readonly string[],
+  blockIds: () => readonly TurnBlockId[],
   correlation: { threadId: string; turnId: string },
-): FrontierLookups {
-  const latest = async (roomKey: string, ids: readonly string[]) => {
+): FrontierLookup {
+  return async (room) => {
     try {
-      return await deps.observationFrontiers.latest(roomKey, ids);
+      return await deps.observationFrontiers.latest(room, blockIds());
     } catch (error) {
       emitEvent(deps.eventSink, {
         level: "warn",
@@ -72,14 +65,4 @@ export function frontierLookups(
       return null;
     }
   };
-  return {
-    recording: (roomKey) =>
-      latest(roomKey, persistedIds(recordingBlocks().map((block) => block.id))),
-    planning: (roomKey) => latest(roomKey, persistedIds(planningBlockIds)),
-  };
-}
-
-/** Only persisted rows hold frontiers; a block's id is a UUID once it is. */
-export function persistedIds(ids: readonly string[]): string[] {
-  return ids.filter((id) => UUID.test(id));
 }

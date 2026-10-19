@@ -17,7 +17,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import type { RoomObservation, RoutedWriteOutcome } from "../../domains/collab/index.js";
+import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -26,9 +26,9 @@ import {
 } from "../../domains/file-policy/index.js";
 import {
   isSkillsUri,
+  type ResultEvidence,
   readSkill,
   refuseSkillWrite,
-  type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
@@ -50,7 +50,7 @@ import {
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
-import { showingOf, threadShownLinks } from "./shown-link-capture.js";
+import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -203,12 +203,8 @@ async function writeUnderGrant(
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
 ): Promise<
-  | (WriteOutcome & {
-      isError: false;
-      shown: ShownLinkShowing[];
-      frontiers?: RoomObservation[];
-    })
-  | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
+  | (WriteOutcome & { isError: false; evidence: ResultEvidence })
+  | (WriteToolErrorOutput & { evidence?: ResultEvidence })
 > {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
@@ -234,20 +230,16 @@ async function writeUnderGrant(
     return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
-  // was a partial failure's echo. An error without echo text carries no facts.
-  const shown = showingOf(address.documentId, written);
-  // A refusal shows no document text and records no frontier.
-  if (written.isError) return { isError: true, output: written.result, shown };
-  // Showing and frontiers are host-only evidence: they leave here only beside the outcome.
-  const { showing: _showing, frontiers, ...outcome } = written;
-  return {
-    ...withDestination(outcome, grant.destination),
-    shown,
-    ...(frontiers ? { frontiers } : {}),
-  } as WriteOutcome & {
+  // was a partial failure's echo. An error without echo text carries no facts,
+  // and a refusal records no frontier.
+  const evidence = evidenceOf(address.documentId, written);
+  if (written.isError)
+    return { isError: true, output: written.result, evidence: { shown: evidence.shown } };
+  // Showing and frontier are host-only: they leave here only as `evidence`.
+  const { showing: _showing, frontier: _frontier, ...outcome } = written;
+  return { ...withDestination(outcome, grant.destination), evidence } as WriteOutcome & {
     isError: false;
-    shown: ShownLinkShowing[];
-    frontiers?: RoomObservation[];
+    evidence: ResultEvidence;
   };
 }
 
@@ -282,8 +274,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     return {
       output: outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
-      shown: showingOf(address.documentId, outcome),
-      ...(outcome.frontiers ? { frontiers: outcome.frontiers } : {}),
+      evidence: evidenceOf(address.documentId, outcome),
     };
   };
 }
@@ -397,7 +388,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
       }
-      return { isError: true, output: outcome.output, shown: outcome.shown };
+      return { isError: true, output: outcome.output, evidence: outcome.evidence };
     }
     if (stagedCreate) {
       const responseId = ctx.responseIdentity?.editScopeId;
@@ -435,8 +426,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }
           : {}),
       },
-      shown: outcome.shown,
-      ...(outcome.frontiers ? { frontiers: outcome.frontiers } : {}),
+      evidence: outcome.evidence,
     };
   };
 }

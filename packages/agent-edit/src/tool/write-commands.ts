@@ -658,7 +658,7 @@ export function createWriteCommands(deps: {
     return withObservation(
       { ...result, ...shownEvidence(renderedItems(result.model), links) },
       doc,
-      context,
+      context.observe,
       documentId,
       options.onObservationFailed,
     );

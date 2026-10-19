@@ -12,7 +12,7 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
-import { frontierLookups } from "./frontier-recording.js";
+import { frontierLookup } from "./frontier-recording.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { ControlMessage } from "./next-inbox-work.js";
@@ -86,10 +86,11 @@ async function prepareBaseRequest(
           reader: input.deps.referenceReader,
           signal: input.signal,
           // The request's own blocks are the conversation the read is shown in.
-          recordingFrontier: frontierLookups(input.deps, () => input.blocks, [], {
-            threadId: input.threadId,
-            turnId: input.currentTurnId,
-          }).recording,
+          recordingFrontier: frontierLookup(
+            input.deps,
+            () => input.blocks.map((block) => block.id),
+            { threadId: input.threadId, turnId: input.currentTurnId },
+          ),
         });
   const referenceUpdates = references.blocks;
   const referencesById = new Map(referenceUpdates.map((block) => [block.id, block]));

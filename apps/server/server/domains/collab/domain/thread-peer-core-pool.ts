@@ -2,8 +2,9 @@
 import {
   type AgentEditCore,
   type DiscardedWriteReason,
+  type FrontierLookup,
   modelResult,
-  type ObservationFrontier,
+  type ObservationRequest,
   parseDocumentAddress,
   type ReadCommand,
   ResponseAttemptStaleError,
@@ -22,13 +23,10 @@ import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
   asThreadPeerAgentEditCore,
-  type FrontierLookup,
   type FrontierRooms,
   type LiveAgentEditCore,
   type RefusedResponseDocument,
   type ResponseSaveResult,
-  type RoomObservation,
-  type RoutedOutcome,
   type RoutedReadContext,
   type RoutedWriteContext,
   type RoutedWriteOutcome,
@@ -54,7 +52,12 @@ import type { Branches } from "./branches.js";
 import { ThreadPeerPullLost } from "./draft-pulls.js";
 import { DraftCasConflictError, DraftStaleUpdateError } from "./draft-store.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
-import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
+import {
+  pinStaged,
+  type ReplyDocument,
+  type ReplyRecord,
+  type ReplySaveFences,
+} from "./reply-save-fences.js";
 
 type PulledThreadPeer = {
   peerDraftId: string;
@@ -254,42 +257,47 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * The room a call renders from (decision 8): the pulled peer's Work draft; the
-   * branch's Work draft for an undo, redo or revert, which plans on that draft
-   * itself, never a peer; or the live document at its authority generation.
-   * Read before the call, so a restore in between leaves the frontier keyed to
-   * the old epoch. Never the peer id, never the draft generation.
+   * The room a call renders from (decision 8): the pulled peer's Work draft, or
+   * the live document at its authority generation. Read before the call, so a
+   * restore in between leaves the frontier keyed to the old epoch. Never the
+   * peer id, never the draft generation. M1 scaffolding: M2 renders from the
+   * room doc, whose authority identity is already bound to it.
    */
   async function roomKeyFor(
     core: AgentEditCore,
     documentId: DocumentId,
     context: WriteContext,
-    inverse: boolean,
   ): Promise<string | undefined> {
     const pulled = context.interactionContext;
     if (pulled?.mode === "threadPeer")
       return pulled.upstreamDraftId ? `draft:${pulled.upstreamDraftId}` : undefined;
-    if (inverse && context.linkView?.kind === "branch") {
-      const draftId = await input.frontierRooms.workDraftId(documentId, context.linkView.branchId);
-      return draftId === null ? undefined : `draft:${draftId}`;
-    }
-    if (core !== input.liveUtilityCore) return undefined;
+    return core === input.liveUtilityCore ? liveRoomKey(documentId) : undefined;
+  }
+
+  async function liveRoomKey(documentId: DocumentId): Promise<string | undefined> {
     const generation = await input.frontierRooms.liveGeneration(documentId);
     return generation === null ? undefined : `live:${documentId}:${generation}`;
   }
 
-  /** A call that records what it shows: its room, and the frontier its observation chains from. */
-  async function observedCall(
+  async function observation(
+    room: string | undefined,
+    lookup: FrontierLookup,
+  ): Promise<ObservationRequest | undefined> {
+    return room ? { room, prev: await lookup(room) } : undefined;
+  }
+
+  /**
+   * The room of a document a reply saves, resolved once by whichever of the
+   * reply's calls on it rendered first and reused by the rest and the save.
+   */
+  async function replyRoomKey(
+    entry: ReplyDocument,
     core: AgentEditCore,
-    documentId: DocumentId | null,
+    documentId: DocumentId,
     context: WriteContext,
-    lookup: FrontierLookup | undefined,
-    inverse = false,
-  ): Promise<{ context: WriteContext; roomKey?: string }> {
-    if (!lookup || !documentId) return { context };
-    const roomKey = await roomKeyFor(core, documentId, context, inverse);
-    if (!roomKey) return { context };
-    return { context: { ...context, observe: { prev: await lookup(roomKey) } }, roomKey };
+  ): Promise<string | undefined> {
+    entry.roomKey ??= await roomKeyFor(core, documentId, context);
+    return entry.roomKey;
   }
 
   /**
@@ -311,7 +319,7 @@ export function createThreadPeerCorePool(input: {
     throw result.refusal;
   }
 
-  async function read(command: ReadCommand, routed: RoutedReadContext): Promise<RoutedOutcome> {
+  async function read(command: ReadCommand, routed: RoutedReadContext): Promise<WriteOutcome> {
     const { grant, liveVersion, recordingFrontier, ...context } = routed;
     const requested = grant.destination;
     const documentId = documentIdFromCommand(command);
@@ -336,13 +344,14 @@ export function createThreadPeerCorePool(input: {
         ? routedContext
         : await threadPeerContext(core, documentId, routedContext);
     // An edits read shows history, not the document: it records no frontier.
-    const observed = await observedCall(
-      core,
-      documentId,
-      callContext,
-      command.format === "edits" ? undefined : recordingFrontier,
-    );
-    const outcome = withFrontiers(await core.read(command, observed.context), observed.roomKey);
+    const room =
+      recordingFrontier && documentId && command.format !== "edits"
+        ? await (pinned
+            ? replyRoomKey(pinned, core, documentId, callContext)
+            : roomKeyFor(core, documentId, callContext))
+        : undefined;
+    const observe = recordingFrontier ? await observation(room, recordingFrontier) : undefined;
+    const outcome = await core.read(command, observe ? { ...callContext, observe } : callContext);
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
       lastSeen.set(seenKey(context.threadId, documentId), {
@@ -408,21 +417,36 @@ export function createThreadPeerCorePool(input: {
       record.documents.set(documentId, entry);
     }
     let callContext: WriteContext = routedContext;
-    let roomKey: string | undefined;
+    /**
+     * What the call records. A staged write records nothing: the reply's save replaces its
+     * echo before the model's next request, and the save records in the room resolved here.
+     * An undo, redo or revert records in the version its result names it ran on.
+     */
+    const observed = async (target: WriteContext): Promise<WriteContext> => {
+      if (!recordingFrontier || !documentId) return target;
+      if (immediateInverse)
+        return {
+          ...target,
+          observeInverse: async (draftId) =>
+            observation(
+              draftId ? `draft:${draftId}` : await liveRoomKey(documentId),
+              recordingFrontier,
+            ),
+        };
+      if (entry) {
+        await replyRoomKey(entry, core, documentId, target);
+        return target;
+      }
+      const observe = await observation(
+        await roomKeyFor(core, documentId, target),
+        recordingFrontier,
+      );
+      return observe ? { ...target, observe } : target;
+    };
     const call = async () => {
       if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
       if (!immediateInverse) pinStaged(entry, callContext);
-      const observed = await observedCall(
-        core,
-        documentId,
-        callContext,
-        recordingFrontier,
-        immediateInverse,
-      );
-      roomKey = observed.roomKey;
-      // The reply's save records this document's frontier in the room its staged writes did.
-      if (entry && !immediateInverse && roomKey) entry.roomKey = roomKey;
-      return core.write(command, observed.context);
+      return core.write(command, await observed(callContext));
     };
     // An immediate drafted write that lost its branch to a close (Discard all) between the
     // ensure and its commit refuses like a save does, never as a crash.
@@ -460,10 +484,7 @@ export function createThreadPeerCorePool(input: {
         return discardedWrite(command, reason);
       }
     };
-    const outcome = withFrontiers(
-      record && !immediateInverse ? await staged() : await immediate(),
-      roomKey,
-    );
+    const outcome = record && !immediateInverse ? await staged() : await immediate();
     if (!outcome.isError && documentId) {
       if (context.threadId)
         lastSeen.set(seenKey(context.threadId, documentId), {
@@ -592,19 +613,18 @@ export function createThreadPeerCorePool(input: {
     if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
   }
 
-  /**
-   * The room of each document a reply saves, the one its staged writes recorded
-   * under, with the frontier the reply's step was planned on there.
-   */
-  async function savedRooms(
+  /** What each document a reply saves records: its reply room, chained from the model's latest. */
+  async function savedObservations(
     record: ResponseRecord,
     lookup: FrontierLookup | undefined,
-  ): Promise<Map<string, { prev: ObservationFrontier | null; roomKey: string }>> {
-    const rooms = new Map<string, { prev: ObservationFrontier | null; roomKey: string }>();
-    if (!lookup) return rooms;
-    for (const [documentId, { roomKey }] of record.documents)
-      if (roomKey) rooms.set(documentId, { roomKey, prev: await lookup(roomKey) });
-    return rooms;
+  ): Promise<Map<string, ObservationRequest>> {
+    const observations = new Map<string, ObservationRequest>();
+    if (!lookup) return observations;
+    for (const [documentId, { roomKey }] of record.documents) {
+      const observe = await observation(roomKey, lookup);
+      if (observe) observations.set(documentId, observe);
+    }
+    return observations;
   }
 
   async function routedTo(
@@ -655,7 +675,7 @@ export function createThreadPeerCorePool(input: {
       const wrote = record.participants.size > 0;
       const participantsNow = () => (wrote ? [...record.participants] : [input.liveUtilityCore]);
       // Read before the save's transaction opens, so a failed lookup cannot abort it.
-      const observed = await savedRooms(record, options?.planningFrontier);
+      const observed = await savedObservations(record, options?.recordingFrontier);
       const saveOptions = {
         ...finalizeOptions(),
         observe: (documentId: string) => observed.get(documentId),
@@ -731,7 +751,7 @@ export function createThreadPeerCorePool(input: {
                 .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
                 .map(([documentId]) => documentId),
             );
-            const saved = mergeSaveResults(responseId, results, refused, observed);
+            const saved = mergeSaveResults(responseId, results, refused);
             await options?.beforeTransactionCommit?.(saved);
             input.responseTransactions.enlist({
               commit: async () => {
@@ -812,37 +832,12 @@ export function createThreadPeerCorePool(input: {
   });
 }
 
-/**
- * Agent-edit's room-less `observation` leaves the pool keyed by its room as
- * host-only `frontiers`; an outcome never carries both.
- */
-function withFrontiers<T extends { observation?: ObservationFrontier }>(
-  outcome: T,
-  roomKey: string | undefined,
-): T & { frontiers?: RoomObservation[] } {
-  if (!("observation" in outcome)) return outcome;
-  const { observation, ...rest } = outcome;
-  return (
-    observation && roomKey ? { ...rest, frontiers: [{ roomKey, ...observation }] } : rest
-  ) as T & { frontiers?: RoomObservation[] };
-}
-
 function mergeSaveResults(
   responseId: string,
   results: readonly ResponseCommitSuccessResult[],
   refused: RefusedResponseDocument[],
-  rooms: ReadonlyMap<string, { roomKey: string }> = new Map(),
 ): ResponseSaveResult {
-  // A saved document in a recorded room names it even when no frontier could be computed:
-  // the caller still supersedes the step's rows there.
-  const documents = results
-    .flatMap((result) => result.documents)
-    .map(({ observation, ...document }) => {
-      const room = rooms.get(document.documentId);
-      return room
-        ? { ...document, room: { roomKey: room.roomKey, frontier: observation ?? null } }
-        : document;
-    });
+  const documents = results.flatMap((result) => result.documents);
   const discardedClaims = results.flatMap((result) => result.discardedClaims ?? []);
   return {
     status: "committed",

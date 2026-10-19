@@ -4,6 +4,7 @@
  */
 import type {
   ConcurrentEditInfo,
+  FrontierLookup,
   ObservationFrontier,
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
@@ -12,7 +13,7 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
-import type { FrontierLookups, ToolHandlerContext } from "../../domains/runtime/index.js";
+import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import {
   deletedFileMessage,
   isPermissionDenial,
@@ -40,21 +41,17 @@ export interface AgentEditResponseWriteLifecycle {
   ): Promise<void>;
 }
 
-/** A save records each document's frontier, chained from the one its step was planned on. */
+/** A save records each document's frontier, chained from the model's latest one (this lookup). */
 type SaveContext = Pick<ToolHandlerContext, "threadId" | "turnId"> & {
-  planningFrontier?: FrontierLookups["planning"];
+  recordingFrontier?: FrontierLookup;
 };
 
 type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      /** Host-only: each saved document's room and its frontier at the post-commit cut, or null. */
-      frontiers: Array<{
-        documentId: string;
-        roomKey: string;
-        frontier: ObservationFrontier | null;
-      }>;
+      /** Host-only: the saved documents' frontiers at the post-commit cut, for those that recorded one. */
+      frontiers: Array<{ documentId: string; frontier: ObservationFrontier }>;
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
       refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
@@ -131,7 +128,9 @@ export function createAgentEditResponseWriteLifecycle(
             document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
           ),
           frontiers: result.documents.flatMap((document) =>
-            document.room ? [{ documentId: document.documentId, ...document.room }] : [],
+            document.frontier
+              ? [{ documentId: document.documentId, frontier: document.frontier }]
+              : [],
           ),
           concurrentEdits: result.documents.flatMap((document) =>
             document.concurrentEdits
