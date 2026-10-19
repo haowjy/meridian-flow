@@ -278,10 +278,10 @@ function Chip({
     >
       <Info aria-hidden className="size-3.5 shrink-0" />
       <span className="sr-only">{full}</span>
-      <span aria-hidden className="min-w-0 truncate @max-[16rem]:hidden">
+      <span aria-hidden className="min-w-0 truncate @max-[13rem]:hidden">
         {sentence}
       </span>
-      <span aria-hidden className="hidden min-w-0 truncate @max-[16rem]:inline">
+      <span aria-hidden className="hidden min-w-0 truncate @max-[13rem]:inline">
         {shortRemovalSentence(documents)}
       </span>
       <DismissNotice projectId={projectId} surface={surface} className="size-5 shrink-0" />
