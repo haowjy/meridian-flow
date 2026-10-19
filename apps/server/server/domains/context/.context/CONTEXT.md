@@ -273,3 +273,18 @@ no `results://` scheme. Neither Recent list lives here: chat Recent reads
 - [File access policy](../../file-policy/.context/CONTEXT.md)
 - [Collab codec and authority](../../collab/.context/CONTEXT.md)
 - [Deferred work](FUTURE.md)
+
+## Thread-folder presentation
+
+Catalog folder `name` and `path` are placement coordinates. Associated roots
+add `displayName`, batch-joined from chat metadata (a subagent uses its spawning
+parent's title; missing metadata uses `Untitled chat`). Replica locations never
+use that label as a basename. Human folder ancestry uses catalog presentation,
+not source-path segments.
+
+Title mutation and targeted root-label publication commit atomically. The
+catalog advances its publisher fence before loading labels, then takes sorted
+scope-head locks and upserts only affected roots with newer observation versions.
+This orders concurrent title publishers and namespace commits without rebuilding
+scopes or invalidating subtrees. Full reconciliation and targeted updates share
+the same delta persistence and wake-hint path.

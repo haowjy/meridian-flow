@@ -33,7 +33,6 @@
  * opens; once it opens, the navigation completes.
  */
 
-import { resolveDocumentHref } from "@meridian/contracts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -125,7 +124,12 @@ export function useLinkFollower({
   const chatId = ready?.chatId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const threadId = ready?.threadId;
-  const variables = ready?.variables;
+  const currentNotes = ready?.variables?.THREAD;
+  const parentNotes = ready?.variables?.PARENT;
+  const variables = useMemo(
+    () => (currentNotes || parentNotes ? { THREAD: currentNotes, PARENT: parentNotes } : undefined),
+    [currentNotes, parentNotes],
+  );
   const variablesKey = JSON.stringify(variables ?? {});
   const holderDocumentId = ready?.holderDocumentId ?? null;
 
@@ -260,11 +264,6 @@ export function useLinkFollower({
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
-      if (ref === null && baseUri === null && target.kind === "scheme") {
-        const parsed = resolveDocumentHref(target.uri, null, { variables });
-        if (!parsed) return;
-        target = { kind: "scheme", uri: parsed.uri + parsed.suffix };
-      }
       const controller = new AbortController();
       if (gesture === "current") {
         if (currentFollow.current) abortFollow(currentFollow.current);
@@ -314,7 +313,7 @@ export function useLinkFollower({
         if (currentFollow.current === controller) currentFollow.current = null;
       });
     },
-    [abortFollow, active, clearShown, pending, projectId, resolution, baseUri, variables],
+    [abortFollow, active, clearShown, pending, projectId, resolution],
   );
 
   const follow = useCallback(

@@ -4,6 +4,7 @@ import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 import { decodeWorkSlug, type WorkSlug } from "../works/work-slug.js";
 
 const notesLocationSchema = z.object({
+  threadId: z.string().uuid().optional(),
   owner: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("work"),

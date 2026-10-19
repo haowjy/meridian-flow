@@ -236,6 +236,11 @@ export const folders = pgTable(
   },
   (table) => [
     check("folders_thread_root_only", sql`${table.threadId} IS NULL OR ${table.parentId} IS NULL`),
+    index("folders_thread_live")
+      .on(table.threadId)
+      .where(
+        sql`${table.threadId} IS NOT NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`,
+      ),
     uniqueIndex("folders_source_thread_live")
       .on(table.contextSourceId, table.threadId)
       .where(

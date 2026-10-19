@@ -40,6 +40,8 @@ export type CatalogFolderEntry = {
   sourceId: ContextSourceId;
   parentId: ContextSourceId | FolderId;
   name: string;
+  /** Presentation only. Placement and CAS always use name/path. */
+  displayName?: string;
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;

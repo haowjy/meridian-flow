@@ -173,10 +173,13 @@ export function renderWorkContext(input: {
   return [
     "<work_context>",
     ...currentLines(input.current, writes),
+    "  notes: scratch://$THREAD/ is your own notes folder. Other chats in this Work can read it; permissions remain owner-wide. Bare scratch:// stays the owner-wide space.",
+    "  scratch://$PARENT/ is the notes folder of the chat that started you (spawn, fork or handoff). A root chat has no $PARENT. Variables require chat scope.",
+    "  Results carry full canonical addresses. Use those addresses in prose, note links and keep-open lines, not variables. Rebinding changes your current notes address and moves no old notes.",
     ...(input.rootThreadRef
       ? [
           input.current.isNoWork
-            ? `  scratch: bare scratch:// is this chat's notes at ${lineageScratch(input.rootThreadRef)}, shared with its forks and subagents. A handoff starts fresh notes.`
+            ? `  scratch: bare scratch:// is this chat's notes at ${lineageScratch(input.rootThreadRef)}, shared with its lineage. A handoff starts a new lineage.`
             : `  scratch: bare scratch:// is this Work's notes at ${workScratch(input.current.slug)}. Earlier chat notes remain at ${lineageScratch(input.rootThreadRef)}.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]

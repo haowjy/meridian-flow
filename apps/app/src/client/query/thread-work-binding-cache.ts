@@ -99,8 +99,43 @@ export function invalidateThreadProjectionDependencies(
 
 function patchSnapshot(client: QueryClient, threadId: string, workId: string | null): void {
   client.setQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId), (current) =>
-    current ? { ...current, thread: { ...current.thread, workId } } : current,
+    current
+      ? {
+          ...current,
+          thread: {
+            ...current.thread,
+            workId,
+            ...(current.thread.workId !== workId ? { notesScope: undefined } : {}),
+          },
+        }
+      : current,
   );
+  // A parent rebind changes dependent chat syntax too. Clear only its prepared
+  // parent location while the existing snapshot read acquires the new scope.
+  for (const [key, snapshot] of client.getQueriesData<ThreadSnapshotResponse>({
+    queryKey: threadQueryKeys.all,
+    predicate: ({ queryKey }) => queryKey.length === 3 && queryKey[2] === "snapshot",
+  })) {
+    const parent = snapshot?.thread.notesScope?.parent;
+    if (!snapshot || parent?.threadId !== threadId) continue;
+    const catalog = client.getQueryData<ListWorksResponse>(
+      projectQueryKeys.works(snapshot.thread.projectId),
+    );
+    const work = workId ? workFromSnapshot(catalog, workId) : null;
+    if (
+      work &&
+      (work.isNoWork
+        ? parent.owner.kind === "lineage"
+        : parent.owner.kind === "work" && parent.owner.workSlug === work.slug)
+    )
+      continue;
+    client.setQueryData<ThreadSnapshotResponse>(key, (current) => {
+      if (!current?.thread.notesScope) return current;
+      const { parent: _parent, ...notesScope } = current.thread.notesScope;
+      return { ...current, thread: { ...current.thread, notesScope } };
+    });
+    void client.invalidateQueries({ queryKey: key, exact: true });
+  }
 }
 
 export function convergeThreadWorkBinding(
@@ -127,8 +162,8 @@ export function convergeThreadWorkBinding(
           workId: work.id,
           work: { id: work.id, title: work.name },
         });
-        patchSnapshot(client, signal.threadId, work.id);
       }
+      patchSnapshot(client, signal.threadId, work?.id ?? projectedWorkId);
       invalidateThreadProjectionDependencies(client, {
         threadId: signal.threadId,
         projectId: signal.projectId,

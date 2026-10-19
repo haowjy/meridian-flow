@@ -153,6 +153,8 @@ export type InternalLinkResolver = {
 };
 
 export type LinkAnswerCache = {
+  /** Input spelling in the registered scope, shared by cache keys and follow outcomes. */
+  canonicalLink(link: LinkKey): LinkKey | null;
   subscribe: (listener: () => void) => () => void;
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
@@ -423,6 +425,12 @@ export function createLinkAnswerCache(): LinkAnswerCache {
   };
 
   return {
+    canonicalLink(link) {
+      const internal = internalLink(link);
+      return internal
+        ? { ref: internal.question.ref, href: linkTargetHref(internal.question.target) }
+        : null;
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

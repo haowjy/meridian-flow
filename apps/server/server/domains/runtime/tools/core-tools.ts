@@ -13,7 +13,7 @@ import {
   type AgentEditResultCommand,
   type AgentEditResultV1,
   agentEditResultCommand,
-  DOCUMENT_NAMES_DESCRIPTION,
+  DOCUMENT_NAMES_DESCRIPTION as BASE_DOCUMENT_NAMES_DESCRIPTION,
   DocumentVersionSchema,
   modelResult,
   ReadToolInputSchema,
@@ -38,6 +38,8 @@ import { modelToolSchema } from "./model-tool-schema.js";
 import { renderSearchResult } from "./search-result.js";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
 import { renderWorkResult } from "./work-result.js";
+
+const DOCUMENT_NAMES_DESCRIPTION = `${BASE_DOCUMENT_NAMES_DESCRIPTION}\nIn chat scope, scratch://$THREAD/ is your notes folder (other chats in this Work can read it). scratch://$PARENT/ is the folder of the chat that started you; a root chat has no $PARENT. Bare scratch:// remains owner-wide. Results carry canonical addresses: use those in prose, note links and keep-open lines.`;
 
 /** A Work slug as the model writes it: trimmed, and `@x` means Work `x`. */
 const WorkRefSchema = z

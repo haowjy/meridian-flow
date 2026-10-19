@@ -476,6 +476,8 @@ export {
 
 /** Prepared owner/thread locations; variables are input shorthand, never stored authority. */
 export type ContextNotesLocation = {
+  /** Scope refresh dependency, never part of URI authority. */
+  threadId?: string;
   owner: Extract<ParsedContextAuthority, { kind: "work" | "lineage" }>;
   threadRef: string;
 };

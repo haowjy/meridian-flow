@@ -331,7 +331,7 @@ export function projectCatalogFile(
 }
 
 function projectCatalogDirectory(
-  projectId: string,
+  _projectId: string,
   entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "folder" }>,
   folder: FolderNamespaceRecord | undefined,
   placement: ResourcePlacement,
@@ -344,7 +344,7 @@ function projectCatalogDirectory(
     kind: "dir",
     entryId: entry.entryId,
     parentId: entry.parentId,
-    name: entry.name,
+    name: entry.displayName ?? entry.name,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     ...(entry.navigationOnly ? { navigationOnly: true } : {}),

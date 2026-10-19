@@ -3,6 +3,7 @@
  * list/get, soft-delete, and cost recomputation). Thread.workId is projected from
  * the primary thread_works row, not stored on threads.
  */
+
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type {
@@ -19,6 +20,7 @@ import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "dri
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
 import type { LineageScratchLifecycle } from "../../../context/index.js";
+import type { ThreadFolderLabelMutationPort } from "../../../context/ports/context-catalog.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -183,7 +185,11 @@ async function insertThreadRow(
 
 export function createDrizzleThreadRepository(
   db: DrizzleDatabase,
-  options: { statusReader?: ThreadStatusReader; lineageScratch: LineageScratchLifecycle },
+  options: {
+    statusReader?: ThreadStatusReader;
+    lineageScratch: LineageScratchLifecycle;
+    notesLabels?: ThreadFolderLabelMutationPort;
+  },
 ): ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory {
   const statusReader = options.statusReader;
   const lineageScratch = options.lineageScratch;
@@ -530,18 +536,21 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
     async updateTitle(id, title) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({ title, updatedAt: new Date() })
-        .where(eq(schema.threads.id, id))
-        .returning(threadColumns);
-      if (!row) throw new Error(`Thread not found: ${id}`);
-      const primary = await currentDrizzleDb(db)
-        .select({ workId: schema.threadWorks.workId })
-        .from(schema.threadWorks)
-        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-        .limit(1);
-      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+      return runInDrizzleTransaction(db, async () => {
+        const [row] = await currentDrizzleDb(db)
+          .update(schema.threads)
+          .set({ title, updatedAt: new Date() })
+          .where(eq(schema.threads.id, id))
+          .returning(threadColumns);
+        if (!row) throw new Error(`Thread not found: ${id}`);
+        const primary = await currentDrizzleDb(db)
+          .select({ workId: schema.threadWorks.workId })
+          .from(schema.threadWorks)
+          .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+          .limit(1);
+        await options.notesLabels?.updateThreadFolderLabels(id);
+        return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+      });
     },
     async setAiWriteMode(id, mode) {
       const rows = await currentDrizzleDb(db)

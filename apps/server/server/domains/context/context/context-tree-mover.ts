@@ -518,8 +518,13 @@ export class ContextTreeMover {
     }
     const destinationEntry = await this.inspect(destination);
     if (!destinationEntry.ok) return destinationEntry;
+    const parsedDestination = parseContextUri(destination.canonical);
+    const associatedRoot =
+      parsedDestination.ok &&
+      Boolean(parsedDestination.value.threadRef) &&
+      !parsedDestination.value.path;
     const targetPath =
-      destinationEntry.value?.kind === "directory"
+      destinationEntry.value?.kind === "directory" || associatedRoot
         ? joinPath(destination.path, sourceBasename)
         : destination.path.split("/").filter(Boolean).join("/");
     if (!basename(targetPath)) {

@@ -173,3 +173,21 @@ export function catalogFiles(view: CatalogCacheView): CatalogFileEntry[] {
     (entry): entry is CatalogFileEntry => entry.kind === "file",
   );
 }
+
+/** Human folder ancestry; storage path segments remain namespace coordinates. */
+export function catalogEntryParentLabels(
+  view: CatalogCacheView,
+  entry: Extract<CatalogEntry, { kind: "folder" | "file" }>,
+): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  let parentId = entry.parentId;
+  while (!seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = view.entries.get(parentId);
+    if (parent?.kind !== "folder") break;
+    labels.unshift(parent.displayName ?? parent.name);
+    parentId = parent.parentId;
+  }
+  return labels;
+}

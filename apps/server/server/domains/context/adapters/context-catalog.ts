@@ -42,6 +42,7 @@ import type {
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
+  ThreadFolderLabelMutationPort,
   WorkAuthorityCatalogMutationPort,
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
@@ -50,6 +51,7 @@ import { loadJoinedFrom } from "../tree/forwards.js";
 import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
+import { loadThreadFolderLabels } from "./thread-folder-labels.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
 
@@ -312,6 +314,10 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           },
         ]),
   );
+  const folderLabels = await loadThreadFolderLabels(
+    db,
+    folderRows.map((row) => row.id),
+  );
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -365,6 +371,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         sourceId: source.id,
         parentId: folder.parentId ?? source.id,
         name: folder.name,
+        ...(folderLabels.has(folder.id) ? { displayName: folderLabels.get(folder.id) } : {}),
         path,
         uri: contextUriFromSourceLocation(scheme, path.join("/"), authority),
         hasChildren: (childCounts.get(folder.id) ?? 0) > 0,
@@ -450,7 +457,8 @@ export function createDrizzleContextCatalog(
 ): ContextCatalog &
   ContextCatalogMutationPort &
   ProjectCatalogLifecyclePort &
-  WorkAuthorityCatalogMutationPort {
+  WorkAuthorityCatalogMutationPort &
+  ThreadFolderLabelMutationPort {
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
   const retainedCommitsPerScope = Math.max(
@@ -542,17 +550,42 @@ export function createDrizzleContextCatalog(
       }
     }
     if (changes.length === 0) return;
+    await publishChanges(tx, scope, head, changes, commitId);
+  }
+
+  async function publishChanges(
+    tx: Database,
+    scope: CatalogScope,
+    head: typeof contextCatalogScopeHeads.$inferSelect,
+    changes: CatalogChange[],
+    commitId: string,
+  ) {
     const revision = head.headRevision + 1;
-    await tx.delete(contextCatalogEntries).where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-    if (authoritative.length > 0) {
-      await tx.insert(contextCatalogEntries).values(
-        authoritative.map((entry) => ({
-          scopeKey: head.scopeKey,
-          entryId: entry.entryId,
-          entry,
-        })),
-      );
-    }
+    const removed = changes.flatMap((change) =>
+      change.operation === "delete" ? [change.entryId] : [],
+    );
+    if (removed.length)
+      await tx
+        .delete(contextCatalogEntries)
+        .where(
+          and(
+            eq(contextCatalogEntries.scopeKey, head.scopeKey),
+            inArray(contextCatalogEntries.entryId, removed),
+          ),
+        );
+    const entries = changes.flatMap((change) =>
+      change.operation === "upsert" ? [change.entry] : [],
+    );
+    if (entries.length)
+      await tx
+        .insert(contextCatalogEntries)
+        .values(
+          entries.map((entry) => ({ scopeKey: head.scopeKey, entryId: entry.entryId, entry })),
+        )
+        .onConflictDoUpdate({
+          target: [contextCatalogEntries.scopeKey, contextCatalogEntries.entryId],
+          set: { entry: sql`excluded.entry` },
+        });
     await tx.insert(contextCatalogCommits).values({
       commitId,
       scopeKey: head.scopeKey,
@@ -817,6 +850,99 @@ export function createDrizzleContextCatalog(
         userIds: project?.isPersonal ? [project.userId] : [],
       });
     },
+    async updateThreadFolderLabels(threadId) {
+      await runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db) as Database;
+        const vf = visibleFolders(LIVE_TREE);
+        const affected = await tx
+          .select({
+            id: vf.id,
+            workId: contextSources.workId,
+            rootThreadId: contextSources.rootThreadId,
+            projectId: sql<
+              string | null
+            >`COALESCE(${contextSources.projectId}, ${works.projectId})`,
+          })
+          .from(vf)
+          .innerJoin(threads, eq(threads.id, vf.threadId))
+          .innerJoin(contextSources, eq(contextSources.id, vf.contextSourceId))
+          .leftJoin(works, eq(works.id, contextSources.workId))
+          .where(
+            and(
+              eq(contextSources.slug, "scratch"),
+              sql`(${threads.id} = ${threadId} OR (${threads.kind} = 'subagent' AND ${threads.parentThreadId} = ${threadId}))`,
+            ),
+          );
+        if (!affected.length) return;
+        const ids = affected.map((row) => row.id);
+        const scopes = new Map<string, CatalogScope>();
+        const rootsByScope = new Map<string, string[]>();
+        for (const row of affected) {
+          if (!row.projectId) continue;
+          const scope: CatalogScope | null = row.workId
+            ? { kind: "work", projectId: row.projectId, workId: row.workId }
+            : row.rootThreadId
+              ? { kind: "lineage", projectId: row.projectId, rootThreadId: row.rootThreadId }
+              : null;
+          if (!scope) continue;
+          const key = catalogScopeKey(scope);
+          scopes.set(key, scope);
+          const roots = rootsByScope.get(key) ?? [];
+          roots.push(row.id);
+          rootsByScope.set(key, roots);
+        }
+        if (!scopes.size) return;
+        const projectIds = [
+          ...new Set(
+            [...scopes.values()].flatMap((scope) =>
+              scope.kind === "user" ? [] : [scope.projectId],
+            ),
+          ),
+        ];
+        await availabilityMutations.advance({ projectIds, userIds: [] });
+        const version = await availabilityMutations.publishNamespace({ projectIds, userIds: [] });
+        const labels = await loadThreadFolderLabels(tx, ids);
+        for (const [scopeKey, scope] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
+          await tx.execute(
+            sql`SELECT 1 FROM ${contextCatalogScopeHeads} WHERE ${contextCatalogScopeHeads.scopeKey} = ${scopeKey} FOR UPDATE`,
+          );
+          const [head] = await tx
+            .select()
+            .from(contextCatalogScopeHeads)
+            .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
+          if (!head) throw new Error("Catalog head disappeared");
+          // Re-read only these rows under the head lock, so a rename/delete commit cannot be overwritten.
+          const rows = await tx
+            .select()
+            .from(contextCatalogEntries)
+            .where(
+              and(
+                eq(contextCatalogEntries.scopeKey, scopeKey),
+                inArray(contextCatalogEntries.entryId, rootsByScope.get(scopeKey) ?? []),
+              ),
+            );
+          const changes: CatalogChange[] = [];
+          for (const row of rows) {
+            if (
+              row.entry.kind !== "folder" ||
+              !labels.has(row.entryId) ||
+              row.entry.displayName === labels.get(row.entryId)
+            )
+              continue;
+            changes.push({
+              operation: "upsert",
+              ordinal: changes.length,
+              entry: {
+                ...row.entry,
+                displayName: labels.get(row.entryId),
+                observationVersion: version,
+              },
+            });
+          }
+          if (changes.length) await publishChanges(tx, scope, head, changes, randomUUID());
+        }
+      });
+    },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();
       if (unique.length === 0) return;
@@ -855,7 +981,6 @@ export function createDrizzleContextCatalog(
             .limit(1);
           if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
           const changes: CatalogChange[] = [];
-          const entries: CatalogEntry[] = [];
           const existingRows = await tx
             .select({ entryId: contextCatalogEntries.entryId, entry: contextCatalogEntries.entry })
             .from(contextCatalogEntries)
@@ -883,56 +1008,10 @@ export function createDrizzleContextCatalog(
             };
             const existing = existingById.get(work.id);
             if (existing && stableJson(existing) === stableJson(entry)) continue;
-            entries.push(entry);
             changes.push({ operation: "upsert", ordinal: changes.length, entry });
           }
           if (changes.length === 0) continue;
-          const revision = head.headRevision + 1;
-          await tx
-            .insert(contextCatalogEntries)
-            .values(
-              entries.map((entry) => ({
-                scopeKey: head.scopeKey,
-                entryId: entry.entryId,
-                entry,
-              })),
-            )
-            .onConflictDoUpdate({
-              target: [contextCatalogEntries.scopeKey, contextCatalogEntries.entryId],
-              set: { entry: sql`excluded.entry` },
-            });
-          await tx.insert(contextCatalogCommits).values({
-            commitId: randomUUID(),
-            scopeKey: head.scopeKey,
-            firstRevision: revision,
-            lastRevision: revision,
-            changes,
-          });
-          const oldestRevision = Math.max(1, revision - retainedCommitsPerScope + 1);
-          await tx
-            .update(contextCatalogScopeHeads)
-            .set({ headRevision: revision, oldestRevision, updatedAt: new Date() })
-            .where(eq(contextCatalogScopeHeads.scopeKey, head.scopeKey));
-          await tx
-            .delete(contextCatalogCommits)
-            .where(
-              and(
-                eq(contextCatalogCommits.scopeKey, head.scopeKey),
-                lt(contextCatalogCommits.lastRevision, oldestRevision),
-              ),
-            );
-          runAfterDrizzleCommit(async () => {
-            if (!wakePort) return;
-            try {
-              await wakePort.publish({
-                type: "context-catalog-hint",
-                scope,
-                headRevision: String(revision),
-              });
-            } catch {
-              // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
-            }
-          });
+          await publishChanges(tx, scope, head, changes, randomUUID());
         }
       });
     },

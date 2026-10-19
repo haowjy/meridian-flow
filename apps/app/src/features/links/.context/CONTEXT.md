@@ -12,8 +12,10 @@ cache (the Editor passes the per-editor cache its decorations draw from):
 ```ts
 resolution.registerResolver(
   createProjectLinkResolver(scope, index, settlements), // settlements: the account's memo
-  { baseUri, projectId },
+  { baseUri, projectId, variables },
 );
+// variables: prepared chat notes scope only (Editor holders have none).
+// Scope changes register a new generation. Raw syntax is canonical before cache keys.
 // local, synchronously, per question: `resolveStoredLink` over the scope's catalog
 // (`project-link-catalog.ts`: the complete index, the memo as `settlement()`):
 //   malformed ref                          -> gone (never the address)
@@ -258,3 +260,10 @@ Catalog URIs remain canonical. Nothing here rewrites schemes or derives identity
 from a path or label.
 
 [link-following]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/documents/identity/link-following.md
+
+`ChatScreen` retains the project list's optimistic title/Work projection but
+sources `notesScope` from the validated thread snapshot. A Work mismatch clears
+the map until that same snapshot query catches up. The binding cache also
+refreshes cached child/fork/handoff snapshots whose prepared parent identity
+names a rebound chat. No link click fetches a parent, and no Editor holder
+receives this map.

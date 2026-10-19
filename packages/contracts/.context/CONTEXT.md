@@ -116,3 +116,12 @@ lookups remain explicit projections and cannot stand in for full DTO validation.
 
 Golden protocol fixtures are test-only exports at `@meridian/contracts/test-support`.
 Production barrels do not re-export test data.
+
+`contextUriVariables` formats prepared current/parent notes locations. Parsing
+expands only a whole `$THREAD`/`$PARENT` first segment after `scheme://`, then
+applies the destination scheme's ordinary grammar. Missing or unknown variables
+report `unresolvedVariable`. Inner variable-like names and `$5 bills` are literal.
+`notesScope` on the validated thread projection supplies browser and mf scope;
+Editor holders supply none. Persisted links, refs, admission and keep-open lines
+are canonical-only. Catalog folder `displayName` is presentation; `name`/`path`
+remain source coordinates even when a title changes.

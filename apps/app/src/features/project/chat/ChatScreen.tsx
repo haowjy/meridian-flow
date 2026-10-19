@@ -9,6 +9,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
+import { useMemo } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { topChatOf } from "@/client/query/useTopChat";
@@ -137,7 +138,22 @@ function ChatScreenLoaded({
     settled: historySettled,
     refetch,
   } = useThreadSnapshotSync(threadId);
-  const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
+  const projectedThread = projectThreads.find((t) => t.id === threadId);
+  const thread = useMemo(
+    () =>
+      projectedThread
+        ? {
+            ...projectedThread,
+            // The list owns optimistic Work/title updates; the validated thread snapshot
+            // owns prepared notes scope. Never reuse it across a pending Work rebind.
+            notesScope:
+              snapshotThread?.workId === projectedThread.workId
+                ? snapshotThread.notesScope
+                : undefined,
+          }
+        : snapshotThread,
+    [projectedThread, snapshotThread],
+  );
   const ancestors = snapshot?.ancestors ?? [];
   const activity = useThreadActivity({
     threadId: thread?.parentThreadId ?? threadId,

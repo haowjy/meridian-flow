@@ -3,6 +3,7 @@ import {
   isOwnedContextScheme,
   type ParsedContextAuthority,
   parseContextUri,
+  sourceLocationFromContextUri,
 } from "@meridian/contracts/context-uri";
 import type {
   ContextOperationReceipt,
@@ -281,7 +282,7 @@ export function namespaceOutcomeMatches(
     return (
       source.ok &&
       source.value.scheme === attempt.request.scheme &&
-      source.value.path === normalizedPath(attempt.request.body.path) &&
+      sourceLocationFromContextUri(source.value) === normalizedPath(attempt.request.body.path) &&
       authorityMatches(attempt.request.scheme, source.value.authority, attempt.request) &&
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
@@ -300,7 +301,7 @@ export function namespaceOutcomeMatches(
       source.ok &&
       destination.ok &&
       source.value.scheme === attempt.request.scheme &&
-      source.value.path === normalizedPath(attempt.request.body.path) &&
+      sourceLocationFromContextUri(source.value) === normalizedPath(attempt.request.body.path) &&
       authorityMatches(attempt.request.scheme, source.value.authority, {
         workId: attempt.request.body.sourceWorkId ?? null,
         workSlug: attempt.request.sourceWorkSlug,
@@ -314,7 +315,7 @@ export function namespaceOutcomeMatches(
       (attempt.request.body.destinationParent?.kind === "folder"
         ? destination.value.path.split("/").at(-1) === (attempt.request.body.newName ?? currentName)
         : destination.value.scheme === attempt.request.body.destinationScheme &&
-          destination.value.path === destinationPath &&
+          sourceLocationFromContextUri(destination.value) === destinationPath &&
           authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
             workId: attempt.request.body.destinationWorkId ?? null,
             workSlug: attempt.request.destinationWorkSlug,
@@ -677,8 +678,8 @@ export function reconcileResourceNamespace(input: {
       const parent =
         intent?.desired.kind === "set-location" ? intent.desired.destination.parent : null;
       const observed =
-        parent?.kind === "folder"
-          ? await input.transport.lookupIdentity(intent!.projectId, {
+        parent?.kind === "folder" && intent
+          ? await input.transport.lookupIdentity(intent.projectId, {
               kind: "folder",
               id: parent.folderId,
             })

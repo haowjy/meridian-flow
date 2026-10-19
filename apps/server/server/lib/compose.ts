@@ -496,6 +496,7 @@ export async function createProductionAppPorts(input: {
     workProjectionMutation,
     lineageScratch,
     statusReader,
+    contextCatalog,
   );
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);

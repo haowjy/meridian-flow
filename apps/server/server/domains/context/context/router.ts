@@ -54,7 +54,7 @@ import type {
 } from "../ports/context-port.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
-import { type ParseContextUriOptions, parseContextUri } from "./uri.js";
+import { type ParseContextUriOptions, type ParsedContextUri, parseContextUri } from "./uri.js";
 
 export interface ContextSourceBinding {
   adapter: ContextSchemeAdapter;
@@ -389,8 +389,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     deps.moveLinks,
   );
 
-  async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
-    const parsed = parseContextUri(uri, parseOptions);
+  async function resolve(
+    uri: string,
+    parsedInput?: ParsedContextUri,
+  ): Promise<Result<Dispatch, ContextError>> {
+    const parsed = parsedInput ? Ok(parsedInput) : parseContextUri(uri, parseOptions);
     if (!parsed.ok) {
       const { error } = parsed;
       const files =
@@ -530,15 +533,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     uri: string,
     origin?: WriteProvenance,
   ): Promise<Result<MutationDispatch, ContextError>> {
-    const resolved = await resolve(uri);
-    if (!resolved.ok) return resolved;
     const parsedTail = parseContextUri(uri, parseOptions);
     if (!parsedTail.ok) return parsedTail;
     const validation = validateContextEntryPath(parsedTail.value.path, { allowRoot: true });
-    if (validation.ok) return Ok(mutationDispatch(resolved.value, origin));
+    if (validation.ok) {
+      const resolved = await resolve(uri, parsedTail.value);
+      return resolved.ok ? Ok(mutationDispatch(resolved.value, origin)) : resolved;
+    }
     return Err({
       code: "invalid_uri",
-      uri: resolved.value.canonical,
+      uri: parsedTail.value.normalized,
       reason:
         validation.reason === "name/reserved-authority-qualifier"
           ? `File and folder names cannot begin with "@" (${validation.segment ?? "unknown"})`

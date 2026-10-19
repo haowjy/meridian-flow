@@ -11,7 +11,11 @@ import {
   parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
-import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
+import {
+  type CatalogCacheView,
+  catalogChildren,
+  catalogEntryParentLabels,
+} from "@meridian/resource-replica";
 import {
   authoritativeReferenceForFile,
   canonicalReferenceUri,
@@ -238,7 +242,7 @@ export function createReferenceBrowserController(
         )
         .sort((a, b) => b.action.prefix.length - a.action.prefix.length)[0] ?? null;
     const parsed = explicitUri();
-    containerScheme = parsed?.path === "" ? parsed.scheme : null;
+    containerScheme = parsed?.path === "" && !parsed.threadRef ? parsed.scheme : null;
     const namespaceScope = parsed
       ? scopes.find((scope) => {
           if (parsed.scheme === "kb" || parsed.scheme === "manuscript")
@@ -543,7 +547,7 @@ function rootRows(
         continue;
       }
       if (entry.kind !== "source") continue;
-      const sourceRow = rowForEntry(entry, authorities);
+      const sourceRow = rowForEntry(view, entry, authorities);
       if (sourceRow && (!populated || populated.has(entry.entryId))) rows.push(sourceRow);
       appendDescendants(rows, view, entry.entryId, authorities, populated);
     }
@@ -560,7 +564,7 @@ function appendDescendants(
 ): void {
   for (const entry of catalogChildren(view, parentId)) {
     if (entry.kind === "authority") continue;
-    const row = rowForEntry(entry, authorities);
+    const row = rowForEntry(view, entry, authorities);
     if (row && (entry.kind === "file" || !populated || populated.has(entry.entryId)))
       rows.push(row);
     if (entry.kind === "folder")
@@ -589,7 +593,7 @@ function drilledRows(
   return entries.flatMap((entry) => {
     if (entry.kind === "authority" || (entry.kind !== "file" && !populated.has(entry.entryId)))
       return [];
-    const row = rowForEntry(entry, authorities);
+    const row = rowForEntry(view, entry, authorities);
     return row ? [row] : [];
   });
 }
@@ -612,7 +616,7 @@ function populatedContainers(
   }
   for (const entry of view.entries.values()) {
     if (entry.kind !== "file") continue;
-    const row = rowForFile(entry, authorities);
+    const row = rowForFile(view, entry, authorities);
     if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
     let parentId: string | undefined = entry.parentId;
     while (parentId && !populated.has(parentId)) {
@@ -649,10 +653,11 @@ function rowForAuthority(
 }
 
 function rowForEntry(
+  view: CatalogCacheView,
   entry: BrowsableCatalogEntry,
   authorities: ReferenceAuthorityIndex,
 ): ReferenceRow | null {
-  if (entry.kind === "file") return rowForFile(entry, authorities);
+  if (entry.kind === "file") return rowForFile(view, entry, authorities);
   const prefix = canonicalReferenceUri(entry.scope, entry.uri, authorities);
   if (!prefix) return null;
   if (entry.kind === "source") {
@@ -675,8 +680,8 @@ function rowForEntry(
   return {
     kind: "folder",
     rowId: `folder:${catalogScopeKey(entry.scope)}:${entry.entryId}`,
-    label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
+    label: entry.displayName ?? entry.name,
+    location: catalogEntryParentLabels(view, entry).join("/"),
     matchAliases: [],
     action: {
       type: "navigate",
@@ -689,6 +694,7 @@ function rowForEntry(
 }
 
 function rowForFile(
+  view: CatalogCacheView,
   entry: CatalogFileEntry,
   authorities: ReferenceAuthorityIndex,
 ): Extract<ReferenceRow, { kind: "file" }> | null {
@@ -698,7 +704,7 @@ function rowForFile(
     kind: "file",
     rowId: `file:${entry.entryId}`,
     label: entry.name,
-    location: entry.path.slice(0, -1).join("/"),
+    location: catalogEntryParentLabels(view, entry).join("/"),
     fileKind: entry.editable ? "document" : "asset",
     aliases: entry.aliases,
     matchedAlias: null,

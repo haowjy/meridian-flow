@@ -61,3 +61,19 @@ Tool policy does not gate model-call cost. `turn-accounting.ts` uses
 `CreditLedger` and `TreeBudget`; `costing/` resolves token rates and applies the
 fixed 1.15 multiplier before ledger debit. `Usage` is the shared runtime DTO,
 and pricing rejects a negative uncached remainder rather than clamping it.
+
+## Chat notes addresses
+
+`$THREAD` and `$PARENT` expand only at address/href intake from prepared chat
+scope, before parsing and file-policy selection. The thread projection carries
+current and derivation-source locations; uploads still use the top primary chat.
+Both policy and the ContextPort receive the same variable map. Editor holders,
+admission references and keep-open lines are canonical-only.
+
+The model uses `scratch://$THREAD/` for its own notes and `$PARENT` for the
+originating chat's notes (no parent on an ordinary root). Permissions remain
+owner-wide. Bare Scratch remains owner-wide and rebinding moves nothing.
+Results carry canonical addresses; model prose, note links and keep-open lines
+should reuse them. AI-written link preparation and assignment share the same
+map. `return_result` accepts raw artifact strings, expands them in its handler,
+then applies the unchanged canonical capture schema before saving object refs.

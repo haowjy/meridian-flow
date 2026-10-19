@@ -505,6 +505,13 @@
       "when": 1792445692774,
       "tag": "0077_thread_notes_folder_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792446446907,
+      "tag": "0078_thread_notes_labels_index",
+      "breakpoints": true
     }
   ]
 }

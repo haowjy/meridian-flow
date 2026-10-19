@@ -5,7 +5,7 @@ import { type SQL, sql } from "drizzle-orm";
 
 function notesLocation(threadId: SQL): SQL<ContextNotesLocation | null> {
   return sql`(SELECT CASE WHEN note.ref IS NOT NULL AND (NOT w.is_no_work OR root.ref IS NOT NULL)
-    THEN jsonb_build_object('threadRef', note.ref, 'owner', CASE WHEN w.is_no_work
+    THEN jsonb_build_object('threadId', note.id, 'threadRef', note.ref, 'owner', CASE WHEN w.is_no_work
       THEN jsonb_build_object('kind', 'lineage', 'rootThreadRef', root.ref)
       ELSE jsonb_build_object('kind', 'work', 'workSlug', w.slug) END) END
     FROM threads note JOIN thread_works membership ON membership.thread_id = note.id AND membership.is_primary

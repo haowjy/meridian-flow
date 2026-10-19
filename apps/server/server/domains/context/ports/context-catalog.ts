@@ -47,3 +47,8 @@ export interface WorkAuthorityCatalogMutationPort {
 export interface ContextCatalogWakePort {
   publish(hint: CatalogWakeHint): void | Promise<void>;
 }
+
+export interface ThreadFolderLabelMutationPort {
+  /** Title-only observations for this chat's and its subagents' associated roots. */
+  updateThreadFolderLabels(threadId: string): Promise<void>;
+}

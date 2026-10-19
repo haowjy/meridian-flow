@@ -332,3 +332,8 @@ its origin turn's thread as parent; otherwise a subagent uses its spawning
 thread. This is not the top-primary uploads owner. Browser and mf consume
 this projection; they never fetch a parent on each link click. Rebinding a
 chat changes its projected current location and moves no notes.
+The prepared locations also carry source-thread identity as a cache dependency,
+not URI authority. Work-binding convergence clears a stale current location and
+refreshes snapshots whose parent location names the rebound thread. Until that
+ordinary snapshot read returns, the missing variable is unasked, never resolved
+against its previous owner.

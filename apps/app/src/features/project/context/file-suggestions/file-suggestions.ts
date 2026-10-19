@@ -1,6 +1,6 @@
 /** Pure normalized-catalog projection and ranking for file suggestion hosts. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "@meridian/resource-replica";
+import { type CatalogCacheView, catalogEntryParentLabels } from "@meridian/resource-replica";
 
 export type FileSuggestionKind = "file" | "dir";
 
@@ -48,9 +48,9 @@ export function catalogFileSuggestions(views: readonly CatalogCacheView[]): File
         entryId: entry.entryId,
         scheme: source.scheme,
         path: `/${entry.path.join("/")}`,
-        name: entry.name,
+        name: entry.kind === "folder" ? (entry.displayName ?? entry.name) : entry.name,
         kind: entry.kind === "folder" ? "dir" : "file",
-        parents: entry.path.slice(0, -1),
+        parents: catalogEntryParentLabels(view, entry),
       });
     }
   }

@@ -13,6 +13,9 @@ chat resources rather than ordinary Editor tabs.
 - Every placement consumer uses the shared `ResourcePlacement` snapshot,
   including other Works. Recovery keeps real journal identities reachable;
   synthetic ancestors are navigation-only and have no mutations.
+- Associated chat-folder roots use catalog presentation labels, never their
+  reserved stored basenames. Their menu offers Delete but not Rename or Move;
+  contents keep ordinary actions. Placement always retains the stored name.
 - Context entries use one interaction boundary and one `ContextOwner` per
   list. It owns action dispatch, operation/refusal state, and move-picker
   wiring; shells own geometry, creation entry points, and navigation.

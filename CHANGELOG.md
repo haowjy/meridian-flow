@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Chat notes folders display chat titles (subagents use their spawning parent’s title), independently of their stable paths. Title changes publish only affected folder labels, not entire source trees.
+
 - Chat address inputs accept `$THREAD` for their own notes and `$PARENT` for their originating chat’s notes. Tool results, AI-written links and returned artifacts keep canonical addresses; variables outside chat scope fail instead of becoming filenames.
 
 - Scratch addresses can name a chat notes folder with an explicit owner and `@/c15/` (or `@/p7/`) qualifier. Associated roots are allocated lazily by create, mkdir and move destinations. Roots stay fixed; their contents remain editable, and deleting a root allows the next write to recreate it.

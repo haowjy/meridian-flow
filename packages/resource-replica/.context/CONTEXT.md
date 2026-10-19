@@ -253,3 +253,8 @@ authoritative upserts. Entries absent after replay are absent from that scope.
 The server republishes all surviving affected identities, even if another
 repair already published them. Checkpoints contain only the resulting complete
 tree; there is no hidden-entry set or subtree-refetch lifecycle.
+
+Associated Scratch root labels are catalog presentation (`displayName`), never
+`ResourceLocation.name`. Locations and receipt matching use the source-location
+codec, not the URI tail alone. Human ancestry reads parent identities and their
+presentation labels; it never derives labels from reserved storage segments.

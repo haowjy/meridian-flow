@@ -44,7 +44,11 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   let steps = 0;
 
   for (const tool of tools) {
-    const path = stringInput(toolInputObject(tool), "path");
+    const resultPath =
+      tool.result && typeof tool.result === "object" && !Array.isArray(tool.result)
+        ? stringInput(tool.result, "path")
+        : undefined;
+    const path = resultPath ?? stringInput(toolInputObject(tool), "path");
     // Successful writes belong to the turn receipt, not the process digest.
     const command = toolCommand(tool);
     const skill = stringInput(toolInputObject(tool), "name");
@@ -55,7 +59,8 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     }
     // A skill's own files are not the writer's documents; reading one is a step.
     if (!documentToolFailed(tool) && path && isReadCommand(command) && !skillFile(path)) {
-      readDocuments.add(documentIdentity(path));
+      const identity = documentIdentity(path);
+      if (identity) readDocuments.add(identity);
       continue;
     }
     if (!documentToolFailed(tool) && path && isEditCommand(command)) {
@@ -85,10 +90,10 @@ function isEditCommand(command: ToolCommand): boolean {
   );
 }
 
-function documentIdentity(uriOrPath: string): string {
+function documentIdentity(uriOrPath: string): string | null {
   // A section address (`path#fragment`) names the same document as its path.
   const marker = uriOrPath.indexOf("#");
   const filePath = marker === -1 ? uriOrPath : uriOrPath.slice(0, marker);
   const parsed = parseContextUri(filePath);
-  return parsed.ok ? parsed.value.normalized : filePath;
+  return parsed.ok ? parsed.value.normalized : parsed.error.unresolvedVariable ? null : filePath;
 }
