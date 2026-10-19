@@ -331,7 +331,10 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "invalid_write": {
-      const reason = rejectionCopy(documentFailureRejected(tool));
+      const reason =
+        documentFailureRejected(tool) === "removed"
+          ? removedWriteCopy(name, documentFailureRemoval(tool))
+          : rejectionCopy(documentFailureRejected(tool));
       if (reason) return reason;
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
     }
@@ -347,6 +350,56 @@ function documentFailureRejected(tool: ToolView): string | null {
   const result = tool.result;
   if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
   return asString(result.rejected) ?? null;
+}
+
+/**
+ * Who removed a refused write's document and how, when the host sent the
+ * record with a `removed` rejection. Projects have one owner, so a person
+ * who removed it is the writer.
+ */
+function documentFailureRemoval(tool: ToolView): {
+  by: "you" | "unfinished-reply" | null;
+  reason: "deleted" | "discarded";
+} {
+  const result = tool.result;
+  const removal =
+    result && typeof result === "object" && !Array.isArray(result) ? result.removal : null;
+  if (!removal || typeof removal !== "object" || Array.isArray(removal))
+    return { by: null, reason: "deleted" };
+  const actor = removal.actor;
+  const kind = actor && typeof actor === "object" && !Array.isArray(actor) ? actor.kind : null;
+  const cause = actor && typeof actor === "object" && !Array.isArray(actor) ? actor.cause : null;
+  return {
+    by:
+      kind === "user" ? "you" : kind === "system" && cause !== "repair" ? "unfinished-reply" : null,
+    reason: removal.reason === "discarded" ? "discarded" : "deleted",
+  };
+}
+
+/** A write refused because its document was removed before the reply saved it. */
+function removedWriteCopy(
+  name: string | null,
+  removal: ReturnType<typeof documentFailureRemoval>,
+): string {
+  if (removal.by === "unfinished-reply")
+    return name
+      ? t`${name} was removed when the reply that created it didn't finish, so this change wasn't made.`
+      : t`This document was removed when the reply that created it didn't finish, so this change wasn't made.`;
+  if (removal.by === "you")
+    return removal.reason === "discarded"
+      ? name
+        ? t`You discarded ${name} from the draft before this reply saved its change.`
+        : t`You discarded this document from the draft before this reply saved its change.`
+      : name
+        ? t`You deleted ${name} before this reply saved its change.`
+        : t`You deleted this document before this reply saved its change.`;
+  return removal.reason === "discarded"
+    ? name
+      ? t`${name} was discarded from the draft before this reply saved its change.`
+      : t`This document was discarded from the draft before this reply saved its change.`
+    : name
+      ? t`${name} was deleted before this reply saved its change.`
+      : t`This document was deleted before this reply saved its change.`;
 }
 
 function rejectionCopy(rejected: string | null): string | null {

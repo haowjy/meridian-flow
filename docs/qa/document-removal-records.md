@@ -144,10 +144,9 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 ## Removal notices in the browser
 
 Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
-device. Projects are single-owner, so a removal by the signed-in user reads
-"You deleted <title> elsewhere."; "<title> was deleted by <name>." needs a
-removal record naming another user. The server closes a removed document's
-live and draft rooms with `4208` after the removal commits.
+device. Projects are single-owner, so every removal by a person reads "You
+deleted <title> elsewhere."; there is no named form. The server closes a
+removed document's live and draft rooms with `4208` after the removal commits.
 
 - A shows a document with a long one beside it; B deletes it from Files. A
   falls back to the long document and the tab strip's free end shows a dashed
@@ -159,14 +158,21 @@ live and draft rooms with `4208` after the removal commits.
   documents elsewhere.", the names in its tooltip.
 - Hold B's delete (route `**/context/*/delete*` to abort in both tabs, delete,
   wait 15 s, unroute, toggle B offline and online): A's tab closes at once with
-  no chip, and the chip appears once the delete commits and A is focused.
-- Narrow the pane until the strip is full: the chip shrinks to its glyph and
-  dismiss; tabs keep their width.
+  no chip, and the chip appears once the delete commits and A is focused, as
+  long as A did not navigate meanwhile.
+- A sits on Chat while B deletes one of A's Editor tabs: nothing shows on
+  Chat; going to the Editor shows the chip once, and the next Editor
+  navigation clears it.
+- A opens a document beside Chat (the dock); B deletes it: the dock returns to
+  "Recent" and its header's free end says the sentence in a chip.
+- Narrow the window to 900 px with the dock open: the chip keeps a short
+  sentence ("1 document deleted"), the full one in its tooltip; the tabs
+  scroll instead.
 - Phone shell (a coarse pointer; `agent-browser` needs an init script that
   answers `(pointer: coarse)`): the top bar's notice row says the sentence;
   browsing a folder clears it.
-- A deletes from its own Files menu, or Discards a created document from its
-  review: nothing is said.
+- A deletes from its own Files menu (a document in a tab, or in the dock), or
+  Discards a created document from its review: nothing is said.
 - B Discards a created document A is reviewing: A says "You discarded <title>
   from the draft elsewhere." Reopen its review address: the pane says the
   same in place of "This destination is unavailable".
