@@ -218,6 +218,19 @@ try {
     "closed historical Apply evidence",
     "applied receipt retained; non-applied receipts discarded",
   );
+  const closedLive = await h.liveText(applied.documentId);
+  const closedRevert = await applied.command("revert");
+  observe("closed draft never writable", {
+    status: closedRevert.status,
+    message: closedRevert.message,
+  });
+  assert.equal(closedRevert.status, "nothing_to_revert");
+  assert.match(closedRevert.message, /discarded/i);
+  assert.equal(await h.liveText(applied.documentId), closedLive);
+  assert.deepEqual(
+    await h.raw`select id,origin,placement,effect from document_edit_parts order by id`,
+    partsBefore,
+  );
   console.log("PASS G1 disposition and close");
 } finally {
   for (const doc of docs) doc.destroy();
