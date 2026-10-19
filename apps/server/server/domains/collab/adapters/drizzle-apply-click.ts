@@ -123,6 +123,7 @@ export function createDrizzleApplyClick(
       const { schema } = click;
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
+      let committedAt: number | undefined;
       try {
         for (let attempt = 0; ; attempt++) {
           try {
@@ -132,6 +133,11 @@ export function createDrizzleApplyClick(
                 deps.workProjection.mutate(
                   { works: [command.workId] },
                   async (): Promise<ApplyClickAnswer> => {
+                    // mutate awaits post-commit delivery too; stop the boundary clock at
+                    // root commit, before room recovery and document projections run.
+                    deferUntilDrizzleCommit(() => {
+                      committedAt = performance.now();
+                    });
                     const tx = currentDrizzleDb(db);
                     const found = await lookupCommand(tx, command.envelope);
                     if (found.kind === "done")
@@ -402,7 +408,7 @@ export function createDrizzleApplyClick(
       } finally {
         deps.measured({
           commandId: command.envelope.commandId,
-          boundaryMs: performance.now() - boundaryStart,
+          boundaryMs: (committedAt ?? performance.now()) - boundaryStart,
         });
       }
     },
