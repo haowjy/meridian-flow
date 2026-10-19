@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Every document view the model is shown now records an observation frontier with the transcript block that showed it (#871, concurrent-edit M1): reads, write echoes, settled write receipts, and the reads materialized for a writer's document mentions. A frontier is a Yjs snapshot of what the model saw plus the blocks that changed since its previous view and were not shown in full, stored in `observation_frontiers` (migration 0070) under the room it was read from: the Work draft, or the live document at its restore epoch. Forks find their inherited frontiers without copying, retries get their own, and a save's frontier supersedes the step's staged ones. Nothing reads them to plan yet; model text, results and writer-facing behavior are unchanged, and a failure to record one is logged and leaves the result as it was.
+
 - The draft/branch rename upgrade now includes all-zero command IDs and nonpositive receipt IDs. Renaming receipt placement keys no longer generates recursive change-trail work; real placement changes still signal normally (#880).
 
 - The draft/branch rename preserves command replay fingerprints and opaque document IDs. Its online backfill commits complete receipt and settlement rows in indexed batches and refreshes shown-link digests without creating duplicate showings (#880).
