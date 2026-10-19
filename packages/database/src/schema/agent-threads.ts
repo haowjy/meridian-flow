@@ -802,6 +802,8 @@ export const observationFrontiers = pgTable(
       name: "observation_frontiers_pk",
       columns: [table.sourceBlockId, table.roomKey],
     }),
+    // The latest-row lookup walks a room's rows newest first and stops at the first in the conversation.
+    index("observation_frontiers_room_latest").on(table.roomKey, table.recordedSeq.desc()),
   ],
 );
 
