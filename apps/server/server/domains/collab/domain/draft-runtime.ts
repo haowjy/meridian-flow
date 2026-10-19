@@ -488,6 +488,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           async finalize(read) {
             const judged = await finalizeAppend(read, {
               candidate: prefix,
+              candidateState: encodedOf(replica),
               work,
               rows: journals,
               containment: documentContainment,
@@ -522,7 +523,9 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           });
           throw new DraftPrefixMissingError(snapshot.draftId, outcome.clocks);
         }
-        if (!finalized) throw new Error(`Draft ${snapshot.draftId} append was not finalized`);
+        if (!finalized || !cut)
+          throw new Error(`Draft ${snapshot.draftId} append was not finalized`);
+        const committedCut = cut;
         const { doc, prefixHeld, prefixRows, checkpointSeq } = finalized;
         const rows = [
           ...prefixRows.map((row) => row.update),
@@ -537,6 +540,9 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               checkpointRevision: outcome.checkpointRevision,
               seq: Math.max(checkpointSeq, seq),
               doc,
+              get encoded() {
+                return committedCut.afterState;
+              },
               tail: grownTail(EMPTY_TAIL, rows),
             },
           };
@@ -546,6 +552,9 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
             checkpointRevision: replica.checkpointRevision,
             seq: Math.max(replica.seq, seq),
             doc,
+            get encoded() {
+              return committedCut.afterState;
+            },
             tail: grownTail(replica.tail, rows),
           },
           from: replica,

@@ -5,6 +5,17 @@
 - Keep draft-review bursts proportional to current text and queued clicks: retain base nodes and clean frames, subscribe controls to their own state, and map peer edits without inflating review paint.
 
 - Subscribe the document toolbar to its control state so unchanged review metadata does not rerender its ten controls.
+- Keep undoable draft Discard out of schema-repair notices while preserving genuine repair reports.
+
+- Share equal blocks' immutable merge tokens without replacing editor nodes or arrays.
+
+- Take Apply's draft hold only at the append door; a late close rolls back both document halves and the command claim.
+
+- Compile already-current Apply snapshots without duplicating the draft document.
+
+- Reuse immutable draft encodings across append cuts and replicas, keeping unused serialization out of row holds.
+
+- Capture draft edit receipts by retained item ranges instead of expanding every review-base character.
 
 - End dock Discard notices when their room session retires, so Undo never targets a replaced document.
 - Hide the empty-paragraph placeholder while removed review prose occupies its line, preventing overlapping glyphs.
