@@ -70,7 +70,7 @@ import type { ContextRemovalRoutePort } from "./context/context-removal-coordina
 import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
-import type { DocumentRemoval } from "./context/RemovedDocumentNotice";
+import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import {
@@ -167,7 +167,7 @@ export type ProjectViewProps = {
     main?: ProjectRouteIssue;
     editor?: ProjectRouteIssue;
     /** Why an unavailable Editor destination is gone, when its document was removed. */
-    removed?: DocumentRemoval;
+    removed?: ProjectRouteMask["removed"];
   };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
@@ -222,8 +222,21 @@ export function ProjectView(props: ProjectViewProps) {
     [availability, props.projectId],
   );
   useContextCatalogWake(props.projectId, repairColdWork);
+  useRemovedNoticeLifetime(props.projectId, {
+    key: JSON.stringify([
+      props.activeScreen,
+      props.activeContextScheme,
+      props.activeContextFolder,
+      props.activeContextPath,
+      props.activeLocalDocumentId,
+    ]),
+    scheme: props.activeContextScheme,
+    path: props.activeContextPath,
+  });
   useEffect(() => {
     const lease = availability.attachProject(props.projectId);
+    let askedRecords = new Set<string>();
+    const pendingAsk = new Set<string>();
     const reportWatches = () => {
       const slice = useContextTabsStore.getState().byProject[props.projectId];
       lease.watch(
@@ -245,6 +258,24 @@ export function ProjectView(props: ProjectViewProps) {
             ]
           : [],
       );
+      // A tab closed without its removal's record waits for it: asked once
+      // here, then on focus, online and the poll, until the reconcile settles it.
+      const awaiting = removal.getProjectSnapshot(props.projectId).awaitingRecordIds;
+      lease.watch(
+        "removal-records",
+        awaiting.map((documentId) => ({ documentId })),
+      );
+      const unasked = awaiting.filter((documentId) => !askedRecords.has(documentId));
+      askedRecords = new Set(awaiting);
+      if (unasked.length > 0) {
+        // One lookup for every tab one catalog pass closed.
+        for (const documentId of unasked) pendingAsk.add(documentId);
+        queueMicrotask(() => {
+          const ids = [...pendingAsk];
+          pendingAsk.clear();
+          if (ids.length > 0) void availability.recheck(props.projectId, ids);
+        });
+      }
       lease.watch(
         "recent-routes",
         readRecentRoutes(props.projectId).slice(0, 64).map(availabilityWatchRecord),

@@ -203,21 +203,62 @@ catalogs through the same replica owner.
 ### Removed-document notices
 
 A tab whose document something else deleted or discarded closes as before and
-says so: `ContextRemovalCoordinator` publishes `notices` on its project
-snapshot, and `RemovedDocumentNotices` floats them, dismissible, over the
-pane's foot ("<title> was deleted by <name>.", "… was deleted.", "… was
-discarded from the draft."). Three paths feed it. An availability
-`terminal-remove` carries the server's removal record. The catalog dropping a
-tab's document (`closeVanished`, which also covers another browser tab's
-delete arriving through the shared local replica before the server commits)
-waits for the record: from its own exact lookup, retried while the lookup
-still finds the document, or from any later command carrying it; an authority
-loss says nothing (a Work cascade keeps its own handling). A draft-only tab
-whose draft list says it went (`DraftOnlySettlement`) says it was discarded.
-The tab's own removal says nothing: the tree delete and every Discard command
-mark their documents (`markOwnRemoval`) before the request and unmark on
-failure. A review address whose document was removed says the same sentence
-in place of "This destination is unavailable" (`useRemovedDestination`).
+says so. `ContextRemovalCoordinator` owns one `notice` per project snapshot:
+the `DocumentRemovalRecord`s of the documents that closed, joined into one
+notice until the writer moves on. `RemovedDocumentSentence` owns every copy
+rule (projects are single-owner, so a user actor matching the signed-in
+account reads "You deleted <title> elsewhere."; another named user, "<title>
+was deleted by <name>."; a system rollback, "removed when the reply that
+created it didn't finish"; anything else, "<title> was deleted."). A Work's
+removal keeps its authority-loss handling and makes no notice.
+
+Placement follows "feedback never displaces content": a ghost chip in the tab
+strip's free end (`RemovedDocumentTabNotice`), the landing's top margin when
+no tab remains (`RemovedDocumentLandingNotice`), or the phone top bar's notice
+row (`useRemovedDocumentPhoneNotice`). The chip sits outside the tab scroller
+and takes only the width the tabs leave, truncating down to its glyph and
+dismiss. It clears on dismiss, and on the writer's next navigation in the
+Editor (`useRemovedNoticeLifetime`, mounted once in `ProjectView` for both
+shells): each removed document keeps the address its tab showed; the notice
+anchors on the Editor's place once the route has left those addresses (so the
+removal's own fallback is not a navigation), and any later change of place,
+including a phone folder browse, clears it. A removal joining the notice
+re-anchors it.
+
+Two paths feed it. An availability `terminal-remove` that closes tabs carries
+the server's record. The catalog dropping a tab's document (`closeVanished`,
+which also covers another browser tab's delete arriving through the shared
+local replica before the server commits) and a draft-only tab leaving its
+draft list (`discardDraft`) learn no record: the document joins
+`awaitingRecordIds`, which the project view watches (`removal-records`) and
+rechecks once; focus, `online` and the 60 s poll retry. Any command carrying
+the record settles it into the notice, an authority loss settles it silently,
+and the catalog placing the document again releases it.
+
+The tab's own removal says nothing: the tree delete and every Discard take a
+mark (`markOwnRemoval`) before the request and settle it in `finally`. A
+settled "kept" releases it; while in flight every sighting is silent; once
+settled as a removal, the first sighting uses it up. Folder deletes mark only
+open tabs of the folder's scheme and owner.
+
+A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from
+the registry (`observeRemovedRooms`, held by an editor or not) and asks
+availability for the document. `deleted` closes its tabs with the record.
+`available` (a restore won the race, or a stale close) reconnects the same
+session in place (`restartRemovedRoom`), once per session so a server that
+keeps closing it cannot loop. Rebinding the tab instead would not help: its
+cached resource handle hands back the same removed session. Editors read the
+same answer (`useRemovedRoomCheck`, joining the in-flight lookup): a tab still
+open on a removed room says the record sentence in place (`SyncStatus`).
+Draft rooms carry no document identity in the registry, so their review owner
+asks through the same hook and refreshes the Work's drafts.
+
+Reopening a review address whose document was removed says the sentence in
+place of "This destination is unavailable" (`useRemovedDestination`, item key
+parsed by `@meridian/contracts`' `parseDraftItemKey`). A plain path address
+keeps "This destination is unavailable": once nothing lives at the path it
+names no document, and finding the newest tombstone at a path belongs to a
+later track.
 
 Unsent text is not kept: a removed document's tab closes even when its
 session holds unacknowledged edits. Keeping it bound would need more than the

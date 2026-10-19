@@ -8,7 +8,7 @@
  * branch (§2.4). A writer's command is claimed in the staging transaction and settled by the
  * tree step in completion (§4.6).
  */
-import type { BranchId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, DraftItemKey, UserId, WorkId } from "@meridian/contracts";
 import type { BranchApplyAllResponse, DraftApplyItemResult } from "@meridian/contracts/branches";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type {
@@ -22,7 +22,6 @@ import type { BranchReviewItems, DraftReviewItem } from "./branch-review-items.j
 import {
   BRANCH_TREE_STEP,
   type BranchTreePayload,
-  type DraftItemKey,
   encodeBranchTreePayload,
   type HeldReason,
   readBranchTreeHold,
@@ -34,12 +33,7 @@ import type { DraftJournalRow } from "./draft-journal.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { ApplyRefusal } from "./ports/settlement-apply.js";
 
-export {
-  BRANCH_TREE_STEP,
-  type DraftItemKey,
-  draftItemKey,
-  type HeldReason,
-} from "./branch-tree-payload.js";
+export { BRANCH_TREE_STEP, type HeldReason } from "./branch-tree-payload.js";
 
 /**
  * What the writer was shown of one item. A token absent (the legacy per-document Apply

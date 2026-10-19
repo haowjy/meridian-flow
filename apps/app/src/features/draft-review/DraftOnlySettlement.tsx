@@ -115,7 +115,7 @@ function WorkSettlement({
             if (!isOrphan(draft, currentDrafts) || JSON.stringify(scopeFor(draft)) !== key)
               continue;
             if (view.entries.get(draft.documentId)?.kind === "file") void lifecycle.promote(draft);
-            else lifecycle.remove(draft, true);
+            else lifecycle.remove(draft);
           }
         })
         // A failed membership check leaves this scope's tabs intact, never guesses Discard.

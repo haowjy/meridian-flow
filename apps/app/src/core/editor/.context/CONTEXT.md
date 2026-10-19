@@ -214,8 +214,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   document-scoped ref, and released.
 - `resetDisposition` gives the reset its meaning: `superseded` and `rebuild`
   keep unacknowledged updates for retirement, `refused` rejects pending edits,
-  `schema` fences the room, and `removed` (4208) ends it for good: the
-  document is gone, so nothing restarts it.
+  `schema` fences the room, and `removed` (4208) ends it: nothing restarts it
+  unless an exact open proves the document present (a restore won the race).
 - A draft room's update refusal (`1008`) is bounded in the transport: after
   three in a row with no acknowledgement between, the room ends `terminal`
   `DRAFT_UPDATES_REFUSED` (`updatesRefused`) instead of reconnecting forever.

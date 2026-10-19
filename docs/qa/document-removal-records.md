@@ -106,23 +106,39 @@ the tab/tree update without an error. Capture a screenshot outside this repo.
 
 ## Removal notices in the browser
 
-Two tabs of one signed-in browser (A and B). The dev user has no display name
-(dev login re-provisions it on every request), so a named actor needs a
-throwaway name on this worktree's database; drop it afterwards. The server closes the
-removed document's live and draft rooms with `4208` after the removal commits.
+Two tabs of one signed-in browser (A and B), plus `./mf doc rm` as another
+device. Projects are single-owner, so a removal by the signed-in user reads
+"You deleted <title> elsewhere."; "<title> was deleted by <name>." needs a
+removal record naming another user. The server closes a removed document's
+live and draft rooms with `4208` after the removal commits.
 
-- A shows a document; B deletes it from Files. A's tab closes and the pane's
-  foot says "<title> was deleted by <name>." B says nothing. One `/ws/yjs`
-  close in A, no new opens after.
-- Same with another tab open in A: A lands on that tab with the same notice.
-- Socket first: `./mf doc rm` the document A shows (no browser tab of B
-  refreshes A's catalog first). The 4208 closes A's tab with the notice; no reconnect.
-- A reviews a document's Work draft; B deletes the document. Same notice;
-  both rooms close once. Reopen it from the Work's Files: the pane says the
-  sentence in place of "This destination is unavailable".
+- A shows a document with a long one beside it; B deletes it from Files. A
+  falls back to the long document and the tab strip's free end shows a dashed
+  chip "You deleted <title> elsewhere."; nothing covers the text. B says
+  nothing. Selecting another tab clears the chip; so does Dismiss.
+- A's only tab is deleted (`./mf doc rm`): the landing's top margin says the
+  sentence; the Recently opened list does not move.
+- B deletes a folder holding three of A's open tabs: one chip, "You deleted 3
+  documents elsewhere.", the names in its tooltip.
+- Hold B's delete (route `**/context/*/delete*` to abort in both tabs, delete,
+  wait 15 s, unroute, toggle B offline and online): A's tab closes at once with
+  no chip, and the chip appears once the delete commits and A is focused.
+- Narrow the pane until the strip is full: the chip shrinks to its glyph and
+  dismiss; tabs keep their width.
+- Phone shell (a coarse pointer; `agent-browser` needs an init script that
+  answers `(pointer: coarse)`): the top bar's notice row says the sentence;
+  browsing a folder clears it.
 - A deletes from its own Files menu, or Discards a created document from its
-  dock: nothing is said.
-- A reviews a created document; B Discards it from its dock: A says
-  "<title> was discarded from the draft." Reopen its review address: same.
+  review: nothing is said.
+- B Discards a created document A is reviewing: A says "You discarded <title>
+  from the draft elsewhere." Reopen its review address: the pane says the
+  same in place of "This destination is unavailable".
+- Apply during a removal: restart with `COLLAB_PAUSE_AT=applyItems.afterStaging
+  COLLAB_PAUSE_FILE=<file>`, touch the file, click Apply, `./mf doc rm` the
+  document, delete the file. The command answers `held` with `deleted_live` and
+  the record; the review closes with the removal's chip.
+- A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
+  socket while the document exists): the room reconnects within a few hundred
+  ms and typing saves.
 - A holds unsent text (block its `/ws/yjs` sockets, type), B deletes: A closes
-  with the notice and the unsent text is lost (not yet kept).
+  with the notice and the unsent text is lost (a recorded divergence).

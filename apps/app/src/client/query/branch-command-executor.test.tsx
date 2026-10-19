@@ -306,8 +306,8 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     const fourth = runDraftSelection(client, scope, "discard", target, selecting(d), "thread-d");
     const outcomes = await Promise.all([first, second, third, fourth]);
     expect(outcomes).toEqual([
-      { kind: "change-settled", mode: "discard" },
-      { kind: "change-settled", mode: "discard" },
+      { kind: "change-settled", mode: "discard", itemClosed: false },
+      { kind: "change-settled", mode: "discard", itemClosed: false },
       { kind: "change-refused", mode: "discard", code: "stale" },
       { kind: "change-refused", mode: "discard", code: "stale" },
     ]);
@@ -561,7 +561,7 @@ describe("command-record outcome matrix", () => {
     expect(Boolean(pending?.itemClosed)).toBe(itemClosed);
     expect(pending?.draftGeneration).toBe(1);
     refresh.resolve();
-    expect(await done).toEqual({ kind: "change-settled", mode: "apply" });
+    expect(await done).toEqual({ kind: "change-settled", mode: "apply", itemClosed });
     expect([...intentKeys(currentChangeCommandRecords(), input).hidden]).toEqual(["part:0"]);
     expect(api.applyDraftChanges).toHaveBeenCalledTimes(1);
   });
@@ -664,7 +664,7 @@ describe("command-record outcome matrix", () => {
     api.observeBranchCommand.mockResolvedValue({ state: "unknown" });
     const done = startBranchCommand(client, command).outcome;
     await vi.advanceTimersByTimeAsync(1500);
-    expect(await done).toEqual({ kind: "change-settled", mode: "apply" });
+    expect(await done).toEqual({ kind: "change-settled", mode: "apply", itemClosed: false });
     expect(api.applyDraftChanges.mock.calls[0]?.[3]).toEqual(
       api.applyDraftChanges.mock.calls[1]?.[3],
     );

@@ -1,7 +1,7 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ContextOwner } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
@@ -63,7 +63,10 @@ export type EntryActionTarget = {
   path: string;
 } & ({ kind: "file"; documentId: string } | { kind: "dir"; entryId: string });
 
-export type DeleteTarget = EntryActionTarget & { owner: ContextOwner };
+export type DeleteTarget = EntryActionTarget & {
+  owner: ContextOwner;
+  scheme: ProjectContextTreeScheme;
+};
 
 // ─── Right-click context menu (wraps the row) ───────────────────────────────
 
@@ -214,12 +217,18 @@ function DropdownActionItems({
 
 // ─── Delete confirmation dialog ─────────────────────────────────────────────
 
-/** The file, or the open tabs inside the folder, that this delete removes. */
+/** The file, or the open tabs inside the folder (same scheme and owner), that this delete removes. */
 function ownDeletedDocumentIds(projectId: string, target: DeleteTarget): string[] {
   if (target.kind === "file") return [target.documentId];
   const folder = `${target.path.replace(/^\/+|\/+$/g, "")}/`;
   return getContextTabs(projectId).tabs.flatMap((tab) =>
-    tab.kind !== "new" && tab.path.replace(/^\/+/, "").startsWith(folder) ? [tab.documentId] : [],
+    tab.kind !== "new" &&
+    tab.scheme === target.scheme &&
+    (target.owner.workId == null || tab.workId === target.owner.workId) &&
+    tab.rootThreadId === target.owner.rootThreadId &&
+    tab.path.replace(/^\/+/, "").startsWith(folder)
+      ? [tab.documentId]
+      : [],
   );
 }
 
@@ -243,11 +252,12 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
     if (!target) return;
     setError(null);
     // This tab's own delete closes its tabs and says nothing about it, however the removal arrives.
-    const unmark = removal.markOwnRemoval(
+    const settleMark = removal.markOwnRemoval(
       projectId,
       ownDeletedDocumentIds(projectId, target),
       "deleted",
     );
+    let removed = false;
     try {
       setLocalPending(true);
       if (target.kind === "file") {
@@ -257,12 +267,13 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
       } else {
         await resources.deleteFolder(projectId, target.entryId);
       }
+      removed = true;
       setTarget(null);
     } catch (cause) {
-      unmark();
       // Keep the target visible so the writer can refresh and retry.
       setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
     } finally {
+      settleMark(removed ? "removed" : "kept");
       setLocalPending(false);
     }
   }, [projectId, removal, resources, target]);

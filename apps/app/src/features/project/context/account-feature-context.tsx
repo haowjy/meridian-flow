@@ -289,6 +289,11 @@ export function useAccountEpochSignal(): AbortSignal {
   return signal;
 }
 
+/** The signed-in user's id, or null outside the authenticated shell. */
+export function useOptionalAccountId(): string | null {
+  return useContext(AccountIdContext);
+}
+
 export function useAccountId(): string {
   const accountId = useContext(AccountIdContext);
   if (!accountId) throw new Error("AccountFeatureComposition is required");

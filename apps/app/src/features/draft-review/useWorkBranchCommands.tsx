@@ -72,14 +72,19 @@ export function useWorkBranchCommands({
     };
     /**
      * This tab's own Discard of a created document says nothing when the
-     * document goes: marked before the request, unmarked when nothing went.
+     * document goes: marked before the request, settled once by its outcome
+     * (no outcome: it failed).
      */
     const ownDiscard = (mode: "apply" | "discard", documentId: string) => {
       if (mode !== "discard") return () => undefined;
-      const unmark = removal.markOwnRemoval(projectId, [documentId], "discarded");
-      return (outcome?: BranchCommandOutcome) => {
-        if (outcome?.kind !== "discarded" && outcome?.kind !== "change-settled") unmark();
-      };
+      const settle = removal.markOwnRemoval(projectId, [documentId], "discarded");
+      return (outcome?: BranchCommandOutcome) =>
+        settle(
+          outcome?.kind === "discarded" ||
+            (outcome?.kind === "change-settled" && outcome.itemClosed)
+            ? "removed"
+            : "kept",
+        );
     };
     const refOf = (draft: DraftReviewSelection): DraftRef => ({
       ...scope,
@@ -112,18 +117,24 @@ export function useWorkBranchCommands({
       if (!start.sent) settleMark();
       return {
         ...start,
-        outcome: start.outcome.then((outcome) => {
-          settleMark(outcome);
-          if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
-          if (outcome.kind === "discarded") {
-            try {
-              lifecycle.remove(target);
-            } catch {
-              /* The committed command must not be resent for route repair. */
+        outcome: start.outcome.then(
+          (outcome) => {
+            settleMark(outcome);
+            if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
+            if (outcome.kind === "discarded") {
+              try {
+                lifecycle.remove(target);
+              } catch {
+                /* The committed command must not be resent for route repair. */
+              }
             }
-          }
-          return outcome;
-        }),
+            return outcome;
+          },
+          (error: unknown) => {
+            settleMark();
+            throw error;
+          },
+        ),
       };
     };
     const selection = (

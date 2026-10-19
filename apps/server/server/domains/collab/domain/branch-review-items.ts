@@ -10,9 +10,9 @@
  * its path, the live document's full-state fingerprint, and the draft generation.
  */
 import type { BranchId } from "@meridian/contracts";
+import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
-import { type DraftItemKey, draftItemKey } from "./branch-apply.js";
 import type { WorkBranchPendingEvidence } from "./ports/work-branch-pending-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 
