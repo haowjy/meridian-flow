@@ -41,8 +41,10 @@ Seed `The cat sat on the mat.` unless the row says otherwise. N is `w1`.
 | N deleted a sentence | N removed `BBB stood still.`; the neighbouring sentences then changed | the sentence comes back between the changed neighbours |
 | Revert of a revert | revert `w1`, then revert that revert's handle | N's text is back |
 
-A write is one part, so a write that touched two separated paragraphs and was then edited in one of them is skipped
-whole and listed once.
+Revert works per receipt part, and a write can have several (a replace across two paragraphs records two): each part
+reverts or is skipped on its own, so the result can read `reverted: w1 (1 of 2 parts)` with one `not reverted:` line.
+A live write rewrites its whole paragraph, so in auto-apply any later change to that paragraph, even to words N kept,
+skips the part; in draft mode only changes to N's own words do.
 
 ## In the browser
 
