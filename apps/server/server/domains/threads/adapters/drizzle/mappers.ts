@@ -61,6 +61,7 @@ export function mapThread(
     parentThreadId: row.parentThreadId,
     originType: row.originType as Thread["originType"],
     originTurnId: row.originTurnId,
+    derivationSourceThreadId: row.derivationSourceThreadId,
     rootThreadId: row.rootThreadId,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],

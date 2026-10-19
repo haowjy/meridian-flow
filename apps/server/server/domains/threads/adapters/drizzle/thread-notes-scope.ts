@@ -16,5 +16,5 @@ function notesLocation(threadId: SQL): SQL<ContextNotesLocation | null> {
 export const threadNotesScope = sql<ContextNotesScope>`jsonb_strip_nulls(jsonb_build_object(
   'current', ${notesLocation(sql`${threads}.id`)},
   'parent', ${notesLocation(sql`CASE WHEN ${threads}.origin_type IN ('fork', 'handoff')
-    THEN (SELECT thread_id FROM turns WHERE id = ${threads}.origin_turn_id)
+    THEN ${threads}.derivation_source_thread_id
     ELSE ${threads}.parent_thread_id END`)}))`;

@@ -248,6 +248,7 @@ export function createDrizzleThreadRepository(
           parentThreadId: thread.parentThreadId,
           rootThreadId: thread.rootThreadId,
           originTurnId: thread.originTurnId,
+          derivationSourceThreadId: thread.derivationSourceThreadId as ThreadId | null,
           originType: thread.originType,
           spawnDepth: thread.spawnDepth,
           status: thread.status,

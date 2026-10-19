@@ -328,7 +328,8 @@ source owners available to a live fork and report `owners[].trashed`.
 `ThreadRepository.findNotesScope` reads current and optional parent Scratch
 owner/thread locations only for server consumers; no thread DTO or snapshot
 carries them. Its SQL reads primary Work membership and the lineage handle. A
-fork or handoff uses its origin turn's thread as parent; otherwise a subagent
+fork or handoff uses its explicit `derivation_source_thread_id` as parent
+(the acted-on chat, not necessarily its inherited cutoff's owner); otherwise a subagent
 uses its spawning thread. This is not the top-primary uploads owner. Browser
 and mf send raw variable hrefs with a proved chat scope to link resolution.
 Rebinding changes the next resolution and moves no notes; it requires no

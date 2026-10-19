@@ -43,6 +43,7 @@ export const threadSchema = z.object({
    * edge, since `parentThreadId` never carries it.
    */
   originTurnId: z.string().nullable().optional(),
+  derivationSourceThreadId: z.string().nullable().optional(),
   /**
    * Identifies the run tree this thread belongs to. An organic root equals its
    * own id; a subagent takes its spawning parent's root; a fork/handoff

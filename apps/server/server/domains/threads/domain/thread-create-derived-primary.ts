@@ -4,8 +4,8 @@
  * the source's `parentThreadId` and `spawnDepth` as its own. Forks keep
  * the source lineage; handoffs start a fresh lineage,
  * while preserving their source provenance. The fork-source
- * relationship itself is carried by `originTurnId` (the anchor turn lives on
- * the source thread), never by `parentThreadId`.
+ * transcript anchor is carried by `originTurnId`; the acted-on chat is retained
+ * separately in `derivationSourceThreadId`, never in `parentThreadId`.
  */
 import type {
   ProjectId,
@@ -30,6 +30,7 @@ export interface CreateDerivedPrimaryThreadInput {
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
+  derivationSourceThreadId?: ThreadId | null;
   title?: string | null;
   initialPromptBakeId?: PromptBakeId | null;
 }
@@ -55,6 +56,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     parentThreadId: input.source.parentThreadId,
     originType: input.originType,
     originTurnId: input.originTurnId ?? null,
+    derivationSourceThreadId: input.derivationSourceThreadId ?? null,
     rootThreadId: input.originType === "handoff" ? input.id : input.source.rootThreadId,
     spawnDepth: input.source.spawnDepth,
     spawnStatus: null,

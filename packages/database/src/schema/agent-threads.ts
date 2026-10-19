@@ -67,6 +67,7 @@ export const threads = pgTable(
     originTurnId: uuid("origin_turn_id")
       .$type<TurnId>()
       .references((): PgColumn => turns.id),
+    derivationSourceThreadId: uuid("derivation_source_thread_id").$type<ThreadId>(),
     originType: text("origin_type"),
     spawnStatus: text("spawn_status"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
