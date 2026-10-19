@@ -1,4 +1,3 @@
-import type { NoticeInput } from "../../../notices/index.js";
 import type {
   NormalizedTrail,
   RawTrailChange,
@@ -13,7 +12,6 @@ export type DurableTrailRecord = {
   threadIds: readonly string[];
   journalOwners: readonly (TrailOwner | null)[];
   changes: readonly RawTrailChange[];
-  transactionalNotice?: NoticeInput;
 };
 
 export type ChangeTrailPersistence = {

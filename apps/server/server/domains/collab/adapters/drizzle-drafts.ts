@@ -47,7 +47,6 @@ import type { Branches } from "../domain/branches.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
 import { seedDraftState } from "../domain/draft-content.js";
 import { DraftNotFoundError, type ResolvedDraft } from "../domain/draft-resolver.js";
-import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import {
   type AppendDraftJournalInput,
   type AppendReceiptGroup,
@@ -395,14 +394,6 @@ export function createDrizzleDraftStore(
     return row ? mapDraft(row) : null;
   }
 
-  async function closeThreadPeersOf(
-    upstreamDraftIds: readonly string[],
-    cause: Exclude<DraftCloseCause, object>,
-  ): Promise<void> {
-    if (upstreamDraftIds.length === 0) return;
-    await deps.close.closeDrafts(currentDrizzleDb(db), { upstreamDraftIds }, cause);
-  }
-
   async function getDraftSnapshot(draftId: string): Promise<DraftSnapshot> {
     const [row] = await selectDraft(currentDrizzleDb(db))
       .where(eq(documentDrafts.id, draftId))
@@ -684,7 +675,6 @@ export function createDrizzleDraftStore(
 
     ensureCreatedDocumentDraft,
     retractCreatedDocumentDraft,
-    closeThreadPeersOf,
 
     ensureThreadPeerDraft(input) {
       return ensureThreadPeerDraft(input);

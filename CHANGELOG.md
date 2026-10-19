@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Remove obsolete server-preview contracts, legacy restoration claims, dead review helpers and unreachable trail notices; the append probe uses the same restoration recorder as the editor.
+
 - Take the Work lock before claiming Discard commands, matching Apply and preventing conflicting-delivery deadlocks.
 
 - Resolve draft addresses from metadata only; classify receipt membership only for review lists and frozen Apply cuts.

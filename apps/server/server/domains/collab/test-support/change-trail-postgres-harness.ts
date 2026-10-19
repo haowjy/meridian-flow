@@ -1451,7 +1451,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     seedCheckpointRestoredExplicitDelete,
     /** A writer edit on the warm room, journaled first, as a socket write would be. */
     appendWriterPrefix,
-    /** The warm room's full-state fingerprint, as a text token captures it. */
     crossWorkProbeFixture: () => ({
       provisionDraft,
       runtime,
