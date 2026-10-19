@@ -268,6 +268,7 @@
     "apps/server/server/domains/collab/domain/draft-write-granularity.test.ts": 11,
     "apps/server/server/domains/collab/domain/markdown-document.test.ts": 6,
     "apps/server/server/domains/collab/domain/offline-reconciliation.test.ts": 1,
+    "apps/server/server/domains/collab/domain/peer-retirement.test.ts": 3,
     "apps/server/server/domains/collab/domain/provenance.test.ts": 13,
     "apps/server/server/domains/collab/domain/reply-save-fences.test.ts": 9,
     "apps/server/server/domains/collab/domain/response-transaction.test.ts": 2,
