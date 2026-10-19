@@ -18,7 +18,9 @@ import {
   type DrizzleTransactionParticipant,
   enlistDrizzleTransactionParticipant,
   isInDrizzleTransaction,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { type BranchDraftRef, branchDraftRefs } from "../../../shared/work-branch-lifecycle.js";
 import {
@@ -27,6 +29,7 @@ import {
   lockWorksInIdOrder,
 } from "../../../shared/work-lifecycle-lock.js";
 import type { ProjectContextAvailabilityMutationPort } from "../../context/ports/project-context-availability.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { WorkLifecycleUnavailableError } from "../domain/work-lifecycle.js";
 import type { ContextCatalogLifecyclePort } from "../ports/context-catalog-lifecycle.js";
 import type { WorkBranchPendingCounts } from "../ports/work-branch-pending-counts.js";
@@ -69,6 +72,12 @@ export type WorkProjectionMutation = {
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
   /** `lockWorks`, then `operation`, in one transaction (its own when the caller has none). */
   mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
+  /**
+   * Works whose pending count the caller's transaction changed without holding them (it is
+   * past Work-first order): each is recounted in a root transaction of its own once the caller
+   * commits, unless the caller already locked it through this boundary.
+   */
+  recountAfterCommit(workIds: readonly WorkId[]): void;
 };
 
 const WORKS_NOTICE_STATE = {};
@@ -76,6 +85,8 @@ type WorksNoticeState = {
   touchedWorkIds: Set<WorkId>;
   /** Works locked through the boundary: their pending count is reconciled once, at commit. */
   reconcileWorkIds: Set<WorkId>;
+  /** Works changed but not locked: recounted after commit unless locked by then. */
+  recountWorkIds: Set<WorkId>;
   pendingWorkIdsByProject: Map<string, Set<WorkId>>;
 };
 
@@ -85,17 +96,20 @@ export function createWorkProjectionMutation(input: {
   catalog: ContextCatalogLifecyclePort;
   /** The collab-owned pending membership rule, counted per Work in SQL. */
   pendingCounts: WorkBranchPendingCounts;
+  eventSink?: EventSink;
 }): WorkProjectionMutation {
   const worksNoticeParticipant: DrizzleTransactionParticipant<WorksNoticeState> = {
     key: WORKS_NOTICE_STATE,
     create: () => ({
       touchedWorkIds: new Set(),
       reconcileWorkIds: new Set(),
+      recountWorkIds: new Set(),
       pendingWorkIdsByProject: new Map(),
     }),
     fork: (parent) => ({
       touchedWorkIds: new Set(parent.touchedWorkIds),
       reconcileWorkIds: new Set(parent.reconcileWorkIds),
+      recountWorkIds: new Set(parent.recountWorkIds),
       pendingWorkIdsByProject: new Map(
         [...parent.pendingWorkIdsByProject].map(([projectId, workIds]) => [
           projectId,
@@ -106,6 +120,7 @@ export function createWorkProjectionMutation(input: {
     merge(parent, child) {
       for (const workId of child.touchedWorkIds) parent.touchedWorkIds.add(workId);
       for (const workId of child.reconcileWorkIds) parent.reconcileWorkIds.add(workId);
+      for (const workId of child.recountWorkIds) parent.recountWorkIds.add(workId);
       for (const [projectId, childWorkIds] of child.pendingWorkIdsByProject) {
         const parentWorkIds = parent.pendingWorkIdsByProject.get(projectId) ?? new Set<WorkId>();
         for (const workId of childWorkIds) parentWorkIds.add(workId);
@@ -114,6 +129,8 @@ export function createWorkProjectionMutation(input: {
       return parent;
     },
     async beforeCommit(state) {
+      const unlocked = [...state.recountWorkIds].filter((id) => !state.reconcileWorkIds.has(id));
+      if (unlocked.length) runAfterDrizzleCommit(() => recountInRoot(unlocked.sort()));
       await reconcilePendingCounts(state);
       if (state.pendingWorkIdsByProject.size === 0) return;
       const projectIds = [...state.pendingWorkIdsByProject.keys()].sort();
@@ -124,6 +141,23 @@ export function createWorkProjectionMutation(input: {
       await input.catalog.upsertWorkAuthorities(workIds);
     },
   };
+
+  async function recountInRoot(workIds: WorkId[]): Promise<void> {
+    try {
+      await runInRootDrizzleTransaction(input.db, () =>
+        mutation.mutate({ works: workIds }, async () => undefined),
+      );
+    } catch (error) {
+      // The next mutation of these Works reconciles their counts again.
+      if (input.eventSink)
+        emitEvent(input.eventSink, {
+          level: "error",
+          source: "projects.work_projection",
+          name: "recount.failed",
+          payload: { workIds, ...unknownToEventPayload(error) },
+        });
+    }
+  }
 
   function worksNoticeState(): WorksNoticeState {
     return enlistDrizzleTransactionParticipant(worksNoticeParticipant);
@@ -242,6 +276,11 @@ export function createWorkProjectionMutation(input: {
       });
     },
     lockWorks: lockWriteSet,
+    recountAfterCommit(workIds) {
+      if (!workIds.length) return;
+      const state = worksNoticeState();
+      for (const workId of workIds) state.recountWorkIds.add(workId);
+    },
     /**
      * The set's Works locked before `operation` takes any branch or draft row, so every
      * structural draft write enters Work, then branch, then draft, the order Archive takes

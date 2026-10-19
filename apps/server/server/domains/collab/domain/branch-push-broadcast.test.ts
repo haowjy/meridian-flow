@@ -170,7 +170,6 @@ function stores(
       return {
         status: "completed",
         held: [],
-        outcomes: [],
         projections: batch.members.map(({ push }) =>
           projection({
             revision: 1,

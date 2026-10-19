@@ -11,6 +11,7 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Ok } from "../../../../shared/result.js";
+import { createTestDocumentRemoval } from "../../../../test-support/document-removal.js";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
@@ -78,7 +79,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const markdownByDocument = new Map<string, string>();
       const observedWriteFiletypes: Array<string | null> = [];
       let beforeCollabWrite: (() => Promise<void>) | null = null;
-      const mutationStore = new DrizzleContextTreeMutationStore(db);
+      const mutationStore = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+      });
       const context = new ContextFS({
         placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
@@ -87,7 +90,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         mutationStore,
         scheme: "kb",
         documentSync: {
-          ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
           bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
@@ -143,8 +145,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("enforces cross-schema and tracked/storage rename rejection in Postgres", async () => {
       const { context, move } = createContextHarness();
-      await context.write("chapter", "Chapter");
-      await context.write("script.py", "print('hello')");
+      await context.createTrackedDocument("chapter", "Chapter");
+      await context.createTrackedDocument("script.py", "print('hello')");
       await context.writeBinary("cover.png", {
         fileType: "image",
         storageUrl: "s3://bucket/cover.png",
@@ -171,7 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps one Postgres document identity when write and rename overlap", async () => {
       const { context, move, pauseNextWrite } = createContextHarness();
-      const initial = await context.write("chapter", "Chapter");
+      const initial = await context.createTrackedDocument("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let releaseWrite = () => {};
       const writeReleased = new Promise<void>((resolve) => {
@@ -215,7 +217,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps alias-only Postgres renames in place", async () => {
       const { context, move } = createContextHarness();
-      const initial = await context.write("Alias", "Unchanged");
+      const initial = await context.createTrackedDocument("Alias", "Unchanged");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       expect(await move("Alias", "Alias.txt")).toMatchObject({ ok: true });
       expect(
@@ -231,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("allows a Postgres rename while projection activity changes mid-flight", async () => {
       const { context, move, mutationStore } = createContextHarness();
-      const initial = await context.write("chapter", "Chapter");
+      const initial = await context.createTrackedDocument("chapter", "Chapter");
       if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
       let concurrentWrite: Awaited<ReturnType<ContextFS["write"]>> | null = null;
       mutationStore.setBeforeDestructiveWrite(async () => {
@@ -277,7 +279,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("ignores source content activity during an overwrite move", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
-      const tree = new DrizzleContextTreeMutationStore(db, createDrizzleContextCatalog(db));
+      const tree = new DrizzleContextTreeMutationStore(db, {
+        removal: createTestDocumentRemoval(db),
+        catalogMutations: createDrizzleContextCatalog(db),
+      });
       const source = await tree.inspect(SOURCE_ID, "rollback-source");
       const target = await tree.inspect(SOURCE_ID, "rollback-target");
       expect(source?.kind).toBe("file");

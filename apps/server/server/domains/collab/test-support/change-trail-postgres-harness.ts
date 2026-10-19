@@ -1,7 +1,3 @@
-import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
-import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
-import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
-import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -24,27 +20,33 @@ import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
+import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
+import { createRemovalRecords } from "../../context/tree/removal.js";
 import type { FileGrant } from "../../file-policy/index.js";
+import { createDrizzleBranchCommands } from "../adapters/drizzle-branch-commands.js";
 import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
+import { readHeadRevision } from "../adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
-import { readLiveReviewRevision } from "../adapters/drizzle-draft-review-live.js";
 import { createDrizzleReviewCut, readLiveDoc } from "../adapters/drizzle-review-cut.js";
+import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createBranchDiscard } from "../domain/branch-discard.js";
+import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
-import { createPeerRetirement } from "../domain/peer-retirement.js";
+import { createDraftRetirement } from "../domain/draft-retirement.js";
+import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementApplyStep } from "../domain/ports/settlement-apply.js";
 import { writeMarkdown } from "./bound-writes.js";
@@ -100,7 +102,7 @@ const { createDrizzleDocumentProjectionEffects } = await import(
 );
 const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
 const { documentAuthority } = await import("../domain/document-handle.js");
-const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGeneration } = await import(
+const { readDocumentAuthorityHead, replaceGeneration } = await import(
   "../adapters/drizzle-document-authority-head.js"
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
@@ -146,6 +148,7 @@ const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
 );
 const { createWorkBranchReviewService } = await import("../domain/work-branch-review-service.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
+const { createUnboundParser } = await import("../domain/link-binding.js");
 const { createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } = await import(
   "../domain/provenance.js"
 );
@@ -357,11 +360,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     store: createDrizzleBranchStore(db),
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
+  // One closer for the harness's drafts, Discard and removals; its retirement binds below.
+  const { draftClose, documentRemoval } = createTestRemovalDeps(db);
   const realDraftStore = createFixtureDraftStore(db, {
+    close: draftClose,
     workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
     },
     branches: workBranches,
   });
@@ -437,8 +442,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     codec: markupCodec,
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    lifecycle: persistence.lifecycle,
-    initialDocumentSeeds: persistence.lifecycle,
+    initialDocumentSeeds: persistence.seeds,
+    parseStored: createUnboundParser({ codec: markupCodec, schema: documentSchema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this harness");
@@ -656,8 +661,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         afterCommit: deferUntilDrizzleCommit,
       },
     }),
-    lifecycle: persistence.lifecycle,
-    initialDocumentSeeds: persistence.lifecycle,
+    initialDocumentSeeds: persistence.seeds,
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
@@ -684,12 +688,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       documentEdits: modelDocumentEdits,
       branches: workBranches,
       fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
+      removals: createRemovalRecords(db),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
       frontierRooms: { liveGeneration: async () => null },
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
       drafts: draftStore,
       draftCoordinator,
       draftPulls,
@@ -761,16 +765,25 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
   // the pooled cores' thread state.
-  const retirePeers = createPeerRetirement({
-    closeDraftRoom: (draftId) => {
-      for (const roomId of [...hocuspocus.documents.keys()]) {
-        if (!roomId.startsWith(`draft:${draftId}:gen:`)) continue;
-        hocuspocus.documents.get(roomId)?.destroy();
-        hocuspocus.documents.delete(roomId);
-      }
+  const closeDraftRoom = (draftId: string) => {
+    for (const roomId of [...hocuspocus.documents.keys()]) {
+      if (!roomId.startsWith(`draft:${draftId}:gen:`)) continue;
+      hocuspocus.documents.get(roomId)?.destroy();
+      hocuspocus.documents.delete(roomId);
+    }
+  };
+  draftClose.bindRetirement(
+    createDraftRetirement({
+      closeDraftRoom,
+      async closeRemovedRooms(_documentIds, draftIds) {
+        for (const draftId of draftIds) closeDraftRoom(draftId);
+      },
+      agentEdit,
+    }),
+    (error) => {
+      throw error;
     },
-    agentEdit,
-  });
+  );
   const lookups = createDrizzleCollabLookups(db);
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
@@ -785,13 +798,15 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
+        removal: documentRemoval,
+        close: draftClose,
         branches: workBranches,
         drafts: draftStore,
         coordinator: draftCoordinator,
         workProjection: createTestWorkProjectionMutation(db),
         catalog: { refreshSources: async () => "" },
       }),
-      retire: retirePeers,
+      holdRetirement: draftClose.holdRetirement,
       releaseObjects: async () => {},
     }),
     draftReview,
@@ -1065,7 +1080,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     documentId: DocumentId = ALPHA_ID,
     replace = false,
   ): Promise<string> {
-    await persistence.lifecycle.ensureDocument(documentId);
+    await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(documentId, async (doc) => {
       const before = Y.encodeStateVector(doc);
       model.insertBlocks(
@@ -1143,7 +1158,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     responseId: string;
     recentWriterUserId: UserId | null;
   }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       model.insertBlocks(
@@ -1215,7 +1230,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     initialMarkdown: string;
     steps: readonly MatrixDraftStep[];
   }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, input.initialMarkdown);
@@ -1346,7 +1361,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedPendingDependencyPush(): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     const source = new Y.Doc({ gc: false });
     source.clientID = 424_242;
     const fragment = source.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
@@ -1421,7 +1436,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, markdown);
@@ -1448,7 +1463,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     coldProvenance: string[];
     rebasedDraftProvenance: string[];
   }> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Agent-only passage.");
@@ -1492,8 +1507,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .orderBy(desc(schema.documentYjsCheckpoints.id))
         .limit(1);
       if (!checkpoint) throw new Error("compaction probe checkpoint is unavailable");
-      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-      const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      const replaced = await replaceGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
         expectedGeneration: authorityHead.generation,
@@ -1523,7 +1538,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedAuthorityReplacementProbe(): Promise<number> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Restored base.");
@@ -1584,8 +1599,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+    const replaced = await replaceGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
       expectedGeneration: authorityHead.generation,
@@ -1600,7 +1615,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     currentGenerationUpdateCount: number;
   }> {
     const checkpointId = await seedAuthorityReplacementProbe();
-    const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
+    const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
     let releaseBlocker!: () => void;
     let blockerReady!: () => void;
     const blockerRelease = new Promise<void>((resolve) => {
@@ -1632,10 +1647,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     }
 
     const compact = persistence.journal.compact(ALPHA_ID, new Date("2100-01-01T00:00:00.000Z"));
-    let replacement: ReturnType<typeof replaceDocumentAuthorityHeadGeneration> | undefined;
+    let replacement: ReturnType<typeof replaceGeneration> | undefined;
     try {
       await waitForAdvisoryLockWaiters(1);
-      replacement = replaceDocumentAuthorityHeadGeneration(db, {
+      replacement = replaceGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId,
         expectedGeneration: authorityHead.generation,
@@ -1658,7 +1673,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     carriedMarkdown: string | readonly string[];
     responseId: string;
   }): Promise<string> {
-    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await persistence.seeds.seedInitialDocument(ALPHA_ID, Y.encodeStateAsUpdate(new Y.Doc()));
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, input.initialMarkdown);
@@ -1782,7 +1797,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const checkpointId = Number(
       await persistence.store.createCheckpoint(cut, "oracle-explicit-restoration"),
     );
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const replaced = await replaceGeneration(db, {
       documentId: ALPHA_ID,
       checkpointId,
       expectedGeneration: authorityHead.generation,
@@ -1951,7 +1966,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       draftId: documentDraft.draftId,
       selectRows: async () => ({
         journalIds: [discarded.id],
-        expectedLiveRevision: await readLiveReviewRevision(db, ALPHA_ID),
+        expectedLiveRevision: await readHeadRevision(db, ALPHA_ID),
       }),
       reviewedByUserId: USER_ID,
     });
@@ -2337,8 +2352,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
         .limit(1);
       if (!checkpoint) throw new Error("durable authority checkpoint is unavailable");
-      const authorityHead = await ensureAndReadDocumentAuthorityHead(db, ALPHA_ID);
-      return replaceDocumentAuthorityHeadGeneration(db, {
+      const authorityHead = await readDocumentAuthorityHead(db, ALPHA_ID);
+      return replaceGeneration(db, {
         documentId: ALPHA_ID,
         checkpointId: checkpoint.id,
         expectedGeneration: authorityHead.generation,

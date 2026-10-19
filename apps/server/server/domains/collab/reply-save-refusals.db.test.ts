@@ -3,17 +3,20 @@
  * or an archive lands before the save. A refusal is a receipt, never a thrown save.
  */
 
+import { removedWriteRefusal } from "@meridian/agent-edit/integration";
 import type { WorkId } from "@meridian/contracts/runtime";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
+import { setTestHook } from "../../shared/test-hooks.js";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
+import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createBranches } from "./domain/branches.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 import { ThreadPeerPullLost } from "./domain/draft-pulls.js";
 import {
   ALPHA_ID,
@@ -48,13 +51,23 @@ const DOC = "Write did not land: the user discarded this new document. Re-read a
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 type Saved = Awaited<ReturnType<ReturnType<typeof createHarness>["commit"]>>;
-/** Each refused write's document and the copy its receipt carries, in save order. */
+/** A Discard that released the creation refuses with the removal record's copy, never a retry. */
+const REMOVED =
+  "This file was discarded from the draft before this reply was saved, so this change wasn't made.";
+/** Each refused write's document and the copy it carries, in save order. */
 function refused(saved: Saved) {
-  return saved.documents.flatMap((doc) =>
-    doc.receipts.flatMap((receipt) =>
-      receipt.result.status === "invalid_write" ? [[doc.documentId, receipt.result.message]] : [],
+  return [
+    ...saved.documents.flatMap((doc) =>
+      doc.receipts.flatMap((receipt) =>
+        receipt.result.status === "invalid_write" ? [[doc.documentId, receipt.result.message]] : [],
+      ),
     ),
-  );
+    ...("refused" in saved ? saved.refused : []).flatMap((refusal) =>
+      "removed" in refusal
+        ? [[refusal.documentId, removedWriteRefusal(refusal.removed).message]]
+        : [],
+    ),
+  ];
 }
 
 describe("reply save refusals (postgres)", () => {
@@ -213,7 +226,15 @@ describe("reply save refusals (postgres)", () => {
       extension: "",
       hidden: true,
     });
+    await seedEmptyAuthority(documentId);
     await claimCreate(documentId, WORK_ID, THREAD_ID);
+  }
+  /** A create's own step: the document's empty authority. */
+  async function seedEmptyAuthority(documentId: string) {
+    await createDrizzleCollabPersistence(db).seeds.seedInitialDocument(
+      documentId as never,
+      Y.encodeStateAsUpdate(new Y.Doc()),
+    );
   }
   /** Work B's branch claims the same hidden create, as two chats creating one path would. */
   async function shareHiddenCreate(fixture: Fixture) {
@@ -265,7 +286,7 @@ describe("reply save refusals (postgres)", () => {
     const { second, review } = await createdThenStaged();
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(second);
-    expect(refused(saved)).toEqual([[NEW_ID, DOC]]);
+    expect(refused(saved)).toEqual([[NEW_ID, REMOVED]]);
     const [row] = await db
       .select()
       .from(schema.documents)
@@ -290,7 +311,7 @@ describe("reply save refusals (postgres)", () => {
 
   it("15b: another Work revealing the create before Discard's transaction keeps the draft and refuses discarded_edit", async () => {
     const { second, review, fixture } = await createdThenStaged();
-    const remove = setCollabHook("discard.beforeCommitScope", async () => {
+    const remove = setTestHook("discard.beforeCommitScope", async () => {
       remove();
       await db
         .update(schema.documents)
@@ -448,7 +469,7 @@ describe("reply save refusals (postgres)", () => {
       const { responseId, review, write } = await setup();
       expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
       let saved: Saved | undefined;
-      const remove = setCollabHook("discard.beforeRetirement", async () => {
+      const remove = setTestHook("draft.beforeRetirement", async () => {
         remove();
         saved = await harness.commit(responseId);
       });
@@ -459,7 +480,7 @@ describe("reply save refusals (postgres)", () => {
     it.each([
       { name: "a revealed create", reveal: true, other: false, copy: EDIT },
       { name: "a hidden create another Work's branch uses", reveal: false, other: true, copy: DOC },
-      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: DOC },
+      { name: "a hidden create no other branch uses", reveal: false, other: false, copy: REMOVED },
     ])("$name refuses its draft state's copy", async ({ reveal, other, copy }) => {
       const { second, review, fixture } = await createdThenStaged();
       if (reveal) {
@@ -476,7 +497,7 @@ describe("reply save refusals (postgres)", () => {
         await shareHiddenCreate(fixture);
       }
       let saved: Saved | undefined;
-      const remove = setCollabHook("discard.beforeRetirement", async () => {
+      const remove = setTestHook("draft.beforeRetirement", async () => {
         remove();
         saved = await harness.commit(second);
       });
@@ -489,7 +510,7 @@ describe("reply save refusals (postgres)", () => {
     const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let late: Awaited<ReturnType<typeof write>> | undefined;
-    const remove = setCollabHook("discard.beforeRetirement", async () => {
+    const remove = setTestHook("draft.beforeRetirement", async () => {
       remove();
       late = await write("blue", "navy", "w-late");
     });
@@ -503,7 +524,7 @@ describe("reply save refusals (postgres)", () => {
     const { responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardItem(ALPHA_ID);
@@ -559,7 +580,7 @@ describe("reply save refusals (postgres)", () => {
       if (phase === "after the first ensure" && ensures === 1) await discardOnce();
       return peer;
     }) as typeof ensure;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (phase === "before the upstream read") await discardOnce();
     });
     let late: Awaited<ReturnType<typeof core.write>>;
@@ -583,14 +604,17 @@ describe("reply save refusals (postgres)", () => {
     // find, but the reply still names the discarded document; none crash.
     expect(late.isError).toBe(true);
     if (phase === "before the upstream read") expect(late.status).toBe("invalid_write");
-    expect(JSON.stringify(late.result)).toContain("the user discarded this new document");
-    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, DOC]]);
+    // A tombstoned creation is the removal's, so the write says so and asks for no retry.
+    expect(JSON.stringify(late.result)).toContain(
+      other ? "the user discarded this new document" : REMOVED,
+    );
+    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, other ? DOC : REMOVED]]);
   });
 
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
     const { responseId, review, write, core, context } = await setup();
     let once = true;
-    const unhook = setCollabHook("draft.beforeAccess", async () => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         await review.discardAll();
@@ -654,7 +678,7 @@ describe("reply save refusals (postgres)", () => {
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     let next: string | undefined;
     let oldSaved: Saved | undefined;
-    const remove = setCollabHook("discard.beforeRetirement", async () => {
+    const remove = setTestHook("draft.beforeRetirement", async () => {
       remove();
       oldSaved = await harness.commit(responseId);
       next = await createResponse(db, 3);
@@ -682,7 +706,7 @@ describe("reply save refusals (postgres)", () => {
   it("21: a same-reply write after the old peer's delayed retirement commits; the old write is receipted separately", async () => {
     const { fixture, draftId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
-    const remove = setCollabHook("discard.beforeRetirement", async () => {
+    const remove = setTestHook("draft.beforeRetirement", async () => {
       remove();
       expect(await write("blue", "navy", "w-fresh")).toMatchObject({ phase: "staged" });
     });
@@ -698,6 +722,7 @@ describe("reply save refusals (postgres)", () => {
     const { fixture, responseId, write, core, context } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     const granted = testFileGrant({ kind: "live" }, BETA_ID);
+    await seedEmptyAuthority(BETA_ID);
     expect(
       await core.write(
         {

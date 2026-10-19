@@ -540,7 +540,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
       const generation = await availability.advance({ projectIds: [PROJECT], userIds: [] });
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[0]));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOCS[0]));
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
       let result = await availability.lookup(
         { projectId: PROJECT as never, documentIds: [DOCS[0], DOCS[2]] as never },
@@ -555,7 +558,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[2]));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOCS[2]));
       await expect(
         availability.lookup(
           { projectId: PROJECT as never, documentIds: [DOCS[2]] as never },
@@ -630,25 +636,48 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("hides draft-only identities from live availability", async () => {
+    it("hides draft-only identities from live availability, and answers a discarded one", async () => {
       const db = await seed();
       const evidence = createInMemoryEventSink();
       const hiddenId = "00000000-0000-4000-8000-000000000927";
-      await db.insert(documents).values({
-        id: hiddenId,
-        contextSourceId: PROJECT_SOURCE,
-        hidden: true,
-        name: "draft-only",
-        extension: "json",
-      });
+      const discardedId = "00000000-0000-4000-8000-000000000928";
+      await db.insert(documents).values([
+        {
+          id: hiddenId,
+          contextSourceId: PROJECT_SOURCE,
+          hidden: true,
+          name: "draft-only",
+          extension: "json",
+        },
+        {
+          id: discardedId,
+          contextSourceId: PROJECT_SOURCE,
+          hidden: true,
+          name: "discarded-creation",
+          extension: "md",
+          deletedAt: new Date("2026-10-18T00:00:00Z"),
+          deletionReason: "discarded",
+          deletedByUserId: USER as never,
+        },
+      ]);
       const availability = createDrizzleProjectContextAvailability(db, evidence);
       const result = await availability.lookup(
-        { projectId: PROJECT as never, documentIds: [hiddenId] as never },
+        { projectId: PROJECT as never, documentIds: [hiddenId, discardedId] as never },
         { userId: USER },
       );
-      expect(result.resolutions).toEqual([
-        expect.objectContaining({ kind: "not-visible", documentId: hiddenId }),
-      ]);
+      expect(result.resolutions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "not-visible", documentId: hiddenId }),
+          expect.objectContaining({
+            kind: "deleted",
+            documentId: discardedId,
+            removal: expect.objectContaining({
+              reason: "discarded",
+              actor: expect.objectContaining({ kind: "user", userId: USER }),
+            }),
+          }),
+        ]),
+      );
       expect(evidence.events).toEqual([]);
     });
 
@@ -680,7 +709,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
       };
       await assertInconsistent();
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOCS[0]));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, DOCS[0]));
       await assertInconsistent();
       expect(evidence.events).toEqual([
         expect.objectContaining({

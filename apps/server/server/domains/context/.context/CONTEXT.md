@@ -60,7 +60,9 @@ binary intake, while Scratch is the writable authoring space and accepts
 nested paths. Text creates and writes resolve the persisted filetype and call
 collab's document-aware engine; they never seed a Y.Doc with an assumed
 Markdown schema. Binary documents are storage-backed and are read through
-storage, not the text engine.
+storage, not the text engine. A whole-file `write` overwrites a living document and
+answers `not_found` at an empty path: it never creates (W52); creation is
+`createTrackedDocument`, `createBoundDocument` or `ensureTrackedDocument`.
 
 ## Views, identity, and revisions
 

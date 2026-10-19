@@ -7,7 +7,6 @@ import {
   type AgentEditCodecFactory,
   createAgentEditCore,
   type DocumentEdits,
-  type DocumentLifecycle,
   type SemanticProvenanceWriter,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
@@ -15,6 +14,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { DocumentRemovals } from "../context/ports/document-removal.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type {
   FrontierRooms,
@@ -62,7 +62,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   drafts: ApplicationDraftStore;
   draftCoordinator: DraftCoordinator;
   draftPulls: DraftPullService;
@@ -83,6 +82,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   responseTransactionSettlement: ResponseTransactionSettlement;
   responseTransactions: ResponseTransactionHooks;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  removals: DocumentRemovals;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
   frontierRooms: FrontierRooms;
@@ -91,12 +91,14 @@ export function createDraftThreadPeerAgentEditCore(input: {
   return createThreadPeerCorePool({
     branches: input.branches,
     drafts: input.drafts,
+    removals: input.removals,
     fences: createReplySaveFences({
       liveUtilityCore: input.liveUtilityCore,
       drafts: input.drafts,
       branches: input.branches,
       diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,
+      removals: input.removals,
       lockWorks: input.lockWorks,
       lockLiveDocuments: input.lockLiveDocuments,
     }),
@@ -141,7 +143,6 @@ export function createDraftThreadPeerAgentEditCore(input: {
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
         documentEdits: input.documentEdits,
-        lifecycle: input.lifecycle,
         codec: input.codec,
         model: input.model,
         semanticProvenance: input.semanticProvenance,

@@ -71,6 +71,7 @@ export const documentDrafts = pgTable(
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
     status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
+    closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     /** Current visible effect against the durable last-pulled live cut. */
@@ -111,6 +112,14 @@ export const documentDrafts = pgTable(
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
     check("document_drafts_kind_valid", sql`${table.kind} IN ('work_draft', 'thread_peer')`),
+    check(
+      "document_drafts_closed_cause_presence",
+      sql`(${table.status} = 'closed') = (${table.closedCause} IS NOT NULL)`,
+    ),
+    check(
+      "document_drafts_closed_cause_valid",
+      sql`${table.closedCause} IN ('discarded', 'document_removed')`,
+    ),
     check("document_drafts_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
       "document_drafts_owner_shape",

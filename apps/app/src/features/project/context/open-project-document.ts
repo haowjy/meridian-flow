@@ -181,7 +181,8 @@ export class ProjectDocumentLiveOpener {
           if (
             snapshot.status === "access-lost" ||
             snapshot.connectionState?.kind === "unauthorized" ||
-            snapshot.connectionState?.kind === "terminal"
+            snapshot.connectionState?.kind === "terminal" ||
+            session.resetDisposition === "removed"
           ) {
             await registry.restartUnavailableRoom(lease);
             session = registry.get(lease);

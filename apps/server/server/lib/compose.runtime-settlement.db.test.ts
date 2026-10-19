@@ -392,7 +392,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
         await db
           .update(schema.documents)
-          .set({ deletedAt: new Date() })
+          .set({ deletionReason: "deleted", deletedAt: new Date() })
           .where(eq(schema.documents.id, DOC_ID));
         runtime = await runtimes.compose();
         ({ ports, app } = runtime);

@@ -1,11 +1,12 @@
-import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 /** Public collab-domain reverseTurn coverage over Drizzle draft infrastructure. */
 
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
   CREATED_DOC_ID,
   createWorkBranchFixture,
@@ -72,7 +73,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         documentCreation: collab,
         documentSync: {
           ...collab,
@@ -85,7 +88,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       try {
-        const created = await context.write("fresh.md", "Seed.");
+        const created = await context.createTrackedDocument("fresh.md", "Seed.");
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
         await expect(

@@ -21,6 +21,7 @@ import { createDrizzleProjectRepository } from "../../apps/server/server/domains
 import { createWorkProjectionMutation } from "../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
+import { createTestRemovalDeps } from "../../apps/server/server/test-support/document-removal.js";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
     await cleanupSmokeRows(db);
 
     const workRepository = createDrizzleWorkRepository({
+      removal: createTestRemovalDeps(db, workProjectionMutation).documentRemoval,
       lineageScratch,
       db,
       projectionMutation: workProjectionMutation,

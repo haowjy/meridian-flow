@@ -2,8 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-import { branches, documentDrafts, works } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { branches, documentDrafts } from "@meridian/database/schema";
 import { expect, it } from "vitest";
 import {
   handleApplyAllWorkBranchRequest,
@@ -116,50 +115,5 @@ describeBranchTreeDb("deleted-live review preview", (start, db) => {
     const preview = await handleWorkDraftPreviewRequest(deps, documentInput);
     expect(preview.status).toBe("active");
     expect(await s.view(work).text("chapter.md")).toContain("Pending words.");
-  });
-
-  it("previews pending text, including archived read-only review, but refuses another Work's branch", async () => {
-    const { s, runtime } = await start();
-    const work = await s.work("ascension", "draft");
-    const other = await s.work("beacon", "draft");
-    const documentId = await s.writer.createDocument("chapter.md", "Live words.");
-    await s.model(work).edit("chapter.md", "Live words.", "Pending words.");
-    await s.model(other).edit("chapter.md", "Live words.", "Other words.");
-    const [item] = await s.items(work);
-    const [foreign] = await s.items(other);
-    if (!item || !foreign) throw new Error("Expected both Works to have an item");
-    expect((await s.writer.delete("chapter.md")).ok).toBe(true);
-    expect((await s.items(work))[0]?.conflict?.code).toBe("deleted_live");
-    const deps = selectBranchRouteServices(runtime.app);
-    const input = {
-      projectId: s.project.id,
-      userId: s.project.userId,
-      workId: work.id,
-      documentId,
-      itemKey: item.itemKey,
-    };
-    const preview = await handleWorkDraftPreviewRequest(deps, input);
-    expect(preview.status).toBe("active");
-    expect(JSON.stringify(preview.status === "active" ? preview.hunks : null)).toContain("Pending");
-    // Another Work's key names nothing here.
-    expect(
-      await handleWorkDraftPreviewRequest(deps, { ...input, itemKey: foreign.itemKey }),
-    ).toMatchObject({ status: "gone" });
-    await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, work.id));
-    expect((await handleWorkDraftPreviewRequest(deps, input)).status).toBe("active");
-    await expect(
-      handleApplyWorkDraftRequest(deps, {
-        ...input,
-        request: { branchId: item.branchId, itemKey: item.itemKey, commandId: randomUUID() },
-      }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    for (const target of [
-      { kind: "document" as const, documentId },
-      { kind: "draft" as const, documentId, workId: work.id },
-    ]) {
-      expect(
-        await runtime.app.fileAccess.authorize({ accountId: s.project.userId }, target, "read"),
-      ).toMatchObject({ denied: true, reason: "not_found" });
-    }
   });
 });

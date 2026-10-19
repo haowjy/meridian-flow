@@ -14,6 +14,7 @@ import type {
   UserId,
 } from "@meridian/contracts";
 import type {
+  DocumentRemovalRecord,
   ReversalOutcome,
   TurnInverseSkip,
   TurnReceiptChip,
@@ -49,6 +50,8 @@ export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
   live: Y.Doc;
+  /** Set when the document is removed: its inverse is skipped with this record, never planned. */
+  removal: DocumentRemovalRecord | null;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,

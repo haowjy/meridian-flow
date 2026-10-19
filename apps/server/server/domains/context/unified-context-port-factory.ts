@@ -70,6 +70,7 @@ import type {
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { DocumentRemoval } from "./ports/document-removal.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -431,6 +432,7 @@ function createInMemoryStoreResolvers(
 function createProductionStoreResolvers(
   db: Database,
   catalogMutations: ContextCatalogMutationPort,
+  removal: DocumentRemoval,
   arrivals?: DocumentArrivals,
   repair?: HiddenNodeRepair,
 ): ContextStoreResolvers {
@@ -478,7 +480,12 @@ function createProductionStoreResolvers(
       return workId;
     },
     resolveMutationStore() {
-      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals, repair);
+      return new DrizzleContextTreeMutationStore(db, {
+        removal,
+        catalogMutations,
+        ...(arrivals ? { arrivals } : {}),
+        ...(repair ? { repair } : {}),
+      });
     },
   };
 }
@@ -600,6 +607,8 @@ export function createProductionUnifiedContextPortFactory(options: {
   documentSync: ContextFSDeps["documentSync"] &
     DocumentCreationAggregate &
     Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  /** The tree's removal kernel: every delete, overwrite and end of use tombstones through it. */
+  removal: DocumentRemoval;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
@@ -627,6 +636,7 @@ export function createProductionUnifiedContextPortFactory(options: {
   const storeResolvers = createProductionStoreResolvers(
     options.db,
     catalogMutations,
+    options.removal,
     options.arrivals,
     options.hiddenNodeRepair,
   );
@@ -641,6 +651,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     creates: (store) =>
       createDrizzleBranchCreates({
         db: options.db,
+        removal: options.removal,
         sourceId: () => store.contextSourceId(),
         documents: options.documentSync,
         drafts: options.documentSync,

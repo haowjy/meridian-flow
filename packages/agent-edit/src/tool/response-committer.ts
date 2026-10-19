@@ -8,9 +8,9 @@ import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type {
-  DiscardedWriteReason,
   DocumentAccess,
   DocumentCoordinator,
+  RetiredWriteReason,
   StagedHelperCut,
   StagedWriteHost,
   StagedWriteRejectionReason,
@@ -95,7 +95,7 @@ export interface ResponseCommitter {
     documentId: string;
     threadId: string;
     peerDraftId: string;
-    reason: DiscardedWriteReason;
+    reason: RetiredWriteReason;
   }): void;
   dropForThread(docId: string, threadId: string): void;
   prepare(editScopeId: string, docId: string): Promise<ResponseReadLease | null>;
@@ -215,7 +215,6 @@ export interface ResponseStageUpdateInput {
   writeOrdinal?: number;
   durableWriteId?: string;
   toolCallId?: string;
-  ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
@@ -250,7 +249,6 @@ interface ResponseDocumentBufferFields {
   session: ActorSession;
   commandName: DocumentCommandName;
   updates: StagedResponseUpdate[];
-  ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
   rejectedUpdates?: StagedResponseUpdate[];
@@ -356,7 +354,6 @@ export function createResponseCommitter(deps: {
   model: AgentEditModel;
   codec: AgentEditCodecFactory;
   links: import("../ports/document-links.js").DocumentLinksPort;
-  ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onTransition?: (event: ResponseCommitterTransitionDetail) => void;
@@ -364,14 +361,7 @@ export function createResponseCommitter(deps: {
   afterPreflight?: (responseId: string) => Promise<void> | void;
   onObservationFailed?: (event: ObservationFailedDetail) => void;
 }): ResponseCommitter {
-  const {
-    runtimeStore,
-    mutationCommit,
-    coordinator,
-    ensureDocument,
-    onClaimDiscarded,
-    onTransition,
-  } = deps;
+  const { runtimeStore, mutationCommit, coordinator, onClaimDiscarded, onTransition } = deps;
   const noticeOutbox = new Map<
     string,
     Map<string, { docId: string; writes: StagedResponseUpdate[] }>
@@ -523,7 +513,9 @@ export function createResponseCommitter(deps: {
         const explanation = writes.every((entry) => entry.rejectionReason === "discard")
           ? "was discarded with the text it edited"
           : `did not land: ${[...new Set(writes.map((entry) => rejectedWriteExplanation(entry.rejectionReason)))].join("; ")}`;
-        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
+        // A removed file has nothing to re-read.
+        const removed = writes.every((entry) => typeof entry.rejectionReason === "object");
+        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}.${removed ? "" : " Re-read and retry."}`;
       });
     },
   };
@@ -729,11 +721,7 @@ export function createResponseCommitter(deps: {
       doc.view.runtime,
       "read",
     );
-    if (
-      isInternalWriteResult(restored) &&
-      !(restored.status === "document_not_found" && doc.createdDocumentBeforeCommit)
-    )
-      throw internalResultError(restored);
+    if (isInternalWriteResult(restored)) throw internalResultError(restored);
     const lease = readLease(doc.view.runtime.doc);
     for (const entry of doc.updates) Y.applyUpdate(unwrapDoc(lease.doc), entry.update);
     if (
@@ -1081,13 +1069,7 @@ export function createResponseCommitter(deps: {
           },
           { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
         );
-        if (isInternalWriteResult(preflight)) {
-          if (preflight.status === "document_not_found" && docBuffer.createdDocumentBeforeCommit) {
-            preflights.set(docBuffer.docId, undefined);
-            continue;
-          }
-          throw internalResultError(preflight);
-        }
+        if (isInternalWriteResult(preflight)) throw internalResultError(preflight);
         if (!preflight) throw new Error(`Preflight returned no result for ${docBuffer.docId}.`);
         preflights.set(docBuffer.docId, preflight);
       }
@@ -1147,9 +1129,6 @@ export function createResponseCommitter(deps: {
             };
           replayBase = new Y.Doc({ gc: false });
           Y.applyUpdate(replayBase, replayed.beforeState);
-        }
-        if (docBuffer.ensureDocumentBeforeCommit) {
-          await ensureDocument?.(docBuffer.docId);
         }
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
         const hashes = responseHashes(docBuffer);
@@ -1696,7 +1675,6 @@ export function createResponseCommitter(deps: {
         session: input.session,
         commandName: input.commandName,
         updates: [] as StagedResponseUpdate[],
-        ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
         createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
       };
@@ -1742,8 +1720,6 @@ export function createResponseCommitter(deps: {
       }
     }
     docBuffer.commandName = input.commandName;
-    docBuffer.ensureDocumentBeforeCommit =
-      docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
     docBuffer.createdDocumentBeforeCommit =
       docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;

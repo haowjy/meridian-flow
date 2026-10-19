@@ -1,15 +1,16 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
-  DiscardedWriteReason,
   FrontierLookup,
   ReadCommand,
   ResponseCommitSuccessResult,
+  RetiredWriteReason,
   StagedWriteRejectionReason,
   WriteCommand,
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
@@ -50,8 +51,17 @@ export type RoutedReadContext = WriteContext &
 export type RefusedResponseDocument =
   | {
       documentId: DocumentId;
-      /** The policy's refusal under the save's locks; its copy is the tool's to write. */
+      /** The policy's permission refusal under the save's locks; its copy is the tool's to write. */
       denial: FileAccessDenied;
+    }
+  | {
+      documentId: DocumentId;
+      /**
+       * The document is not found, or its draft closed because it was removed: the writes are
+       * dropped with the record's copy. Null when there is no record: the document went with
+       * its source or Work, or stands again.
+       */
+      removed: DocumentRemovalRecord | null;
     }
   | {
       documentId: DocumentId;
@@ -61,14 +71,6 @@ export type RefusedResponseDocument =
        */
       reason: StagedWriteRejectionReason;
     };
-
-/**
- * A model call's outcome. An undo or redo that reversed some of its writes but
- * was refused for others names the refused ones; the tool writes the copy.
- */
-export type RoutedWriteOutcome = WriteOutcome & {
-  refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
-};
 
 /** One reply's save across every destination it wrote (D42). */
 export type ResponseSaveResult = ResponseCommitSuccessResult & {
@@ -100,7 +102,7 @@ export type ThreadPeerAgentEditCore = Omit<
   "read" | "write" | "commitResponse" | "prepareResponse" | "responseDocuments"
 > & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
-  write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
+  write(command: WriteCommand, context: RoutedWriteContext): Promise<WriteOutcome>;
   /**
    * Retire exactly these peers on `documentId` after their drafts closed or were deleted:
    * their staged writes are refused with the reason, then their runtimes and pulled baselines
@@ -108,7 +110,7 @@ export type ThreadPeerAgentEditCore = Omit<
    */
   retireThreadPeers(
     documentId: string,
-    peers: readonly { threadId: string; peerDraftId: string; reason: DiscardedWriteReason }[],
+    peers: readonly { threadId: string; peerDraftId: string; reason: RetiredWriteReason }[],
   ): Promise<void>;
   /** Where this reply's writes to a document go, once it has written there. */
   responseDestination(responseId: string, documentId: string): FileDestination | undefined;

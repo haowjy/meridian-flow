@@ -5,21 +5,18 @@
  * the same way, and an inconsistent hidden node met by a read is repaired by it too.
  *
  * Every function runs in its caller's transaction, which holds the Work, the branch (when
- * there is one) and the namespaces. Hidden nodes are tombstoned, never hard-deleted.
+ * there is one) and the namespaces; the Work's pending count follows at that transaction's
+ * commit. Hidden nodes are tombstoned, never hard-deleted.
  */
 import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import type { RetractionCause } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
+import type { DocumentRemoval } from "../ports/document-removal.js";
 import { dropDocumentRows } from "./branch-tree-store.js";
-import {
-  lockDocuments,
-  type ReleasedDraft,
-  releaseDocumentStorage,
-  tombstoneDocuments,
-  tombstoneFolders,
-} from "./node-rows.js";
-import { treeHook } from "./test-hooks.js";
+import { lockDocuments, type RemovalInitiator, tombstoneFolders } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
 import {
@@ -29,21 +26,13 @@ import {
   loadDocumentIdentityRows,
 } from "./tree-view-sql.js";
 
-/**
- * What an end of use tombstoned, the stored objects to delete once it commits, and the
- * drafts its storage release deleted (their rooms and runtimes retire after commit).
- */
+/** What an end of use tombstoned, and the stored objects to delete once it commits. */
 export type EndedUse = {
   tombstoned: readonly NodeRef[];
   releasedObjects: readonly string[];
-  releasedDrafts: readonly ReleasedDraft[];
 };
 
-const NOTHING_ENDED: EndedUse = Object.freeze({
-  tombstoned: [],
-  releasedObjects: [],
-  releasedDrafts: [],
-});
+const NOTHING_ENDED: EndedUse = Object.freeze({ tombstoned: [], releasedObjects: [] });
 
 /**
  * The branch stops using these documents: its rows go,
@@ -52,12 +41,17 @@ const NOTHING_ENDED: EndedUse = Object.freeze({
  */
 export async function endUse(
   db: Database,
-  input: { branchId: BranchId; documentIds: readonly DocumentId[] },
+  input: {
+    branchId: BranchId;
+    documentIds: readonly DocumentId[];
+    actor: RemovalInitiator;
+    removal: DocumentRemoval;
+  },
 ): Promise<EndedUse> {
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
   await dropDocumentRows(db, { branchId: input.branchId, documentIds: ids });
-  return tombstoneUnused(db, ids);
+  return tombstoneUnused(db, ids, { actor: input.actor, removal: input.removal });
 }
 
 /**
@@ -71,7 +65,11 @@ export async function endUse(
 export async function tombstoneUnused(
   db: Database,
   documentIds: readonly DocumentId[],
-  options: { keepFolders?: boolean } = {},
+  options: {
+    keepFolders?: boolean;
+    actor: RemovalInitiator;
+    removal: DocumentRemoval;
+  },
 ): Promise<EndedUse> {
   const ids = [...new Set(documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
@@ -80,14 +78,16 @@ export async function tombstoneUnused(
   const rows = await loadDocumentIdentityRows(tx, ids);
   const used = new Set((await loadActiveBranchUses(tx, ids)).map((use) => use.documentId));
   const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
-  await treeHook("endUse.afterRevalidate");
+  await testHook("endUse.afterRevalidate");
   if (ending.length === 0) return NOTHING_ENDED;
-  const endingIds = ending.map((row) => row.id);
-  await tombstoneDocuments(db, endingIds);
-  const releasedDrafts = await releaseDocumentStorage(db, endingIds);
-  const tombstoned: NodeRef[] = endingIds.map((id) => ({ kind: "document" as const, id }));
+  const removed = await options.removal.remove({
+    documentIds: ending.map((row) => row.id),
+    reason: "discarded",
+    ...options.actor,
+  });
+  const tombstoned: NodeRef[] = removed.map((id) => ({ kind: "document" as const, id }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
-  if (options.keepFolders) return { tombstoned, releasedObjects, releasedDrafts };
+  if (options.keepFolders) return { tombstoned, releasedObjects };
   // Every ancestor of every ended document, deepest first: a folder is judged only after
   // all of the batch's folders beneath it, so a sibling still alive at first glance never
   // leaves its parent behind.
@@ -108,7 +108,7 @@ export async function tombstoneUnused(
     await tombstoneFolders(db, [folderId]);
     tombstoned.push({ kind: "folder", id: folderId });
   }
-  return { tombstoned, releasedObjects, releasedDrafts };
+  return { tombstoned, releasedObjects };
 }
 
 /** What an end of use touches: documents, and every source they sit in now or in a branch. */
@@ -198,7 +198,7 @@ export async function acquireEndUseScope(
 /**
  * Reverse a branch's create for a rolled-back reply or a failed create (§12.5, O-11). The
  * tree half only: collab's `retractDraft` decides whether the document's draft holds
- * another contribution (then the create stands) and otherwise removes it; the branch's use
+ * another contribution (then the create stands) and otherwise closes it; the branch's use
  * then ends.
  */
 export async function retractCreate(
@@ -206,6 +206,8 @@ export async function retractCreate(
   input: {
     branchId: BranchId;
     documentId: DocumentId;
+    cause: RetractionCause;
+    removal: DocumentRemoval;
     retractDraft(): Promise<"retracted" | "stands">;
   },
 ): Promise<{ retracted: boolean; tombstoned: readonly NodeRef[] }> {
@@ -215,6 +217,11 @@ export async function retractCreate(
     return { retracted: false, tombstoned: [] };
   }
   if ((await input.retractDraft()) === "stands") return { retracted: false, tombstoned: [] };
-  const ended = await endUse(db, { branchId: input.branchId, documentIds: [input.documentId] });
+  const ended = await endUse(db, {
+    branchId: input.branchId,
+    documentIds: [input.documentId],
+    actor: { cause: input.cause },
+    removal: input.removal,
+  });
   return { retracted: true, tombstoned: ended.tombstoned };
 }

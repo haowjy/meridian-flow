@@ -6,7 +6,7 @@
  * (D23).
  */
 import assert from "node:assert/strict";
-import { setCollabHook } from "../../../../apps/server/server/domains/collab/domain/collab-test-hooks.ts";
+import { setTestHook } from "../../../../apps/server/server/shared/test-hooks.ts";
 import {
   appendToFirstParagraph,
   gate,
@@ -33,7 +33,7 @@ export const d12PullBeforeArchive: Probe = {
     const paused = gate();
     const resume = gate();
     let first = true;
-    const remove = setCollabHook("draft.rewrite.beforeCommit", async () => {
+    const remove = setTestHook("draft.rewrite.beforeCommit", async () => {
       if (!first) return;
       first = false;
       paused.open();

@@ -1,17 +1,12 @@
 /**
- * Controlled interleaving for DB tests (contract §16.1): run `a` until it reaches a tree or
- * collab hook point, run `b` until it completes or waits on a lock `a` holds, then release `a`.
- * Depends only on the hook registries and the database's lock view.
+ * Controlled interleaving for DB tests (contract §16.1): run `a` until it reaches a test
+ * hook point, run `b` until it completes or waits on a lock `a` holds, then release `a`.
+ * Depends only on the hook registry and the database's lock view.
  */
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
-import {
-  type CollabHookPoint,
-  isCollabHookPoint,
-  setCollabHook,
-} from "../domains/collab/domain/collab-test-hooks.js";
-import { setTreeHook, type TreeHookPoint } from "../domains/context/tree/test-hooks.js";
 import { currentDrizzleDb, isInDrizzleTransaction } from "../shared/drizzle-transaction.js";
+import { setTestHook, type TestHookPoint } from "../shared/test-hooks.js";
 
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
@@ -39,7 +34,7 @@ async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
 export async function interleave<A, B>(
   db: Database,
   a: () => Promise<A>,
-  at: TreeHookPoint | CollabHookPoint,
+  at: TestHookPoint,
   b: () => Promise<B>,
   options: { waitMs?: number } = {},
 ): Promise<{ a: Settled<A>; b: Settled<B>; bWaited: boolean }> {
@@ -60,7 +55,7 @@ export async function interleave<A, B>(
     reached(row ? Number(row.pid) : null);
     await gate;
   };
-  const remove = isCollabHookPoint(at) ? setCollabHook(at, pause) : setTreeHook(at, pause);
+  const remove = setTestHook(at, pause);
   try {
     const aRun = settle(a);
     const first = await Promise.race([atHook.then((holder) => ({ holder })), aRun]);
@@ -98,7 +93,7 @@ export async function race<K extends string>(
   db: Database,
   runs: Record<K, () => Promise<unknown>>,
   first: K,
-  at: TreeHookPoint | CollabHookPoint,
+  at: TestHookPoint,
 ): Promise<{ bWaited: boolean; by: Record<K, Settled<unknown>> }> {
   const [second] = (Object.keys(runs) as K[]).filter((name) => name !== first);
   if (second === undefined) throw new Error("A race needs two runs");

@@ -54,10 +54,56 @@ and whole Discard retain their existing document-level semantics. Corrupt
 previews return a typed refusal without resetting state; the whole Discard
 command is the recovery path for a corrupt draft.
 
-Discard closes only peers whose upstream is the addressed Work draft,
-then retires those peers after commit. A fresh peer in the same thread and
-peers for other Works survive. Thread-core invalidation is a post-discard
-side effect, never a preview side effect.
+Discard closes only peers whose upstream is the addressed Work draft. A fresh
+peer in the same thread and peers for other Works survive. Thread-core
+invalidation is a post-discard side effect, never a preview side effect.
+
+Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
+cause)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
+`branch_closed`, `document_discarded`, `edit_discarded` or
+`{ documentRemoved: record }`. It prelocks Work drafts in ID order, then thread
+peers in ID order (a pull's upstream-before-peer order), derives the durable
+`closed_cause` (`document_removed` for a removal, else `discarded`), settles
+each Work draft's current generation, and joins the root transaction's
+retirement batch (a transaction participant: a rolled-back savepoint's closes
+leave with it). After the root commits the batch retires once
+(`domain/draft-retirement.ts`): a draft whose document the same transaction
+removed retires as a removal whatever its own cause (its rooms close `4208`,
+its peers' staged writes are refused `{ removed: record }`), so a Discard that
+closes a created document's drafts and then tombstones it still closes their
+rooms `4208`; any other closed draft's room closes stale and its peers are
+refused with their cause's `discarded_*` reason. A removal's selection names its
+documents, whose live rooms close `4208` even with no draft, but only while the
+removal still stands: after every matching room load settles, one batched record
+read outside DB locks drops live rooms a Work Restore has since made living
+again (draft rooms close by exact draft id; a closed draft stays closed). A
+Restore that commits while that read is in flight can still have its new live
+connection closed `4208`; the app's stale-4208 recovery reconnects it. Why a
+reply's closed pin lost its write is one pure rule, `closedPinReason`
+(`domain/closed-pin-reason.ts`), shared by the save fence and a failed peer
+pull: a draft closed `document_removed` is the removal's even when its document
+stands again (`removed: null`). The closer is
+built at the composition root and its retirement bound by the collab domain once
+rooms and cores exist (the `hocuspocusBinding.current()` pattern); unbound, as in
+fixtures without rooms, it retires nothing. A caller whose commit happens inside
+process-level live scopes (Discard) runs under `holdRetirement`, so retirement,
+and a save racing it, never wait on scopes the committer still holds.
+Retraction takes the same lock order before checking for other contributions
+and closes rather than deleting. Removed documents refuse new draft/peer inserts
+under their document mutation lock, after Work/thread and branch admission.
+
+Only a committed removal closes live and draft sockets with `4208`. The room
+helper closes the gateway transport before Hocuspocus's protocol close, which
+otherwise arrives as `1000`. Failures are logged as
+`collab.retirement.after_commit.failed`.
+
+A discarded document's closed draft rows remain as lifecycle records, but their
+journals are deleted, `state`/`state_vector` are zero-length bytea and
+`live_cut`/`discarded_state_vector` are NULL. Zero-length state is deliberately
+invalid Yjs: `readDraftAt` omits its checkpoint and `materializeDraftRead`
+rejects it, including a raw zero-length checkpoint. It is never an empty document.
+A `deleted` removal retains all bytes. Restoring the document does not reopen
+its old drafts.
 
 ## Save, replay, and grants
 
@@ -191,7 +237,8 @@ cursor instead: rows appended since it was computed are applied into its
 checkpoint under the row lock, so an intervening append never makes it miss,
 and only another rewrite does. Whether a draft is frozen is derived on every
 read from its branch's origin Work (archived, deleted, or missing), never
-stored. Archive, delete and restore lock no draft row and bump no revision:
+stored. Archive and restore lock no draft row and bump no revision (Work deletion also
+removes its owned documents through the tree removal protocol, closing their drafts):
 every rewrite and reply save locks the Work through the Works
 mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its

@@ -8,7 +8,11 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { BranchId, LinkView } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
-import type { ReversalOutcome, TurnReceiptChip } from "@meridian/contracts/protocol";
+import type {
+  DocumentRemovalRecord,
+  ReversalOutcome,
+  TurnReceiptChip,
+} from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -24,11 +28,10 @@ import type { Result } from "../../shared/result.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type {
   RefusedResponseDocument,
-  RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type { RefusedResponseDocument, RoutedWriteOutcome };
+export type { RefusedResponseDocument };
 
 import type { ApplyItemRef } from "./domain/branch-apply.js";
 import type {
@@ -42,7 +45,6 @@ import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
-import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { DerivedReview } from "./domain/review-cut.js";
@@ -143,6 +145,14 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  /**
+   * The removed document a room serves, with its record (a draft room's by its retained draft,
+   * at any status, never reopened), or null while it lives. Unauthorized: the gateway reads it
+   * only where it is already refusing, and answers `4208` only to a reader of the document.
+   */
+  roomRemoval(
+    room: { documentId: DocumentId } | { draftId: string },
+  ): Promise<{ documentId: DocumentId; removal: DocumentRemovalRecord } | null>;
   validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   admitDraftWriterUpdate(input: {
     draftId: string;
@@ -229,7 +239,13 @@ export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  ensureDocument(documentId: string): Promise<void>;
+  /** The create's own step for an empty create: its authority, empty, in its transaction. */
+  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  /**
+   * Explicit repair of a living document whose authority is absent, from its stored
+   * projection; a no-op when it has authority. Called only on an explicit touch.
+   */
+  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
@@ -507,13 +523,12 @@ export type DraftPeerShadowAccess = {
   /**
    * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
    * `stands` when the branch's draft on the document (or a thread peer of it) holds a
-   * contribution; otherwise the drafts go and, once the transaction commits, their
-   * pooled cores, caches and rooms are retired.
+   * contribution; otherwise closes the drafts, which retire after commit.
    */
   retractCreatedDocumentDraft(input: {
     documentId: DocumentId;
     branchId: BranchId;
-  }): Promise<"retracted" | "stands">;
+  }): Promise<"stands" | "retracted">;
 };
 
 export type DocumentAttribution = {
@@ -536,7 +551,6 @@ export type CollabLifecycle = {
 
 export type CollabDomain = CollabTransport &
   CollabLifecycle &
-  DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &
   MarkdownDocumentStore &
@@ -552,7 +566,3 @@ export type CollabDomain = CollabTransport &
   DocumentCreationAggregate;
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";
-export type {
-  DocumentAuthorityHead,
-  DocumentAuthorityHeads,
-} from "./domain/ports/document-authority-heads.js";

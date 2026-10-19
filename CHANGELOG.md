@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Removed document stays removed (W52, #854). Live keystroke, reply save, Apply, checkpoint, compaction or version restore that reaches it after removal changes nothing. Only a create makes a document. Apply holds a removed file with its record and applies the rest.
+- Model hears who removed the file, no retry: "This file was deleted by Ana Ruiz before this reply was saved, so this change wasn't made." and "File not found. This file was deleted by Ana Ruiz." (status `document_not_found`). Peer path and save path read the same. Draft closed by a removal stays the removal's after Work Restore, never "the user discarded". Chat card: "You deleted Chapter 3 before this reply saved its change."
+- Editor on a removed document closes `4208 document-deleted`, no reconnect, only for someone who may read it; others get plain denial or unknown draft. A stale `4208` on a document that still exists reconnects in place; while availability can't answer, the tab says "Access lost (not saving to the server)". The space a closed tab or dock slot leaves says "You deleted Chapter 3 elsewhere.", "You deleted 3 documents elsewhere (Chapter 1, Chapter 2, and Chapter 3).", "You discarded Note from the draft elsewhere."; never over text; silent in the tab that removed it. A reopened review link says the same.
+- Removal records reason, actor (writer, Work or system) and time. Migrations 0072–0074 classify old tombstones, close their active drafts as removed (safe against a racing Work Restore), retire stale tree uses and fix Work counts.
+
 - Server records what each document view the model receives showed it: an observation frontier (Yjs snapshot plus blocks changed and not shown in full) per read, write echo, undo/redo/revert echo, settled save receipt and @-mention read, keyed by the transcript block and the room (Work draft, or live document at its restore epoch). Survives restart; forks inherit it; retries don't. Nothing plans on it yet: model text and writer behavior unchanged (#871, migrations 0070-0071).
 
 - The draft/branch rename upgrade now includes all-zero command IDs and nonpositive receipt IDs. Renaming receipt placement keys no longer generates recursive change-trail work; real placement changes still signal normally (#880).

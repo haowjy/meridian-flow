@@ -33,7 +33,7 @@ export const d22RetractedPeerPull: Probe = {
                 harness.store.retractCreatedDocumentDraft({ documentId, branchId }),
               ),
             );
-            retraction = result.outcome;
+            retraction = result;
           }
           const outcome = await harness.store.commitRewrite(input);
           outcomes.push(outcome.status);

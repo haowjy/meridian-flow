@@ -42,6 +42,7 @@ import {
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
+import { createDraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
@@ -52,6 +53,7 @@ import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-docu
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createBranches } from "./domain/branches.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
+import { createUnboundParser } from "./domain/link-binding.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
 import { resetDatabase } from "./test-support/change-trail-postgres-harness.js";
 import { commitJournaledUpdate } from "./test-support/draft-update-writes.js";
@@ -82,10 +84,10 @@ describe("branch-push durable projection", () => {
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const draftStore = createDrizzleDraftStore(db, {
+    close: createDraftClose(),
     workProjection: createTestWorkProjectionMutation(db),
     live: {
       journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
     },
     branches,
   });
@@ -157,7 +159,10 @@ describe("branch-push durable projection", () => {
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
-    await persistence.lifecycle.ensureDocument(documentId as never);
+    await persistence.seeds.seedInitialDocument(
+      documentId as never,
+      Y.encodeStateAsUpdate(new Y.Doc()),
+    );
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
@@ -168,8 +173,8 @@ describe("branch-push durable projection", () => {
       codec,
       journal: persistence.journal,
       coordinator: liveCoordinator,
-      lifecycle: persistence.lifecycle,
-      initialDocumentSeeds: persistence.lifecycle,
+      initialDocumentSeeds: persistence.seeds,
+      parseStored: createUnboundParser({ codec, schema }),
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
       identityPreservingWrite: async () => {
         throw new Error("Identity-preserving writes are not part of this projection scenario");
@@ -381,7 +386,10 @@ describe("branch-push durable projection", () => {
       status: "complete",
     });
     await db.insert(threadWorks).values({ threadId, workId, projectId, isPrimary: true });
-    await persistence.lifecycle.ensureDocument(documentId as never);
+    await persistence.seeds.seedInitialDocument(
+      documentId as never,
+      Y.encodeStateAsUpdate(new Y.Doc()),
+    );
 
     const schema = buildDocumentSchema();
     const model = yProsemirrorModel(schema);
@@ -392,8 +400,8 @@ describe("branch-push durable projection", () => {
       codec,
       journal: persistence.journal,
       coordinator: liveCoordinator,
-      lifecycle: persistence.lifecycle,
-      initialDocumentSeeds: persistence.lifecycle,
+      initialDocumentSeeds: persistence.seeds,
+      parseStored: createUnboundParser({ codec, schema }),
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
       identityPreservingWrite: async () => {
         throw new Error("Identity-preserving writes are not part of this projection scenario");

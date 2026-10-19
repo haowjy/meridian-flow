@@ -148,21 +148,32 @@ if (!RUN) {
       await db.insert(documents).values([
         row(HOLDER, "holder", { folderId: PART }),
         row(TARGET, "target", { folderId: PART }),
-        row(DELETED, "gone", { deletedAt: new Date() }),
+        row(DELETED, "gone", { deletionReason: "deleted", deletedAt: new Date() }),
         row(SECRET, "secret"),
         row(NOTES, "notes"),
         row(DRAFTED, "drafted", { hidden: true }),
         row(STAGED, "staged", { hidden: true }),
         row(MAP, "map", { folderId: PART, extension: "png", fileType: "image" }),
         // A deleted picture alone at its path, and one whose path a live picture took.
-        row(SEAL, "seal", { extension: "png", fileType: "image", deletedAt: new Date() }),
-        row(OLD_CREST, "crest", { extension: "png", fileType: "image", deletedAt: new Date() }),
+        row(SEAL, "seal", {
+          extension: "png",
+          fileType: "image",
+          deletionReason: "deleted",
+          deletedAt: new Date(),
+        }),
+        row(OLD_CREST, "crest", {
+          extension: "png",
+          fileType: "image",
+          deletionReason: "deleted",
+          deletedAt: new Date(),
+        }),
         row(CREST, "crest", { extension: "png", fileType: "image" }),
         // A discarded branch's picture: a hidden tombstone, never a live or deleted image.
         row(WRECK, "wreck", {
           extension: "png",
           fileType: "image",
           hidden: true,
+          deletionReason: "discarded",
           deletedAt: new Date(),
         }),
         { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "" },

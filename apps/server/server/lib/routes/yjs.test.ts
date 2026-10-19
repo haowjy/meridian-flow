@@ -38,6 +38,8 @@ function services(stale: boolean) {
     },
     eventSink: {} as never,
     documentSync: {
+      roomRemoval: vi.fn(async () => null),
+      repairDocumentAuthority: vi.fn(async () => {}),
       rejectStaleDraftSyncStep1: vi.fn(async () => stale),
       admitDraftWriterUpdate: vi.fn(async () => undefined),
     } as never,
@@ -52,7 +54,10 @@ function gatewayServices() {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
     eventSink: {} as never,
-    documentSync: { bindHocuspocus: () => undefined } as never,
+    documentSync: {
+      bindHocuspocus: () => undefined,
+      roomRemoval: async () => null,
+    } as never,
   };
 }
 
@@ -114,6 +119,8 @@ describe("Yjs draft handshake route guard", () => {
         fileAccess: createAllowAllFileAccess(),
         fileAccessChanges: createLocalFileAccessChanges(),
         documentSync: {
+          roomRemoval: vi.fn(async () => null),
+          repairDocumentAuthority: vi.fn(async () => {}),
           bindHocuspocus: vi.fn(),
           resolveDraftHocuspocusRoom: vi.fn(async () => ({
             draftId: "draft_1",
@@ -162,21 +169,19 @@ describe("Yjs draft handshake route guard", () => {
     const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
-    const closeTransport = vi.fn();
     const document = new Y.Doc();
 
     await expect(
       admitWriterSync({
         services: {
           ...services(false),
-          documentSync: { admitDraftWriterUpdate } as never,
+          documentSync: { admitDraftWriterUpdate, roomRemoval: async () => null } as never,
         },
         documentName,
         document,
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        closeTransport,
         context: {
           draftSyncState: new Map([["draft_1:3", "passed"]]),
         },
@@ -188,10 +193,6 @@ describe("Yjs draft handshake route guard", () => {
       update: new Uint8Array([1, 2, 3]),
       origin: { type: "user", userId: "user-1" },
       document,
-    });
-    expect(closeTransport).toHaveBeenCalledWith({
-      code: 1008,
-      reason: "draft-update-admission-failed",
     });
   });
 
@@ -206,7 +207,7 @@ describe("Yjs draft handshake route guard", () => {
     const admission = admitWriterSync({
       services: {
         ...services(false),
-        documentSync: { admitDraftWriterUpdate } as never,
+        documentSync: { admitDraftWriterUpdate, roomRemoval: async () => null } as never,
       },
       documentName,
       document: new Y.Doc(),
@@ -318,6 +319,8 @@ describe("Yjs draft handshake route guard", () => {
       },
       eventSink: { emit: vi.fn() } as never,
       documentSync: {
+        roomRemoval: vi.fn(async () => null),
+        repairDocumentAuthority: vi.fn(async () => {}),
         bindHocuspocus: () => undefined,
         getPersistenceQueueMetrics: () => ({}),
         drainHocuspocusPersistence: () => persistenceDrain,
@@ -421,13 +424,12 @@ describe("Yjs live writer admission", () => {
     expect(admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("returns a contained admission without closing the transport", async () => {
+  it("returns a contained admission", async () => {
     const payload = new Uint8Array([0, 0]);
     const admitLiveWriterUpdate = vi.fn(async () => ({
       admitted: false as const,
       joinedSettlement: false as const,
     }));
-    const closeTransport = vi.fn();
 
     await expect(
       admitWriterSync({
@@ -440,11 +442,9 @@ describe("Yjs live writer admission", () => {
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        closeTransport,
         expectedGeneration: 1n,
       }),
     ).resolves.toEqual({ admitted: false, joinedSettlement: false });
-    expect(closeTransport).not.toHaveBeenCalled();
   });
 
   it("rejects a failed admission and accepts the client's resubmitted update", async () => {
@@ -453,7 +453,6 @@ describe("Yjs live writer admission", () => {
       .fn()
       .mockRejectedValueOnce(new Error("journal down"))
       .mockResolvedValueOnce({ admitted: true, joinedSettlement: false });
-    const closeTransport = vi.fn();
     const input = {
       services: {
         ...services(false),
@@ -464,17 +463,12 @@ describe("Yjs live writer admission", () => {
       syncType: messageYjsUpdate,
       payload,
       userId: "user-1" as never,
-      closeTransport,
       expectedGeneration: 1n,
     };
 
     await expect(admitWriterSync(input)).rejects.toMatchObject({
       reason: "writer-journal-admission-failed",
       code: 1013,
-    });
-    expect(closeTransport).toHaveBeenCalledWith({
-      code: 1013,
-      reason: "writer-journal-admission-failed",
     });
     await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,
@@ -490,6 +484,8 @@ describe("Yjs room access", () => {
   function roomServices(input: { readOnly?: boolean } = {}) {
     const allowAll = createAllowAllFileAccess();
     const documentSync = {
+      roomRemoval: vi.fn(async () => null),
+      repairDocumentAuthority: vi.fn(async () => {}),
       bindHocuspocus: vi.fn(),
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),

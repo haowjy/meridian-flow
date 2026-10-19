@@ -19,7 +19,10 @@ import * as Y from "yjs";
 import { UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { createDrizzleJournal } from "../collab/adapters/drizzle-journal.js";
+import {
+  createDrizzleCollabPersistence,
+  createDrizzleJournal,
+} from "../collab/adapters/drizzle-journal.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -131,6 +134,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const journal = createDrizzleJournal(database.current);
       const update = Y.encodeStateAsUpdate(new Y.Doc());
+      await createDrizzleCollabPersistence(database.current).seeds.seedInitialDocument(
+        probe as never,
+        update,
+      );
       const meta = { origin: `agent:${turn}`, actorTurnId: turn, seq: 0 };
       const appendUnder = (grant: FileGrant<"edit">) =>
         runWithEditGrants(access(), [grant], () => journal.append(probe, update, meta));

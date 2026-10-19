@@ -23,7 +23,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import { collabHook } from "./collab-test-hooks.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { DraftCoordinator, PreparedDraftWrite } from "./draft-coordinator.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "./draft-journal.js";
 import type { WorkDraftLookup } from "./draft-pulls.js";
@@ -274,7 +274,7 @@ export function createDraftAgentEditCoordinator(input: {
    * it is ordered by the revisions its writes were prepared at.
    */
   async function underAccess<T>(peerDraftId: string, run: () => Promise<T>): Promise<T> {
-    await collabHook("draft.beforeAccess");
+    await testHook("draft.beforeAccess");
     return accessedPeer.run(peerDraftId, run);
   }
   return {

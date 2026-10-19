@@ -33,9 +33,9 @@ import type { DraftJournalRow } from "../domain/draft-journal.js";
 import { persistDurableTrailRecords } from "../domain/draft-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-branch-commands.js";
+import { readHeadRevision } from "./drizzle-document-authority-head.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
-import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import { commitRewriteWithinTx } from "./drizzle-draft-storage.js";
 import {
   assertRootOwnedSettlement,
@@ -325,8 +325,7 @@ async function commitPreparedDiscard(
   await lockDocumentMutation(db, input.documentDraft.documentId);
   if (
     input.expectedLiveRevision !== undefined &&
-    input.expectedLiveRevision !==
-      (await readLiveReviewRevision(db, input.documentDraft.documentId))
+    input.expectedLiveRevision !== (await readHeadRevision(db, input.documentDraft.documentId))
   )
     throw new DraftChangeRefusal("stale");
 
@@ -459,8 +458,7 @@ async function commitPreparedPush(
   await lockDocumentMutation(db, input.documentDraft.documentId);
   if (
     input.expectedLiveRevision !== undefined &&
-    input.expectedLiveRevision !==
-      (await readLiveReviewRevision(db, input.documentDraft.documentId))
+    input.expectedLiveRevision !== (await readHeadRevision(db, input.documentDraft.documentId))
   )
     throw new DraftChangeRefusal("stale");
 

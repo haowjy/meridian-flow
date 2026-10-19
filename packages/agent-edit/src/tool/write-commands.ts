@@ -57,8 +57,6 @@ export function createWriteCommands(deps: {
     CreateWriteToolOptions,
     | "model"
     | "codec"
-    | "lifecycle"
-    | "createRuntimeDoc"
     | "coordinator"
     | "semanticProvenance"
     | "links"
@@ -202,9 +200,6 @@ export function createWriteCommands(deps: {
     const content = command.command === "create" ? (command.content ?? "") : "";
     // A host's bound write (§6.2) arrives as nodes: never parsed or assigned again.
     const boundNodes = command.command === "create" ? context.boundNodes : undefined;
-    if (!options.lifecycle) {
-      return status("invalid_write", "document creation is not supported by this deployment");
-    }
     if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
       responseCommitter.assertCanStage({
         responseId: context.responseIdentity?.editScopeId,
@@ -229,28 +224,19 @@ export function createWriteCommands(deps: {
         "Staged create requires host-resolved createdDocument ownership metadata.",
       );
     }
-    const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
+    // The host materialized the document before this command (`ensureTrackedDocument`): a
+    // reply's first write into a document it created owns that empty document.
+    const createdByThisReply = responseStagedCreate && context.createdDocument === true;
     const overwriting =
-      command.overwrite === true || (deferNewDocumentCreation && !runtime.hasStagedWrites);
-    if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
+      command.overwrite === true || (createdByThisReply && !runtime.hasStagedWrites);
     const alreadyExists = status(
       "invalid_write",
       `File already exists: ${address.filePath}. Read it, then edit it; use overwrite=true only to replace all of its content.`,
     );
     const liveCheck = await runtime.checkEmpty(overwriting, alreadyExists);
-    const missingLiveForDeferredNewDocument =
-      deferNewDocumentCreation &&
-      isInternalWriteResult(liveCheck) &&
-      liveCheck.status === "document_not_found";
-    if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
-
-    if (!missingLiveForDeferredNewDocument) {
-      const restored = await runtime.restore();
-      if (isInternalWriteResult(restored)) return restored;
-    }
-    if (missingLiveForDeferredNewDocument) {
-      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
+    if (isInternalWriteResult(liveCheck)) return liveCheck;
+    const restored = await runtime.restore();
+    if (isInternalWriteResult(restored)) return restored;
     const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
@@ -505,7 +491,6 @@ export function createWriteCommands(deps: {
           writeOrdinal: identity.ordinal,
           durableWriteId: identity.durableId,
           toolCallId: identity.toolCallId,
-          ensureDocumentBeforeCommit: Boolean(edit.creation),
           createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
           touchedHashes,
           deletedHashes,

@@ -345,7 +345,7 @@ every journal read: which run of history is current? Three fields carry that.
   </tr>
 </table>
 </div>
-<p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>allocateDocumentAdmission</code>, <code>packages/database/src/schema/yjs.ts</code> (<code>document_yjs_updates_authority_admission</code> unique index), <code>adapters/drizzle-journal.ts</code> <code>read</code> and <code>compact</code></p>
+<p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>allocateAdmission</code>, <code>packages/database/src/schema/yjs.ts</code> (<code>document_yjs_updates_authority_admission</code> unique index), <code>adapters/drizzle-journal.ts</code> <code>read</code> and <code>compact</code></p>
 <p>
 Every live journal append runs in a transaction that checks an agent write's
 grant, locks the bound grants' Works, then takes
@@ -387,7 +387,7 @@ checkpoint as a new generation.
     and a frame replaying retired structs is refused as
     <code>retired-durable-authority-generation</code>.</li>
 </ol>
-<p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>replaceDocumentAuthorityHeadGeneration</code>, <code>domain/document-mutation-policy.ts</code> <code>replaceAuthorityGeneration</code>, <code>hocuspocus-persistence.ts</code> <code>disconnectLiveGeneration</code> and <code>admitLiveWriterUpdate</code></p>
+<p class="ref"><code>adapters/drizzle-document-authority-head.ts</code> <code>replaceGeneration</code>, <code>domain/document-mutation-policy.ts</code> <code>replaceAuthorityGeneration</code>, <code>hocuspocus-persistence.ts</code> <code>disconnectLiveGeneration</code> and <code>admitLiveWriterUpdate</code></p>
 <p>
 On this checkout, <code>CollabDomain.restore</code> is wired to that path in
 <code>composition.ts</code>, but no route or service outside collab calls it.
@@ -743,7 +743,7 @@ without a row.
   <li><strong>Seed.</strong> A new document's first content is installed as
     an <code>up_to_seq = 0</code> checkpoint with no journal rows. Seeding is
     initialize-only; a later attempt on a document with any admission or
-    checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerDocumentLifecycle</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
+    checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerInitialDocumentSeeds</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
   <li><strong>Room store.</strong> Hocuspocus <code>onStoreDocument</code>
     queues the room's authority binding. After the caller's transaction commits,
     the worker captures a durable cut and writes it (dropped on rollback or when

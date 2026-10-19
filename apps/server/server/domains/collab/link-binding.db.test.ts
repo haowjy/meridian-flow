@@ -215,7 +215,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             act: async () =>
               (
                 await ok(
-                  port.write("manuscript://imported", "[T](moved/target) and [S](soon).", imported),
+                  port.createTrackedDocument(
+                    "manuscript://imported",
+                    "[T](moved/target) and [S](soon).",
+                    imported,
+                  ),
                 )
               ).documentId ?? "",
             refs: () => [targetRef, expect.not.stringMatching(soon ?? "")],

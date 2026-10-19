@@ -29,7 +29,6 @@ import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
-import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createReplySaveFences } from "../../domain/reply-save-fences.js";
@@ -50,7 +49,6 @@ import {
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
 import {
   createInMemoryCoordinator,
-  createInMemoryDocumentLifecycle,
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
@@ -63,10 +61,8 @@ import {
 export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
-  const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => operation(),
-    ensureDocument: lifecycle.ensureDocument,
   });
   const hocuspocusBinding = createHocuspocusBinding();
   const store = inMemoryStore(journal);
@@ -81,13 +77,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
     inTransaction: () => false,
     journal,
     coordinator,
-    lifecycle: documentCreation,
     initialDocumentSeeds: {
-      async seedInitialDocument(documentId, state) {
+      seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      async missingAuthorityProjection(documentId) {
         const snapshot = await journal.read(documentId);
-        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.seedInitialDocument(documentId, state);
-        return true;
+        return snapshot.checkpoint || snapshot.updates.length > 0 ? null : "";
       },
     },
     runDocumentWriteHook,
@@ -100,9 +94,12 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   // No Work branches exist in memory, so the pool routes both destinations to the live core.
   const fileAccess = createAllowAllFileAccess();
+  // Nothing is removed in memory.
+  const removals = { lookup: async () => new Map() };
   const agentEdit = createThreadPeerCorePool({
     branches,
     drafts: { getDraft: async () => null },
+    removals,
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
     pullThreadPeer: async () => undefined,
@@ -112,6 +109,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drafts: { getDraft: async () => null },
       branches,
       fileAccess,
+      removals,
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
     }),
@@ -137,7 +135,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     metaForOrigin,
     emitAgentEditInvariantViolation() {},
   });
-  const authorityHeads = createInMemoryAuthorityHeads(journal);
   const lineage = createTurnLiveLineageReadModel({
     store: createInMemoryTurnLiveLineageStore(journal),
     resolveDocumentUri: async (documentId) => documentId,
@@ -170,6 +167,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      // Nothing is removed in memory.
+      roomRemoval: async () => null,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
@@ -183,7 +182,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
-    authorityHeads,
     agentEdit: {
       agentEdit: () => agentEdit,
     },
@@ -194,7 +192,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
-      ensureDocument: lifecycle.ensureDocument,
+      initializeEmptyDocument: runtime.markdownDocuments.initializeEmptyDocument,
+      repairDocumentAuthority: runtime.markdownDocuments.repairDocumentAuthority,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
@@ -356,29 +355,6 @@ function createInMemoryBranchStub(): CollabBranches {
         },
       }),
       discardAll: gone,
-    },
-  };
-}
-
-function createInMemoryAuthorityHeads(journal: InMemoryJournal) {
-  const heads = new Map<string, DocumentAuthorityHead>();
-  return {
-    async ensureAndReadAuthorityHeads(documentIds: DocumentId[]) {
-      return Promise.all(
-        [...new Set(documentIds)].sort().map(async (documentId) => {
-          let head = heads.get(documentId);
-          if (!head) {
-            head = {
-              documentId,
-              authorityId: crypto.randomUUID() as DocumentAuthorityHead["authorityId"],
-              generation: 1n,
-              admittedThrough: 0n,
-            };
-            heads.set(documentId, head);
-          }
-          return { ...head, admittedThrough: BigInt(await journal.latestUpdateSeq(documentId)) };
-        }),
-      );
     },
   };
 }

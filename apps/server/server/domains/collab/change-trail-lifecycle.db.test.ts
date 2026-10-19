@@ -15,7 +15,6 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
 
@@ -166,7 +165,7 @@ describe("change trail (postgres)", () => {
     });
     await db
       .update(schema.documents)
-      .set({ deletedAt: new Date() })
+      .set({ deletionReason: "deleted", deletedAt: new Date() })
       .where(eq(schema.documents.id, ALPHA_ID));
 
     const reader = createDrizzleChangeTrailReader(db, drizzleFileAccess(db));
@@ -295,7 +294,7 @@ describe("change trail (postgres)", () => {
   it("recovers a late Discard committed before the trail worker restarts", async () => {
     const warm = createHarness(db);
     try {
-      const draftId = await warm.seedDestructivePush("late-discard-restart");
+      await warm.seedDestructivePush("late-discard-restart");
       await warm.pollTrails();
       await warm.pollTrails();
       const [settled] = (await warm.trailRowMembership()).shells;

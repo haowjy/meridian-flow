@@ -1,6 +1,6 @@
 /** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked. */
 
-import { documentTitleFromUri } from "@meridian/contracts";
+import { type DocumentId, documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
@@ -79,7 +79,7 @@ function documentSyncProbe() {
   const seeded: string[] = [];
   const documentSync: ContextFSDeps["documentSync"] = {
     ...createInMemoryCollabDomain(),
-    ensureDocument: async (documentId) => {
+    initializeEmptyDocument: async (documentId) => {
       ensured.push(documentId);
     },
     readAsMarkdown: async () => ({ ok: true, value: "" }),
@@ -154,12 +154,12 @@ describe("ContextFS createUntitledDocument", () => {
     let failDurableHeadOnce = true;
     const documentSync = {
       ...collab,
-      async ensureDocument(documentId: string) {
+      async initializeEmptyDocument(documentId: DocumentId) {
         if (failDurableHeadOnce) {
           failDurableHeadOnce = false;
           throw new Error("durable document authority head unavailable");
         }
-        return collab.ensureDocument(documentId);
+        return collab.initializeEmptyDocument(documentId);
       },
     } satisfies ContextFSDeps["documentSync"];
     const { fs, backing } = createUntitledFs({ documentSync });
@@ -229,7 +229,6 @@ describe("ContextFS rename filetype invariant", () => {
       mutationStore,
       scheme: "kb",
       documentSync: {
-        ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
         bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
         seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {
@@ -257,7 +256,7 @@ describe("ContextFS rename filetype invariant", () => {
 
   it("serializes overlapping moves so one success cannot be rolled back", async () => {
     const { backing, context, move, mutationStore } = createHarness();
-    const initial = await context.write("chapter.md", "Chapter");
+    const initial = await context.createTrackedDocument("chapter.md", "Chapter");
     if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
     let releaseFirstMove = () => {};
     const firstMoveReleased = new Promise<void>((resolve) => {

@@ -48,7 +48,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function softDelete(id: DocumentId, folderNames: readonly string[] = []) {
       const db = database.current;
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, id));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, id));
       if (folderNames.length > 0) {
         await db
           .update(folders)

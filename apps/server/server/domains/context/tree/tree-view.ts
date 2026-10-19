@@ -35,6 +35,7 @@ import {
 } from "./tree-addresses.js";
 import {
   type DocumentIdentityRow,
+  identityDocuments,
   loadActiveBranchUses,
   loadBranchCreatedDocuments,
   loadDocumentIdentityRows,
@@ -53,6 +54,7 @@ export {
   identityDocuments,
   identityFolderFields,
   identityFolders,
+  livingDocumentUses,
   type VisibleDocumentsSubquery,
   type VisibleFoldersSubquery,
   visibleDocumentFields,
@@ -161,9 +163,9 @@ export type TreeStateNode = {
   hidden: boolean;
   binary: boolean;
   fileType: string;
-  /** Soft-deleted live: Apply restores it with its deleted ancestors (decisions 7 and 9). */
+  /** Soft-deleted live: Apply holds it with the removal's record and revives nothing. */
   deleted: boolean;
-  /** The row's own location, the only one a document has: where Apply reveals or restores it. */
+  /** The row's own location, the only one a document has: where Apply reveals it. */
   target: {
     contextSourceId: ContextSourceId;
     parentFolderId: FolderId | null;
@@ -184,7 +186,7 @@ export type TreeStateNode = {
      * document holds the path of a folder the target needs.
      */
     | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
-    /** Created-and-revealed or edited, then deleted live: Apply restores it (decision 7, F9). */
+    /** Created-and-revealed or edited, then deleted live: Apply holds it, reviving nothing. */
     | { kind: "deleted_live" };
 };
 
@@ -863,11 +865,16 @@ export function createTreeReader(
     const ids = [...new Set(documentIds)].filter(isUuid);
     const out = new Map<DocumentId, DocumentLineage>();
     if (ids.length === 0) return out;
-    const shown = await documentRows(view, (vd) => inArray(vd.id, ids));
-    const visible = new Set(shown.map((row) => row.id));
-    const missing = ids.filter((id) => !visible.has(id));
-    const deleted = missing.length ? await loadDocumentIdentityRows(tx(), missing) : [];
-    const located = [...shown, ...deleted.filter((row) => !row.hidden && row.deleted)];
+    const identities = identityDocuments(view);
+    const located = await tx()
+      .select({
+        id: identities.id,
+        contextSourceId: identities.contextSourceId,
+        folderId: identities.folderId,
+        deletedAt: identities.deletedAt,
+      })
+      .from(identities)
+      .where(inArray(identities.id, ids));
     const chains = await loadFolderChains(
       tx(),
       located.map((row) => row.folderId),
@@ -875,7 +882,7 @@ export function createTreeReader(
     for (const row of located) {
       const chain = row.folderId === null ? [] : (chains.get(row.folderId) ?? []);
       out.set(row.id, {
-        status: visible.has(row.id) ? "visible" : "deleted",
+        status: row.deletedAt ? "deleted" : "visible",
         contextSourceId: row.contextSourceId,
         folders: chain.map((folder) => ({ id: folder.id, deleted: folder.deleted })),
       });
