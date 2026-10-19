@@ -243,7 +243,13 @@ export function useLinkFollower({
       ? null
       : "";
   useEffect(() => {
-    if (scopeKey === null) return;
+    if (scopeKey === null) {
+      // Retire answers from before invalidation, not clicks made while the
+      // replacement snapshot is pending. Its arrival releases those waiters.
+      abortAll();
+      answeredScope.current = null;
+      return;
+    }
     if (answeredScope.current !== null && answeredScope.current !== scopeKey) {
       abortAll();
       if (!scopeKey && shown.current) clearShown();

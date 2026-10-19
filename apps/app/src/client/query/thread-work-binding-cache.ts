@@ -110,8 +110,8 @@ function patchSnapshot(client: QueryClient, threadId: string, workId: string | n
         }
       : current,
   );
-  // A parent rebind changes dependent chat syntax too. Clear only its prepared
-  // parent location while the existing snapshot read acquires the new scope.
+  // A prepared scope is atomic: dependent clicks wait until the refreshed
+  // snapshot validates both current and parent locations.
   for (const [key, snapshot] of client.getQueriesData<ThreadSnapshotResponse>({
     queryKey: threadQueryKeys.all,
     predicate: ({ queryKey }) => queryKey.length === 3 && queryKey[2] === "snapshot",
@@ -131,8 +131,7 @@ function patchSnapshot(client: QueryClient, threadId: string, workId: string | n
       continue;
     client.setQueryData<ThreadSnapshotResponse>(key, (current) => {
       if (!current?.thread.notesScope) return current;
-      const { parent: _parent, ...notesScope } = current.thread.notesScope;
-      return { ...current, thread: { ...current.thread, notesScope } };
+      return { ...current, thread: { ...current.thread, notesScope: undefined } };
     });
     void client.invalidateQueries({ queryKey: key, exact: true });
   }

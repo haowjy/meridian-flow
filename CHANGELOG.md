@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Chat links wait for refreshed notes scope after own or parent Work rebind, then resume without a second click.
+
 - Files ancestry, document breadcrumbs, tab tooltips and move feedback use catalog folder display names instead of reserved chat-folder basenames.
 
 - File operations reject source and chat-folder roots without a writer filename, including tracked ensure and binary creation. Folder operations still accept those roots.

@@ -6,7 +6,7 @@
  *
  * Scope: the thread's Work, and its lineage while the thread is on No Work (a
  * bare `scratch://` is the lineage's), with no base URI (so relative links are
- * text). It is pending only while the thread or the Works snapshot is loading; a click
+ * text). It is pending while the thread, prepared notes scope or Works snapshot is loading; a click
  * then waits, showing checking, and is never answered from a guessed Work.
  * A null thread binding remains pending rather than guessing No Work. A No
  * Work thread uses the locked row id whichever snapshot names it first, so
@@ -89,7 +89,8 @@ function chatLinkScope({
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
-  const scoped = { threadId: thread?.id, variables: contextUriVariables(thread?.notesScope ?? {}) };
+  if (!thread?.notesScope) return "pending";
+  const scoped = { threadId: thread.id, variables: contextUriVariables(thread.notesScope) };
   if (activeWork)
     return { projectId, workId: activeWork.id, rootThreadId, chatId, baseUri: null, ...scoped };
   if (!worksSettled || !thread?.workId) return "pending";
