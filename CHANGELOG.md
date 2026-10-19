@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft rooms keep one identity until close. Removed draft generations and reset replay; Discard all and Work purge close other tabs after commit with a terminal discarded reason. Live restore epochs and removal closes are unchanged.
+
 - Unified draft append lifetime and after-commit maintenance; server rows can now be authored as client 1 on the locked committed prefix, with journal receipts and root-commit delivery.
 - Removed inverse holds and their refusal statuses. Revert keeps applied changes in the draft until the writer applies them.
 

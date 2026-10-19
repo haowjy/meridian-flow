@@ -196,7 +196,7 @@ bound to it, and these lookups go ([decision](https://github.com/haowjy/meridian
 
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
 Yjs peers. A planning-visible item disappearing is not by itself rollback
-evidence. Only retired-generation structs or immutable inverse removals after
+evidence. Only immutable inverse removals after
 the helper cut revoke a staged write. Replay drops the rejected logical write
 and its later dependency closure, retains independent writes, and reports the
 typed refusal in notices and receipts.
@@ -210,14 +210,12 @@ in flight. Switching to Auto-apply with pending changes explicitly chooses
 Work refuses under the Work lock.
 
 Live writer SET and agent writes routed to live preserve a pending Work draft:
-pulls merge live edits into it without resetting its generation or settling its
-authored rows. `./mf doc put --overwrite` is not that path: it deletes the
+pulls merge live edits into it without settling its authored rows. `./mf doc put --overwrite` is not that path: it deletes the
 document and creates a new one at the same URI, and the new identity inherits
 no drafts.
 
 A Work draft is shared by every thread editing the same document in that Work.
-Thread peers fork from it and retain the upstream draft identity and
-peer-draft generation independently of that Work draft's current generation. Draft reset and peer re-fork no longer exist. A peer whose upstream no longer
+Thread peers fork from it and retain the upstream draft identity. Draft reset and peer re-fork no longer exist. A peer whose upstream no longer
 contains its saved state refuses through `ThreadPeerPullLost`, never re-forks.
 
 Attribution is based on immutable journal provenance and dependency closure,
@@ -239,9 +237,8 @@ bytes.
 
 An **append** (`appendRows`) is sequenced, not fenced. Its row `UPDATE`
 bumps `revision` at whatever value it holds, with no revision predicate, and
-holds the draft row to `COMMIT`; it still refuses a closed draft, another
-generation, or a Work that is not active (the predicate is in the statement).
-Journal ids are allocated after that lock, so within a draft and generation a
+holds the draft row to `COMMIT`; it still refuses a closed draft or a Work that is not active (the predicate is in the statement).
+Journal ids are allocated after that lock, so within a draft a
 lower id is committed before a higher one is visible (tail order): a fold's
 `checkpoint_seq = max(id)` is always a complete prefix. Under the lock one
 separate statement reads the committed prefix since the caller's base, and
@@ -358,8 +355,8 @@ rejection) and appended once; a concurrent writer costs it one row-lock wait,
 never a second judgement. It first checks its room holds the committed replica,
 and a room that does not has missed a delivery: it is reconciled to the replica
 (`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
-Only a generation the draft has left, or a draft no longer writable, refuses
-the frame (`1008`).
+A closed draft refuses with terminal `4205` (`discarded`), or removal `4208`.
+An inactive Work refuses without ending the draft (`4409`).
 
 Room delivery has one owner: `install` in
 `domain/draft-runtime.ts`, the only place a replica becomes the draft's
@@ -368,23 +365,20 @@ callbacks move to its parent on release and are dropped on its rollback, so a
 rolled-back child installs nothing), installs only past the replica installed
 by then, and sends this process's rooms what separates the two: the rows the new
 replica was built from when they cover everything past the installed one (built
-on it or on an older replica of the same checkpoint and generation: a frame with
+on it or on an older replica of the same checkpoint: a frame with
 the rows that landed before its lock, a reply's rows, a read's tail catch-up),
 otherwise the document difference (a pull or
 compaction that folded rows under the draft lock, a checkpoint catch-up, a
-checkpoint another process wrote), or nothing when the content is unchanged. A
-new generation closes the rooms of older ones instead. A transition at or below
+checkpoint another process wrote), or nothing when the content is unchanged. A transition at or below
 the committed revision installs and sends nothing, so a read racing a local
 commit delivers once. `install` reaches only rooms Hocuspocus has registered,
 and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
 enrolls itself: its `afterLoadDocument` hook chains after
 Hocuspocus's own registration, and the coordinator's `reconcileRegisteredRoom`
 reads the draft and reconciles the room to it, or closes the room when the
-draft left its generation while it loaded. From registration on, every
+draft closed while it loaded. From registration on, every
 transition reaches it; enrollment covers what committed between its load read
-and registration. The load itself returns state only for the generation it was
-asked for, and the draft `connected` hook re-checks the generation as the live
-one does. Rooms are Yjs replicas kept current by anti-entropy ([eventual
+and registration. The load and draft `connected` hook re-check active status. Rooms are Yjs replicas kept current by anti-entropy ([eventual
 consistency][eventual]):
 push delivery is the fast path, and the room is reconciled against the
 committed replica (structs past its state vector plus the delete set) at every
@@ -393,7 +387,7 @@ exchange that reads the draft: its enrollment, every tab's SyncStep1 handshake
 the tab may write or only read), and a frame that finds its room behind. A room
 that missed a delivery, or another server process's commit, therefore heals on
 the next exchange and is never refused for it; the tab's own Yjs handshake then
-brings the tab current. `1008` stays for a generation mismatch. Another process's
+brings the tab current. `1008` remains a nonterminal admission error; closed identity is terminal. Another process's
 commits also reach this process's rooms when its runtime reads the draft for a
 turn inverse's `deliverCommitted`. There is no periodic reconciliation: an idle
 room with no exchange catches up at the next keystroke, rejoin or handshake.
@@ -579,7 +573,7 @@ as pending changes; closed drafts supply disposition but never write admission.
 Response helpers are private to agent-edit's committer. Every tool and scoped
 read obtains a prepare lease; reporting uses disposable replicas. Rollback
 keeps the helper until transaction outcome is known. When a write cannot
-integrate, the helper is replaced with the current generation plus surviving
+integrate, the helper is replaced with the current draft state plus surviving
 stages before subsequent tool resolution; dropped writes are named once in the
 next result. Whole Discard retires only the addressed peer and does not roll
 back unrelated documents in the reply.

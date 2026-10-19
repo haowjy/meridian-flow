@@ -4,7 +4,7 @@
  *
  * Vocabulary (D68): `branchId` is a `branches` row (the Work's whole branch), `itemKey`
  * (`${branchId}:${documentId}`) is the client's only identity for one reviewed document, and a
- * document's text draft never crosses the wire. `draftGeneration` is that draft's generation.
+ * document's text draft never crosses the wire. `hasDraft` reports only its existence.
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";
@@ -62,7 +62,6 @@ export type DraftItemConflict = { code: "path_taken"; path: string } | { code: "
 export type DraftItemTokens = {
   locationToken: string;
   liveTextToken: string | null;
-  draftGenerationToken: string | null;
 };
 
 /**
@@ -75,12 +74,8 @@ export interface ThreadDraftListItem {
   /** `${branchId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
-  /**
-   * The item's draft generation: it rises with each reset or refork, and the same `itemKey`
-   * carries the next proposal at the higher generation. Null for an item with no text draft (a created
-   * image, or a create whose first text write has not happened).
-   */
-  draftGeneration: number | null;
+  /** Whether the item has a text draft (an empty create or image may not). */
+  hasDraft: boolean;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
   isNew: boolean;
@@ -123,9 +118,7 @@ type ActiveDraftPreviewBase = {
   status: "active";
   branchId: BranchId;
   itemKey: DraftItemKey;
-  /** The draft generation (see `ThreadDraftListItem.draftGeneration`) that `reviewRoomName` and the tokens belong to. */
-  draftGeneration: number;
-  /** Hocuspocus room name for inline draft review; already generation-fenced. Opaque to the client. */
+  /** Hocuspocus room name for inline draft review; stable for the draft lifetime. Opaque to the client. */
   reviewRoomName: string;
   liveRevisionToken: string;
   draftRevisionToken: string;
@@ -136,7 +129,7 @@ type ActiveDraftPreviewBase = {
 export type DraftPreviewRefusal =
   | { status: "gone"; itemKey: DraftItemKey }
   /** `branchId` lets a corrupt item missing from the list still build its whole-item Discard. */
-  | { status: "corrupt"; branchId: BranchId; itemKey: DraftItemKey; draftGeneration: number };
+  | { status: "corrupt"; branchId: BranchId; itemKey: DraftItemKey };
 
 export type DraftPreviewResponse =
   | (ActiveDraftPreviewBase & {
@@ -146,8 +139,7 @@ export type DraftPreviewResponse =
   | DraftPreviewRefusal;
 
 /**
- * The change an operation is across draft generations: its part key, which a
- * re-fork keeps while it gives the row a new `operationId`. An operation with no
+ * The immutable receipt identity of a change: its part key. An operation with no
  * part key is only the row it is.
  */
 export function operationKey(operation: Pick<ReviewOperation, "operationId" | "partKey">): string {

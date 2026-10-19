@@ -565,7 +565,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
-      rejectStaleDraftSyncStep1: hocuspocusPersistence.rejectStaleDraftSyncStep1,
+      reconcileHocuspocusDraftRoom: hocuspocusPersistence.reconcileHocuspocusDraftRoom,
       enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },

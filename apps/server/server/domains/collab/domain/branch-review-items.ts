@@ -23,7 +23,7 @@ export type DraftReviewItem = {
   /** The branch's draft on the document; null for an image or a create with no text yet. */
   draftId: string | null;
   /** The draft's generation; null without a draft. */
-  draftGeneration: number | null;
+  hasDraft: boolean;
   /** created: the branch has a `created` row; edited: draft rows only. */
   origin: "created" | "edited";
   /** Created and still hidden: derived on read, nothing rewrites it. */
@@ -36,7 +36,6 @@ export type DraftReviewItem = {
   tokens: {
     locationToken: string;
     liveTextToken: string | null;
-    draftGenerationToken: string | null;
   };
   /**
    * Deleted live (an edited document, or a revealed create): no view shows it, so it
@@ -159,7 +158,7 @@ function toItem(
     isNew,
     binary: node.binary,
     wholeItem: isNew || node.binary || deletedLive,
-    draftGeneration: evidence?.documentDraft.generation ?? null,
+    hasDraft: !!evidence,
     documentName: documentTitleFromUri(path),
     path,
     conflict: conflictOf(node),
@@ -167,7 +166,6 @@ function toItem(
     tokens: {
       locationToken: node.locationVersion.toString(),
       liveTextToken: null,
-      draftGenerationToken: evidence ? String(evidence.documentDraft.generation) : null,
     },
     actorThreadIds:
       creatorThreadId && !writers.includes(creatorThreadId)

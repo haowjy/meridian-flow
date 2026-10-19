@@ -27,7 +27,6 @@ export function testDraftRow(
     threadId: null,
     status: "active",
     closedCause: null,
-    generation: 1,
     revision: 0,
     checkpointRevision: 0,
     checkpointSeq: 0,
@@ -40,7 +39,6 @@ export function testDraftRow(
 
 type MemoryRow = {
   id: number;
-  generation: number;
   update: Uint8Array;
   source: "agent" | "writer" | "server";
 };
@@ -110,7 +108,7 @@ export class MemoryDraftStore implements DraftStore {
       documentDraft: rowOf(documentDraft),
       checkpoint: held ? null : documentDraft.checkpoint,
       tail: documentDraft.rows
-        .filter((row) => row.generation === documentDraft.generation && row.id > after)
+        .filter((row) => row.id > after)
         .map(({ id, update, source }) => ({ id, update, source })),
     };
   }
@@ -123,11 +121,7 @@ export class MemoryDraftStore implements DraftStore {
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
-    if (
-      documentDraft?.status !== "active" ||
-      documentDraft.lifecycle !== "active" ||
-      documentDraft.generation !== input.expectedGeneration
-    )
+    if (documentDraft?.status !== "active" || documentDraft.lifecycle !== "active")
       return { status: "refused" };
     const read = this.readNow(input.draftId, input.base);
     if (!read) return { status: "refused" };
@@ -180,8 +174,7 @@ export class MemoryDraftStore implements DraftStore {
   async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     if (input.upstream) {
       const upstream = this.drafts.get(input.upstream.draftId);
-      if (upstream?.status !== "active" || upstream.generation !== input.upstream.generation)
-        return { status: "upstreamMoved" };
+      if (upstream?.status !== "active") return { status: "upstreamMoved" };
     }
     const documentDraft = this.drafts.get(input.draftId);
     if (documentDraft?.status !== "active") return { status: "closed" };
@@ -192,9 +185,7 @@ export class MemoryDraftStore implements DraftStore {
         : documentDraft.checkpointRevision !== input.policy.checkpointRevision
     )
       return { status: "moved" };
-    const tail = documentDraft.rows.filter(
-      (row) => row.generation === documentDraft.generation && row.id > documentDraft.checkpointSeq,
-    );
+    const tail = documentDraft.rows.filter((row) => row.id > documentDraft.checkpointSeq);
     const { operation } = input;
     // A fold applies what landed after its cursor; a reset discards it.
     let folded = 0;
@@ -225,7 +216,6 @@ export class MemoryDraftStore implements DraftStore {
       revision: documentDraft.revision,
       checkpointRevision: documentDraft.checkpointRevision,
       seq: documentDraft.checkpointSeq,
-      generation: documentDraft.generation,
     };
   }
 
@@ -233,7 +223,6 @@ export class MemoryDraftStore implements DraftStore {
     const id = this.nextRowId++;
     documentDraft.rows.push({
       id,
-      generation: row.generation,
       update: row.updateData,
       source: row.source,
     });

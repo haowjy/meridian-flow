@@ -212,7 +212,6 @@ describe("whole-item changes", () => {
       status: "active",
       branchId: listed.branchId,
       itemKey: listed.itemKey,
-      draftGeneration: 1,
       reviewRoomName: "room",
       liveRevisionToken: "l",
       draftRevisionToken: "t",
@@ -237,7 +236,7 @@ describe("whole-item changes", () => {
       ...listed,
       binary: true,
       wholeItem: true,
-      draftGeneration: null,
+      hasDraft: false,
       documentName: "map.png",
       actorThreads: [{ threadId: "chat-a", title: "Chat A" }],
     };

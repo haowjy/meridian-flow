@@ -18,7 +18,7 @@ it("keeps one loss sentence on the addressed document until dismissal", async ()
       documentId: "affected",
       itemKey: "draft",
     },
-    "draft:review:gen:1",
+    "draft:review",
   );
   reference.writerLoss?.();
   try {

@@ -1,5 +1,5 @@
 /**
- * The session registry's generation-fenced draft (review) rooms: retained per
+ * The session registry's stable-id draft (review) rooms: retained per
  * owner, torn down after a grace period once no owner holds them, retired when
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
@@ -10,7 +10,6 @@
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import * as Y from "yjs";
 
 import { type DocumentSession, updatesRefused } from "./document-session";
 import type { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
@@ -21,12 +20,6 @@ export type DraftRoomRef = Readonly<{
   changed(): void | Promise<void>;
   writerChanges?(generation: number | null): void;
   writerLoss?(): void;
-}>;
-export type DraftRoomCarry = Readonly<{
-  ref: DraftRoomRef;
-  source: { roomKey: string; generation: number };
-  carry: Uint8Array;
-  sourceState: Uint8Array;
 }>;
 
 export class DraftRoomPool {
@@ -42,7 +35,6 @@ export class DraftRoomPool {
       openSession(roomKey: string): DocumentSession;
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
-      carry?(carry: DraftRoomCarry): void;
     },
   ) {}
 
@@ -120,7 +112,7 @@ export class DraftRoomPool {
     for (const timer of this.teardownTimers.values()) clearTimeout(timer);
     this.teardownTimers.clear();
     const rooms = [...this.rooms];
-    for (const [roomKey, session] of rooms) this.retire(roomKey, session, true);
+    for (const [roomKey, session] of rooms) this.retire(roomKey, session);
     this.refs.clear();
   }
 
@@ -169,29 +161,12 @@ export class DraftRoomPool {
     return false;
   }
 
-  private retire(roomKey: string, session: DocumentSession, closing = false): void {
+  private retire(roomKey: string, session: DocumentSession): void {
     if (this.rooms.get(roomKey) !== session) return;
-    const disposition = session.resetDisposition;
-    const ref = this.refs.get(roomKey);
-    const carry = closing ? null : session.unacknowledgedUpdates();
-    const room = parseYjsRoomName(roomKey);
-    const retirement: DraftRoomCarry | null =
-      carry &&
-      ref &&
-      room?.kind === "draft" &&
-      (disposition === "superseded" || disposition === "rebuild")
-        ? {
-            ref,
-            source: { roomKey, generation: room.generation },
-            carry,
-            sourceState: Y.encodeStateAsUpdate(session.document),
-          }
-        : null;
     this.rooms.delete(roomKey);
     this.refs.delete(roomKey);
     this.cancelTeardown(roomKey);
     // Quarantine is installed before delivery can try to reopen the same room.
     void this.deps.teardownOwner.retire({ kind: "draft", roomKey }, session).catch(() => undefined);
-    if (retirement) this.deps.carry?.(retirement);
   }
 }

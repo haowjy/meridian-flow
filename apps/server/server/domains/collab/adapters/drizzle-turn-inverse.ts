@@ -404,7 +404,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           ? {
               draftId: draftEntry.documentDraft.draftId,
               revision: draftEntry.documentDraft.revision,
-              generation: draftEntry.documentDraft.generation,
               view,
               effect: {
                 hasEffect: !documentEffectsEqual(document.live, view),
@@ -415,7 +414,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             ? {
                 draftId: draftEntry.documentDraft.draftId,
                 revision: draftEntry.documentDraft.revision,
-                generation: draftEntry.documentDraft.generation,
                 view,
               }
             : undefined,
@@ -467,7 +465,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             db(),
             edits.map(({ part }) => ({
               draftId: draft.draftId,
-              generation: draft.generation,
               updateData: part.update,
               source: entry.source,
               threadId: query.model ? query.threadId : null,
@@ -482,7 +479,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             origins[index].push({
               kind: "pending",
               draftId: draft.draftId,
-              generation: draft.generation,
               rowId,
             });
           }
@@ -628,7 +624,6 @@ type PlannedInverse = {
   draft?: {
     draftId: string;
     revision: number;
-    generation: number;
     view: Y.Doc;
     effect?: { hasEffect: boolean; liveCut: Uint8Array };
   };

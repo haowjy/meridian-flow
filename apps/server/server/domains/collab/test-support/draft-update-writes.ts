@@ -9,18 +9,17 @@ type SaveDoors = Pick<DraftCoordinator, "readDraft" | "commitSegmentRows">;
 /** Journals `updateData` as one row on the draft's current generation. */
 export async function commitJournaledUpdate(
   coordinator: SaveDoors,
-  input: Omit<AppendDraftJournalInput, "generation">,
+  input: AppendDraftJournalInput,
 ): Promise<boolean> {
-  const staged = await coordinator.readDraft(input.draftId, async (doc, snapshot) => {
+  const staged = await coordinator.readDraft(input.draftId, async (doc, _snapshot) => {
     const sourceDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(sourceDoc, Y.encodeStateAsUpdate(doc));
     Y.applyUpdate(sourceDoc, input.updateData);
-    return { sourceDoc, generation: snapshot.generation };
+    return { sourceDoc };
   });
   try {
     return await coordinator.commitSegmentRows({
       draftId: input.draftId,
-      expectedGeneration: staged.generation,
       sourceDoc: staged.sourceDoc,
       rows: [input],
     });

@@ -30,8 +30,6 @@ export type JournalMutation = JournalMutationBase &
     | { mode: "live" }
     | {
         mode: "threadPeer";
-        /** Host draft generation captured with the write baseline. */
-        draftGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
         peerDraftId?: string;
       }

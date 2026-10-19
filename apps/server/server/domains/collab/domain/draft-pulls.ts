@@ -51,7 +51,6 @@ export type DraftPullService = {
   }): Promise<{
     peerDraftId: string;
     upstreamDraftId: string;
-    draftGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
     attributionBaseline: Uint8Array;
@@ -283,21 +282,18 @@ export function createDraftPullService(input: {
           const upstreamDraftId = peer.upstreamDraftId;
           if (!upstreamDraftId)
             throw new Error(`Thread peer ${peer.draftId} has no upstream Work draft`);
-          // The upstream is read at its epoch, and the peer's commit holds that epoch: a
-          // per-change Discard that re-forked the upstream since the read wins, and the stale
-          // capture is abandoned, never merged back. The pull's attempts are root
-          // transactions of their own: it commits even when the caller's transaction aborts.
-          const upstream = await input.outsideTransaction(async () => {
+          // The commit holds the upstream active by id before the peer row. A close wins;
+          // the captured state never redirects to a replacement draft. Pulls commit in root
+          // transactions of their own, even when the caller's transaction aborts.
+          const _upstream = await input.outsideTransaction(async () => {
             await testHook("draft.beforeAccess");
-            const read = await input.draftCoordinator.readDraft(upstreamDraftId, (doc, snapshot) =>
+            const read = await input.draftCoordinator.readDraft(upstreamDraftId, (doc, _snapshot) =>
               Promise.resolve({
-                generation: snapshot.generation,
                 state: Y.encodeStateAsUpdate(doc),
               }),
             );
             const outcome = await pullPeerFromCapturedUpstream(peer.draftId, {
               draftId: upstreamDraftId,
-              generation: read.generation,
               state: read.state,
             });
             if (outcome !== "pulled") throw new PeerPullRefused(peer.draftId, outcome);
@@ -306,7 +302,6 @@ export function createDraftPullService(input: {
           return {
             peerDraftId: peer.draftId,
             upstreamDraftId,
-            draftGeneration: upstream.generation,
             afterJournalId,
             liveJournalSeq,
             attributionBaseline,
@@ -328,14 +323,14 @@ export function createDraftPullService(input: {
 
   async function pullPeerFromCapturedUpstream(
     peerDraftId: string,
-    upstream: { draftId: string; generation: number; state: Uint8Array },
+    upstream: { draftId: string; state: Uint8Array },
   ): Promise<PullOutcome> {
     const upstreamDoc = yjsUpdateFromState(upstream.state);
     try {
       return await input.draftCoordinator.pullFromDoc({
         draftId: peerDraftId,
         upstream: upstreamDoc,
-        upstreamEpoch: { draftId: upstream.draftId, generation: upstream.generation },
+        upstreamEpoch: { draftId: upstream.draftId },
       });
     } finally {
       upstreamDoc.destroy();

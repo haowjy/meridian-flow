@@ -8,9 +8,8 @@ export type RetiredWriteReason = Exclude<
   "discard" | "inverse" | "integration"
 >;
 
-/** The helper's authority base, independent of the generations its staged writes name. */
+/** The committed draft state on which the response helper planned its staged writes. */
 export interface StagedHelperCut {
-  generation: number;
   state: Uint8Array;
 }
 

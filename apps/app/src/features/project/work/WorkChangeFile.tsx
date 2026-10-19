@@ -46,7 +46,7 @@ export function WorkChangeFile({
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
   const review = (focusOperationIds?: readonly string[]) =>
-    file.draft.draftGeneration !== null
+    file.draft.hasDraft
       ? openReviewFile(file, workId, focusOperationIds)
       : imageOpenable && setPreviewing(true);
 
@@ -83,9 +83,7 @@ export function WorkChangeFile({
           <button
             type="button"
             className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-            disabled={
-              !file.contextLocation || (file.draft.draftGeneration === null && !imageOpenable)
-            }
+            disabled={!file.contextLocation || (!file.draft.hasDraft && !imageOpenable)}
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>

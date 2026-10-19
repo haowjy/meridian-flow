@@ -44,7 +44,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const targets = useMemo(
     () =>
       candidates
-        .filter((row) => row.draft.draftGeneration !== null)
+        .filter((row) => row.draft.hasDraft)
         .map((row) => ({
           projectId,
           workId,
@@ -77,7 +77,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
       // A draft-only picture has no review room: it opens as a preview.
-      if (file.row.draft.draftGeneration === null) {
+      if (!file.row.draft.hasDraft) {
         if (isDraftImagePath(file.row.contextLocation?.path))
           setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
         return;

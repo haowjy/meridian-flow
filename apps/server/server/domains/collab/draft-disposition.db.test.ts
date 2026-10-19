@@ -88,8 +88,8 @@ async function fixture() {
     const [row] = await db
       .insert(schema.draftWriteJournal)
       .values({
-        draftId,
         generation: 1,
+        draftId,
         draftBaseUpdateSeq: 0,
         updateData: Buffer.from(Y.mergeUpdates(updates)),
         source: "agent",
