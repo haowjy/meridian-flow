@@ -86,6 +86,28 @@ write against a different version from the thread's last read returns
 `read_required`. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
+A call whose caller passes `recordingFrontier` (the read and write tools, and
+reference reads) records an observation frontier in its room: the pulled
+peer's upstream Work draft (`draft:<upstreamDraftId>`, never the peer id or the
+draft generation), or `live:<documentId>:<authorityGeneration>`. The pool
+resolves the room before the call (the generation through `FrontierRooms`,
+`adapters/drizzle-frontier-rooms.ts`, isolated from any ambient transaction, so
+a restore in between leaves the frontier on the old epoch and a failed read
+records none), looks up the model's previous frontier there, and passes
+agent-edit `observe: { room, prev }`; the outcome comes back with its
+`frontier`. An undo, redo or revert passes `observeInverse` instead: its room is
+the draft its result names it ran on (`DocumentEditResult.draftId`), or, when
+null, the live room whose generation the pool read before the call. A staged
+write does no frontier work. The reply's save, given `recordingFrontier`,
+derives each saved document's room from its pin (`draft:<upstreamDraftId>`) or
+its live core (the live room), looks up the previous frontier there before its
+transaction opens, and returns each saved document's `frontier` at the
+post-commit cut. `format: "edits"` reads record none.
+`roomKeyFor` and `FrontierRooms` are temporary: once writes plan on the
+frontier, results render from the room doc, whose authority identity is already
+bound to it, and these lookups go ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)). See
+[runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
+
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
 Yjs peers. A planning-visible item disappearing is not by itself rollback
 evidence. Only retired-generation structs or immutable inverse removals after

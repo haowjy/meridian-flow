@@ -3,6 +3,7 @@ import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
+import type { ObservationRequest } from "../frontier.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -35,6 +36,7 @@ import type {
   MutationCommit,
   OwnWriteStep,
 } from "./mutation-commit.js";
+import { observeRendered } from "./observation.js";
 import { rejectedWriteExplanation, renderSettledReceipts } from "./receipt.js";
 
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -54,6 +56,7 @@ import type {
   ResponseStagedCreateOutcome,
   WriteContext,
 } from "./types.js";
+import type { ObservationFailedDetail } from "./write-deps.js";
 
 export interface ResponseCommitter {
   assertCanStage(input: ResponseStagePreflightInput): void;
@@ -173,6 +176,12 @@ export type CommandDocumentLease = CommandLeaseMethods &
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
+  /**
+   * Host-only: per document, the room to record in and the model's previous
+   * frontier there, when the host records one. The document's result then
+   * carries the frontier at the post-commit cut (`frontier`).
+   */
+  observe?(documentId: string): ObservationRequest | undefined;
   /** Host transaction hook; keeps lifecycle delivery aligned with durable commit. */
   deferFinalization?(participant: {
     commit(): void | Promise<void>;
@@ -353,6 +362,7 @@ export function createResponseCommitter(deps: {
   onTransition?: (event: ResponseCommitterTransitionDetail) => void;
   closedResponseTombstoneCap?: number;
   afterPreflight?: (responseId: string) => Promise<void> | void;
+  onObservationFailed?: (event: ObservationFailedDetail) => void;
 }): ResponseCommitter {
   const {
     runtimeStore,
@@ -1204,17 +1214,18 @@ export function createResponseCommitter(deps: {
         if (isLive(docBuffer)) projectLive(docBuffer, applied.concurrent.updates);
         try {
           const lateSweep = applied.lateSweep;
+          const receipts = applied.awarenessDegraded
+            ? renderSettledReceipts(
+                docBuffer.updates,
+                docBuffer.rejectedUpdates ?? [],
+                applied.revision,
+                () => null,
+              )
+            : settledWriteReceipts(docBuffer, applied.revision, lateSweep);
           return {
             documentId: docBuffer.docId,
             updateCount: docBuffer.updates.length,
-            receipts: applied.awarenessDegraded
-              ? renderSettledReceipts(
-                  docBuffer.updates,
-                  docBuffer.rejectedUpdates ?? [],
-                  applied.revision,
-                  () => null,
-                )
-              : settledWriteReceipts(docBuffer, applied.revision, lateSweep),
+            receipts,
             ...(applied.concurrent.detection.info
               ? {
                   concurrentEdits: withRunShownLinks(
@@ -1236,7 +1247,7 @@ export function createResponseCommitter(deps: {
           signal: options.signal,
           timeoutMs: options.lockTimeoutMs ?? 30_000,
         });
-        documents.push(document);
+        documents.push(saveObservation(docBuffer, document, options));
         assertOwner(responseId, owner);
         emit("live_projected", responseId, responsePhaseForAcceptance(journalCommitKind), {
           journalCommitKind,
@@ -1297,7 +1308,7 @@ export function createResponseCommitter(deps: {
       try {
         for (const docBuffer of docBuffers.slice(documents.length)) {
           if (!retryApplyDocument) throw new Error("Phase-C retry was not initialized.");
-          documents.push(await retryApplyDocument(docBuffer));
+          documents.push(saveObservation(docBuffer, await retryApplyDocument(docBuffer), options));
         }
         emit("recovery_succeeded", responseId, "journalCommitted", {
           journalCommitKind,
@@ -1349,7 +1360,8 @@ export function createResponseCommitter(deps: {
           responseId,
           buffer,
           docBuffers,
-          recheckedDocuments ?? documents,
+          // Journal replay leaves no cut the receipts were rendered from: no document records one.
+          (recheckedDocuments ?? documents).map(({ frontier: _, ...document }) => document),
           liveResponseState(responseId),
           (docBuffer) => settledWriteReceipts(docBuffer, null),
           awarenessDegraded ? { awarenessDegraded: true } : {},
@@ -1423,6 +1435,33 @@ export function createResponseCommitter(deps: {
       if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
       return document;
     });
+  }
+
+  /**
+   * The document's frontier at the post-commit cut, when the host asked: every
+   * saved document records one, crediting what its accepted receipts show in
+   * full (none when they are degraded or textless). A failure is reported and
+   * the document goes out without one.
+   */
+  function saveObservation(
+    docBuffer: ResponseDocumentBuffer,
+    document: ResponseCommitDocumentResult,
+    options: ResponseCommitOptions,
+  ): ResponseCommitDocumentResult {
+    const observe = options.observe?.(docBuffer.docId);
+    if (!observe) return document;
+    try {
+      const accepted = document.receipts.slice(0, docBuffer.updates.length);
+      const frontier = observeRendered(
+        documentDoc(docBuffer),
+        observe,
+        accepted.map((receipt) => receipt.result),
+      );
+      return { ...document, frontier };
+    } catch (cause) {
+      deps.onObservationFailed?.({ documentId: docBuffer.docId, cause });
+      return document;
+    }
   }
 
   function degradedDocumentReceipt(

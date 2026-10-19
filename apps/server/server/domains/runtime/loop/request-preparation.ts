@@ -4,7 +4,6 @@ import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts
 import { encodeImageInclusionMetadata, type ImageContextBreak } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { Tool } from "../gateway/index.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
@@ -13,12 +12,18 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { estimateRequestTokens } from "./compaction/estimate.js";
+import { frontierLookup } from "./frontier-recording.js";
 import type { CompactionImageProjectionMode, ImageInclusionDecision } from "./image-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
-import { type LoadedReferenceReads, loadReferenceReads } from "./reference-context.js";
+import {
+  type LoadedReferenceReads,
+  loadReferenceReads,
+  NO_REFERENCE_EVIDENCE,
+  type ReferenceEvidence,
+} from "./reference-context.js";
 import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
@@ -48,8 +53,8 @@ export type PreparedRequest = {
   assembled: AssembledNextTurnContext;
   events: OrchestratorEvent[];
   compaction: CompactionDecision;
-  /** Host-only reference-read candidates; the commit persisting `events` records them. */
-  shown: ShownLinkShowing[];
+  /** Host-only reference-read evidence; the commit persisting `events` records it. */
+  evidence: ReferenceEvidence;
 };
 
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
@@ -72,7 +77,7 @@ async function prepareBaseRequest(
 ): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
   const references: LoadedReferenceReads =
     input.readReferences === false
-      ? { blocks: [], shown: [] }
+      ? { blocks: [], evidence: NO_REFERENCE_EVIDENCE }
       : await loadReferenceReads({
           blocks: input.blocks,
           userTurnId: input.referenceTurnId,
@@ -80,6 +85,12 @@ async function prepareBaseRequest(
           assistantTurnId: input.currentTurnId,
           reader: input.deps.referenceReader,
           signal: input.signal,
+          // The request's own blocks are the conversation the read is shown in.
+          recordingFrontier: frontierLookup(
+            input.deps,
+            () => input.blocks.map((block) => block.id),
+            { threadId: input.threadId, turnId: input.currentTurnId },
+          ),
         });
   const referenceUpdates = references.blocks;
   const referencesById = new Map(referenceUpdates.map((block) => [block.id, block]));
@@ -191,7 +202,7 @@ async function prepareBaseRequest(
     }
     compaction = { kind: "generate" };
   }
-  return { assembled, events, compaction, shown: references.shown };
+  return { assembled, events, compaction, evidence: references.evidence };
 }
 
 function buildImageProjectionEvents(input: {

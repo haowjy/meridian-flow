@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Server records what each document view the model receives showed it: an observation frontier (Yjs snapshot plus blocks changed and not shown in full) per read, write echo, undo/redo/revert echo, settled save receipt and @-mention read, keyed by the transcript block and the room (Work draft, or live document at its restore epoch). Survives restart; forks inherit it; retries don't. Nothing plans on it yet: model text and writer behavior unchanged (#871, migrations 0070-0071).
+
 - The draft/branch rename upgrade now includes all-zero command IDs and nonpositive receipt IDs. Renaming receipt placement keys no longer generates recursive change-trail work; real placement changes still signal normally (#880).
 
 - The draft/branch rename preserves command replay fingerprints and opaque document IDs. Its online backfill commits complete receipt and settlement rows in indexed batches and refreshes shown-link digests without creating duplicate showings (#880).

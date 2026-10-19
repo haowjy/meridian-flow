@@ -20,6 +20,7 @@ import {
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
+import { hasReferenceEvidence } from "../loop/reference-context.js";
 import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
@@ -490,11 +491,11 @@ export function createDeliveryAdapter(
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
     // Adopted reference reads count as shown only with the commit that
     // persists their blocks; a discarded or retried preparation records nothing.
-    const recordShown = async (turnId: TurnId) => {
-      if (!drain.shown?.length) return;
-      if (!input.recordShown)
-        throw new Error("Adopted reference reads have no shown-link recorder");
-      await input.recordShown(turnId, drain.shown);
+    const recordEvidence = async (turnId: TurnId) => {
+      if (!drain.evidence || !hasReferenceEvidence(drain.evidence)) return;
+      if (!input.recordEvidence)
+        throw new Error("Adopted reference reads have no evidence recorder");
+      await input.recordEvidence(turnId, drain.evidence);
     };
 
     const receipt = await leaseStore.lockReceipt(lease);
@@ -534,7 +535,7 @@ export function createDeliveryAdapter(
               ...events,
             ],
           }),
-          { afterEvents: () => recordShown(currentTurn.id) },
+          { afterEvents: () => recordEvidence(currentTurn.id) },
         );
         await ack(threadId, drain.ackIds, deliveredBy(currentTurn));
         drain.ackIds = [];
@@ -584,7 +585,7 @@ export function createDeliveryAdapter(
           }),
           {
             afterEvents: async () => {
-              await recordShown(next.id);
+              await recordEvidence(next.id);
               await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
               if (adoption.selection.outstanding.length > 0)
                 await input.admit?.(next, adoption.selection.outstanding);
@@ -595,7 +596,7 @@ export function createDeliveryAdapter(
       if (input.current.kind === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
       await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }), {
-        afterEvents: () => recordShown(currentTurn.id),
+        afterEvents: () => recordEvidence(currentTurn.id),
       });
     }
 

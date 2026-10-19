@@ -16,7 +16,11 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { FileAccess } from "../file-policy/index.js";
-import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
+import type {
+  FrontierRooms,
+  LiveAgentEditCore,
+  ThreadPeerAgentEditCore,
+} from "./domain/agent-edit-cores.js";
 import type { Branches } from "./domain/branches.js";
 import { createScopedDocumentLinks } from "./domain/document-links-port.js";
 import {
@@ -47,6 +51,7 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onLinkSpliceFallback"
+  | "onObservationFailed"
 >;
 
 /**
@@ -80,6 +85,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
+  frontierRooms: FrontierRooms;
   branches: Pick<Branches, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
@@ -99,6 +105,7 @@ export function createDraftThreadPeerAgentEditCore(input: {
     fileAccess: input.fileAccess,
     lockWorks: input.lockWorks,
     lockLiveDocuments: input.lockLiveDocuments,
+    frontierRooms: input.frontierRooms,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     attemptScope: input.attemptScope,
     responseTransactionSettlement: input.responseTransactionSettlement,

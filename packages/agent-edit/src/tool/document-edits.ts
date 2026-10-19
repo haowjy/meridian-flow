@@ -7,6 +7,7 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ModelInverseCommand } from "../ports/document-edits.js";
 import { openCommandLinks } from "./command-links.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import { withObservation } from "./observation.js";
 import { renderReceipt } from "./receipt.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { status } from "./response-format.js";
@@ -53,8 +54,19 @@ export function createDocumentEditCommands(deps: {
         model: { message: result.message, read: { format: "edits" } },
       };
 
+    // `after` is the cut the inverse committed on top of, in the version it ran on: the echo
+    // records there, crediting nothing when it degraded.
+    const observe = result.after ? await context.observeInverse?.(result.draftId) : undefined;
     const before = new Y.Doc({ gc: false }),
       after = new Y.Doc({ gc: false });
+    const observed = (rendered: InternalWriteResult) =>
+      withObservation(
+        rendered,
+        after,
+        observe,
+        address.documentId,
+        deps.options.onObservationFailed,
+      );
     try {
       await deps.runtimeStore.evictThreadRuntimes(address.documentId, session.threadId, {
         markLiveDocStale: true,
@@ -90,20 +102,20 @@ export function createDocumentEditCommands(deps: {
         afterBlocks,
         { phase: "committed", ...(result.writeId ? { writeId: result.writeId } : {}) },
       );
-      return {
+      return observed({
         ...receipt,
         ...shownEvidence(renderedItems(receipt.model), links),
         revision: deps.options.links.revision(after, links.scope),
         model: { ...receipt.model, message: result.message },
-      };
+      });
     } catch {
       // Admission has already succeeded; an echo failure cannot turn it into a refusal.
-      return {
+      return observed({
         status: "success",
         phase: "committed",
         ...(result.writeId ? { writeId: result.writeId } : {}),
         model: { message: result.message, awarenessDegraded: true },
-      };
+      });
     } finally {
       before.destroy();
       after.destroy();

@@ -533,7 +533,10 @@ const rows: Array<{
             input: z.object({}),
             execution: {
               type: "server",
-              handler: async () => ({ ...outcome, shown: showingOf(TARGET, outcome) }),
+              handler: async () => ({
+                ...outcome,
+                evidence: { shown: showingOf(TARGET, outcome) },
+              }),
             },
           },
         ],
@@ -543,7 +546,7 @@ const rows: Array<{
         { threadId: "thread" as ThreadId, turnId: "turn" as TurnId, agentSlug: null },
       );
       check(JSON.stringify(executed.result), "persisted result").not.toMatch(HOST_FACTS);
-      check(executed.shown, "evidence still travels beside it").toHaveLength(1);
+      check(executed.evidence?.shown, "evidence still travels beside it").toHaveLength(1);
       return { store: h.store, threadId: "thread", shown: {} };
     },
   },
@@ -650,14 +653,16 @@ const rows: Array<{
               toolCallId: toolCall.id,
               output: "read",
               result: {},
-              shown: [
-                {
-                  documentId: SOURCE,
-                  holderUri: "user://source",
-                  view: { kind: "live" },
-                  links: [fact(93)],
-                },
-              ],
+              evidence: {
+                shown: [
+                  {
+                    documentId: SOURCE,
+                    holderUri: "user://source",
+                    view: { kind: "live" },
+                    links: [fact(93)],
+                  },
+                ],
+              },
             }),
           },
           eventSink: { emit() {} },

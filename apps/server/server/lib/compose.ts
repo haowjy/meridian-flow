@@ -156,6 +156,7 @@ import {
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
+  createDrizzleObservationFrontiers,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
@@ -184,6 +185,7 @@ import {
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
+  type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -406,6 +408,8 @@ export type ProductionAppPorts = {
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
   shownLinks: ShownLinkStore;
+  /** What each transcript block showed the model of a document, per room. */
+  observationFrontiers: ObservationFrontiers;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -732,6 +736,7 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
+    observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
 
@@ -1052,6 +1057,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,

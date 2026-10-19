@@ -1,7 +1,7 @@
 # Document text in history
 
-This context defines revision and shown-link evidence for document copies in
-history. Compaction replaces stale copies selectively; `thread_history` stubs
+This context defines revision, shown-link and observation-frontier evidence
+for document copies in history. Compaction replaces stale copies selectively; `thread_history` stubs
 every copy and preserves mutation inputs, so the transcript itself stays
 unchanged. Compaction applies replacement only where the retained prefix
 already breaks at position 0; it does not rewrite later arrivals.
@@ -36,6 +36,65 @@ rows through the cutoff, then deduplicate by the latest eligible sequence;
 nothing is copied at fork time. Handoffs and spawned children inherit no rows.
 The in-memory repository transaction rolls evidence back with a failed result;
 a response rollback still keeps evidence for an echo the model already saw.
+
+## Observation frontiers
+
+An observation frontier records what document state a block showed the model:
+`{ room, snapshot, unshown }` in `observation_frontiers` (the room in
+`room_key`), on the source block: a `tool_result`, or a writer turn's reference
+block whose materialized read the model is sent. A block records at most one
+(`source_block_id` is the primary key).
+The room is `draft:<workDraftId>` (the thread peer's upstream, never the peer)
+or `live:<documentId>:<authorityGeneration>`; collab names it. `snapshot` is
+`Y.encodeSnapshotV2` of the doc the result was rendered from; `unshown` lists
+blocks changed since the model's previous frontier and not shown in full
+(`@meridian/agent-edit/integration` computes both). Nothing plans on them yet:
+today's concurrent-edit reporting still runs on in-memory watermarks until
+writes plan on the frontier ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)).
+
+- **What records.** Only results the model receives: reads, immediate write
+  echoes, undo, redo and revert echoes, settled save receipts, and reference
+  reads. A staged write's echo records nothing: the step's save replaces it
+  before the next request is built. Refusals, `format: "edits"` reads and copy
+  source reads record none. A result reported with `awarenessDegraded` records
+  a frontier that counts no block as shown in full: its snapshot advances and
+  every changed block is unshown.
+- **Recording.** A handler returns its host-only `evidence` (`ResultEvidence`:
+  shown links and the frontier) beside the result; the executor strips it from
+  everything serialized, and dispatch records both in
+  `persistAndAppendEvents`'s `afterEvents`, once the block row exists.
+  Reference reads carry `ReferenceEvidence` the same way to the commit that
+  persists their blocks. Deleting the block's old row is part of the block write
+  and fails it; the insert runs in a savepoint, so a failed insert is logged
+  (`observation_frontier.record_failed`) and the result commits with no
+  frontier, never the stale one.
+- **Saves.** The save records on each committed document's last settled
+  result a frontier at the post-commit cut, chained like any result from the
+  `recording` lookup, crediting what the settled receipts show in full (nothing
+  when they are degraded or textless). The latest row may be a sibling read's
+  from the same step: its snapshot holds the step's staged structs, so it
+  validates only if they landed, and it credits only what that read showed.
+  Recovery's journal replay leaves the cut unknown and records none; a failed
+  save, a refused write and a typed rejection record none. Replacing a result
+  replaces its row. Concurrent-run backfill keeps the settled row and is not
+  credited.
+- **Selection.** The model's frontier for a room is the row with the greatest
+  `recorded_seq` among a block set (rooms only grow, so recording order is cut
+  order). `frontierLookup` (`loop/frontier-recording.ts`) builds one lookup per
+  block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
+  reads the run's current blocks, so a sibling call's result counts as seen,
+  and `planning` reads the blocks the authoring request was built from (calls
+  in one response share the view from before it; nothing calls it until writes
+  plan on the frontier). The block set is the effective conversation (fork
+  lineage through the cutoff, forgotten turns removed), not the compaction
+  projection: credit survives a summarized or elided result. A failed lookup is
+  logged and answers null, the empty frontier; it runs in a savepoint inside a
+  transaction, so the caller's stays usable. Its `ORDER BY recorded_seq DESC
+  NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS LAST)` index, so
+  the scan walks the room newest first and stops at the first row among the
+  blocks.
+- **Lifecycle.** Rows cascade with their block. A fork renders inherited block
+  ids and finds their rows with nothing copied; a retry has new blocks.
 
 ## Tool policy and elision
 
