@@ -33,13 +33,28 @@ returns, a joined hidden candidate before its draft seeds, live overwrite and
 the held live lease, and Hocuspocus room admission before its first generation
 read. Everything else requires an existing head and creates nothing:
 `allocateDocumentAdmission` (journal and settlement), `readDocumentAuthorityHead`
-(provenance, compaction, the generation reader), checkpoint storage and push
-completion. A miss answers the removal record (`DocumentRemovedError`) or
+(provenance, the generation reader), checkpoint storage, compaction, version
+replacement and push completion. A miss answers the removal record (`DocumentRemovedError`) or
 `DocumentNotFoundError`.
 
 `allocateDocumentAdmission` is the one live-write boundary: its head update
 joins the living row, so a removal that won the mutation lock refuses every
 later frame, staged save install and Apply member at no extra query.
+
+A deleted document keeps its head and history for Restore, so an existing head
+is not a document that may change. Every other door that mutates retained
+history reads `findLivingDocumentAuthorityHead` under the mutation lock:
+version replacement and an explicit checkpoint refuse with the record; a
+background checkpoint store and compaction do nothing. `advanceHeadToCheckpoint`,
+which every checkpoint insert passes, joins the living row too, as the backstop.
+Journal-row edit links (`document_yjs_updates.edit_id`) are written only beside
+the admission that inserted the row. Reads of a deleted document's history stay
+open; only purge deletes it.
+
+`DocumentRemovedError` is a `DocumentNotFoundError` carrying the record's
+sentence (`modelReason`), so every not-found mapping, the model's included,
+answers a removal as `document_not_found` with who removed it until the model
+gets its own `document_deleted` answer.
 
 ## Schema-aware document engine
 
