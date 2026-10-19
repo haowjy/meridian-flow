@@ -103,8 +103,9 @@ derives each saved document's room from its pin (`draft:<upstreamDraftId>`) or
 its live core (the live room), looks up the previous frontier there before its
 transaction opens, and returns each saved document's `frontier` at the
 post-commit cut. `format: "edits"` reads record none.
-`roomKeyFor` and `FrontierRooms` are M1 scaffolding: M2 renders from the room
-doc, whose authority identity is already bound to it. See
+`roomKeyFor` and `FrontierRooms` are temporary: once writes plan on the
+frontier, results render from the room doc, whose authority identity is already
+bound to it, and these lookups go ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)). See
 [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
 Prepared replay treats ordinary concurrent chat edits and writer deletions as
