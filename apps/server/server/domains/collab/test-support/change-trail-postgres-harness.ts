@@ -72,11 +72,12 @@ export const {
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
-const {
-  createDrizzleDraftJournalReadStore,
-  createDrizzleWorkBranchPendingStore,
-  createDrizzlePushCommitStore,
-} = await import("../adapters/drizzle-branch-push.js");
+const { createDrizzleDraftJournalReadStore, createDrizzlePushCommitStore } = await import(
+  "../adapters/drizzle-branch-push.js"
+);
+const { createDrizzleWorkBranchPendingStore } = await import(
+  "../adapters/drizzle-work-branch-pending.js"
+);
 const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
