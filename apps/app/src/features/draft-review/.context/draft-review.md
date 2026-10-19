@@ -93,7 +93,9 @@ old occurrence suffix. No post-click edit changes a frozen command.
 
 `discard(ref, target, surface)` composes against that optimistic base and
 calls `writeDiscardBlocks` (including `recordWriteBack`) in one transaction.
-Editor history uses the binding origin with stop-capture boundaries. A dock
+Editor history tracks a dedicated Discard origin with stop-capture boundaries.
+Direct writes never impersonate the binding origin: its delete-only transactions
+without a writer ProseMirror transaction are schema-repair evidence. A dock
 or Work notice owns a separate manager and pool lease, retains the runtime,
 and installs `recordRestorations` so Undo writes links in its own transaction.
 Undo restores a cached list item before server discovery catches up. At most

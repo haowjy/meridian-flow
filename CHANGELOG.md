@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep undoable draft Discard out of schema-repair notices while preserving genuine repair reports.
+
 - Share equal blocks' immutable merge tokens without replacing editor nodes or arrays.
 
 - Take Apply's draft hold only at the append door; a late close rolls back both document halves and the command claim.

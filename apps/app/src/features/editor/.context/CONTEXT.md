@@ -55,22 +55,12 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Review reads like suggestion mode: insertions are green for the AI and gold
-for the writer (gold inside green for a writer edit inside an AI change,
-dashed grey when the server flags `mergeArtifact`, a true CRDT interleave
-rather than two authors in one hunk); removed text is struck in its remover's
-colour (crimson AI, gold writer), and a removal the server could not attribute
-is struck in no author's colour. Focus emphasizes every operation sharing the
-change's `closureClassId`.
-
-Desktop review mounts the server draft projection in an editable Yjs draft;
-the writer is a peer and edits land in that draft. Phone review uses the same
-projection read-only. Review marks, removed-text widgets, attribution,
-`mergeArtifact`, and the merge flag come from the server model. Removed text is
-not part of the Y.Doc or TipTap document, so it cannot be typed into or saved;
-long removals fold and open on click, and a click on struck text places the
-caret beside it and leaves the removal untouched. Hiding review marks changes
-visibility without remounting the editor, projection, selection, or open folds.
+Review projects the mounted draft text against its review base. Removed base
+text is red and struck; inserted draft text is green, including writer edits.
+Attribution supplies bylines without partitioning changes. Removed-text widgets
+are not manuscript content. Desktop review is editable; phone review is
+read-only. Projection, commands and history belong to the
+[draft-review runtime](../../draft-review/.context/draft-review.md).
 
 `DraftReviewProvider` supplies the presented review. Identity/header chrome and
 change bars read the shared model; `EditorView` does not own a second review
@@ -82,20 +72,9 @@ right margin beside the change when there is room, else in a block slot after
 the change's last paragraph. Draft review lifecycle, generation, commands, and settlement belong
 to [`draft-review`](../../draft-review/.context/draft-review.md).
 
-`PaintHold` is the continuity boundary. Only finished paint replaces its
-retained snapshot; loading, pending-token gaps, and token handoff do not.
-Inactive warm editors remain mounted but their chrome is inactive. A review
-request waits for its model acknowledgement or bounded timeout. `shown` stays
-true across a generation change so header and change list remain present. A
-draft-only tab without a review shows a terminal Close card.
-
-A Discard replaces the review editor and the writer must not see it: from the
-click, the discarded change's original text shows as plain prose at once. The old view is covered while the
-successor syncs, carries unsent edits, and projects the new review. The place
-capture is identity-based: first visible block and caret are anchored to Yjs
-items, not source offsets or pixels. `PaintHold.afterRelease` restores focus,
-selection, and viewport; explicit navigation supersedes that place. A refusal
-removes restoring flags and reveals the original review again.
+`PaintHold` retains finished paint across lifecycle handoffs. Ordinary text
+Discard edits the same draft Y.Doc in place, without replacing the editor,
+selection or undo manager. An empty review stays in the same draft room.
 
 ## Schema and repair
 

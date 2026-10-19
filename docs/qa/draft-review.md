@@ -56,6 +56,15 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
 | A reply writes through Discard | It keeps writing into the same draft. Later edits are new changes, never a stale-generation refusal. |
 | 50k words all changed, then Discard | One transaction/frame, instant notice and count drop, no editor navigation. Record timing and update bytes. |
 
+After Apply, type an extra word outside a replacement, then Discard that
+insertion and Undo. Repeat with the document's Discard draft while only
+insertions remain. Neither action nor Undo raises a schema-repair notice;
+restored text is green. Also check Redo and repeated Discard/Undo. As a positive
+control, apply a foreign Yjs update containing an unsupported `sidebar` node to
+the bound room: the binding removes it and still shows a live repair notice
+with the recovered prose. Do not fake the notice or insert and remove the node
+in a single local transaction.
+
 Repeat the notice cells on Work Files, including an initially opening room and
 Undo after the server's pending list has omitted the discarded item. Try a
 per-change Discard inside a still-hidden created text document: it is local,
