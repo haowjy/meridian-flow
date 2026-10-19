@@ -13,9 +13,10 @@ reading the winner. Pending commands are observations, not a second scheduler.
 
 `adapters/drizzle-apply-click.ts` owns the atomic storage operation. The Works
 boundary locks the Work and confirms the route's bound edit grants before the
-first write (the command claim). Verified tree namespace acquisition precedes
-live's mutation lock. A source moving during namespace acquisition rolls back
-and retries that transaction; it never re-compiles the clicked text. Live is
+first write (the command claim). A hidden-create reveal verifies its tree namespace before taking live's
+mutation lock. A source moving during that acquisition rolls back and retries
+the transaction, without re-compiling the click. Ordinary text Apply takes only
+live's mutation lock, so unrelated tree changes do not serialize it. Live is
 read from the committed checkpoint and journal under its mutation lock, never
 from a room. A still-hidden creation is revealed through the tree's placement
 kernel, and its arrival and catalog changes join the same transaction.

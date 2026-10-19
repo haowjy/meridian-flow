@@ -21,6 +21,7 @@ import type {
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import { BranchCommandExistsError, type BranchCommands } from "./branch-commands.js";
 import type { BranchReviewIdentity } from "./branch-review-identity.js";
@@ -154,6 +155,7 @@ export function createApplyClickService(input: {
     };
     const first = await lookup();
     if (first) return first;
+    await testHook("apply.beforeCompile");
     try {
       const resolved = await input.identity.resolveReviewItemByDocument(command);
       if (!resolved?.draftId) {

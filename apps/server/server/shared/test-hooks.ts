@@ -31,6 +31,7 @@ const TEST_HOOK_POINTS = [
   "draft.beforeRetirement",
   /** A thread core's access, or a peer pull past its ensures, is about to read its drafts. */
   "draft.beforeAccess",
+  "apply.beforeCompile",
   "apply.beforeBoundary",
   "apply.afterLive",
   "applyItems.beforeStaging",
