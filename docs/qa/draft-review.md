@@ -27,7 +27,10 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
 
 1. Open the change from the chat dock, then from Work Files. Counts, list,
    stepper and paint agree. Removed text is red and struck, new text green.
-   Unknown authorship does not hide the change or invent a byline.
+   Unknown authorship does not hide the change or invent a byline. An empty
+   draft paragraph holding a red removal must not also paint “Start writing…”.
+   Hide changes: the genuine empty paragraph may show its placeholder again;
+   show changes: only the removal occupies the line.
 2. Type inside and beside a change, then Ctrl+Z. Paint follows the actual text
    while the 120 ms projection waits. Cut/paste the paragraph and Undo; repeat
    with block drag. Removal widgets never enter pasted manuscript text.
