@@ -249,24 +249,37 @@ waiting for an answer included. A removal joining the notice re-anchors it.
 A dock removal on the Work screen has no placement there; it shows when the
 writer next sees Chat's rail.
 
-The tab's own removal says nothing: the tree delete and every Discard take a
-mark in the store (`markOwnRemoval`) before the request and settle it in
-`finally`. Only documents a tab or the dock presents are marked. While the
+The tab's own removal says nothing: the tree delete and a Discard of a
+created (draft-only) document take a mark in the store (`markOwnRemoval`)
+before the request and settle it in `finally`. A Discard of an existing
+document's edits removes nothing, so it marks nothing. Only documents a tab or
+the dock presents are marked. While the
 mark lives every sighting is silent; "kept" releases it, and a settled
 removal lasts until each surface that presented the document saw it vanish.
 A replica change origin cannot replace the marks: Discard is a server command,
 not a replica mutation.
 
 A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from
-the registry (`observeRemovedRooms`, held by an editor or not) and asks
-availability for the document. `deleted` closes its tabs. `available` (a
-restore won the race, or a stale close) reconnects the same session in place
-(`restartRemovedRoom`), once per session so a server that keeps closing it
-cannot loop. Rebinding the tab instead would not help: its cached resource
-handle hands back the same removed session. A tab still open on a removed room
-says the record sentence in place (`SyncStatus`). Draft rooms carry no
-document identity in the registry, so their review owner asks the cache and
-refreshes the Work's drafts.
+the registry (`observeRemovedRooms`, held by an editor or not) and follows the
+document's answer in the record cache. The close outdates any answer but
+`removed` (`roomRemoved` forgets it and asks again), so whatever answers next
+was learned after the close. `removed` closes its tabs. `available` (a restore
+won the race, or a stale close) reconnects the same session in place
+(`restartRemovedRoom`). Each close restarts at most once, so a server that
+keeps closing the room costs one lookup per close and a real restore cycle
+never leaves the tab dead. The follow ends on `removed`, `lost`, the restart
+or the session's end; a failed lookup leaves it `unresolved` and the
+availability watch keeps asking. Rebinding the tab instead would not help:
+its cached resource handle hands back the same removed session. A tab still
+open on a removed room says nothing while asked, the record sentence for
+`removed`, and "Access lost (not saving to the server)" otherwise
+(`SyncStatus`). Draft rooms carry no document identity in the registry, so
+their review owner does the same itself: it forgets the answer on the close,
+refreshes the Work's drafts on `removed` and rebuilds the room on `available`.
+
+The dock and the Editor share one push for a Discard that closes a created
+document: `DraftOnlyContainer.remove` reports whichever container it closed
+to that surface's notice.
 
 Reopening a review address whose document was removed says the sentence in
 place of "This destination is unavailable" (item key parsed by

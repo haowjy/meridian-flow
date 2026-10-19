@@ -12,12 +12,15 @@ import {
 import {
   useContextRemovalCoordinator,
   useOptionalAccountEpochSignal,
+  useOptionalRemovedNotices,
 } from "@/features/project/context/account-feature-context";
 import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import type { ContextUri } from "@/lib/context-uri";
 
 export type DraftOnlyPresentation = DraftRef & {
   container: "editor" | "dock";
+  /** A created document the draft alone holds; Discard removes it. */
+  draftOnly: boolean;
   token: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
 };
@@ -26,7 +29,11 @@ export interface DraftOnlyContainer {
   subscribe(listener: () => void): () => void;
   /** Document-wide: every Work's entry clears, and each container keeps the review it showed. */
   promote(draft: DraftRef): Promise<boolean>;
-  /** The Editor's tab says who removed it unless this tab's own Discard did. */
+  /**
+   * Closes the discarded review wherever it shows. A created document's
+   * container reports it to its removed-documents notice, which stays silent
+   * for this tab's own Discard.
+   */
   remove(draft: DraftRef): void;
 }
 
@@ -37,6 +44,7 @@ function presentations(projectId: string, tab: ContextTab, container: "editor" |
     documentId: tab.documentId,
     workId,
     itemKey: entry.itemKey,
+    draftOnly: isDraftOnly(tab),
     token: entry.tabInstanceToken,
     container,
     contextLocation: { scheme: tab.scheme, path: tab.path },
@@ -46,26 +54,28 @@ function presentations(projectId: string, tab: ContextTab, container: "editor" |
 /**
  * The dock holds one review (its admission kept a single entry). Discard is that
  * review's address alone; becoming live is document-wide and keeps the dock's
- * chosen review. Exact occupant identity fences replacement instances.
+ * chosen review. Exact occupant identity fences replacement instances. Returns
+ * the tab it settled, or null.
  */
-function settleDock(draft: DraftRef, promote: boolean): boolean {
+function settleDock(draft: DraftRef, promote: boolean): ContextTab | null {
   const occupant = useDockDocumentStore.getState().occupant;
   if (!occupant || occupant.projectId !== draft.projectId || occupant.tab.kind !== "tracked")
-    return false;
+    return null;
   const holds = promote
     ? isDraftOnly(occupant.tab) && occupant.tab.documentId === draft.documentId
     : matchesReviewItem(occupant.tab, { reviewWorkId: draft.workId, reviewItemKey: draft.itemKey });
-  if (!holds) return false;
+  if (!holds) return null;
   const { reviews: _, ...tab } = occupant.tab;
   useDockDocumentStore.setState((state) =>
     state.occupant === occupant ? { occupant: promote ? { ...occupant, tab } : null } : state,
   );
-  return true;
+  return occupant.tab;
 }
 
 export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
   const epoch = useOptionalAccountEpochSignal();
   const removal = useContextRemovalCoordinator();
+  const notices = useOptionalRemovedNotices();
   return useMemo(
     () => ({
       presentations: (project) => {
@@ -96,15 +106,18 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
           tab?.kind === "tracked"
             ? removal.promoteAppliedDraft(draft.projectId, tab)
             : Promise.resolve(false);
-        const dock = settleDock(draft, true);
+        const dock = settleDock(draft, true) !== null;
         return (await editor) || dock;
       },
       remove: (draft) => {
         if (epoch?.aborted) return;
-        removal.discardDraft(draft.projectId, draft.workId, draft.itemKey);
-        settleDock(draft, false);
+        const editor = removal.discardDraft(draft.projectId, draft.workId, draft.itemKey);
+        if (editor.kind !== "noop")
+          notices?.presentedRemoved(draft.projectId, "editor", editor.removed);
+        const dock = settleDock(draft, false);
+        if (dock && isDraftOnly(dock)) notices?.presentedRemoved(draft.projectId, "dock", [dock]);
       },
     }),
-    [removal, epoch, projectId],
+    [removal, notices, epoch, projectId],
   );
 }

@@ -73,10 +73,14 @@ export function useWorkBranchCommands({
     /**
      * This tab's own Discard of a created document says nothing when the
      * document goes: marked before the request, settled once by its outcome
-     * (no outcome: it failed).
+     * (no outcome: it failed). Discarding an existing document's edits removes
+     * nothing, so it marks nothing.
      */
     const ownDiscard = (mode: "apply" | "discard", documentId: string) => {
-      if (mode !== "discard" || !notices) return () => undefined;
+      const removes = lifecycle
+        .presentations(projectId)
+        .some((draft) => draft.documentId === documentId && draft.draftOnly);
+      if (mode !== "discard" || !notices || !removes) return () => undefined;
       const settle = notices.markOwnRemoval(projectId, [documentId]);
       return (outcome?: BranchCommandOutcome) =>
         settle(

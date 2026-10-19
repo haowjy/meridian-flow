@@ -183,6 +183,16 @@ removed document's live and draft rooms with `4208` after the removal commits.
   the record; the review closes with the removal's chip.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
-  ms and typing saves.
+  ms and typing saves. A second stale 4208 on the same tab reconnects too.
+- A stale 4208 while `POST /api/projects/:projectId/context/availability`
+  fails: the tab says "Access lost (not saving to the server)"; once lookups
+  succeed (focus, online or the 60 s poll) the room reconnects and typing
+  saves.
+- Discard a draft of an existing document open in a tab or the dock, then
+  `./mf doc rm` it: the removal's chip shows (the Discard left no mark).
+- B Discards a created document A reviews in the dock beside Chat: A's dock
+  says "You discarded <title> from the draft elsewhere." beside "Recent".
+- A folder delete closing several tabs reads "You deleted 3 documents
+  elsewhere (one, two, and three)." (names in the locale's list form).
 - A holds unsent text (block its `/ws/yjs` sockets, type), B deletes: A closes
   with the notice and the unsent text is lost (a recorded divergence).
