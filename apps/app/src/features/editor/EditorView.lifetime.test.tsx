@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 /** Writer edits, undo history, and read-only fencing survive editor surface changes. */
 
+import { i18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
@@ -15,6 +17,7 @@ import type { EditorViewProps } from "./EditorView";
 let shell: ReturnType<typeof installEditorShell>;
 let sessions: ReturnType<typeof createEditorSessions>;
 beforeEach(() => {
+  i18n.loadAndActivate({ locale: "en", messages: {} });
   sessions = createEditorSessions();
   shell = installEditorShell(sessions.registry as unknown as LiveDocumentSessionRegistry);
   vi.spyOn(threads, "useProjectThreads").mockImplementation(() => ({
@@ -86,7 +89,9 @@ function Harness({ initial }: { initial: SurfaceProps }) {
 function ExactLiveEditor(props: SurfaceProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
+      <I18nProvider i18n={i18n}>
+        <EditorView {...props} session={props.session ?? sessions.get(props.documentId)} />
+      </I18nProvider>
     </QueryClientProvider>
   );
 }
