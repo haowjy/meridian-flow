@@ -17,13 +17,16 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { ChevronRight, FoldVertical } from "lucide-react";
+import { BookOpen, FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { ActivityRow } from "../ActivityRow";
 import { AnchoredCards } from "../ChatCards";
+import { ClippedProse } from "../ClippedExpand";
+import { DocumentName } from "../DocumentName";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "../TurnInfoButton";
 import { CompactionInstructions } from "./CompactionInstructions";
@@ -176,27 +179,27 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 
 /** One re-shown document: a read row whose body is the text the successor holds. */
 function CompactionDocument({ document }: { document: DividerDocument }) {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
   return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}
-        className="focus-ring flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-ink-muted transition-colors hover:text-foreground"
-      >
-        <ChevronRight
-          className={cn("size-3 shrink-0 transition-transform duration-200", open && "rotate-90")}
-          aria-hidden
-        />
-        <span className="min-w-0 truncate">{t`Read ${document.uri}`}</span>
-      </button>
-      <div id={panelId} hidden={!open} className="mt-1 ml-4 border-l border-border pl-3">
-        <Markdown variant="compact">{document.body}</Markdown>
-      </div>
-    </div>
+    <ActivityRow
+      Icon={BookOpen}
+      title={
+        <>
+          {t`Read`} <DocumentName path={document.uri} />
+        </>
+      }
+      expand={() => (
+        <ClippedProse
+          className="text-tier-quoted"
+          footer={
+            <span className="flex min-w-0 text-meta">
+              <DocumentName path={document.uri} label="open" />
+            </span>
+          }
+        >
+          <Markdown variant="compact">{document.body}</Markdown>
+        </ClippedProse>
+      )}
+    />
   );
 }
 

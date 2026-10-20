@@ -4,7 +4,6 @@ import type { TokenizerFamily } from "../../gateway/index.js";
 import type { RecordedDocuments } from "./elide.js";
 import { estimateModelPartTokens } from "./estimate.js";
 
-export const NOT_RESHOWN_HEADING = "## Documents not re-shown";
 const KEEP_OPEN_HEADING = "## Documents to keep open";
 const RECENT_DOCUMENTS_COUNT = 3;
 

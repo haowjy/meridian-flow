@@ -355,7 +355,7 @@ export async function prepareCompactionSuccessor(args: {
     const base = await staged.assemble([], []);
     const baseEstimate = fittingEstimate(base.assembled);
     let tokensAfter = baseEstimate.tokens;
-    // The picker reserves the mandatory omission note before admitting document text.
+    // The picker reserves the written list before admitting document text.
     const reshown = await reshowImportantFiles({
       ...args,
       policies,

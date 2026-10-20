@@ -3362,13 +3362,14 @@ msgid "Quote"
 msgstr "Quote"
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Read"
 msgstr "Read"
 
 #. placeholder {0}: document.uri
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Read {0}"
-msgstr "Read {0}"
+#~ msgid "Read {0}"
+#~ msgstr "Read {0}"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Read file"
