@@ -3,7 +3,7 @@ import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
-import type { Block, JsonObject } from "@meridian/contracts/threads";
+import { type Block, isNotesStepHeldResult, type JsonObject } from "@meridian/contracts/threads";
 import type { CompactionMetadata } from "../../../threads/index.js";
 import type { DocumentTextPolicy } from "../../tools/document-text.js";
 import { elideReferenceRead } from "../reference-context.js";
@@ -25,7 +25,7 @@ function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies)
   return blocks.flatMap((result) => {
     if (result.blockType !== "tool_result") return [];
     const content = result.content as JsonObject;
-    if (content.isError) return [];
+    if (content.isError || isNotesStepHeldResult(content.result)) return [];
     const call = calls.get(content.toolCallId);
     if (!call) return [];
     const tool = call.content as JsonObject;

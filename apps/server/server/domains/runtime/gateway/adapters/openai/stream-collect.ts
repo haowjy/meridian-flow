@@ -226,12 +226,6 @@ export function mapResponseStatus(
   incompleteReason: string | undefined,
   hasToolCalls: boolean,
 ): FinishReason {
-  // A tool call means the assistant is intentionally handing control back to the
-  // orchestrator, even if the response status looks otherwise terminal. Keep
-  // that precedence so the loop executes tools instead of treating the turn as
-  // a plain assistant answer.
-  if (hasToolCalls) return "tool_use";
-
   // SDK ResponseStatus is 'completed' | 'failed' | 'in_progress' | 'cancelled'
   // | 'queued' | 'incomplete'. Only 'incomplete' and 'failed' need mapping;
   // other terminal statuses default to end_turn below.
@@ -248,6 +242,7 @@ export function mapResponseStatus(
 
   if (status === "failed") return "error";
   if (status === "cancelled") return "error";
+  if (hasToolCalls) return "tool_use";
 
   return "end_turn";
 }

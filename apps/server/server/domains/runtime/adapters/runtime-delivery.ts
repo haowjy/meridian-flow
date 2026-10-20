@@ -639,7 +639,7 @@ export function createDeliveryAdapter(
     return {
       drain,
       preparedCurrent: adoption.preparedCurrent,
-      context: prepared.context,
+      ...(!terminal && preparationFailure === undefined ? { context: prepared.context } : {}),
       next,
       split,
       terminal,
@@ -843,17 +843,17 @@ export function createDeliveryAdapter(
     splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;
-      const disposition = await threadLock.withThreadLock(threadId, async () => {
+      return threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
         const cause = settlement.closeCause(input, receipt);
-        if (input.continueWith && cause.kind === "success") {
+        if (input.continueOnPending && cause.kind === "success") {
           // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
           if (
             selection.batch.some((message) => message.intent === "message") ||
             selection.workContext
           ) {
-            return { kind: "prepare_split" as const };
+            return { kind: "continue" as const };
           }
         }
         await input.settleSummaryResponses?.();
@@ -865,13 +865,6 @@ export function createDeliveryAdapter(
         );
         return { kind: "completed" as const, completion };
       });
-      if (disposition.kind === "completed") return disposition;
-
-      const boundary = input.continueWith as DeliveryBoundary;
-      const adopted = await adopt(boundary);
-      if (adopted.split) return { kind: "split", adopted };
-      const completion = await settlement.settleClosed(input);
-      return { kind: "completed", completion };
     },
   };
 }

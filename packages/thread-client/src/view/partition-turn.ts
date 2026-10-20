@@ -8,9 +8,11 @@ import {
   type JsonValue,
 } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue as ReportContentValue } from "@meridian/contracts/spawn";
+import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import { isToolDeliveryBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
-import { groupDeliverySegments } from "./group-delivery-segments";
+import { type DeliverySegment, groupDeliverySegments } from "./group-delivery-segments";
+import { toolInputObject } from "./tool-command";
 import { isArtifactBlock } from "./tool-kind";
 import { isToolViewVisible } from "./tool-view-visibility";
 
@@ -27,24 +29,30 @@ export function isReasoningBlock(block: Block): boolean {
 }
 
 export function partitionTurn(blocks: Block[]): RenderItem[] {
-  const hidden = hiddenToolCallIds(blocks);
-  const reportCalls = new Set(
-    blocks.flatMap((block) => {
-      if (block.blockType !== "tool_use") return [];
-      const content = blockContentRecord(block);
-      return content.toolName === "return_result" && typeof content.toolCallId === "string"
-        ? [content.toolCallId]
-        : [];
-    }),
-  );
-  // return_result's typed result: `{ ok: true }`, `{ ok: false, message }`,
-  // or an executor error `{ code, message }`.
-  const resultByCall = new Map<string, Record<string, JsonValue>>();
-  for (const block of blocks) {
-    if (block.blockType !== "tool_result") continue;
-    const content = blockContentRecord(block);
-    if (typeof content.toolCallId === "string" && isRecord(content.result)) {
-      resultByCall.set(content.toolCallId, content.result);
+  const segments = groupDeliverySegments(blocks);
+  const hidden = hiddenToolCallIds(blocks, segments);
+  const reports = new Map<Block, ReportContentValue>();
+  const reportCalls = new Set<string>();
+  for (const segment of segments) {
+    const tools =
+      segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
+    for (const tool of tools) {
+      if (
+        tool.keyBlock.blockType !== "tool_use" ||
+        tool.toolName !== "return_result" ||
+        isNotesStepHeldResult(tool.result)
+      )
+        continue;
+      const input = toolInputObject(tool);
+      const result = isRecord(tool.result) ? tool.result : {};
+      reports.set(tool.keyBlock, {
+        summary: typeof input.summary === "string" ? input.summary : "",
+        ...(input.payload === undefined ? {} : { payload: input.payload }),
+        artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
+        partial: result.ok === false || tool.isError,
+        ...(typeof result.message === "string" ? { reason: result.message } : {}),
+      });
+      if (tool.toolCallId) reportCalls.add(tool.toolCallId);
     }
   }
   const items: RenderItem[] = [];
@@ -65,21 +73,10 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     if (isToolDeliveryBlock(block)) {
       const content = blockContentRecord(block);
       const toolCallId = content.toolCallId;
-      if (block.blockType === "tool_use" && content.toolName === "return_result") {
-        const input = isRecord(content.input) ? content.input : {};
-        const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
+      const report = reports.get(block);
+      if (report) {
         flushProcess();
-        items.push({
-          kind: "report",
-          block,
-          report: {
-            summary: typeof input.summary === "string" ? input.summary : "",
-            ...(input.payload === undefined ? {} : { payload: input.payload }),
-            artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
-            partial: result?.ok === false || content.isError === true,
-            ...(typeof result?.message === "string" ? { reason: result.message } : {}),
-          },
-        });
+        items.push({ kind: "report", block, report });
         continue;
       }
       if (
@@ -135,14 +132,17 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
  * `thread_message` refused before it started has no card, so its failure row
  * stays.
  */
-export function hiddenToolCallIds(blocks: Block[]): Set<string> {
+export function hiddenToolCallIds(
+  blocks: Block[],
+  segments: DeliverySegment[] = groupDeliverySegments(blocks),
+): Set<string> {
   const hidden = new Set<string>();
   for (const block of blocks) {
     if (block.blockType !== "custom") continue;
     const card = parseInvocationCard(componentBlockContent(block.content));
     if (card) hidden.add(card.toolCallId);
   }
-  for (const segment of groupDeliverySegments(blocks)) {
+  for (const segment of segments) {
     const tools =
       segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
     for (const tool of tools) {
