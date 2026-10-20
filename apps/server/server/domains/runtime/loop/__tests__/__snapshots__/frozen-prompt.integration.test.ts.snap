@@ -147,7 +147,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
-This chat continues from c1. Its uploads are at uploads://@/c1/.
+This chat continues from c1. Its uploads are at uploads://@/c1/. Original notes remain at scratch://@/c1/@/c1/. A copy may still be arriving at scratch://$THREAD/; read the originals if absent.
 </system_update>",
             "type": "text",
           },
@@ -268,7 +268,7 @@ Documents are Markdown with a few Meridian forms. You will see them when you rea
             "providerOptions": undefined,
             "text": "<system_update>
 Forked conversation through turn 00000000-0000-4000-8000-000000000012.
-This chat continues from c1. Its uploads are at uploads://@/c1/.
+This chat continues from c1. Its uploads are at uploads://@/c1/. Original notes remain at scratch://@/c1/@/c2/. A copy may still be arriving at scratch://$THREAD/; read the originals if absent.
 </system_update>",
             "type": "text",
           },
