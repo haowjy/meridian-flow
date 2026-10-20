@@ -12,7 +12,7 @@ export const KEEP_OPEN_INSTRUCTION_LINES = [
   KEEP_OPEN_HEADING,
   "End the summary with this section: one context URI per line, most important first.",
   "List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.",
-  `Do not carry forward an earlier summary's ${NOT_RESHOWN_HEADING} section; the server replaces it for this compaction.`,
+  "The server replaces this list with the documents it actually re-shows; list what you need.",
   "Example:",
   "manuscript://Chapter 1.md",
   "scratch://@/c12/plan.md",
@@ -122,14 +122,13 @@ export function importantFileCandidates(
   return { candidates, unknownUriCount: listedLines.length - listed.length };
 }
 
-/** Current-attempt omission receipt, shared by projection and worst-case budget reservation. */
-export function notReshownNote(uris: readonly string[]): string {
-  if (!uris.length) return "";
-  return [
-    NOT_RESHOWN_HEADING,
-    "These documents were not re-shown after the summary. Read them again before writing in them.",
-    ...new Set(uris.map((uri) => `- ${uri}`)),
-  ].join("\n");
+/**
+ * The documents the successor now holds, written back into the summary. Built
+ * from the reads that were admitted, so the list and the blocks cannot disagree.
+ */
+export function documentsSection(labels: readonly string[]): string {
+  if (!labels.length) return "";
+  return [KEEP_OPEN_HEADING, ...labels.map((label) => `- ${label}`)].join("\n");
 }
 
 /**
@@ -144,15 +143,18 @@ export async function chooseImportantFiles<T extends { text: string }>(input: {
   tokenizer: TokenizerFamily;
   read: (reference: ReferenceOccurrence) => Promise<T | null>;
 }): Promise<{ reference: ReferenceOccurrence; read: T }[]> {
-  const note = notReshownNote(input.candidates.map((candidate) => candidate.uri as string));
-  // Every kept document only shortens this note, so reserving all omissions is conservative.
-  const noteTokens = note
-    ? estimateModelPartTokens({ type: "text", text: `\n\n${note}` }, input.tokenizer)
-    : 0;
-  let remaining = Math.max(0, input.budgetTokens - noteTokens);
+  // The rewritten list is part of the summary: reserve the longest one it can become.
+  const listTokens = estimateModelPartTokens(
+    {
+      type: "text",
+      text: `\n\n${documentsSection(input.candidates.map((candidate) => candidate.uri as string))}`,
+    },
+    input.tokenizer,
+  );
+  let remaining = Math.max(0, input.budgetTokens - listTokens);
   const kept: { reference: ReferenceOccurrence; read: T }[] = [];
   for (const candidate of input.candidates) {
-    // Nothing more can fit; the unread candidates are named in the omission note.
+    // Nothing more can fit; the list stops where the reads stopped.
     if (remaining <= 0) break;
     const uri = candidate.uri as string;
     const reference: ReferenceOccurrence = {

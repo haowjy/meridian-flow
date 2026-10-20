@@ -26,8 +26,8 @@ import {
 import { collectRecordedDocuments, planModelElisions } from "./compaction/elide.js";
 import {
   chooseImportantFiles,
+  documentsSection,
   importantFileCandidates,
-  notReshownNote,
   parseImportantFiles,
   reshowBudgetTokens,
 } from "./compaction/important-files.js";
@@ -72,14 +72,15 @@ interface ReshownDocuments {
   /** Recorded with the blocks: a fresh frontier chain, like an @-mentioned document's. */
   evidence: ReferenceEvidence;
   documentIds: ReadonlySet<string>;
-  notReshownUris: string[];
+  /** The admitted documents, in read order: the summary's list after the reads. */
+  uris: string[];
 }
 
 const NO_RESHOWN: ReshownDocuments = {
   blocks: [],
   evidence: NO_REFERENCE_EVIDENCE,
   documentIds: new Set(),
-  notReshownUris: [],
+  uris: [],
 };
 
 function fittingEstimate(context: AssembledNextTurnContext) {
@@ -195,13 +196,7 @@ async function reshowImportantFiles(args: {
       ),
     },
     documentIds,
-    notReshownUris: [
-      ...new Set(
-        candidates
-          .filter((candidate) => !documentIds.has(candidate.documentId))
-          .map((candidate) => candidate.uri as string),
-      ),
-    ],
+    uris: kept.map(({ reference }) => reference.uri),
   };
 }
 
@@ -284,9 +279,7 @@ export async function prepareCompactionSuccessor(args: {
     };
     // The request this compaction would hand the successor, including its final summary text.
     const stage = (reshown: ReshownDocuments) => {
-      const summary = [parsed.summary, notReshownNote(reshown.notReshownUris)]
-        .filter(Boolean)
-        .join("\n\n");
+      const summary = [parsed.summary, documentsSection(reshown.uris)].filter(Boolean).join("\n\n");
       // Projection reads only the summary text; its provisional block is not persisted.
       const projectedSummary = localBlockFromEvent(
         contentForBlockInput({
@@ -373,7 +366,7 @@ export async function prepareCompactionSuccessor(args: {
         baseTokens: tokensAfter,
       }),
     });
-    if (reshown.blocks.length > 0 || reshown.notReshownUris.length > 0) {
+    if (reshown.blocks.length > 0) {
       staged = stage(reshown);
       // Measurement: the recorded `tokensAfter` is what the successor really carries.
       tokensAfter = fittingEstimate((await staged.assemble([], [])).assembled).tokens;
