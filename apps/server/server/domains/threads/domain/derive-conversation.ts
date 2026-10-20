@@ -184,7 +184,7 @@ export async function handoffThreadAgent(
           sourceRef: owner.ref ?? owner.id,
           sourceTitle: owner.title,
           cutoffTurnId: cutoff.turn.id,
-          sourceNotesUri: notesRootUri(lockedSource),
+          sourceNotesUri: await notesRootUri(deps, lockedSource.id as ThreadId),
         }),
       });
       await deps.eventWriter.appendEvent(target.id, { type: "turn.created", turn: seed });
@@ -293,7 +293,7 @@ export async function forkThreadAgent(
     await seedSystemTurn(
       deps,
       target,
-      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id, notesRootUri(lockedSource))}`,
+      `Forked conversation through turn ${cutoff.turn.id}.\n${continuesFromLine(owner.ref ?? owner.id, await notesRootUri(deps, lockedSource.id as ThreadId))}`,
     );
     await deps.eventWriter.appendEvent(source.id as ThreadId, {
       type: "agent.fork",
@@ -487,8 +487,11 @@ export function continuesFromLine(sourceRef: string, sourceNotesUri?: string): s
   return `This chat continues from ${sourceRef}. Its uploads are at ${uploads}.${sourceNotesUri ? ` Original notes remain at ${sourceNotesUri}. A copy may still be arriving at scratch://$THREAD/; read the originals if absent.` : ""}`;
 }
 
-function notesRootUri(thread: Thread): string | undefined {
-  const location = thread.notesScope?.current;
+async function notesRootUri(
+  deps: ThreadAgentSwapDeps,
+  threadId: ThreadId,
+): Promise<string | undefined> {
+  const location = (await deps.threads.findNotesScope(threadId)).current;
   return location ? formatParsedContextUri("scratch", "", location.owner, location) : undefined;
 }
 

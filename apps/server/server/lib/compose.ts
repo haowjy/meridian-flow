@@ -637,13 +637,15 @@ export async function createProductionAppPorts(input: {
     try {
       const outcome = await withDatabaseSignal(signal, async () => {
         const source = await threadRepos.threads.findById(sourceId);
-        const destination = await threadRepos.threads.findById(destinationId);
-        if (!source?.notesScope?.current || !destination?.notesScope?.current) return;
+        if (!source) return;
+        const sourceScope = await threadRepos.threads.findNotesScope(sourceId);
+        const destinationScope = await threadRepos.threads.findNotesScope(destinationId);
+        if (!sourceScope.current || !destinationScope.current) return;
         return notesCopy.copy({
           projectId: source.projectId,
           userId: source.userId,
-          source: source.notesScope.current,
-          destination: destination.notesScope.current,
+          source: sourceScope.current,
+          destination: destinationScope.current,
           signal,
           deadline,
         });

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Read fork and handoff notes locations through the server-only scope after integrating the final notes-folder and compaction phases.
+
 - Mock model input usage scales with received messages, tool schemas and response format, keeping notes-before-compaction probes reachable without a provider fixture.
 
 - Keep variable-link clicks in the shared generation lifecycle: catalog changes re-ask pending clicks, teardown retires them, and later clicks never reuse an answer.
