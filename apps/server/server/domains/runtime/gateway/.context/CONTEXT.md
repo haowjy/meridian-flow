@@ -71,3 +71,13 @@ unregistered stored model fails route resolution before provider dispatch; no
 local-data remapping or compatibility alias is allowed. Tool schema projection
 for providers that reject root unions belongs to the adapter, while execution
 validates the unchanged canonical schema.
+
+## Offline mock usage
+
+The mock HTTP adapter estimates prompt usage from received messages, tools and
+response format (UTF-8 JSON bytes divided by three, rounded up). Both scripted
+and default replies, streaming and non-streaming, report that input count and
+matching totals. Output counts remain synthetic; explicit cancellation/billing
+fault scenarios retain their deliberate usage. This keeps the carried input
+baseline proportional to history so stock-mock compaction probes need no runtime
+override. It is not provider tokenizer, cache or billing evidence.

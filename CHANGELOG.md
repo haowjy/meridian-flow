@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Mock model input usage scales with received messages, tool schemas and response format, keeping notes-before-compaction probes reachable without a provider fixture.
+
 - Keep variable-link clicks in the shared generation lifecycle: catalog changes re-ask pending clicks, teardown retires them, and later clicks never reuse an answer.
 
 - CLI variable document addresses operate at the requested location, not a moved document’s historical link destination. Navigation still follows moved links.

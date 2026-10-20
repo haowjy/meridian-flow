@@ -212,8 +212,10 @@ restart smoke check.
   (`compaction-protocol`).
 - **Stack:** mock for structure; real provider separately for cache-read evidence.
 - **Steps:** publish a second Agent using setup's API with slug `runtime-probe-auto`
-  and `autocompact: 12000`. Create its thread. Send large replies with `--mock`
-  until the next send triggers C. Save context before the trigger, immediately
+  and `autocompact: 12000`. Create its thread, then send the large writer
+  message from setup with its short scripted reply. Mock input usage now grows
+  with the received request, so the next send enters notes without a fixture.
+  Save context before the trigger, immediately
   after C/B, and after one further short send:
 
   ```bash
@@ -231,7 +233,9 @@ restart smoke check.
   request. The following request extends the identical serialized prefix.
 - **Evidence:** C metadata, before/after/following requests, prefix comparison;
   real-provider variant also records usage, cache reads and actual spend.
-- **Last run:** merge-gate §13–16 mock PASS; original real run FAIL (billing
+- **Last run:** 2026-10-19 stock mock PASS after request-derived input usage:
+  notes/C/B followed by a short send preserved B's full 12-message prefix.
+  Earlier: merge-gate §13–16 mock PASS; original real run FAIL (billing
   settlement), 2026-09-28 (source commit not recorded in that report). Do not mark real PASS
   from the mock result.
 
@@ -979,10 +983,50 @@ restart smoke check.
 - **Stack:** owned mock stack and database. Use `./mf mock script` to queue the
   whole notes/summary/successor sequence globally. `send --mock` matches that
   writer text, which a rolling summary replaces, so it cannot script the summary.
-  Stock mock reports fixed tiny input usage. For deterministic threshold/room
-  probes, temporarily use full estimation instead of its carried baseline on
-  this owned mock only; record and remove that fixture before committing. This
-  proves control flow, never provider cache behavior or billing.
+  Stock mock estimates input usage from received messages, tools and response
+  format using the planner's three-byte heuristic. No baseline override or
+  provider fixture is needed. This proves control flow, never provider cache
+  behavior or billing.
+- **Repeatable smoke:** publish the RP-4 Agent (`autocompact: 12000`) and create
+  a fresh thread `T`. Send setup's 1,400-repeat keeper message with its short
+  `--mock` reply, then use this unscoped script. Do not insert setup's second
+  send: the first completed response already carries input usage above T.
+
+  ```bash
+  ./mf mock script '[
+    {"toolCalls":[{"name":"write","args":{"command":"create","path":"scratch://$THREAD/one.md","content":"The keeper opens the silver gate."}}]},
+    {"delayMs":15000,"toolCalls":[
+      {"name":"write","args":{"command":"create","path":"scratch://$THREAD/two.md","content":"The gate leads north."}},
+      {"name":"write","args":{"command":"create","path":"manuscript://notes-held.md","content":"Must not exist."}},
+      {"name":"search","args":{"query":"keeper"}},
+      {"name":"spawn","args":{"agent":"writer-helper","prompt":"Must not run."}}
+    ]},
+    {"text":"Notes done."},
+    {"text":"Working notes are one.md and two.md in this chat notes folder. The keeper opens the silver gate, which leads north."},
+    {"text":"Continue after C: the keeper walks north."}
+  ]' --json
+  ./mf thread send "$T" 'Continue the story' --json > "$E/notes.ndjson"
+  ./mf thread context "$T" --all --view raw --json > "$E/notes-context.json"
+  ./mf thread view "$T" --full --json > "$E/notes-view.json"
+  ```
+
+  Open the chat in the browser before sending. During the delay, capture the
+  first saved edit and active reply; afterwards expand the steps and capture
+  two edits, three neutral held rows, the automatic divider and continued task.
+  Confirm the manuscript path is absent, spawn created no child, and all three
+  results contain `{refusal:"notes_step"}` with `isError:false`. Inspect B's
+  actual request for both current note texts. Send RP-4's short follow-up and
+  compare B's entire message array with the start of the following request.
+  Reload and compare the same receipts, held rows and divider.
+
+  For **Stop mid-step**, create another fresh thread with the same Agent and
+  large opening pair. Queue a first write to `scratch://$THREAD/stop.md`, then
+  `{"delayMs":60000,"text":"Must not finish."}`. Send “Continue the story”
+  from the browser. Wait for the first write to settle and for the next request
+  to be captured with the notes marker, then press the browser's Stop.
+  Expect a cancelled assistant, saved note/receipt and marker, no C and no
+  active execution. Clear only this probe's remaining script by its returned
+  id. No source edits or throwaway provider fixture belong in either run.
 - **Entry:** assemble a compactable older pair and small retained suffix. Calibrate
   the actual automatic decision, not just a token threshold. At T and above T,
   expect one hidden system marker `section: "compaction_notes"`, followed by an
@@ -1079,7 +1123,11 @@ restart smoke check.
   after C, and after reload.
 - **Evidence:** raw turns and positions, complete request messages and tool
   definitions, re-shown file blocks, response rows and debits, and screenshots.
-- **Last run:** 2026-10-19, owned `c14-notes` mock stack. Two saved notes and
+- **Last run:** 2026-10-19, owned `c14-notes` stock mock stack after rebase onto
+  `320d9a0c4`: the fixture-free smoke above saved two notes, held manuscript
+  write/search/spawn, completed C/B and preserved the next request prefix. A
+  fresh browser send entered notes and Stop retained its saved note with no C.
+  Earlier on the same date: two saved notes and
   re-show order, nine held call kinds, three-generation bound, Stop/resume,
   named-Work copy, manual compact, late-room/no-fit fallback and queue-switch
   yield exercised through `./mf`; neutral rows and expanded saved receipts/divider
