@@ -348,6 +348,7 @@ function projectCatalogDirectory(
     name: entry.displayName ?? entry.name,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
+    ...(entry.threadId ? { threadId: entry.threadId } : {}),
     ...(entry.navigationOnly ? { navigationOnly: true } : {}),
     ...(repair
       ? {

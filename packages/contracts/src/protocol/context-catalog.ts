@@ -42,6 +42,8 @@ export type CatalogFolderEntry = {
   name: string;
   /** Presentation only. Placement and CAS always use name/path. */
   displayName?: string;
+  /** The chat whose notes folder this is, for an associated thread root. */
+  threadId?: string;
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;

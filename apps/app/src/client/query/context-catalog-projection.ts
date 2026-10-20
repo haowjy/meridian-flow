@@ -55,6 +55,8 @@ export type CatalogDirectory = {
   name: string;
   path: string;
   uri: string;
+  /** The chat whose notes folder this is, for an associated thread root. */
+  threadId?: string;
   /** A refused rename or move put this folder back; the writer retries from here. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;

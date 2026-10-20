@@ -10,7 +10,6 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
 import { FileImage, FileText, FileType, PanelRightOpen, Paperclip, Trash2 } from "lucide-react";
@@ -23,8 +22,7 @@ import type {
 } from "@/client/query/context-catalog-projection";
 import { type ChatUpload, useChatUploads } from "@/client/query/useChatUploads";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { topChatOf } from "@/client/query/useTopChat";
+import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useThreadStore } from "@/client/stores";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -55,26 +53,21 @@ export function ChatFilesMenu({
   projectId: string;
   threadId: string | null;
 }) {
-  const { threads } = useProjectThreads(projectId, { enabled: threadId !== null });
-  const thread = threadId
-    ? (threads?.find((candidate) => candidate.id === threadId) ?? null)
-    : null;
-  const topChat = topChatOf(thread, threads);
-  // A fork or handoff is a primary: its origin is read on the chat that owns the files.
-  const chatThread = topChat ? (threads?.find((c) => c.id === topChat.chatId) ?? null) : null;
+  const thread = useDisplayedThread(projectId, threadId);
+  // Uploads belong to the writer's chat; a subagent is an AI helper and has none of its own.
+  const chat = thread?.kind === "primary" ? thread : null;
   const scratch = useChatScratchSource(projectId, threadId);
   const scratchCatalog = useContextCatalogView(projectId, "scratch", {
     ...(scratch?.owner ?? {}),
     enabled: scratch !== null,
   });
-  const notes = useChatNotes(scratchCatalog.catalog, thread?.ref ?? null);
-  if (!threadId || !topChat) return null;
+  const notes = useChatNotes(scratchCatalog.catalog, thread?.id ?? null);
+  if (!threadId) return null;
   return (
     <FilesDropdown
       projectId={projectId}
       threadId={threadId}
-      chatId={topChat.chatId}
-      chatThread={chatThread}
+      chat={chat}
       notes={notes}
       owner={scratch?.owner ?? {}}
     />
@@ -83,46 +76,37 @@ export function ChatFilesMenu({
 
 type ChatNote = { file: CatalogFile; label: string };
 
-/** The chat's own notes folder: the folder whose address is its thread root. */
-function useChatNotes(catalog: CatalogContextView | null, ref: string | null): ChatNote[] {
+/** The chat's own notes folder: the root the server associated with its thread. */
+function useChatNotes(catalog: CatalogContextView | null, threadId: string | null): ChatNote[] {
   return useMemo(() => {
-    if (!catalog || !ref) return [];
+    if (!catalog || !threadId) return [];
     const folder = catalog
       .children(catalog.root.entryId)
-      .find(
-        (node): node is CatalogDirectory => node.kind === "dir" && threadRootRef(node.uri) === ref,
-      );
+      .find((node): node is CatalogDirectory => node.kind === "dir" && node.threadId === threadId);
     if (!folder) return [];
     return catalog
       .files()
       .filter((file) => file.path.startsWith(`${folder.path}/`))
       .sort((left, right) => left.path.localeCompare(right.path))
       .map((file) => ({ file, label: file.path.slice(folder.path.length + 1) }));
-  }, [catalog, ref]);
-}
-
-function threadRootRef(uri: string): string | null {
-  const parsed = parseContextUri(uri);
-  return parsed.ok && parsed.value.path === "" ? (parsed.value.threadRef ?? null) : null;
+  }, [catalog, threadId]);
 }
 
 function FilesDropdown({
   projectId,
   threadId,
-  chatId,
-  chatThread,
+  chat,
   notes,
   owner,
 }: {
   projectId: string;
   threadId: string;
-  chatId: string;
-  chatThread: Thread | null;
+  chat: Thread | null;
   notes: readonly ChatNote[];
   owner: ContextOwner;
 }) {
-  const { uploads } = useChatUploads(projectId, chatId);
-  const continuesFrom = useContinuesFrom(chatThread);
+  const { uploads } = useChatUploads(projectId, chat?.id ?? null);
+  const continuesFrom = useContinuesFrom(chat);
   const openResource = useOpenChatResource(projectId);
   const openNote = useOpenScratchNote();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
@@ -157,7 +141,8 @@ function FilesDropdown({
 
   const remove = (upload: ChatUpload) => {
     const { deletion } = upload;
-    if (!deletion) return;
+    const chatId = chat?.id;
+    if (!deletion || !chatId) return;
     setDeleted((current) => new Set(current).add(upload.documentId));
     setFailed((current) => without(current, upload.documentId));
     const bringBack = (reason: "used" | "failed") => {
@@ -341,10 +326,7 @@ function ChatNoteRow({ note, onOpen }: { note: ChatNote; onOpen: () => void }) {
         type="button"
         onClick={onOpen}
         aria-label={t`Open ${note.label}`}
-        className={cn(
-          dropdownRowVariants({ kind: "descriptive", interactive: false }),
-          "flex min-h-10 w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-dropdown-hover",
-        )}
+        className={cn(dropdownRowVariants({ kind: "descriptive" }), "w-full px-3 text-left")}
       >
         <FileText className="text-muted-foreground" aria-hidden />
         <span className="truncate">{note.label}</span>

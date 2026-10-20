@@ -13,7 +13,6 @@ import { FilePlus, MessagesSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -30,7 +29,6 @@ import {
   compareTreePlaces,
   isThreadFolder,
   type TreePlace,
-  threadFolderRef,
   workFileSearch,
 } from "./work-files-model";
 
@@ -89,13 +87,7 @@ export function WorkFilesView({
 }) {
   const { scratch, intake } = files;
   const scratchDelete = useDeleteConfirmation({ projectId });
-  const { threads } = useProjectThreads(projectId);
   const { openChat } = useChatNavigation();
-  const threadIdByRef = useMemo(
-    () =>
-      new Map((threads ?? []).flatMap((thread) => (thread.ref ? [[thread.ref, thread.id]] : []))),
-    [threads],
-  );
   const scratchRoot = scratch.catalog?.root.entryId;
   const scratchFolders =
     scratch.catalog && scratchRoot
@@ -139,9 +131,8 @@ export function WorkFilesView({
   const underThread = (file: { path: string }) =>
     threadPaths.some((path) => file.path.startsWith(`${path}/`));
   const openChatFor = (folder: CatalogDirectory) => {
-    const ref = threadFolderRef(folder);
-    const threadId = ref ? threadIdByRef.get(ref) : undefined;
-    return threadId ? () => void openChat(threadId) : undefined;
+    const id = folder.threadId;
+    return id ? () => void openChat(id) : undefined;
   };
   const rowFor = (node: CatalogDirectory | CatalogFile): RuledRow & { place: TreePlace } => ({
     key: node.entryId,

@@ -292,6 +292,7 @@ export async function buildScopeEntries(
     for (const folder of folderRows.filter((item) => item.contextSourceId === source.id)) {
       const path = pathForFolder(folder.id, source.id);
       if (!path) continue;
+      const fact = folderLabels.get(folder.id);
       entries.push({
         kind: "folder",
         observationVersion,
@@ -300,7 +301,7 @@ export async function buildScopeEntries(
         sourceId: source.id,
         parentId: folder.parentId ?? source.id,
         name: folder.name,
-        ...(folderLabels.has(folder.id) ? { displayName: folderLabels.get(folder.id) } : {}),
+        ...(fact ? { displayName: fact.label, threadId: fact.threadId } : {}),
         path,
         uri: contextUriFromSourceLocation(scheme, path.join("/"), authority),
         hasChildren: (childCounts.get(folder.id) ?? 0) > 0,

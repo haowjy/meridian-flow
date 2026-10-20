@@ -590,10 +590,11 @@ export function createDrizzleContextCatalog(
             );
           const changes: CatalogChange[] = [];
           for (const row of rows) {
+            const fact = labels.get(row.entryId);
             if (
               row.entry.kind !== "folder" ||
-              !labels.has(row.entryId) ||
-              row.entry.displayName === labels.get(row.entryId)
+              !fact ||
+              (row.entry.displayName === fact.label && row.entry.threadId === fact.threadId)
             )
               continue;
             changes.push({
@@ -601,7 +602,8 @@ export function createDrizzleContextCatalog(
               ordinal: changes.length,
               entry: {
                 ...row.entry,
-                displayName: labels.get(row.entryId),
+                displayName: fact.label,
+                threadId: fact.threadId,
                 observationVersion: version,
               },
             });
