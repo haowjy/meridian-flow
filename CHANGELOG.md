@@ -70,6 +70,8 @@
 - Centralized source-location transport decoding and URI spelling, separating stored folder coordinates from writer-controlled names.
 ### Changed
 
+- Integrated selected keep-open reads with guarded compaction continuations and fixture-free mock usage probes.
+
 - Keep notes markers and staged request updates under one preparation owner.
 
 - Show held `return_result` calls as neutral notes-step rows on the live stream as well as after reload; reports use the same paired tool data as other tool rows.

@@ -101,7 +101,12 @@ A successful fallback drops the selector, so only the effective target is listed
 The effective selector is stored inside the host-generated reference `read`
 snapshot beside its result and revision, and survives reload/recompaction.
 Selected frontiers start fresh, leaving outside blocks `unshown`, not initially
-`changed`; later writer changes appear through the ordinary concurrent listing. Assembly runs
+`changed`; later writer changes appear through the ordinary concurrent listing.
+An edit at a selected section's edge includes an unshown neighbour: the first
+write gets the ordinary
+`region_changed` refusal with current region text, advancing the view so the
+next attempt lands. This is the owner's region rule, not a selector defect;
+never widen selected credit or add a compaction-specific bypass. Assembly runs
 once without them to size the budget and fail early, then once with them: that
 second pass measures `tokensAfter` with the final summary, even when no documents
 fit.

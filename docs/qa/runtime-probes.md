@@ -1181,9 +1181,11 @@ restart smoke check.
   After C, insert distinctive writer text in Arrival through the browser editor
   (a writer Yjs session, not another AI tool). Script a `write replace` outside
   the selection. Inspect the actual tool result/concurrent listing, receipt and
-  final document: the writer insertion survives without approval/refusal gates.
-  The baseline may still refuse an unseen passage with `region_changed`; record
-  that as a concurrent-policy discrepancy, not a no-refusal/M2 pass.
+  final document: the writer insertion survives. Also target the edge of the
+  selected section: the region includes an unshown neighbour, so the first
+  attempt gets `region_changed` with current region text. Retry the same edit
+  after that response: it lands. This is the owner's region rule, not a selector
+  defect; do not widen credit or bypass it for compaction.
   Repeat with enough large changed outside blocks that the target falls beyond
   the concurrent-listing byte cap, exercising unseen-projection planning (M2).
 - **Selectors:** on fresh compactable cycles repeat `in: 4`, `in: 40..95`,
@@ -1218,6 +1220,9 @@ restart smoke check.
   final `tokensAfter`, never a truncated body.
 - **Automatic/draft:** repeat the heading case under RP-4/C14 automatic
   compaction, explicitly queue notes responses, summary, then B in that order.
+  Use RP-4's large opening writer message and short reply to establish stock
+  mock input usage, then a short follow-up to trigger notes/C/B. No estimator
+  override or provider fixture is needed or allowed.
   Run draft-mode and auto-apply threads: C uses the same effective version as an
   ordinary read. Capture both a selected C and its next compaction after reload;
   C10 resets credit each time. Check ordinary mentions and whole keep-open too.
