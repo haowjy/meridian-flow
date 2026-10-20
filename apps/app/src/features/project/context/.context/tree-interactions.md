@@ -169,11 +169,12 @@ success feedback derives a folder label from a source path. Masked Scratch
 addresses have no proved catalog owner yet, so their temporary header shows the
 area and filename without guessed ancestry.
 
-The Work Files tab keeps a chat's notes folder out of the Scratch group: it
-sits under "Chat notes" at the bottom, wears the chat mark, and its menu adds
-Open chat to Delete (rename and move stay filtered because the folder is the
-chat's address). The split reads the entry's URI (a thread qualifier root), not
-its label, because the label is only the chat title the server publishes; a
-writer-made folder that reads the same stays ordinary Scratch. The chat's top
-Files menu lists that same folder's notes beside the chat's uploads, so the
-chat itself reaches both kinds of file.
+The Work Files tab keeps a chat's notes folder in the Scratch group, in its
+ordinary tree place: it wears the chat mark, and its menu adds Open chat to
+Delete (rename and move stay filtered because the folder is the chat's address).
+The mark reads the chat id the server publishes on the entry, not its label,
+because the label is only the chat title; a writer-made folder that reads the
+same stays unmarked. Open chat appears only while that chat can be opened (the
+catalog also carries its availability). The chat's top Files menu lists that
+same folder's notes beside the chat's uploads, so the chat itself reaches both
+kinds of file.

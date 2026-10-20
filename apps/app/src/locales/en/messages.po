@@ -1011,10 +1011,6 @@ msgstr "Chat context"
 msgid "Chat deleted"
 msgstr "Chat deleted"
 
-#: src/features/project/work/WorkFilesView.tsx
-msgid "Chat notes"
-msgstr "Chat notes"
-
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/work/WorkDetailScreen.tsx

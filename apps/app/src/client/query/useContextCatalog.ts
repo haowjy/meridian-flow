@@ -349,6 +349,7 @@ function projectCatalogDirectory(
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     ...(entry.threadId ? { threadId: entry.threadId } : {}),
+    ...(entry.chatAvailable !== undefined ? { chatAvailable: entry.chatAvailable } : {}),
     ...(entry.navigationOnly ? { navigationOnly: true } : {}),
     ...(repair
       ? {

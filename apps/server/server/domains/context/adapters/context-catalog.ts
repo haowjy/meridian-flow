@@ -594,7 +594,9 @@ export function createDrizzleContextCatalog(
             if (
               row.entry.kind !== "folder" ||
               !fact ||
-              (row.entry.displayName === fact.label && row.entry.threadId === fact.threadId)
+              (row.entry.displayName === fact.label &&
+                row.entry.threadId === fact.threadId &&
+                row.entry.chatAvailable === fact.chatAvailable)
             )
               continue;
             changes.push({
@@ -604,6 +606,7 @@ export function createDrizzleContextCatalog(
                 ...row.entry,
                 displayName: fact.label,
                 threadId: fact.threadId,
+                chatAvailable: fact.chatAvailable,
                 observationVersion: version,
               },
             });

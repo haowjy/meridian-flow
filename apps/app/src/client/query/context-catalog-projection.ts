@@ -57,6 +57,8 @@ export type CatalogDirectory = {
   uri: string;
   /** The chat whose notes folder this is, for an associated thread root. */
   threadId?: string;
+  /** False when the owning chat is trashed or gone; the folder itself survives. */
+  chatAvailable?: boolean;
   /** A refused rename or move put this folder back; the writer retries from here. */
   namespaceFailure?: "delete" | "set-location";
   namespaceRepairName?: string;

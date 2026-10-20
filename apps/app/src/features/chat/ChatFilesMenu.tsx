@@ -4,9 +4,10 @@
  * Uploads are the files the writer attached: a row adds one to the message being written (the
  * chip the `@` picker inserts), opens it in the viewer, or deletes it while no sent message has
  * used it. Notes are the chat's own Scratch folder: each row opens the note. A subagent shows
- * its top chat's uploads and its own notes. A fork or handoff owns its own files and names the
- * chat it continues from. The control appears once the chat has a file or a source to point
- * back to, so a chat with nothing to show carries no extra control.
+ * the notes it owns and leaves attachments on the writer's chat that holds them; a fork or
+ * handoff owns its own files and names the chat it continues from. The control appears once the
+ * chat has a file or a source to point back to, so a chat with nothing to show carries no extra
+ * control.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -238,8 +239,11 @@ function FilesDropdown({
           "text-tier-chat w-[min(22rem,calc(100vw-1.5rem))] p-0",
         )}
         onOpenAutoFocus={(event) => {
+          // A source-only menu has no file row; Radix's own focus reaches its link.
+          const firstRow = contentRef.current?.querySelector<HTMLElement>("[data-file-row]");
+          if (!firstRow) return;
           event.preventDefault();
-          contentRef.current?.querySelector<HTMLElement>("[data-file-row]")?.focus();
+          firstRow.focus();
         }}
         onCloseAutoFocus={(event) => {
           if (focusHandoff.current) event.preventDefault();

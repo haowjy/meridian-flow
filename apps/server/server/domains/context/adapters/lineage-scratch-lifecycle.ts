@@ -5,11 +5,11 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, type SQL, type SQLWrapper, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type { DocumentArrivals } from "../ports/document-arrivals.js";
-import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
 
 export class LineageScratchUnavailableError extends Error {
@@ -113,6 +113,22 @@ export function createDrizzleLineageScratchLifecycle(
           ),
           sql`NOT EXISTS (SELECT 1 FROM threads chat WHERE chat.id = ${contextSources.chatThreadId} AND chat.deleted_at IS NOT NULL)`,
         );
+        // A chat's notes folder lives in its Work's Scratch, so that catalog must
+        // learn when the chat can no longer be opened.
+        const workFolders = visibleFolders(LIVE_TREE);
+        const workSources = await currentDrizzleDb(db)
+          .selectDistinct({ id: contextSources.id })
+          .from(workFolders)
+          .innerJoin(contextSources, eq(contextSources.id, workFolders.contextSourceId))
+          .where(
+            and(
+              inArray(workFolders.threadId, [...new Set(threadIds)]),
+              eq(contextSources.scope, "work"),
+              isNull(contextSources.deletedAt),
+            ),
+          );
+        if (workSources.length)
+          await catalog?.refreshSources(workSources.map((source) => source.id));
       }),
   };
 

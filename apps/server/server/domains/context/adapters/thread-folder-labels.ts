@@ -8,7 +8,7 @@ import { LIVE_TREE, visibleFolders } from "../tree/tree-view.js";
 export async function loadThreadFolderLabels(
   db: Pick<Database, "select">,
   folderIds: readonly string[],
-): Promise<Map<string, { label: string; threadId: string }>> {
+): Promise<Map<string, { label: string; threadId: string; chatAvailable: boolean }>> {
   if (folderIds.length === 0) return new Map();
   const vf = visibleFolders(LIVE_TREE);
   const parent = alias(threads, "notes_parent");
@@ -19,6 +19,8 @@ export async function loadThreadFolderLabels(
       kind: threads.kind,
       parentTitle: parent.title,
       threadId: vf.threadId,
+      liveId: threads.id,
+      deletedAt: threads.deletedAt,
     })
     .from(vf)
     .leftJoin(threads, eq(threads.id, vf.threadId))
@@ -36,6 +38,7 @@ export async function loadThreadFolderLabels(
                     ? `${row.parentTitle?.trim() || "Untitled chat"} (subagent)`
                     : row.title?.trim() || "Untitled chat",
                 threadId: row.threadId,
+                chatAvailable: Boolean(row.liveId) && !row.deletedAt,
               },
             ] as const,
           ]

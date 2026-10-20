@@ -317,6 +317,13 @@ parent's title; missing metadata uses `Untitled chat`). Replica locations never
 use that label as a basename. Human folder ancestry uses catalog presentation,
 not source-path segments.
 
+Associated roots also carry `threadId` and `chatAvailable`. The first is the
+folder's chat identity, used to mark it and offer Open chat; the second says
+whether that chat can still be opened, because a folder outlives a trashed or
+purged chat. Trash and restore refresh the Work's Scratch source so a cached
+entry changes with the chat. Migration `0081` backfills both facts and moves
+each affected scope's cursor.
+
 Title mutation and targeted root-label publication commit atomically. The
 catalog advances its publisher fence before loading labels, then takes sorted
 scope-head locks and upserts only affected roots with newer observation versions.

@@ -124,15 +124,11 @@ export function WorkFilesView({
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
 
-  // A chat's notes folder is an ordinary folder with a title label, so the group it
-  // appears in is decided by its address, not by how its name reads.
-  const threadFolders = scratchFolders.filter(isThreadFolder);
-  const threadPaths = threadFolders.map((folder) => folder.path);
-  const underThread = (file: { path: string }) =>
-    threadPaths.some((path) => file.path.startsWith(`${path}/`));
+  // A chat's notes folder is an ordinary folder with a title label, so the row it
+  // wears is decided by its address, not by how its name reads.
   const openChatFor = (folder: CatalogDirectory) => {
     const id = folder.threadId;
-    return id ? () => void openChat(id) : undefined;
+    return id && folder.chatAvailable === true ? () => void openChat(id) : undefined;
   };
   const rowFor = (node: CatalogDirectory | CatalogFile): RuledRow & { place: TreePlace } => ({
     key: node.entryId,
@@ -165,13 +161,10 @@ export function WorkFilesView({
       ),
   });
 
-  const notesRows = inTreeOrder([
-    ...visible.filter((node) => node.kind === "dir" && isThreadFolder(node)).map(rowFor),
-    ...visible.filter((node) => node.kind === "file" && underThread(node)).map(rowFor),
-  ]);
-  const scratchRows = inTreeOrder([
-    ...visible.filter((node) => node.kind === "dir" && !isThreadFolder(node)).map(rowFor),
-    ...visible.filter((node) => node.kind === "file" && !underThread(node)).map(rowFor),
+  // Chat folders are ordinary Scratch folders: they keep their place in the tree
+  // and wear the chat mark, rather than moving to a group of their own.
+  const rows = inTreeOrder([
+    ...visible.map(rowFor),
     ...(intake.note
       ? [
           {
@@ -192,30 +185,23 @@ export function WorkFilesView({
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
-      {scratchRows.length > 0 || notesRows.length === 0 ? (
-        <WorkFileGroup label={t`Scratch`}>
-          {scratch.isError ? (
-            <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-          ) : !scratch.catalog ? (
-            <WorkFileGroupLoading />
-          ) : scratchRows.length ? (
-            <RuledList className="-mx-2" rows={scratchRows} />
-          ) : (
-            <WorkFileGroupNote>
-              {search ? (
-                <Trans>No scratch notes match “{search}”.</Trans>
-              ) : (
-                <Trans>No scratch notes yet.</Trans>
-              )}
-            </WorkFileGroupNote>
-          )}
-        </WorkFileGroup>
-      ) : null}
-      {notesRows.length > 0 ? (
-        <WorkFileGroup label={t`Chat notes`}>
-          <RuledList className="-mx-2" rows={notesRows} />
-        </WorkFileGroup>
-      ) : null}
+      <WorkFileGroup label={t`Scratch`}>
+        {scratch.isError ? (
+          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+        ) : !scratch.catalog ? (
+          <WorkFileGroupLoading />
+        ) : rows.length ? (
+          <RuledList className="-mx-2" rows={rows} />
+        ) : (
+          <WorkFileGroupNote>
+            {search ? (
+              <Trans>No scratch notes match “{search}”.</Trans>
+            ) : (
+              <Trans>No scratch notes yet.</Trans>
+            )}
+          </WorkFileGroupNote>
+        )}
+      </WorkFileGroup>
       <DeleteConfirmationDialog
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}

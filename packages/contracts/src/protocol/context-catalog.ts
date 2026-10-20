@@ -44,6 +44,8 @@ export type CatalogFolderEntry = {
   displayName?: string;
   /** The chat whose notes folder this is, for an associated thread root. */
   threadId?: string;
+  /** False when the owning chat is trashed or gone; the folder itself survives. */
+  chatAvailable?: boolean;
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;

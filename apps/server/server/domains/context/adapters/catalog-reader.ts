@@ -301,7 +301,9 @@ export async function buildScopeEntries(
         sourceId: source.id,
         parentId: folder.parentId ?? source.id,
         name: folder.name,
-        ...(fact ? { displayName: fact.label, threadId: fact.threadId } : {}),
+        ...(fact
+          ? { displayName: fact.label, threadId: fact.threadId, chatAvailable: fact.chatAvailable }
+          : {}),
         path,
         uri: contextUriFromSourceLocation(scheme, path.join("/"), authority),
         hasChildren: (childCounts.get(folder.id) ?? 0) > 0,
