@@ -32,7 +32,6 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
   const segments = groupDeliverySegments(blocks);
   const hidden = hiddenToolCallIds(blocks, segments);
   const reports = new Map<Block, ReportContentValue>();
-  const reportCalls = new Set<string>();
   for (const segment of segments) {
     const tools =
       segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
@@ -52,7 +51,6 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
         partial: result.ok === false || tool.isError,
         ...(typeof result.message === "string" ? { reason: result.message } : {}),
       });
-      if (tool.toolCallId) reportCalls.add(tool.toolCallId);
     }
   }
   const items: RenderItem[] = [];
@@ -69,7 +67,14 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     else runs.push({ kind: runKind, blocks: [block] } as Run);
   };
 
-  for (const block of blocks) {
+  const orderedBlocks = segments.flatMap((segment) =>
+    segment.kind === "block"
+      ? [segment.block]
+      : segment.kind === "tool"
+        ? [segment.tool.keyBlock]
+        : segment.tools.map((tool) => tool.keyBlock),
+  );
+  for (const block of orderedBlocks) {
     if (isToolDeliveryBlock(block)) {
       const content = blockContentRecord(block);
       const toolCallId = content.toolCallId;
@@ -77,13 +82,6 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
       if (report) {
         flushProcess();
         items.push({ kind: "report", block, report });
-        continue;
-      }
-      if (
-        block.blockType === "tool_result" &&
-        typeof toolCallId === "string" &&
-        reportCalls.has(toolCallId)
-      ) {
         continue;
       }
       if (typeof toolCallId === "string" && hidden.has(toolCallId)) continue;

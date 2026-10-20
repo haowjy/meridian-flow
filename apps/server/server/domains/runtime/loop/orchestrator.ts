@@ -661,7 +661,10 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
-            remainingIterations: MAX_TURN_ITERATIONS,
+            remainingIterations: Math.min(
+              MAX_TURN_ITERATIONS,
+              treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
+            ),
             // A Retry-led compaction pins what it retries: those messages are not in the summary's words.
             pinnedRequestTurnIds: new Set([
               ...selection.outstanding.map((row) => row.id),
@@ -1944,7 +1947,10 @@ async function executeLoop({
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
           readReferences: false,
           continuation,
-          remainingIterations: MAX_TURN_ITERATIONS - iteration,
+          remainingIterations: Math.min(
+            MAX_TURN_ITERATIONS - iteration,
+            treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
+          ),
           signal: input.signal,
           forcedDecision,
           assertNoResponseScope: () => {

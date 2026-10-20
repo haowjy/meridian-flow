@@ -22,9 +22,11 @@ transactions still apply. Held results are not document evidence, edits, errors
 or successful receipts, including in compaction and `thread_history` projections.
 
 Admission needs a prior assistant response in this prompt epoch, two remaining
-model iterations, and input headroom for another output reserve. Manual and
-forced overflow compaction bypass the step. An oversized result ends it; the
-existing rolling summary handles the fit. A committed marker prevents Retry or
+model iterations under both the local cap and shared tree-turn budget, and input headroom for another output reserve. Manual and
+forced overflow compaction bypass the step. A result that exhausts optional headroom ends it. The forced summary uses the
+actual input window as its fit limit, not the lower automatic trigger; the
+trigger still sizes the preferred retained tail. An indivisible pinned tail
+that exceeds the real window remains an ordinary context-too-large failure. A committed marker prevents Retry or
 process recovery from reopening the allowance in the same epoch. No marker is
 installed before the prepared boundary commits. The summary is due after the
 step even if the next estimate falls below the trigger. Normal cancellation,
