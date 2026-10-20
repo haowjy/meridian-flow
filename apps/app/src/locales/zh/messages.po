@@ -1973,6 +1973,10 @@ msgstr ""
 msgid "Document version"
 msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+#~ msgid "Documents"
+#~ msgstr ""
+
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -3358,8 +3362,14 @@ msgid "Quote"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Read"
 msgstr ""
+
+#. placeholder {0}: document.uri
+#: src/features/chat/compaction/CompactionDivider.tsx
+#~ msgid "Read {0}"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Read file"

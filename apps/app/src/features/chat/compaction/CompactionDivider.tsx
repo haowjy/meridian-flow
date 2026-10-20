@@ -17,17 +17,21 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { FoldVertical } from "lucide-react";
+import { BookOpen, FoldVertical } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { ActivityRow } from "../ActivityRow";
 import { AnchoredCards } from "../ChatCards";
+import { ClippedProse } from "../ClippedExpand";
+import { CommandTitle } from "../CommandTitle";
+import { DocumentName } from "../DocumentName";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "../TurnInfoButton";
 import { CompactionInstructions } from "./CompactionInstructions";
-import { type DividerView, dividerView } from "./compaction-model";
+import { type DividerDocument, type DividerView, dividerView } from "./compaction-model";
 import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type CompactionDividerProps = {
@@ -147,17 +151,57 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 
       <AnchoredCards anchor={{ turn: turn.id }} />
 
-      {view.summary ? (
-        <div
-          id={panelId}
-          hidden={!open}
-          data-compaction-summary
-          className="chat-card mt-[var(--chat-space-inline)] bg-muted/40"
-        >
-          <Markdown variant="compact">{view.summary}</Markdown>
+      {view.summary || view.documents.length > 0 ? (
+        <div id={panelId} hidden={!open} data-compaction-body className="flex flex-col">
+          {view.summary ? (
+            <div
+              data-compaction-summary
+              className="flex items-stretch gap-[var(--chat-space-block)]"
+            >
+              <div className="flex w-[19px] shrink-0 flex-col items-center" aria-hidden>
+                <span className="w-px flex-1 bg-border" data-activity-rail />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="rounded-md bg-muted/40 px-2.5 py-1.5">
+                  <Markdown variant="compact">{view.summary}</Markdown>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {view.documents.length > 0 ? (
+            <div data-compaction-documents className="flex flex-col">
+              {view.documents.map((document) => (
+                <CompactionDocument key={document.uri} document={document} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** One re-shown document: a read row whose body is the text the successor holds. */
+function CompactionDocument({ document }: { document: DividerDocument }) {
+  return (
+    <ActivityRow
+      Icon={BookOpen}
+      quietIcon
+      title={<CommandTitle verb={t`Read`} parameter={<DocumentName path={document.uri} />} />}
+      expand={() => (
+        <ClippedProse
+          className="text-tier-quoted"
+          footer={
+            <span className="flex min-w-0 text-meta">
+              <DocumentName path={document.uri} label="open" />
+            </span>
+          }
+        >
+          <Markdown variant="compact">{document.body}</Markdown>
+        </ClippedProse>
+      )}
+    />
   );
 }
 

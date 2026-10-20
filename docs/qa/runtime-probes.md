@@ -870,7 +870,7 @@ restart smoke check.
   for d in C10-Target C10-Reshown C10-Fork W2-Draft; do
     ./mf doc put "manuscript://$d" --text @"$E/ch.md" --overwrite --json > /dev/null
   done
-  for i in 1 2 3 4 5; do
+  for i in 1 2 3; do
     printf 'Filler %s text.\n' $i > "$E/f$i.md"
     ./mf doc put "manuscript://C10-Filler$i" --text @"$E/f$i.md" --overwrite --json > /dev/null
   done
@@ -883,12 +883,15 @@ restart smoke check.
 - **Steps:**
 
   1. Compaction without a re-show: in a fresh No Work thread read `C10-Target`, then read
-     `C10-Filler1` to `C10-Filler5` in five sends (the target falls out of the five re-shown
-     files), compact, then send `writemock C10-Target` twice.
+     `C10-Filler1` to `C10-Filler3` in three sends (the target falls out of the 3 recent
+     documents). Before compacting, set the summary mock to return a summary ending with
+     `## Documents to keep open` and no URIs, so the target is not model-listed either.
+     Compact, then send `writemock C10-Target` twice.
   2. Compaction with a re-show: a fresh thread reads `C10-Reshown`, compacts, then sends
      `writemock C10-Reshown` once.
   3. Fork before the compaction: a fresh thread reads `C10-Fork` (keep the send's result
-     `turnId` as `CUT`), reads the five fillers, compacts, sends `writemock C10-Fork`; then
+     `turnId` as `CUT`), reads the three fillers, compacts with the same empty keep-open list as step 1,
+     sends `writemock C10-Fork`; then
      fork at `CUT` (`POST /api/threads/$T/fork` with `originTurnId`) and send `writemock C10-Fork`
      on the fork.
   4. First draft-mode write after a live read: a draft-mode thread on a new Work (body as in
@@ -912,3 +915,57 @@ restart smoke check.
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
 [link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments
+
+## RP-21: M2c re-shows every listed document that fits, most important first
+
+- **Protects:** owner rulings C12/C13. No listed-document count cap or fixed token
+  budget; the only budget is half the compacted request's headroom under the
+  auto-compaction trigger, less 1,000 tokens of estimator slack. The budget
+  includes the list the server writes back into the summary. Without a trigger it
+  is unlimited.
+- **Stack:** mock, using the Agent and `compact` helper from Setup.
+- **Steps:**
+  1. Create 12 small documents with distinct URIs and show all 12 through `read`.
+     Queue a summary with narrative followed by `## Documents to keep open`
+     and all 12 URIs, one per line in a deliberately chosen priority order
+     (not their read-recency order). Compact, then send a continuation.
+  2. Inspect `thread context --all --view raw --json` and
+     `thread view --blocks --json`. The summary has sequence 0; re-shown
+     blocks have sequences 1 through 12 in exactly the listed order. The first
+     listed URI is the first block after the summary, not the last.
+  3. Compact that thread again with narrative and an empty keep-open section,
+     without any intervening document reads. Exactly the first three documents
+     from the previous re-show are selected, in that same order: among
+     documents on one compaction turn, earlier means more recent.
+  4. In a fresh thread read a document larger than half the available headroom,
+     plus four small documents. List the oversized document first, then the
+     small documents. Compact and continue. The large document is skipped
+     whole, the small documents appear in listed order, and the stored
+     summary's `## Documents to keep open` names only the small URIs. The
+     successor's `tokensAfter` is below the trigger. Expand the compaction
+     divider in the browser: the Documents group shows exactly those small
+     documents, and the large one has no row.
+  5. For a genuinely spent budget, use enough fitting documents to consume all
+     available room after the reserved list. The picker must stop reading
+     further candidates once remaining room reaches zero (not read every
+     candidate merely because the list is now unbounded). To hit exact zero
+     cheaply, invoke the picker in a throwaway script with 1,000 candidates and
+     a budget of the estimated worst-case list plus the first rendered read;
+     count reader calls and require exactly one. Keep no test from this script.
+     Oversized candidates
+     while room remains are skipped, not truncated, so later small ones can fit.
+- **Evidence:** captured successor requests, persisted block sequences, divider
+  summary and `tokensAfter`, plus the browser screenshot. Compare the warm
+  summary request against its source: only the appended summary instruction
+  changes (its old “at most 10” clause is gone); tools, messages, system and
+  cache key otherwise stay identical.
+
+- **Last run:** 2026-10-19, C13 amendment after `d18594b1b0`, this branch's mock
+  stack. All 12 listed documents appeared in order (sequences 1–12); the next
+  empty-list compaction picked documents 1, 2, 3. An oversized first candidate
+  was omitted whole while four small candidates fit in order; `tokensAfter`
+  was 8,238 against the 100,000 trigger. The exact-zero picker probe read only
+  one of 1,000 candidates. Browser: expanded normal and omission dividers both
+  matched their stored summaries. Evidence: docs repository
+  `work/concurrent-edit-design/m2c/probe/c13/` (report and screenshots); raw
+  request captures remain at `/tmp/m2c-c13-probe/`.

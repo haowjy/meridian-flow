@@ -1547,7 +1547,7 @@ else
         });
         return {
           kind: "complete",
-          text: "The earlier scene is complete.",
+          text: "The earlier scene is complete.\n\n## Documents to keep open\n- `kb://notes`\n- manuscript://never-shown",
           model: "summary-model",
           modelResponses: [],
         };
@@ -1563,7 +1563,8 @@ else
         ],
         onStream: async (call) => {
           if (call === 1) rig.setThreshold(undefined);
-          if (call === 2) rig.setThreshold(2500);
+          // Leave room for the re-show after reserving half-headroom and estimator slack.
+          if (call === 2) rig.setThreshold(5000);
           if (call === 3) {
             const latest = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
             expect(latest?.role).toBe("assistant");
@@ -1606,7 +1607,10 @@ else
         compactedThrough: { turnId: tail[0].id, blockSequence: 2 },
       });
       expect((await rig.repos.blocks.listByTurn(tail[1].id))[0].content).toMatchObject({
-        props: { excludedTurnCount: 3 },
+        props: {
+          excludedTurnCount: 3,
+          summary: "The earlier scene is complete.\n\n## Documents to keep open\n- kb://notes",
+        },
       });
       expect(rig.summarizer.calls).toHaveLength(1);
       expect(rig.summarizer.calls[0].retainedMessages).toEqual([
