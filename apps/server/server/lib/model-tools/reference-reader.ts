@@ -31,7 +31,11 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
     async read(reference, ctx) {
       const call = await resolveToolCall(deps, ctx);
       if (isToolError(call)) return { result: readError(call.output.message), revision: null };
-      const address = await resolveDocumentAddress(call.context, "read", reference.uri);
+      const uri =
+        ctx.selector && "fragment" in ctx.selector
+          ? `${reference.uri}#${ctx.selector.fragment}`
+          : reference.uri;
+      const address = await resolveDocumentAddress(call.context, "read", uri);
       if (isToolError(address)) return { result: asJson(address.output), revision: null };
       if (address.documentId !== reference.documentId) {
         return {
@@ -48,7 +52,10 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
         deps,
         grant,
         address,
-        ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {},
+        {
+          ...(ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {}),
+          ...(ctx.selector && "in" in ctx.selector ? { selection: { in: ctx.selector.in } } : {}),
+        },
         ctx,
       );
       if (outcome.isError) return { result: asJson(outcome.result), revision: outcome.revision };
