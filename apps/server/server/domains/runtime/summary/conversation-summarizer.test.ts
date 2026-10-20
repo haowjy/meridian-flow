@@ -273,8 +273,9 @@ describe("conversation summarizer", () => {
   });
 
   it("segments only at turns and carries the running summary into each bounded request", async () => {
+    const narrowWindow = 2_600;
     const rig = setup({
-      models: [threadModel, { ...cheapModel, contextWindow: 2_400 }],
+      models: [threadModel, { ...cheapModel, contextWindow: narrowWindow }],
       async *events(_request, call) {
         yield { type: "end", result: reply(`Summary ${call}`) };
       },
@@ -294,7 +295,7 @@ describe("conversation summarizer", () => {
     rig.requests.forEach((request, index) => {
       expect(
         estimateRequestTokens({ request, baseline: null, tokenizer: cheapModel.tokenizer }),
-      ).toBeLessThan(cheapModel.contextWindow - cheapModel.maxOutputTokens);
+      ).toBeLessThan(narrowWindow - cheapModel.maxOutputTokens);
       if (index)
         expect(JSON.stringify(request)).toContain(
           `Prior context (running summary):\\nSummary ${index}`,
