@@ -290,6 +290,8 @@
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 ### Changed
 
+- A compaction's summary lists the documents it actually re-showed, in read order, and the divider shows each one as a read row; the separate "not re-shown" note is gone.
+
 - Each chat has its own AI write mode (draft or auto-apply). A new chat starts in its Work's last-used mode; subagents, forks and handoffs start in their source chat's mode. Switching one chat leaves the Work's other chats as they are.
 - A switch made while the AI is replying waits for that reply to finish, then takes effect before any message you sent after it. Switching back before it takes effect cancels it.
 - The chat shows where a switch took effect.
