@@ -453,15 +453,18 @@ export function createMarkdownDocumentEngine(
   async function initializeAuthority(
     documentId: DocumentId,
     blocks: readonly PMNode[],
+    origin: DocumentSeedOrigin = { type: "system" },
+    onSeeded?: (doc: Y.Doc) => Promise<void>,
   ): Promise<void> {
     const doc = createCollabYDoc({ gc: false });
     try {
-      materializeDocument(doc, deps.model, blocks);
+      materializeDocument(doc, deps.model, blocks, yjsTransactionOrigin(origin));
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
         documentId,
         Y.encodeStateAsUpdate(doc),
       );
       if (!seeded) return;
+      await onSeeded?.(doc);
     } finally {
       doc.destroy();
     }
@@ -489,25 +492,15 @@ export function createMarkdownDocumentEngine(
   ): Promise<void> {
     const format = await documentFormat(documentId);
     if (!format.ok) throwSyncError(format.error);
-    const doc = createCollabYDoc({ gc: false });
-    try {
-      materializeDocument(doc, deps.model, nodes, yjsTransactionOrigin(origin));
+    await initializeAuthority(documentId, nodes, origin, async (doc) => {
       const markdown = serializeForSchema(
         documentId,
         doc,
         format.value.schemaType,
         await spelling(documentId, [doc], LIVE_VIEW, [...nodes]),
       );
-      const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
-        documentId,
-        Y.encodeStateAsUpdate(doc),
-      );
-      if (!seeded) return;
-      // Creation-bound seeds install before the row is visible; cold loads read authority.
       await deps.afterWrite?.({ documentId, markdown });
-    } finally {
-      doc.destroy();
-    }
+    });
   }
 
   const engine: MarkdownDocumentEngine = {

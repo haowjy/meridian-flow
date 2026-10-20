@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Make Markdown and node seeds share initialize-only authority persistence and post-commit delivery, so ordinary and copy readers see the same successfully seeded document.
+
 - Keep fork membership creation independent of optional notes installation, and acquire its lifecycle guard before retaining account locks. Same-namespace writes still serialize with atomic publication.
 
 - Read fork and handoff notes locations through the server-only scope after integrating the final notes-folder and compaction phases.

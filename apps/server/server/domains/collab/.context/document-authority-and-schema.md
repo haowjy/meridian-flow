@@ -137,8 +137,12 @@ rejected promise.
 ## Fresh copied documents
 
 `readCopySource` projects live PMNodes and their revision from one durable read.
-`seedFromNodes` installs them only into a document without authority and defers
-room delivery until commit. Whole-document model copy and initial seeding use
+`initializeAuthority` is the shared materialize/initialize-only persistence and
+delivery lifecycle for empty initialization, repair, Markdown seeds and node
+seeds. Content seeds also prepare stored links and publish their projection.
+A successful seed is usable by both ordinary and copy readers. Delivery merges
+the committed checkpoint into an already-open room; inside a creation transaction
+it is deferred until commit, never opening a room in the publication transaction. Whole-document model copy and initial seeding use
 agent-edit's `materializeDocument`, which inserts nodes with fresh CRDT and
 block binding identity, retaining stored link refs. Never initialize a copy by
 applying the source's Yjs updates or by Markdown roundtripping its nodes.
