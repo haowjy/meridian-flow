@@ -27,9 +27,11 @@ Rolling uses the configured cheap model or source model fallback and receives
 only the cut plus prior summary. It omits opaque reasoning, carries a running
 summary through segments, and fails before a cold call when an indivisible block
 cannot fit. Compaction retains pins/tail outside the cut; handoff has no
-retained tail. Both use the fixed fiction-oriented summary sections, preserve
-writer terminology, and treat transcript text as source material rather than
-instructions.
+retained tail. Both use a fixed spine of sections (Objective, Work state,
+Decisions, User preferences, Open questions, Next step) and ask the model to add
+the sections its work needs (a story's canon, research sources, code interfaces),
+preserve the user's terminology, and treat transcript text as source material
+rather than instructions.
 
 Compaction alone ends its summary instruction with `## Documents to keep open`:
 one context URI per line, most important first, with an example

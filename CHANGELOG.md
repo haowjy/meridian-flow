@@ -292,6 +292,8 @@
 
 - A compaction's summary lists the documents it actually re-showed, in read order, and the divider shows each one as a read row; the separate "not re-shown" note is gone.
 
+- Compaction summaries and handoff briefs are no longer fiction-specific: the prompt keeps a spine of general sections, names no genre, and asks the model to add the sections its own kind of work needs (story canon, research sources, code interfaces).
+
 - Each chat has its own AI write mode (draft or auto-apply). A new chat starts in its Work's last-used mode; subagents, forks and handoffs start in their source chat's mode. Switching one chat leaves the Work's other chats as they are.
 - A switch made while the AI is replying waits for that reply to finish, then takes effect before any message you sent after it. Switching back before it takes effect cancels it.
 - The chat shows where a switch took effect.
