@@ -80,13 +80,13 @@ Kept verbatim, in order (a passage may start mid-message):
 
 ## Documents to keep open
 End the summary with this section: one context URI per line, optionally with one read selector, most important first.
-List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a block hash, a 1-based block number, or an inclusive start..end range. Do not combine #fragment and in:. Leave the section empty if none apply.
+List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a quoted block hash (including digit-only hashes), a bare 1-based block number, or an inclusive start..end range. Quote each hash endpoint; leave numeric positions unquoted. Do not combine #fragment and in:. Leave the section empty if none apply.
 The server replaces this list with the documents it actually re-shows; list what you need.
 
 Example:
 scratch://@/c12/plan.md
 manuscript://Chapter 1.md#the-duel
-manuscript://Chapter 2.md in: a1b2
+manuscript://Chapter 2.md in: "2194"
 manuscript://Chapter 3.md in: 40..95
 </system_update>"
 `;
@@ -157,13 +157,13 @@ Kept verbatim, in order (a passage may start mid-message):
 
 ## Documents to keep open
 End the summary with this section: one context URI per line, optionally with one read selector, most important first.
-List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a block hash, a 1-based block number, or an inclusive start..end range. Do not combine #fragment and in:. Leave the section empty if none apply.
+List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a quoted block hash (including digit-only hashes), a bare 1-based block number, or an inclusive start..end range. Quote each hash endpoint; leave numeric positions unquoted. Do not combine #fragment and in:. Leave the section empty if none apply.
 The server replaces this list with the documents it actually re-shows; list what you need.
 
 Example:
 scratch://@/c12/plan.md
 manuscript://Chapter 1.md#the-duel
-manuscript://Chapter 2.md in: a1b2
+manuscript://Chapter 2.md in: "2194"
 manuscript://Chapter 3.md in: 40..95
 </system_update>",
           "type": "text",
