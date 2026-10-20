@@ -47,12 +47,12 @@ export function importantFileText(uri: string, text: string): string {
   return `Current text of ${uri}, re-shown after the summary:\n${text}`;
 }
 
-/** Estimator slack only; the omission note is priced and reserved separately. */
+/** Estimator slack only; the written list is priced and reserved separately. */
 const TRIGGER_MARGIN_TOKENS = 1_000;
 
 /**
- * Re-shown text and its omission note may use half the trigger headroom, less estimator
- * slack. The mandatory note is still written when it alone exceeds the budget.
+ * Re-shown text and its list may use half the trigger headroom, less estimator slack.
+ * The list can still exceed the budget on its own; it is then the only thing written.
  */
 export function reshowBudgetTokens(input: {
   triggerTokens: number | null;

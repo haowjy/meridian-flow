@@ -26,6 +26,7 @@ import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "../ActivityRow";
 import { AnchoredCards } from "../ChatCards";
 import { ClippedProse } from "../ClippedExpand";
+import { CommandTitle } from "../CommandTitle";
 import { DocumentName } from "../DocumentName";
 import { ForkTurnAction } from "../derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "../TurnInfoButton";
@@ -182,11 +183,7 @@ function CompactionDocument({ document }: { document: DividerDocument }) {
   return (
     <ActivityRow
       Icon={BookOpen}
-      title={
-        <>
-          {t`Read`} <DocumentName path={document.uri} />
-        </>
-      }
+      title={<CommandTitle verb={t`Read`} parameter={<DocumentName path={document.uri} />} />}
       expand={() => (
         <ClippedProse
           className="text-tier-quoted"

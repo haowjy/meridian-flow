@@ -921,7 +921,8 @@ restart smoke check.
 - **Protects:** owner rulings C12/C13. No listed-document count cap or fixed token
   budget; the only budget is half the compacted request's headroom under the
   auto-compaction trigger, less 1,000 tokens of estimator slack. The budget
-  includes the worst-case omission note. Without a trigger it is unlimited.
+  includes the list the server writes back into the summary. Without a trigger it
+  is unlimited.
 - **Stack:** mock, using the Agent and `compact` helper from Setup.
 - **Steps:**
   1. Create 12 small documents with distinct URIs and show all 12 through `read`.
@@ -949,7 +950,7 @@ restart smoke check.
      further candidates once remaining room reaches zero (not read every
      candidate merely because the list is now unbounded). To hit exact zero
      cheaply, invoke the picker in a throwaway script with 1,000 candidates and
-     a budget of the estimated worst-case note plus the first rendered read;
+     a budget of the estimated worst-case list plus the first rendered read;
      count reader calls and require exactly one. Keep no test from this script.
      Oversized candidates
      while room remains are skipped, not truncated, so later small ones can fit.
