@@ -139,6 +139,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   async function updateWork(id: WorkId, patch: Partial<typeof works.$inferInsert>): Promise<Work> {
     return runInDrizzleTransaction(db, async () => {
       if (!isUuid(id)) throw new Error(`Work not found: ${id}`);
+      if ("archivedAt" in patch) await lockWorkLifecycle(db, id);
       const [row] = await currentDrizzleDb(db)
         .update(works)
         .set({ ...patch, entityRevision: sql`${works.entityRevision} + 1`, updatedAt: new Date() })

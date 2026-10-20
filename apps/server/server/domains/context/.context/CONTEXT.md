@@ -323,3 +323,8 @@ scope-head locks and upserts only affected roots with newer observation versions
 This orders concurrent title publishers and namespace commits without rebuilding
 scopes or invalidating subtrees. Full reconciliation and targeted updates share
 the same delta persistence and wake-hint path.
+
+Namespace mutation keeps its exclusive advisory guard across atomic notes
+installation. Its Work guard is lifecycle-only (`FOR KEY SHARE`), compatible
+with membership creation and Work activity updates; actual lifecycle transitions
+take `FOR UPDATE`. A same-namespace foreground write can still wait for installation.

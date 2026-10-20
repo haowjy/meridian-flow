@@ -159,7 +159,11 @@ uses `Untitled chat`; a subagent uses its spawning parent's title plus `(subagen
 ## Fork and handoff copies (Phase 3)
 
 Creation commits the conversation and registers a tracked detached best-effort
-copy. Creation, replay, the handoff brief and first turns never wait for copying. There is no notes-copy job, status UI or Retry.
+copy. Creation and replay do not await copying; membership creation uses a
+shared lifecycle guard, independently of the install namespace. The handoff
+brief and first turn have no copy-readiness dependency, but a write into the
+same namespace can wait for an in-flight atomic install. There is no notes-copy
+job, status UI or Retry.
 An idempotent creation replay does not retry copying, even after failure.
 
 Capture the source assistant turn id from

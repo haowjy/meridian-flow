@@ -1,4 +1,4 @@
-/** Shared row lock for serializing Work lifecycle changes with Work-owned mutations. */
+/** Work row guards: stable lifecycle reads, projection mutation, and lifecycle transitions. */
 import { works } from "@meridian/database/schema";
 import { asc, inArray } from "drizzle-orm";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
@@ -15,12 +15,13 @@ export interface LockedWork {
 /**
  * Lock several Works in one global order, sorted by id, so writers spanning
  * Works never deadlock each other (file-access §5), and read each one's
- * lifecycle under the lock. `FOR NO KEY UPDATE` serializes lifecycle changes
- * without blocking foreign-key references to the row.
+ * lifecycle under the requested guard. KEY SHARE guards stability without
+ * blocking metadata/activity updates; lifecycle changes explicitly take UPDATE.
  */
-export async function lockWorksInIdOrder(
+async function lockWorkRows(
   db: DrizzleDb,
   workIds: readonly string[],
+  strength: "key share" | "no key update" | "update",
 ): Promise<ReadonlyMap<string, LockedWork>> {
   const ids = [...new Set(workIds)].sort();
   const locked = new Map<string, LockedWork>();
@@ -35,7 +36,7 @@ export async function lockWorksInIdOrder(
     .from(works)
     .where(inArray(works.id, ids))
     .orderBy(asc(works.id))
-    .for("no key update");
+    .for(strength);
   const found = new Map(rows.map((row) => [row.id as string, row]));
   for (const id of ids) {
     const row = found.get(id);
@@ -52,11 +53,21 @@ export async function lockWorksInIdOrder(
   return locked;
 }
 
+/** Projection writers serialize with each other, but not lifecycle-only readers. */
+export function lockWorksInIdOrder(db: DrizzleDb, workIds: readonly string[]) {
+  return lockWorkRows(db, workIds, "no key update");
+}
+
+/** Lifecycle transitions take UPDATE; ordinary activity updates remain compatible. */
+export function lockStableWorksInIdOrder(db: DrizzleDb, workIds: readonly string[]) {
+  return lockWorkRows(db, workIds, "key share");
+}
+
 export async function lockWorkLifecycle(
   db: DrizzleDb,
   workId: string,
 ): Promise<LockedWorkLifecycle> {
-  return (await lockWorksInIdOrder(db, [workId])).get(workId)?.state ?? "missing";
+  return (await lockWorkRows(db, [workId], "update")).get(workId)?.state ?? "missing";
 }
 
 /**
@@ -78,7 +89,8 @@ export async function requireLockedActiveWorks(
   db: DrizzleDb,
   workIds: readonly string[],
 ): Promise<void> {
-  const locked = await lockSeamWorks(db, workIds);
+  const locked = await lockStableWorksInIdOrder(db, [...workIds, ...scopedEditWorkIds()]);
+  await confirmScopedEdits();
   for (const workId of [...new Set(workIds)].sort()) {
     const work = locked.get(workId);
     if (work && work.state !== "active") {

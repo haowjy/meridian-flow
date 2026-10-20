@@ -73,10 +73,14 @@ writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 
 ## Lifecycle invariants
 
-Lifecycle writes lock the Work row and publish `{ workId }` through
+Lifecycle writes take `FOR UPDATE` on the Work row and publish `{ workId }` through
 `FileAccessChanges` in the same transaction so Scratch, Uploads, and draft
-rooms reconnect at their new access level. Work context mutations use that
-same lifecycle lock. Archive, unarchive and restore lock no draft row
+rooms reconnect at their new access level. Context namespace/provisioning and
+thread membership take `FOR KEY SHARE`: this guards lifecycle stability without
+serializing membership with content installation. Projection/activity writers
+retain `FOR NO KEY UPDATE`, compatible with those stability guards; never use
+`FOR SHARE` here, since upgrading to an activity UPDATE would deadlock against
+a namespace waiter. Archive, unarchive and restore lock no draft row
 and bump no draft revision. Delete removes Work-owned documents through the tree
 removal kernel, closing their drafts permanently; restore revives documents,
 not those closed drafts. Collab's append keeps the Work predicate in its

@@ -372,3 +372,7 @@ retention does not become a new thread-deletion dependency. Historical rows
 are backfilled in committed PK pages from their origin turn's owner (the
 acted-on thread was not previously recorded). New creates store the explicit
 source, independently of transcript lineage and the cutoff turn.
+
+Derived creation takes its Work lifecycle stability guard after locking the
+source thread, before allocating the counter or inserting the target. Optional
+notes installation owns namespace exclusion, not membership serialization.

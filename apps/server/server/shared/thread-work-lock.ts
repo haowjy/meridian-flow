@@ -5,8 +5,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 import {
   type LockedWorkLifecycle,
+  lockStableWorksInIdOrder,
   lockWorkLifecycle,
-  lockWorksInIdOrder,
 } from "./work-lifecycle-lock.js";
 
 /** Caller owns the transaction. FK KEY SHARE from Work notices must remain compatible. */
@@ -105,7 +105,7 @@ export async function lockThreadAndWorks(
     .from(threadWorks)
     .where(and(eq(threadWorks.threadId, threadId), eq(threadWorks.isPrimary, true)));
   const workIds = [...new Set([...additionalWorkIds, ...(primary ? [primary.workId] : [])])].sort();
-  const locked = await lockWorksInIdOrder(db, workIds);
+  const locked = await lockStableWorksInIdOrder(db, workIds);
   const workStates = new Map<WorkId, LockedWorkLifecycle>(
     workIds.map((workId) => [workId, locked.get(workId)?.state ?? "missing"]),
   );

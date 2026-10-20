@@ -6,7 +6,7 @@ import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { lockWorkLifecycle } from "../../../shared/work-lifecycle-lock.js";
+import { lockStableWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import {
   type ProjectWorkAuthorityResolver,
   resolvedWorkAuthority,
@@ -36,7 +36,7 @@ export function createDrizzleProjectWorkAuthorityResolver(
     bySlug: (projectId, workSlug) => selectBy(projectId, eq(works.slug, workSlug)),
     noWork: (projectId) => selectBy(projectId, eq(works.isNoWork, true)),
     async lockById(projectId, workId) {
-      await lockWorkLifecycle(db, workId);
+      await lockStableWorksInIdOrder(db, [workId]);
       return selectBy(projectId, eq(works.id, workId));
     },
   };

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Keep fork membership creation independent of optional notes installation, and acquire its lifecycle guard before retaining account locks. Same-namespace writes still serialize with atomic publication.
+
 - Read fork and handoff notes locations through the server-only scope after integrating the final notes-folder and compaction phases.
 
 - Mock model input usage scales with received messages, tool schemas and response format, keeping notes-before-compaction probes reachable without a provider fixture.

@@ -19,6 +19,7 @@ import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
+import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { LineageScratchLifecycle } from "../../../context/index.js";
 import type { ThreadFolderLabelMutationPort } from "../../../context/ports/context-catalog.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -234,6 +235,9 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
+      // The caller holds the source thread. Guard lifecycle before the counter and
+      // thread INSERT retain account/FK locks; content installation is independent.
+      if (input.workId) await requireLockedActiveWorks(db, [input.workId]);
       const thread = buildDerivedPrimaryThreadRow(input);
       const row = await insertThreadRow(
         db,
