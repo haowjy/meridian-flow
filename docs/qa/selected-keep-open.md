@@ -50,7 +50,7 @@
   Repeat with enough large changed outside blocks that the target falls beyond
   the concurrent-listing byte cap, exercising unseen-projection planning (M2).
 - **Selectors:** on fresh compactable cycles repeat `in: 4`, `in: 40..95`,
-  `in: <blockhash>`, `in: <startHash>..<endHash>`, `#<blockhash>` and
+  `in: "<blockhash>"`, `in: "<startHash>".."<endHash>"`, `#<blockhash>` and
   `#<headingHash>`, using hashes from the ordinary read. Compare exact bodies
   and block IDs; the numeric range persists `[40,95]`, not a string. Reload,
   send again and compare persisted-selector projection to its priced heading.
@@ -99,3 +99,7 @@
   this stack with `pnpm dev --stop`; retain fixture IDs for the browser prober.
 This recipe is not a claim that every case passed. Record evidence and any
 unreachable cases in the active work directory.
+
+Digit-only hashes: use a real generated hash such as `2194` (Y.Doc client id 2).
+`in: "2194"` must read that hash, while `in: 2194` means position 2194.
+Check `in: "2194"..5` and persisted/replayed labels preserve endpoint types.

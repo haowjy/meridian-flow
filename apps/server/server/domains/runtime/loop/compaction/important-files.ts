@@ -1,8 +1,9 @@
 /** Model-ranked document selections a compaction re-shows, within its token budget. */
-import type {
-  DocumentRevisionEvidence,
-  ReferenceOccurrence,
-  ReferenceReadSelector,
+import {
+  type DocumentRevisionEvidence,
+  type ReferenceOccurrence,
+  type ReferenceReadSelector,
+  referenceReadSelectorSchema,
 } from "@meridian/contracts/protocol";
 import type { TokenizerFamily } from "../../gateway/index.js";
 import type { RecordedDocuments } from "./elide.js";
@@ -14,13 +15,13 @@ const RECENT_DOCUMENTS_COUNT = 3;
 export const KEEP_OPEN_INSTRUCTION_LINES = [
   KEEP_OPEN_HEADING,
   "End the summary with this section: one context URI per line, optionally with one read selector, most important first.",
-  "List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a block hash, a 1-based block number, or an inclusive start..end range. Do not combine #fragment and in:. Leave the section empty if none apply.",
+  "List only documents this conversation showed. To keep part open, use the read tool's #fragment (heading slug or block hash), or append in: with a quoted block hash (including digit-only hashes), a bare 1-based block number, or an inclusive start..end range. Quote each hash endpoint; leave numeric positions unquoted. Do not combine #fragment and in:. Leave the section empty if none apply.",
   "The server replaces this list with the documents it actually re-shows; list what you need.",
   "",
   "Example:",
   "scratch://@/c12/plan.md",
   "manuscript://Chapter 1.md#the-duel",
-  "manuscript://Chapter 2.md in: a1b2",
+  'manuscript://Chapter 2.md in: "2194"',
   "manuscript://Chapter 3.md in: 40..95",
 ];
 
@@ -62,7 +63,8 @@ export function importantFileLabel(
   const { uri, selector } = target;
   if (!selector) return uri;
   if ("fragment" in selector) return `${uri}#${selector.fragment}`;
-  return `${uri} in: ${Array.isArray(selector.in) ? selector.in.join("..") : selector.in}`;
+  const endpoints = Array.isArray(selector.in) ? selector.in : [selector.in];
+  return `${uri} in: ${endpoints.map((endpoint) => JSON.stringify(endpoint)).join("..")}`;
 }
 
 /** Exact projected text, shared with budget estimation. */
@@ -117,12 +119,9 @@ function decoratedLayers(line: string): string[] {
   }
 }
 
-function selectorEndpoint(text: string): string | number | undefined {
-  if (/^[1-9]\d*$/u.test(text)) {
-    const number = Number(text);
-    return Number.isSafeInteger(number) ? number : undefined;
-  }
-  return /^[0-9a-f]{4,}$/iu.test(text) && !/^\d+$/u.test(text) ? text : undefined;
+function selectorEndpoint(text: string): string | number {
+  if (/^\d+$/u.test(text)) return Number(text);
+  return text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
 }
 
 function resolveListedUri(
@@ -142,11 +141,12 @@ function resolveListedUri(
     const fragment = layer.match(/^(.+)#([^#\s]+)$/u);
     if (fragment) {
       const ref = byUri.get(fragment[1] as string);
-      if (ref)
+      const selector = referenceReadSelectorSchema.safeParse({ fragment: fragment[2] });
+      if (ref && selector.success)
         return {
           documentId: ref.documentId,
           uri: fragment[1] as string,
-          selector: { fragment: fragment[2] as string },
+          selector: selector.data,
         };
     }
     const scoped = layer.match(/^(.+?)\s+in:\s*(\S+)$/u);
@@ -155,17 +155,11 @@ function resolveListedUri(
     if (!ref) continue;
     const parts = (scoped[2] as string).split("..");
     const endpoints = parts.map(selectorEndpoint);
-    const first = endpoints[0];
-    if (first === undefined || endpoints.some((value) => value === undefined)) continue;
-    const second = endpoints[1];
-    if (parts.length === 1)
-      return { documentId: ref.documentId, uri: scoped[1] as string, selector: { in: first } };
-    if (parts.length === 2 && second !== undefined)
-      return {
-        documentId: ref.documentId,
-        uri: scoped[1] as string,
-        selector: { in: [first, second] },
-      };
+    const selector = referenceReadSelectorSchema.safeParse({
+      in: parts.length === 1 ? endpoints[0] : endpoints,
+    });
+    if (selector.success)
+      return { documentId: ref.documentId, uri: scoped[1] as string, selector: selector.data };
   }
   return undefined;
 }

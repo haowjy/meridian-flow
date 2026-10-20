@@ -49,8 +49,10 @@ headings accept any Markdown heading level, case differences, a trailing colon
 and closing hashes. An empty narrative after stripping fails with `empty_text`
 through the summary-failure path; documents and the note cannot replace it.
 Listed lines match shown URIs across all decoration layers before interpreting
-selectors, preserving exact filenames (including literal ` in: 40..95`). Supported
-suffixes are `#fragment` (heading slug or block hash) and ` in: target` (block
+selectors, preserving exact filenames (including literal ` in: 40..95`).
+Hash endpoints in `in:` are quoted strings (including all-digit hashes); bare
+digits are positions. Labels preserve these types, and parsing uses the stored
+reference selector schema. Supported suffixes are `#fragment` (heading slug or block hash) and ` in: target` (block
 hash, 1-based number, or inclusive `start..end` range). Numeric endpoints become
 numbers, hash endpoints strings; the ordinary read resolver owns their meaning.
 Mixed or malformed selectors count as unknown. List markers and wrapping

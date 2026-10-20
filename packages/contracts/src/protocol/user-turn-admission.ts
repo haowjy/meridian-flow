@@ -128,15 +128,11 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
 /** The read tool's supported keep-open selection, independent of document identity. */
-export type ReferenceReadSelector =
-  | { fragment: string }
-  | { in: string | number | [string | number, string | number] };
-
 const selectorEndpoint = z.union([
   z.string().regex(/^[0-9a-f]{4,}$/iu),
   z.number().int().positive().safe(),
 ]);
-const referenceReadSelectorSchema = z.union([
+export const referenceReadSelectorSchema = z.union([
   z
     .object({
       fragment: z
@@ -149,6 +145,8 @@ const referenceReadSelectorSchema = z.union([
     .object({ in: z.union([selectorEndpoint, z.tuple([selectorEndpoint, selectorEndpoint])]) })
     .strict(),
 ]);
+
+export type ReferenceReadSelector = z.infer<typeof referenceReadSelectorSchema>;
 
 /** Server-generated snapshot; never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {
