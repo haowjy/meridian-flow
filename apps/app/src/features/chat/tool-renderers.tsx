@@ -16,6 +16,7 @@ import { type ReactNode, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
+import { CommandTitle } from "./CommandTitle";
 import {
   type CommandExpand,
   descriptorFor,
@@ -63,20 +64,6 @@ function inputObject(tool: ToolView): Record<string, JsonValue> {
 
 function asString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** A command and what it acted on, laid out as one line. */
-function CommandTitle({ verb, parameter }: { verb: ReactNode; parameter?: ReactNode }) {
-  return (
-    <span className="flex w-full min-w-0 items-baseline gap-[var(--chat-space-inline)]">
-      <span className="shrink-0">{verb}</span>
-      {parameter ? (
-        <span className="flex min-w-0 items-baseline font-normal text-muted-foreground">
-          {parameter}
-        </span>
-      ) : null}
-    </span>
-  );
 }
 
 /** A parameter the timeline shows as text rather than as a destination. */
