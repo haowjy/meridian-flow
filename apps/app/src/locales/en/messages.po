@@ -1974,8 +1974,8 @@ msgid "Document version"
 msgstr "Document version"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-msgid "Documents"
-msgstr "Documents"
+#~ msgid "Documents"
+#~ msgstr "Documents"
 
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx

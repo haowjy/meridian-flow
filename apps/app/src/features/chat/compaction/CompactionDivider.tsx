@@ -151,27 +151,31 @@ export function CompactionDivider({ turn, stopping, onStop }: CompactionDividerP
 
       <AnchoredCards anchor={{ turn: turn.id }} />
 
-      {view.summary ? (
-        <div
-          id={panelId}
-          hidden={!open}
-          data-compaction-summary
-          className="chat-card mt-[var(--chat-space-inline)] bg-muted/40"
-        >
-          <Markdown variant="compact">{view.summary}</Markdown>
-        </div>
-      ) : null}
+      {view.summary || view.documents.length > 0 ? (
+        <div id={panelId} hidden={!open} data-compaction-body className="flex flex-col">
+          {view.summary ? (
+            <div
+              data-compaction-summary
+              className="flex items-stretch gap-[var(--chat-space-block)]"
+            >
+              <div className="flex w-[19px] shrink-0 flex-col items-center" aria-hidden>
+                <span className="w-px flex-1 bg-border" data-activity-rail />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="rounded-md bg-muted/40 px-2.5 py-1.5">
+                  <Markdown variant="compact">{view.summary}</Markdown>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
-      {view.documents.length > 0 ? (
-        <div
-          hidden={!open}
-          data-compaction-documents
-          className="mt-[var(--chat-space-inline)] flex flex-col"
-        >
-          <div className="font-medium">{t`Documents`}</div>
-          {view.documents.map((document) => (
-            <CompactionDocument key={document.uri} document={document} />
-          ))}
+          {view.documents.length > 0 ? (
+            <div data-compaction-documents className="flex flex-col">
+              {view.documents.map((document) => (
+                <CompactionDocument key={document.uri} document={document} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -183,6 +187,7 @@ function CompactionDocument({ document }: { document: DividerDocument }) {
   return (
     <ActivityRow
       Icon={BookOpen}
+      quietIcon
       title={<CommandTitle verb={t`Read`} parameter={<DocumentName path={document.uri} />} />}
       expand={() => (
         <ClippedProse
