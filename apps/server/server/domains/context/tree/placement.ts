@@ -92,26 +92,36 @@ export async function walkFolders(
  */
 export type AssociatedRoot = { name: string; threadId: ThreadId };
 
-/** Allocate, never adopt, a proven chat root. Caller holds its namespace. */
-export async function createLiveAssociatedRoot(
+/** Allocate or identify a proven root under its namespace; callers choose adoption. */
+export async function allocateLiveAssociatedRoot(
   db: Database,
   contextSourceId: ContextSourceId,
   association: AssociatedRoot,
-): Promise<FolderId | null> {
-  const [created] = await currentDrizzleDb(db)
-    .insert(folders)
-    .values({
-      contextSourceId,
-      parentId: null,
-      name: association.name,
-      threadId: association.threadId,
-      hidden: false,
-    })
-    .onConflictDoNothing()
-    .returning({ id: folders.id });
-  if (!created) return null;
+): Promise<{ id: FolderId; created: boolean }> {
+  const [existing] = await currentDrizzleDb(db)
+    .select({ id: folders.id, threadId: folders.threadId })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.contextSourceId, contextSourceId),
+        isNull(folders.parentId),
+        eq(folders.name, association.name),
+        isNull(folders.deletedAt),
+        eq(folders.hidden, false),
+      ),
+    );
+  if (existing) {
+    if (existing.threadId !== association.threadId)
+      throw new Error("Thread-root association mismatch");
+    return { id: existing.id, created: false };
+  }
+  const id = await insertFolder(
+    db,
+    { contextSourceId, parentId: null, name: association.name },
+    { hidden: false, threadId: association.threadId },
+  );
   await claimDocumentLocation(db, contextSourceId, null, association.name);
-  return created.id;
+  return { id, created: true };
 }
 
 export async function ensureLiveFolderPath(
@@ -128,31 +138,8 @@ export async function ensureLiveFolderPath(
     const association = input.associatedRoot;
     if (!association || association.name !== input.dir[0])
       throw new Error("Missing proven thread-root association");
-    const tx = currentDrizzleDb(db);
-    const [existing] = await tx
-      .select({ id: folders.id, threadId: folders.threadId })
-      .from(folders)
-      .where(
-        and(
-          eq(folders.contextSourceId, contextSourceId),
-          isNull(folders.parentId),
-          eq(folders.name, association.name),
-          isNull(folders.deletedAt),
-          eq(folders.hidden, false),
-        ),
-      );
-    if (existing) {
-      if (existing.threadId !== association.threadId)
-        throw new Error("Thread-root association mismatch");
-    } else {
-      const id = await insertFolder(
-        db,
-        { contextSourceId, parentId: null, name: association.name },
-        { hidden: false, threadId: association.threadId },
-      );
-      await claimDocumentLocation(db, contextSourceId, null, association.name);
-      created.push(id);
-    }
+    const root = await allocateLiveAssociatedRoot(db, contextSourceId, association);
+    if (root.created) created.push(root.id);
   }
   const walk = await walkFolders(db, LIVE_TREE, contextSourceId, input.dir, async (gap) => {
     const at = { contextSourceId, ...gap };

@@ -26,7 +26,7 @@ import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import { claimDocumentLocation } from "./tree/node-locations.js";
 import { insertDocumentRow, insertFolder, lockDocuments } from "./tree/node-rows.js";
-import { createLiveAssociatedRoot } from "./tree/placement.js";
+import { allocateLiveAssociatedRoot } from "./tree/placement.js";
 import { readLiveSubtree } from "./tree/read-subtree.js";
 import { createTreeReader, LIVE_TREE } from "./tree/tree-view.js";
 
@@ -185,10 +185,10 @@ export function createThreadNotesCopy(deps: {
               if (existing.kind !== "not_found") return false;
               const association = await associatedRootForSource(db, destinationId, dir);
               if (!association) throw new Error("Cannot prove copied notes root");
-              // A model/writer root wins even if it arrived after preparation. The live
-              // (source, thread) unique index arbitrates without destination ownership.
-              const rootId = await createLiveAssociatedRoot(db, destinationId, association);
-              if (!rootId) return false;
+              // Ordinary ensure adopts; inheritance never merges into an existing root.
+              const allocated = await allocateLiveAssociatedRoot(db, destinationId, association);
+              if (!allocated.created) return false;
+              const rootId = allocated.id;
               const folders = new Map<FolderId, FolderId>([[cutRoot.id, rootId]]);
               const paths = new Map<FolderId, string>([[cutRoot.id, ""]]);
               for (const folder of cut.folders.slice(1)) {

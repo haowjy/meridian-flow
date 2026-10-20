@@ -105,3 +105,9 @@ Location claims and history use location-only CAS tokens. A move snapshots the
 subtree, checks the final path, handles hidden splits/absorbs, and then records
 history and versions. Apply reveals through placement and never restores a
 removed document (W52); it does not move nodes. Tree code never refreshes the catalog independently of its caller.
+
+`placement.allocateLiveAssociatedRoot` owns proven chat-root allocation and
+location claiming for both ordinary paths and notes inheritance. It returns
+the identity and whether it was created under the caller's namespace guard.
+Ordinary ensure adopts; inheritance skips existing roots. The live unique index
+remains the final invariant, not a second allocation mechanism.

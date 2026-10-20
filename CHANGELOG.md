@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Use one proven chat-root allocator for ordinary Scratch writes and detached notes copies; ordinary writes adopt existing roots while copies leave them untouched.
+
 - Make Markdown and node seeds share initialize-only authority persistence and post-commit delivery, so ordinary and copy readers see the same successfully seeded document.
 
 - Keep fork membership creation independent of optional notes installation, and acquire its lifecycle guard before retaining account locks. Same-namespace writes still serialize with atomic publication.
