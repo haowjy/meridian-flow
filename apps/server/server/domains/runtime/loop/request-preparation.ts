@@ -196,7 +196,7 @@ async function prepareBaseRequest(input: PrepareRequestInput): Promise<PreparedR
       ? {
           kind: "compact" as const,
           trigger: "auto" as const,
-          fitLimitTokens: assembled.compactionTriggerTokens ?? usable,
+          fitLimitTokens: usable,
           knownTooLarge: measure(assembled) >= usable,
         }
       : undefined);

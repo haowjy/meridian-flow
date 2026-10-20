@@ -1,7 +1,7 @@
 /**
  * group-delivery-segments — converts delivery blocks into render segments.
  *
- * Adjacent raw tool protocol blocks are paired into logical ToolViews before
+ * Raw tool protocol blocks are paired across the whole turn before ordered
  * grouping so live (`tool_use` with its result) and durable (`tool_use` +
  * `tool_result`) shapes produce the same delivery segment model before React
  * rendering.
@@ -60,35 +60,24 @@ type ToolFields = {
 
 export function groupDeliverySegments(blocks: Block[]): DeliverySegment[] {
   const segments: DeliverySegment[] = [];
-  let index = 0;
-
-  while (index < blocks.length) {
-    const block = blocks[index];
-    if (!block) break;
-
+  const views = pairToolViews(blocks);
+  let run: ToolView[] = [];
+  const flush = () => {
+    const only = run[0];
+    if (run.length === 1 && only) segments.push({ kind: "tool", tool: only });
+    else if (run.length > 1) segments.push({ kind: "tool-run", tools: run });
+    run = [];
+  };
+  for (const block of blocks) {
     if (!isToolDeliveryBlock(block) || isImageBlock(block)) {
+      flush();
       segments.push({ kind: "block", block });
-      index += 1;
-      continue;
-    }
-
-    const run: Block[] = [];
-    while (index < blocks.length) {
-      const next = blocks[index];
-      if (!next || !isToolDeliveryBlock(next) || isImageBlock(next)) break;
-      run.push(next);
-      index += 1;
-    }
-
-    const tools = pairToolViews(run);
-    if (tools.length === 1) {
-      const only = tools[0];
-      if (only) segments.push({ kind: "tool", tool: only });
-    } else if (tools.length > 1) {
-      segments.push({ kind: "tool-run", tools });
+    } else {
+      const view = views.get(block);
+      if (view) run.push(view);
     }
   }
-
+  flush();
   return segments;
 }
 
@@ -109,7 +98,7 @@ function toToolView(block: Block): ToolView {
   };
 }
 
-function pairToolViews(blocks: Block[]): ToolView[] {
+function pairToolViews(blocks: Block[]): Map<Block, ToolView> {
   const viewsByUseBlock = new Map<Block, ToolView>();
   const firstViewByToolCallId = new Map<string, ToolView>();
   const pairedResults = new Set<Block>();
@@ -143,19 +132,12 @@ function pairToolViews(blocks: Block[]): ToolView[] {
     pairedResults.add(block);
   });
 
-  const toolViews: ToolView[] = [];
   for (const block of blocks) {
-    if (block.blockType === "tool_use") {
-      const view = viewsByUseBlock.get(block);
-      if (view) toolViews.push(view);
-      continue;
-    }
     if (block.blockType === "tool_result" && !pairedResults.has(block)) {
-      toolViews.push(toolResultOnlyView(block));
+      viewsByUseBlock.set(block, toolResultOnlyView(block));
     }
   }
-
-  return toolViews;
+  return viewsByUseBlock;
 }
 
 function mergeToolResult(view: ToolView, resultBlock: Block): void {
@@ -170,6 +152,19 @@ function mergeToolResult(view: ToolView, resultBlock: Block): void {
     view.streamedOutput = fields.streamedOutput;
   }
   if (fields.metadata) view.metadata = fields.metadata;
+  // Process folds can be partitioned by intervening prose. Carry the paired
+  // result on the use so later per-fold grouping cannot lose its outcome.
+  view.keyBlock = {
+    ...view.keyBlock,
+    status: "complete",
+    content: {
+      ...blockContentRecord(view.keyBlock),
+      result: view.result,
+      isError: view.isError,
+      streamedOutput: view.streamedOutput,
+      metadata: view.metadata,
+    },
+  };
 }
 
 function toolResultOnlyView(block: Block): ToolView {

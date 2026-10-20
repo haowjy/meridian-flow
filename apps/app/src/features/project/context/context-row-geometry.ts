@@ -26,5 +26,3 @@ export function contextTreeFileRowClassName(active: boolean): string {
 
 export const contextTreeOverflowTriggerClassName =
   "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:size-11 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:size-11 [@media(pointer:coarse)]:opacity-100";
-
-export const mobileContextTreeOverflowTriggerClassName = "size-11 opacity-100";
