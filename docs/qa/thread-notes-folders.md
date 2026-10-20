@@ -247,6 +247,14 @@ UUIDs and retain each request body unchanged for replay:
     Under Nitro dev, exercise the API worker's registered shutdown handler
     (not only the supervisor process) to prove prompt abort before the copy
     deadline; verify that no copy transaction remains active.
+    Pause only the copied `plan` INSERT for 40 seconds. While it is blocked,
+    create another fork in the same Work and make an authenticated request:
+    both return without waiting for installation. Inspect `pg_stat_activity`:
+    no creation-held user/FK lock amplifies the copy wait into authentication.
+    A first model write in that namespace may wait; after the 12-second copy
+    rollback it creates its own root and text, without copied partial content.
+    With an explicit Work lifecycle `FOR UPDATE` blocker instead, creation
+    waits before its counter/thread INSERT, not while retaining account locks.
     Repeat with a 40-second INSERT delay and a deferred COMMIT trigger:
     native cancellation drains rollback before the detached task settles.
     Exercise tracked/binary reads and failed-object cleanup with the same

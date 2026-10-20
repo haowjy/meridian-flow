@@ -28,8 +28,10 @@ The root cannot be renamed or moved. Contents can; root deletion is allowed.
 ## Rules that change behavior
 
 - Routes and tools ask file policy before calling this domain. Storage
-  transactions begin with `lockSeamWorks`, then namespace/source locks; lifecycle
-  loss is reported as `context_unavailable`.
+  transactions begin with Work lifecycle-stability guards and edit confirmation,
+  then namespace/source locks; lifecycle loss is `context_unavailable`. Stability
+  uses `FOR KEY SHARE`, while lifecycle transitions take `FOR UPDATE`; activity
+  and projection updates keep their separate `FOR NO KEY UPDATE` serialization.
 - Capabilities are declared in `ports/context-adapter.ts`. Uploads authority stays
   separate from `UploadIntake`; uploads are flat while Scratch accepts nested
   intake paths.
