@@ -939,12 +939,13 @@ restart smoke check.
   4. In a fresh thread read a document larger than half the available headroom,
      plus four small documents. List the oversized document first, then the
      small documents. Compact and continue. The large document is skipped
-     whole, the small documents appear in listed order, and the server's
-     `## Documents not re-shown` section names the large URI. The successor's
-     `tokensAfter` is below the trigger. Expand the compaction divider in the
-     browser and check that the same omission note is visible.
+     whole, the small documents appear in listed order, and the stored
+     summary's `## Documents to keep open` names only the small URIs. The
+     successor's `tokensAfter` is below the trigger. Expand the compaction
+     divider in the browser: the Documents group shows exactly those small
+     documents, and the large one has no row.
   5. For a genuinely spent budget, use enough fitting documents to consume all
-     available room after the reserved note. The picker must stop reading
+     available room after the reserved list. The picker must stop reading
      further candidates once remaining room reaches zero (not read every
      candidate merely because the list is now unbounded). To hit exact zero
      cheaply, invoke the picker in a throwaway script with 1,000 candidates and

@@ -62,20 +62,22 @@ The full text is selected greedily in that order, within
 half the headroom between the measured compacted base and the auto-compaction
 trigger, less estimator slack, of rendered text using the successor model's tokenizer and shared part estimator,
 including the exact projected heading plus read. Before admitting documents,
-the picker reserves the worst-case omission note (every candidate omitted),
+the picker reserves the longest list it can write (every candidate named),
 priced with that same estimator and tokenizer. Each admitted document only
-shrinks the note. The 1,000-token margin is estimator slack only. When the base
-and mandatory note already exhaust trigger headroom, no document is admitted,
-but the note still names every omission; this base can remain over the trigger. A document whose full text
-exceeds what is left is skipped, never truncated (a truncated copy would be a partial read with its
-own listing). There is no count cap or fixed token budget. Without a trigger there is no
-limit. Reads stop as soon as the remaining room is spent; oversized documents
-are skipped so later smaller candidates can still fit. Candidates that do not fit or cannot be read are
-named in a trailing summary section as not re-shown, with an instruction to
-read them again before writing in them. That note is visible in the writer's
-compaction divider too. Its URI list is deduplicated. The server regenerates
-this note from the current preparation attempt only, replacing any old note
-the summarizer carried forward.
+shortens that list. The 1,000-token margin is estimator slack only. When the base
+and the reserved list already exhaust trigger headroom, no document is admitted
+and the list is empty; this base can remain over the trigger. A document whose
+full text exceeds what is left is skipped, never truncated (a truncated copy
+would be a partial read with its own listing). There is no count cap or fixed
+token budget. Without a trigger there is no limit. Reads stop as soon as the
+remaining room is spent; oversized documents are skipped so later smaller
+candidates can still fit.
+
+The summary's `## Documents to keep open` section is written from the admitted
+reads, in read order, replacing whatever the summarizer listed. The list and the
+blocks therefore cannot disagree: a candidate that did not fit, could not be
+read, or was never shown is simply absent, and no omission note is written for
+the model or the writer.
 
 Each is read in full through the reference reader (`readDocument`, an
 omitted-version read, so a draft-mode thread gets its Work draft and auto-apply
