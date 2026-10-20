@@ -3,6 +3,21 @@
 Reference detail for Context-tree interactions. Read [CONTEXT.md](CONTEXT.md)
 for feature-level contracts first.
 
+## Shared nested rows
+
+Work Files, the context sidebar, and the phone browser render ordinary nested
+folders through `TreeChildren`/`ContextTreeEntry`. Search supplies visible ids
+with ancestor closure, not a filtered catalog: rename and move collision checks
+always see all siblings. Search disclosure is temporary; it never overwrites
+the normal expansion state. A newly created Work note stays visible for naming
+even when its name does not match the search.
+
+The chat Files menu combines this same shared Scratch browser with chat-owned
+uploads. Scratch queries wait for resolved Work/lineage authority; an unresolved
+owner never falls back to a project-wide query. There are no thread folders or
+folder-to-chat actions. The sidebar and Files menu use `ChatScratchTree`,
+including its read-only Earlier notes navigation and per-owner capabilities.
+
 ## Inline name form semantics
 
 Create and rename adapt `useInlineEdit` (`components/ui/use-inline-edit.ts`),

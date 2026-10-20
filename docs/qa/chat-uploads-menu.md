@@ -1,24 +1,24 @@
-# Chat uploads menu
+# Chat Files menu
 
-The dropdown in the chat's top bar lists the files attached in this chat. Use the
+The Files dropdown combines shared Scratch and files attached in this chat. Use the
 lane's `pnpm dev` stack and URLs from `pnpm portless:list`; sign in with
 dev-login. Drive it with `agent-browser` under one session name. Attach through
 the composer's Attach file input (`agent-browser upload`), since the files must
 come in through the real intake.
 
 1. In a New chat, attach `outline.txt` and send. The chat's top bar now shows a
-   paperclip and "1 file" beside the subagents control. A chat with no files
-   shows no control.
-2. Attach two more files without sending. The trigger reads "3 files". Open it
-   (Enter or Space on the trigger): rows are newest first, each with the name, the
+   Files control beside the subagents control. A materialized chat with no uploads
+   still offers Files for its Scratch.
+2. Attach two more files without sending. The trigger stays "Files". Open it
+   (Enter or Space on the trigger): the Uploads section has newest-first rows, each with the name, the
    type ("PDF", "Markdown") and when it was attached ("2 min ago") on separate
    lines. The file the sent message used has no delete action.
 3. Arrow Down and Up move between rows, Arrow Right reaches a row's actions,
    Escape closes the menu and focus returns to the trigger.
 4. Click a row: the menu closes, the same chip the `@` picker inserts lands in the
    composer, and the caret is in the composer.
-5. Delete an unused file: its row goes at once, the trigger count drops, and its
-   chip leaves the composer. Reload: the count stays. Intercept the DELETE with
+5. Delete an unused file: its row goes at once, and its
+   chip leaves the composer. Reload: it stays deleted. Intercept the DELETE with
    `agent-browser network route "**/context/uploads/upload*" --body '{"kind":"already_used"}'`
    and delete another: the row returns without its delete action and with no message.
    Measure the menu content's height (`getBoundingClientRect().height`) before and
@@ -33,7 +33,8 @@ come in through the real intake.
    created with its first attachment. On the Work and Editor screens, where the chat is
    the dock, rows offer no Open, and the sent message's attachment is not a link: those
    screens have no viewer ([#884](https://github.com/haowjy/meridian-flow/issues/884)).
-7. Open a second chat in the same Work: no trigger. Fork the first chat: the fork's
+7. Open a second chat in the same Work: Files shows the same shared Scratch and
+   no uploads from the first chat. Fork the first chat: the fork's
    trigger reads "Files" and its menu says "No files attached in this chat yet."
    under "Continues from <source title>". The link opens the source chat.
 8. Narrow the viewport to 390 px and set `data-ui-theme="dark"` on the root: the
@@ -53,3 +54,27 @@ host the same way.
 two hidden file inputs (the dock editor's figure input and the composer's), and the first
 match may attach to another chat's composer draft. Upload with the ref of the composer's
 "Choose File" button, one file per call.
+
+## Shared Scratch and nested trees
+
+Seed a Work note at `scratch://notes/research/timing` through `./mf doc put`
+with that Work selected. Open Work Files, expand both folders, then open the
+same Work chat's Files menu and sidebar Scratch. All three show the actual
+`notes → research → timing` tree, with matching guide lines and folder actions.
+Use the phone coarse-pointer setup above to verify Work Files, the chat drawer,
+and Editor's nested project tree. Folder disclosure expands in place; opening a
+file navigates. There are no thread-folder badges or Open chat actions.
+
+Search Work Files for `timing`: both ancestors remain visible. Collapse/reopen a
+search result, clear the query, and confirm normal saved expansion is unchanged.
+Rename to an existing *filtered-out* sibling: collision validation still refuses.
+Search for a nonmatching name, click New note, and name the new note in place;
+its pending/error row and rename field must remain visible during the search.
+
+Rename, move and delete a note from each surface, reload, and compare the other
+surfaces. An archived Work permits browsing but offers no mutation actions.
+A failed refresh keeps already loaded rows, with Retry below them. Before chat
+ownership resolves, the menu must not fetch a global Scratch catalog. Two No Work
+lineages show different Scratch; forks/subagents retain their lineage's Scratch,
+and an actual handoff starts fresh. Rebinding changes the source, never copies
+notes. Uploads remain attached to their source primary chat throughout.

@@ -21,6 +21,7 @@ import { type CSSProperties, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
   DeleteConfirmationDialog,
   type DeleteTarget,
@@ -44,12 +45,7 @@ import { useChatScratchSource } from "./use-chat-scratch-source";
 
 function useChatScratch(projectId: string, threadId: string | null) {
   const scratch = useChatScratchSource(projectId, threadId);
-  const source = useCatalogMenuSource({
-    projectId,
-    owner: scratch?.owner ?? {},
-    earlierRootThreadId: scratch?.earlierRootThreadId,
-    heading: scratch?.heading ?? schemeLabel("scratch"),
-  });
+  const source = useCatalogMenuSource(projectId, scratch);
   const openNote = useOpenScratchNote();
   if (!scratch) return null;
   return {
@@ -94,46 +90,13 @@ export function RailScratchSection({
   /** Desktop only: a handle on the divider above the expanded section resizes it. */
   resizable?: boolean;
 }) {
-  const scratch = useChatScratch(projectId, threadId);
-  const openId = useOpenDocumentId(projectId, editorWorkId);
+  const scratch = useChatScratchSource(projectId, threadId);
   const expanded = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchExpanded);
   const height = useProjectSurfacePrefsStore((state) => state.railPrefs.scratchHeight);
   const setExpanded = useProjectSurfacePrefsStore((state) => state.setRailExpanded);
   const setHeight = useProjectSurfacePrefsStore((state) => state.setScratchHeight);
   const sectionRef = useRef<HTMLElement | null>(null);
-  const deletion = useDeleteConfirmation({ projectId });
-  const { works, noWork } = useWorks(projectId);
-  const capabilitiesByOwner = new Map<string, EntryCapabilities>();
-  const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {
-    const key = owner.rootThreadId ? `lineage:${owner.rootThreadId}` : `work:${owner.workId ?? ""}`;
-    const cached = capabilitiesByOwner.get(key);
-    if (cached) return cached;
-    const work =
-      owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
-    const actions: EntryCapabilities =
-      !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
-    capabilitiesByOwner.set(key, actions);
-    return actions;
-  };
-  const folderIds = useMemo(
-    () =>
-      scratch?.source.ready
-        ? treeFolderIds((parent) =>
-            scratch.source.tree
-              .children(parent)
-              .filter((node) => node.folder)
-              .map((node) => node.id),
-          )
-        : null,
-    [scratch?.source.ready, scratch?.source.tree],
-  );
-  const { isExpanded, toggleEntry } = useTreeExpansion(
-    projectId,
-    `chat-scratch:${scratch?.scope ?? "none"}`,
-    folderIds,
-  );
   if (!scratch) return null;
-  const { tree } = scratch.source;
   const changeExpanded = (next: boolean) => {
     setExpanded("scratch", next);
   };
@@ -182,29 +145,96 @@ export function RailScratchSection({
       <RailPaneHeader
         label={schemeLabel("scratch")}
         icon={schemeIcon("scratch")}
-        title={tree.heading}
-        ariaLabel={tree.heading}
+        title={scratch.heading}
+        ariaLabel={scratch.heading}
         expanded={expanded}
         onExpandedChange={changeExpanded}
       />
       {expanded ? (
         <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
-          <ScratchRows
+          <ChatScratchTree
             projectId={projectId}
-            onRequestDelete={deletion.requestDelete}
-            capabilitiesFor={capabilitiesFor}
-            source={scratch.source}
-            tree={tree}
-            folderId={null}
-            depth={1}
-            openId={openId}
-            isExpanded={isExpanded}
-            onToggle={toggleEntry}
-            onPick={(node) => {
-              if (scratch.pick(node)) onPicked?.();
-            }}
+            threadId={threadId}
+            editorWorkId={editorWorkId}
+            onPicked={onPicked}
           />
         </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Shared Scratch browser for the rail, phone drawer and chat Files menu. */
+export function ChatScratchTree({
+  projectId,
+  threadId,
+  editorWorkId = null,
+  onPicked,
+}: {
+  projectId: string;
+  threadId: string | null;
+  editorWorkId?: string | null;
+  onPicked?: () => void;
+}) {
+  const scratch = useChatScratch(projectId, threadId);
+  const openId = useOpenDocumentId(projectId, editorWorkId);
+  const deletion = useDeleteConfirmation({ projectId });
+  const { works, noWork } = useWorks(projectId);
+  const capabilitiesByOwner = new Map<string, EntryCapabilities>();
+  const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {
+    const key = owner.rootThreadId ? `lineage:${owner.rootThreadId}` : `work:${owner.workId ?? ""}`;
+    const cached = capabilitiesByOwner.get(key);
+    if (cached) return cached;
+    const work =
+      owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
+    const actions: EntryCapabilities =
+      !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
+    capabilitiesByOwner.set(key, actions);
+    return actions;
+  };
+  const folderIds = useMemo(
+    () =>
+      scratch?.source.ready
+        ? treeFolderIds((parent) =>
+            scratch.source.tree
+              .children(parent)
+              .filter((node) => node.folder)
+              .map((node) => node.id),
+          )
+        : null,
+    [scratch?.source.ready, scratch?.source.tree],
+  );
+  const { isExpanded, toggleEntry } = useTreeExpansion(
+    projectId,
+    `chat-scratch:${scratch?.scope ?? "none"}`,
+    folderIds,
+  );
+  if (!scratch) return <div aria-busy className="min-h-8" />;
+  const { tree } = scratch.source;
+  const hasRows = tree.children(null).length > 0;
+  return (
+    <>
+      {hasRows || scratch.source.ready ? (
+        <ScratchRows
+          projectId={projectId}
+          source={scratch.source}
+          tree={tree}
+          folderId={null}
+          depth={1}
+          openId={openId}
+          isExpanded={isExpanded}
+          onToggle={toggleEntry}
+          capabilitiesFor={capabilitiesFor}
+          onRequestDelete={deletion.requestDelete}
+          onPick={(node) => {
+            if (scratch.pick(node)) onPicked?.();
+          }}
+        />
+      ) : !scratch.source.isError ? (
+        <div aria-busy className="min-h-8" />
+      ) : null}
+      {scratch.source.isError ? (
+        <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.source.refetch} />
       ) : null}
       <DeleteConfirmationDialog
         target={deletion.target}
@@ -213,7 +243,7 @@ export function RailScratchSection({
         onCancel={deletion.cancel}
         onConfirm={() => void deletion.confirm()}
       />
-    </section>
+    </>
   );
 }
 

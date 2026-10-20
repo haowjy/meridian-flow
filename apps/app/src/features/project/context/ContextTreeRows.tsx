@@ -49,6 +49,8 @@ export type TreeEnv = {
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
+  visibleIds?: ReadonlySet<string>;
+  rename?: { path: string; done: () => void };
 };
 
 const TreeEnvContext = createContext<TreeEnv | null>(null);
@@ -86,13 +88,15 @@ export function TreeChildren({
           siblings={siblings}
         />
       ) : null}
-      {children.map((child) =>
-        child.kind === "dir" ? (
-          <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
-        ) : (
-          <FileRow key={child.entryId} file={child} depth={depth} siblings={siblings} />
-        ),
-      )}
+      {children
+        .filter((child) => !env.visibleIds || env.visibleIds.has(child.entryId))
+        .map((child) =>
+          child.kind === "dir" ? (
+            <DirRow key={child.entryId} dir={child} depth={depth} siblings={siblings} />
+          ) : (
+            <FileRow key={child.entryId} file={child} depth={depth} siblings={siblings} />
+          ),
+        )}
     </>
   );
 }
@@ -215,7 +219,14 @@ function DirRow({
         </div>
       </EntryInteractionShell>
       {isOpen ? (
-        <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
+        <div className="relative">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 border-l border-border-subtle"
+            style={{ left: rowPaddingLeft(depth) + 16 }}
+          />
+          <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
+        </div>
       ) : null}
     </>
   );
@@ -234,6 +245,8 @@ function FileRow({
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
+    requestRename: env.rename?.path === file.path,
+    onRenameDone: env.rename?.done,
     owner: env.owner,
     scheme: env.scheme,
     capabilities: env.capabilities,

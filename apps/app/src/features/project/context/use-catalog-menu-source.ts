@@ -31,7 +31,7 @@ import {
   menuTabFor,
 } from "./menu-tree";
 
-const NO_NOTES = () => t`No notes yet. The AI keeps its notes for this chat here.`;
+const NO_NOTES = () => t`No scratch notes yet.`;
 
 export type CatalogMenuSource = {
   entryFor(
@@ -40,6 +40,8 @@ export type CatalogMenuSource = {
   tree: DrillTree;
   /** All listed catalogs have resolved; only then may the rail prune stale folders. */
   ready: boolean;
+  isError: boolean;
+  refetch: () => void;
   /** The tab a picked note opens as. */
   tabFor(rowId: string): ServerContextTab | null;
 };
@@ -56,7 +58,7 @@ function useScratchArea(
   projectId: string,
   source: ScratchSource | null,
   { listed, id }: { listed: boolean; id: string },
-): (MenuArea & { complete: boolean }) | null {
+): (MenuArea & { complete: boolean; isError: boolean; refetch: () => void }) | null {
   const primary = useContextCatalogView(projectId, "scratch", {
     ...(source?.owner ?? {}),
     enabled: source !== null,
@@ -77,33 +79,38 @@ function useScratchArea(
             icon: schemeIcon("scratch"),
             catalog: primary.catalog,
             complete: primary.isComplete && (!source.earlierRootThreadId || earlier.isComplete),
+            isError: primary.isError || (Boolean(source.earlierRootThreadId) && earlier.isError),
+            refetch: () => {
+              void primary.refetch();
+              if (source.earlierRootThreadId) void earlier.refetch();
+            },
             listed,
             earlier: source.earlierRootThreadId
               ? { catalog: earlier.catalog, rootThreadId: source.earlierRootThreadId }
               : undefined,
           }
         : null,
-    [earlier.catalog, earlier.isComplete, id, listed, primary.catalog, primary.isComplete, source],
+    [
+      earlier.catalog,
+      earlier.isComplete,
+      earlier.isError,
+      earlier.refetch,
+      id,
+      listed,
+      primary.catalog,
+      primary.isComplete,
+      primary.isError,
+      primary.refetch,
+      source,
+    ],
   );
 }
 
-export function useCatalogMenuSource({
-  projectId,
-  owner,
-  earlierRootThreadId,
-  heading,
-}: {
-  projectId: string;
-  /** Whose Scratch the section lists. */
-  owner: ContextOwner;
-  /** A lineage whose notes stay listed under "Earlier notes" while `owner` is a Work. */
-  earlierRootThreadId?: string | null;
-  heading: string;
-}): CatalogMenuSource {
-  const scratch = useMemo(
-    () => ({ owner, heading, earlierRootThreadId }),
-    [owner, heading, earlierRootThreadId],
-  );
+export function useCatalogMenuSource(
+  projectId: string,
+  scratch: ScratchSource | null,
+): CatalogMenuSource {
+  const heading = scratch?.heading ?? schemeLabel("scratch");
   const area = useScratchArea(projectId, scratch, { listed: true, id: "scratch" });
   const areas = useMemo(() => (area ? [area] : []), [area]);
   const tree = useMemo(
@@ -113,6 +120,8 @@ export function useCatalogMenuSource({
   return {
     tree,
     ready: area?.complete ?? false,
+    isError: area?.isError ?? false,
+    refetch: () => area?.refetch(),
     tabFor: (rowId) => menuTabFor(areas, rowId),
     entryFor: (rowId) => {
       const catalogs = area

@@ -56,6 +56,11 @@ and says what it left out. The decision and its rejected alternatives are in the
 Turn-metadata readers (compaction, handoff seed, thread references) live in
 `@meridian/contracts/threads` because they mirror the server's metadata codecs.
 
+Pre-compaction held results use the shared contracts discriminator
+`isNotesStepHeldResult`. They remain visible neutral tool rows, even for tools
+whose successful invocation normally becomes a custom card or child report.
+They contribute neither a successful receipt nor a child `return_result`.
+
 ## Message documents
 
 Non-editor callers use `buildMessageDoc`: skills, prose and references are inline
