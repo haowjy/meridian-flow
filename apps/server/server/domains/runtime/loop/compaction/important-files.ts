@@ -12,6 +12,7 @@ export const KEEP_OPEN_INSTRUCTION_LINES = [
   "End the summary with this section: one context URI per line, most important first.",
   "List only documents this conversation showed that are most important to read again in full. Leave the section empty if none apply.",
   "The server replaces this list with the documents it actually re-shows; list what you need.",
+  "",
   "Example:",
   "manuscript://Chapter 1.md",
   "scratch://@/c12/plan.md",
