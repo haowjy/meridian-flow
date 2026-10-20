@@ -203,6 +203,7 @@ function projectActiveHistory(
       const textContent = importantFileText(
         reference.uri,
         referenceReadText(reference.read.result),
+        reference.read.selector,
       );
       return [{ ...block, turnId: synthetic.turn.id, textContent, content: textContent }];
     })
