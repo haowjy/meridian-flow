@@ -1,4 +1,5 @@
 /** The Work Files tab's pure rules: name search, rename siblings, and tree order. */
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextEntrySibling } from "../context/context-entry-name";
 export type WorkFileSearch = (name: string) => boolean;
 
@@ -34,4 +35,21 @@ export function compareTreePlaces(left: TreePlace, right: TreePlace): number {
     return nameA.localeCompare(nameB);
   }
   return a.length - b.length;
+}
+
+/**
+ * A chat's notes folder, not a writer-made folder that happens to read like one:
+ * the entry's address is a thread qualifier root (`scratch://@arc/@/c15`), while
+ * a writer's folder has an ordinary scratch path. Its stored name is the chat's
+ * handle; the title is only the label the server publishes.
+ */
+export function isThreadFolder(folder: { uri: string }): boolean {
+  const parsed = parseContextUri(folder.uri);
+  return parsed.ok && parsed.value.path === "" && Boolean(parsed.value.threadRef);
+}
+
+/** The chat handle a notes folder belongs to, or null for a writer-made folder. */
+export function threadFolderRef(folder: { uri: string }): string | null {
+  const parsed = parseContextUri(folder.uri);
+  return parsed.ok && parsed.value.path === "" ? (parsed.value.threadRef ?? null) : null;
 }

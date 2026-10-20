@@ -6,7 +6,7 @@ import type { ContextEntrySibling } from "../context/context-entry-name";
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Folder, FolderOpen } from "lucide-react";
+import { Folder, FolderOpen, type LucideIcon } from "lucide-react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "../context/ContextEntryActions";
@@ -42,22 +42,29 @@ export function FolderRow({
   folder,
   open,
   onToggle,
+  icon,
+  onOpenChat,
   ...management
 }: ScratchRowManagement & {
   folder: CatalogDirectory;
   open: boolean;
   onToggle: () => void;
+  /** A chat's notes folder wears the chat mark, not the generic folder. */
+  icon?: LucideIcon;
+  onOpenChat?: () => void;
 }) {
   const interaction = useEntryInteraction({
     ...management,
     node: folder,
     owner: { workId: management.workId },
     scheme: "scratch",
+    onOpenChat,
   });
+  const Icon = icon ?? (open ? FolderOpen : Folder);
   if (interaction.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
-        <RowIcon icon={open ? FolderOpen : Folder} />
+        <RowIcon icon={Icon} />
         <InlineRename options={interaction.rename} />
       </div>
     );
@@ -70,7 +77,7 @@ export function FolderRow({
           aria-expanded={open}
           onClick={onToggle}
         >
-          <RowIcon icon={open ? FolderOpen : Folder} />
+          <RowIcon icon={Icon} />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{folder.name}</span>
             <LinkUpdateNote

@@ -9,16 +9,18 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { FilePlus } from "lucide-react";
+import { FilePlus, MessagesSquare } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { CatalogDirectory } from "@/client/query/context-catalog-projection";
+import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
 import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { useTreeExpansion } from "../context/use-tree-expansion";
 import { RuledList, type RuledRow } from "../RuledList";
+import { useChatNavigation } from "../routing/chat-navigation";
 import { useWorkNoteIntake } from "./use-work-note-intake";
 import { WorkChanges } from "./WorkChanges";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
@@ -26,7 +28,9 @@ import { FolderRow, NoteAttemptRow, ScratchFileRow } from "./WorkFileRows";
 import {
   catalogSiblings,
   compareTreePlaces,
+  isThreadFolder,
   type TreePlace,
+  threadFolderRef,
   workFileSearch,
 } from "./work-files-model";
 
@@ -85,6 +89,13 @@ export function WorkFilesView({
 }) {
   const { scratch, intake } = files;
   const scratchDelete = useDeleteConfirmation({ projectId });
+  const { threads } = useProjectThreads(projectId);
+  const { openChat } = useChatNavigation();
+  const threadIdByRef = useMemo(
+    () =>
+      new Map((threads ?? []).flatMap((thread) => (thread.ref ? [[thread.ref, thread.id]] : []))),
+    [threads],
+  );
   const scratchRoot = scratch.catalog?.root.entryId;
   const scratchFolders =
     scratch.catalog && scratchRoot
@@ -121,35 +132,55 @@ export function WorkFilesView({
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
 
+  // A chat's notes folder is an ordinary folder with a title label, so the group it
+  // appears in is decided by its address, not by how its name reads.
+  const threadFolders = scratchFolders.filter(isThreadFolder);
+  const threadPaths = threadFolders.map((folder) => folder.path);
+  const underThread = (file: { path: string }) =>
+    threadPaths.some((path) => file.path.startsWith(`${path}/`));
+  const openChatFor = (folder: CatalogDirectory) => {
+    const ref = threadFolderRef(folder);
+    const threadId = ref ? threadIdByRef.get(ref) : undefined;
+    return threadId ? () => void openChat(threadId) : undefined;
+  };
+  const rowFor = (node: CatalogDirectory | CatalogFile): RuledRow & { place: TreePlace } => ({
+    key: node.entryId,
+    place: { path: node.path, folder: node.kind === "dir" },
+    node:
+      node.kind === "dir" ? (
+        <FolderRow
+          projectId={projectId}
+          workId={work.id}
+          siblings={catalogSiblings(scratch.catalog, node)}
+          capabilities={files.editable ? ["rename", "move", "delete"] : []}
+          onRequestDelete={scratchDelete.requestDelete}
+          folder={node}
+          open={isExpanded(node.entryId)}
+          onToggle={() => toggleEntry(node.entryId)}
+          icon={isThreadFolder(node) ? MessagesSquare : undefined}
+          onOpenChat={openChatFor(node)}
+        />
+      ) : (
+        <ScratchFileRow
+          projectId={projectId}
+          workId={work.id}
+          file={node}
+          siblings={catalogSiblings(scratch.catalog, node)}
+          capabilities={files.editable ? ["rename", "move", "delete"] : []}
+          onRequestDelete={scratchDelete.requestDelete}
+          requestRename={files.renaming === node.path}
+          onRenameDone={() => files.setRenaming(null)}
+        />
+      ),
+  });
+
+  const notesRows = inTreeOrder([
+    ...visible.filter((node) => node.kind === "dir" && isThreadFolder(node)).map(rowFor),
+    ...visible.filter((node) => node.kind === "file" && underThread(node)).map(rowFor),
+  ]);
   const scratchRows = inTreeOrder([
-    ...visible.map((node) => ({
-      key: node.entryId,
-      place: { path: node.path, folder: node.kind === "dir" },
-      node:
-        node.kind === "dir" ? (
-          <FolderRow
-            projectId={projectId}
-            workId={work.id}
-            siblings={catalogSiblings(scratch.catalog, node)}
-            capabilities={files.editable ? ["rename", "move", "delete"] : []}
-            onRequestDelete={scratchDelete.requestDelete}
-            folder={node}
-            open={isExpanded(node.entryId)}
-            onToggle={() => toggleEntry(node.entryId)}
-          />
-        ) : (
-          <ScratchFileRow
-            projectId={projectId}
-            workId={work.id}
-            file={node}
-            siblings={catalogSiblings(scratch.catalog, node)}
-            capabilities={files.editable ? ["rename", "move", "delete"] : []}
-            onRequestDelete={scratchDelete.requestDelete}
-            requestRename={files.renaming === node.path}
-            onRenameDone={() => files.setRenaming(null)}
-          />
-        ),
-    })),
+    ...visible.filter((node) => node.kind === "dir" && !isThreadFolder(node)).map(rowFor),
+    ...visible.filter((node) => node.kind === "file" && !underThread(node)).map(rowFor),
     ...(intake.note
       ? [
           {
@@ -170,23 +201,30 @@ export function WorkFilesView({
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
-      <WorkFileGroup label={t`Scratch`}>
-        {scratch.isError ? (
-          <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
-        ) : !scratch.catalog ? (
-          <WorkFileGroupLoading />
-        ) : scratchRows.length ? (
-          <RuledList className="-mx-2" rows={scratchRows} />
-        ) : (
-          <WorkFileGroupNote>
-            {search ? (
-              <Trans>No scratch notes match “{search}”.</Trans>
-            ) : (
-              <Trans>No scratch notes yet.</Trans>
-            )}
-          </WorkFileGroupNote>
-        )}
-      </WorkFileGroup>
+      {scratchRows.length > 0 || notesRows.length === 0 ? (
+        <WorkFileGroup label={t`Scratch`}>
+          {scratch.isError ? (
+            <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />
+          ) : !scratch.catalog ? (
+            <WorkFileGroupLoading />
+          ) : scratchRows.length ? (
+            <RuledList className="-mx-2" rows={scratchRows} />
+          ) : (
+            <WorkFileGroupNote>
+              {search ? (
+                <Trans>No scratch notes match “{search}”.</Trans>
+              ) : (
+                <Trans>No scratch notes yet.</Trans>
+              )}
+            </WorkFileGroupNote>
+          )}
+        </WorkFileGroup>
+      ) : null}
+      {notesRows.length > 0 ? (
+        <WorkFileGroup label={t`Chat notes`}>
+          <RuledList className="-mx-2" rows={notesRows} />
+        </WorkFileGroup>
+      ) : null}
       <DeleteConfirmationDialog
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}

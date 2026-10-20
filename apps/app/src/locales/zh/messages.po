@@ -237,7 +237,7 @@ msgstr ""
 msgid "{count, plural, one {# document removed} other {# documents removed}}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "{count, plural, one {# file} other {# files}}"
 msgstr ""
 
@@ -600,7 +600,7 @@ msgstr ""
 msgid "Actually…"
 msgstr "其实…"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
 msgstr ""
 
@@ -1011,6 +1011,10 @@ msgstr ""
 msgid "Chat deleted"
 msgstr ""
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Chat notes"
+msgstr ""
+
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -1238,7 +1242,7 @@ msgstr ""
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Continues from <0/>"
 msgstr ""
 
@@ -1421,7 +1425,7 @@ msgstr ""
 msgid "Couldn't delete this entry. Try again."
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
 msgstr ""
 
@@ -1808,7 +1812,7 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Delete {name}"
 msgstr ""
 
@@ -2204,19 +2208,23 @@ msgstr ""
 msgid "File this document"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/PendingDocumentPath.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "Files attached in this chat, {count}"
+#: src/features/chat/ChatFilesMenu.tsx
+#~ msgid "Files attached in this chat, {count}"
+#~ msgstr ""
+
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Files in this chat"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "Files in this chat"
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Files in this chat, {count}"
 msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
@@ -2978,12 +2986,16 @@ msgstr ""
 msgid "No fields required; confirm to continue."
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "No files attached in this chat yet."
-msgstr ""
+#: src/features/chat/ChatFilesMenu.tsx
+#~ msgid "No files attached in this chat yet."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "No files in {containerLabel}."
+msgstr ""
+
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "No files in this chat yet."
 msgstr ""
 
 #: src/core/editor/asset-image-render-state.ts
@@ -3082,6 +3094,10 @@ msgstr ""
 msgid "Notebook"
 msgstr ""
 
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Notes"
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr ""
@@ -3133,7 +3149,9 @@ msgstr ""
 msgid "Open \"{name}\""
 msgstr "打开“{name}”"
 
+#. placeholder {0}: note.label
 #. placeholder {0}: work.name
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/work/WorkRow.tsx
 msgid "Open {0}"
 msgstr ""
@@ -3150,7 +3168,7 @@ msgstr ""
 msgid "Open {0} at this passage. {1}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Open {name}"
 msgstr ""
 
@@ -3168,6 +3186,7 @@ msgstr ""
 msgid "Open a Work to create an Untitled document"
 msgstr ""
 
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Open chat"
 msgstr ""
@@ -4361,7 +4380,7 @@ msgstr ""
 msgid "The server couldn't do that. Try again."
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr ""
@@ -4998,6 +5017,7 @@ msgstr ""
 msgid "Uploading elsewhere…"
 msgstr ""
 
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr ""

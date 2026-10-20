@@ -237,7 +237,7 @@ msgstr "{count, plural, one {# document discarded} other {# documents discarded}
 msgid "{count, plural, one {# document removed} other {# documents removed}}"
 msgstr "{count, plural, one {# document removed} other {# documents removed}}"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "{count, plural, one {# file} other {# files}}"
 msgstr "{count, plural, one {# file} other {# files}}"
 
@@ -600,7 +600,7 @@ msgstr "Active Work"
 msgid "Actually…"
 msgstr "Actually…"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
 msgstr "Add {name} to your message"
 
@@ -1011,6 +1011,10 @@ msgstr "Chat context"
 msgid "Chat deleted"
 msgstr "Chat deleted"
 
+#: src/features/project/work/WorkFilesView.tsx
+msgid "Chat notes"
+msgstr "Chat notes"
+
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -1238,7 +1242,7 @@ msgstr "Confirming your purchase…"
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr "Connection lost. Retrying… attempt {0}"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Continues from <0/>"
 msgstr "Continues from <0/>"
 
@@ -1421,7 +1425,7 @@ msgstr "Couldn't delete this document. Try again."
 msgid "Couldn't delete this entry. Try again."
 msgstr "Couldn't delete this entry. Try again."
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
 msgstr "Couldn’t delete this file. Try again."
 
@@ -1808,7 +1812,7 @@ msgstr "Default alignment"
 msgid "Delete"
 msgstr "Delete"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Delete {name}"
 msgstr "Delete {name}"
 
@@ -2204,20 +2208,24 @@ msgstr "File suggestions"
 msgid "File this document"
 msgstr "File this document"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/PendingDocumentPath.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr "Files"
 
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "Files attached in this chat, {count}"
-msgstr "Files attached in this chat, {count}"
+#: src/features/chat/ChatFilesMenu.tsx
+#~ msgid "Files attached in this chat, {count}"
+#~ msgstr "Files attached in this chat, {count}"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Files in this chat"
 msgstr "Files in this chat"
+
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Files in this chat, {count}"
+msgstr "Files in this chat, {count}"
 
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
@@ -2978,13 +2986,17 @@ msgstr "No favorite chats yet."
 msgid "No fields required; confirm to continue."
 msgstr "No fields required; confirm to continue."
 
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "No files attached in this chat yet."
-msgstr "No files attached in this chat yet."
+#: src/features/chat/ChatFilesMenu.tsx
+#~ msgid "No files attached in this chat yet."
+#~ msgstr "No files attached in this chat yet."
 
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "No files in {containerLabel}."
 msgstr "No files in {containerLabel}."
+
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "No files in this chat yet."
+msgstr "No files in this chat yet."
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "No image has been uploaded to {path} yet."
@@ -3082,6 +3094,10 @@ msgstr "Not saved yet (keep this tab open until you're back online)"
 msgid "Notebook"
 msgstr "Notebook"
 
+#: src/features/chat/ChatFilesMenu.tsx
+msgid "Notes"
+msgstr "Notes"
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
@@ -3133,7 +3149,9 @@ msgstr "Open"
 msgid "Open \"{name}\""
 msgstr "Open \"{name}\""
 
+#. placeholder {0}: note.label
 #. placeholder {0}: work.name
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/work/WorkRow.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
@@ -3150,7 +3168,7 @@ msgstr "Open {0} ({1})"
 msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
 
@@ -3168,6 +3186,7 @@ msgstr "Open a document from the project tree, or start a new one."
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
 
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Open chat"
 msgstr "Open chat"
@@ -4361,7 +4380,7 @@ msgstr "The requested passage wasn't specific enough."
 msgid "The server couldn't do that. Try again."
 msgstr "The server couldn't do that. Try again."
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr "the source chat"
@@ -4998,6 +5017,7 @@ msgstr "Uploading {0}…"
 msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr "Uploads"

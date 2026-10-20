@@ -13,7 +13,10 @@ import { useRenameOperation } from "./LinkUpdateNote";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
 import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
-export type EntryCapabilities = readonly Exclude<EntryAction, "new-file" | "new-folder">[];
+export type EntryCapabilities = readonly Exclude<
+  EntryAction,
+  "new-file" | "new-folder" | "open-chat"
+>[];
 export type EntryCreation = (kind: ContextCreateKind, parentPath: string) => void;
 
 export function entryActions(
@@ -34,6 +37,7 @@ export function useEntryInteraction({
   siblings,
   requestRename,
   onRenameDone,
+  onOpenChat,
 }: {
   projectId: string;
   node: CatalogNode;
@@ -46,6 +50,8 @@ export function useEntryInteraction({
   /** Creation may ask an arriving row to open its naming field. */
   requestRename?: boolean;
   onRenameDone?: () => void;
+  /** A chat's notes folder can take the writer to the chat that owns it. */
+  onOpenChat?: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
@@ -65,13 +71,17 @@ export function useEntryInteraction({
   }
   const fixedRoot =
     node.kind === "dir" && parsed.ok && Boolean(parsed.value.threadRef) && !parsed.value.path;
-  const actions = (
+  const actions: EntryAction[] = (
     node.kind === "dir" && node.navigationOnly ? [] : entryActions(capabilities, create)
-  ).filter((action) => !fixedRoot || (action !== "rename" && action !== "move"));
+  )
+    .filter((action) => !fixedRoot || (action !== "rename" && action !== "move"))
+    .filter((action) => action !== "open-chat");
+  if (fixedRoot && onOpenChat) actions.push("open-chat");
   useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
-    if (action === "rename") setRenaming(true);
+    if (action === "open-chat") onOpenChat?.();
+    else if (action === "rename") setRenaming(true);
     else if (action === "move") setMoving(true);
     else if (action === "new-file" || action === "new-folder")
       create?.(

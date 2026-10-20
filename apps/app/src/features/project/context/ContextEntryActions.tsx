@@ -2,7 +2,15 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import {
+  FilePlus,
+  FolderInput,
+  FolderPlus,
+  type LucideIcon,
+  MessagesSquare,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
@@ -33,19 +41,20 @@ import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
-export type EntryAction = "new-file" | "new-folder" | "rename" | "move" | "delete";
+export type EntryAction = "new-file" | "new-folder" | "open-chat" | "rename" | "move" | "delete";
 
 type EntryActionSpec = {
   action: EntryAction;
   label: React.ReactNode;
   icon: LucideIcon;
-  group: "create" | "manage";
+  group: "create" | "navigate" | "manage";
   destructive?: true;
 };
 
 const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
   { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
+  { action: "open-chat", label: <Trans>Open chat</Trans>, icon: MessagesSquare, group: "navigate" },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
   { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
   {
