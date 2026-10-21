@@ -1,4 +1,4 @@
-/** Focused change attribution and Apply/Discard, one row on desktop and phone. Failures stay inline on the acted-on change. */
+/** Focused change attribution and Apply/Discard, one control row on desktop and phone. Failures grow below it. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
@@ -36,12 +36,14 @@ export function ReviewChangeBar({
       data-review-change-bar={change.id}
       className={cn(
         touch
-          ? "flex items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card"
-          : "flex w-full max-w-full items-center gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
+          ? "flex flex-col items-stretch gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card"
+          : "flex w-full max-w-full flex-col items-stretch gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
         className,
       )}
     >
-      <div className={cn("flex min-w-0 flex-1 items-center", touch ? "gap-3 py-0.5" : "gap-x-1.5")}>
+      <div
+        className={cn("flex min-w-0 shrink-0 items-center", touch ? "gap-3 py-0.5" : "gap-x-1.5")}
+      >
         <div className="flex min-w-0 flex-1 items-center">
           <ChangeAuthor
             touch={touch}
@@ -50,35 +52,37 @@ export function ReviewChangeBar({
             className={touch ? "min-h-11" : undefined}
           />
         </div>
-        <span
-          className={
-            touch
-              ? "flex shrink-0 items-center gap-3"
-              : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
-          }
-        >
-          <Button
-            variant="quiet"
-            size="xs"
-            className={touch ? "h-11 px-4 text-sm" : undefined}
-            aria-label={touch ? label : undefined}
-            disabled={disabled}
-            onClick={onDiscard}
+        {!disabled ? (
+          <span
+            className={
+              touch
+                ? "flex shrink-0 items-center gap-3"
+                : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
+            }
           >
-            {touch ? <Trans>Discard</Trans> : label}
-          </Button>
-          <Button
-            size="xs"
-            className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
-            disabled={disabled}
-            onClick={onApply}
-          >
-            <Trans>Apply</Trans>
-          </Button>
-        </span>
+            <Button
+              variant="quiet"
+              size="xs"
+              className={touch ? "h-11 px-4 text-sm" : undefined}
+              aria-label={touch ? label : undefined}
+              disabled={disabled}
+              onClick={onDiscard}
+            >
+              {touch ? <Trans>Discard</Trans> : label}
+            </Button>
+            <Button
+              size="xs"
+              className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+              disabled={disabled}
+              onClick={onApply}
+            >
+              <Trans>Apply</Trans>
+            </Button>
+          </span>
+        ) : null}
       </div>
       {draftFailure ? (
-        <p role="status" className="min-w-0 pr-2 text-meta text-destructive">
+        <p role="status" className="min-w-0 break-words pr-2 text-meta text-destructive">
           <ReviewMessageText failure={draftFailure} />
         </p>
       ) : null}
