@@ -4,8 +4,10 @@ import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { releaseDocumentStorage, tombstoneDocuments } from "../context/tree/node-rows.js";
+import { lockDocuments } from "../context/tree/node-rows.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -18,8 +20,8 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -63,13 +65,13 @@ describe("forward card inverse", () => {
           ),
         ).toMatchObject({ status: "success", phase: "staged" });
       await harness.commit(responseId);
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
+        .from(schema.documentDrafts)
         .where(
           and(
-            eq(schema.documentBranches.documentId, ALPHA_ID),
-            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentDrafts.documentId, ALPHA_ID),
+            eq(schema.documentDrafts.kind, "work_draft"),
           ),
         );
       const original = "Alpha Beta.\n\nBlue.\n";
@@ -79,7 +81,7 @@ describe("forward card inverse", () => {
           : kind === "delete"
             ? "Alpha .\n\n.\n"
             : "Alpha Gamma.\n\nSilver.\n";
-      expect(await view.draftMarkdown(branch.id)).toBe(edited);
+      expect(await view.draftMarkdown(documentDraft.id)).toBe(edited);
       if (placement === "applied")
         expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
       if (placement === "mixed") {
@@ -106,7 +108,9 @@ describe("forward card inverse", () => {
           documents: [
             {
               destination:
-                placement === "applied" ? { kind: "live" } : { kind: "draft", branchId: branch.id },
+                placement === "applied"
+                  ? { kind: "live" }
+                  : { kind: "draft", draftId: documentDraft.id },
             },
           ],
         });
@@ -135,7 +139,7 @@ describe("forward card inverse", () => {
         expect(
           placement === "applied"
             ? await harness.liveMarkdown(ALPHA_ID)
-            : await view.draftMarkdown(branch.id),
+            : await view.draftMarkdown(documentDraft.id),
         ).toBe(direction === "undo" ? original : edited);
         if (placement === "mixed") expect(await harness.liveMarkdown(ALPHA_ID)).toBe(mixedLive);
       }
@@ -237,9 +241,13 @@ it("a tombstoned draft document with released storage does not stop another docu
       ).toMatchObject({ status: "success" });
     await harness.commit(responseId);
     // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
-    await db.transaction(async (tx) => {
-      await tombstoneDocuments(tx as never, [BETA_ID]);
-      await releaseDocumentStorage(tx as never, [BETA_ID]);
+    await runInDrizzleTransaction(db, async () => {
+      await lockDocuments(db, [BETA_ID]);
+      await createTestDocumentRemoval(db).remove({
+        documentIds: [BETA_ID],
+        reason: "discarded",
+        cause: "repair",
+      });
     });
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",
@@ -275,24 +283,24 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed" });
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, branch.state);
+      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.branchCoordinator.commitWriterUpdate({
-        branchId: branch.id,
-        expectedGeneration: branch.generation,
+      await view.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.id,
+        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,
@@ -312,7 +320,7 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "expired", acceptedParts: 0 });
-    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Be!ta.\n\nBlue.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Be!ta.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();

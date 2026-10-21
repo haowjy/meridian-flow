@@ -53,7 +53,7 @@ export type TurnEditsReceiptProps = {
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
-  /** Work receipts carried by this turn's tool results (`turnWorkReceipts`). */
+  /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
@@ -264,7 +264,7 @@ export function TurnEditsReceipt({
               data-turn-draft-outcome
               role="status"
             >
-              <Trans>Undone in your draft. Apply it to change your manuscript.</Trans>
+              <Trans>Undone in your drafts. Apply them to change your manuscript.</Trans>
             </p>
           ) : null}
           {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (
@@ -392,7 +392,7 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "permission_denied":
       return t`This file's Work is archived. Unarchive the Work to reverse this change.`;
     case "internal_error":
-    case "read_required":
+    case "region_changed":
     case "request_failed":
       return reversalRetryCopy(refusal.direction);
     default: {

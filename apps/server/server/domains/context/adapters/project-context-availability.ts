@@ -1,5 +1,7 @@
 /** Drizzle project-final identity lookup and global availability watermarks. */
+
 import { randomUUID } from "node:crypto";
+import type { DocumentId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
   canonicalContextUri,
@@ -37,6 +39,7 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
+import { readRemovalRecords } from "../tree/removal.js";
 import {
   identityDocumentFields,
   identityDocuments,
@@ -465,6 +468,12 @@ export function createDrizzleProjectContextAvailability(
             : [];
           const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
 
+          const removals = await readRemovalRecords(
+            tx,
+            rows
+              .filter((row) => row.document.deletedAt)
+              .map((row) => row.document.id as DocumentId),
+          );
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);
             if (!row) return { kind: "not-visible", documentId, checkedGeneration } as never;
@@ -493,7 +502,14 @@ export function createDrizzleProjectContextAvailability(
               checkedGeneration,
               foldersById,
             });
-            if (classification.kind === "not-visible") {
+            // A discarded creation only answers its removal: one that cannot be placed
+            // (its draft folder went with it) stays not visible, never inconsistent.
+            if (
+              classification.kind === "not-visible" ||
+              (classification.kind === "inconsistent" &&
+                document.deletedAt &&
+                document.deletionReason === "discarded")
+            ) {
               return { kind: "not-visible", documentId, checkedGeneration } as never;
             }
             if (classification.kind === "inconsistent") return indeterminate();
@@ -509,6 +525,7 @@ export function createDrizzleProjectContextAvailability(
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
+                removal: removals.get(documentId as DocumentId),
               };
             }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
@@ -557,6 +574,7 @@ export function createDrizzleProjectContextAvailability(
                 generation,
                 observationVersion: namespaceVersion(scope),
                 lastAuthority: authority,
+                removal: removals.get(documentId as DocumentId),
               } as never;
             }
             try {

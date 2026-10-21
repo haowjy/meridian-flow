@@ -1,4 +1,4 @@
-/** Durable inverse publication to live rooms and review trails. */
+/** Durable inverse delivery to live rooms and review trails. */
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -71,15 +71,15 @@ it("an already-connected live room sees Undo, Redo and immediate rollback withou
     ).toMatchObject({ status: "success", phase: "committed" });
     // Reading the fixture creates an empty default draft. Retire it before observing the no-draft room.
     await db
-      .update(schema.documentBranches)
-      .set({ status: "closed" })
+      .update(schema.documentDrafts)
+      .set({ status: "closed", closedCause: "discarded" })
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
-    expect(await view.branchStore.listActiveWorkDraftBranchIds(ALPHA_ID)).toEqual([]);
+    expect(await view.draftStore.listActiveWorkDraftIds(ALPHA_ID)).toEqual([]);
     expect(prose()).toBe("Alpha Gamma.\n\nBlue.");
     for (const direction of ["undo", "redo"] as const) {
       const broadcasts = view.hocuspocus.broadcasts.length;
@@ -201,16 +201,16 @@ it.each([
       ]),
     );
     if (action === "redo") {
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
+        .from(schema.documentDrafts)
         .where(
           and(
-            eq(schema.documentBranches.documentId, ALPHA_ID),
-            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentDrafts.documentId, ALPHA_ID),
+            eq(schema.documentDrafts.kind, "work_draft"),
           ),
         );
-      expect(await view.draftMarkdown(branch.id)).toBe("Alpha Gamma.\n\nBlue.\n");
+      expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
       expect(await reviewDriver(view.collab.draftReview).applyItem(ALPHA_ID)).toMatchObject({
         status: "applied",

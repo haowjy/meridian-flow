@@ -14,13 +14,14 @@ import type {
   UserId,
 } from "@meridian/contracts";
 import type {
+  DocumentRemovalRecord,
   ReversalOutcome,
   TurnInverseSkip,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
+import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
@@ -42,31 +43,39 @@ export type TurnInverseQuery = {
   turnId?: TurnId;
   responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
   model?: boolean;
-  branchId?: string | null;
+  draftId?: string | null;
   documentIds?: DocumentId[];
 };
 export type InverseDocument = {
   documentId: DocumentId;
   uri: string;
   live: Y.Doc;
+  /** The live room `live` was captured from, by its authority; null when it has none yet. */
+  liveRoom: string | null;
+  /** Removed documents are skipped with the record, never planned against. */
+  removal: DocumentRemovalRecord | null;
   history: StoredInversePart[];
   drafts: ReadonlyMap<
     string,
-    { branch: BranchSnapshot; doc: Y.Doc; name: string; frozen: boolean }
+    { documentDraft: DraftSnapshot; doc: Y.Doc; name: string; frozen: boolean }
   >;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
-  branchId: string | null;
+  draftId: string | null;
   computed: ComputedInverse;
   consumes: string[];
   skips: TurnInverseSkip[];
   heldDraftIds: string[];
 };
 export interface TurnInverseStore {
-  markBlocking(branchIds: string[]): Promise<void>;
-  /** Transition locks, all process locks, Work rows, then admission locks. */
-  withLockedDocuments<T>(
+  markBlocking(draftIds: string[]): Promise<void>;
+  /**
+   * The inverse's attempts: `run` plans on a lock-free capture and commits through `commit`;
+   * a commit that finds the capture moved reruns `run` on a new capture. After the last
+   * attempt `run` sees one more capture on which `commit` throws `ReversalConflictError`.
+   */
+  withCapturedDocuments<T>(
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T>;
@@ -75,7 +84,7 @@ export interface TurnInverseStore {
     kind: "undo" | "redo" | "revert" | "rollback";
     userId?: UserId;
     query: TurnInverseQuery;
-  }): Promise<string[]>;
+  }): Promise<{ handles: string[]; updates: Uint8Array[] }>;
   describePart(
     document: InverseDocument,
     part: StoredInversePart,
@@ -128,19 +137,19 @@ function prepare(
               part.targets.some((target) => accepted.has(partKey(target))),
           );
     const pending = placements.find((part) => part.placement.kind === "pending");
-    let branchId = pending?.placement.kind === "pending" ? pending.placement.branchId : null;
+    let draftId = pending?.placement.kind === "pending" ? pending.placement.draftId : null;
     const context = contexts.get(document.documentId);
     if (!context) throw new Error("Missing document hold context");
     const { views, liveIndex, holds } = context;
     const targetRoots = new Set(targets.flatMap((part) => liveIndex.roots(part.effect)));
-    if (!branchId && direction === "undo") {
+    if (!draftId && direction === "undo") {
       const ownHolders = new Set([...targetRoots].flatMap((root) => [...(holds.get(root) ?? [])]));
-      branchId =
+      draftId =
         targets
-          .flatMap((part) => (part.origin.kind === "pending" ? [part.origin.branchId] : []))
+          .flatMap((part) => (part.origin.kind === "pending" ? [part.origin.draftId] : []))
           .find((id) => ownHolders.has(id)) ?? null;
     }
-    const draft = branchId ? document.drafts.get(branchId) : undefined;
+    const draft = draftId ? document.drafts.get(draftId) : undefined;
     const skips: TurnInverseSkip[] = [];
     const heldDraftIds: string[] = [];
     const selection: InverseSelection[] = [];
@@ -166,8 +175,8 @@ function prepare(
       }
       if (
         part.placement.kind === "pending" &&
-        (part.placement.branchId !== branchId ||
-          draft?.branch.generation !== part.placement.generation)
+        (part.placement.draftId !== draftId ||
+          draft?.documentDraft.generation !== part.placement.generation)
       ) {
         skip(part, "This part is in another draft");
         continue;
@@ -175,7 +184,7 @@ function prepare(
       const holder = liveIndex
         .roots(part.effect)
         .flatMap((root) => [...(holds.get(root) ?? [])])
-        .find((id) => id !== branchId);
+        .find((id) => id !== draftId);
       if (holder) {
         heldDraftIds.push(holder);
         skip(
@@ -186,7 +195,7 @@ function prepare(
       }
       selection.push({ part, direction: direction === "undo" ? "invert" : "reapply" });
     }
-    const computed = (views.get(branchId) ?? liveIndex).compute(selection, {
+    const computed = (views.get(draftId) ?? liveIndex).compute(selection, {
       actionId,
       allocateClient: allocateDocumentClient,
     });
@@ -204,7 +213,7 @@ function prepare(
     }
     return {
       document,
-      branchId,
+      draftId,
       computed,
       consumes: selectedAction ? [selectedAction] : [],
       skips,
@@ -223,7 +232,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ...createModelInversePolicy(store),
     async getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withCapturedDocuments(query, async (documents) => {
         if (!documents.length) return null;
         const contexts = prepareHolds(documents);
         const redo = prepare(store, documents, query, "redo", randomUUID(), contexts);
@@ -255,7 +264,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
         actor: { type: "user"; userId: string } | { type: "agent" };
       },
     ): Promise<ReversalOutcome> {
-      return store.withLockedDocuments(query, async (documents) => {
+      return store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(
           store,
           documents,
@@ -291,8 +300,8 @@ export function createTurnInverseService(store: TurnInverseStore) {
             uri: plan.document.uri,
             ...(plan.computed.edits.length
               ? {
-                  destination: plan.branchId
-                    ? { kind: "draft" as const, branchId: plan.branchId }
+                  destination: plan.draftId
+                    ? { kind: "draft" as const, draftId: plan.draftId }
                     : { kind: "live" as const },
                 }
               : {}),
@@ -313,7 +322,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
         responseIdentity: import("@meridian/contracts").ModelResponseIdentity;
       },
     ): Promise<void> {
-      await store.withLockedDocuments(query, async (documents) => {
+      await store.withCapturedDocuments(query, async (documents) => {
         const plans = prepare(
           store,
           documents,

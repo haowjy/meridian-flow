@@ -66,7 +66,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       },
       // Another process writes the second member's draft after the batch staged it.
       afterDurableCommit: async () => competingWrite?.(),
-      publicationSteps: [
+      applySteps: [
         {
           kind: "test_first_effect",
           async plan() {
@@ -96,11 +96,11 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     const [alpha, beta, gamma] = (await seedBatch(harness)) as [string, string, string];
     // Request order is not document order; items answer in request order.
     const request = [gamma, alpha, beta];
-    const generations = await Promise.all(request.map((id) => harness.branchGeneration(id)));
+    const generations = await Promise.all(request.map((id) => harness.draftGeneration(id)));
     broadcastsBefore = harness.liveRoomBroadcasts().length;
 
     await expect(
-      runInRootDrizzleTransaction(db, () => harness.pushBranches(request, "auto")),
+      runInRootDrizzleTransaction(db, () => harness.pushDrafts(request, "auto")),
     ).rejects.toThrow(/root-owned/);
     expect(await db.select().from(schema.pushLineage)).toEqual([]);
 
@@ -109,13 +109,13 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       competingWrite = undefined;
       await competitor.stageAnotherDestructiveEdit(beta);
     };
-    const result = await harness.pushBranches(request, "auto");
+    const result = await harness.pushDrafts(request, "auto");
 
     expect(result.items).toEqual(
       [GAMMA_ID, ALPHA_ID, BETA_ID].map((documentId, index) =>
         expect.objectContaining({
           status: "pushed",
-          push: expect.objectContaining({ branchId: request[index], documentId }),
+          push: expect.objectContaining({ draftId: request[index], documentId }),
         }),
       ),
     );
@@ -140,14 +140,14 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     for (const documentId of BATCH) {
       await expect(harness.liveMarkdown(documentId)).resolves.toBe("Survivor.\n");
     }
-    // Resetting drained branches belongs to the review step (§2.4), not the raw push.
-    expect(await Promise.all(request.map((id) => harness.branchGeneration(id)))).toEqual(
+    // Resetting drained drafts belongs to the review step (§2.4), not the raw push.
+    expect(await Promise.all(request.map((id) => harness.draftGeneration(id)))).toEqual(
       generations,
     );
     const betaRows = await db
-      .select({ status: schema.branchWriteJournal.status })
-      .from(schema.branchWriteJournal)
-      .where(eq(schema.branchWriteJournal.branchId, beta));
+      .select({ status: schema.draftWriteJournal.status })
+      .from(schema.draftWriteJournal)
+      .where(eq(schema.draftWriteJournal.draftId, beta));
     expect(betaRows.filter(({ status }) => status === "active")).toHaveLength(1);
     competitor.destroyWarmState();
     harness.destroyWarmState();
@@ -170,12 +170,12 @@ describe("durable branch-push settlement oracle (postgres)", () => {
             },
           }),
     });
-    const branchIds = await seedBatch(failing);
+    const draftIds = await seedBatch(failing);
     const liveBefore = await liveDurableState(db, BATCH);
     const markdownBefore = await Promise.all(BATCH.map((id) => failing.liveMarkdown(id)));
     const broadcastsBefore = failing.liveRoomBroadcasts().length;
 
-    await expect(failing.pushBranches(branchIds)).rejects.toThrow("injected");
+    await expect(failing.pushDrafts(draftIds)).rejects.toThrow("injected");
 
     expect(await liveDurableState(db, BATCH)).toEqual(liveBefore);
     expect(failing.liveRoomBroadcasts().slice(broadcastsBefore)).toEqual([]);
@@ -224,8 +224,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         throw new Error("pause actor A after durable claim");
       },
     });
-    const branchId = await actorA.seedDestructivePush("item-6-stale-owner");
-    await expect(actorA.push(branchId)).rejects.toThrow("pause actor A");
+    const draftId = await actorA.seedDestructivePush("item-6-stale-owner");
+    await expect(actorA.push(draftId)).rejects.toThrow("pause actor A");
     const [ownedByA] = await db.select().from(schema.branchPushSettlementBatches);
     if (
       !ownedByA?.claimToken ||
@@ -334,8 +334,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           afterDurableCommit: injectPostCutWriter,
           afterClassification: deleteAfterFirstClassification(),
         });
-        const branchId = await warm.seedDestructivePush("oracle-f1a-warm");
-        await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+        const draftId = await warm.seedDestructivePush("oracle-f1a-warm");
+        await expect(warm.push(draftId)).resolves.toMatchObject({ status: "pushed" });
         await expectLiveSweepOnly(warm);
         const observed = await observeSettlement(db, warm);
         warm.destroyWarmState();
@@ -349,8 +349,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
             throw new Error("injected process death after durable push commit");
           },
         });
-        const branchId = await coldHarness.seedDestructivePush("oracle-f1a-cold");
-        await expect(coldHarness.push(branchId)).rejects.toThrow("injected process death");
+        const draftId = await coldHarness.seedDestructivePush("oracle-f1a-cold");
+        await expect(coldHarness.push(draftId)).rejects.toThrow("injected process death");
       },
       async destroyWarmState() {
         coldHarness?.destroyWarmState();
@@ -411,8 +411,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
             await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
           },
         });
-        const branchId = await warm.seedDestructivePush("oracle-race-fault-warm");
-        await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+        const draftId = await warm.seedDestructivePush("oracle-race-fault-warm");
+        await expect(warm.push(draftId)).resolves.toMatchObject({ status: "pushed" });
         const observed = await observeSettlement(db, warm);
         warm.destroyWarmState();
         return observed;
@@ -429,8 +429,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
             throw new Error("fault after journal commit and settlement staging");
           },
         });
-        const branchId = await coldHarness.seedDestructivePush("oracle-race-fault-cold");
-        await expect(coldHarness.push(branchId)).rejects.toThrow("fault after journal commit");
+        const draftId = await coldHarness.seedDestructivePush("oracle-race-fault-cold");
+        await expect(coldHarness.push(draftId)).rejects.toThrow("fault after journal commit");
       },
       async destroyWarmState() {
         coldHarness?.destroyWarmState();

@@ -2,20 +2,32 @@
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type Dispatch, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type Dispatch,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   type ChangeCommandRecords,
   currentChangeCommandRecords,
   intentKeys,
   useChangeCommandRecords,
   wholeDraftDisposition,
-} from "@/client/query/draft-command-record";
+} from "@/client/query/branch-command-record";
 import { projectDraft, projectDraftList } from "@/client/query/draft-projection";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
-import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
-import type { DocumentSession } from "@/core/editor/document-session";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+import { workBranchDraftsQueryOptions } from "@/client/query/useWorkBranchDrafts";
+import { type DocumentSession, updatesRefused } from "@/core/editor/document-session";
+import {
+  useLiveDocumentSessionRegistry,
+  useOptionalProjectContextAvailabilityCoordinator,
+} from "@/features/project/context/account-feature-context";
+import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import type { PresentedDocument } from "@/features/project/presented-document";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { reviewChangesOfPreview } from "./review-changes";
@@ -42,16 +54,20 @@ export function useReviewRoomOwner({
   const draftOnly = presented?.draftOnly ?? false;
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
+  const availability = useOptionalProjectContextAvailabilityCoordinator();
   const owner = useRef(`review-room:${++ownerSequence}`);
   const documentId = review?.documentId ?? "";
   const itemKey = review?.itemKey ?? "";
-  const generation = review?.branchGeneration;
+  const generation = review?.draftGeneration;
   const roomName = review?.roomName ?? null;
-  const draft = { projectId, workId, documentId, itemKey, branchGeneration: generation };
+  const draft = { projectId, workId, documentId, itemKey, draftGeneration: generation };
   const key = JSON.stringify([projectId, workId, documentId, itemKey, generation, roomName]);
   const horizon = useRef({ key, queryClient, registry });
   horizon.current = { key, queryClient, registry };
-  const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
+  const { data: rows } = useQuery({
+    ...workBranchDraftsQueryOptions(projectId, workId),
+    enabled: false,
+  });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
   const records = useChangeCommandRecords();
   const [entryAnswered, setEntryAnswered] = useState<string | null>(null);
@@ -95,11 +111,12 @@ export function useReviewRoomOwner({
       documentId,
       itemKey,
       terminal,
-      branchGeneration: absenceGeneration,
+      draftGeneration: absenceGeneration,
       draftOnly: kind.current.draftOnly,
-      evidence: generation === null ? null : { branchGeneration: generation, proposal: true },
+      evidence: generation === null ? null : { draftGeneration: generation, proposal: true },
     });
   };
+  const reopenRoom = useRef<(() => void) | null>(null);
   const [binding, setBinding] = useState<{
     session: DocumentSession | null;
     key: string;
@@ -180,9 +197,9 @@ export function useReviewRoomOwner({
       if (!current()) return;
       const shown = selected.current.review;
       if (
-        answer.branchGeneration !== undefined &&
-        shown?.branchGeneration !== undefined &&
-        answer.branchGeneration < shown.branchGeneration
+        answer.draftGeneration !== undefined &&
+        shown?.draftGeneration !== undefined &&
+        answer.draftGeneration < shown.draftGeneration
       )
         answer = await read();
       if (!current()) return;
@@ -193,13 +210,13 @@ export function useReviewRoomOwner({
         const visible = projectDraft(
           answer,
           intentKeys(records, draft),
-          wholeDraftDisposition(records, draft, answer.branchGeneration, answer) !== null,
+          wholeDraftDisposition(records, draft, answer.draftGeneration, answer) !== null,
         ).preview;
         dispatch({
           type: "generationObserved",
           documentId,
           itemKey,
-          branchGeneration: answer.branchGeneration,
+          draftGeneration: answer.draftGeneration,
           proposal: visible.status === "active" && reviewChangesOfPreview(visible).length > 0,
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
@@ -235,7 +252,28 @@ export function useReviewRoomOwner({
     };
     let rebuilding = false;
     let unsubscribe: (() => void) | undefined;
-    registry.retainBranchRooms(owner.current, [
+    let removedSession: DocumentSession | null = null;
+    // Reopen the room from the server's state; a re-forked draft answers that
+    // reconnect as superseded and the review moves to its new generation.
+    const rebuild = () => {
+      rebuilding = true;
+      setBinding({ session: null, key });
+      void registry.rebuildDraftRoom(roomName).then(
+        (replacement) => {
+          if (!current()) return;
+          unsubscribe?.();
+          rebuilding = false;
+          bind(replacement);
+        },
+        () => {
+          unavailable();
+        },
+      );
+    };
+    reopenRoom.current = () => {
+      if (current() && !rebuilding) rebuild();
+    };
+    registry.retainDraftRooms(owner.current, [
       {
         ...reviewRoomRef(queryClient, draft, roomName),
         writerChanges: (generation) => {
@@ -256,8 +294,9 @@ export function useReviewRoomOwner({
         setOutbox({
           scope,
           generation:
-            room?.kind === "branch" &&
+            room?.kind === "draft" &&
             connection?.kind !== "reset" &&
+            !updatesRefused(connection) &&
             session.hasUnacknowledgedEdits()
               ? room.generation
               : null,
@@ -267,6 +306,14 @@ export function useReviewRoomOwner({
             case "schema":
               // Keep the terminal session so its schema notice can paint.
               return;
+            case "removed":
+              // Keep the terminal session, read-only, until availability answers
+              // (`removal`). The close outdates what the record cache knew.
+              if (removedSession !== session) {
+                removedSession = session;
+                availability?.roomRemoved(projectId, documentId);
+              }
+              return;
             case "superseded":
               rebuilding = true;
               setBinding({ session: null, key });
@@ -274,22 +321,12 @@ export function useReviewRoomOwner({
               return;
             case "rebuild":
             case "refused":
-              rebuilding = true;
-              setBinding({ session: null, key });
-              void registry.rebuildBranchRoom(roomName).then(
-                (replacement) => {
-                  if (!current()) return;
-                  unsubscribe?.();
-                  rebuilding = false;
-                  bind(replacement);
-                },
-                () => {
-                  unavailable();
-                },
-              );
+              rebuild();
               return;
           }
         }
+        // Stays bound and read-only: the writer copies the unsent text, then reopens.
+        if (updatesRefused(connection)) return;
         if (
           snapshot.status === "destroyed" ||
           connection?.kind === "terminal" ||
@@ -303,27 +340,50 @@ export function useReviewRoomOwner({
       });
     };
     try {
-      bind(registry.getBranchRoom(roomName));
+      bind(registry.getDraftRoom(roomName));
     } catch (error) {
-      registry.releaseBranchRooms(owner.current);
+      registry.releaseDraftRooms(owner.current);
       throw error;
     }
     return () => {
       owned = false;
+      reopenRoom.current = null;
       unsubscribe?.();
-      registry.releaseBranchRooms(owner.current);
+      registry.releaseDraftRooms(owner.current);
     };
-  }, [key, scope, registry, queryClient, dispatch]);
+  }, [key, scope, registry, queryClient, availability, dispatch]);
 
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
+  // The server closed the draft room as removed (4208). `removed` closes the
+  // tab and the Work's drafts drop the closed draft; `available`, learned
+  // after the close, means a restore won the race, so the room reopens, once
+  // per close.
+  const roomRemoved = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => session?.subscribe(listener) ?? (() => undefined),
+      [session],
+    ),
+    () => session?.resetDisposition === "removed",
+  );
+  const removal = useRemovalRecord(projectId, roomRemoved ? documentId : null);
+  useEffect(() => {
+    if (removal?.kind === "removed")
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+      });
+    if (removal?.kind === "available") reopenRoom.current?.();
+  }, [projectId, queryClient, removal, workId]);
   return {
     session,
     /** The writer's unsent edits of a retired generation have not all reached the room yet. */
     carryPending: writerChanges.scope === scope && writerChanges.generation !== null,
+    /** Reopens a room whose updates the server kept refusing at the draft's current state. */
+    reopen: () => reopenRoom.current?.(),
     inputEligible:
       session !== null &&
       session.getSnapshot().connectionState?.kind !== "reset" &&
+      !updatesRefused(session.getSnapshot().connectionState) &&
       review !== null &&
       !review.roomError &&
       review.completion?.phase !== "closed",
@@ -332,7 +392,7 @@ export function useReviewRoomOwner({
 
 /** Addressed cache observations, without interpreting an empty reset as a proposal. */
 export function reviewRoomObservations(
-  rows: import("@meridian/contracts/drafts").ThreadDraftListItem[] | undefined,
+  rows: import("@meridian/contracts/branches").ThreadDraftListItem[] | undefined,
   preview: DraftPreviewRead | undefined,
   draft: { documentId: string; itemKey: string },
   pendingWriterGeneration: number | null = null,
@@ -353,22 +413,22 @@ export function reviewRoomObservations(
           wholeDraftDisposition(
             intents.records,
             { ...intents.scope, ...draft },
-            preview.branchGeneration,
+            preview.draftGeneration,
             preview,
           ) !== null,
         ).preview
       : preview;
-  if (row && row.branchGeneration !== null)
+  if (row && row.draftGeneration !== null)
     actions.push({
       type: "generationObserved",
       ...draft,
-      branchGeneration: row.branchGeneration,
+      draftGeneration: row.draftGeneration,
       proposal: visibleRows?.includes(row) === true,
     });
   const evidence =
     preview?.status === "active"
       ? {
-          branchGeneration: preview.branchGeneration,
+          draftGeneration: preview.draftGeneration,
           proposal:
             visiblePreview?.status === "active" &&
             reviewChangesOfPreview(visiblePreview).length > 0,
@@ -378,8 +438,8 @@ export function reviewRoomObservations(
   // Delivery is changes evidence, not a listed proposal that adopts a generation.
   const changesEvidence =
     pendingWriterGeneration !== null &&
-    (!evidence?.proposal || pendingWriterGeneration > evidence.branchGeneration)
-      ? { branchGeneration: pendingWriterGeneration, proposal: true }
+    (!evidence?.proposal || pendingWriterGeneration > evidence.draftGeneration)
+      ? { draftGeneration: pendingWriterGeneration, proposal: true }
       : evidence;
   // A draft-only address belongs to lifecycle until catalog settlement. List
   // omission and an empty active/reset preview cannot close or fail it.
@@ -387,7 +447,7 @@ export function reviewRoomObservations(
     actions.push({
       type: "reviewAbsent",
       ...draft,
-      branchGeneration: preview?.branchGeneration,
+      draftGeneration: preview?.draftGeneration,
       evidence: changesEvidence,
       draftOnly,
     });

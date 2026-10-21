@@ -29,7 +29,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const { draftTreeScenario } = await import("../test-support/draft-tree-scenario.js");
+    const { branchTreeScenario } = await import("../test-support/branch-tree-scenario.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -346,7 +346,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    // D31: a create or copy would make its file in the archived Work's frozen draft.
+    // D31: a create or copy would make its file in the archived Work's frozen drafts.
     it("refuses a draft-mode chat's create or copy into its archived Work with D31's copy", async () => {
       const script = await startWithChapter("Writer live content.");
       await db
@@ -355,7 +355,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, WORK_ID));
       const { call } = await script.begin();
       const frozen =
-        'Work w1 is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"w1"})`, or ask the user to switch this chat to auto-apply.';
+        'Work w1 is archived, so its drafts are frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"w1"})`, or ask the user to switch this chat to auto-apply.';
 
       for (const args of [
         { command: "create", path: "manuscript://new", content: "Never lands." },
@@ -424,7 +424,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // the Work already committed text to it.
     it("retracts a rolled-back reply's draft create unless another thread committed text to it (C-4)", async () => {
       const runtime = await runtimes.compose();
-      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const scenario = await branchTreeScenario(db, { runtime, runtimes });
       const work = await scenario.work("Retracting", "draft");
       const documentIdOf = (result: { metadata?: unknown }) => {
         const documentId = (result.metadata as { documentId?: unknown } | undefined)?.documentId;
@@ -440,9 +440,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const usesOf = (id: string) =>
         db
-          .select({ draftId: schema.draftTreeChanges.draftId })
-          .from(schema.draftTreeChanges)
-          .where(eq(schema.draftTreeChanges.nodeId, id));
+          .select({ branchId: schema.branchTreeChanges.branchId })
+          .from(schema.branchTreeChanges)
+          .where(eq(schema.branchTreeChanges.nodeId, id));
 
       const alone = await scenario.model(work).reply();
       const aloneId = documentIdOf(
@@ -461,12 +461,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(
           await db
-            .select({ id: schema.documentBranches.id })
-            .from(schema.documentBranches)
-            .where(eq(schema.documentBranches.documentId, aloneId)),
-          "retracted: its empty branches gone",
+            .select({
+              status: schema.documentDrafts.status,
+              cause: schema.documentDrafts.closedCause,
+              state: schema.documentDrafts.state,
+            })
+            .from(schema.documentDrafts)
+            .where(eq(schema.documentDrafts.documentId, aloneId)),
+          "retracted: its drafts retained closed with bytes released",
         )
-        .toEqual([]);
+        .toEqual([
+          expect.objectContaining({ status: "closed", cause: "discarded", state: Buffer.alloc(0) }),
+          expect.objectContaining({ status: "closed", cause: "discarded", state: Buffer.alloc(0) }),
+        ]);
 
       const other = await scenario.thread(work);
       const first = await scenario.model(work).reply();
@@ -491,7 +498,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         hidden: true,
         deletedAt: null,
       });
-      expect.soft(await usesOf(sharedId), "stands: the draft keeps it").toHaveLength(1);
+      expect.soft(await usesOf(sharedId), "stands: the branch keeps it").toHaveLength(1);
       const read = await scenario.view(other).read("lore/shared.md");
       expect
         .soft(read.ok && read.value.content, "stands: the other thread's text")
@@ -517,9 +524,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(documentIdOf(joined), "B joins A's hidden identity").toBe(twoWorkId);
       const bPeer = async () => {
         const [peer] = await db
-          .select({ status: schema.documentBranches.status })
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.threadId, workB.threadId));
+          .select({ status: schema.documentDrafts.status })
+          .from(schema.documentDrafts)
+          .where(eq(schema.documentDrafts.threadId, workB.threadId));
         return peer?.status;
       };
       expect.soft(await bPeer(), "B's peer before A retracts").toBe("active");
@@ -562,8 +569,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     // D24 with 12b-Q2: a binary copy duplicates the stored object; in a draft-mode Work it
-    // is the draft's own hidden row, never shared and not live.
-    it("copies a binary file into the draft as its own hidden row and stored object", async () => {
+    // is the branch's own hidden row, never shared and not live.
+    it("copies a binary file into the branch as its own hidden row and stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -609,9 +616,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(copy?.hidden).toBe(true);
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
       const created = await db
-        .select({ draftId: schema.draftTreeChanges.draftId })
-        .from(schema.draftTreeChanges)
-        .where(eq(schema.draftTreeChanges.nodeId, copy?.id ?? ""));
+        .select({ branchId: schema.branchTreeChanges.branchId })
+        .from(schema.branchTreeChanges)
+        .where(eq(schema.branchTreeChanges.nodeId, copy?.id ?? ""));
       expect(created).toHaveLength(1);
       await expect(
         runtime.ports.contextPorts

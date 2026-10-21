@@ -1,6 +1,5 @@
 // Versioned JSON result contract presented to editing models.
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
-import type { ConcurrentEditInfo } from "../apply/types.js";
+import type { DocumentRemovalRecord, PermissionDeniedReason } from "@meridian/contracts/protocol";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
 
@@ -31,7 +30,7 @@ export type WriteErrorStatus =
   | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
-  | "read_required"
+  | "region_changed"
   | "binary_file"
   | "permission_denied"
   | "internal_error";
@@ -68,14 +67,23 @@ export type AgentEditBlockGroup =
       items: AgentEditBlockItem[];
     };
 
-export interface AgentEditConcurrentRun {
-  origin: "human" | "agent" | "mixed" | "concurrent edits";
+/**
+ * Blocks changed since the model last saw them that the result doesn't show, in document
+ * order until the listing's byte cap; removed ones by hash; what didn't fit by count.
+ */
+export interface AgentEditConcurrentListing {
   blocks: AgentEditBlockItem[];
-  tombstones: Array<{ hash: string; body: string }>;
+  removed?: string[];
+  more?: number;
 }
 
-/** A staged write the host refused: the writer discarded what it edited, or it could not integrate. */
+/**
+ * A staged write the host refused: the writer discarded what it edited, its document was removed
+ * before the reply saved (`removed`, with the record in `removal` when one exists), or it could
+ * not integrate.
+ */
 export type WriteRejection =
+  | "removed"
   | "discarded_draft"
   | "discarded_document"
   | "discarded_edit"
@@ -85,7 +93,7 @@ export type WriteRejection =
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
-  /** Where a write landed: the live document, or the draft of the Work named by `draftWork`. */
+  /** Where a write landed: the live document, or the document's draft in the Work named by `draftWork`. */
   destination?: "live" | "draft";
   /** The drafted Work's handle, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
@@ -96,6 +104,8 @@ export interface AgentEditModelPayload {
   owner?: string;
   /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
   rejected?: WriteRejection;
+  /** Who removed the document and how, beside `rejected: "removed"`, for the chat's card. */
+  removal?: DocumentRemovalRecord;
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -114,14 +124,11 @@ export interface AgentEditModelPayload {
     format: "full" | "outline" | "edits";
     /** The whole document's block count; the text names it when the read returned fewer. */
     documentBlocks?: number;
-    /** The version actually read; the host fills it in, since only it knows drafts. */
+    /** The version actually read; the host fills it in, since only it knows the selected document draft. */
     version?: "draft" | "live";
   };
   blocks?: AgentEditBlockGroup[];
-  concurrent?: {
-    runs: AgentEditConcurrentRun[];
-    syncOverflow?: boolean;
-  };
+  concurrent?: AgentEditConcurrentListing;
   awarenessDegraded?: boolean;
   /** The write left the document empty; its one blank block is the empty document, not a leftover. */
   documentEmpty?: boolean;
@@ -220,7 +227,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_redo_users_undo":
     case "nothing_to_revert":
     case "work_archived":
-    case "read_required":
+    case "region_changed":
     case "binary_file":
     case "internal_error":
     case "reversed":
@@ -243,21 +250,5 @@ export function modelBlockItem(serialized: string): AgentEditBlockItem {
   return {
     hash: line.hash,
     body: line.body.startsWith("\n") ? line.body.slice(1) : line.body,
-  };
-}
-
-export function modelConcurrentResult(
-  info: ConcurrentEditInfo,
-): NonNullable<AgentEditResultV1["concurrent"]> {
-  return {
-    runs: info.runs.map((run) => ({
-      origin: run.origin,
-      blocks: run.blocks.map(modelBlockItem),
-      tombstones: run.tombstones.map(({ hash, capturedBody }) => ({
-        hash,
-        body: capturedBody,
-      })),
-    })),
-    ...(info.syncOverflow ? { syncOverflow: true } : {}),
   };
 }

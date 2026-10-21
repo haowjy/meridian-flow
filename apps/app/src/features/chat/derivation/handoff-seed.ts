@@ -11,16 +11,11 @@ export type BriefCardState = "generating" | "ready" | "failed" | "stopped";
 export type BriefCardView = {
   state: BriefCardState;
   brief: string | null;
-  /**
-   * Writer copy for the latest seed's failure (its `turn.error`, which asks
-   * the writer to try again); null otherwise.
-   */
-  failureCopy: string | null;
   /** An ended brief a newer seed has replaced: its story is told, with nothing to act on. */
   superseded: boolean;
   /** Stop is offered while the brief is generating and no Stop is in flight. */
   canStop: boolean;
-  /** Retry is offered only on the latest seed, once it ended without a brief. */
+  /** Stopped-brief Retry is offered only on the latest seed; failed-brief recovery comes from chatCards. */
   canRetry: boolean;
 };
 
@@ -44,14 +39,13 @@ export function briefCardView(input: {
         : turn.status === "cancelled"
           ? "stopped"
           : "failed";
-  const ended = state === "failed" || state === "stopped";
+  const stopped = state === "stopped";
   return {
     state,
     brief: state === "ready" ? readHandoffBrief(turn) : null,
-    failureCopy: state === "failed" && latest ? (turn.error ?? null) : null,
-    superseded: ended && !latest,
+    superseded: stopped && !latest,
     canStop: state === "generating" && !stopping,
-    canRetry: ended && latest,
+    canRetry: stopped && latest,
   };
 }
 

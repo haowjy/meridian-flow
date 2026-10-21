@@ -16,7 +16,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
+import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -78,12 +78,12 @@ it.each([
       destination === "draft"
         ? (
             await db
-              .select({ draftId: schema.documentBranches.id })
-              .from(schema.documentBranches)
+              .select({ draftId: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
               .where(
                 and(
-                  eq(schema.documentBranches.documentId, ALPHA_ID),
-                  eq(schema.documentBranches.kind, "work_draft"),
+                  eq(schema.documentDrafts.documentId, ALPHA_ID),
+                  eq(schema.documentDrafts.kind, "work_draft"),
                 ),
               )
           )[0]
@@ -99,16 +99,16 @@ it.each([
       );
     };
     if (draft) {
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, draft.draftId));
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.id, draft.draftId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
-        await view.branchCoordinator.commitWriterUpdate({
-          branchId: branch.id,
-          expectedGeneration: branch.generation,
+        Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
+        await view.draftCoordinator.commitWriterUpdate({
+          draftId: documentDraft.id,
+          expectedGeneration: documentDraft.generation,
           updateData: change(doc),
           actorUserId: USER_ID,
           roomDocument: doc,
@@ -198,12 +198,12 @@ it.each([
       destination === "draft"
         ? (
             await db
-              .select({ draftId: schema.documentBranches.id })
-              .from(schema.documentBranches)
+              .select({ draftId: schema.documentDrafts.id })
+              .from(schema.documentDrafts)
               .where(
                 and(
-                  eq(schema.documentBranches.documentId, ALPHA_ID),
-                  eq(schema.documentBranches.kind, "work_draft"),
+                  eq(schema.documentDrafts.documentId, ALPHA_ID),
+                  eq(schema.documentDrafts.kind, "work_draft"),
                 ),
               )
           )[0]

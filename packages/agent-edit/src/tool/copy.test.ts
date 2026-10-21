@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 
-import { expectOutcome, hashAt } from "./test-support/assertions.js";
+import { blockTexts, expectOutcome, hashAt } from "./test-support/assertions.js";
 import {
   context,
   harness,
@@ -100,7 +100,7 @@ describe("document copy", () => {
     );
 
     expectOutcome(result, "success");
-    expect(ctx.coordinator.docs.has("copy.md")).toBe(false);
+    expect(blockTexts(ctx.liveDoc("copy.md")), "the host's empty document, untouched").toEqual([]);
 
     const commit = await ctx.core.commitResponse("response-copy");
     expect(commit.stagedCreates.committed).toEqual(["copy.md"]);

@@ -18,9 +18,9 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-
 import { reviewDriver } from "./test-support/draft-review-requests.js";
-import { draftBranchId, inverseFixture } from "./test-support/turn-inverse-fixture.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
+import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
 const fixture = () => inverseFixture(db);
@@ -88,7 +88,7 @@ it.each([
     await db
       .insert(schema.works)
       .values({ ...work, id: otherWork as never, name: "Holding draft", handle: "w2" });
-    await db.insert(schema.drafts).values({
+    await db.insert(schema.branches).values({
       projectId: PROJECT_ID,
       originWorkId: otherWork as never,
       createdBy: USER_ID,
@@ -185,6 +185,38 @@ it.each([
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nGold.\n");
       return;
     }
+    // The receipt chip is a markBlocking host: reading it marks the holding draft blocking in
+    // a revision move, so a frame judged before the chip cannot commit over it (§2.5).
+    const holdingDraft = async () => {
+      const [row] = await db
+        .select({
+          revision: schema.documentDrafts.revision,
+          blocking: schema.documentDrafts.blocking,
+        })
+        .from(schema.documentDrafts)
+        .innerJoin(schema.branches, eq(schema.branches.id, schema.documentDrafts.branchId))
+        .where(
+          and(
+            eq(schema.branches.originWorkId, otherWork as never),
+            eq(schema.documentDrafts.kind, "work_draft"),
+            eq(schema.documentDrafts.status, "active"),
+          ),
+        );
+      if (!row) throw new Error("missing holding draft");
+      return row;
+    };
+    let marked: Awaited<ReturnType<typeof holdingDraft>> | undefined;
+    if (origin === "applied") {
+      // Nothing has asked about this turn yet, so nothing marked the holding draft.
+      const unmarked = await holdingDraft();
+      await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID);
+      marked = await holdingDraft();
+      expect(unmarked.blocking).toBe(false);
+      expect({ blocking: marked.blocking, moved: marked.revision > unmarked.revision }).toEqual({
+        blocking: true,
+        moved: true,
+      });
+    }
     const partial = await view.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
@@ -198,6 +230,14 @@ it.each([
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     expect(await holdingReview.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
+    if (marked) {
+      // Placing the held rows clears the hold, in a revision move like setting it.
+      const cleared = await holdingDraft();
+      expect({ blocking: cleared.blocking, moved: cleared.revision > marked.revision }).toEqual({
+        blocking: false,
+        moved: true,
+      });
+    }
     // Both an active Gamma part and the latest action's undone Gold part now qualify.
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "redo",
@@ -290,16 +330,16 @@ it("card Undo during an open response drops writes into undone text and keeps an
     expect(missing.result.message).toContain('"Gamma" → "Gild"');
     expect(missing.result.message).toContain('"Gild" → "Bronze"');
     await harness.commit(second);
-    const [branch] = await db
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
+      .from(schema.documentDrafts)
       .where(
         and(
-          eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.kind, "work_draft"),
+          eq(schema.documentDrafts.documentId, ALPHA_ID),
+          eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
-    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Beta.\n\nSilver.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha Beta.\n\nSilver.\n");
     const entries = await db
       .select()
       .from(schema.documentEdits)
@@ -329,7 +369,7 @@ it("overlapping applied and pending parts undo together in the draft", async () 
       context,
     );
     await harness.commit(responseId);
-    const branchId = await draftBranchId(db, ALPHA_ID);
+    const draftId = await readDraftId(db, ALPHA_ID);
     expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
     const second = randomUUID();
     await db.insert(schema.modelResponses).values({
@@ -363,7 +403,7 @@ it("overlapping applied and pending parts undo together in the draft", async () 
           actor: { type: "user", userId: USER_ID },
         }),
       ).toMatchObject({ status: "reversed", acceptedParts: 2 });
-      expect(await view.draftMarkdown(branchId)).toBe(
+      expect(await view.draftMarkdown(draftId)).toBe(
         direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Delta.\n\nBlue.\n",
       );
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
@@ -408,7 +448,7 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
       );
       await harness.commit(id);
     }
-    const branchId = await draftBranchId(db, ALPHA_ID);
+    const draftId = await readDraftId(db, ALPHA_ID);
     if (placement === "mixed") {
       const preview = await review.activePreview(ALPHA_ID);
       await review.applyChanges(ALPHA_ID, preview, [preview.operations[0].operationId]);
@@ -421,15 +461,15 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed", acceptedParts: 2 });
-    expect(await view.draftMarkdown(branchId)).toBe("Alpha Beta.\n\nBlue.\n");
+    expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
     if (placement === "empty") {
-      const [branch] = await db
+      const [documentDraft] = await db
         .select()
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, branchId));
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.id, draftId));
       const doc = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(doc, branch.state);
+        Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
         doc.clientID = allocateDocumentClient(doc);
         const updates = captureMutationUpdates(doc, () => {
           const p = new Y.XmlElement("paragraph"),
@@ -438,9 +478,9 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
           p.insert(0, [t]);
           doc.getXmlFragment("prosemirror").insert(2, [p]);
         });
-        await view.branchCoordinator.commitWriterUpdate({
-          branchId: branch.id,
-          expectedGeneration: branch.generation,
+        await view.draftCoordinator.commitWriterUpdate({
+          draftId: documentDraft.id,
+          expectedGeneration: documentDraft.generation,
           updateData: Y.mergeUpdates(updates),
           actorUserId: USER_ID,
           roomDocument: doc,

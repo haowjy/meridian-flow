@@ -11,7 +11,7 @@
  * that supplies text to the class but is not an operation of it names no chat.
  * An operation the server cannot place in a chat reads "AI".
  */
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewOperation } from "@meridian/contracts/branches";
 
 /** One chat that wrote into a change, and where in it the write happened. */
 export interface ChangeChat {

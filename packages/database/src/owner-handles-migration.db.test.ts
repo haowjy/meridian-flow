@@ -1,4 +1,4 @@
-/** 0062 gives every existing Work the handle its creation order earns and carries the counters over. */
+/** 0075 gives every existing Work the handle its creation order earns and carries the counters over. */
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
@@ -12,13 +12,13 @@ if (!enabled || !databaseUrl) {
   describe("owner handles migration (postgres)", () => {
     it("numbers Works per project by creation order, counts deleted ones, and keeps the thread counter", async () => {
       const migration = await readFile(
-        new URL("./migrations/0062_owner_handles.sql", import.meta.url),
+        new URL("./migrations/0075_owner_handles.sql", import.meta.url),
         "utf8",
       );
       const target = postgres(databaseUrl, { max: 1 });
       try {
         await target.begin(async (tx) => {
-          // A scratch schema holds the pre-0062 tables, so the real ones are never touched.
+          // A scratch schema holds the pre-0075 tables, so the real ones are never touched.
           await tx.unsafe(`
             CREATE SCHEMA owner_handles_test;
             SET LOCAL search_path = owner_handles_test;

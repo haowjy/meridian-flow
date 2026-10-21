@@ -27,8 +27,9 @@ A queued `/compact` needs a completed reply first (`compact_requires_completed_r
 and wait, then hold the next reply, then type `/compact` and press Enter twice.
 
 Selectors: `[data-queued]` (the article), `[data-queue-control=move-to-box|cancel-queue|send-now]`,
-`[data-hand-back-card=<copy>]` and `[data-hand-back-card-retry]`, `[data-queued-control-card]`
-(the row card), `[data-composer-stop]`, and the box at `[data-composer] .ProseMirror`.
+`[data-chat-card=<copy>]` (a card's sentence), `[data-chat-card-action=<try_again|retry>]`
+(its action button), `button[aria-label="Dismiss"]` (a refused card's X), `[data-composer-stop]`, and the box at
+`[data-composer] .ProseMirror`. A queued command's card sits in its row.
 
 ## Fault injection
 
@@ -121,7 +122,9 @@ ordinary message the reply answers, the box is empty, and no card shows.
 
 ## QC-08: failure cards
 
-Each is an error `NoticeCard` above the box, except the last row. None announces itself.
+Hand-back failures are `FailureCard`s above the box. A queued-command failure
+sits in that command's row. None announces itself; the chat's keyed announcer
+publishes watched cards.
 
 - **Committed, answer lost:** as QC-05 without reloading. Rows gone, card with Try again. Restore
   `fetch`, Try again: the words arrive once, the card clears.
@@ -129,6 +132,13 @@ Each is an error `NoticeCard` above the box, except the last row. None announces
   release. Rows gone and the card shows. Free storage, Try again: the words arrive once.
 - **Unsaved:** fill `sessionStorage` first, press the x. Nothing is sent, the row stays queued and
   the card shows. Free storage, Try again: the row leaves and the words arrive.
+- **Occurrence identity:** lose a hand-back answer, then make the composer storage write fail.
+  Press Try again twice: each press has a new card key, no new POST occurs, and the already
+  stored command and its recovery card remain. Restore storage, Retry with another lost answer,
+  and read the pending command's `occurrence`. Reload while the response is still lost: the
+  stored occurrence and card key stay the same. Restore transport and reload: words arrive once,
+  the command/card retire, and a second reload does not duplicate the words. A refused write
+  cannot preserve its new occurrence across reload; only the last saved occurrence survives.
 - **Refused:** answer `hand-back` with 409. The rows come back and the card has Dismiss only;
   Dismiss clears it. The copy follows the row count: "Couldn't move your queued message." for one
   row, "Couldn't move your queued messages." for more.

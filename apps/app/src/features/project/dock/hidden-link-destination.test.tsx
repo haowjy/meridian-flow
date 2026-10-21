@@ -20,7 +20,7 @@ const hidden: LinkDocumentRef = {
   documentId: "document-h",
   review: {
     workId: "work-a",
-    itemKey: "draft-1:document-h",
+    itemKey: "branch-1:document-h",
     contextLocation: { scheme: "manuscript", path: "/Kael.md" },
     documentName: "Kael",
   },
@@ -70,7 +70,7 @@ it("a hidden link with no existing tab becomes a draft-only review, not a live t
   expect(tabs[0]).toMatchObject({
     documentId: "document-h",
     reviews: {
-      "work-a": { itemKey: "draft-1:document-h", tabInstanceToken: expect.any(String) },
+      "work-a": { itemKey: "branch-1:document-h", tabInstanceToken: expect.any(String) },
     },
   });
   expect(recentOpening("project-a", tabs[0], "now")).toBeNull();

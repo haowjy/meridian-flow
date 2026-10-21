@@ -50,6 +50,7 @@
     "@biomejs/biome": "^2.5.1",
     "@meridian/contracts": "workspace:*",
     "@meridian/database": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
     "@playwright/test": "^1.61.1",
     "@types/node": "catalog:",
     "@types/ws": "^8.18.1",
@@ -62,6 +63,7 @@
     "tsx": "^4.22.4",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "yjs": "13.6.31"
   }
 }

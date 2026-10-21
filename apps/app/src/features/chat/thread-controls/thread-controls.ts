@@ -21,16 +21,24 @@
 import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 
+import {
+  type CardControl,
+  durableControls,
+  nextOccurrence,
+  type Occurrence,
+} from "@meridian/thread-client";
+
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 
 export type LocalSend = {
   id: string;
   control: CompactControl;
   request: "sending" | "sent" | "failed" | "finished";
+  attempt: number;
 };
 
 /** `settled`: the server confirmed it, either withdrawn or already started. */
-export type Withdrawal = "withdrawing" | "failed" | "settled";
+export type Withdrawal = Occurrence & { status: "withdrawing" | "failed" | "settled" };
 
 export type LocalControls = {
   sends: readonly LocalSend[];
@@ -42,10 +50,7 @@ export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Ma
 /** `sending`: the writer asked and the server has not answered. */
 export type QueuedControlStatus = "sending" | "queued" | "failed" | "withdraw_failed";
 
-export type QueuedControl = {
-  id: string;
-  control: ControlBody;
-  status: QueuedControlStatus;
+export type QueuedControl = CardControl & {
   /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
   /** A switch the record says applies at the next run's start: its notice sits before that run's reply. */
@@ -64,7 +69,7 @@ export type ControlAction =
   /** The server took the command; `sent` when the record lists it, else it already ran or was withdrawn. */
   | { type: "enqueued"; id: string; sent: boolean }
   | { type: "enqueue_failed"; id: string }
-  | { type: "withdraw"; id: string }
+  | { type: "withdraw"; id: string; requestId: string }
   | { type: "withdrawn"; id: string }
   /** The server had no such command (404) when the withdrawal reached it. */
   | { type: "withdraw_not_found"; id: string }
@@ -77,26 +82,41 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     ...state,
     sends: state.sends.map((entry) => (entry.id === id ? { ...entry, request } : entry)),
   });
-  const withdrawal = (id: string, next: Withdrawal) => ({
-    ...state,
-    withdrawals: new Map(state.withdrawals).set(id, next),
-  });
+  const withdrawal = (id: string, status: Withdrawal["status"], next?: Occurrence) => {
+    const occurrence = next ?? state.withdrawals.get(id);
+    if (!occurrence) return state;
+    return { ...state, withdrawals: new Map(state.withdrawals).set(id, { ...occurrence, status }) };
+  };
   switch (action.type) {
     case "enqueue":
       if (state.sends.some((entry) => entry.id === action.id)) return state;
       return {
         ...state,
-        sends: [...state.sends, { id: action.id, control: action.control, request: "sending" }],
+        sends: [
+          ...state.sends,
+          { id: action.id, control: action.control, request: "sending", attempt: 1 },
+        ],
       };
     case "retry":
-      return patchSend(action.id, "sending");
+      return {
+        ...state,
+        sends: state.sends.map((entry) =>
+          entry.id === action.id
+            ? { ...entry, request: "sending", attempt: entry.attempt + 1 }
+            : entry,
+        ),
+      };
     case "enqueued":
       // Not in the record: it already ran or was withdrawn earlier.
       return patchSend(action.id, action.sent ? "sent" : "finished");
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":
-      return withdrawal(action.id, "withdrawing");
+      return withdrawal(
+        action.id,
+        "withdrawing",
+        nextOccurrence(state.withdrawals.get(action.id)?.attempt ?? 0, action.requestId),
+      );
     case "withdrawn":
       return withdrawal(action.id, "settled");
     case "withdraw_failed":
@@ -127,32 +147,48 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
   const { local, items } = input;
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
-  for (const item of items) {
-    if (item.intent !== "control" || item.control?.kind !== "compact") continue;
+  for (const item of durableControls(items)) {
+    if (item.control.kind !== "compact") continue;
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
     const withdrawal = local.withdrawals.get(item.id);
     if (!withdrawal) {
       result.push({ id: item.id, control: item.control, status: "queued" });
-    } else if (withdrawal === "failed") {
-      result.push({ id: item.id, control: item.control, status: "withdraw_failed" });
+    } else if (withdrawal.status === "failed") {
+      result.push({
+        id: item.id,
+        control: item.control,
+        status: "withdraw_failed",
+        failure: { requestId: withdrawal.requestId, attempt: withdrawal.attempt, kind: "lost" },
+      });
     }
   }
   for (const entry of local.sends) {
     const withdrawal = local.withdrawals.get(entry.id);
-    if (listed.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
+    if (listed.has(entry.id) || (withdrawal && withdrawal.status !== "failed")) continue;
     const status = requestStatus(entry);
     if (!status) continue;
-    result.push({
-      id: entry.id,
-      control: entry.control,
-      status: withdrawal && status !== "failed" ? "withdraw_failed" : status,
-    });
+    const row = { id: entry.id, control: entry.control };
+    if (withdrawal) {
+      result.push({
+        ...row,
+        status: "withdraw_failed",
+        failure: { requestId: withdrawal.requestId, attempt: withdrawal.attempt, kind: "lost" },
+      });
+    } else if (status === "failed") {
+      result.push({
+        ...row,
+        status,
+        failure: { requestId: entry.id, attempt: entry.attempt, kind: "lost" },
+      });
+    } else {
+      result.push({ ...row, status });
+    }
   }
   return result;
 }
 
-function requestStatus(entry: LocalSend): QueuedControlStatus | null {
+function requestStatus(entry: LocalSend): Exclude<QueuedControlStatus, "withdraw_failed"> | null {
   if (entry.request === "sending") return "sending";
   if (entry.request === "failed") return "failed";
   if (entry.request === "finished") return null;

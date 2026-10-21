@@ -85,7 +85,7 @@ describe("smoke: in-process turn", () => {
     const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
     const writeResult = await contextPorts
       .forProject(project.id, project.userId)
-      .write(FILE_URI, FILE_CONTENT, { origin: { type: "system" } });
+      .createTrackedDocument(FILE_URI, FILE_CONTENT, { origin: { type: "system" } });
     expect(writeResult.ok).toBe(true);
 
     const toolRegistry = createToolRegistry({

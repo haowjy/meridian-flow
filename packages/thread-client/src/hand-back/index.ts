@@ -1,10 +1,4 @@
-/** The hand-back operation, its cards and Send now: shared by the app and `./mf`. */
-export {
-  type FailedSendNow,
-  type HandBackCard,
-  type HandBackCardCopy,
-  handBackCards,
-} from "./cards";
+/** The hand-back operation and Send now: shared by the app and `./mf`. */
 export type { FrozenRequest, HttpPort, HttpResult, ResponseSchema, Verdict } from "./classify";
 export { classifyAnswer } from "./classify";
 export {
@@ -14,6 +8,7 @@ export {
   type HandBackOutcome,
   type HandBackPorts,
   type HandBackPressInput,
+  type HandBackReplay,
   type HandBackStore,
   type RunStatePort,
   type StopFacts,
@@ -21,4 +16,9 @@ export {
   type UnresolvedStatus,
   viewRunStatePort,
 } from "./operation";
-export { postSendNow, type SendNowOutcome, type SendNowPorts } from "./send-now";
+export {
+  type FailedSendNow,
+  postSendNow,
+  type SendNowOutcome,
+  type SendNowPorts,
+} from "./send-now";

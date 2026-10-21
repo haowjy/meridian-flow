@@ -22,7 +22,7 @@ function emptyWorkContext(projectId: string): WorkContextReader {
               workHandle: testWorkHandle("w1"),
             },
             aiWriteMode: "direct",
-            draftOwner: null,
+            branchOwner: null,
           },
         },
       };

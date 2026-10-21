@@ -303,7 +303,7 @@ const doors: DoorCase[] = [
   {
     name: "a contextual link stays contextual when its block is rewritten",
     async run() {
-      const contextual = { text: "Draft", ref: null, href: "manuscript://b" };
+      const contextual = { text: "Branch", ref: null, href: "manuscript://b" };
       const ctx = linkHarness({
         holder: { id: H, uri: "user://notes/holder" },
         documents: [catalogDocument(D, "manuscript://b")],
@@ -312,11 +312,11 @@ const doors: DoorCase[] = [
       await ctx.write({
         command: "replace",
         in: [1, 1],
-        content: "[Draft](manuscript://b) note, revised.",
+        content: "[Branch](manuscript://b) note, revised.",
       });
       expect
         .soft(storedLinks(ctx.live()), this.name)
-        .toEqual([{ label: "Draft", ref: null, href: "manuscript://b", title: null }]);
+        .toEqual([{ label: "Branch", ref: null, href: "manuscript://b", title: null }]);
     },
   },
   {

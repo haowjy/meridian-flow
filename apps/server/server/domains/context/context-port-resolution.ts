@@ -24,8 +24,8 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
-  /** The thread's Work when the chat drafts AI writes; null in auto-apply. */
-  primaryDraftWork: WorkRef | null;
+  /** The thread's Work when the chat writes drafts; null in auto-apply. */
+  primaryBranchWork: WorkRef | null;
   scratchLineages?: import("./scratch-owner.js").ScratchLineages;
   scratchOwner?: import("./scratch-owner.js").ScratchOwner;
   /** The chat whose uploads this thread's bare `uploads://` names; null for an unknown chat. */
@@ -82,7 +82,7 @@ export async function resolveThreadContext(
     primaryWorkId: primaryMembership?.workId ?? null,
     workAuthorities,
     primaryWorkAuthority,
-    primaryDraftWork:
+    primaryBranchWork:
       primaryWork && thread.aiWriteMode === "draft"
         ? { id: primaryWork.id, handle: primaryWork.handle }
         : null,
@@ -115,7 +115,7 @@ export function contextPortForThread(
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
       responseId: options.responseId,
-      draftWork: options.liveWrites ? null : resolution.primaryDraftWork,
+      branchWork: options.liveWrites ? null : resolution.primaryBranchWork,
       ...(options.version ? { version: options.version } : {}),
     },
   );

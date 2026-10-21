@@ -80,6 +80,8 @@ function hold(next: RunState | null) {
 
 let root: Root;
 let latest: ReplyRetry;
+const refusedFor = (turnId: string) =>
+  latest.outcomes.some((outcome) => outcome.kind === "refused" && outcome.turnId === turnId);
 function Probe({ turns }: { turns: readonly Turn[] }) {
   latest = useReplyRetry({ threadId: "t", storedTurns: turns });
   return null;
@@ -155,13 +157,14 @@ describe("useReplyRetry", () => {
         .mockRejectedValueOnce(new TypeError("Failed to fetch"))
         .mockResolvedValueOnce({ executionId: "e-r", turn: null, runState: record("3000", "e-r") });
       await act(async () => latest.retry(failed));
-      const lost = latest.standIns[0] as Turn;
+      const id = latest.outcomes[0]?.requestId ?? "";
       // The lost request has no answer version, so even an idle record cannot retire it.
       hold(record("3500", null));
       await act(async () => root.render(<Probe turns={[message, failed]} />));
-      expect(latest.requestOf(lost.id)).toBe("failed");
-      await act(async () => latest.retry(lost));
+      expect(latest.outcomes).toMatchObject([{ kind: "lost", requestId: id }]);
+      await act(async () => latest.retry(failed));
       expect(latest.standIns).toEqual([]);
+      expect(latest.outcomes).toEqual([]);
     } finally {
       vi.useRealTimers();
     }
@@ -171,45 +174,45 @@ describe("useReplyRetry", () => {
     api.retryReply.mockRejectedValue(new HttpResponseError("reply_retry_unavailable", 409, null));
     await act(async () => latest.retry(failed));
     expect(latest.standIns).toEqual([]);
-    expect(latest.refused.has("f")).toBe(true);
+    expect(refusedFor("f")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
-    expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
     // The other reply is still running: the card stays. A reply that fails doesn't clear it.
     await act(async () =>
       root.render(<Probe turns={[message, failed, turn("o", "assistant", "streaming", 3)]} />),
     );
-    expect(latest.refused.has("f")).toBe(true);
+    expect(refusedFor("f")).toBe(true);
     await act(async () =>
       root.render(<Probe turns={[message, failed, turn("o", "assistant", "error", 3)]} />),
     );
-    expect(latest.refused.has("f")).toBe(true);
+    expect(refusedFor("f")).toBe(true);
     // A reply that completes after the refusal clears it, with no action from the writer.
     await act(async () =>
       root.render(<Probe turns={[message, failed, turn("o", "assistant", "complete", 3)]} />),
     );
-    expect(latest.refused.has("f")).toBe(false);
+    expect(refusedFor("f")).toBe(false);
     // Refused again, the writer's next Retry clears it while its request runs.
     await act(async () => latest.retry(failed));
-    expect(latest.refused.has("f")).toBe(true);
+    expect(refusedFor("f")).toBe(true);
     api.retryReply.mockReturnValueOnce(new Promise(() => undefined));
     await act(async () => latest.retry(turn("g", "assistant", "error", 4)));
-    expect(latest.refused.has("f")).toBe(false);
+    expect(refusedFor("f")).toBe(false);
   });
 
   it("keeps a lost request's reply, failed, and its Retry re-sends the same id for the same failed reply", async () => {
     api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await act(async () => latest.retry(failed));
-    const lost = latest.standIns[0] as Turn;
-    expect(lost).toMatchObject({ status: "error", error: "Couldn't start the retry. Try again." });
-    expect(latest.requestOf(lost.id)).toBe("failed");
-    expect(announcements.announceError).toHaveBeenCalledWith(
-      "Couldn't start the retry. Try again.",
-    );
+    // A lost request is no errored stand-in: the failed reply shows again, with a lost-Retry outcome.
+    expect(latest.standIns).toEqual([]);
+    expect(latest.retried.size).toBe(0);
+    const [outcome] = latest.outcomes;
+    expect(outcome).toMatchObject({ kind: "lost", turnId: "f", attempt: 1 });
+    expect(announcements.announceError).not.toHaveBeenCalled();
     api.retryReply.mockReturnValueOnce(deferred<Turn>().promise);
-    await act(async () => latest.retry(lost));
-    expect(api.retryReply).toHaveBeenLastCalledWith("t", "f", { id: lost.id });
+    await act(async () => latest.retry(failed));
+    expect(api.retryReply).toHaveBeenLastCalledWith("t", "f", { id: outcome?.requestId });
     expect(latest.standIns).toHaveLength(1);
-    expect(latest.standIns[0]).toMatchObject({ id: lost.id, status: "pending", error: null });
+    expect(latest.standIns[0]).toMatchObject({ id: outcome?.requestId, status: "pending" });
+    expect(latest.outcomes).toEqual([]);
   });
 
   it("treats a replay the server can't place yet as pending, and keeps the stand-in once it answers the execution", async () => {
@@ -221,7 +224,7 @@ describe("useReplyRetry", () => {
       await act(async () => latest.retry(failed));
       const id = latest.standIns[0]?.id ?? "";
       // Not a refusal and not lost: the same id goes again.
-      expect(latest.refused.has("f")).toBe(false);
+      expect(refusedFor("f")).toBe(false);
       expect(latest.requestOf(id)).toBe("sending");
       await act(async () => vi.advanceTimersByTimeAsync(1000));
       expect(api.retryReply).toHaveBeenCalledTimes(2);
@@ -267,12 +270,11 @@ describe("useReplyRetry", () => {
       await act(async () => vi.advanceTimersByTimeAsync(60_000));
       expect(api.retryReply).toHaveBeenCalledTimes(RETRY_PENDING_ATTEMPTS);
       // Not refused: nothing says the server wrote nothing.
-      expect(latest.refused.has("f")).toBe(false);
-      expect(latest.requestOf(id)).toBe("failed");
-      expect(latest.standIns[0]).toMatchObject({ id, status: "error" });
+      expect(refusedFor("f")).toBe(false);
+      expect(latest.outcomes).toMatchObject([{ kind: "lost", turnId: "f", requestId: id }]);
 
       api.retryReply.mockResolvedValueOnce({ executionId: "e-r", turn: null });
-      await act(async () => latest.retry(latest.standIns[0] as Turn));
+      await act(async () => latest.retry(failed));
       expect(api.retryReply).toHaveBeenLastCalledWith("t", "f", { id });
       expect(latest.requestOf(id)).toBe("sent");
     } finally {

@@ -18,6 +18,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { runHandBack } from "./hand-back-adapter";
 import { handedBackText, viewOfSnapshot } from "./queue-output";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
@@ -54,7 +55,7 @@ export const threadStopCommand: CommandSpec = {
       input = { replay: { kind: "stop", requestId: parsed.data.requestId, body: parsed.data } };
     } else {
       const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-        parse: threadSnapshotSchema.safeParse,
+        decode: jsonResponse(threadSnapshotSchema),
       });
       // `mine` is empty: every message ./mf admitted is in the record at or below `sentThrough`.
       input = { press: { kind: "stop", view: viewOfSnapshot(snapshot) } };

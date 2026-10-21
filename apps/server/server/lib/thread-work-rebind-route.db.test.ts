@@ -1,18 +1,18 @@
-import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
-import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
-import { createQuietDrizzleJournalWriter } from "../test-support/journal-writer.js";
-
 /** PostgreSQL coverage for the writer Work-rebind HTTP boundary. */
 
 import { setTimeout as delay } from "node:timers/promises";
 import { createApp, toWebHandler } from "nitro/h3";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../domains/context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../domains/file-policy/index.js";
+import { createTestDrizzleDelivery } from "../domains/runtime/loop/__tests__/test-drizzle-delivery.js";
 import {
   resetThreadWorkRaceFixture,
   THREAD_WORK_RACE,
 } from "../domains/threads/test-support/thread-work-postgres-harness.js";
+import { createTestDocumentRemoval } from "../test-support/document-removal.js";
+import { createQuietDrizzleJournalWriter } from "../test-support/journal-writer.js";
 import { createTestWorkProjectionMutation } from "../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -48,6 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const threads = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      removal: createTestDocumentRemoval(db),
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),

@@ -38,12 +38,14 @@ const reasoning = block("reasoning", "reasoning", {
 function plan(
   blocks: Block[],
   current = new Map([["00000000-0000-4000-8000-000000000001", "new"]]),
+  reshown?: ReadonlySet<string>,
 ) {
   const before = JSON.stringify(blocks);
   const elisions = planModelElisions({
     retainedSuffix: [{ turn: { id: "turn" } as Turn, blocks }],
     recorded: collectRecordedDocuments([{ turn: { id: "turn" } as Turn, blocks }], policies),
     current,
+    reshown,
     policies,
   });
   expect(JSON.stringify(blocks)).toBe(before);
@@ -86,7 +88,7 @@ function pair(command: string, extra: JsonObject = {}, toolName = "write") {
 }
 
 describe("document text elisions", () => {
-  it("preserves fresh reads, duplicate reads and fresh writes", () => {
+  it("preserves fresh reads, duplicate reads and fresh writes, and elides re-shown copies as reshown", () => {
     for (const command of ["read", "create", "replace", "remove", "undo", "redo"])
       expect(
         plan(pair(command), new Map([["00000000-0000-4000-8000-000000000001", "old"]])),
@@ -99,6 +101,20 @@ describe("document text elisions", () => {
     expect(plan([...pair("read"), ...duplicate], new Map([[evidence.documentId, "old"]]))).toEqual(
       [],
     );
+    const reshown = new Set([evidence.documentId]);
+    for (const revision of ["old", "new"])
+      expect(plan(pair("read"), new Map([[evidence.documentId, revision]]), reshown)).toMatchObject(
+        [
+          {
+            treatment: "reshown",
+            content: { output: expect.stringContaining("shown after the summary") },
+          },
+        ],
+      );
+    // A copy of a document the compaction does not re-show keeps its stale treatment.
+    expect(plan(pair("read"), undefined, new Set(["other"]))).toMatchObject([
+      { treatment: "stale_write" },
+    ]);
   });
   it("absent evidence fails closed but an explicit empty list carries no text", () => {
     expect(plan(pair("read", { metadata: {} }))).toHaveLength(1);

@@ -21,8 +21,8 @@ export interface Work {
   defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */
-  unpushedChangeCount?: number | null;
+  /** Documents this Work's active branch changes (the Works badge), as the server stores it; never derive from visible rows. */
+  pendingDocumentCount: number;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -44,9 +44,8 @@ export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
   return work.archivedAt !== null;
 }
 
-export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
-export type NamedWorkCatalogEntry = WorkCatalogEntry & { isNoWork: false; handle: WorkHandle };
-export type NoWorkCatalogEntry = WorkCatalogEntry & { isNoWork: true; handle: null };
+export type NamedWorkCatalogEntry = Work & { isNoWork: false; handle: WorkHandle };
+export type NoWorkCatalogEntry = Work & { isNoWork: true; handle: null };
 
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
@@ -79,7 +78,7 @@ export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  draftOwner: { kind: "work"; workId: WorkId } | null;
+  branchOwner: { kind: "work"; workId: WorkId } | null;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */

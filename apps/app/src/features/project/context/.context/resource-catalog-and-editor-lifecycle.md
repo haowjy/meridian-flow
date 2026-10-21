@@ -120,10 +120,10 @@ advances. The phone document host (`MobileDocumentHost`) uses the same binding
 but neither offers Retry nor retries on a revision change, so a failed phone
 open has no in-place recovery yet.
 
-A draft-only tab (a new document proposed by a draft) opens no live binding at
+A draft-only tab (a new document proposed in a branch) opens no live binding at
 all: it is absent from the live SQL tree and the server refuses a room for it,
-so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
-failed branch room offers Retry or closing the tab, never a fallback to an empty
+so review hosts the draft room alone (`liveRoom={!draftOnly}`) and a
+failed draft room offers Retry or closing the tab, never a fallback to an empty
 live editor. The phone hosts it through the same `ContextEditorMountHost`
 (`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
 shells find the tab through `route-document-owner.ts`, the bound identity in the
@@ -199,6 +199,102 @@ Mounting a catalog consumer respects the five-second query freshness window;
 reactivating a retained editor does not force a fresh request. Stale mounts,
 explicit refetch, wake hints, reconnect/focus, and interval polling still refresh
 catalogs through the same replica owner.
+
+### Removed-document notices
+
+A presented document that something else deleted or discarded closes as
+before and says so. Three owners, one concept each:
+
+- **The record cache.** `ProjectContextAvailabilityCoordinator.removalRecord(projectId,
+  documentId)` is a subscribable per-document answer: `removed` with the
+  server's `DocumentRemovalRecord` (null: the server keeps none, because the
+  source or Work went rather than the document itself), `available`, `lost`
+  (an authority loss) or `unresolved` (the lookup failed). Every resolution
+  fills it, whichever watch, open or poll brought it, before its commands
+  apply. Subscribing asks: the first subscriber looks the document up unless
+  an answer or an open is pending, and the document stays watched (focus,
+  `online`, the 60 s poll) until it is `removed` or `lost`. `available` is not
+  final while someone asks: another browser tab's delete reaches this tab
+  through the shared local replica before the server commits it.
+  `useRemovalRecord` is the one React reader: the notice, `SyncStatus`, the
+  review room owner and the reopened review address.
+- **The notice store.** `RemovedNoticeStore` holds one notice per project and
+  surface (`editor`: Editor tabs on both shells; `dock`: the dock's
+  document). Whatever presented a document pushes it when it vanished:
+  `ContextRemovalCoordinator` for Editor tabs (`closeVanished`, a
+  `terminal-remove` that closed tabs, `discardDraft`), and
+  `useDesktopDockPresentation` for the dock. An entry shows once the cache
+  says `removed`; a Work's removal and an authority loss drop it.
+- **The sentence.** `removalSentence` in `RemovedDocumentNotice.tsx` owns
+  every copy rule as plain strings, so tooltips reuse them. A removal names
+  its actor from the record, the same for every account, and never says "you":
+  "Ana Ruiz deleted <title>.", "<title> was deleted with the Work <name>."; a
+  system rollback reads "removed when the reply that created it didn't
+  finish"; a user with no display name or a purged actor, "<title> was
+  deleted."
+
+Placement follows "feedback never displaces content": a chip in the tab
+strip's free end (`RemovedDocumentChip` in a `RemovedNoticeSlot`), the
+landing's top margin when no tab remains, the phone top bar's notice row, and
+for the dock a chip beside "Recent" in Chat's rail header. The slot keeps room
+for the chip's short sentence ("1 document deleted"), so tabs scroll before
+the notice loses its words.
+
+`useRemovedNoticeLifetime` (Editor: `ProjectView`, both shells; dock:
+`DesktopProject`) starts a notice's lifetime only when its placement is on
+screen (the Editor screen; Chat with its rail open and no dock document), so a
+removal noticed elsewhere waits for the writer. It anchors once the place no
+longer shows a removed document (the removal's own fallback is not a
+navigation), and the next change of place clears the notice, documents still
+waiting for an answer included. A removal joining the notice re-anchors it.
+A dock removal on the Work screen has no placement there; it shows when the
+writer next sees Chat's rail.
+
+The tab's own removal says nothing: the tree delete and a Discard of a
+created (draft-only) document take a mark in the store (`markOwnRemoval`)
+before the request and settle it in `finally`. A Discard of an existing
+document's edits removes nothing, so it marks nothing. Only documents a tab or
+the dock presents are marked. While the
+mark lives every sighting is silent; "kept" releases it, and a settled
+removal lasts until each surface that presented the document saw it vanish.
+A replica change origin cannot replace the marks: Discard is a server command,
+not a replica mutation.
+
+A live room's 4208 has one reaction: `AccountFeatureLifetime` hears it from
+the registry (`observeRemovedRooms`, held by an editor or not) and follows the
+document's answer in the record cache. The close outdates any answer but
+`removed` (`roomRemoved` forgets it and asks again), so whatever answers next
+was learned after the close. `removed` closes its tabs. `available` (a restore
+won the race, or a stale close) reconnects the same session in place
+(`restartRemovedRoom`). Each close costs one lookup and at most one restart;
+nothing caps restarts across closes, which holds because the server's 4208 and
+availability read the same removal record. A real restore cycle never leaves
+the tab dead. The follow ends on `removed`, `lost`, the restart
+or the session's end; a failed lookup leaves it `unresolved` and the
+availability watch keeps asking. Rebinding the tab instead would not help:
+its cached resource handle hands back the same removed session. A tab still
+open on a removed room says nothing while asked, the record sentence for
+`removed`, and "Access lost (not saving to the server)" otherwise
+(`SyncStatus`). Draft rooms carry no document identity in the registry, so
+their review owner does the same itself: it forgets the answer on the close,
+refreshes the Work's drafts on `removed` and rebuilds the room on `available`.
+
+The dock and the Editor share one push for a Discard that closes a created
+document: `DraftOnlyContainer.remove` reports whichever container it closed
+to that surface's notice.
+
+Reopening a review address whose document was removed says the sentence in
+place of "This destination is unavailable" (item key parsed by
+`@meridian/contracts`' `parseDraftItemKey`). A plain path address keeps "This
+destination is unavailable": once nothing lives at the path it names no
+document, and finding the newest tombstone at a path belongs to a later track.
+
+Unsent text is not kept: a removed document's tab closes even when its
+session holds unacknowledged edits. Keeping it bound would need more than the
+planner deferring this tab's removal and revoke: the catalog-vanished close
+must defer too, the route's path-based admission stops resolving the address
+(masking the tab as unavailable and dropping its selection to a candidate),
+and the session binding re-probes when the replica marks the resource terminal.
 
 ### Multi-Work review representations
 

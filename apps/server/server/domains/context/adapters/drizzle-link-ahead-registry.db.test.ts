@@ -20,8 +20,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
 import {
@@ -291,7 +291,7 @@ if (!RUN) {
       // Delete and recreate the address: the compare-and-set must not move the target.
       await database
         .update(documents)
-        .set({ deletedAt: new Date() })
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
         .where(eq(documents.id, DOCUMENT));
       await insertDocument(database, "manuscript", DOCUMENT_2);
       expect(await registry.settleArrivals([DOCUMENT_2 as never])).toBe(0);
@@ -421,9 +421,9 @@ if (!RUN) {
 
       async function start() {
         const runtime = await runtimes.compose();
-        const scenario = await draftTreeScenario(db, { runtime, runtimes });
+        const scenario = await branchTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
-        // The model's create is a hidden row in the Work's draft.
+        // The model's create is a hidden row in the Work's branch.
         const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
         return { runtime, scenario, work, kael };
       }
@@ -437,18 +437,18 @@ if (!RUN) {
         return { registered: ref !== undefined, live: ref?.settled ?? null };
       }
 
-      it("registers a draft's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
+      it("registers a branch's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
         const { scenario, kael } = await start();
         const registry = createTestLinkAheadRegistry(db);
         const at = { holderProjectId: scenario.project.id, address: KAEL };
-        // The draft's hidden document at the path binds nothing, for any holder or mint.
+        // The branch's hidden document at the path binds nothing, for any holder or mint.
         const typed = crypto.randomUUID();
         await registry.register([{ ...at, aheadId: typed }]);
         await registry.register([{ ...at, aheadId: typed }]);
         expect
-          .soft(await registryRow(typed), "registered once, not bound to the draft's document")
+          .soft(await registryRow(typed), "registered once, not bound to the branch's document")
           .toEqual({ registered: true, live: null });
-        // A model's mint in the draft's view registers the same way.
+        // A model's mint in the branch's view registers the same way.
         const links = createScopedDocumentLinks({
           scopes: createTestDocumentLinkScopes(db),
           registrar: registry,
@@ -457,7 +457,7 @@ if (!RUN) {
         const minted = crypto.randomUUID();
         await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
         expect.soft(await registryRow(minted)).toEqual({ registered: true, live: null });
-        // The first live arrival at the path (a Create reveals the draft's document, 12b)
+        // The first live arrival at the path (a Create reveals the branch's document, 12b)
         // binds every waiting ref, once.
         const live = await scenario.writer.createDocument("lore/kael", "Kael, live.");
         for (const aheadId of [typed, minted]) {
@@ -466,7 +466,7 @@ if (!RUN) {
             live,
           });
         }
-        expect.soft(live, "the revealed draft document").toBe(kael);
+        expect.soft(live, "the revealed branch document").toBe(kael);
       });
 
       it("registers the writer's link typed in the draft's review room, best effort and globally (L-3)", async () => {

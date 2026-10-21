@@ -19,7 +19,10 @@
  * them (`isToolViewVisible`) before a fold reaches this row.
  */
 
+import { t } from "@lingui/core/macro";
+import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import type { ToolView } from "@meridian/thread-client";
+import { Pause } from "lucide-react";
 import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
@@ -30,6 +33,17 @@ export type ToolRowProps = {
 };
 
 function ToolRowComponent({ tool }: ToolRowProps) {
+  if (isNotesStepHeldResult(tool.result)) {
+    return (
+      <div data-tool-call-id={tool.toolCallId ?? undefined}>
+        <ActivityRow Icon={Pause} title={t`Not run before compaction`} status="done" />
+      </div>
+    );
+  }
+  return <ExecutedToolRow tool={tool} />;
+}
+
+function ExecutedToolRow({ tool }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
     tool.status === "partial" ? "running" : toolRowFailed(tool) ? "error" : "done";

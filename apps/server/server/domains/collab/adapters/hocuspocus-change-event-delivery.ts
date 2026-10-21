@@ -15,8 +15,8 @@ export function createHocuspocusChangeEventDelivery(input: {
   return {
     deliver(message, sweptChanges) {
       try {
-        // A live room is named by the bare document ID. Branch review rooms use
-        // the branch: prefix and intentionally receive attributed decorations elsewhere.
+        // A live room is named by the bare document ID. Draft review rooms use
+        // the draft: prefix and intentionally receive attributed decorations elsewhere.
         const room = input.hocuspocus().documents.get(message.documentId);
         if (!room) return;
         const connectionsByUser = new Map<UserId, Set<Connection>>();

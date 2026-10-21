@@ -1,43 +1,36 @@
 /** Sole ordering owner for durable branch-push batch settlement and recovery. */
+
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AgentEditCodecFactory,
-  DocumentCoordinator,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
+import type { BranchCommandEnvelope } from "./branch-commands.js";
 import {
-  type BranchCriticalSections,
-  type BranchLockLease,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
-import {
+  type ApplyPayloads,
   FIRST_CLAIM_EPOCH,
   type PendingLiveSettlement,
   type PendingSettlementBatch,
   type PreparedPushCommit,
-  type PublicationPayloads,
   type PushCommitStore,
   type PushLineageRow,
   type SettlementClaim,
   type SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
-import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
-import { collabHook } from "./collab-test-hooks.js";
-import type { DraftCommandEnvelope } from "./draft-commands.js";
+import type { Attempt } from "./draft-attempts.js";
+import { trailContributionReplacement } from "./draft-trail-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
-import type {
-  PublicationItemHold,
-  PublicationItemOutcome,
-  PublicationRefusal,
-} from "./ports/settlement-publication.js";
+import type { ApplyItemHold, ApplyRefusal } from "./ports/settlement-apply.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
@@ -50,45 +43,18 @@ export class PendingLiveSettlementError extends Error {
   }
 }
 
-/**
- * A staged batch whose completion needs branch leases its execution doesn't hold, still
- * owned by that execution (F22): it releases what it holds, leases the grown set in
- * global order and continues the same batch with `continueStaged`.
- */
-export type StagedBatchHandoff = {
-  batchId: string;
-  claim: SettlementClaim;
-  /** The pushes staged with it, for the caller's per-item results. */
-  pushes: readonly PushLineageRow[];
-};
-
-/** A publication step needs branch leases this execution doesn't hold; discovery must run again. */
-export class PublicationLeasesChangedError extends Error {
-  constructor(
-    readonly batchId: string,
-    readonly branchIds: readonly string[],
-    /** The batch the execution still owns and continues once it holds `branchIds` too. */
-    readonly staged: StagedBatchHandoff,
-  ) {
-    super(`Settlement batch ${batchId} needs branch leases its caller doesn't hold`);
-    this.name = "PublicationLeasesChangedError";
-  }
-}
-
 type LiveDocs = ReadonlyMap<DocumentId, Y.Doc>;
 
 /** How a staged (or checked) batch ended. */
-export type PublicationOutcome =
+export type ApplyOutcome =
   | {
       kind: "settled";
       /** The pushes whose text reached live. */
       pushes: readonly PushLineageRow[];
-      /** Every held item, at the check or in completion, branchless ones included. */
-      held: readonly PublicationItemHold[];
-      /** What the steps did per published item, decided in completion. */
-      outcomes: readonly PublicationItemOutcome[];
+      /** Every held item, at the check or in completion, items without text drafts included. */
+      held: readonly ApplyItemHold[];
     }
-  | { kind: "refused"; reason: PublicationRefusal }
+  | { kind: "refused"; reason: ApplyRefusal }
   /** Another request holds the writer's `commandId`; nothing was staged. */
   | { kind: "command_exists" };
 
@@ -96,16 +62,14 @@ export type PublicationOutcome =
 type SettleResult =
   | {
       kind: "completed";
-      held: readonly PublicationItemHold[];
-      outcomes: readonly PublicationItemOutcome[];
+      held: readonly ApplyItemHold[];
     }
-  | { kind: "refused"; reason: PublicationRefusal }
-  | { kind: "rediscover"; branchIds: readonly string[]; claim: SettlementClaim };
+  | { kind: "refused"; reason: ApplyRefusal };
 
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
   settlementStore: PendingSettlementStore;
-  liveCoordinator: DocumentCoordinator;
+  liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   /** Settlement runs in its documents' scope, so nested document doors join it. */
@@ -113,32 +77,30 @@ export function createBranchPushTransition(input: {
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
   sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
-  /** Recovery takes publication steps' branch leases here, before coordinator leases. */
-  criticalSections?: BranchCriticalSections;
 }) {
-  const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   type PreparedTransition<T> =
     | { kind: "return"; value: T }
     | {
         kind: "push";
-        /** May be empty when `payloads` carries the whole publication. */
+        /** May be empty when `payloads` carries the whole Apply. */
         pushes: PreparedPushCommit[];
-        payloads?: PublicationPayloads;
-        /** The branch leases the caller holds, publication steps' included. */
-        leasedBranchIds: readonly string[];
-        /** The lease the caller holds, for steps that reset a leased branch in completion. */
-        lease?: BranchLockLease;
+        payloads?: ApplyPayloads;
         /** The writer's command, claimed with the staging (§4.6). */
-        command?: DraftCommandEnvelope;
+        command?: BranchCommandEnvelope;
         onCommandExists?: () => T;
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
         onConflict: (push: PushLineageRow) => T;
-        finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
+        finish: (input: { outcome: ApplyOutcome; docs: LiveDocs }) => T | Promise<T>;
       };
 
   async function execute<T>(inputExecution: {
     documentIds: readonly DocumentId[];
     signal?: AbortSignal;
+    /**
+     * The caller's attempt, whose one commit scope is the staging transaction: a staging that
+     * misses its revision rolls back and the attempt recaptures. Settlement runs after it.
+     */
+    attempt?: Pick<Attempt, "commit">;
     prepare: (input: {
       docs: LiveDocs;
       lockCuts: ReadonlyMap<DocumentId, Uint8Array>;
@@ -152,23 +114,23 @@ export function createBranchPushTransition(input: {
         if (prepared.kind === "return") return prepared.value;
         const payloads = prepared.payloads ?? {};
         if (prepared.pushes.length === 0 && Object.keys(payloads).length === 0) {
-          throw new Error("Branch push transition requires a push or a publication payload");
+          throw new Error("Branch push transition requires a push or an Apply payload");
         }
         const settlement = { batchId: randomUUID(), claimToken: randomUUID() };
         // The same plans and lock order as completion, before anything is staged:
         // a refusal stages nothing, and held candidates leave the batch first.
-        const check = await input.settlementStore.checkPublication({
+        const check = await input.settlementStore.checkApply({
           batchId: settlement.batchId,
           members: prepared.pushes.map((push) => ({
-            documentId: push.branch.documentId,
-            branchId: push.branch.branchId,
-            workId: push.branch.workId,
+            documentId: push.documentDraft.documentId,
+            draftId: push.documentDraft.draftId,
+            workId: push.documentDraft.workId,
             journalIds: push.journalRows.map((row) => row.id),
           })),
           payloads: new Map(Object.entries(payloads)),
           liveTextFingerprints: new Map(
             prepared.pushes.map((push) => [
-              push.branch.documentId,
+              push.documentDraft.documentId,
               fullStateUpdateFingerprint(push.lockCutUpdate),
             ]),
           ),
@@ -179,43 +141,41 @@ export function createBranchPushTransition(input: {
         // Held items are durable exclusions: their text leaves the batch, their step
         // payload is the refined one, and the holds are staged with it.
         const checkHeld = new Set(check.hold.flatMap(({ documentId }) => documentId ?? []));
-        const pushes = prepared.pushes.filter((push) => !checkHeld.has(push.branch.documentId));
+        const pushes = prepared.pushes.filter(
+          (push) => !checkHeld.has(push.documentDraft.documentId),
+        );
         const stagedPayloads = Object.fromEntries(check.payloads);
         const staging = pushes.length > 0 || check.payloads.size > 0;
         if (!staging) {
           return prepared.finish({
-            outcome: { kind: "settled", pushes: [], held: check.hold, outcomes: [] },
+            outcome: { kind: "settled", pushes: [], held: check.hold },
             docs,
           });
         }
-        const committed = await input.commitStore.commitPushBatch({
-          settlement,
-          pushes,
-          ...(check.payloads.size > 0 ? { payloads: stagedPayloads } : {}),
-          ...(check.hold.length > 0 ? { holds: check.hold } : {}),
-          ...(prepared.command ? { command: prepared.command } : {}),
-        });
+        const stage = () =>
+          input.commitStore.commitPushBatch({
+            settlement,
+            pushes,
+            ...(check.payloads.size > 0 ? { payloads: stagedPayloads } : {}),
+            ...(check.hold.length > 0 ? { holds: check.hold } : {}),
+            ...(prepared.command ? { command: prepared.command } : {}),
+          });
+        const committed = await (inputExecution.attempt?.commit(stage) ?? stage());
         if (committed.status === "conflict") return prepared.onConflict(committed.push);
         if (committed.status === "command_exists") {
           if (!prepared.onCommandExists) throw new Error("Command id already has an effect");
           return prepared.onCommandExists();
         }
-        await prepared.afterDurableCommit?.(pushes.map((push) => push.branch.documentId));
+        await prepared.afterDurableCommit?.(pushes.map((push) => push.documentDraft.documentId));
         // Staged and durable, not yet settled: where a test races a change with the batch.
-        await collabHook("applyItems.afterStaging");
+        await testHook("applyItems.afterStaging");
         // The committer holds the batch's first claim; it never adopts a later one.
         const batch = await input.settlementStore.loadSettlementBatch({
           batchId: settlement.batchId,
           owner: { token: settlement.claimToken, epoch: FIRST_CLAIM_EPOCH },
         });
         if (!batch) throw new PendingLiveSettlementError(settlement.batchId);
-        const settled = await settle({
-          batch,
-          docs,
-          leasedBranchIds: prepared.leasedBranchIds,
-          ...(prepared.lease ? { lease: prepared.lease } : {}),
-          signal: inputExecution.signal,
-        });
+        const settled = await settle({ batch, docs, signal: inputExecution.signal });
         return prepared.finish({
           outcome: outcomeOf(settled, { batchId: settlement.batchId, pushes: committed.pushes }),
           docs,
@@ -282,8 +242,6 @@ export function createBranchPushTransition(input: {
   type Settlement = {
     batch: PendingSettlementBatch;
     docs: LiveDocs;
-    leasedBranchIds: readonly string[];
-    lease?: BranchLockLease;
     signal?: AbortSignal;
   };
 
@@ -333,9 +291,7 @@ export function createBranchPushTransition(input: {
             replacement: trailContributionReplacement(member.trail, member.push),
           })),
           payloads,
-          leasedBranchIds: settlement.leasedBranchIds,
-          ...(settlement.lease ? { lease: settlement.lease } : {}),
-          // The live text the batch publishes over: its lock cut plus every admission that
+          // The live text the batch lands over: its lock cut plus every admission that
           // joined it since staging, so a writer's change after the cut (a deletion too)
           // moves the rendered-text token.
           liveTextFingerprints: new Map(
@@ -360,10 +316,6 @@ export function createBranchPushTransition(input: {
         throw cause;
       }
       if (completion.status === "refused") return { kind: "refused", reason: completion.reason };
-      if (completion.status === "rediscover") {
-        // The owner keeps the batch: it leases the grown set first, then settles again.
-        return { kind: "rediscover", branchIds: completion.branchIds, claim };
-      }
       if (completion.status === "completed") {
         for (const projection of completion.projections) {
           const sweep = sweeps.get(projection.documentId as DocumentId);
@@ -378,7 +330,7 @@ export function createBranchPushTransition(input: {
             // and the trail must never be reported as failed because it missed.
           }
         }
-        return { kind: "completed", held: completion.held, outcomes: completion.outcomes };
+        return { kind: "completed", held: completion.held };
       }
     }
     await input.settlementStore.recordFailure({
@@ -436,125 +388,50 @@ export function createBranchPushTransition(input: {
     }
   }
 
-  /**
-   * Recovery takes the same outer leases as warm execution, discovered from the
-   * staged payloads before any coordinator lease or claim: every publication
-   * step's declared branches and the members' own. Completion asks again under
-   * its locks; a grown set hands the batch back for the next pass.
-   */
+  /** Recovery claims each recoverable batch, then settles it under its documents' coordinator locks. */
   async function recover(recoveryInput?: { signal?: AbortSignal }): Promise<number> {
     const recoverableIds = await input.settlementStore.listRecoverableBatchIds();
     let recovered = 0;
     for (const batchId of recoverableIds) {
       recoveryInput?.signal?.throwIfAborted();
-      const scope = await input.settlementStore.loadRecoveryScope(batchId);
-      const leasedBranchIds = [
-        ...new Set([
-          ...(await input.settlementStore.prepareBranchLeases(scope.payloads)),
-          ...scope.memberBranchIds,
-        ]),
-      ].sort();
-      await criticalSections.withBranches(leasedBranchIds, async (lease) => {
-        let batch: PendingSettlementBatch | null = null;
-        try {
-          batch = await input.settlementStore.claimRecoverableBatch({
-            batchId,
-            token: randomUUID(),
-          });
-          if (!batch) return;
-          const claimed = batch;
-          const settled = await withDocumentLocks(
-            claimed.members.map((member) => member.push.documentId),
-            recoveryInput?.signal,
-            (docs) =>
-              settle({
-                batch: claimed,
-                docs,
-                leasedBranchIds,
-                lease,
-                signal: recoveryInput?.signal,
-              }),
-          );
-          if (settled.kind === "rediscover") {
-            // Hand it back: the next pass discovers and leases the grown set first.
-            await input.settlementStore.recordFailure({
-              batchId,
-              claim: settled.claim,
-              stage: "handoff",
-              error: "publication branch leases changed",
-            });
-          } else {
-            recovered += 1;
-          }
-        } catch (cause) {
-          if (!batch || cause instanceof PendingLiveSettlementError) return;
-          await input.settlementStore.recordFailure({
-            batchId: batch.batchId,
-            claim: batch.claim,
-            stage: "execute",
-            error: cause,
-          });
-        }
-      });
+      let batch: PendingSettlementBatch | null = null;
+      try {
+        batch = await input.settlementStore.claimRecoverableBatch({ batchId, token: randomUUID() });
+        if (!batch) continue;
+        const claimed = batch;
+        await withDocumentLocks(
+          claimed.members.map((member) => member.push.documentId),
+          recoveryInput?.signal,
+          (docs) => settle({ batch: claimed, docs, signal: recoveryInput?.signal }),
+        );
+        recovered += 1;
+      } catch (cause) {
+        if (!batch || cause instanceof PendingLiveSettlementError) continue;
+        await input.settlementStore.recordFailure({
+          batchId: batch.batchId,
+          claim: batch.claim,
+          stage: "execute",
+          error: cause,
+        });
+      }
     }
     return recovered;
   }
 
-  /**
-   * Continues a batch this execution staged and still owns, after leasing the grown set
-   * its completion asked for (F22): the same claim, the members' coordinator leases, the
-   * same completion. Another growth hands it back again; the caller bounds the retries.
-   */
-  async function continueStaged<T>(continuation: {
-    staged: StagedBatchHandoff;
-    leasedBranchIds: readonly string[];
-    lease?: BranchLockLease;
-    signal?: AbortSignal;
-    finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
-  }): Promise<T> {
-    const { staged } = continuation;
-    const batch = await input.settlementStore.loadSettlementBatch({
-      batchId: staged.batchId,
-      owner: staged.claim,
-    });
-    if (!batch) throw new PendingLiveSettlementError(staged.batchId);
-    return withDocumentLocks(
-      batch.members.map((member) => member.push.documentId),
-      continuation.signal,
-      async (docs) => {
-        const settled = await settle({
-          batch,
-          docs,
-          leasedBranchIds: continuation.leasedBranchIds,
-          ...(continuation.lease ? { lease: continuation.lease } : {}),
-          signal: continuation.signal,
-        });
-        return continuation.finish({ outcome: outcomeOf(settled, staged), docs });
-      },
-    );
-  }
-
-  return { execute, continueStaged, recover };
+  return { execute, recover };
 }
 
-/** A settlement's outcome for its execution; a grown lease set hands the batch up. */
+/** A settlement's outcome for its execution. */
 function outcomeOf(
   settled: SettleResult,
-  staged: Omit<StagedBatchHandoff, "claim">,
-): PublicationOutcome {
-  if (settled.kind === "rediscover") {
-    throw new PublicationLeasesChangedError(staged.batchId, settled.branchIds, {
-      ...staged,
-      claim: settled.claim,
-    });
-  }
+  staged: { batchId: string; pushes: readonly PushLineageRow[] },
+): ApplyOutcome {
   if (settled.kind === "refused") return { kind: "refused", reason: settled.reason };
   const heldDocuments = new Set(settled.held.flatMap(({ documentId }) => documentId ?? []));
   return {
     kind: "settled",
     pushes: staged.pushes.filter((push) => !heldDocuments.has(push.documentId)),
     held: settled.held,
-    outcomes: settled.outcomes,
   };
 }
 
@@ -588,7 +465,7 @@ export function fullStateFingerprint(doc: Y.Doc): string {
 /**
  * The fingerprint of a full-state update: deletions count, unlike a state vector. A lock
  * cut is `Y.encodeStateAsUpdate` of the warm room, so its fingerprint equals
- * `fullStateFingerprint` of the room as the writer saw it under the same lease.
+ * `fullStateFingerprint` of the room as the writer saw it under the same live scope.
  */
 export function fullStateUpdateFingerprint(update: Uint8Array): string {
   return createHash("sha256").update(update).digest("base64");

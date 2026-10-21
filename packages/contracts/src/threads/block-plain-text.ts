@@ -1,7 +1,6 @@
 /**
  * Purpose: Derives display plain text from block content across durable and live projections.
- * Key decision: this stays in a dependency-light leaf so protocol can re-export
- * it without evaluating the full threads barrel and its golden fixtures.
+ * Key decision: this dependency-light leaf is shared by protocol and both clients.
  */
 import type { BlockType, JsonValue } from "./index.js";
 

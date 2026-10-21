@@ -100,7 +100,7 @@ export function createAccountDocumentSessionRuntime(
       if (typeof value !== "function") return value;
       if (
         property === "release" ||
-        property === "releaseBranchRooms" ||
+        property === "releaseDraftRooms" ||
         property === "revokeDocument" ||
         property === "revokeAccess" ||
         property === "whenRefusedRoomDropped"

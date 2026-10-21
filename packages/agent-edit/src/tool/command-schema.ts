@@ -28,7 +28,7 @@ const BLOCK_SELECTOR_JSON_SCHEMA = {
 const BlockPositionSchema = z.union([z.string().min(1), z.int().positive()]);
 
 const BLOCK_SELECTOR_DESCRIPTION =
-  "Block hash, 1-based block number, or an inclusive [start, end] range of either. Not with `around` or a `#fragment`.";
+  "A string is a block hash (even if all digits); an integer is a 1-based block number. Or an inclusive [start, end] range of either. Not with `around` or a `#fragment`.";
 
 function blockSelector(description: string) {
   return z

@@ -6,7 +6,7 @@ import { toHashline } from "../model/hashline.js";
 import type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
-  AgentEditConcurrentRun,
+  AgentEditConcurrentListing,
   AgentEditResultV1,
 } from "./model-result.js";
 
@@ -119,15 +119,7 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
   }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
-  if (result.concurrent) {
-    const shown = new Set(
-      groups
-        .filter((group) => group.extent === "full" && group.relation === "changed")
-        .flatMap((group) => group.items.map((item) => item.hash)),
-    );
-    lines.push(...concurrentLines(result.concurrent.runs, shown));
-    if (result.concurrent.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
-  }
+  if (result.concurrent) lines.push(...concurrentLines(result.concurrent));
   const swept = groups.filter((group) => group.relation === "swept");
   if (swept.length > 0) {
     lines.push("concurrent user content swept during commit; re-read required");
@@ -141,21 +133,18 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
   return lines;
 }
 
-function concurrentLines(
-  runs: readonly AgentEditConcurrentRun[],
-  shown: ReadonlySet<string>,
-): string[] {
-  const rendered: string[] = [];
-  for (const run of runs) {
-    const entries = [
-      ...run.blocks.filter((item) => !shown.has(item.hash)).map((item) => `    ${blockLine(item)}`),
-      ...run.tombstones.map(
-        (tombstone) => `    ${tombstone.hash}| [explicit deletion]\n${tombstone.body}`,
-      ),
-    ];
-    if (entries.length > 0) rendered.push(`  ${run.origin}:`, ...entries);
-  }
-  return rendered.length > 0 ? ["concurrent edits:", ...rendered] : [];
+/** The blocks changed since the model last saw them, unlabelled (labels arrive with M3). */
+function concurrentLines(listing: AgentEditConcurrentListing): string[] {
+  const lines = listing.blocks.map((item) => `  ${blockLine(item)}`);
+  if (listing.removed?.length)
+    lines.push(`  removed since you last saw it: ${listing.removed.join(" ")}`);
+  if (listing.more)
+    lines.push(
+      listing.more === 1
+        ? "  1 more block changed since you last saw it"
+        : `  ${listing.more} more blocks changed since you last saw them`,
+    );
+  return lines.length > 0 ? ["concurrent edits:", ...lines] : [];
 }
 
 /** The file an outline's sections are read from; undefined when the result isn't an outline. */

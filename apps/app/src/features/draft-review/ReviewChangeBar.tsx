@@ -2,7 +2,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 
-import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
+import type {
+  BranchCommandFailure,
+  ChangeCommandState,
+} from "@/client/query/branch-command-record";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
@@ -14,7 +17,7 @@ export type ReviewChangeBarProps = {
   disabled: boolean;
 
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
-  draftFailure?: DraftCommandFailure | null;
+  draftFailure?: BranchCommandFailure | null;
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;

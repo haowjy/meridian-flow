@@ -26,6 +26,7 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
     status: null,
     archivedAt: null,
     defaultAiWriteMode: "direct",
+    pendingDocumentCount: 0,
     entityRevision: "1",
     createdAt: "2026-08-08T00:00:00.000Z",
     updatedAt: "2026-08-08T00:00:00.000Z",

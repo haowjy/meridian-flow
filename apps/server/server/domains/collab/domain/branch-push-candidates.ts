@@ -1,29 +1,29 @@
-/** Builds the candidate batches a publication stages: whole-branch, or the rows a review selected. */
+/** Builds the candidate batches an Apply stages: whole-draft, or the rows a review selected. */
 import { randomUUID } from "node:crypto";
 import type { UserId } from "@meridian/contracts/runtime";
-import type { BranchSnapshot } from "./branch-coordinator.js";
 import {
-  type BranchJournalRow,
+  type ApplyPayloads,
   BranchPushCommitConflictError,
   type CandidateBatch,
-  type PublicationPayloads,
 } from "./branch-push-contracts.js";
+import type { DraftJournalRow } from "./draft-journal.js";
+import type { DraftSnapshot } from "./draft-store.js";
 
 type CandidateSource = {
-  branch: BranchSnapshot;
-  rows: BranchJournalRow[];
+  documentDraft: DraftSnapshot;
+  rows: DraftJournalRow[];
 };
 
-export function buildWholeBranchCandidates(input: {
+export function buildWholeDraftCandidates(input: {
   sources: readonly CandidateSource[];
-  payloads?: PublicationPayloads;
+  payloads?: ApplyPayloads;
   pushedByUserId?: UserId;
 }): CandidateBatch {
   return {
     ...(input.payloads ? { payloads: input.payloads } : {}),
     candidates: input.sources.map((source) => ({
-      branchId: source.branch.branchId,
-      documentId: source.branch.documentId,
+      draftId: source.documentDraft.draftId,
+      documentId: source.documentDraft.documentId,
       rows: source.rows,
       materialization: "whole" as const,
     })),
@@ -32,26 +32,26 @@ export function buildWholeBranchCandidates(input: {
   };
 }
 
-/** One branch's selected rows, fenced by the live revision the selection was made against. */
+/** One draft's selected rows, fenced by the live revision the selection was made against. */
 export function buildSelectedRowCandidates(input: {
   source: CandidateSource;
   journalIds: readonly number[];
   expectedLiveRevision: string;
-  payloads?: PublicationPayloads;
+  payloads?: ApplyPayloads;
   pushedByUserId?: UserId;
 }): CandidateBatch {
   const selected = new Set(input.journalIds);
   if (selected.size === 0) throw new Error("selective_push_requires_rows");
   const rows = input.source.rows.filter((row) => selected.has(row.id));
   if (rows.length !== selected.size) {
-    throw new BranchPushCommitConflictError(input.source.branch.branchId);
+    throw new BranchPushCommitConflictError(input.source.documentDraft.draftId);
   }
   return {
     ...(input.payloads ? { payloads: input.payloads } : {}),
     candidates: [
       {
-        branchId: input.source.branch.branchId,
-        documentId: input.source.branch.documentId,
+        draftId: input.source.documentDraft.draftId,
+        documentId: input.source.documentDraft.documentId,
         rows,
         materialization: "selected_rows",
       },

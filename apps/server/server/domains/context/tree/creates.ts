@@ -1,43 +1,31 @@
 /**
- * Creates at a path (contract §6.2–§6.4): a draft's create makes or joins a hidden live
+ * Creates at a path (contract §6.2–§6.4): a branch's create makes or joins a hidden live
  * row; a live create at a hidden node's path reveals it instead of inserting a twin. Both
  * pick a hidden candidate the same way, and repair on touch: a hidden document no active
- * draft uses, met under its lock, is tombstoned (§12.4).
+ * branch uses, met under its lock, is tombstoned (§12.4).
  *
  * Every function runs in its caller's transaction, which already holds the locks §14
- * names before the document locks taken here: Work rows, the draft row, then namespace
- * advisory locks. A draft's create never seeds live content: a new text row gets an empty
- * live Yjs document, and its text lives in the draft's branch.
+ * names before the document locks taken here: Work rows, the branch row, then namespace
+ * advisory locks. A branch's create never seeds live content: a new text row gets an empty
+ * live Yjs document, and its text lives in the document's draft.
  */
-import type {
-  ContextSourceId,
-  DocumentId,
-  DraftId,
-  ProjectId,
-  ThreadId,
-  TurnId,
-} from "@meridian/contracts";
+import type { BranchId, ContextSourceId, DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { isUuid } from "../../../shared/uuid.js";
+import { type TestHookPoint, testHook } from "../../../shared/test-hooks.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
-import { draftMayHold, loadProjectHolder } from "./draft-ownership.js";
-import { recordCreated } from "./draft-tree-store.js";
-import { tombstoneUnused } from "./end-use.js";
+import { recordCreated } from "./branch-tree-store.js";
 import type { HiddenNodeRepair } from "./hidden-node-repair.js";
 import type {
   BinaryNode,
+  BranchCreateResult,
   CreateFault,
-  DraftCreateResult,
   LiveClaim,
   LiveCreateCandidate,
-  RevealExpectation,
   TrackedNode,
 } from "./hidden-node-types.js";
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
 import { type PlaceResult, place, walkFolders } from "./placement.js";
-import { type TreeHookPoint, treeHook } from "./test-hooks.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
 import {
   type DocumentSlot,
@@ -46,20 +34,20 @@ import {
 } from "./tree-view-sql.js";
 
 // ---------------------------------------------------------------------------------------
-// Draft creates (§6.2)
+// Branch creates (§6.2)
 // ---------------------------------------------------------------------------------------
 
 /**
- * A draft's create at `dir/name.extension` (§6.2): hidden folders as needed, then the
- * document, joined when another draft's hidden text document sits at the path, recorded
- * as the draft's `created` row at the draft's location, with the draft's branch and its
+ * A branch's create at `dir/name.extension` (§6.2): hidden folders as needed, then the
+ * document, joined when another branch's hidden text document sits at the path, recorded
+ * as the branch's `created` row at the branch's location, with the document's draft and its
  * settlements of unsettled ahead refs at that address. Runs in the command transaction
- * that holds the drafting Work, the draft and the source's namespace.
+ * that holds the drafting Work, the branch and the source's namespace.
  */
-export async function createInDraft(
+export async function createInBranch(
   db: Database,
   input: {
-    draftId: DraftId;
+    branchId: BranchId;
     contextSourceId: ContextSourceId;
     dir: readonly string[];
     name: string;
@@ -67,16 +55,18 @@ export async function createInDraft(
     node: TrackedNode | BinaryNode;
     /** The chat that made the create, recorded for the review row (§3.3). */
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
-    /** Empty live Yjs for a new text row (never seeded). */
-    ensureEmptyContent(documentId: DocumentId): Promise<void>;
-    /** The draft's branch on a text document, seeded from its empty live document. */
-    ensureDraftBranch(documentId: DocumentId): Promise<void>;
+    /** A new text row's authority, empty, in this transaction (never seeded). */
+    initializeEmptyContent(documentId: DocumentId): Promise<void>;
+    /** A joined text row whose authority is missing, repaired from its stored projection. */
+    repairContent(documentId: DocumentId): Promise<void>;
+    /** The branch's draft of a text document, seeded from its empty live document. */
+    ensureDocumentDraft(documentId: DocumentId): Promise<void>;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   },
-): Promise<Result<DraftCreateResult, CreateFault>> {
+): Promise<Result<BranchCreateResult, CreateFault>> {
   const tree = createTreeReader(db);
-  const view: TreeView = { kind: "draft", draftId: input.draftId };
+  const view: TreeView = { kind: "branch", branchId: input.branchId };
   const occupant = await tree.resolvePath(view, {
     contextSourceId: input.contextSourceId,
     path: filePath(input.dir, input.name, input.extension),
@@ -90,7 +80,7 @@ export async function createInDraft(
     return Ok({ kind: "existing", documentId: occupant.node.document.id, binary });
   }
 
-  // Folders a draft doesn't see yet: a hidden live folder at the location is joined (a
+  // Folders a branch doesn't see yet: a hidden live folder at the location is joined (a
   // folder's use is implied by what is placed under it), else a new hidden one is made.
   const { contextSourceId } = input;
   const walk = await walkFolders(db, view, contextSourceId, input.dir, async (gap) => {
@@ -104,7 +94,7 @@ export async function createInDraft(
         : { code: "conflict", occupantKind: "file" },
     );
   }
-  if (walk.kind !== "walked") throw new Error("A draft's folder walk fills every gap");
+  if (walk.kind !== "walked") throw new Error("A branch's folder walk fills every gap");
   const slot: DocumentSlot = {
     contextSourceId,
     folderId: walk.folderId,
@@ -118,8 +108,8 @@ export async function createInDraft(
     documentId =
       (
         await pickHiddenCandidate(db, slot, {
-          excludeDraftId: input.draftId,
-          lock: "createInDraft.afterCandidateLock",
+          excludeBranchId: input.branchId,
+          lock: "createInBranch.afterCandidateLock",
           ...(input.repair ? { repair: input.repair } : {}),
         })
       )?.id ?? null;
@@ -132,15 +122,17 @@ export async function createInDraft(
       ...(id ? { id } : {}),
     });
     if (!documentId) throw new Error(`Hidden document ${slot.name} was not inserted`);
-    if (input.node.kind === "tracked") await input.ensureEmptyContent(documentId);
+    if (input.node.kind === "tracked") await input.initializeEmptyContent(documentId);
+  } else if (joined) {
+    await input.repairContent(documentId);
   }
 
   await recordCreated(db, {
-    draftId: input.draftId,
+    branchId: input.branchId,
     documentId,
     ...(input.createdBy ? { createdBy: input.createdBy } : {}),
   });
-  if (input.node.kind === "tracked") await input.ensureDraftBranch(documentId);
+  if (input.node.kind === "tracked") await input.ensureDocumentDraft(documentId);
   return Ok({ kind: "created", documentId, joined });
 }
 
@@ -227,7 +219,7 @@ export async function createLive(
     claim: LiveClaim;
     insert: LiveInsert;
     /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
-    repair?: Pick<HiddenNodeRepair, "report">;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
   const { claim } = input;
@@ -265,7 +257,6 @@ export async function createLive(
           name: input.slot.name,
           extension: input.slot.extension,
         },
-        mode: "reveal",
       },
     ],
   });
@@ -282,22 +273,22 @@ export async function createLive(
 // ---------------------------------------------------------------------------------------
 
 /**
- * The oldest valid hidden text document at the slot that some active draft uses
- * (excluding the ones `excludeDraftId` already uses). Unlocked, a look holding nothing.
+ * The oldest valid hidden text document at the slot that some active branch uses
+ * (excluding the ones `excludeBranchId` already uses). Unlocked, a look holding nothing.
  * With `lock`, every candidate's document lock is taken in one id-ordered pass before any
- * is chosen, then each is revalidated under its lock, and a candidate no active draft
+ * is chosen, then each is revalidated under its lock, and a candidate no active branch
  * uses is an inconsistent row, tombstoned here (repair on touch).
  */
 async function pickHiddenCandidate(
   db: Database,
   slot: DocumentSlot,
   options: {
-    excludeDraftId?: DraftId;
-    lock?: TreeHookPoint;
-    repair?: Pick<HiddenNodeRepair, "report">;
+    excludeBranchId?: BranchId;
+    lock?: TestHookPoint;
+    repair?: Pick<HiddenNodeRepair, "report" | "tombstoneUnused">;
   } = {},
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
-  const filter = options.excludeDraftId ? { excludeDraftId: options.excludeDraftId } : {};
+  const filter = options.excludeBranchId ? { excludeBranchId: options.excludeBranchId } : {};
   const candidates = await loadHiddenDocumentCandidates(db, slot, filter);
   const firstUsed = (rows: typeof candidates) => {
     const used = rows.find((candidate) => candidate.activeUses > 0);
@@ -306,14 +297,16 @@ async function pickHiddenCandidate(
   if (!options.lock) return firstUsed(candidates);
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await treeHook(options.lock);
+  await testHook(options.lock);
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ...filter, ids });
-  const repaired = await tombstoneUnused(
-    db,
-    valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
-    { keepFolders: true },
-  );
-  options.repair?.report(repaired, "create");
+  const unused = valid
+    .filter((candidate) => candidate.activeUses === 0)
+    .map((candidate) => candidate.id);
+  if (unused.length) {
+    if (!options.repair) throw new Error("Candidate repair requires the removal protocol");
+    const repaired = await options.repair.tombstoneUnused(unused, { keepFolders: true });
+    options.repair.report(repaired, "create");
+  }
   return firstUsed(valid);
 }

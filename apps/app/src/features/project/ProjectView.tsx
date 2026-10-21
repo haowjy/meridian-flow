@@ -52,10 +52,10 @@ import {
   useDraftReviewStateOwner,
 } from "@/features/draft-review/useDraftReviewController";
 import {
-  useWorkDraftCommands,
-  type WorkDraftCommands,
-  WorkDraftCommandsBoundary,
-} from "@/features/draft-review/useWorkDraftCommands";
+  useWorkBranchCommands,
+  type WorkBranchCommands,
+  WorkBranchCommandsBoundary,
+} from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
@@ -70,6 +70,7 @@ import type { ContextRemovalRoutePort } from "./context/context-removal-coordina
 import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
+import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import {
@@ -162,7 +163,12 @@ export type ProjectViewProps = {
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
-  routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
+  routeIssues?: {
+    main?: ProjectRouteIssue;
+    editor?: ProjectRouteIssue;
+    /** Why an unavailable Editor destination is gone, when its document was removed. */
+    removed?: ProjectRouteMask["removed"];
+  };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
   onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
@@ -216,6 +222,18 @@ export function ProjectView(props: ProjectViewProps) {
     [availability, props.projectId],
   );
   useContextCatalogWake(props.projectId, repairColdWork);
+  // Both shells place the Editor's notice only on the Editor (Files) screen.
+  useRemovedNoticeLifetime(props.projectId, "editor", {
+    key: JSON.stringify([
+      props.activeScreen,
+      props.activeContextScheme,
+      props.activeContextFolder,
+      props.activeContextPath,
+      props.activeLocalDocumentId,
+    ]),
+    onScreen: props.activeScreen === "context",
+    showing: { scheme: props.activeContextScheme, path: props.activeContextPath },
+  });
   useEffect(() => {
     const lease = availability.attachProject(props.projectId);
     const reportWatches = () => {
@@ -402,7 +420,7 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
-    chatCommands: WorkDraftCommands;
+    chatCommands: WorkBranchCommands;
     presentedReview: DraftReviewContextValue;
     mobileDocumentRoute: MobileDocumentRoute;
     retainEditorWhileLoading?: boolean;
@@ -512,7 +530,7 @@ function HydratedReviewControllers({
   mobileDocumentRoute: MobileDocumentRoute;
   retainEditorWhileLoading?: boolean;
 }) {
-  const chatCommands = useWorkDraftCommands({
+  const chatCommands = useWorkBranchCommands({
     projectId: props.projectId,
     work: props.chatWork,
     threadId: props.chatThreadId,
@@ -651,6 +669,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   const editorMask: ProjectRouteMask = {
     destinationKey: props.routeLocationKey,
     issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
+    removed: props.routeIssues?.removed,
     onRetry: props.onRetryEditorRoute,
     retainWhileLoading: editorPresentation.retainWhileLoading,
     recovery:
@@ -679,6 +698,12 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
+  // The dock's notice sits beside "Recent", on screen only while Chat's rail shows.
+  useRemovedNoticeLifetime(props.projectId, "dock", {
+    key: JSON.stringify([props.activeScreen, screenSwitch.dockDocument?.tab.documentId ?? null]),
+    onScreen: props.activeScreen === "chat" && isOpen("context-rail") && !screenSwitch.dockDocument,
+    showing: screenSwitch.dockDocument?.tab.documentId ?? null,
+  });
   // The single writer-driven collapse entry. Calls targeting a surface that is
   // currently the dock occupant drive the shared dock pref instead of the
   // surface's own pref — the dock reads as one persistent sidebar across
@@ -731,14 +756,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "context-rail",
       children: (
-        <WorkDraftCommandsBoundary value={props.chatCommands}>
+        <WorkBranchCommandsBoundary value={props.chatCommands}>
           <ContextSidebar
             threadId={displayedChatThreadId(props.chatDisplay)}
             projectId={props.projectId}
             visible={isOpen("context-rail")}
             onClose={close("context-rail")}
           />
-        </WorkDraftCommandsBoundary>
+        </WorkBranchCommandsBoundary>
       ),
     },
     {
@@ -807,7 +832,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 inert={chatIndexShowing}
                 aria-hidden={chatIndexShowing}
               >
-                <WorkDraftCommandsBoundary value={props.chatCommands}>
+                <WorkBranchCommandsBoundary value={props.chatCommands}>
                   <ChatSurface
                     key="chat-surface"
                     projectId={props.projectId}
@@ -822,7 +847,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     onCloseDock={close("chat")}
                     onOpenContextTarget={props.onOpenContextTarget}
                   />
-                </WorkDraftCommandsBoundary>
+                </WorkBranchCommandsBoundary>
               </div>
             )}
             {chatIndexShowing ? (

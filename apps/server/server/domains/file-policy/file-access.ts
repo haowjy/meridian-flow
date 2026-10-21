@@ -40,7 +40,7 @@ export interface FileAccess {
    * Access at an explicit destination instead of the one the principal's mode
    * picks: an undo reverses a write where it landed, which a mode switch since
    * may have moved new writes away from. Review previews use a read grant
-   * at the item's destination so archived drafts remain readable, not editable.
+   * at the item's destination so archived branches remain readable, not editable.
    */
   authorizeAt<N extends FileNeed = "edit">(
     principal: Principal,
@@ -53,20 +53,20 @@ export interface FileAccess {
    * already locked the Works the grants' facts name (`grantWorkIds`), in one
    * id-ordered select with its own. Re-reads facts and each agent chain, and
    * re-runs the policy at each grant's destination. A file whose owner or
-   * draft Work moved outside that locked set is refused, since locking it now
+   * branch Work moved outside that locked set is refused, since locking it now
    * would break the id order. Refused grants are returned, not thrown, so the
    * rest of the reply can commit.
    */
   confirmEdit(grants: readonly FileGrant<"edit">[]): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
-   * with an agent's draft rows decided at the draft. A document the principal
+   * with an agent's drafted documents decided in its branch. A document the principal
    * can't read is absent, so callers drop it.
    */
   listAccess(
     principal: Principal,
     documentIds: readonly DocumentId[],
-    options?: { draftViews?: ReadonlyMap<DocumentId, TreeView> },
+    options?: { branchViews?: ReadonlyMap<DocumentId, TreeView> },
   ): Promise<Map<DocumentId, FileDecision>>;
   /**
    * History reads (change-trail detail) keep a deleted document's captured
@@ -96,7 +96,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async authorizeAt(principal, target, destination, need) {
       const facts = await deps.facts.load({
         target,
-        ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
+        ...(destination.kind === "draft" ? { branchWorkId: destination.workId } : {}),
       });
       if (!facts) return notFound(principal, target);
       const grants = await deps.grants.personGrants(principal.accountId, facts);
@@ -112,7 +112,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         fresh.push(
           await deps.facts.load({
             target: facts.target,
-            ...(destination.kind === "draft" ? { draftWorkId: destination.workId } : {}),
+            ...(destination.kind === "draft" ? { branchWorkId: destination.workId } : {}),
           }),
         );
       }
@@ -151,8 +151,8 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async listAccess(principal, documentIds, options) {
       const facts = await deps.facts.loadList(
         documentIds,
-        principal.agent?.draftWork?.id,
-        options?.draftViews,
+        principal.agent?.branchWork?.id,
+        options?.branchViews,
       );
       const out = new Map<DocumentId, FileDecision>();
       for (const [documentId, fact] of facts) {
@@ -164,10 +164,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   };
 }
 
-/** An agent's document or container access may go through its draft-mode chat's Work draft. */
+/** An agent's document or container access may go through its draft-mode chat's Work branch. */
 function factsRequest(principal: Principal, target: FileTarget): FileFactsRequest {
-  const draftWork = principal.agent?.draftWork;
-  return target.kind !== "draft" && draftWork ? { target, draftWorkId: draftWork.id } : { target };
+  const branchWork = principal.agent?.branchWork;
+  return target.kind !== "draft" && branchWork
+    ? { target, branchWorkId: branchWork.id }
+    : { target };
 }
 
 async function refreshPrincipal(

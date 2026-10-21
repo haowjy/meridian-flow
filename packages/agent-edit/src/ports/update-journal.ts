@@ -1,9 +1,8 @@
 import type { DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
+import type { SavePrecondition } from "./document-coordinator.js";
 import type { CompactionResult, JournalSnapshot, UpdateMeta } from "./types.js";
-
-export type JournalCommitKind = "durable" | "staged";
 
 type JournalMutationBase = {
   /** Ordered parts of one atomic edit. Storage adapters choose their journal row expansion. */
@@ -30,14 +29,8 @@ export type JournalMutation = JournalMutationBase &
     | { mode: "live" }
     | {
         mode: "threadPeer";
-        /** Host branch generation captured with the write baseline. */
-        branchGeneration: number;
         /** Peer that accepted this buffered write, not its shared upstream. */
-        peerBranchId?: string;
-        /** Branch journal head captured while preparing an edit. */
-        branchJournalWatermark?: number;
-        /** Host revision for status-sensitive branch history transitions. */
-        branchJournalRevision?: string;
+        peerDraftId?: string;
       }
   );
 
@@ -55,10 +48,15 @@ export interface JournalBatchAppendEntry {
 
 export interface JournalBatchAppendResult {
   seq: number;
-  /** Whether this append created durable truth, or only queued pending branch state. */
-  journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
+  /**
+   * The entry's document as this batch's append found it, read inside the append under the
+   * document's lock before any of the batch's rows (the same state for every entry of one
+   * document): the cut a save reports, returned with the rows so nothing fallible runs between
+   * the append committing and its caller learning what it followed.
+   */
+  beforeState: Uint8Array;
 }
 
 export interface JournalReadOptions {
@@ -76,15 +74,15 @@ export interface UpdateJournal {
     meta: UpdateMeta,
     authority?: JournalAuthority,
   ): Promise<number>;
-  /** Journal-first transport admission; hosts may atomically join settlement state. */
-  appendWriterUpdate?(
-    docId: string,
-    update: Uint8Array,
-    meta: UpdateMeta,
-    authority?: JournalAuthority,
-  ): Promise<{ seq: number; joinedSettlement: boolean }>;
-  /** Append logical edit envelopes atomically; the storage adapter expands their ordered parts. */
-  appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  /**
+   * Append logical edit envelopes atomically; the storage adapter expands their ordered parts.
+   * `precondition` is judged on each document's `beforeState` under its lock, before anything
+   * is written; a failure rejects with SavePreconditionRefused and appends nothing.
+   */
+  appendBatch(
+    entries: readonly JournalBatchAppendEntry[],
+    precondition?: SavePrecondition,
+  ): Promise<JournalBatchAppendResult[]>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   /** Durable attributed base used when reporting destructive effects. */
   readAttribution?(docId: string): Promise<JournalSnapshot>;
@@ -94,13 +92,22 @@ export interface UpdateJournal {
     docId: string;
     before: DocHandle;
     afterCandidate: DocHandle;
-    /** Branch adapters classify roots absent from the live document as agent-authored. */
+    /** Draft adapters classify roots absent from the live document as agent-authored. */
     fallbackProvenance?: "writer_protected" | "agent";
   }): Promise<{
     before: DestructiveProvenanceRun[];
     afterCandidate: DestructiveProvenanceRun[];
   }>;
 }
+
+/**
+ * What agent-edit itself reads from a host's journal: write ordinals and the provenance a
+ * destructive report reads. Appending belongs to the host's save (`StagedWriteCommit.persist`).
+ */
+export type AgentEditJournal = Pick<
+  UpdateJournal,
+  "reserveWriteOrdinal" | "read" | "readAttribution" | "materializeDestructiveProvenance"
+>;
 
 export interface DestructiveProvenanceRun {
   target: LineageRange;

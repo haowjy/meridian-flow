@@ -5,7 +5,7 @@
  *
  * A command's identity, mode, coverage and the draft generation it acted on
  * live in the draft's claim, and the server's answer lands there
- * (`draft-command-record`), so the review needs nothing from the sender. A
+ * (`branch-command-record`), so the review needs nothing from the sender. A
  * review that opens on a claimed draft adopts the claim (`draftClaim`); one
  * already open follows it: pending when it begins, closed on the answer that
  * closed the draft (before any list read can drop the draft), and withdrawn
@@ -23,15 +23,15 @@
 
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useEffect } from "react";
-import { listedDocumentName } from "@/client/query/draft-command-executor";
+import { listedDocumentName } from "@/client/query/branch-command-executor";
 import {
+  type BranchCommandRecords,
   changedDrafts,
-  currentDraftCommandRecords,
-  type DraftCommandRecords,
+  currentBranchCommandRecords,
+  pendingBranchCommand,
   pendingChangeCommand,
-  pendingDraftCommand,
-  subscribeDraftCommandRecords,
-} from "@/client/query/draft-command-record";
+  subscribeBranchCommandRecords,
+} from "@/client/query/branch-command-record";
 import type {
   DraftReviewAction,
   DraftReviewSelection,
@@ -49,17 +49,17 @@ type Scope = { projectId: string; workId: string };
 export function draftClaim(
   queryClient: QueryClient,
   draft: Scope & DraftReviewSelection,
-  records: DraftCommandRecords = currentDraftCommandRecords(),
+  records: BranchCommandRecords = currentBranchCommandRecords(),
 ): ReviewClaim | undefined {
-  const command = pendingDraftCommand(records, draft);
-  if (!command || command.branchGeneration === undefined) return undefined;
+  const command = pendingBranchCommand(records, draft);
+  if (!command || command.draftGeneration === undefined) return undefined;
   if (command.itemClosed)
     return {
-      branchGeneration: command.branchGeneration,
+      draftGeneration: command.draftGeneration,
       completion: { phase: "closed", documentName: command.itemClosed.documentName },
     };
   return {
-    branchGeneration: command.branchGeneration,
+    draftGeneration: command.draftGeneration,
     ...(command.completesDraft
       ? {
           completion: {
@@ -83,13 +83,13 @@ export function draftClaim(
  * like the last (another writer's change handled the rest).
  */
 export function completionAction(
-  records: DraftCommandRecords,
-  previous: DraftCommandRecords,
+  records: BranchCommandRecords,
+  previous: BranchCommandRecords,
   draft: Scope & DraftReviewSelection,
   queryClient: QueryClient,
 ): DraftReviewAction | null {
-  const current = pendingDraftCommand(records, draft);
-  const prior = pendingDraftCommand(previous, draft);
+  const current = pendingBranchCommand(records, draft);
+  const prior = pendingBranchCommand(previous, draft);
   const claim = draftClaim(queryClient, draft, records);
   const before = draftClaim(queryClient, draft, previous);
   if (claim?.completion?.phase === "closed") {
@@ -98,13 +98,13 @@ export function completionAction(
     if (current === prior) return null;
     if (!claim?.completion && (!prior?.completesDraft || !before)) return null;
   }
-  const generation = claim?.completion ? claim.branchGeneration : before?.branchGeneration;
+  const generation = claim?.completion ? claim.draftGeneration : before?.draftGeneration;
   if (generation === undefined) return null;
   return {
     type: "completionObserved",
     documentId: draft.documentId,
     itemKey: draft.itemKey,
-    branchGeneration: generation,
+    draftGeneration: generation,
     completion: claim?.completion ?? null,
   };
 }
@@ -123,7 +123,7 @@ export function useReviewCommandCompletion({
   const queryClient = useQueryClient();
   useEffect(
     () =>
-      subscribeDraftCommandRecords((records, previous) => {
+      subscribeBranchCommandRecords((records, previous) => {
         if (!activeRef.current) return;
         for (const draft of changedDrafts(records, previous, { projectId, workId })) {
           const action = completionAction(records, previous, draft, queryClient);
@@ -137,7 +137,7 @@ export function useReviewCommandCompletion({
             review.kind === "inline" &&
             review.documentId === draft.documentId &&
             review.itemKey === draft.itemKey &&
-            review.branchGeneration === command.branchGeneration
+            review.draftGeneration === command.draftGeneration
           )
             dispatch({
               type: "toast",

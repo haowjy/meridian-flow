@@ -1,8 +1,8 @@
 /**
  * Where #754's identity moves and namespace observation versions meet hidden nodes: a
- * writer's `{ parent, name }` move never lands in a folder only a draft holds, anchored
- * folder creation is a live create (it reveals the draft's hidden folder of that name),
- * and only live changes publish observations. A draft's creates, tree changes and Discard
+ * writer's `{ parent, name }` move never lands in a folder only a branch holds, anchored
+ * folder creation is a live create (it reveals the branch's hidden folder of that name),
+ * and only live changes publish observations. A branch's creates, tree changes and Discard
  * allocate no namespace version and restamp no live entry; Apply's reveal publishes a newer
  * version.
  */
@@ -11,8 +11,8 @@ import { createDb } from "@meridian/database";
 import { contextAvailabilityHeads, contextCatalogCommits, users } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createTreeReader, LIVE_TREE } from "./tree-view.js";
 
@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function start() {
       const runtime = await runtimes.compose();
-      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const scenario = await branchTreeScenario(db, { runtime, runtimes });
       const { id: projectId, userId } = scenario.project;
       const ascension = await scenario.work("Ascension", "draft");
       const model = scenario.model(ascension);
@@ -50,13 +50,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return head?.version ?? 0n;
       }
       async function hiddenFolder(path: string) {
-        const draft = await scenario.draftOf(ascension);
+        const branch = await scenario.branchOf(ascension);
         const found = await tree.resolvePath(
-          { kind: "draft", draftId: draft.id },
+          { kind: "branch", branchId: branch.id },
           { contextSourceId: manuscript, path },
         );
         if (found.kind !== "found" || found.node.kind !== "folder")
-          throw new Error(`The draft holds no folder at ${path}`);
+          throw new Error(`The branch holds no folder at ${path}`);
         const live = await tree.resolvePath(LIVE_TREE, { contextSourceId: manuscript, path });
         expect(live.kind).toBe("not_found");
         return found.node.folder.id;
@@ -75,7 +75,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("refuses a writer's move into a folder only a draft holds as destination_missing", async () => {
+    it("refuses a writer's move into a folder only a branch holds as destination_missing", async () => {
       const s = await start();
       await s.model.create("lore/harbor", "The harbor.");
       const lore = await s.hiddenFolder("lore");
@@ -96,7 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await s.hiddenFolder("lore");
     });
 
-    it("reveals a draft's hidden folder for anchored creation instead of making a second", async () => {
+    it("reveals a branch's hidden folder for anchored creation instead of making a second", async () => {
       const s = await start();
       await s.model.create("lore/harbor", "The harbor.");
       const lore = await s.hiddenFolder("lore");
@@ -135,7 +135,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .filter((change) => change.operation !== "upsert" || change.entry.kind !== "authority");
     }
 
-    it("publishes no namespace observation for a draft's creates or tree change and a newer one for Apply's reveal", async () => {
+    it("publishes no namespace observation for a branch's creates or tree change and a newer one for Apply's reveal", async () => {
       const s = await start();
       await s.scenario.writer.createDocument("chapter", "Chapter one.");
       await s.scenario.writer.createDocument("arc/opening", "The opening.");
@@ -176,7 +176,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toBe(true);
     });
 
-    it("publishes nothing live, and names no hidden node, when a draft discards its creates", async () => {
+    it("publishes nothing live, and names no hidden node, when a branch discards its creates", async () => {
       const s = await start();
       await s.scenario.writer.createDocument("chapter", "Chapter one.");
       await s.scenario.writer.createDocument("arc/opening", "The opening.");

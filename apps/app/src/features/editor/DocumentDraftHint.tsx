@@ -1,8 +1,8 @@
 /**
- * DocumentDraftHint — a line under the identity row saying that drafts other than the one
+ * DocumentDraftHint — a line under the identity row saying that branches other than the one
  * this view works in have changes to the open document, with a Review action that opens that
- * draft's review. One draft: its label and Review. Several: a count and a short list.
- * Renders nothing when there are none, so a document no draft touches shows no hint.
+ * branch's document-draft review. One branch: its label and Review. Several: a count and a short list.
+ * Renders nothing when there are none, so a document no branch touches shows no hint.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -18,11 +18,11 @@ import {
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import { draftsOtherThanViews, hintReviewTarget } from "./draft-hint-review";
+import { branchesOtherThanViews, hintReviewTarget } from "./draft-hint-review";
 
 export type DocumentDraftHintProps = {
   projectId: string;
-  /** The open document's tab; a local reservation (`new`) has no drafts to find. */
+  /** The open document's tab; a local reservation (`new`) has no branches to find. */
   tab: ContextTab;
 };
 
@@ -37,14 +37,14 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
   const { controller } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  const others = draftsOtherThanViews(hints, controller.workId);
+  const others = branchesOtherThanViews(hints, controller.workId);
   if (!contextLocation || others.length === 0) return null;
 
   const review = (hint: (typeof others)[number]) => {
     const target = hintReviewTarget(hint, { documentId, contextLocation, documentName });
     if (target) openAiDraft(target);
   };
-  const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed draft`;
+  const labelOf = (hint: (typeof others)[number]) => hint.label ?? t`Unnamed Work`;
   const [only] = others;
 
   return (
@@ -56,12 +56,12 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
       <span className="min-w-0">
         {others.length === 1 && only ? (
           only.label ? (
-            <Trans>A draft has changes to this ({only.label})</Trans>
+            <Trans>A Work has drafts for this ({only.label})</Trans>
           ) : (
-            <Trans>A draft has changes to this</Trans>
+            <Trans>A Work has drafts for this</Trans>
           )
         ) : (
-          plural(others.length, { other: "# drafts have changes to this" })
+          plural(others.length, { other: "# Works have drafts for this" })
         )}
       </span>
       {others.length === 1 && only ? (
@@ -76,7 +76,7 @@ export function DocumentDraftHint({ projectId, tab }: DocumentDraftHintProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-[min(18rem,calc(100vw-1rem))]">
             {others.map((hint) => (
-              <DropdownMenuItem key={hint.draftId} onSelect={() => review(hint)}>
+              <DropdownMenuItem key={hint.branchId} onSelect={() => review(hint)}>
                 {labelOf(hint)}
               </DropdownMenuItem>
             ))}

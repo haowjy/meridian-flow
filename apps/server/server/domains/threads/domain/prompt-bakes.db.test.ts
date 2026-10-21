@@ -192,7 +192,7 @@ else {
         .update(schema.threads)
         .set({ initialPromptBakeId: source.bake.id })
         .where(eq(schema.threads.id, fork.id));
-      await db.delete(schema.documentBranches).where(eq(schema.documentBranches.id, ids.branchId));
+      await db.delete(schema.documentDrafts).where(eq(schema.documentDrafts.id, ids.draftId));
 
       await db.delete(schema.users).where(eq(schema.users.id, ids.userId));
 

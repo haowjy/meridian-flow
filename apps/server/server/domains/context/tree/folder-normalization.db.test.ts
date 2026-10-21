@@ -1,9 +1,9 @@
 /**
  * What live folder operations do to hidden nodes, through the real commands (contract §8):
- * a delete or a move out of where drafts hold folders splits hidden contents into twins
+ * a delete or a move out of where branches hold folders splits hidden contents into twins
  * at their paths (F-1, F-3), a move between project sources carries them (F-2), a visible
  * folder arriving at a hidden folder's path absorbs it (F-4), and neither race leaves a
- * draft's create behind (I-4, I-5).
+ * branch's create behind (I-4, I-5).
  */
 
 import { randomUUID } from "node:crypto";
@@ -12,12 +12,12 @@ import { createDb } from "@meridian/database";
 import { documents, folders, users } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import {
-  type DraftTreeScenario,
-  draftTreeScenario,
+  type BranchTreeScenario,
+  branchTreeScenario,
   type ScenarioWork,
-} from "../../../test-support/draft-tree-scenario.js";
+} from "../../../test-support/branch-tree-scenario.js";
+import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
 import { createTreeReader } from "./tree-view.js";
@@ -26,9 +26,9 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("live folder operations keep hidden nodes where their drafts expect them (postgres)", () => {});
+  describe.skip("live folder operations keep hidden nodes where their branches expect them (postgres)", () => {});
 } else {
-  describe("live folder operations keep hidden nodes where their drafts expect them (postgres)", () => {
+  describe("live folder operations keep hidden nodes where their branches expect them (postgres)", () => {
     // Commands publish catalog work after commit, so this suite commits for real.
     const committed = createDb(DATABASE_URL, { max: 12 });
     afterAll(() => committed.close());
@@ -39,7 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function start() {
       const runtime = await runtimes.compose();
-      return draftTreeScenario(committed, { runtime, runtimes });
+      return branchTreeScenario(committed, { runtime, runtimes });
     }
 
     async function document(id: string) {
@@ -74,7 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     async function idAt(
-      scenario: DraftTreeScenario,
+      scenario: BranchTreeScenario,
       of: ScenarioWork | "live",
       path: string,
     ): Promise<string | null> {
@@ -134,7 +134,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect.objectContaining({ deleted: true, locationVersion: 1n }),
         ]);
       expect
-        .soft(await idAt(scenario, ascension, "world/places/harbor"), "the draft still sees it")
+        .soft(await idAt(scenario, ascension, "world/places/harbor"), "the branch still sees it")
         .toBe(harbor);
       expect.soft(await idAt(scenario, "live", "world/places/harbor"), "live does not").toBeNull();
     });
@@ -164,7 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           contextSourceId: kb,
           locationVersion: before.locationVersion + 1n,
         });
-        expect.soft(await idAt(scenario, work, `kb://${path}`), `${path}: in its draft`).toBe(id);
+        expect.soft(await idAt(scenario, work, `kb://${path}`), `${path}: in its branch`).toBe(id);
         expect.soft(await idAt(scenario, work, path), `${path}: not left behind`).toBeNull();
         expect.soft(await idAt(scenario, "live", `kb://${path}`), `${path}: not live`).toBeNull();
       }
@@ -173,7 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("splits a nested hidden document off a folder moved out of user:// or into a Work's Scratch (F-3)", async () => {
-      // Out of user:// into a project narrows which drafts may hold it (§8.3, D20); a
+      // Out of user:// into a project narrows which branches may hold it (§8.3, D20); a
       // Work's Scratch is held by none.
       for (const into of ["project", "scratch"] as const) {
         const scenario = await start();
@@ -220,7 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect
           .soft(
             await idAt(scenario, ascension, `${origin}/places/harbor`),
-            `${destination}: the draft still sees it`,
+            `${destination}: the branch still sees it`,
           )
           .toBe(harbor);
         expect
@@ -263,18 +263,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
     });
 
-    it("absorbs a hidden folder beside a same-named visible document: a draft clash, never a live refusal (F-4)", async () => {
+    it("absorbs a hidden folder beside a same-named visible document: a branch clash, never a live refusal (F-4)", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      const kaelFile = await scenario.seedLive("drafts/kael");
-      const drafts = await scenario.seedLiveFolder("drafts");
+      const kaelFile = await scenario.seedLive("branches/kael");
+      const branches = await scenario.seedLiveFolder("branches");
       const notes = await scenario.model(ascension).create("ideas/kael/notes", "Notes.");
-      const draft = await scenario.draftOf(ascension);
+      const branch = await scenario.branchOf(ascension);
       const hiddenKael = (await document(notes)).folderId;
       const hiddenIdeas = (await folder(hiddenKael)).parentId;
 
       expect
-        .soft(await scenario.writer.move("drafts", "ideas"), "no live refusal")
+        .soft(await scenario.writer.move("branches", "ideas"), "no live refusal")
         .toMatchObject({ ok: true });
 
       expect.soft(await folder(hiddenIdeas), "the hidden folder tombstoned").toMatchObject({
@@ -284,17 +284,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await folder(hiddenKael), "its child folded in").toMatchObject({
         hidden: true,
         deleted: false,
-        parentId: drafts,
+        parentId: branches,
         locationVersion: 0n,
       });
       expect.soft(await idAt(scenario, "live", "ideas/kael"), "the live file").toBe(kaelFile);
       const resolved = await createTreeReader(committed).resolvePath(
-        { kind: "draft", draftId: draft.id },
+        { kind: "branch", branchId: branch.id },
         { contextSourceId: scenario.project.sources.manuscript, path: "ideas/kael" },
       );
-      expect.soft(resolved.kind, "two nodes at one path in the draft").toBe("ambiguous");
-      const [item] = await createTreeReader(committed).treeState(draft.id);
-      expect.soft(item?.conflict, "a clash in the draft's view").toEqual({
+      expect.soft(resolved.kind, "two nodes at one path in the branch").toBe("ambiguous");
+      const [item] = await createTreeReader(committed).treeState(branch.id);
+      expect.soft(item?.conflict, "a clash in the branch's view").toEqual({
         kind: "clash",
         withNode: { kind: "document", id: kaelFile },
         at: "ideas/kael",
@@ -305,7 +305,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           httpStatus: 409,
           body: {
             status: "held",
-            draftId: expect.any(String),
+            branchId: expect.any(String),
             itemKey: expect.any(String),
             reason: { code: "path_taken", path: "manuscript://ideas/kael" },
           },
@@ -314,15 +314,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 
-    it("answers a path two of a draft's documents share with the clash, never one of them (absorb)", async () => {
+    it("answers a path two of a branch's documents share with the clash, never one of them (absorb)", async () => {
       const scenario = await start();
       const ascension = await scenario.work("Ascension", "draft");
-      await scenario.seedLiveFolder("drafts");
-      const first = await scenario.model(ascension).create("drafts/note", "First.");
+      await scenario.seedLiveFolder("branches");
+      const first = await scenario.model(ascension).create("branches/note", "First.");
       const second = await scenario.model(ascension).create("ideas/note", "Second.");
-      expect.soft(await scenario.writer.move("drafts", "ideas"), "no live refusal").toMatchObject({
-        ok: true,
-      });
+      expect
+        .soft(await scenario.writer.move("branches", "ideas"), "no live refusal")
+        .toMatchObject({
+          ok: true,
+        });
 
       const view = scenario.view(ascension);
       const clash = { ok: false, error: { code: "invalid_operation" } };
@@ -336,8 +338,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it.each([
       { first: "rename" as const, at: "absorb.beforeRepoint" as const },
-      { first: "create" as const, at: "createInDraft.afterCandidateLock" as const },
-    ])("never leaves a draft's create under an absorbed folder, $first first (I-4)", async ({
+      { first: "create" as const, at: "createInBranch.afterCandidateLock" as const },
+    ])("never leaves a branch's create under an absorbed folder, $first first (I-4)", async ({
       first,
       at,
     }) => {
@@ -372,8 +374,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it.each([
       { first: "remove" as const, at: "split.beforeRepoint" as const },
-      { first: "create" as const, at: "createInDraft.afterCandidateLock" as const },
-    ])("never leaves a draft's create in a split folder, $first first (I-5)", async ({
+      { first: "create" as const, at: "createInBranch.afterCandidateLock" as const },
+    ])("never leaves a branch's create in a split folder, $first first (I-5)", async ({
       first,
       at,
     }) => {

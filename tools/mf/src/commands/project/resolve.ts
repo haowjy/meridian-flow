@@ -7,12 +7,13 @@ import {
 } from "@meridian/contracts/protocol";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 
 /** `--project <id>`; omitted or `default` ensures and returns the writer's default project. */
 export async function resolveProjectId(session: Session, raw: string | undefined): Promise<string> {
   if (raw && raw !== "default") return raw;
   const bootstrap = await session.request("POST", "/api/projects/bootstrap-default", undefined, {
-    parse: projectBootstrapResponseSchema.safeParse,
+    decode: jsonResponse(projectBootstrapResponseSchema),
   });
   return bootstrap.projectId;
 }
@@ -26,7 +27,7 @@ export async function resolveWork(
   const text = raw.startsWith("@") ? raw.slice(1) : raw;
   const handle = decodeWorkHandle(text);
   const snapshot = await session.request("GET", apiProjectWorksPath(projectId), undefined, {
-    parse: workCatalogIdentitySchema.safeParse,
+    decode: jsonResponse(workCatalogIdentitySchema),
   });
   const work = snapshot.works.find((entry) =>
     handle ? entry.handle === handle : entry.id === text,

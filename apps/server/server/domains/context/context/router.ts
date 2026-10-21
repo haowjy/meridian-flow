@@ -620,12 +620,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
-      const creation = r.value.requireCreation("intake");
-      if (!creation.ok) {
-        const existing = await callAdapter(canonical, () => adapter.stat(path));
-        if (!existing.ok) return existing;
-        if (!existing.value) return creation;
-      }
       const result = await callAdapter(canonical, () => adapter.write(path, content, options));
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
@@ -864,13 +858,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!r.ok) return r;
       const { adapter, canonical } = r.value;
       const retracted = await callAdapter(canonical, () =>
-        adapter.retractCreate(r.value.path, options.documentId),
+        adapter.retractCreate(r.value.path, options.documentId, options.cause),
       );
       if (!retracted.ok) return retracted;
       if (retracted.value.placement === "draft") return Ok(undefined);
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
       const deleted = await treeMover.delete(r.value, {
         expected: { kind: "file", documentId: options.documentId },
+        removal: { reason: "discarded", cause: options.cause },
       });
       if (
         !deleted.ok &&

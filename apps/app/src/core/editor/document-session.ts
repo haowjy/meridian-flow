@@ -89,9 +89,9 @@ export type DocumentSessionStatus =
   | "destroyed";
 
 export type DocumentSessionSnapshot = {
-  /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
+  /** Live document id for live rooms; draft sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a draft room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -116,13 +116,20 @@ export type DocumentSessionAccess = "edit" | "read";
 export type DocumentSessionResetReason =
   /** The room's access changed while local edits were pending; the server refused them. */
   | typeof WS_CLOSE.ACCESS_CHANGED.reason
-  | typeof WS_CLOSE.BRANCH_STALE.reason
+  | typeof WS_CLOSE.DRAFT_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+  | typeof WS_CLOSE.DRAFT_GENERATION_STALE.reason
+  /** The document was deleted or discarded; its rooms never reopen. */
+  | typeof WS_CLOSE.DOCUMENT_DELETED.reason;
 
-/** How a terminal room reset treats its unacknowledged writer updates. */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
+/**
+ * How a terminal room reset treats its unacknowledged writer updates.
+ * `removed`: the server says the document is gone, so nothing reconnects,
+ * rebuilds or replays on its own; the session stays read-only until its owner
+ * closes it, or an exact open proves the document present and restarts it.
+ */
+export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema" | "removed";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -132,6 +139,17 @@ export type DocumentSessionConnectionState =
       disposition: ResetDisposition;
       code?: number;
     };
+
+/**
+ * Client-side terminal reason: the server refused this draft room's updates on
+ * several reconnects in a row. The session stays open and read-only so its owner
+ * can show the unsent text and reopen the draft; nothing retries it.
+ */
+export const DRAFT_UPDATES_REFUSED = "draft-updates-refused";
+
+export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
+  return state?.kind === "terminal" && state.reason === DRAFT_UPDATES_REFUSED;
+}
 
 /**
  * Surface `DocumentSession` consumes from its transport.
@@ -180,7 +198,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>:gen:<generation>` for a draft room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
@@ -226,6 +244,9 @@ export class DocumentSession {
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
   private observedOutboxPresence = false;
+  // Distinct connection states can share a status (`disconnected` and
+  // `terminal` are both `offline`); subscribers still need the new one.
+  private emittedTransportState: DocumentSessionConnectionState | null = null;
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -255,7 +276,7 @@ export class DocumentSession {
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
-    this.documentId = room.kind === "live" ? room.documentId : room.branchId;
+    this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
@@ -751,10 +772,12 @@ export class DocumentSession {
     if (
       next === this.status &&
       acknowledged === this.serverHasLocalChanges &&
-      outboxPresent === this.observedOutboxPresence
+      outboxPresent === this.observedOutboxPresence &&
+      this.transportState === this.emittedTransportState
     )
       return;
     this.observedOutboxPresence = outboxPresent;
+    this.emittedTransportState = this.transportState;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;
     this.emit();

@@ -2,10 +2,10 @@ export * from "./account-skill-installs";
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";
+export * from "./branches";
 export * from "./content";
 export * from "./context-catalog";
 export * from "./context-operation-receipts";
-export * from "./drafts";
 export * from "./preferences";
 export * from "./provenance";
 export * from "./recent-documents";
@@ -20,11 +20,11 @@ import * as accountSkillInstalls from "./account-skill-installs";
 import * as agentDefinitionRevisions from "./agent-definition-revisions";
 import * as agentThreads from "./agent-threads";
 import * as billing from "./billing";
+import * as branches from "./branches";
 import * as content from "./content";
 import * as contextCatalog from "./context-catalog";
 import * as contextOperations from "./context-operation-receipts";
 import * as documentEdits from "./document-edits";
-import * as drafts from "./drafts";
 import * as preferences from "./preferences";
 import * as provenance from "./provenance";
 import * as recentDocuments from "./recent-documents";
@@ -43,7 +43,7 @@ export const schema = {
   ...content,
   ...contextCatalog,
   ...contextOperations,
-  ...drafts,
+  ...branches,
   ...agentThreads,
   ...agentDefinitionRevisions,
   ...provenance,

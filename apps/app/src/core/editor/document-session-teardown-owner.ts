@@ -2,7 +2,7 @@
 import type { DocumentSession } from "./document-session";
 
 export type DocumentSessionRetirementKey = Readonly<{
-  kind: "live" | "branch";
+  kind: "live" | "draft";
   roomKey: string;
 }>;
 

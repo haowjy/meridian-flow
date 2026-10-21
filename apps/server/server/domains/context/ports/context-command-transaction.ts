@@ -1,14 +1,14 @@
-import type { DraftId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import type { ContextScheme } from "./context-port.js";
 
 export type ContextCommandScope = { scheme: ContextScheme; workId: string | null };
 
 /**
- * A command that writes a Work's draft for a draft-mode chat (contract §2.3): the transaction locks
- * that Work with its other Works, then the Work's active draft (made at this write
+ * A command that writes a Work's branch for a draft-mode chat (contract §2.3): the transaction locks
+ * that Work with its other Works, then the Work's active branch (made at this write
  * boundary for `ensure`, only locked for `existing`), before any namespace lock.
  */
-export type ContextCommandDraft = {
+export type ContextCommandBranch = {
   mode: "ensure" | "existing";
   workId: WorkId;
   threadId: ThreadId;
@@ -16,21 +16,21 @@ export type ContextCommandDraft = {
 };
 
 export type ContextCommandOptions = {
-  draft?: ContextCommandDraft;
+  branch?: ContextCommandBranch;
   /** More sources whose namespaces the command takes with its own, in key order (§6.4). */
   sourceIds?: readonly string[];
 };
 
-/** A locked active draft as the transaction resolved it. */
-export type ContextCommandActiveDraft = { id: DraftId; originWorkId: WorkId | null };
+/** A locked active branch as the transaction resolved it. */
+export type ContextCommandActiveBranch = { id: BranchId; originWorkId: WorkId | null };
 
 /** What the transaction resolved before the command ran. */
 export type ContextCommandContext = {
   /**
-   * The locked active draft, when the command asked for one; null when none is active.
+   * The locked active branch, when the command asked for one; null when none is active.
    * An `ensure` command always has one (the transaction makes it).
    */
-  draft: ContextCommandActiveDraft | null;
+  branch: ContextCommandActiveBranch | null;
 };
 
 /** Scopes known up front, or resolved when the transaction starts (an identity destination's current home). */
@@ -50,6 +50,6 @@ export interface ContextCommandTransaction {
 export const directContextCommandTransaction: ContextCommandTransaction = {
   async run(operation, scopes) {
     if (typeof scopes === "function") await scopes();
-    return operation({ draft: null });
+    return operation({ branch: null });
   },
 };

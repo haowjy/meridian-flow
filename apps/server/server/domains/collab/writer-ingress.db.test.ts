@@ -25,7 +25,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
+    const { createDrizzleCollabPersistence, createDrizzleJournal } = await import(
+      "./adapters/drizzle-journal.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000701";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
@@ -79,13 +81,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values([
           {
             documentId: DOCUMENT_ID as never,
-            branchGeneration: 1,
+            draftGeneration: 1,
             journalIds: [],
             idempotencyKey: "writer-join-1",
           },
           {
             documentId: DOCUMENT_ID as never,
-            branchGeneration: 1,
+            draftGeneration: 1,
             journalIds: [],
             idempotencyKey: "writer-join-2",
           },
@@ -115,12 +117,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const update = Y.encodeStateAsUpdate(writerDoc);
       expect(update).toContain(0);
 
-      const result = await journal.appendWriterUpdate?.(DOCUMENT_ID, update, {
+      await createDrizzleCollabPersistence(db).seeds.seedInitialDocument(
+        DOCUMENT_ID as never,
+        Y.encodeStateAsUpdate(new Y.Doc()),
+      );
+      const result = await journal.appendWriterUpdate(DOCUMENT_ID, update, {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
 
-      expect(result).toMatchObject({ joinedSettlement: true });
+      expect(result).toMatchObject({ status: "appended", joinedSettlement: true });
       const settlements = await db
         .select({
           joinVersion: branchPushSettlementOutbox.joinVersion,

@@ -3,7 +3,7 @@
  * closure class or one whole-draft item for a new document, in document order.
  *
  * The server owns the class partition (dependency-closed sets of operations
- * that publish or discard together); this module only groups by the required
+ * that apply or discard together); this module only groups by the required
  * `operation.closureClassId` and describes each class: its colour, a short
  * excerpt, who made it, and whether the writer's own edits are inside it. The
  * header's stepper, the manuscript's bar and the change list all read this one
@@ -17,8 +17,8 @@ import {
   type ReviewHunk,
   type ReviewOperation,
   type ThreadDraftListItem,
-} from "@meridian/contracts/drafts";
-import type { ChangeSelection } from "@/client/query/draft-command-record";
+} from "@meridian/contracts/branches";
+import type { ChangeSelection } from "@/client/query/branch-command-record";
 import { wholeItemHidden } from "@/client/query/draft-projection";
 import {
   attributionThreadIds,
@@ -163,7 +163,7 @@ function changesOf(preview: ActivePreview): readonly ReviewChange[] {
 /**
  * The one change of a whole-item item (created, binary or deleted live), whatever
  * its operation count: it has no live target for selective commands, so item
- * Apply and Discard settle it. A branchless item (an image, an empty create)
+ * Apply and Discard settle it. An item without a document-draft row (an image, an empty create)
  * has no preview and passes none; it still shows one change, by its file name.
  */
 export function wholeItemChange(

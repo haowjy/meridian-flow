@@ -8,14 +8,32 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
-/** A `drafts` row: one Work draft, the unit Apply all and Discard act on (D68). */
+/** A `branches` row: one Work branch, the unit Apply all and Discard act on (D68). */
+export type BranchId = string;
+/** One document's pending `work_draft` version inside a branch (D68). */
 export type DraftId = string;
-/** One document's `work_draft` branch inside a draft (D68). */
-export type DraftBranchId = string;
-/** `${draftId}:${documentId}`: the client's one review identity for a document of a draft (D68). */
+/** `${branchId}:${documentId}`: the client's one review identity for a document of a branch (D68). */
 export type DraftItemKey = string;
+
+/** The one builder of a draft item key, for text and binary items alike. */
+export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftItemKey {
+  return `${branchId}:${documentId}`;
+}
+
+/** The branch and document a draft item key names; null when the string is not one. */
+export function parseDraftItemKey(
+  itemKey: string,
+): { branchId: BranchId; documentId: DocumentId } | null {
+  const separator = itemKey.indexOf(":");
+  if (separator <= 0 || separator === itemKey.length - 1) return null;
+  const branchId = itemKey.slice(0, separator);
+  const documentId = itemKey.slice(separator + 1) as DocumentId;
+  return draftItemKey(branchId, documentId) === itemKey && !documentId.includes(":")
+    ? { branchId, documentId }
+    : null;
+}
 /** A client-generated UUID naming one writer Apply or Discard command; resends reuse it. */
-export type DraftCommandId = string;
+export type BranchCommandId = string;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;

@@ -12,15 +12,13 @@ export type DocumentCreationAggregate = {
   createDocumentAtomically<T>(
     input: ImmediateDocumentCreation<T>,
   ): Promise<{ created: true; value: T } | { created: false }>;
-  ensureDocument(documentId: string): Promise<void>;
 };
 
 export function createDocumentCreationAggregate(input: {
   atomic<T>(operation: () => Promise<T>): Promise<T>;
-  ensureDocument(documentId: string): Promise<void>;
   /**
    * Arrival hook (contract §9.3), inside `atomic` once identity and content exist. The
-   * command already holds the document's namespace key. A draft's create is no arrival:
+   * command already holds the document's namespace key. A branch's create is no arrival:
    * it never comes through here.
    */
   onArrival?(documentId: DocumentId): Promise<unknown>;
@@ -34,10 +32,6 @@ export function createDocumentCreationAggregate(input: {
         await input.onArrival?.(documentId);
         return { created: true, value } as const;
       });
-    },
-
-    async ensureDocument(documentId) {
-      await input.ensureDocument(documentId);
     },
   };
 }

@@ -1,7 +1,7 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { isPendingPlaceholder } from "@meridian/contracts/threads";
+import { type Block, isPendingPlaceholder } from "@meridian/contracts/threads";
 import type { NoticePort } from "../../notices/index.js";
 import { hasCompletedReplyInLineage, SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
@@ -20,6 +20,7 @@ import {
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
+import { hasReferenceEvidence } from "../loop/reference-context.js";
 import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
@@ -490,11 +491,11 @@ export function createDeliveryAdapter(
     const compaction = prepared.compaction?.kind === "compact" ? prepared.compaction : undefined;
     // Adopted reference reads count as shown only with the commit that
     // persists their blocks; a discarded or retried preparation records nothing.
-    const recordShown = async (turnId: TurnId) => {
-      if (!drain.shown?.length) return;
-      if (!input.recordShown)
-        throw new Error("Adopted reference reads have no shown-link recorder");
-      await input.recordShown(turnId, drain.shown);
+    const recordEvidence = async (turnId: TurnId) => {
+      if (!drain.evidence || !hasReferenceEvidence(drain.evidence)) return;
+      if (!input.recordEvidence)
+        throw new Error("Adopted reference reads have no evidence recorder");
+      await input.recordEvidence(turnId, drain.evidence);
     };
 
     const receipt = await leaseStore.lockReceipt(lease);
@@ -502,19 +503,23 @@ export function createDeliveryAdapter(
       (id) => !work.ids.includes(id) && !committedWorkIds.includes(id),
     );
     let terminal = false;
+    let completedBlocks: Block[] = [];
     if (split) {
-      completed =
-        input.current.kind === "placeholder"
-          ? await input.current.complete(
-              adoption.preparedCurrent,
-              prepared.successorFailure === undefined ? preparationFailure : undefined,
-            )
-          : {
-              ...currentTurn,
-              status: "complete" as const,
-              finishReason: "end_turn" as const,
-              completedAt: new Date().toISOString(),
-            };
+      if (input.current.kind === "placeholder") {
+        const placeholder = await input.current.complete(
+          adoption.preparedCurrent,
+          prepared.successorFailure === undefined ? preparationFailure : undefined,
+        );
+        completed = placeholder.turn;
+        completedBlocks = placeholder.blocks;
+      } else {
+        completed = {
+          ...currentTurn,
+          status: "complete" as const,
+          finishReason: "end_turn" as const,
+          completedAt: new Date().toISOString(),
+        };
+      }
       terminal =
         input.current.kind === "placeholder" &&
         !input.continueTask &&
@@ -534,7 +539,7 @@ export function createDeliveryAdapter(
               ...events,
             ],
           }),
-          { afterEvents: () => recordShown(currentTurn.id) },
+          { afterEvents: () => recordEvidence(currentTurn.id) },
         );
         await ack(threadId, drain.ackIds, deliveredBy(currentTurn));
         drain.ackIds = [];
@@ -584,7 +589,7 @@ export function createDeliveryAdapter(
           }),
           {
             afterEvents: async () => {
-              await recordShown(next.id);
+              await recordEvidence(next.id);
               await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
               if (adoption.selection.outstanding.length > 0)
                 await input.admit?.(next, adoption.selection.outstanding);
@@ -595,7 +600,7 @@ export function createDeliveryAdapter(
       if (input.current.kind === "assistant") await deps.repos.threads.updateCost(threadId, "0", 1);
     } else if (events.length > 0) {
       await persistAndAppendEvents(deps, threadId, async () => ({ result: undefined, events }), {
-        afterEvents: () => recordShown(currentTurn.id),
+        afterEvents: () => recordEvidence(currentTurn.id),
       });
     }
 
@@ -634,11 +639,12 @@ export function createDeliveryAdapter(
     return {
       drain,
       preparedCurrent: adoption.preparedCurrent,
-      context: prepared.context,
+      ...(!terminal && preparationFailure === undefined ? { context: prepared.context } : {}),
       next,
       split,
       terminal,
       completed,
+      completedBlocks,
       compaction,
       ...(preparationFailure === undefined ? {} : { preparationFailure }),
     };
@@ -677,7 +683,7 @@ export function createDeliveryAdapter(
     const drain = { turns: [], blocks: [], events: [], ackIds: [] };
     if (input.current.kind === "assistant")
       return { drain, next: input.currentTurn, split: false, yielded: true };
-    const completed = await input.current.complete(
+    const { turn: completed, blocks: completedBlocks } = await input.current.complete(
       prepared.preparedCurrent,
       prepared.currentFailure,
     );
@@ -686,6 +692,7 @@ export function createDeliveryAdapter(
       drain,
       next: completed,
       completed,
+      completedBlocks,
       split: true,
       terminal: true,
       yielded: true,
@@ -836,17 +843,17 @@ export function createDeliveryAdapter(
     splitAndContinue: (input) => adopt(input),
     close: async (input) => {
       const threadId = input.lease.threadId;
-      const disposition = await threadLock.withThreadLock(threadId, async () => {
+      return threadLock.withThreadLock(threadId, async () => {
         const receipt = await leaseStore.lockReceipt(input.lease);
         const cause = settlement.closeCause(input, receipt);
-        if (input.continueWith && cause.kind === "success") {
+        if (input.continueOnPending && cause.kind === "success") {
           // A yield selects no rows, so the reply closes here with no successor.
           const { selection } = await selectForPreparation(threadId, "boundary");
           if (
             selection.batch.some((message) => message.intent === "message") ||
             selection.workContext
           ) {
-            return { kind: "prepare_split" as const };
+            return { kind: "continue" as const };
           }
         }
         await input.settleSummaryResponses?.();
@@ -858,13 +865,6 @@ export function createDeliveryAdapter(
         );
         return { kind: "completed" as const, completion };
       });
-      if (disposition.kind === "completed") return disposition;
-
-      const boundary = input.continueWith as DeliveryBoundary;
-      const adopted = await adopt(boundary);
-      if (adopted.split) return { kind: "split", adopted };
-      const completion = await settlement.settleClosed(input);
-      return { kind: "completed", completion };
     },
   };
 }

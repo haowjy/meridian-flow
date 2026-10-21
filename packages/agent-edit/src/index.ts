@@ -1,23 +1,23 @@
 // Deep public facade for the agent editing core.
 import { type CreateWriteToolOptions, createWriteTool } from "./tool/write.js";
 
-export type { ResponseReadLease } from "./tool/response-committer.js";
+// A host's response-attempt surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is
+// exported once, from `integration.ts`.
 
 export type AgentEditCoreOptions = CreateWriteToolOptions;
 
 export interface AgentEditCore {
   read: ReturnType<typeof createWriteTool>["read"];
   write: ReturnType<typeof createWriteTool>["write"];
-  recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
+  prepareResponse: ReturnType<typeof createWriteTool>["prepareResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
-  prepare: ReturnType<typeof createWriteTool>["prepare"];
+  readRoom: ReturnType<typeof createWriteTool>["readRoom"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
   refuseStaged: ReturnType<typeof createWriteTool>["refuseStaged"];
   retirePeer: ReturnType<typeof createWriteTool>["retirePeer"];
-  invalidateThreadDocument: ReturnType<typeof createWriteTool>["invalidateThreadDocument"];
-  evictThread: ReturnType<typeof createWriteTool>["evictThread"];
+  dropStaged: ReturnType<typeof createWriteTool>["dropStaged"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -25,16 +25,15 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   return {
     read: tool.read,
     write: tool.write,
-    recover: tool.recover,
     commitResponse: tool.commitResponse,
+    prepareResponse: tool.prepareResponse,
     rollbackResponse: tool.rollbackResponse,
     hasResponseDocument: tool.hasResponseDocument,
-    prepare: tool.prepare,
+    readRoom: tool.readRoom,
     responseDocuments: tool.responseDocuments,
     refuseStaged: tool.refuseStaged,
     retirePeer: tool.retirePeer,
-    invalidateThreadDocument: tool.invalidateThreadDocument,
-    evictThread: tool.evictThread,
+    dropStaged: tool.dropStaged,
   };
 }
 
@@ -78,7 +77,7 @@ export { documentNotFoundMessage } from "./tool/internal-result.js";
 export type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
-  AgentEditConcurrentRun,
+  AgentEditConcurrentListing,
   AgentEditResultCommand,
   AgentEditResultV1,
 } from "./tool/model-result.js";
@@ -87,10 +86,10 @@ export {
   agentEditResultCommand,
   isAgentEditResultEnvelope,
   modelBlockItem,
-  modelConcurrentResult,
   modelResult,
   type WriteRejection,
 } from "./tool/model-result.js";
+export { removedFile } from "./tool/removal-copy.js";
 export {
   agentEditResultSummary,
   readCall,

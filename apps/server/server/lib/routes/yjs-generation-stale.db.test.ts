@@ -6,8 +6,9 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import WebSocket from "ws";
 import * as Y from "yjs";
+import { materializeDraftRead } from "../../domains/collab/domain/draft-store.js";
 import { createHocuspocusPersistenceService } from "../../domains/collab/hocuspocus-persistence.js";
-import { closeBranchRooms } from "../../domains/collab/hocuspocus-rooms.js";
+import { closeDraftRooms } from "../../domains/collab/hocuspocus-rooms.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -34,7 +35,7 @@ it.each([
   let server: Server | undefined;
   try {
     await harness.seedWriterDocument("The sacred dawn.\n\nThe courtyard waits.", "stale-signal");
-    const branchId = await harness.stageCertifiedReplace({
+    const draftId = await harness.stageCertifiedReplace({
       responseId: "first",
       find: "sacred ",
       content: "ruined ",
@@ -46,27 +47,33 @@ it.each([
         content: "garden",
       });
     const f = harness.crossWorkProbeFixture();
-    const snapshot = await f.branchStore.getBranch(branchId);
-    if (!snapshot) throw new Error("missing branch");
-    const roomName = `branch:${branchId}:gen:${snapshot.generation}`;
+    const snapshot = await f.draftStore.getDraft(draftId);
+    if (!snapshot) throw new Error("missing draft");
+    const roomName = `draft:${draftId}:gen:${snapshot.generation}`;
     const old = createCollabYDoc({ gc: false });
     documents.push(old);
-    await f.branchCoordinator.readBranch(branchId, async (doc) => {
+    await f.draftCoordinator.readDraft(draftId, async (doc) => {
       Y.applyUpdate(old, Y.encodeStateAsUpdate(doc));
     });
     const review = reviewDriver(f.collab.draftReview);
     const persistence = createHocuspocusPersistenceService({
-      branchStore: f.branchStore,
-      branchCoordinator: f.branchCoordinator,
+      draftStore: f.draftStore,
+      draftCoordinator: f.draftCoordinator,
       hocuspocus: () => server?.hocuspocus ?? null,
     } as never);
     const gateway = createHocuspocus(
-      { documentSync: { ...persistence, bindHocuspocus: () => undefined } } as never,
+      {
+        documentSync: {
+          ...persistence,
+          bindHocuspocus: () => undefined,
+          roomRemoval: async () => null,
+        },
+      } as never,
       {} as never,
     );
     const onConnect = gateway.configuration.onConnect;
     if (!onConnect) throw new Error("missing production onConnect");
-    const syncState = { branchSyncState: new Map() };
+    const syncState = { draftSyncState: new Map() };
     let reset = false;
     server = new Server({
       address: "127.0.0.1",
@@ -81,7 +88,10 @@ it.each([
           } as never);
         }
       },
-      onLoadDocument: async () => (await f.branchStore.getBranch(branchId))?.state,
+      onLoadDocument: async () => {
+        const read = await f.draftStore.readDraftAt(draftId);
+        return read ? Y.encodeStateAsUpdate(materializeDraftRead(read)) : undefined;
+      },
       beforeSync:
         kind === "selective"
           ? async ({ documentName, document, type, payload }) => {
@@ -130,15 +140,15 @@ it.each([
       expect(server.hocuspocus.documents.get(roomName)?.getConnectionsCount()).toBe(1);
       await review.discardItem(ALPHA_ID);
       reset = true;
-      closeBranchRooms(server.hocuspocus, branchId);
+      closeDraftRooms(server.hocuspocus, draftId);
       // In-band CLOSE synthesizes 1000; clients must classify the named reason.
       expect(await connected.closed).toEqual({
         code: 1000,
-        reason: WS_CLOSE.BRANCH_GENERATION_STALE.reason,
+        reason: WS_CLOSE.DRAFT_GENERATION_STALE.reason,
       });
       const fresh = createCollabYDoc({ gc: false });
       documents.push(fresh);
-      expect(await open(fresh).denied).toBe(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
+      expect(await open(fresh).denied).toBe(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
     } else {
       const preview = await review.activePreview(ALPHA_ID);
       expect(preview.operations).toHaveLength(2);
@@ -147,13 +157,13 @@ it.each([
           preview.operations[1]?.operationId as string,
         ]),
       ).toMatchObject({ itemClosed: false });
-      expect((await f.branchStore.getBranch(branchId))?.generation).toBe(snapshot.generation + 1);
+      expect((await f.draftStore.getDraft(draftId))?.generation).toBe(snapshot.generation + 1);
       const reconnect = createCollabYDoc({ gc: false });
       documents.push(reconnect);
       reset = true;
       const stale = open(reconnect);
       // The old room is rejected before any obsolete update is admitted.
-      expect(await stale.denied).toBe(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
+      expect(await stale.denied).toBe(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
     }
   } finally {
     for (const provider of providers) provider.destroy();

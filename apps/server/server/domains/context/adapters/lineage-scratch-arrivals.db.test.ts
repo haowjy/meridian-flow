@@ -1,4 +1,5 @@
 /** Restoring chat and Work visibility claims returning lineage addresses once. */
+
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
@@ -14,8 +15,9 @@ import {
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
+import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
@@ -103,14 +105,15 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         availabilityMutations: availability,
       });
       const workRepo = createDrizzleProjectWorkRepository({
+        removal: createTestDocumentRemoval(db),
         db,
         lineageScratch: lifecycle,
         arrivals,
         projectionMutation: createWorkProjectionMutation({
           db,
+          pendingCounts: createDrizzleWorkBranchPendingStore(db),
           availability,
           catalog,
-          pending: createDrizzleWorkDraftPendingStore(db),
         }),
         fileAccessChanges: createLocalFileAccessChanges(),
       });
@@ -128,6 +131,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
           contextSourceId: source,
           name: "deleted",
           extension: "toml",
+          deletionReason: "deleted",
           deletedAt: new Date(),
         },
         { id: hidden, contextSourceId: source, folderId: folder, name: "note", extension: "toml" },

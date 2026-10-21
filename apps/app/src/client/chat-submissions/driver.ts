@@ -1,6 +1,7 @@
 /** One bounded, fenced lifecycle for first and subsequent writer messages. */
 import type { Thread } from "@meridian/contracts/protocol";
 import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
+import { nextOccurrence } from "@meridian/thread-client";
 import type { SubmissionOutcome, ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { classifyWriteFailure } from "@/client/copilot/ThreadRunController";
 import { abortable, type SubmissionLock } from "./lock";
@@ -30,7 +31,11 @@ export type SubmissionDriverOptions = {
   /** Post a control record (a write-mode switch) to the chat's controls route. */
   postControl(entry: ChatSubmission, signal: AbortSignal): Promise<EnqueueThreadControlResponse>;
   row(entry: ChatSubmission): string;
-  status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
+  status(
+    entry: ChatSubmission,
+    status: "pending" | "error",
+    localFailure?: "unsaved" | "lost",
+  ): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
   takeFresh(recordId: string): boolean;
   finished(entry: ChatSubmission): void;
@@ -44,7 +49,7 @@ export type SubmissionDriverOptions = {
 export class ChatSubmissionDriver {
   private readonly deletedThreads = new Set<string>();
   private readonly incompleteDeletions = new Map<string, "deleted" | "project-deleted">();
-  private readonly localFailures = new Set<string>();
+  private readonly localFailures = new Map<string, ChatSubmission>();
   private readonly drives = new Map<string, Promise<void>>();
   constructor(private readonly options: SubmissionDriverOptions) {}
 
@@ -179,15 +184,16 @@ export class ChatSubmissionDriver {
       return Promise.resolve();
     if (!this.incompleteDeletions.has(original.threadId) && this.options.transferReceived(original))
       return this.edit(submissionId);
-    this.options.status(original, "pending");
+    const requested = this.nextAttempt(original);
+    this.options.status(requested, "pending");
     return this.locked(
       original.threadId,
       async (derived) => {
         const entry = this.read(original.recordId);
         if (!entry || entry.submissionId !== submissionId || !this.current()) return;
-        await this.guard(entry, () => this.attempt(entry, true, derived));
+        await this.guard(requested, () => this.attempt(entry, true, derived, requested));
       },
-      original,
+      requested,
     )
       .finally(() => this.options.finished(original))
       .then(() => {
@@ -229,16 +235,21 @@ export class ChatSubmissionDriver {
     } catch (error) {
       if (!this.current()) return;
       reportError(error);
-      this.localFailure(entry);
+      const saved = this.read(entry.recordId);
+      this.localFailure(
+        saved && (saved.occurrence?.attempt ?? 0) > (entry.occurrence?.attempt ?? 0)
+          ? saved
+          : entry,
+      );
     } finally {
       this.options.finished(entry);
     }
   }
 
-  private localFailure(entry: ChatSubmission) {
-    this.localFailures.add(entry.recordId);
+  private localFailure(entry: ChatSubmission, kind: "unsaved" | "lost" = "lost") {
+    this.localFailures.set(entry.recordId, entry);
     try {
-      this.options.status(entry, "error", true);
+      this.options.status(entry, "error", kind);
     } catch (error) {
       reportError(error);
     }
@@ -249,11 +260,29 @@ export class ChatSubmissionDriver {
       this.localFailures.delete(entry.recordId);
       return true;
     }
-    this.localFailure(entry);
+    this.localFailure(entry, "unsaved");
     return false;
   }
 
-  private async attempt(original: ChatSubmission, retry: boolean, derived: boolean) {
+  private nextAttempt(entry: ChatSubmission): ChatSubmission {
+    return {
+      ...entry,
+      occurrence: nextOccurrence(
+        Math.max(
+          entry.occurrence?.attempt ?? 0,
+          this.localFailures.get(entry.recordId)?.occurrence?.attempt ?? 0,
+        ),
+        crypto.randomUUID(),
+      ),
+    };
+  }
+
+  private async attempt(
+    original: ChatSubmission,
+    retry: boolean,
+    derived: boolean,
+    requested?: ChatSubmission,
+  ) {
     let entry = this.read(original.recordId);
     if (!entry || !this.current()) return;
     const deletion = this.incompleteDeletions.get(entry.threadId);
@@ -278,10 +307,18 @@ export class ChatSubmissionDriver {
       return;
     }
     const fresh = this.options.takeFresh(entry.recordId) && !retry;
-    if (retry && entry.state) {
-      entry = { ...entry, state: undefined };
-      if (!this.current() || !this.write(entry)) return;
-    }
+    const before = entry;
+    entry = {
+      ...entry,
+      occurrence: (requested ?? (fresh && entry.occurrence ? entry : this.nextAttempt(entry)))
+        .occurrence,
+      ...(retry ? { state: undefined } : {}),
+    };
+    if (
+      (entry.occurrence !== before.occurrence || entry.state !== before.state) &&
+      !this.write(entry)
+    )
+      return;
     this.options.status(entry, "pending");
     if (!derived) {
       this.settle(entry, "rejected");
@@ -307,7 +344,7 @@ export class ChatSubmissionDriver {
         .filter((record) => record.threadId === entry?.threadId && record.creation)) {
         if (!this.current()) return;
         if (!this.write({ ...record, creation: undefined })) {
-          this.localFailure(entry);
+          this.localFailure(entry, "unsaved");
           return;
         }
       }
@@ -429,7 +466,7 @@ export class ChatSubmissionDriver {
       else if (entry.posted && entry.state !== "rejected") result = "kept";
       else if (this.options.journal.retire(recordId)) result = "removed";
       else {
-        this.localFailure(entry);
+        this.localFailure(this.nextAttempt(entry), "unsaved");
         result = "kept";
       }
     });
@@ -473,9 +510,12 @@ export class ChatSubmissionDriver {
   private settle(entry: ChatSubmission, kind: "accepted" | "rejected" | "ambiguous") {
     if (!this.current()) return;
     if (kind === "accepted") {
-      if (!this.options.journal.retire(entry.recordId)) this.localFailure(entry);
+      if (!this.options.journal.retire(entry.recordId)) this.localFailure(entry, "unsaved");
     } else {
-      if (kind === "rejected" && !this.write({ ...entry, state: "rejected" })) return;
+      if (kind === "rejected") {
+        entry = { ...entry, state: "rejected" };
+        if (!this.write(entry)) return;
+      }
       if (this.current()) this.options.status(entry, "error");
     }
   }
@@ -484,7 +524,7 @@ export class ChatSubmissionDriver {
     for (const record of cohort) {
       if (!this.current()) return;
       if (!this.options.journal.retire(record.recordId)) {
-        this.localFailure(record);
+        this.localFailure(record, "unsaved");
         return;
       }
     }

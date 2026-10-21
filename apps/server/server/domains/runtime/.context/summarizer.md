@@ -27,9 +27,22 @@ Rolling uses the configured cheap model or source model fallback and receives
 only the cut plus prior summary. It omits opaque reasoning, carries a running
 summary through segments, and fails before a cold call when an indivisible block
 cannot fit. Compaction retains pins/tail outside the cut; handoff has no
-retained tail. Both use the fixed fiction-oriented summary sections, preserve
-writer terminology, and treat transcript text as source material rather than
-instructions.
+retained tail. Both use a fixed spine of sections (Objective, Work state,
+Decisions, User preferences, Open questions, Next step) and ask the model to add
+the sections its work needs (a story's canon, research sources, code interfaces),
+preserve the user's terminology, and treat transcript text as source material
+rather than instructions.
+
+Compaction alone ends its summary instruction with `## Documents to keep open`:
+one JSON object of ordinary `read` arguments per line, most important first.
+`loop/compaction/important-files.ts` publishes the existing read input schema
+and examples; validation uses that same schema, not a compaction selector grammar. The warm
+branch's retained-scope rule exempts this section, so documents shown only in the
+retained tail can be listed; the rolling path sees only the cut, and the server's
+3 most recent documents cover the tail there. Only the appended instruction
+changes: the cached request prefix (messages, tools, system and cache key) does
+not. Handoff is unchanged. What successor preparation does with the list is in
+[compaction](compaction.md#important-files).
 
 Before either path, one settled-authority revision query over the source
 projection supplies changed document URIs. Summary rows do not supply prefix

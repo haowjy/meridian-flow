@@ -5,15 +5,16 @@
  */
 import { createDb } from "@meridian/database";
 import {
+  branchTreeChanges,
   changeTrailDocumentDetails,
   documents,
-  draftTreeChanges,
   folders,
   modelResponses,
 } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
@@ -23,7 +24,7 @@ import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
-  createWorkDraftFixture,
+  createWorkBranchFixture,
   DOC_ID,
   DRAFT_DESTINATION,
   PROJECT_ID,
@@ -33,7 +34,7 @@ import {
   TURN_ID,
   USER_ID,
   WORK_ID,
-} from "./test-support/work-draft-fixture.js";
+} from "./test-support/work-branch-fixture.js";
 
 const documentSchema = buildDocumentSchema();
 
@@ -58,7 +59,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
     });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } =
+      createWorkBranchFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
@@ -105,7 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     // The thread view exercises the same one-scope search as a writer's live
-    // view, through a draft view; the adapter's snapshot reuse is pinned in
+    // view, through a branch view; the adapter's snapshot reuse is pinned in
     // `document-link-scope.db.test.ts`.
     it("shares search paths across chapters in a thread view", async () => {
       const links = createTestDocumentLinkScopes(db);
@@ -126,7 +128,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const LOST = "00000000-0000-4000-8000-000000000719";
       const cover = { contextSourceId: SOURCE_ID, name: "cover", extension: "png" };
       await db.insert(documents).values([
-        { ...cover, id: OLD_COVER, fileType: "image", deletedAt: new Date() },
+        {
+          ...cover,
+          id: OLD_COVER,
+          fileType: "image",
+          deletionReason: "deleted",
+          deletedAt: new Date(),
+        },
         { ...cover, id: "00000000-0000-4000-8000-00000000071a", fileType: "image" },
       ]);
       await writeMarkdown(collab, {
@@ -146,10 +154,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         threadView: {
           threadId: THREAD_ID,
-          draftWork: { id: WORK_ID as never, handle: "w1" },
+          branchWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: {
           ...collab,
@@ -252,9 +262,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.seedFromMarkdown(DOC_ID, collab.bindStatic("Holder."), { type: "system" });
       const CREATED_ID = "00000000-0000-4000-8000-000000000714";
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
-      // The Work's draft created this chapter: a hidden row and the draft's created row,
+      // The Work's branch created this chapter: a hidden row and the branch's created row,
       // as ContextFS leaves a model's create in a draft-mode Work.
-      const draft = await collab.drafts.ensureActiveForWrite({
+      const branch = await collab.branches.ensureActiveForWrite({
         workId: WORK_ID as never,
         projectId: PROJECT_ID as never,
         threadId: THREAD_ID as never,
@@ -267,8 +277,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "",
         hidden: true,
       });
-      await db.insert(draftTreeChanges).values({
-        draftId: draft.id,
+      await db.insert(branchTreeChanges).values({
+        branchId: branch.id,
         nodeKind: "document",
         nodeId: CREATED_ID,
         created: true,
@@ -354,11 +364,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,
-          draftWork: { id: WORK_ID as never, handle: "w1" },
+          branchWork: { id: WORK_ID as never, handle: "w1" },
         },
         documentSync: collab,
       }).search("See created");
@@ -414,8 +426,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
       // The same comparison in live. A create is a row, not a reply's in-memory set: a live
-      // create is visible in every view at once, and the draft's hidden create is "in a
-      // draft" in both views, spelled at its path only where its draft can read it.
+      // create is visible in every view at once, and the branch's hidden create is "in a
+      // draft" in both views, spelled at its path only where its branch can read it.
       const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
       const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
       await db.insert(documents).values({
@@ -424,6 +436,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "live-created",
         extension: "",
       });
+      // The host's create materializes the document before the model's command runs.
+      await collab.initializeEmptyDocument(LIVE_CREATED_ID as never);
       await db.insert(modelResponses).values({
         id: LIVE_RESPONSE_ID as never,
         turnId: TURN_ID as never,
@@ -461,28 +475,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
         async () => {
           const live = { kind: "live" } as const;
-          const drafted = { kind: "draft", draftId: draft.id } as const;
+          const drafted = { kind: "branch", branchId: branch.id } as const;
           await links.prepare({
             holders: [live, drafted].map((view) => ({ documentId: DOC_ID, view })),
             refs: [`doc:${LIVE_CREATED_ID}`, `doc:${CREATED_ID}`],
           });
-          const [inLive, inDraft] = [live, drafted].map((view) =>
+          const [inLive, inBranch] = [live, drafted].map((view) =>
             links.holder({ documentId: DOC_ID, view }),
           );
           const liveCreate = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale" };
-          const draftCreate = { ref: `doc:${CREATED_ID}`, href: "manuscript://stale-created" };
+          const branchCreate = { ref: `doc:${CREATED_ID}`, href: "manuscript://stale-created" };
           expect.soft(inLive?.spellLink(liveCreate).href, "live create, live").toBe("live-created");
           expect
-            .soft(inDraft?.resolve(liveCreate), "live create, draft")
-            .toMatchObject({ kind: "document", inDraft: false });
+            .soft(inBranch?.resolve(liveCreate), "live create, branch")
+            .toMatchObject({ kind: "document", inBranch: false });
           expect
-            .soft(inLive?.resolve(draftCreate), "draft create, live")
-            .toMatchObject({ kind: "document", inDraft: true });
+            .soft(inLive?.resolve(branchCreate), "draft create, live")
+            .toMatchObject({ kind: "document", inBranch: true });
           expect
-            .soft(inDraft?.resolve(draftCreate), "draft create, its draft")
-            .toMatchObject({ kind: "document", inDraft: true });
+            .soft(inBranch?.resolve(branchCreate), "drafted create, its branch")
+            .toMatchObject({ kind: "document", inBranch: true });
           expect
-            .soft(inDraft?.spellLink(draftCreate).href, "draft create spelled in its draft")
+            .soft(inBranch?.spellLink(branchCreate).href, "drafted create spelled in its branch")
             .toBe("created");
         },
       );

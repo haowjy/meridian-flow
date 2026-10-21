@@ -2,7 +2,7 @@
 
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { BranchPeerShadowAccess, DocumentLinkScopes, Drafts } from "../collab/index.js";
+import type { Branches, DocumentLinkScopes, DraftPeerShadowAccess } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import type { WorkRepository } from "../projects/index.js";
 import {
@@ -15,8 +15,8 @@ import type { ProjectContextAvailabilityPort } from "./ports/project-context-ava
 import { LIVE_TREE } from "./tree/tree-view.js";
 
 export function createDocumentRevisions(deps: {
-  documents: Pick<BranchPeerShadowAccess, "readEffectiveRevision">;
-  drafts: Pick<Drafts, "viewForWork">;
+  documents: Pick<DraftPeerShadowAccess, "readEffectiveRevision">;
+  branches: Pick<Branches, "viewForWork">;
   /** One snapshot serves every document asked about together. */
   links: Pick<DocumentLinkScopes, "within">;
   threads: Pick<ThreadRepository, "findById">;
@@ -39,10 +39,10 @@ export function createDocumentRevisions(deps: {
     const revisions = new Map<string, string | null>();
     // Archive restricts writes, not the revision reads used by summaries and compaction.
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
-    const draftOwner =
-      work && thread ? threadExecutionContext(work, thread.aiWriteMode).draftOwner : null;
-    const draftWork = draftOwner && work ? { id: draftOwner.workId, handle: work.handle } : null;
-    const view = draftWork ? await deps.drafts.viewForWork(draftWork.id) : LIVE_TREE;
+    const branchOwner =
+      work && thread ? threadExecutionContext(work, thread.aiWriteMode).branchOwner : null;
+    const branchWork = branchOwner && work ? { id: branchOwner.workId, handle: work.handle } : null;
+    const view = branchWork ? await deps.branches.viewForWork(branchWork.id) : LIVE_TREE;
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;
       if (valid) {
@@ -55,14 +55,14 @@ export function createDocumentRevisions(deps: {
           source?.kind === "available" ? parseUnifiedContextUri(source.entry.uri) : null;
         if (parsed?.ok) {
           // The revision of the version this thread's writes change, per document (D14, D20).
-          const drafted = sourceDestination(parsed.value.scheme, draftWork).kind === "draft";
+          const drafted = sourceDestination(parsed.value.scheme, branchWork).kind === "draft";
           revision = await deps.documents.readEffectiveRevision(
-            drafted && draftWork
+            drafted && branchWork
               ? {
                   documentId: documentId as DocumentId,
                   threadId,
                   destination: "draft",
-                  workId: draftWork.id,
+                  workId: branchWork.id,
                 }
               : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
           );

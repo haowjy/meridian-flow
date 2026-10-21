@@ -75,12 +75,20 @@ client ID is answered with the same execution from durable facts, and once
 `prepare` returns, Retry hands the run to execution before any descriptive read
 so no exit after preparation can strand a heartbeating claim.
 
-`persistModelResponse` mints the response ID used by tool handlers. After all
-tool results persist, response-scoped agent-edit writes commit; staged results
-are replaced by settled receipts in the same transaction. A staged result left
-by process failure becomes a typed rejection only when its canonical result
-shape and staged phase are both present. Cancellation rolls the response buffer
-back before finalizing the turn.
+`persistModelResponse` mints the response ID used by tool handlers. One
+response's tool calls dispatch one at a time (`orchestrator.ts`, "Sequential
+dispatch is load-bearing"), each result persisting before the next call runs.
+After all tool results persist, response-scoped agent-edit writes commit, so
+staged writes save at the end of every model step, before the next request is
+prepared; staged results are replaced by settled receipts in the same
+transaction. A staged result left by process failure becomes a typed rejection
+only when its canonical result shape and staged phase are both present.
+Cancellation rolls the response buffer back before finalizing the turn.
+
+A block whose document view the model receives records its
+[observation frontier](document-text.md#observation-frontiers) in the
+transaction that persists it, in `afterEvents`, once the block row exists. A
+staged result records none; the settled receipt that replaces it does.
 
 Summary calls use `TurnAccounting.computeAndDebit` and the shared tree budget;
 handoff settlement is outside this loop. Summary calls do not consume model
@@ -88,6 +96,13 @@ iterations or the turn budget. The explicit gateway, repositories, retained
 Agent reader, tool registry/executor, delivery, claim, credit ledger, child
 coordinator, interrupts, EventSink, and background tracker are required ports;
 no disabled behavior is represented by an omitted dependency.
+
+Continuation eligibility is checked before preparation or compaction; iteration
+and tree-turn spend happen only when an assistant request actually dispatches.
+Successful reply closure first asks delivery whether pending input needs another
+request. No input means success can close even if the last response spent into
+debt. Pending input goes through the same eligibility and split preparation as
+other continuations, not a separate closure-owned preparation path.
 
 ## Queue, release, and shutdown
 
@@ -109,8 +124,9 @@ the same shutdown hook sequence.
 - A turn permits at most 32 model/tool iterations.
 - Cancellation is authorized only by the run signal or durable cancel request,
   checked before calls, after stream events, and around tool execution.
-- Tools run in parallel unless registration marks them sequential; timeout and
-  abort races belong to the executor.
+- One response's tool calls run sequentially, in the model's order; timeout and
+  abort races belong to the executor. `ToolExecutor.executeTools` (parallel
+  unless a registration is sequential) is not used by the loop.
 - Response-write settlement is report-only: ordinary Yjs merge commits;
   destructive effects are echoed and trail evidence stays lifecycle-neutral.
 - Production runners hold the cross-process claim through completion delivery;

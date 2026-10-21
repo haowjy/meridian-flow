@@ -8,7 +8,6 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
-import { commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -21,7 +20,9 @@ import {
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 import { reviewDriver } from "./test-support/draft-review-requests.js";
-import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
+import { readResolvedDraft } from "./test-support/draft-store-seam.js";
+import { commitDraftRows } from "./test-support/draft-update-writes.js";
+import { captureHistoricalDraftRow } from "./test-support/historical-draft-row.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetDatabase(db));
@@ -47,23 +48,30 @@ it.each([
   try {
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "generation-replay");
     const f = harness.crossWorkProbeFixture();
-    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    docs.push(branch.doc);
-    const ai = clone(branch.doc);
+    const documentDraft = await readResolvedDraft(
+      f.draftStore,
+      await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID),
+    );
+    docs.push(documentDraft.doc);
+    const ai = clone(documentDraft.doc);
     const edit = (doc: Y.Doc, blockIndex: number, from: number, to: number, text: string) => {
       const block = f.model.getBlocks(toDocHandle(doc))[blockIndex];
       f.model.applyTextEdit(toDocHandle(doc), block, { from, to }, text);
     };
     ai.clientID = 731000;
     edit(ai, 0, 11, 11, " Proposed");
-    await commitSegmentRows(f.branchCoordinator, {
-      branchId: branch.branchId,
+    await commitDraftRows(f.draftCoordinator, {
+      draftId: documentDraft.draftId,
       sourceDoc: ai,
-      expectedGeneration: branch.generation,
+      expectedGeneration: documentDraft.generation,
       rows: [
         {
-          branchId: branch.branchId,
-          updateData: await captureHistoricalBranchRow(f.branchCoordinator, branch.branchId, ai),
+          draftId: documentDraft.draftId,
+          updateData: await captureHistoricalDraftRow(
+            f.draftCoordinator,
+            documentDraft.draftId,
+            ai,
+          ),
           source: "agent",
           actorUserId: null,
           threadId: THREAD_ID,
@@ -73,7 +81,9 @@ it.each([
         },
       ],
     });
-    const writer = await f.branchCoordinator.readBranch(branch.branchId, async (doc) => clone(doc));
+    const writer = await f.draftCoordinator.readDraft(documentDraft.draftId, async (doc) =>
+      clone(doc),
+    );
     writer.clientID = 731001;
     const updates: Uint8Array[] = [];
     writer.on("update", (update) => updates.push(update));
@@ -100,11 +110,11 @@ it.each([
     expect(disposition).toMatchObject({ status: command === "apply" ? "applied" : "discarded" });
     expect(await review.list()).toHaveLength(0);
     const liveBeforeReplay = await harness.liveMarkdown(ALPHA_ID);
-    const next = await f.branchCoordinator.readBranch(branch.branchId, async (doc, state) => ({
+    const next = await f.draftCoordinator.readDraft(documentDraft.draftId, async (doc, state) => ({
       doc: clone(doc),
       generation: state.generation,
     }));
-    expect(next.generation).toBe(branch.generation + 1);
+    expect(next.generation).toBe(documentDraft.generation + 1);
     // Public update events include integrated structs and only the carry's own deletions.
     const scratch = clone(next.doc);
     const integrated: Uint8Array[] = [];
@@ -113,8 +123,8 @@ it.each([
     expect(integrated.length).toBeGreaterThan(0);
     const deliverable = Y.mergeUpdates(integrated);
     expect(
-      await f.branchCoordinator.commitWriterUpdate({
-        branchId: branch.branchId,
+      await f.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.draftId,
         updateData: deliverable,
         expectedGeneration: next.generation,
         roomDocument: next.doc,
@@ -127,11 +137,13 @@ it.each([
     expect(reopened.operations).toHaveLength(restoration ? 0 : 1);
     if (!restoration) expect(reopened.operations[0]).toMatchObject({ kind: "writer" });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(liveBeforeReplay);
-    expect(await f.draftMarkdown(branch.branchId)).toContain(restoration ? "Proposed" : "MINE");
+    expect(await f.draftMarkdown(documentDraft.draftId)).toContain(
+      restoration ? "Proposed" : "MINE",
+    );
     const rows = await db
       .select()
-      .from(schema.branchWriteJournal)
-      .where(eq(schema.branchWriteJournal.branchId, branch.branchId));
+      .from(schema.draftWriteJournal)
+      .where(eq(schema.draftWriteJournal.draftId, documentDraft.draftId));
     const replay = rows.find(
       (row) => row.generation === next.generation && row.source === "writer",
     );
@@ -142,7 +154,7 @@ it.each([
           { source: { client: 731000, length: 4 }, target: { client: 731001, length: 4 } },
         ],
       });
-    await f.branchCoordinator.readBranch(branch.branchId, async (doc) => {
+    await f.draftCoordinator.readDraft(documentDraft.draftId, async (doc) => {
       expect(doc.store.pendingStructs).toBeNull();
       expect(doc.store.pendingDs).toBeNull();
     });

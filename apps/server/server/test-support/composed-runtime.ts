@@ -9,6 +9,7 @@ import type { Database } from "@meridian/database";
 import { modelResponses } from "@meridian/database/schema";
 import { afterEach } from "vitest";
 import * as Y from "yjs";
+import { convergedReview } from "../domains/collab/test-support/converged-review.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
@@ -41,6 +42,8 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
       ports.documentSync.storeHocuspocusDocument(documentName, document),
   });
   ports.documentSync.bindHocuspocus(hocuspocus);
+  // Review membership is projected after an append commits; review reads wait for it.
+  convergedReview(ports.documentSync);
   const app = composeAppServices(ports);
   return { ports, hocuspocus, app };
 }

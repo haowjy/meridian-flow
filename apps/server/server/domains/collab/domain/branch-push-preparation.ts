@@ -7,19 +7,20 @@ import {
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchJournalRow, PreparedPush } from "./branch-push-contracts.js";
-import { publicationBlockChanges } from "./branch-push-plan.js";
+import type { PreparedPush } from "./branch-push-contracts.js";
+import { applyBlockChanges } from "./branch-push-plan.js";
+import type { DraftJournalRow } from "./draft-journal.js";
+import type { DraftSnapshot } from "./draft-store.js";
 import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
-} from "./branch-trail-projection.js";
+} from "./draft-trail-projection.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 import type { RawTrailChange } from "./trail-read-kernel.js";
 
 export type PushPreparationPhase = {
-  branch: BranchSnapshot;
-  rows: BranchJournalRow[];
+  documentDraft: DraftSnapshot;
+  rows: DraftJournalRow[];
   pushUpdate: Uint8Array;
   idempotencyKey: string;
   receiptId: string;
@@ -44,7 +45,7 @@ export async function preparePushUnderLiveLock(
   try {
     Y.applyUpdate(afterDoc, lockCutUpdate);
     Y.applyUpdate(afterDoc, phase.pushUpdate);
-    const holder = { documentId: phase.branch.documentId, view: LIVE_VIEW };
+    const holder = { documentId: phase.documentDraft.documentId, view: LIVE_VIEW };
     await input.links.prepare({ holders: [holder], docs: [lockCutDoc, afterDoc] });
     const codec = input.codec.forScope(input.links.holder(holder));
     const before = snapshotBlocks(toDocHandle(lockCutDoc), input.model, codec);
@@ -55,11 +56,12 @@ export async function preparePushUnderLiveLock(
       model: input.model,
     });
     const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
+    const afterBlockIds = input.model.getDocumentBlockIds(toDocHandle(afterDoc));
     const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
     const afterById = new Map(
-      afterBlocks.flatMap((block, index) => {
+      afterBlocks.flatMap((_block, index) => {
         const xml = afterXmlBlocks[index];
-        return xml instanceof Y.XmlElement ? [[input.model.getBlockId(block), xml] as const] : [];
+        return xml instanceof Y.XmlElement ? [[afterBlockIds[index] as string, xml] as const] : [];
       }),
     );
     const blockIdentities = new Map(
@@ -68,7 +70,7 @@ export async function preparePushUnderLiveLock(
           [
             block.hash,
             {
-              documentId: phase.branch.documentId,
+              documentId: phase.documentDraft.documentId,
               clientID: block.clientID,
               clock: block.clock,
             },
@@ -81,7 +83,7 @@ export async function preparePushUnderLiveLock(
     const afterBodies = new Map(
       after.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
     );
-    const changedBlocks = publicationBlockChanges({
+    const changedBlocks = applyBlockChanges({
       model: input.model,
       beforeDoc: lockCutDoc,
       afterDoc,
@@ -90,12 +92,12 @@ export async function preparePushUnderLiveLock(
         const body = (doc === lockCutDoc ? beforeBodies : afterBodies).get(
           `${identity.clientID}:${identity.clock}`,
         );
-        if (body === undefined) throw new Error("Publication block is missing its rich snapshot");
+        if (body === undefined) throw new Error("Apply block is missing its rich snapshot");
         return body;
       },
     });
     const changes: RawTrailChange[] = preparedTrailChanges({
-      documentId: phase.branch.documentId,
+      documentId: phase.documentDraft.documentId,
       changedBlocks,
       receiptId,
       ownersByBlock: attribution.ownersByBlock,
@@ -116,7 +118,7 @@ export async function preparePushUnderLiveLock(
       trailChanges: changes,
       lockCutUpdate,
       prepared: {
-        branch: phase.branch,
+        documentDraft: phase.documentDraft,
         journalRows: phase.rows,
         pushUpdate: phase.pushUpdate,
         idempotencyKey: phase.idempotencyKey,

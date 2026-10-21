@@ -27,6 +27,7 @@ import {
 import { CliError } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { type CliEvent, RunEventMapper } from "./events-map";
 import type { LiveReason, LiveViewReport } from "./live-view";
 import { runStateOfEvent } from "./run-state";
@@ -129,7 +130,7 @@ export function createObserver(options: ObserverOptions): Observer {
       const read = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
         timeoutMs: remaining,
         signal: abort.signal,
-        parse: threadSnapshotSchema.safeParse,
+        decode: jsonResponse(threadSnapshotSchema),
       });
       if (closed) return;
       if (sync.receive(read) === "stale") {

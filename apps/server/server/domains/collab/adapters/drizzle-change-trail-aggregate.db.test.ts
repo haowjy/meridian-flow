@@ -131,7 +131,7 @@ describe("change trail aggregate projections (postgres)", () => {
       .values([
         {
           documentId: ALPHA_ID,
-          branchGeneration: 1,
+          draftGeneration: 1,
           journalIds: [],
           idempotencyKey: "attribution-auto",
           threadId: THREAD_ID,
@@ -140,7 +140,7 @@ describe("change trail aggregate projections (postgres)", () => {
         },
         {
           documentId: ALPHA_ID,
-          branchGeneration: 1,
+          draftGeneration: 1,
           journalIds: [],
           idempotencyKey: "attribution-manual",
           threadId: THREAD_ID,
@@ -178,7 +178,7 @@ describe("change trail aggregate projections (postgres)", () => {
       .insert(schema.pushLineage)
       .values({
         documentId: ALPHA_ID,
-        branchGeneration: 1,
+        draftGeneration: 1,
         journalIds: [],
         idempotencyKey: "revision-continuity",
         threadId: THREAD_ID,

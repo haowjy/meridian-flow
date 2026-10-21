@@ -14,8 +14,8 @@ import {
   renderFilename,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
-
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { resolveWork } from "../project/resolve";
 import { resolveThreadId } from "../thread/resolve";
 
@@ -108,7 +108,7 @@ export async function resolveDocument(session: Session, projectId: string, targe
     "GET",
     apiProjectDocumentAddressPath(projectId, target.scheme, target.path, ownerOf(target)),
     undefined,
-    { parse: documentAddressReferenceSchema.safeParse },
+    { decode: jsonResponse(documentAddressReferenceSchema) },
   );
   if (address.kind === "unavailable") {
     throw new CliError("not_found", `No live document at ${target.uri}`, {

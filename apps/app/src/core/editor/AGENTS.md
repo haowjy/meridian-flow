@@ -33,7 +33,7 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
 - `pointer-boundary.ts` is the one answer for presses outside prose. It keeps
   caret placement, opaque-object refusal, seam precedence, and keyboard parity
   out of layout components; see the editor context for the geometry policy.
-- Peer marks are projections: never persisted, branch-projected, or locally
+- Peer marks are projections: never persisted, draft-projected, or locally
   authored. Awareness cursor colors are concrete RGB hex before publication;
   only `local-presence.ts` may call `setLocalState*`.
 - A picture enters as a document node before upload. Its stable source is an
@@ -43,7 +43,7 @@ the whole-document ProseMirror rebuild caused by remote Yjs writes.
   hover, and key scopes; object registration owns object physics; the suggestion
   lane owns trigger specs. Extensions register with those seams rather than
   binding private listeners.
-- Branch retirement never replays a retired AI snapshot. The transport owns
+- Draft retirement never replays a retired AI snapshot. The transport owns
   the outbox and the account-epoch writer handoff, which re-expresses only
   surviving pending operations; the detailed carry and reset contract is in
   [`.context/CONTEXT.md`](.context/CONTEXT.md).

@@ -10,31 +10,27 @@ import type { Database } from "@meridian/database";
 import {
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
-  branchWriteJournal,
   documentYjsCheckpoints,
-  documentYjsHeads,
   documentYjsUpdates,
+  draftWriteJournal,
   pushLineage,
 } from "@meridian/database/schema";
-import {
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-  packCollabSchemaVersion,
-} from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { and, asc, desc, eq, inArray, isNull, lte } from "drizzle-orm";
 import * as Y from "yjs";
+import { bumpDraftRevisions } from "../../../shared/draft-revisions.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
+import { branchDraftRefs } from "../../../shared/work-branch-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type {
-  BranchJournalRow,
   PendingLiveSettlement,
   PreparedPushCommit,
   PushLineageRow,
 } from "../domain/branch-push-contracts.js";
 import { deriveDocument } from "../domain/document-derivations.js";
+import type { DraftJournalRow } from "../domain/draft-journal.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
@@ -44,8 +40,9 @@ import { journalInsertionRanges, ProvenanceMaterializationError } from "../domai
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
 import {
-  allocateDocumentAdmission,
-  ensureAndReadDocumentAuthorityHead,
+  advanceHead,
+  allocateAdmission,
+  findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
@@ -85,7 +82,7 @@ export async function stageSettlementMemberWithinTx(
 ): Promise<void> {
   const durablePrePush = await materializeDurableDocumentBefore(
     db,
-    prepared.branch.documentId,
+    prepared.documentDraft.documentId,
     push.upstreamUpdateSeq ?? Number.MAX_SAFE_INTEGER,
   );
   const cut = createCollabYDoc({ gc: false });
@@ -128,19 +125,31 @@ export async function stageSettlementMemberWithinTx(
  */
 export async function withdrawSettlementMembersWithinTx(
   db: DrizzleDb,
-  pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "branchId">[],
-  notices?: NoticePort,
-  workProjection?: WorkProjectionMutation,
+  pushes: readonly Pick<PushLineageRow, "id" | "journalIds" | "draftId">[],
+  notices: NoticePort | undefined,
+  workProjection: WorkProjectionMutation,
 ): Promise<void> {
   if (pushes.length === 0) return;
   const withdraw = async () => {
     const journalIds = pushes.flatMap((push) => push.journalIds);
     if (journalIds.length > 0) {
+      // `pushed → active` is a review-membership change: the draft rows are locked in id
+      // order and their revisions bumped before the rows return (the caller holds the Works).
+      const affected = await db
+        .selectDistinct({ draftId: draftWriteJournal.draftId })
+        .from(draftWriteJournal)
+        .where(
+          and(inArray(draftWriteJournal.id, journalIds), eq(draftWriteJournal.status, "pushed")),
+        );
+      await bumpDraftRevisions(
+        db,
+        affected.map((row) => row.draftId),
+      );
       await db
-        .update(branchWriteJournal)
+        .update(draftWriteJournal)
         .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
         .where(
-          and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+          and(inArray(draftWriteJournal.id, journalIds), eq(draftWriteJournal.status, "pushed")),
         );
     }
     await notices?.retractForPushes(pushes.map((push) => String(push.id)));
@@ -151,9 +160,8 @@ export async function withdrawSettlementMembersWithinTx(
       ),
     );
   };
-  const branchIds = pushes.flatMap(({ branchId }) => (branchId ? [branchId] : []));
-  if (!workProjection) return withdraw();
-  await workProjection.mutatePendingBranches(branchIds, withdraw);
+  const draftIds = pushes.flatMap(({ draftId }) => (draftId ? [draftId] : []));
+  await workProjection.mutate({ drafts: draftIds }, withdraw);
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */
@@ -191,7 +199,7 @@ export async function readSettlementCuts(
 
 /**
  * Makes one locked member effective inside its batch's completion transaction:
- * the branch's authored rows and one reconcile row in the live journal, their
+ * the draft's authored rows and one reconcile row in the live journal, their
  * attribution, the certified derivation, the head, and joins into other batches.
  */
 export async function admitSettlementMemberWithinTx(
@@ -207,12 +215,12 @@ export async function admitSettlementMemberWithinTx(
       ? (
           await db
             .select()
-            .from(branchWriteJournal)
-            .where(inArray(branchWriteJournal.id, staged.push.journalIds))
-            .orderBy(branchWriteJournal.id)
+            .from(draftWriteJournal)
+            .where(inArray(draftWriteJournal.id, staged.push.journalIds))
+            .orderBy(draftWriteJournal.id)
         ).map(mapJournalRow)
       : [];
-  const authority = await allocateDocumentAdmission(db, documentId);
+  const authority = await allocateAdmission(db, documentId);
   const authoredRows =
     journalRows.length > 0
       ? await db
@@ -239,7 +247,7 @@ export async function admitSettlementMemberWithinTx(
       : [];
   // Applied edit parts leave pending for their live sequence (§4.1).
   for (const [i, row] of journalRows.entries()) {
-    await placeDraftRows(db, row.branchId, row.generation, [row.id], {
+    await placeDraftRows(db, row.draftId, row.generation, [row.id], {
       kind: "live",
       seq: (authoredRows[i] as { id: number }).id,
     });
@@ -268,9 +276,7 @@ export async function admitSettlementMemberWithinTx(
     .returning({ id: pushLineage.id });
   if (!updated) throw new Error(`Staged push ${pushId} was completed concurrently`);
 
-  const [branchWork] = staged.push.branchId
-    ? await draftBranchWorks(db, [staged.push.branchId])
-    : [];
+  const [draftWork] = staged.push.draftId ? await branchDraftRefs(db, [staged.push.draftId]) : [];
   const derivation = await deriveDocument(
     {
       store: deps.derivationStore,
@@ -283,10 +289,13 @@ export async function admitSettlementMemberWithinTx(
   if (derivation.status !== "derived")
     throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
   const { stateVector } = derivation;
-  await upsertHead(db, documentId, canonicalRow.id, stateVector);
+  await advanceHead(db, documentId, {
+    latestUpdateSeq: canonicalRow.id,
+    latestStateVector: stateVector,
+  });
   await deps.projectionEffects.applyPushCompletion({
     documentId,
-    ...(branchWork?.workId ? { workId: branchWork.workId } : {}),
+    ...(draftWork?.workId ? { workId: draftWork.workId } : {}),
     at: new Date(),
   });
 
@@ -298,37 +307,10 @@ export async function admitSettlementMemberWithinTx(
   });
 }
 
-async function upsertHead(
-  db: DrizzleDb,
-  documentId: DocumentId,
-  latestUpdateSeq: number,
-  latestStateVector: Uint8Array,
-): Promise<void> {
-  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId,
-      schemaVersion: packedSchemaVersion,
-      latestUpdateSeq,
-      latestStateVector: Buffer.from(latestStateVector),
-      latestCheckpointId: null,
-    })
-    .onConflictDoUpdate({
-      target: documentYjsHeads.documentId,
-      set: {
-        schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${packedSchemaVersion})`,
-        latestUpdateSeq,
-        latestStateVector: Buffer.from(latestStateVector),
-        updatedAt: sql`now()`,
-      },
-    });
-}
-
-function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJournalRow {
+function mapJournalRow(row: typeof draftWriteJournal.$inferSelect): DraftJournalRow {
   return {
     id: row.id,
-    branchId: row.branchId,
+    draftId: row.draftId,
     generation: row.generation,
     wId: row.wId,
     toolCallId: row.toolCallId,
@@ -346,8 +328,8 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
 export function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   return {
     id: row.id,
-    branchId: row.branchId,
-    branchGeneration: row.branchGeneration,
+    draftId: row.draftId,
+    draftGeneration: row.draftGeneration,
     documentId: row.documentId,
     journalIds: row.journalIds,
     upstreamUpdateSeq: row.upstreamUpdateSeq,
@@ -380,13 +362,13 @@ export async function readSettlementMember(
       row.push.journalIds.length > 0
         ? await db
             .select({
-              source: branchWriteJournal.source,
-              draftBaseUpdateSeq: branchWriteJournal.draftBaseUpdateSeq,
-              update: branchWriteJournal.updateData,
+              source: draftWriteJournal.source,
+              draftBaseUpdateSeq: draftWriteJournal.draftBaseUpdateSeq,
+              update: draftWriteJournal.updateData,
             })
-            .from(branchWriteJournal)
-            .where(inArray(branchWriteJournal.id, row.push.journalIds))
-            .orderBy(branchWriteJournal.id)
+            .from(draftWriteJournal)
+            .where(inArray(draftWriteJournal.id, row.push.journalIds))
+            .orderBy(draftWriteJournal.id)
         : [];
     const sweepCandidates = candidateRows.flatMap((candidate, index) =>
       candidate.source === "agent"
@@ -417,7 +399,7 @@ export async function readSettlementMember(
             .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
             .limit(1)
         )[0]
-      : await ensureAndReadDocumentAuthorityHead(db, row.outbox.documentId);
+      : await findDocumentAuthorityHead(db, row.outbox.documentId);
     if (!authority) {
       throw new ProvenanceMaterializationError(
         `Pending branch push settlement ${pushId} has no authority admission`,

@@ -1,8 +1,3 @@
-import {
-  type AccountSettingsRepository,
-  createDrizzleAccountSettingsRepository,
-  createInMemoryAccountSettingsRepository,
-} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -24,8 +19,10 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
-import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createDrizzleDocumentRemovalCollab } from "../domains/collab/adapters/drizzle-document-removal.js";
+import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
+import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -42,6 +39,7 @@ import {
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
+  createDocumentRemoval,
   createDocumentRevisions,
   createDraftUploadVerifier,
   createDrizzleChatUploadsOwners,
@@ -64,9 +62,11 @@ import {
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
+  createRemovalRecords,
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
+  type DocumentRemovals,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -115,7 +115,12 @@ import {
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createDrizzleProjectPreferencesRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 import {
   createDrizzleProjectBootstrapRepository,
   createDrizzleProjectRepository,
@@ -156,6 +161,7 @@ import {
   createConversationSummarizer,
   createDrizzleAdmissionRecords,
   createDrizzleHandoffStatusReader,
+  createDrizzleObservationFrontiers,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
   createDrizzleShownLinkStore,
@@ -184,6 +190,7 @@ import {
   type DeliveryProducer,
   type Gateway,
   InvalidAdmissionError,
+  type ObservationFrontiers,
   type RunClaim,
   type RunStarter,
   type RunTurnPort,
@@ -251,7 +258,11 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runAfterDrizzleCommit,
+  runInDrizzleSavepoint,
+} from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
@@ -406,33 +417,14 @@ export type ProductionAppPorts = {
   statusReader: ThreadStatusReader;
   /** Links shown to the model per thread and document (contract §7). */
   shownLinks: ShownLinkStore;
+  /** The removal record behind a missing file the model asked for. */
+  documentRemovals: DocumentRemovals;
+  /** What each transcript block showed the model of a document, per room. */
+  observationFrontiers: ObservationFrontiers;
 };
-
-const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
 
 /** Max threads one wake sweep starts; the sweep repeats on its interval. */
 const WAKE_SWEEP_LIMIT = 100;
-
-function concurrentRenderBudgetBytes(request: {
-  model?: string;
-  messages: unknown;
-  tools?: unknown;
-}): number {
-  const modelId = request.model ?? MODEL_REGISTRY.defaultModel;
-  const model = MODEL_REGISTRY.providers
-    .flatMap((provider) => provider.models)
-    .find((candidate) => candidate.id === modelId);
-  if (!model) return 0;
-  const fixedRequestBytes = new TextEncoder().encode(
-    JSON.stringify({ messages: request.messages, tools: request.tools }),
-  ).byteLength;
-  // Three UTF-8 bytes per remaining token deliberately underestimates capacity.
-  const capacityBytes = Math.max(
-    0,
-    (model.contextWindow - model.maxOutputTokens - CONCURRENT_RENDER_SAFETY_TOKENS) * 3,
-  );
-  return Math.max(0, capacityBytes - fixedRequestBytes);
-}
 
 export async function createProductionAppPorts(input: {
   db: Database;
@@ -492,7 +484,8 @@ export async function createProductionAppPorts(input: {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
-    pending: createDrizzleWorkDraftPendingStore(db),
+    pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    eventSink,
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
@@ -533,7 +526,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db),
+    facts: createDrizzleFileFacts(db, workProjectionMutation),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
@@ -549,9 +542,18 @@ export async function createProductionAppPorts(input: {
       });
     },
   });
+  // The tree's removal kernel over collab's one draft close. The closer's retirement (rooms,
+  // thread peers) exists only once the collab domain does, which binds it; nothing retires
+  // before a commit, so the late binding is never observed unbound in production.
+  const draftClose = createDraftClose();
+  const documentRemoval = createDocumentRemoval(db, {
+    collab: createDrizzleDocumentRemovalCollab(db, draftClose),
+    workProjection: workProjectionMutation,
+  });
   // One repair on touch for every production tree reader and create (§12.4).
   const hiddenNodeRepair = createHiddenNodeRepair({
     db,
+    removal: documentRemoval,
     eventSink,
     objects: objectRelease,
     backgroundTasks,
@@ -575,6 +577,9 @@ export async function createProductionAppPorts(input: {
     notices,
     workProjectionMutation,
     objects: objectRelease,
+    draftClose,
+    documentRemoval,
+    drainSettlement: environment.DRAIN_APPLY_SETTLEMENT === "1",
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -603,8 +608,9 @@ export async function createProductionAppPorts(input: {
     eventSink,
     arrivals,
     hiddenNodeRepair,
-    drafts: documentSync.drafts,
-    pendingDraft: workProjectionMutation,
+    removal: documentRemoval,
+    branches: documentSync.branches,
+    pendingBranch: workProjectionMutation,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),
@@ -642,6 +648,7 @@ export async function createProductionAppPorts(input: {
   const fileAccessChanges = createPgFileAccessChanges({ db, eventSink });
   workRepo = createDrizzleProjectWorkRepository({
     db,
+    removal: documentRemoval,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
@@ -731,6 +738,8 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
     shownLinks: createDrizzleShownLinkStore(db),
+    documentRemovals: createRemovalRecords(db),
+    observationFrontiers: createDrizzleObservationFrontiers(db),
   };
 }
 
@@ -831,7 +840,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
-    drafts: ports.documentSync,
+    branches: ports.documentSync,
     workContextNotices,
     stopThreadRun,
     documentTouches: ports.threadRepos.documentTouches,
@@ -842,6 +851,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
     shownLinks: ports.shownLinks,
+    documentRemovals: ports.documentRemovals,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
@@ -900,7 +910,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
-    drafts: ports.documentSync.workDraftDisposal,
+    branches: ports.documentSync.workBranchDisposal,
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
@@ -1051,12 +1061,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     shownLinks: ports.shownLinks,
+    observationFrontiers: ports.observationFrontiers,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,
-      drafts: ports.documentSync.drafts,
+      branches: ports.documentSync.branches,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
     }),
@@ -1084,7 +1095,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     handoffBriefs: handoffBriefStopper,
     activeDocuments: ports.activeDocuments,
     imageAssets,
-    concurrentRenderBudgetBytes,
   };
   const orchestrator = createOrchestrator(orchestratorDeps);
   runner = orchestrator;

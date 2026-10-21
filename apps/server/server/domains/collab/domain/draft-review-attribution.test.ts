@@ -3,7 +3,7 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import { computeDraftReviewOperations } from "./draft-review-operations.js";
+import { computeDraftReviewOperations } from "./draft-review-operation-graph.js";
 import {
   captureUpdate,
   cloneDoc,

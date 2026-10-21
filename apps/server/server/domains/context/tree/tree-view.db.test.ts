@@ -1,12 +1,12 @@
-/** Postgres proof for the tree view: the live and draft relations, identity status and tree state. */
+/** Postgres proof for the tree view: the live and branch relations, identity status and tree state. */
 import type { DocumentId, FolderId } from "@meridian/contracts";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
-import { documents, drafts, draftTreeChanges, folders, users } from "@meridian/database/schema";
+import { branches, branchTreeChanges, documents, folders, users } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleDraftStore } from "../../collab/adapters/drizzle-drafts.js";
+import { createDrizzleBranchStore } from "../../collab/adapters/drizzle-branches.js";
 import {
   createTreeReader,
   LIVE_TREE,
@@ -48,7 +48,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function softDelete(id: DocumentId, folderNames: readonly string[] = []) {
       const db = database.current;
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, id));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, id));
       if (folderNames.length > 0) {
         await db
           .update(folders)
@@ -67,9 +70,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("shows hidden rows only in the draft that created them, at their rows' locations (T-1a)", async () => {
+    it("shows hidden rows only in the branch that created them, at their rows' locations (T-1a)", async () => {
       const db = database.current;
-      const scenario = await draftTreeScenario(db);
+      const scenario = await branchTreeScenario(db);
       const tree = createTreeReader(db);
       const manuscript = scenario.project.sources.manuscript;
       const ascension = await scenario.work("Ascension", "draft");
@@ -79,7 +82,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const prologue = await scenario.seedLive("prologue");
       const harbor = await scenario.seedHidden(ascension, "world/places/harbor");
       const atlas = await scenario.seedHidden(rival, "lore/atlas");
-      // Revealed, then renamed live: the draft sees the new name too, a row has one place.
+      // Revealed, then renamed live: the branch sees the new name too, a row has one place.
       const chapter = await scenario.seedHidden(ascension, "chapters/one");
       await reveal(chapter, ["chapters"]);
       await db.update(documents).set({ name: "chapter-one" }).where(eq(documents.id, chapter));
@@ -91,23 +94,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ folderId: await folderId("drafts") })
         .where(eq(documents.id, scraps));
 
-      const draft: TreeView = {
-        kind: "draft",
-        draftId: (await scenario.draftOf(ascension)).id,
+      const branch: TreeView = {
+        kind: "branch",
+        branchId: (await scenario.branchOf(ascension)).id,
       };
 
       expect(await idsIn(LIVE_TREE)).toEqual({
         documents: [kael, prologue, chapter].sort(),
         folders: ["chapters", "world"],
       });
-      expect(await idsIn(draft)).toEqual({
+      expect(await idsIn(branch)).toEqual({
         documents: [kael, prologue, harbor, chapter, notes, scraps].sort(),
         folders: ["chapters", "drafts", "places", "world"],
       });
       expect(
         (
           await db.execute<{ id: string }>(
-            sql`SELECT d.id::text AS id FROM ${visibleDocumentsSql(draft)} d ORDER BY d.id`,
+            sql`SELECT d.id::text AS id FROM ${visibleDocumentsSql(branch)} d ORDER BY d.id`,
           )
         ).map((row) => row.id),
       ).toEqual([kael, prologue, harbor, chapter, notes, scraps].sort());
@@ -127,30 +130,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         node: { document: { id: chapter } },
       });
 
-      expect(await tree.resolvePath(draft, at("world/places/harbor"))).toMatchObject({
+      expect(await tree.resolvePath(branch, at("world/places/harbor"))).toMatchObject({
         kind: "found",
         node: { document: { id: harbor, hidden: true, path: "world/places/harbor" } },
       });
-      expect(await tree.findById(draft, chapter)).toMatchObject({
+      expect(await tree.findById(branch, chapter)).toMatchObject({
         kind: "found",
         document: { path: "chapters/chapter-one", hidden: false },
         clashesWith: [],
       });
-      expect(await tree.resolvePath(draft, at("chapters/one"))).toEqual({ kind: "not_found" });
-      expect(await tree.findFolderById(draft, await folderId("places"))).toMatchObject({
+      expect(await tree.resolvePath(branch, at("chapters/one"))).toEqual({ kind: "not_found" });
+      expect(await tree.findFolderById(branch, await folderId("places"))).toMatchObject({
         name: "places",
         hidden: true,
         path: "world/places",
       });
       expect(await tree.findFolderById(LIVE_TREE, await folderId("places"))).toBeNull();
-      expect(await tree.findFolderById(draft, await folderId("lore"))).toBeNull();
+      expect(await tree.findFolderById(branch, await folderId("lore"))).toBeNull();
 
-      const ambiguous = await tree.resolvePath(draft, at("drafts/notes"));
+      const ambiguous = await tree.resolvePath(branch, at("drafts/notes"));
       expect(ambiguous.kind).toBe("ambiguous");
       expect(
         ambiguous.kind === "ambiguous" && ambiguous.nodes.map((node) => node.id).sort(),
       ).toEqual([notes, scraps].sort());
-      expect(await tree.findById(draft, notes)).toMatchObject({ clashesWith: [scraps] });
+      expect(await tree.findById(branch, notes)).toMatchObject({ clashesWith: [scraps] });
 
       // Two storage tuples that render one filename hold one path, by path and by id.
       // (Not a canonical pair: a raw row from before the name codec, kept by the reader.)
@@ -168,37 +171,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [dotted, literal.id].sort(),
       );
       expect(await tree.findById(LIVE_TREE, dotted)).toMatchObject({ clashesWith: [literal.id] });
-      expect(await tree.findById(draft, literal.id)).toMatchObject({ clashesWith: [dotted] });
+      expect(await tree.findById(branch, literal.id)).toMatchObject({ clashesWith: [dotted] });
     });
 
-    it("names identity per view and states a draft's tree with its conflicts (T-1b)", async () => {
+    it("names identity per view and states a branch's tree with its conflicts (T-1b)", async () => {
       const db = database.current;
-      const scenario = await draftTreeScenario(db);
+      const scenario = await branchTreeScenario(db);
       const tree = createTreeReader(db);
-      const store = createDrizzleDraftStore(db);
+      const store = createDrizzleBranchStore(db);
       const ascension = await scenario.work("Ascension", "draft");
       const rival = await scenario.work("Rival", "draft");
       const stray = await scenario.work("Stray", "draft");
 
       const harbor = await scenario.seedHidden(ascension, "world/harbor");
-      const first = await scenario.draftOf(ascension);
-      const second = await scenario.draftOf(rival);
-      const third = await scenario.draftOf(stray);
-      // Rival joined the harbor too; Ascension is the older draft.
-      await db.insert(draftTreeChanges).values({
-        draftId: second.id,
+      const first = await scenario.branchOf(ascension);
+      const second = await scenario.branchOf(rival);
+      const third = await scenario.branchOf(stray);
+      // Rival joined the harbor too; Ascension is the older branch.
+      await db.insert(branchTreeChanges).values({
+        branchId: second.id,
         nodeKind: "document",
         nodeId: harbor,
         created: true,
       });
       await db
-        .update(drafts)
+        .update(branches)
         .set({ createdAt: sql`now() - interval '2 hours'` })
-        .where(eq(drafts.id, first.id));
+        .where(eq(branches.id, first.id));
       await db
-        .update(drafts)
+        .update(branches)
         .set({ createdAt: sql`now() - interval '1 hour'` })
-        .where(eq(drafts.id, second.id));
+        .where(eq(branches.id, second.id));
 
       const ledger = await scenario.seedLive("old/ledger");
       await softDelete(ledger, ["old"]);
@@ -217,9 +220,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "deleted",
         folders: [{ id: await folderId("old"), deleted: true }],
       });
-      const draftLineages = await tree.lineages({ kind: "draft", draftId: first.id }, ids);
-      expect([...draftLineages.keys()].sort()).toEqual([harbor, ledger].sort());
-      expect(draftLineages.get(harbor)).toMatchObject({
+      const branchLineages = await tree.lineages({ kind: "branch", branchId: first.id }, ids);
+      expect([...branchLineages.keys()].sort()).toEqual([harbor, ledger].sort());
+      expect(branchLineages.get(harbor)).toMatchObject({
         status: "visible",
         folders: [{ id: await folderId("world"), deleted: false }],
       });
@@ -228,8 +231,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const live = await tree.identityStatus(LIVE_TREE, ids);
       expect(live.get(harbor)).toMatchObject({
         kind: "hidden",
-        draft: { draftId: first.id, originWorkId: ascension.id },
-        usedBy: [{ draftId: first.id }, { draftId: second.id }],
+        branch: { branchId: first.id, originWorkId: ascension.id },
+        usedBy: [{ branchId: first.id }, { branchId: second.id }],
         address: { path: "world/harbor", uri: "manuscript://world/harbor" },
       });
       expect(live.get(ledger)).toMatchObject({
@@ -239,7 +242,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live.get(tomb)).toEqual({ kind: "gone", documentId: tomb });
       expect(live.get(orphan)).toEqual({ kind: "gone", documentId: orphan });
       expect(live.get(missing)).toEqual({ kind: "gone", documentId: missing });
-      const rivalView = await tree.identityStatus({ kind: "draft", draftId: second.id }, ids);
+      const rivalView = await tree.identityStatus({ kind: "branch", branchId: second.id }, ids);
       expect(rivalView.get(harbor)).toMatchObject({
         kind: "visible",
         hidden: true,
@@ -247,8 +250,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(rivalView.get(tomb)).toEqual({ kind: "gone", documentId: tomb });
       expect(
-        (await tree.identityStatus({ kind: "draft", draftId: third.id }, [harbor])).get(harbor),
-      ).toMatchObject({ kind: "hidden", draft: { draftId: first.id } });
+        (await tree.identityStatus({ kind: "branch", branchId: third.id }, [harbor])).get(harbor),
+      ).toMatchObject({ kind: "hidden", branch: { branchId: first.id } });
 
       // Tree state: every item at its row's location.
       const liveIntro = await scenario.seedLive("intro");
@@ -330,13 +333,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "manuscript://tale/four",
       });
       expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
-      // A tombstone is no longer the draft's item.
+      // A tombstone is no longer the branch's item.
       expect(state.has(tomb)).toBe(false);
       expect(
         await db
-          .select({ id: draftTreeChanges.nodeId })
-          .from(draftTreeChanges)
-          .where(and(eq(draftTreeChanges.draftId, first.id), eq(draftTreeChanges.nodeId, tomb))),
+          .select({ id: branchTreeChanges.nodeId })
+          .from(branchTreeChanges)
+          .where(and(eq(branchTreeChanges.branchId, first.id), eq(branchTreeChanges.nodeId, tomb))),
       ).toHaveLength(1);
     });
   });

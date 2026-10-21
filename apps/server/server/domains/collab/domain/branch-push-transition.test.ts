@@ -7,16 +7,13 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createInMemoryPendingSettlementStore } from "../test-support/in-memory-pending-settlement-store.js";
+import { testDraftRow } from "../test-support/memory-draft-store.js";
 import type {
   PreparedPushCommit,
   PushCommitStore,
@@ -49,11 +46,11 @@ function fixture() {
     markup.parse("Writer recent: Writer captured body.\n\nSurvivor."),
   );
   const lockCut = Y.encodeStateAsUpdate(live);
-  const branch = document(lockCut);
-  const doomed = model.getBlocks(toDocHandle(branch))[0]!;
-  const before = Y.encodeStateVector(branch);
-  model.deleteBlock(toDocHandle(branch), doomed);
-  const pushUpdate = Y.encodeStateAsUpdate(branch, before);
+  const documentDraft = document(lockCut);
+  const doomed = model.getBlocks(toDocHandle(documentDraft))[0]!;
+  const before = Y.encodeStateVector(documentDraft);
+  model.deleteBlock(toDocHandle(documentDraft), doomed);
+  const pushUpdate = Y.encodeStateAsUpdate(documentDraft, before);
   const completed: number[] = [];
   const store = createInMemoryPendingSettlementStore({ onCompleted: (id) => completed.push(id) });
   const pushes: PushLineageRow[] = [];
@@ -62,8 +59,8 @@ function fixture() {
       if (!prepared) throw new Error("single push fixture");
       const push = {
         id: 1,
-        branchId: "branch",
-        branchGeneration: 1,
+        draftId: "draft",
+        draftGeneration: 1,
         documentId,
         journalIds: [],
         upstreamUpdateSeq: 1,
@@ -89,16 +86,12 @@ function fixture() {
     async commitDiscard() {
       throw new Error("push only");
     },
-    async lockDraftWorks() {
-      return new Set<string>();
-    },
   };
   const mutex = new KeyedMutex();
   const coordinator = {
     withDocument<T>(_id: string, run: (doc: Y.Doc) => Promise<T>) {
       return mutex.run(documentId, () => run(live));
     },
-    async recover() {},
   };
   const transition = () =>
     createBranchPushTransition({
@@ -120,20 +113,7 @@ function fixture() {
     changes: [],
   };
   const prepared: PreparedPushCommit = {
-    branch: {
-      branchId: "branch",
-      documentId,
-      kind: "work_draft",
-      upstreamBranchId: null,
-      draftId: "draft-1",
-      workId: "work" as WorkId,
-      threadId: null,
-      status: "active",
-      generation: 1,
-      state: Y.encodeStateAsUpdate(branch),
-      stateVector: Y.encodeStateVector(branch),
-      schemaVersion: COLLAB_SCHEMA_VERSION,
-    },
+    documentDraft: testDraftRow({ draftId: "draft", documentId, workId: "work" as WorkId }),
     journalRows: [],
     pushUpdate,
     idempotencyKey: "push",
@@ -178,7 +158,6 @@ function fixture() {
         documentIds: [documentId],
         prepare: async () => ({
           kind: "push",
-          leasedBranchIds: [],
           pushes: [prepared],
           afterDurableCommit,
           onConflict: () => "conflict",

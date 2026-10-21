@@ -3,21 +3,23 @@
  * inserts, tombstones with their storage release, and document locks in id order. Hidden
  * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
-import type { ContextSourceId, DocumentId, FolderId, ThreadId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, FolderId, UserId } from "@meridian/contracts";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
-  documentBranches,
   documentDerivations,
+  documentDrafts,
   documentLinks,
   documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
+  draftWriteJournal,
   folders,
 } from "@meridian/database/schema";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../context/paths.js";
@@ -104,14 +106,7 @@ export async function insertFolder(
   return row.id;
 }
 
-export async function tombstoneDocuments(db: Database, ids: readonly DocumentId[]): Promise<void> {
-  if (ids.length === 0) return;
-  await currentDrizzleDb(db)
-    .update(documents)
-    .set({ deletedAt: new Date() })
-    .where(inArray(documents.id, [...ids]));
-  await bumpLocationVersions(db, { documentIds: ids });
-}
+export type RemovalInitiator = { userId: UserId } | { cause: DocumentRemovalCause };
 
 export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): Promise<void> {
   if (ids.length === 0) return;
@@ -125,43 +120,50 @@ export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): 
 
 /**
  * A tombstoned hidden document's storage goes (R8, contract §12.2 step 4): its live Yjs,
- * every branch on it (their journals and trail rows cascade; by the caller's revalidation
- * no draft uses one), its derived rows and its own outgoing link rows. The row itself and
+ * the closed drafts' journals and inline bytes, its derived rows and its own outgoing link rows. The row itself and
  * every record pointing at it stay: a bound link or ahead ref still resolves it to gone.
  */
 export async function releaseDocumentStorage(
   db: Database,
   ids: readonly DocumentId[],
-): Promise<ReleasedBranch[]> {
-  if (ids.length === 0) return [];
+): Promise<void> {
+  if (ids.length === 0) return;
   const tx = currentDrizzleDb(db);
   const list = [...ids];
   await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
   await tx.delete(documentYjsCheckpoints).where(inArray(documentYjsCheckpoints.documentId, list));
   await tx.delete(documentYjsUpdates).where(inArray(documentYjsUpdates.documentId, list));
-  const branches = await tx
-    .delete(documentBranches)
-    .where(inArray(documentBranches.documentId, list))
-    .returning({
-      branchId: documentBranches.id,
-      documentId: documentBranches.documentId,
-      threadId: documentBranches.threadId,
-    });
+  const drafts = await tx
+    .select({
+      draftId: documentDrafts.id,
+    })
+    .from(documentDrafts)
+    .where(and(inArray(documentDrafts.documentId, list), eq(documentDrafts.status, "closed")));
+  if (drafts.length) {
+    await tx.delete(draftWriteJournal).where(
+      inArray(
+        draftWriteJournal.draftId,
+        drafts.map((row) => row.draftId),
+      ),
+    );
+    await tx
+      .update(documentDrafts)
+      .set({
+        state: Buffer.alloc(0),
+        stateVector: Buffer.alloc(0),
+        liveCut: null,
+        discardedStateVector: null,
+      })
+      .where(
+        inArray(
+          documentDrafts.id,
+          drafts.map((row) => row.draftId),
+        ),
+      );
+  }
   await tx.delete(documentDerivations).where(inArray(documentDerivations.documentId, list));
   await tx
     .delete(documentMarkdownProjections)
     .where(inArray(documentMarkdownProjections.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
-  return branches.map((branch) => ({
-    branchId: branch.branchId,
-    documentId: branch.documentId as DocumentId,
-    threadId: branch.threadId as ThreadId | null,
-  }));
 }
-
-/** A branch a tombstone's release deleted: collab retires its room and thread state after commit. */
-export type ReleasedBranch = {
-  branchId: string;
-  documentId: DocumentId;
-  threadId: ThreadId | null;
-};

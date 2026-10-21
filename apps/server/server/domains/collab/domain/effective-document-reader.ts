@@ -1,8 +1,7 @@
-/** Effective branch reads with staged-response overlays . */
+/** Effective document reads for non-tool callers: the same room copy a model call would read. */
 import {
   type AgentEditCodecFactory,
   type DocHandle,
-  type DocumentCoordinator,
   isDocumentNotFoundError,
   toDocHandle,
   unwrapDoc,
@@ -14,20 +13,17 @@ import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
-  BranchPeerShadowAccess,
+  DraftPeerShadowAccess,
   EffectiveReadVersion,
   HashlineRead,
   SyncError,
 } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
-import type { BranchPullService } from "./branch-pulls.js";
-import { BranchNotFoundError } from "./branch-resolver.js";
+import type { Branches } from "./branches.js";
 import { documentRevision, versioned } from "./document-revision.js";
-import type { Drafts } from "./drafts.js";
+import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { PeerRetirement } from "./peer-retirement.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -37,23 +33,19 @@ type EffectiveReadInput = {
 } & EffectiveReadVersion;
 
 export function createEffectiveDocumentReader(input: {
-  branches: ApplicationBranchStore;
-  branchCoordinator: BranchCoordinator;
-  branchPulls: BranchPullService;
-  liveCoordinator: DocumentCoordinator;
+  drafts: ApplicationDraftStore;
+  draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: ThreadPeerAgentEditCore;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
-  drafts: Pick<Drafts, "viewForWork">;
-  retirePeers: PeerRetirement;
-  deferUntilCommit(callback: () => Promise<void>): boolean;
-}): BranchPeerShadowAccess {
+  branches: Pick<Branches, "viewForWork">;
+}): DraftPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? input.drafts.viewForWork(command.workId)
+      ? input.branches.viewForWork(command.workId)
       : { kind: "live" };
   }
 
@@ -64,111 +56,32 @@ export function createEffectiveDocumentReader(input: {
   }
 
   /**
-   * Whether this reply's staged writes to the document belong to the version
-   * being read. A reply that drafted a document must not show those writes in
-   * a live read, and the reverse.
-   */
-  function stagedInVersion(command: EffectiveReadInput): command is EffectiveReadInput & {
-    responseId: string;
-  } {
-    if (!command.responseId) return false;
-    const staged = input.agentEdit.responseDestination(command.responseId, command.documentId);
-    return staged === undefined || staged.kind === command.destination;
-  }
-
-  /**
-   * Reads the document's effective Y.Doc for this command: the reply's staged
-   * create, its thread peer, its Work draft, or else live content. Choosing
-   * the content source never chooses the view: every source renders through
+   * Reads the document's effective Y.Doc for this command: the room copy a model call would
+   * read (the reply's pinned destination with its staged writes, the thread's Work draft, or
+   * live). Choosing the content source never chooses the view: every source renders through
    * the same `read`, which spells in the command's own view.
    */
   async function readEffective<T>(
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, SyncError>> {
-    const lease = stagedInVersion(command)
-      ? await input.agentEdit.prepare(command.responseId, command.documentId)
-      : null;
-    if (lease) {
-      try {
-        return Ok(await read(lease.doc));
-      } finally {
-        lease.dispose();
-      }
-    }
-    const fallback = () => readLive(command, read);
-    if (command.destination === "live") return fallback();
-    if (command.threadId) {
-      // A read never ensures a peer or a draft (S1): it pulls a peer the thread already has,
-      // in the Work's active draft.
-      const view = await viewOf(command);
-      if (view.kind === "draft") {
-        try {
-          const existingPeer = await input.branches.resolveThreadBranch(
-            command.documentId,
-            command.threadId,
-          );
-          existingPeer.doc.destroy();
-          await input.branchPulls.pullThreadPeer({
-            documentId: command.documentId,
-            threadId: command.threadId,
-            draftId: view.draftId,
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchNotFoundError)) throw cause;
-        }
-      }
-      try {
-        const branch = await input.branches.resolveThreadBranch(
-          command.documentId,
-          command.threadId,
-        );
-        return Ok(await readEffectiveBranch(branch, read));
-      } catch (cause) {
-        if (!(cause instanceof BranchNotFoundError)) throw cause;
-      }
-      await input.branchPulls.flushLivePull(command.documentId);
-      try {
-        const workDraft = await input.branches.resolveWorkDraftBranchForThread(
-          command.documentId,
-          command.threadId,
-        );
-        return Ok(await readEffectiveBranch(workDraft, read));
-      } catch (cause) {
-        if (!(cause instanceof BranchNotFoundError)) throw cause;
-      }
-    }
-    return fallback();
-  }
-
-  /** Live content, rendered by the same reader as every branch. */
-  async function readLive<T>(
-    command: EffectiveReadInput,
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<Result<T, SyncError>> {
+    let room: Awaited<ReturnType<ThreadPeerAgentEditCore["readRoom"]>>;
     try {
-      return Ok(
-        await input.liveCoordinator.withDocument(command.documentId, (doc) =>
-          read(toDocHandle(doc)),
-        ),
-      );
+      room = await input.agentEdit.readRoom({
+        documentId: command.documentId,
+        threadId: command.threadId,
+        responseId: command.responseId ?? null,
+        live: command.destination === "live",
+      });
     } catch (cause) {
       if (isDocumentNotFoundError(cause))
         return Err({ code: "not_found", documentId: command.documentId });
       throw cause;
     }
-  }
-
-  async function readEffectiveBranch<T>(
-    branch: { branchId: string; doc: Y.Doc },
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<T> {
     try {
-      return input.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-        read(toDocHandle(doc)),
-      );
+      return Ok(await read(toDocHandle(room.doc)));
     } finally {
-      branch.doc.destroy();
+      room.dispose();
     }
   }
 
@@ -184,8 +97,8 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
-    flushBranchLivePull(documentId) {
-      return input.branchPulls.flushLivePull(documentId);
+    flushDraftLivePull(documentId) {
+      return input.draftPulls.flushLivePull(documentId);
     },
     readEffectiveMarkdown(command) {
       return readEffective(command, async (doc) =>
@@ -210,32 +123,11 @@ export function createEffectiveDocumentReader(input: {
         return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
       });
     },
-    ensureCreatedDraftBranch(command) {
-      return input.branches.ensureCreatedDraftBranch(command);
+    ensureCreatedDocumentDraft(command) {
+      return input.drafts.ensureCreatedDocumentDraft(command);
     },
-    async retractCreatedDraftBranch(command) {
-      const retracted = await input.branches.retractCreatedDraftBranch(command);
-      if (retracted.outcome === "retracted" && retracted.deleted.length > 0) {
-        // Rooms and pooled cores hold the deleted branches' state; exactly those go, once
-        // the deletion is durable (an abort keeps the branches). Another Work's peers on
-        // the same document are not this retraction's.
-        const { deleted } = retracted;
-        const retire = () =>
-          input.retirePeers(
-            deleted.map(({ branchId, threadId }) =>
-              threadId
-                ? {
-                    branchId,
-                    documentId: command.documentId,
-                    threadId,
-                    cause: "document_discarded" as const,
-                  }
-                : { branchId, documentId: command.documentId, threadId: null },
-            ),
-          );
-        if (!input.deferUntilCommit(retire)) await retire();
-      }
-      return retracted.outcome;
+    retractCreatedDocumentDraft(command) {
+      return input.drafts.retractCreatedDocumentDraft(command);
     },
   };
 }

@@ -11,7 +11,7 @@ import { requireRequestId } from "../../../../../../../lib/request-id.js";
 
 type FigureSignedUrlServices = Pick<AppServices, "fileAccess" | "figureAssets"> & {
   projectRepo: Pick<AppServices["projectRepo"], "findById">;
-  documentSync: Pick<AppServices["documentSync"], "drafts">;
+  documentSync: Pick<AppServices["documentSync"], "branches">;
 };
 
 /** Authentication is the HTTP boundary; all query, authorization and signing logic stays shared. */
@@ -29,7 +29,7 @@ export function createFigureSignedUrlHandler(
     const queryWorkId = getQuery(event).workId;
     const workId = queryWorkId === undefined ? undefined : requireRequestId(queryWorkId, "workId");
     const view = workId
-      ? await app.documentSync.drafts.viewForWork(workId)
+      ? await app.documentSync.branches.viewForWork(workId)
       : { kind: "live" as const };
     const asset = await requireFileGrant(
       app.fileAccess,

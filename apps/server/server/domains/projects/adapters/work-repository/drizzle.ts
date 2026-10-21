@@ -30,6 +30,7 @@ import {
   type LineageScratchLifecycle,
 } from "../../../context/index.js";
 import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
+import type { DocumentRemoval } from "../../../context/ports/document-removal.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
@@ -78,6 +79,7 @@ function mapWork(row: WorkRow): Work {
     archivedAt: row.archivedAt?.toISOString() ?? null,
     defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
+    pendingDocumentCount: row.pendingDocumentCount,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -86,6 +88,7 @@ function mapWork(row: WorkRow): Work {
 }
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
+  removal: DocumentRemoval;
   projectionMutation: WorkProjectionMutation;
   /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
   fileAccessChanges: Pick<FileAccessChanges, "publish">;
@@ -148,7 +151,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         .where(and(eq(works.id, id), isNull(works.deletedAt)))
         .returning();
       if (!row) throw new Error(`Work not found: ${id}`);
-      await projectionMutation.publishWorks([row.id]);
+      await projectionMutation.notifyWorksChanged([row.id]);
       return mapWork(row);
     });
   }
@@ -199,7 +202,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           throw cause;
         }
         if (!row) throw new Error("Failed to create work");
-        await projectionMutation.publishWorks([row.id]);
+        await projectionMutation.notifyWorksChanged([row.id]);
         return mapWork(row);
       });
     },
@@ -340,6 +343,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
         const deletedAt = now();
         const deletedThreadIds = await cascadeDelete(db, {
+          projectId: before.projectId,
+          removal: deps.removal,
+          projection: projectionMutation,
           workId: id,
           threadIds: lockedTree.threadIds,
           liveThreadIds: lockedTree.liveThreadIds,
@@ -353,7 +359,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             updatedAt: deletedAt,
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
-        await projectionMutation.publishWorks([id]);
+        await projectionMutation.notifyWorksChanged([id]);
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
         await lineageScratch.reconcile(lockedTree.threadIds);
@@ -386,6 +392,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             .returning();
           if (!row) throw new Error(`Work not found: ${id}`);
           await cascadeRestore(db, {
+            projectId: existing.projectId,
+            removal: deps.removal,
+            projection: projectionMutation,
             workId: id,
             threadIds: lockedTree.threadIds,
             liveThreadIds: lockedTree.liveThreadIds,
@@ -393,7 +402,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           });
           await lineageScratch.reconcile(lockedTree.threadIds);
           if (arriving.length > 0) await deps.arrivals?.settle(arriving);
-          await projectionMutation.publishWorks([row.id]);
+          await projectionMutation.notifyWorksChanged([row.id]);
           await deps.fileAccessChanges.publish({ workId: id });
           return { before: existing, after: mapWork(row), changed: true };
         });
@@ -418,7 +427,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           })
           .where(and(eq(works.id, id), ne(works.defaultAiWriteMode, mode)))
           .returning({ id: works.id });
-        if (changed) await projectionMutation.publishWorks([id]);
+        if (changed) await projectionMutation.notifyWorksChanged([id]);
       });
     },
     async touch(id: WorkId): Promise<void> {

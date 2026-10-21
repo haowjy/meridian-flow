@@ -47,23 +47,25 @@ import type { ModelResponseIdentity } from "@meridian/contracts";
 
 import {
   type AgentEditResultV1,
-  applyConcurrentRenderBudget,
-  type ConcurrentEditInfo,
+  createReplyMutations,
+  type FrontierLookup,
   isAgentEditResultEnvelope,
   type LinkShowing,
-  modelConcurrentResult,
   modelResult,
+  type ObservationFrontier,
   type ResponseCommitWriteReceipt,
   renderAgentEditResult,
   type WriteRejection,
 } from "@meridian/agent-edit/integration";
 import {
+  isMeridianError,
   type MeridianError,
   meridianErrorFromGateway,
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type {
+  DocumentRemovalRecord,
   DocumentRevisionEvidence,
   PermissionDeniedReason,
 } from "@meridian/contracts/protocol";
@@ -86,7 +88,6 @@ import { isCacheReset } from "../../threads/domain/cache-reset.js";
 import type {
   ActiveDocumentResolver,
   BlockRepository,
-  EventJournalWriter,
   LiveEventWriter,
   ModelResponseRepository,
   ThreadRepositories,
@@ -108,7 +109,8 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
-import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
+import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
@@ -130,6 +132,7 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
+import { isScratchCall, type NotesContinuation } from "./compaction/notes-step.js";
 import {
   CompactionCancelledError,
   executeCompaction,
@@ -138,6 +141,7 @@ import {
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { decideForgetting, loadForgettingFacts } from "./forget-failed-attempt.js";
+import { CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
@@ -165,7 +169,12 @@ import {
 } from "./persistence.js";
 import type { InboxMessage, RunClaim, ThreadPhase } from "./ports.js";
 import { createPrefixCacheStateService, type PrefixCacheState } from "./prefix-cache-state.js";
-import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
+import {
+  loadReferenceReads,
+  type ReferenceEvidence,
+  type ReferenceReader,
+  recordReferenceEvidence,
+} from "./reference-context.js";
 import { prepareRequestContext } from "./request-preparation.js";
 import { createRunSessions } from "./run-session.js";
 import {
@@ -195,13 +204,26 @@ const MAX_TURN_ITERATIONS = 32;
 
 class RequestPreparationError extends Error {
   constructor(readonly original: unknown) {
-    super(original instanceof Error ? original.message : String(original), { cause: original });
+    super(
+      original instanceof Error || isMeridianError(original) ? original.message : String(original),
+      { cause: original },
+    );
     this.name = "RequestPreparationError";
   }
 }
 
-function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error), { cause: error });
+function asPreparationFailure(error: unknown): Error | MeridianError {
+  return error instanceof Error || isMeridianError(error)
+    ? error
+    : new Error(String(error), { cause: error });
+}
+
+function errorTerminal(error: MeridianError | string, reason?: string): TerminalCause {
+  return {
+    kind: "failed",
+    reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
+    error,
+  };
 }
 
 export interface OrchestratorRepositories {
@@ -261,14 +283,14 @@ export interface OrchestratorDeps {
   runClaim: RunClaim;
   activeDocuments: ActiveDocumentResolver;
   imageAssets: ImageAssetPort;
-  /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
-  concurrentRenderBudgetBytes?(request: GenerateRequest): number;
-  /** Shown-link evidence: tool results, reference reads, settled receipts and backfilled concurrent runs record here. */
+  /** Shown-link evidence: tool results, reference reads and settled receipts record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
+  /** What each tool result, settled receipt and reference read showed of a document, per room. */
+  observationFrontiers: ObservationFrontiers;
   responseWrites: {
     commitResponse(
       responseIdentity: ModelResponseIdentity,
-      ctx: { threadId: ThreadId; turnId: TurnId },
+      ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier: FrontierLookup },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
@@ -282,11 +304,18 @@ type ResponseWriteCommitOutcome =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      /** The saved documents' frontiers at the save's after-state, for those that recorded one. */
+      frontiers?: Array<{ documentId: string; frontier: ObservationFrontier }>;
       /** Documents the save left out; their writes did not land (D29). */
-      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
+      refused: Array<{
+        documentId: string;
+        message: string;
+        reason?: PermissionDeniedReason;
+        rejected?: WriteRejection;
+        removal?: DocumentRemovalRecord;
+      }>;
     }
-  | { status: "draft_closed"; responseId: string; mode: "draft" };
+  | { status: "branch_closed"; responseId: string; mode: "draft" };
 
 function settledReceipt(
   receipts: Extract<ResponseWriteCommitOutcome, { status: "committed" }>["receipts"],
@@ -326,17 +355,21 @@ export function createOrchestrator(deps: OrchestratorDeps) {
                 error: "Runtime shut down before the response completed",
               }
             : { kind: "cancelled", reason: "cancelled" }
-          : {
-              kind: "failed",
-              reason:
-                (error instanceof CompactionPreparationError ? error.reason : contextError?.code) ??
-                (imageResolutionError
-                  ? "image_resolution_failed"
-                  : requestPreparationFailed
-                    ? "request_preparation_failed"
-                    : "execution_error"),
-              error: error instanceof Error ? error.message : String(error),
-            },
+          : isMeridianError(error)
+            ? errorTerminal(error)
+            : {
+                kind: "failed",
+                reason:
+                  (error instanceof CompactionPreparationError
+                    ? error.reason
+                    : contextError?.code) ??
+                  (imageResolutionError
+                    ? "image_resolution_failed"
+                    : requestPreparationFailed
+                      ? "request_preparation_failed"
+                      : "execution_error"),
+                error: error instanceof Error ? error.message : String(error),
+              },
       });
       if (outcome.kind !== "completed") throw new Error("Failure finalization cannot split");
       return outcome.completion.turn;
@@ -525,7 +558,10 @@ async function runDrainTurn(
   input: DrainRunLoopInput,
   reservedTurnId: TurnId = crypto.randomUUID(),
 ): Promise<PreparedLoop> {
-  let preparationError: Error | null = null;
+  const treeBudget =
+    input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) });
+  const accounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+  let preparationError: Error | MeridianError | null = null;
   const setup = await deps.delivery.adoptBatch(
     input.lease,
     async (selection) => {
@@ -605,7 +641,7 @@ async function runDrainTurn(
           });
         } catch (error) {
           if (input.signal?.aborted) throw error;
-          preparationError = asError(error);
+          preparationError = asPreparationFailure(error);
         }
       }
       let plan = makePlan(preparationError ? [] : selection.notices);
@@ -625,6 +661,10 @@ async function runDrainTurn(
             referenceTurnId: referenceUserTurnId,
             currentTurnId: input.replyTurnId ?? reservedTurnId,
             control,
+            remainingIterations: Math.min(
+              MAX_TURN_ITERATIONS,
+              treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
+            ),
             // A Retry-led compaction pins what it retries: those messages are not in the summary's words.
             pinnedRequestTurnIds: new Set([
               ...selection.outstanding.map((row) => row.id),
@@ -645,10 +685,16 @@ async function runDrainTurn(
             baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
             signal: input.signal,
           };
+          const eligibilityError = await accounting.assertContinuationEligibility(
+            MAX_TURN_ITERATIONS,
+            treeBudget,
+            setupThread,
+          );
+          if (eligibilityError) throw eligibilityError;
           preflight = await prepareRequestContext(prepareInput);
         } catch (error) {
           if (input.signal?.aborted) throw error;
-          preparationError = asError(error);
+          preparationError = asPreparationFailure(error);
         }
       }
       if (preparationError) {
@@ -656,7 +702,7 @@ async function runDrainTurn(
         skillBody = null;
         plan = makePlan([]);
       }
-      const imageUpdateTurn = preflight?.turns.at(-1);
+      const preparedUpdateTurn = preflight?.turns.at(-1);
       const reservedTurn = reservationTurn(
         {
           id:
@@ -664,9 +710,9 @@ async function runDrainTurn(
               ? crypto.randomUUID()
               : (input.replyTurnId ?? reservedTurnId),
           threadId: input.threadId,
-          prevTurnId: imageUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
+          prevTurnId: preparedUpdateTurn?.id ?? plan.leafTurnId ?? skillBody?.turn.id ?? prevTurnId,
           position: nextTurnPosition(
-            imageUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
+            preparedUpdateTurn ?? plan.turns.at(-1) ?? skillBody?.turn ?? previousTurn,
           ),
           identity: {
             executionId: input.lease.executionId,
@@ -734,10 +780,6 @@ async function runDrainTurn(
             selection.activeLeafTurnId,
             async () => {
               await reconcileOrphanedPendingWrites(deps, input.threadId);
-              // The reference blocks in `events` are what this turn's request
-              // shows; a discarded or retried preparation never gets here.
-              if (preflight)
-                await recordShownLinks(deps, input.threadId, reservedTurn.id, preflight.shown);
               if (preflight)
                 await persistPreparedPromptBake(
                   preflight.assembled,
@@ -753,6 +795,15 @@ async function runDrainTurn(
             {
               expectedForgetting: forgetting,
               afterEvents: async () => {
+                // The reference blocks in `events` are what this turn's request
+                // shows; a discarded or retried preparation never gets here.
+                if (preflight)
+                  await recordReferenceEvidence(
+                    deps,
+                    input.threadId,
+                    reservedTurn.id,
+                    preflight.evidence,
+                  );
                 if (selection.outstanding.length > 0 || input.replyTurnId)
                   await admitRunExecution(
                     deps,
@@ -808,12 +859,11 @@ async function runDrainTurn(
         ],
         inheritedBlocks,
         initialContext: preflight?.assembled,
+        initialContinuation: preflight?.continuation ?? { kind: "ordinary" },
         initialCompaction: preflight?.compaction ?? { kind: "generate" },
         initialExecutionAdmitted: setup.executionAdmitted,
         carriedReservedFor: setup.carriedReservedFor,
-        treeBudget:
-          input.treeBudget ??
-          createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+        treeBudget,
         skillBodies: setup.skillBodies,
       });
     },
@@ -1111,16 +1161,35 @@ async function settleCancelledResponse(input: {
   return currentTurn;
 }
 
-async function persistToolRejection(input: {
+async function persistToolOutcome(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   turn: Turn;
   call: ReturnType<typeof collectToolCalls>[number];
-  reason: string;
+  outcome: { kind: "permission_denied"; reason: string } | { kind: "notes_held" };
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number }> {
   let blockSeq = input.blockSeq;
-  const rejectionResult: JsonObject = { error: "permission_denied", reason: input.reason };
+  const denied = input.outcome.kind === "permission_denied";
+  const result: JsonObject =
+    input.outcome.kind === "permission_denied"
+      ? { error: "permission_denied", reason: input.outcome.reason }
+      : { refusal: "notes_step" };
+  const output = denied
+    ? result
+    : "Not run: before compaction only Scratch operations within the 3-call budget execute. This call will not be replayed. Finish this step without tools to start the summary.";
+  const extraEvents: OrchestratorEvent[] =
+    input.outcome.kind === "permission_denied"
+      ? [
+          {
+            type: "permission.denied",
+            toolCallId: input.call.id,
+            toolName: input.call.name,
+            category: "tool_denied",
+            reason: input.outcome.reason,
+          },
+        ]
+      : [];
   const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
@@ -1128,9 +1197,9 @@ async function persistToolRejection(input: {
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output: rejectionResult,
-        result: rejectionResult,
-        isError: true,
+        output,
+        result,
+        isError: denied,
       },
       status: "complete",
     });
@@ -1138,19 +1207,13 @@ async function persistToolRejection(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        {
-          type: "permission.denied" as const,
-          toolCallId: input.call.id,
-          toolName: input.call.name,
-          category: "tool_denied" as const,
-          reason: input.reason,
-        },
+        ...extraEvents,
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output: rejectionResult,
-          result: rejectionResult,
-          isError: true,
+          output,
+          result,
+          isError: denied,
         },
       ],
     };
@@ -1184,6 +1247,8 @@ async function persistUncommittedWriteResult(input: {
   reason?: PermissionDeniedReason;
   /** Why the host rejected a staged write, so the chat can say it plainly. */
   rejected?: WriteRejection;
+  /** The removal record beside `rejected: "removed"`. */
+  removal?: DocumentRemovalRecord;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
@@ -1197,30 +1262,47 @@ async function persistUncommittedWriteResult(input: {
         ...(staged?.path ? { path: staged.path } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
         ...(input.rejected ? { rejected: input.rejected } : {}),
+        ...(input.removal ? { removal: input.removal } : {}),
         message,
       },
     }),
   );
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const block = contentForBlockInput({
-      id: input.block.id,
-      turnId: input.block.turnId,
-      responseId: input.block.responseId,
-      blockType: "tool_result",
-      sequence: input.block.sequence,
-      content: { toolCallId, output, result, isError: true },
-      provider: input.block.provider,
-      status: "complete",
-    });
-    return {
-      result: localBlockFromEvent(block),
-      events: [
-        { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output, result, isError: true },
-      ],
-    };
-  });
+  const persisted = await persistAndAppendEvents(
+    input.deps,
+    input.threadId,
+    async () => {
+      const block = contentForBlockInput({
+        id: input.block.id,
+        turnId: input.block.turnId,
+        responseId: input.block.responseId,
+        blockType: "tool_result",
+        sequence: input.block.sequence,
+        content: { toolCallId, output, result, isError: true },
+        provider: input.block.provider,
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [
+          { type: "block.upserted", block },
+          { type: "tool.result", toolCallId, output, result, isError: true },
+        ],
+      };
+    },
+    // The failure shows no document: whatever the result recorded goes with the text it replaced.
+    { afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, undefined) },
+  );
   return { block: persisted.result };
+}
+
+/** A replaced result's frontier is its new rendering's, in the transaction that replaces it. */
+function replaceFrontier(
+  deps: OrchestratorDeps,
+  threadId: ThreadId,
+  block: Block,
+  frontier: ObservationFrontier | undefined,
+): Promise<void> {
+  return recordFrontier(deps, block.id, frontier, { threadId, turnId: block.turnId });
 }
 
 async function persistCommittedWriteResult(input: {
@@ -1229,6 +1311,8 @@ async function persistCommittedWriteResult(input: {
   block: Block;
   result: AgentEditResultV1;
   documentRevision: DocumentRevisionEvidence;
+  /** The save's post-commit frontier, on the document's last settled result only. */
+  frontier: ObservationFrontier | undefined;
 }): Promise<{ block: Block }> {
   const content = input.block.content as {
     toolCallId?: string;
@@ -1247,36 +1331,33 @@ async function persistCommittedWriteResult(input: {
     ...(staged?.destination ? { destination: staged.destination } : {}),
     ...(staged?.draftWork !== undefined ? { draftWork: staged.draftWork } : {}),
   });
-  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const block = contentForBlockInput({
-      id: input.block.id,
-      turnId: input.block.turnId,
-      responseId: input.block.responseId,
-      blockType: "tool_result",
-      sequence: input.block.sequence,
-      content: toJsonValue({ toolCallId, output, result, metadata }),
-      provider: input.block.provider,
-      status: "complete",
-    });
-    return {
-      result: localBlockFromEvent(block),
-      events: [
-        { type: "block.upserted", block },
-        { type: "tool.result", toolCallId, output, result },
-      ],
-    };
-  });
+  const persisted = await persistAndAppendEvents(
+    input.deps,
+    input.threadId,
+    async () => {
+      const block = contentForBlockInput({
+        id: input.block.id,
+        turnId: input.block.turnId,
+        responseId: input.block.responseId,
+        blockType: "tool_result",
+        sequence: input.block.sequence,
+        content: toJsonValue({ toolCallId, output, result, metadata }),
+        provider: input.block.provider,
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [
+          { type: "block.upserted", block },
+          { type: "tool.result", toolCallId, output, result },
+        ],
+      };
+    },
+    {
+      afterEvents: (block) => replaceFrontier(input.deps, input.threadId, block, input.frontier),
+    },
+  );
   return { block: persisted.result };
-}
-
-/** Records accepted reference-read candidates; callers run it inside the commit persisting their blocks. */
-async function recordShownLinks(
-  deps: Pick<OrchestratorDeps, "shownLinks">,
-  threadId: string,
-  turnId: string,
-  shown: readonly ShownLinkShowing[],
-): Promise<void> {
-  for (const showing of shown) await deps.shownLinks.record({ ...showing, threadId, turnId });
 }
 
 /**
@@ -1291,17 +1372,24 @@ async function prepareReferenceReads(input: {
   userTurnId: string;
   assistantTurnId: string;
   blocks: readonly Block[];
+  /** What the reads are shown beside: their frontiers chain from these and the turn's own blocks. */
+  credited: CreditedBlocks;
   signal?: AbortSignal;
-}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; shown: ShownLinkShowing[] }> {
-  const { blocks: loaded, shown } = await loadReferenceReads({
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; evidence: ReferenceEvidence }> {
+  const { blocks: loaded, evidence } = await loadReferenceReads({
     blocks: input.blocks,
     userTurnId: input.userTurnId,
     threadId: input.threadId,
     assistantTurnId: input.assistantTurnId,
     reader: input.deps.referenceReader,
     signal: input.signal,
+    recordingFrontier: frontierLookup(
+      input.deps,
+      () => [...input.credited.ids(), ...input.blocks.map((block) => block.id)],
+      { threadId: input.threadId, turnId: input.assistantTurnId },
+    ),
   });
-  if (loaded.length === 0) return { blocks: [...input.blocks], events: [], shown };
+  if (loaded.length === 0) return { blocks: [...input.blocks], events: [], evidence };
   const events = loaded.map((block) => ({
     type: "block.upserted" as const,
     block: contentForBlockInput({
@@ -1318,7 +1406,7 @@ async function prepareReferenceReads(input: {
   return {
     blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
     events,
-    shown,
+    evidence,
   };
 }
 
@@ -1485,8 +1573,9 @@ function createResponseScope(input: {
   turnId: TurnId;
   responseId: string;
   allBlocks: Block[];
+  credited: CreditedBlocks;
 }) {
-  const { deps, threadId, turnId, allBlocks } = input;
+  const { deps, threadId, turnId, allBlocks, credited } = input;
   const writes = new Map<
     string,
     Array<{
@@ -1496,17 +1585,20 @@ function createResponseScope(input: {
       uri: string | null;
     }>
   >();
-  /** Records what a settled receipt or a backfilled concurrent run showed the model, from the binding that rendered it. */
+  /** Records what a settled receipt showed the model, from the binding that rendered it. */
   const recordShown = async (documentId: string, shown: { showing?: LinkShowing }) => {
     if (!shown.showing) return;
     await deps.shownLinks.record({ threadId, turnId, documentId, ...shown.showing });
   };
   let id = input.responseId;
   let active = true;
+  const reply = createReplyMutations();
   return {
     get id() {
       return id;
     },
+    /** The reply's own accepted mutations: they outlive edit-scope rotations, not the reply. */
+    reply,
     get hasWrites() {
       return writes.size > 0;
     },
@@ -1539,6 +1631,7 @@ function createResponseScope(input: {
         documentId: string,
         write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
+        frontier: ObservationFrontier | undefined,
       ) => {
         if (receipt.result.status !== "success")
           return persistUncommittedWriteResult({
@@ -1549,6 +1642,7 @@ function createResponseScope(input: {
             text: "the user discarded the text it edited. Re-read and retry.",
             message: receipt.result.message,
             ...(receipt.result.rejected ? { rejected: receipt.result.rejected } : {}),
+            ...(receipt.result.removal ? { removal: receipt.result.removal } : {}),
           });
         // The settled receipt replaces the staged echo; both were shown.
         await recordShown(documentId, receipt);
@@ -1558,17 +1652,40 @@ function createResponseScope(input: {
           block: write.block,
           documentRevision: { documentId, uri: write.uri, revision: receipt.revision },
           result: receipt.result,
+          frontier,
         });
       };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
         { providerResponseId: input.responseId, editScopeId: id },
-        { threadId, turnId },
+        {
+          threadId,
+          turnId,
+          // The settled receipts are a result like any other: their frontier chains from the
+          // model's latest row, which may be a sibling read's in this step.
+          recordingFrontier: frontierLookup(deps, () => credited.ids(), { threadId, turnId }),
+        },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
             const refusal =
               settled.status === "committed"
                 ? settled.refused.find((refused) => refused.documentId === documentId)
+                : undefined;
+            // The document's frontier records on its last settled receipt, the step's latest
+            // result there.
+            const frontier =
+              settled.status === "committed" && !refusal
+                ? settled.frontiers?.find((entry) => entry.documentId === documentId)?.frontier
+                : undefined;
+            const lastSettled =
+              settled.status === "committed" && !refusal
+                ? [...blocks]
+                    .reverse()
+                    .find(
+                      (write) =>
+                        settledReceipt(settled.receipts, documentId, write.settlementId).result
+                          .status === "success",
+                    )
                 : undefined;
             for (const write of blocks) {
               const result = refusal
@@ -1578,6 +1695,10 @@ function createResponseScope(input: {
                     block: write.block,
                     status: "invalid_write",
                     ...(refusal.reason ? { reason: refusal.reason } : {}),
+                    ...(refusal.rejected ? { rejected: refusal.rejected } : {}),
+                    ...(refusal.removal ? { removal: refusal.removal } : {}),
+                    // A removal's sentence stands alone, as the peer path's receipt gives it.
+                    ...(refusal.rejected === "removed" ? { message: refusal.message } : {}),
                     text: refusal.message,
                   })
                 : settled.status === "committed"
@@ -1585,6 +1706,7 @@ function createResponseScope(input: {
                       documentId,
                       write,
                       settledReceipt(settled.receipts, documentId, write.settlementId),
+                      write === lastSettled ? frontier : undefined,
                     )
                   : await persistUncommittedWriteResult({
                       deps,
@@ -1604,48 +1726,6 @@ function createResponseScope(input: {
         if (index >= 0) allBlocks[index] = block;
       }
       return outcome;
-    },
-    async backfill(
-      editsByDocument: Extract<
-        ResponseWriteCommitOutcome,
-        { status: "committed" }
-      >["concurrentEdits"],
-      remainingBytes: number,
-    ) {
-      const renderBudget = { remainingBytes };
-      // Backfill body-complete concurrent runs into the last write result per document.
-      for (const { documentId, concurrentEdits: edits } of editsByDocument) {
-        const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-        const last = writes.get(documentId)?.at(-1);
-        if (!last) continue;
-        const block = last.block;
-        const content = block.content as JsonObject | null;
-        const staged = stagedWriteResult(block);
-        if (!content || !staged) continue;
-
-        const updatedContent = {
-          ...content,
-          ...writeResultContent({ ...staged, concurrent: modelConcurrentResult(boundedEdits) }),
-        };
-        const updatedBlockRow = contentForBlockInput({
-          id: block.id,
-          turnId: block.turnId,
-          responseId: block.responseId,
-          blockType: "tool_result",
-          sequence: block.sequence,
-          content: toJsonValue(updatedContent),
-          provider: block.provider,
-          status: "complete",
-        });
-        const persistedBackfill = await persistAndAppendEvents(deps, input.threadId, async () => ({
-          result: localBlockFromEvent(updatedBlockRow),
-          events: [{ type: "block.upserted", block: updatedBlockRow }],
-        }));
-        const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
-        if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-        // Only runs that fit the render budget were shown.
-        for (const run of boundedEdits.runs) await recordShown(documentId, run);
-      }
     },
     async rollback() {
       if (!active) return;
@@ -1667,6 +1747,7 @@ async function executeLoop({
   inheritedBlocks,
   initialContext,
   initialCompaction,
+  initialContinuation,
   initialExecutionAdmitted,
   carriedReservedFor: initialCarriedReservedFor,
   treeBudget,
@@ -1681,6 +1762,7 @@ async function executeLoop({
   inheritedBlocks: Block[];
   initialContext: AssembledNextTurnContext | undefined;
   initialCompaction: CompactionDecision;
+  initialContinuation: NotesContinuation;
   initialExecutionAdmitted: boolean;
   carriedReservedFor: readonly string[];
   treeBudget: TreeBudget;
@@ -1718,6 +1800,7 @@ async function executeLoop({
       ? requestedReplyTurnId
       : undefined;
   let preparedContext: AssembledNextTurnContext | undefined = initialContext;
+  let continuation = initialContinuation;
   let pendingSummaryResponses: import("../ports/conversation-summarizer.js").SummaryResponse[] = [];
   let pendingSummary:
     | {
@@ -1737,6 +1820,7 @@ async function executeLoop({
   }
   let responseScope: ReturnType<typeof createResponseScope> | undefined;
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
+  const credited = new CreditedBlocks(initialContext?.creditedBlockIds);
   // Only the blocks of the turns the request holds: a forgotten turn's blocks stay in the table.
   const requestTurnIds = new Set(allTurns.map((turn) => turn.id));
   const allBlocks: Block[] = [
@@ -1760,6 +1844,8 @@ async function executeLoop({
   let yieldRequested = false;
   let continuingTask = false;
   let iteration = 0;
+  let pendingCompletion: TerminalCause | undefined;
+  let forcedCompaction: ForcedCompactionDecision | undefined;
   // One emergency retry per reply, even across tool iterations and compaction splits.
   let retriedContextOverflow = false;
 
@@ -1788,7 +1874,8 @@ async function executeLoop({
       signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
-      recordShown: (turnId, shown) => recordShownLinks(deps, input.threadId, turnId, shown),
+      recordEvidence: (turnId, evidence) =>
+        recordReferenceEvidence(deps, input.threadId, turnId, evidence),
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
@@ -1796,6 +1883,7 @@ async function executeLoop({
           userTurnId: turn.id,
           assistantTurnId: currentTurn.id,
           blocks,
+          credited,
           signal: input.signal,
         });
         const skillBody = await prepareSkillBodies({
@@ -1809,7 +1897,7 @@ async function executeLoop({
         return {
           blocks: withReferences.blocks,
           events: withReferences.events,
-          shown: withReferences.shown,
+          evidence: withReferences.evidence,
           extraTurns:
             skillBody.kind === "created"
               ? [{ turn: skillBody.turn, blocks: [skillBody.block] }]
@@ -1825,6 +1913,7 @@ async function executeLoop({
         if (
           !forcedDecision &&
           preparedContext &&
+          continuation.kind !== "compaction_due" &&
           drain.turns.length === 0 &&
           drain.blocks.length === 0
         ) {
@@ -1859,6 +1948,11 @@ async function executeLoop({
           blocks: [...allBlocks, ...drain.blocks, ...skillBlocks],
           baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
           readReferences: false,
+          continuation,
+          remainingIterations: Math.min(
+            MAX_TURN_ITERATIONS - iteration,
+            treeBudget.maxTotalTurns - treeBudget.spent.totalTurns,
+          ),
           signal: input.signal,
           forcedDecision,
           assertNoResponseScope: () => {
@@ -1867,14 +1961,13 @@ async function executeLoop({
           },
           pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
         });
-        thread = prepared.assembled.thread;
-        preparedContext = prepared.assembled;
         return {
           events: [...skillEvents, ...prepared.events],
           turns: [...skillTurns, ...prepared.turns],
           blocks: [...skillBlocks, ...prepared.blocks],
           requiresSplit: skillEvents.length + prepared.events.length > 0,
           compaction: prepared.compaction,
+          context: { assembled: prepared.assembled, continuation: prepared.continuation },
         };
       },
     };
@@ -1901,7 +1994,8 @@ async function executeLoop({
       retriedContextOverflow = false;
     skillBodies.committed(result.drain.turns);
     allTurns.push(...result.drain.turns);
-    for (const block of result.drain.blocks) {
+    for (const block of [...(result.completedBlocks ?? []), ...result.drain.blocks]) {
+      credited.add(block.id);
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
       else allBlocks[index] = block;
@@ -1940,11 +2034,17 @@ async function executeLoop({
     if (result.preparationFailure !== undefined) {
       throw new RequestPreparationError(result.preparationFailure);
     }
+    if (result.context) {
+      preparedContext = result.context.assembled;
+      thread = preparedContext.thread;
+      continuation = result.context.continuation;
+    }
     if (result.compaction) return compact(result.compaction);
     return result.drain;
   }
 
   async function compact(decision: Extract<CompactionDecision, { kind: "compact" }>) {
+    continuation = { kind: "ordinary" };
     await publishPhase("compacting");
     const result = await executeCompaction({
       deps,
@@ -1967,8 +2067,6 @@ async function executeLoop({
     });
     pendingSummaryResponses = [];
     pendingSummary = undefined;
-    preparedContext = result.preparedContext;
-    if (result.summaryBlock) allBlocks.push(localBlockFromEvent(result.summaryBlock));
     return acceptBoundary(result.successor);
   }
 
@@ -1979,18 +2077,19 @@ async function executeLoop({
   }
 
   async function exitRun(continueOnPending: boolean, cause: TerminalCause): Promise<boolean> {
+    if (continueOnPending && cause.kind === "success") {
+      pendingCompletion = cause;
+      return true;
+    }
     const outcome = await deps.delivery.close({
       lease: input.lease,
       turnId: currentTurn.id,
       cause,
       localCancellation: () => (input.signal?.aborted ? abortTerminal() : null),
       settleSummaryResponses: () => settlePendingSummary(),
-      ...(continueOnPending ? { continueWith: boundaryInput() } : {}),
+      continueOnPending,
     });
-    if (outcome.kind === "split") {
-      queuedDrain = await acceptBoundary(outcome.adopted);
-      return true;
-    }
+    if (outcome.kind === "continue") throw new Error("Terminal close cannot continue");
     currentTurn = outcome.completion.turn;
     return false;
   }
@@ -2003,11 +2102,6 @@ async function executeLoop({
           error: "Runtime shut down before the response completed",
         }
       : cancelTerminal;
-  const errorTerminal = (error: MeridianError | string, reason?: string): TerminalCause => ({
-    kind: "failed",
-    reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
-    error,
-  });
   const completeTerminal = (result: GenerateResult): TerminalCause => ({
     kind: "success",
     finishReason: result.finishReason,
@@ -2046,16 +2140,6 @@ async function executeLoop({
 
   for (;;) {
     try {
-      if (initialCompaction.kind === "compact") {
-        const firstDecision = initialCompaction;
-        initialCompaction = { kind: "generate" };
-        queuedDrain = await acceptBoundary({
-          next: currentTurn,
-          split: false,
-          drain: { turns: [], blocks: [], events: [], ackIds: [] },
-          compaction: firstDecision,
-        });
-      }
       if (terminalControl) return currentTurn;
       // The in-process abort is the fast cancel path; the durable lease flag is the
       // cross-process one, read at each iteration's safe boundary. Either set means
@@ -2076,10 +2160,6 @@ async function executeLoop({
             (await deps.delivery.yieldsAtBoundary(input.threadId)))
         )
           return yieldExit();
-        iteration += 1;
-        if (iteration > MAX_TURN_ITERATIONS) {
-          return exitRun(false, errorTerminal("exceeded max tool iterations"));
-        }
 
         // A cancel from another process has no local abort; the lease flag is the
         // only signal. Read it before acting so the interrupt's next turn starts
@@ -2090,12 +2170,33 @@ async function executeLoop({
           return cancelExit();
         }
 
-        const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
-        if (budgetError) {
-          return exitRun(false, errorTerminal(budgetError));
+        // Closure only asks whether input needs another request. No pending input
+        // means a successful response stays successful, even after spending into debt.
+        const completion = pendingCompletion;
+        pendingCompletion = undefined;
+        if (completion) {
+          const closed = await deps.delivery.close({
+            lease: input.lease,
+            turnId: currentTurn.id,
+            cause: completion,
+            localCancellation: () => (isCancelled() ? abortTerminal() : null),
+            settleSummaryResponses: () => settlePendingSummary(),
+            continueOnPending: true,
+          });
+          if (closed.kind === "completed") {
+            currentTurn = closed.completion.turn;
+            return false;
+          }
         }
 
-        turnAccounting.recordIterationSpend(treeBudget);
+        // All automatic continuations share this owner, including reply closure,
+        // initial compaction and a forced overflow retry. This check spends nothing.
+        const eligibilityError = await turnAccounting.assertContinuationEligibility(
+          MAX_TURN_ITERATIONS - iteration,
+          treeBudget,
+          thread,
+        );
+        if (eligibilityError) return exitRun(false, errorTerminal(eligibilityError));
 
         const gatewayAbort = new AbortController();
         let cancelRequested = isCancelled();
@@ -2110,13 +2211,39 @@ async function executeLoop({
           );
         }
 
-        const drain =
-          queuedDrain ??
-          (await acceptBoundary(await deps.delivery.splitAndContinue(boundaryInput())));
+        const boundaryTurnId = currentTurn.id;
+        if (initialCompaction.kind === "compact") {
+          const firstDecision = initialCompaction;
+          initialCompaction = { kind: "generate" };
+          queuedDrain = await acceptBoundary({
+            next: currentTurn,
+            split: false,
+            drain: { turns: [], blocks: [], events: [], ackIds: [] },
+            compaction: firstDecision,
+          });
+        }
+        let drain = queuedDrain;
+        if (!drain) {
+          const adopted = await deps.delivery.splitAndContinue(boundaryInput(forcedCompaction));
+          forcedCompaction = undefined;
+          // Input may have been withdrawn since close requested continuation.
+          if (completion && !adopted.split) return exitRun(false, completion);
+          drain = await acceptBoundary(adopted);
+        }
 
         queuedDrain = undefined;
         if (terminalControl) return false;
         if (yieldRequested) return yieldExit();
+        const acceptedStatus = await deps.runClaim.read(input.threadId);
+        if (acceptedStatus.kind === "awake" && acceptedStatus.cancelRequested)
+          leaseCancelled = true;
+        if (isCancelled()) return cancelExit();
+        // A summary may spend credits while moving to its successor. Ordinary
+        // no-split boundaries have already checked eligibility above.
+        if (currentTurn.id !== boundaryTurnId) {
+          const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+          if (budgetError) return exitRun(false, errorTerminal(budgetError));
+        }
 
         if (!preparedContext)
           throw new Error("Request context must be prepared before assistant generation");
@@ -2126,7 +2253,12 @@ async function executeLoop({
           gatewaySignal: gatewayAbort.signal,
         });
         const usableWindowTokens = preparedContext.compactionUsableWindowTokens;
+        const requestCreditedIds = preparedContext.creditedBlockIds;
         preparedContext = undefined;
+        // What credits is what this request carries (C10), so a compaction restarts the chain here.
+        // Every call it produces plans on that set as of now (C4); results persisting later join `credited`.
+        credited.reset(requestCreditedIds);
+        const planningBlockIds = credited.ids();
         thread = built.thread;
         const request = built.request;
         const gatewayCallId = crypto.randomUUID();
@@ -2134,7 +2266,7 @@ async function executeLoop({
           gatewayCallId,
           threadId: input.threadId,
           turnId: currentTurn.id,
-          iteration: iteration - 1,
+          iteration,
           ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
         };
 
@@ -2165,7 +2297,7 @@ async function executeLoop({
             gatewayCallId,
             threadId: input.threadId,
             turnId: currentTurn.id,
-            iteration: iteration - 1,
+            iteration,
             agentSlug: built.agentSlug,
             request,
             toolRegistry: deps.toolRegistry,
@@ -2194,6 +2326,8 @@ async function executeLoop({
           string,
           { toolName: string; arguments: string; targetRecorded: boolean }
         >();
+        iteration += 1;
+        turnAccounting.recordIterationSpend(treeBudget);
         for await (const event of gateway.stream(request)) {
           if (isCancelled()) {
             cancelRequested = true;
@@ -2292,19 +2426,16 @@ async function executeLoop({
                   error: "Model context overflowed after compaction retry",
                 });
               }
+              continuation = { kind: "ordinary" };
               retriedContextOverflow = true;
               if (usableWindowTokens === null)
                 throw new Error("Context overflow requires a resolved model");
-              queuedDrain = await acceptBoundary(
-                await deps.delivery.splitAndContinue(
-                  boundaryInput({
-                    kind: "compact",
-                    trigger: "auto",
-                    knownTooLarge: true,
-                    fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
-                  }),
-                ),
-              );
+              forcedCompaction = {
+                kind: "compact",
+                trigger: "auto",
+                knownTooLarge: true,
+                fitLimitTokens: Math.min(usableWindowTokens, FLOW_ABSOLUTE_CEILING),
+              };
               return true;
             }
             return exitRun(false, {
@@ -2383,124 +2514,159 @@ async function executeLoop({
             turnId: currentTurn.id,
             responseId,
             allBlocks,
+            credited,
           });
           responseScope = scope;
-          if (isCancelled()) {
-            return cancelExit();
-          }
-
-          // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-          // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
-          for (const call of toolCallsFromResult) {
+          // The reply owns its own-mutation sequence until here, whichever way it ends.
+          try {
             if (isCancelled()) {
               return cancelExit();
             }
 
-            if (scope.hasWrites && isSaveBoundary(call)) {
-              const boundary = await scope.commit();
-
-              if (boundary.status === "draft_closed") {
-                return exitRun(true, abortTerminal());
+            // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+            // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
+            for (const call of toolCallsFromResult) {
+              if (isCancelled()) {
+                return cancelExit();
               }
-              scope.rotate();
-            }
 
-            // If denied, we still persist a tool_result block (with isError: true)
-            // so the model sees the rejection in the next turn's context build.
-            if (!built.policy.has(call.name)) {
-              const persistedRejection = await persistToolRejection({
-                deps,
-                threadId: input.threadId,
-                turn: currentTurn,
-                call,
-                reason: missingToolRefusal(call.name),
-                blockSeq,
-              });
-              blockSeq = persistedRejection.nextBlockSeq;
-              allBlocks.push(persistedRejection.block);
+              if (continuation.kind === "notes") {
+                const withinBudget = continuation.remaining > 0;
+                continuation = {
+                  ...continuation,
+                  remaining: Math.max(0, continuation.remaining - 1),
+                };
+                if (!withinBudget || !isScratchCall(call)) {
+                  const held = await persistToolOutcome({
+                    deps,
+                    threadId: input.threadId,
+                    turn: currentTurn,
+                    call,
+                    outcome: { kind: "notes_held" },
+                    blockSeq,
+                  });
+                  blockSeq = held.nextBlockSeq;
+                  allBlocks.push(held.block);
+                  continue;
+                }
+              }
 
-              continue;
-            }
+              if (scope.hasWrites && isSaveBoundary(call)) {
+                const boundary = await scope.commit();
 
-            await publishPhase("waiting");
-            const interruptState = {
-              thread,
-              threadId: input.threadId,
-              currentTurn: currentTurn,
-              autoResume: interruptAutoResume,
-              signal: input.signal,
-              blockSeqRef: { value: blockSeq },
-              allBlocks,
-            };
-            const interruptSession = createInterruptSession(
-              {
-                interruptRegistry: deps.interruptRegistry,
-                interruptArtifacts: deps.interruptArtifacts,
-                persistenceDeps: deps,
-                eventSink,
-              },
-              interruptState,
-            );
-            const dispatched = await dispatchToolCall(
-              {
-                toolExecutor: deps.toolExecutor,
-                childRunCoordinator: deps.childRunCoordinator,
-                eventSink,
-                persistenceDeps: deps,
-                executionReports: deps.repos.executionReports,
-                readSnapshot: deps.repos.readSnapshot,
-                runClaim: deps.runClaim,
-                shownLinks: deps.shownLinks,
-              },
-              call,
-              {
+                if (boundary.status === "branch_closed") {
+                  return exitRun(true, abortTerminal());
+                }
+                scope.rotate();
+              }
+
+              // If denied, we still persist a tool_result block (with isError: true)
+              // so the model sees the rejection in the next turn's context build.
+              if (!built.policy.has(call.name)) {
+                const persistedRejection = await persistToolOutcome({
+                  deps,
+                  threadId: input.threadId,
+                  turn: currentTurn,
+                  call,
+                  outcome: { kind: "permission_denied", reason: missingToolRefusal(call.name) },
+                  blockSeq,
+                });
+                blockSeq = persistedRejection.nextBlockSeq;
+                allBlocks.push(persistedRejection.block);
+
+                continue;
+              }
+
+              await publishPhase("waiting");
+              const interruptState = {
                 thread,
-                lease: input.lease,
-                agentSlug: built.agentSlug,
-                responseId,
-                editResponseId: scope.id,
-                state: interruptState,
-                interruptSession,
-                interruptAutoResume,
-                treeBudget,
-                blockSeqRef: interruptState.blockSeqRef,
-                allTurns,
-              },
-            );
-            currentTurn = interruptState.currentTurn;
-            blockSeq = interruptState.blockSeqRef.value;
+                threadId: input.threadId,
+                currentTurn: currentTurn,
+                autoResume: interruptAutoResume,
+                signal: input.signal,
+                blockSeqRef: { value: blockSeq },
+                allBlocks,
+              };
+              const interruptSession = createInterruptSession(
+                {
+                  interruptRegistry: deps.interruptRegistry,
+                  interruptArtifacts: deps.interruptArtifacts,
+                  persistenceDeps: deps,
+                  eventSink,
+                },
+                interruptState,
+              );
+              const dispatched = await dispatchToolCall(
+                {
+                  toolExecutor: deps.toolExecutor,
+                  childRunCoordinator: deps.childRunCoordinator,
+                  eventSink,
+                  persistenceDeps: deps,
+                  executionReports: deps.repos.executionReports,
+                  readSnapshot: deps.repos.readSnapshot,
+                  runClaim: deps.runClaim,
+                  shownLinks: deps.shownLinks,
+                  observationFrontiers: deps.observationFrontiers,
+                },
+                call,
+                {
+                  thread,
+                  lease: input.lease,
+                  agentSlug: built.agentSlug,
+                  responseId,
+                  editResponseId: scope.id,
+                  state: interruptState,
+                  interruptSession,
+                  interruptAutoResume,
+                  treeBudget,
+                  blockSeqRef: interruptState.blockSeqRef,
+                  allTurns,
+                  planningBlockIds,
+                  credited,
+                  replyMutations: scope.reply,
+                },
+              );
+              currentTurn = interruptState.currentTurn;
+              blockSeq = interruptState.blockSeqRef.value;
 
-            if (!dispatched.cancelled) scope.stage(dispatched);
-            if (dispatched.cancelled || isCancelled()) {
+              if (!dispatched.cancelled) scope.stage(dispatched);
+              if (dispatched.cancelled || isCancelled()) {
+                return cancelExit();
+              }
+              if (dispatched.endTurn === true) endTurnRequested = true;
+            }
+            if (isCancelled()) {
               return cancelExit();
             }
-            if (dispatched.endTurn === true) endTurnRequested = true;
-          }
-          if (isCancelled()) {
-            return cancelExit();
-          }
-          const concurrentEdits = await scope.commit();
-          responseScope = undefined;
+            const saved = await scope.commit();
+            responseScope = undefined;
 
-          if (concurrentEdits.status === "draft_closed") {
-            return exitRun(true, abortTerminal());
+            if (saved.status === "branch_closed") {
+              return exitRun(true, abortTerminal());
+            }
+
+            if (continuation.kind === "notes") {
+              if (continuation.remaining === 0) continuation = { kind: "compaction_due" };
+              return true;
+            }
+
+            if (endTurnRequested) {
+              // A child called return_result: the report is captured and persisted,
+              // so the turn ends here instead of looping into another model round.
+              // A message that landed in the exit window keeps the run going.
+              return exitRun(true, completeTerminal(result));
+            }
+
+            return true;
+          } finally {
+            scope.reply.clear();
           }
-
-          await scope.backfill(
-            concurrentEdits.concurrentEdits,
-            deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
-          );
-
-          if (endTurnRequested) {
-            // A child called return_result: the report is captured and persisted,
-            // so the turn ends here instead of looping into another model round.
-            // A message that landed in the exit window keeps the run going.
-            return exitRun(true, completeTerminal(result));
-          }
-
-          return true;
         }
 
+        if (continuation.kind === "notes") {
+          continuation = { kind: "compaction_due" };
+          return true;
+        }
         return exitRun(true, completeTerminal(result));
       }
       while (await iterate()) {

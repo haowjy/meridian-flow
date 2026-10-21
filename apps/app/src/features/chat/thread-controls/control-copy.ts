@@ -79,8 +79,3 @@ export function controlStopLabel(control: ControlBody): string {
   if (control.kind === "compact") return t`Stop compaction`;
   return control.mode === "draft" ? t`Stop switch to draft mode` : t`Stop switch to auto-apply`;
 }
-
-/** The Retry button's accessible name. */
-export function controlRetryLabel(control: ControlBody): string {
-  return control.kind === "write_mode" ? t`Retry switching` : t`Retry queueing`;
-}

@@ -1,5 +1,5 @@
 /**
- * Repair on touch (contract §12.4): a hidden, live document no active draft uses can only
+ * Repair on touch (contract §12.4): a hidden, live document no active branch uses can only
  * come from a bug (create and use commit together, and so do end of use and tombstone).
  * A read that meets one (`identityStatus` answering `gone`) schedules its repair here,
  * after the read and in its own transaction: the verified end-use scope (namespaces, a
@@ -21,6 +21,7 @@ import {
 } from "../../observability/index.js";
 import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type { ObjectRelease } from "../../storage/index.js";
+import type { DocumentRemoval } from "../ports/document-removal.js";
 import {
   acquireEndUseScope,
   type EndedUse,
@@ -29,6 +30,10 @@ import {
 } from "./end-use.js";
 
 export type HiddenNodeRepair = {
+  tombstoneUnused(
+    documentIds: readonly DocumentId[],
+    options: { keepFolders: boolean },
+  ): Promise<EndedUse>;
   /** Repair these documents after the caller's transaction commits (or now, outside one). */
   schedule(documentIds: readonly DocumentId[]): void;
   /** Repair them now, in a root transaction of its own. */
@@ -46,6 +51,7 @@ const ATTEMPTS = 3;
 
 export function createHiddenNodeRepair(deps: {
   db: Database;
+  removal: DocumentRemoval;
   eventSink?: EventSink;
   objects?: Pick<ObjectRelease, "storageUrls">;
   /** Where the detached repair is tracked, so shutdown and test resets drain it. */
@@ -65,7 +71,6 @@ export function createHiddenNodeRepair(deps: {
           folderIds: joinIds(
             ended.tombstoned.flatMap((ref) => (ref.kind === "folder" ? [ref.id] : [])),
           ),
-          releasedBranchIds: joinIds(ended.releasedBranches.map((branch) => branch.branchId)),
         },
         payload: {
           trigger,
@@ -78,12 +83,15 @@ export function createHiddenNodeRepair(deps: {
 
   async function repairUnused(documentIds: readonly DocumentId[]): Promise<EndedUse> {
     const ids = [...new Set(documentIds)].sort();
-    if (ids.length === 0) return { tombstoned: [], releasedObjects: [], releasedBranches: [] };
+    if (ids.length === 0) return { tombstoned: [], releasedObjects: [] };
     for (let attempt = 1; ; attempt += 1) {
       try {
         const ended = await runInRootDrizzleTransaction(deps.db, async () => {
           await acquireEndUseScope(deps.db, { documentIds: ids });
-          return tombstoneUnused(deps.db, ids);
+          return tombstoneUnused(deps.db, ids, {
+            actor: { cause: "repair" },
+            removal: deps.removal,
+          });
         });
         await repaired(ended, "read");
         return ended;
@@ -94,6 +102,12 @@ export function createHiddenNodeRepair(deps: {
   }
 
   return {
+    tombstoneUnused: (documentIds, options) =>
+      tombstoneUnused(deps.db, documentIds, {
+        ...options,
+        actor: { cause: "repair" },
+        removal: deps.removal,
+      }),
     repairUnused,
     schedule(documentIds) {
       if (documentIds.length === 0) return;

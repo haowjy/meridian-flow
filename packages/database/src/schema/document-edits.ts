@@ -91,7 +91,7 @@ export const documentEditParts = pgTable(
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
     index("document_edit_parts_pending_idx")
-      .on(sql`(${t.placement}->>'branchId')`, sql`(${t.placement}->>'generation')`)
+      .on(sql`(${t.placement}->>'draftId')`, sql`(${t.placement}->>'generation')`)
       .where(sql`${t.placement}->>'kind' = 'pending'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),

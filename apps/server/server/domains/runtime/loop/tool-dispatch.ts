@@ -11,6 +11,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ReplyMutations } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -22,6 +23,7 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
+import type { ObservationFrontiers } from "../ports/observation-frontiers.js";
 import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
@@ -35,6 +37,7 @@ import type {
   ToolExecutor,
 } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { type CreditedBlocks, frontierLookup, recordFrontier } from "./frontier-recording.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
@@ -49,6 +52,7 @@ export interface ToolDispatchDeps {
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
   shownLinks: Pick<ShownLinkStore, "record">;
+  observationFrontiers: ObservationFrontiers;
 }
 
 export interface ToolDispatchContext {
@@ -64,6 +68,12 @@ export interface ToolDispatchContext {
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
   allTurns: Turn[];
+  /** The ids that credited the request that produced this call (C4's planning cut). */
+  planningBlockIds: readonly string[];
+  /** The provider reply's own accepted mutations, replayed after the planning cut. */
+  replyMutations: ReplyMutations;
+  /** The run's credited ids, live: a sibling call's result counts as seen. */
+  credited: CreditedBlocks;
 }
 
 export type ToolDispatchResult =
@@ -251,6 +261,7 @@ export async function dispatchToolCall(
     return { ok: true as const };
   };
 
+  const correlation = { threadId: ctx.state.threadId, turnId: ctx.state.currentTurn.id };
   const execResult = await deps.toolExecutor.executeTool(
     {
       id: call.id,
@@ -275,6 +286,11 @@ export async function dispatchToolCall(
       threadMessage,
       threadReport,
       returnResult,
+      frontiers: {
+        recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
+        planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        reply: ctx.replyMutations,
+      },
     },
   );
   await outputDeltaAppendChain;
@@ -304,15 +320,6 @@ export async function dispatchToolCall(
     deps.persistenceDeps,
     ctx.state.threadId,
     async () => {
-      // The model is shown exactly the result persisted here, so its evidence
-      // commits with it; a cancelled or timed-out call never reaches this point.
-      for (const showing of execResult.shown ?? []) {
-        await deps.shownLinks.record({
-          ...showing,
-          threadId: ctx.state.threadId,
-          turnId: ctx.state.currentTurn.id,
-        });
-      }
       const block = contentForBlockInput({
         turnId: ctx.state.currentTurn.id,
         ...(stagedWrite ? { responseId: ctx.responseId } : {}),
@@ -342,8 +349,22 @@ export async function dispatchToolCall(
         ],
       };
     },
+    {
+      // The model is shown exactly the result persisted here, so its evidence commits with
+      // it, after the block row exists (the frontier references it); a cancelled or timed-out
+      // call never reaches this point.
+      afterEvents: async (block) => {
+        const evidence = execResult.evidence;
+        if (!evidence) return;
+        const owner = { threadId: ctx.state.threadId, turnId: block.turnId };
+        for (const showing of evidence.shown)
+          await deps.shownLinks.record({ ...showing, ...owner });
+        if (evidence.frontier) await recordFrontier(deps, block.id, evidence.frontier, owner);
+      },
+    },
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
+  ctx.credited.add(persistedToolResult.result.id);
 
   const resultBlock = persistedToolResult.result;
   const resultMetadata = execResult.metadata;
