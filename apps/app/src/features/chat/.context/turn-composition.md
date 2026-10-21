@@ -17,7 +17,9 @@ too; this app draws the items it is handed and never filters raw turns.
   A `return_result` report is visible through its process-tool pair but remains
   an artifact-like writer-facing result.
 
-`partitionTurn(sortedBlocks)` walks once. Visible reasoning and process tools
+`groupDeliverySegments` first pairs tool identities across the complete turn.
+`partitionTurn(segments, hidden)` then walks the normalized segments, retaining
+typed tool views rather than rebuilding protocol blocks. Visible reasoning and process tools
 append to the open process run; empty reasoning placeholders and activity
 placeholders are dropped. Text, image/file, or custom card flushes the process
 run and emits its own item. A later reasoning run therefore starts a new fold
@@ -87,7 +89,8 @@ JSON (that goes behind a dev-only setting).
 
 ```mermaid
 flowchart TD
-  B[Turn.blocks] --> P[partitionTurn ordered walk]
+  B[Turn.blocks] --> N[groupDeliverySegments pairs identities]
+  N --> P[partitionTurn ordered segments]
   P --> R[Process: collapsed Thinking]
   P --> T[Text: prose]
   P --> A[Artifact: card image or file]

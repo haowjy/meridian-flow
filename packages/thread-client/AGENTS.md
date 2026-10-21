@@ -36,8 +36,9 @@ never into `apps/app`; the chat session moves the rest.
   by anchor and decides nothing. `./mf thread view` prints the same cards for what a snapshot
   holds; a host's local command state (a lost Retry, a failed Stop, an unadmitted send) isn't in a
   snapshot, so `thread view` passes none and never prints those cards.
-- `partitionTurn` (`view/partition-turn.ts`) reads only the turn's ordered
-  blocks, never transient stream state. Hidden tool protocol is not rendered
+- `groupDeliverySegments` normalizes tool identities once across the turn.
+  `partitionTurn` (`view/partition-turn.ts`) reads those ordered segments,
+  retaining typed tool views, never transient stream state. Hidden tool protocol is not rendered
   twice: a call whose card is in the turn shows as that card alone
   (`hiddenToolCallIds`).
 - Run state is selectors over one whole `RunState` record and this device's
