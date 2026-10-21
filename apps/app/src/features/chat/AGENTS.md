@@ -8,8 +8,9 @@ adapter only.
 
 ## Mental model
 
-- `partitionTurn` converts ordered blocks into one ordered list of Process, Text,
-  and Artifact items. Process runs fold by block order and are collapsed by
+- `groupDeliverySegments` pairs tool identities across a whole turn;
+  `partitionTurn` keeps those typed views in one ordered list of Process, Text,
+  Report and Artifact items. Process runs fold by block order and are collapsed by
   default, live or settled. Text and artifacts stay visible and close the
   current process run. Render keys are positional (`turnId::sequence`), never
   block IDs.

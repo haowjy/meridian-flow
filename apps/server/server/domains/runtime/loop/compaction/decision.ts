@@ -118,10 +118,12 @@ export function decideCompaction(input: {
     turns: input.turns,
     blocks: input.blocks,
     fitLimitTokens,
-    tailBudgetBaseTokens:
-      input.forcedDecision?.trigger === "manual"
-        ? Math.min(input.thresholdTokens ?? fitLimitTokens, tokensBefore)
-        : fitLimitTokens,
+    // A forced summary may use the hard window without enlarging the preferred tail.
+    tailBudgetBaseTokens: Math.min(
+      input.thresholdTokens ?? fitLimitTokens,
+      fitLimitTokens,
+      tokensBefore,
+    ),
     pinnedRequestTurnIds: input.pinnedRequestTurnIds,
     fixedOverheadTokens: estimateRequestTokens({
       tokenizer: input.tokenizer,

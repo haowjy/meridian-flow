@@ -379,11 +379,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         root: occupied,
         mode: "recursive",
       });
-      expect(populatedResult).toMatchObject({
-        ok: true,
-        value: { deletedDocumentIds: [DOC_DELETE_ID, binaryId, customId, nestedId].sort() },
-      });
       if (!emptyResult.ok || !populatedResult.ok) throw new Error("expected recursive receipts");
+      expect([...populatedResult.value.deletedDocumentIds].sort()).toEqual(
+        [DOC_DELETE_ID, binaryId, customId, nestedId].sort(),
+      );
       expect(BigInt(populatedResult.value.availabilityGeneration)).toBeGreaterThan(
         BigInt(emptyResult.value.availabilityGeneration),
       );

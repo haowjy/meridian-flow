@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
+import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
 import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
 import { ChatSurface } from "../chat/ChatSurface";
@@ -117,7 +117,7 @@ export function MobileProject(props: MobileProjectProps) {
         }
         actions={
           props.activeScreen === "chat" ? (
-            <ChatUploadsMenu
+            <ChatFilesMenu
               projectId={props.projectId}
               threadId={displayedChatThreadId(props.chatDisplay)}
             />

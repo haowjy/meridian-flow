@@ -1,13 +1,5 @@
-/**
- * ChatUploadsMenu — the chat's top-bar dropdown of the files the writer attached in this chat.
- *
- * A row adds the file to the message being written (the chip the `@` picker inserts), can open
- * it in the viewer, and, while no sent message has used it, deletes it. A subagent shows its top
- * chat's files. A fork or handoff owns its own files and names the chat it continues from. The
- * control appears once the chat has a file (or a source to point back to), so a chat with
- * nothing to show carries no extra control.
- */
-import { plural, t } from "@lingui/core/macro";
+/** Chat Files combines existing shared Scratch with this chat's uploads and source-chat link. */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { isHandoffSeed, readHandoffSeed } from "@meridian/contracts/threads";
@@ -27,6 +19,8 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChatScratchTree } from "@/features/project/chat/ChatScratch";
+import { useChatScratchSource } from "@/features/project/chat/use-chat-scratch-source";
 import { useOpenChatResource } from "@/features/project/context/open-chat-document";
 import { cn } from "@/lib/utils";
 import { attachedAgo, uploadTypeLabel } from "./chat-upload-display";
@@ -36,7 +30,7 @@ import { SourceChatLink, useSourceThread } from "./derivation/SourceChatLink";
 
 const NO_TURNS: never[] = [];
 
-export function ChatUploadsMenu({
+export function ChatFilesMenu({
   projectId,
   threadId,
 }: {
@@ -52,7 +46,7 @@ export function ChatUploadsMenu({
   const chatThread = topChat ? (threads?.find((c) => c.id === topChat.chatId) ?? null) : null;
   if (!threadId || !topChat) return null;
   return (
-    <UploadsDropdown
+    <FilesDropdown
       projectId={projectId}
       threadId={threadId}
       chatId={topChat.chatId}
@@ -61,7 +55,7 @@ export function ChatUploadsMenu({
   );
 }
 
-function UploadsDropdown({
+function FilesDropdown({
   projectId,
   threadId,
   chatId,
@@ -73,6 +67,7 @@ function UploadsDropdown({
   chatThread: Thread | null;
 }) {
   const { uploads } = useChatUploads(projectId, chatId);
+  const scratch = useChatScratchSource(projectId, threadId);
   const continuesFrom = useContinuesFrom(chatThread);
   const openResource = useOpenChatResource(projectId);
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
@@ -93,7 +88,6 @@ function UploadsDropdown({
   }, [open]);
 
   const rows = uploads.filter((upload) => !deleted.has(upload.documentId));
-  if (rows.length === 0 && !continuesFrom && !open) return null;
 
   const close = (returnFocusToComposer: boolean) => {
     focusHandoff.current = returnFocusToComposer;
@@ -172,20 +166,20 @@ function UploadsDropdown({
     primaries[next]?.focus();
   };
 
-  const count = rows.length;
-  const label = count > 0 ? plural(count, { one: "# file", other: "# files" }) : t`Files`;
   return (
     <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close(false))}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={count > 0 ? t`Files attached in this chat, ${count}` : t`Files in this chat`}
+          aria-label={t`Files`}
           aria-expanded={open}
           aria-haspopup="dialog"
           className="focus-ring inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [@media(pointer:coarse)]:min-h-11"
         >
           <Paperclip className="size-3.5" aria-hidden />
-          <span aria-hidden="true">{label}</span>
+          <span aria-hidden="true">
+            <Trans>Files</Trans>
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -198,13 +192,17 @@ function UploadsDropdown({
         )}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          contentRef.current?.querySelector<HTMLElement>("[data-upload-row]")?.focus();
+          contentRef.current
+            ?.querySelector<HTMLElement>('[role="button"][tabindex="0"], [data-upload-row]')
+            ?.focus();
         }}
         onCloseAutoFocus={(event) => {
           if (focusHandoff.current) event.preventDefault();
           focusHandoff.current = false;
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={(event) => {
+          if ((event.target as HTMLElement).closest("[data-upload-item]")) handleKeyDown(event);
+        }}
       >
         {continuesFrom ? (
           <p className="px-3 pt-3 text-sm text-ink-muted" onClickCapture={() => close(false)}>
@@ -212,6 +210,21 @@ function UploadsDropdown({
           </p>
         ) : null}
         <div className={cn(dropdownResultsClass, "max-h-72 px-1 py-2")}>
+          {scratch ? (
+            <section aria-label={scratch.heading}>
+              <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
+                {scratch.heading}
+              </h3>
+              <ChatScratchTree
+                projectId={projectId}
+                threadId={threadId}
+                onPicked={() => close(false)}
+              />
+            </section>
+          ) : null}
+          <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground">
+            <Trans>Uploads</Trans>
+          </h3>
           {rows.length === 0 ? (
             <p className="px-3 py-2 text-sm text-muted-foreground">
               <Trans>No files attached in this chat yet.</Trans>
