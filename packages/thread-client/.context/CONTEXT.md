@@ -398,5 +398,6 @@ reason text do not cross the core observer contract.
 
 Delivery views pair tool identities across the complete turn before splitting
 ordered prose/process folds. Results can follow intervening model text in a cold
-snapshot; the normalized use carries that outcome into each fold. Live merged
-uses and durable separate result blocks therefore share visibility and receipts.
+snapshot; the normalized ToolView travels into each fold without encoding it back into
+protocol blocks. Visibility, reports, folds and Work receipts consume the same
+turn-wide normalization. Source blocks remain unchanged identity/raw data.

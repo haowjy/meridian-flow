@@ -53,7 +53,7 @@ export type TurnEditsReceiptProps = {
   turn: Turn;
   documents: TurnEditDocument[];
   receipt: TurnReceiptChip | null;
-  /** Work receipts carried by this turn's tool results (`turnWorkReceipts`). */
+  /** Work receipts carried by this turn's tool results (`AssistantView.workReceipts`). */
   workReceipts?: readonly WorkReceipt[];
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;

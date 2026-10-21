@@ -1,22 +1,17 @@
-/** partition-turn — folds an ordered `Block[]` into render items: process folds, prose, reports and artifacts. */
+/** partition-turn — folds normalized delivery segments into render items: process folds, prose, reports and artifacts. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { isArtifactRef } from "@meridian/contracts/interrupt";
-import {
-  type Block,
-  blockContentRecord,
-  blockPlainText,
-  type JsonValue,
-} from "@meridian/contracts/protocol";
+import { type Block, blockPlainText, type JsonValue } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue as ReportContentValue } from "@meridian/contracts/spawn";
 import { isNotesStepHeldResult } from "@meridian/contracts/threads";
-import { isToolDeliveryBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
-import { type DeliverySegment, groupDeliverySegments } from "./group-delivery-segments";
+import type { DeliverySegment, ToolView } from "./group-delivery-segments";
 import { toolInputObject } from "./tool-command";
-import { isArtifactBlock } from "./tool-kind";
 import { isToolViewVisible } from "./tool-view-visibility";
 
-export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
+export type Run =
+  | { kind: "reasoning"; blocks: Block[] }
+  | { kind: "activity"; blocks: Block[]; tools: ToolView[] };
 
 export type RenderItem =
   | { kind: "process"; runs: Run[] }
@@ -24,35 +19,14 @@ export type RenderItem =
   | { kind: "report"; block: Block; report: ReportContentValue }
   | { kind: "artifact"; block: Block };
 
-export function isReasoningBlock(block: Block): boolean {
+function isReasoningBlock(block: Block): boolean {
   return block.blockType === "reasoning" || block.blockType === "thinking";
 }
 
-export function partitionTurn(blocks: Block[]): RenderItem[] {
-  const segments = groupDeliverySegments(blocks);
-  const hidden = hiddenToolCallIds(blocks, segments);
-  const reports = new Map<Block, ReportContentValue>();
-  for (const segment of segments) {
-    const tools =
-      segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
-    for (const tool of tools) {
-      if (
-        tool.keyBlock.blockType !== "tool_use" ||
-        tool.toolName !== "return_result" ||
-        isNotesStepHeldResult(tool.result)
-      )
-        continue;
-      const input = toolInputObject(tool);
-      const result = isRecord(tool.result) ? tool.result : {};
-      reports.set(tool.keyBlock, {
-        summary: typeof input.summary === "string" ? input.summary : "",
-        ...(input.payload === undefined ? {} : { payload: input.payload }),
-        artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
-        partial: result.ok === false || tool.isError,
-        ...(typeof result.message === "string" ? { reason: result.message } : {}),
-      });
-    }
-  }
+export function partitionTurn(
+  segments: DeliverySegment[],
+  hidden: ReadonlySet<string>,
+): RenderItem[] {
   const items: RenderItem[] = [];
   let runs: Run[] | null = null;
 
@@ -60,37 +34,51 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     if (runs && runs.length > 0) items.push({ kind: "process", runs });
     runs = null;
   };
-  const pushProcessBlock = (runKind: Run["kind"], block: Block) => {
+  const pushTool = (tool: ToolView) => {
     if (!runs) runs = [];
     const last = runs[runs.length - 1];
-    if (last && last.kind === runKind) last.blocks.push(block);
-    else runs.push({ kind: runKind, blocks: [block] } as Run);
+    if (last?.kind === "activity") {
+      last.blocks.push(tool.keyBlock);
+      last.tools.push(tool);
+    } else runs.push({ kind: "activity", blocks: [tool.keyBlock], tools: [tool] });
   };
-
-  const orderedBlocks = segments.flatMap((segment) =>
-    segment.kind === "block"
-      ? [segment.block]
-      : segment.kind === "tool"
-        ? [segment.tool.keyBlock]
-        : segment.tools.map((tool) => tool.keyBlock),
-  );
-  for (const block of orderedBlocks) {
-    if (isToolDeliveryBlock(block)) {
-      const content = blockContentRecord(block);
-      const toolCallId = content.toolCallId;
-      const report = reports.get(block);
-      if (report) {
-        flushProcess();
-        items.push({ kind: "report", block, report });
-        continue;
+  for (const segment of segments) {
+    if (segment.kind !== "block") {
+      const tools = segment.kind === "tool" ? [segment.tool] : segment.tools;
+      for (const tool of tools) {
+        if (
+          tool.keyBlock.blockType === "tool_use" &&
+          tool.toolName === "return_result" &&
+          !isNotesStepHeldResult(tool.result)
+        ) {
+          const input = toolInputObject(tool);
+          const result = isRecord(tool.result) ? tool.result : {};
+          flushProcess();
+          items.push({
+            kind: "report",
+            block: tool.keyBlock,
+            report: {
+              summary: typeof input.summary === "string" ? input.summary : "",
+              ...(input.payload === undefined ? {} : { payload: input.payload }),
+              artifacts: Array.isArray(input.artifacts)
+                ? input.artifacts.filter(isArtifactRef)
+                : [],
+              partial: result.ok === false || tool.isError,
+              ...(typeof result.message === "string" ? { reason: result.message } : {}),
+            },
+          });
+        } else if (!tool.toolCallId || !hidden.has(tool.toolCallId)) pushTool(tool);
       }
-      if (typeof toolCallId === "string" && hidden.has(toolCallId)) continue;
-      pushProcessBlock("activity", block);
       continue;
     }
-
+    const { block } = segment;
     if (isReasoningBlock(block)) {
-      if (hasVisibleReasoningText(block)) pushProcessBlock("reasoning", block);
+      if (hasVisibleReasoningText(block)) {
+        if (!runs) runs = [];
+        const last = runs[runs.length - 1];
+        if (last?.kind === "reasoning") last.blocks.push(block);
+        else runs.push({ kind: "reasoning", blocks: [block] });
+      }
       continue;
     }
 
@@ -105,13 +93,7 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     // transport liveness, not deliverable content.
     if (block.blockType === ("activity" as Block["blockType"])) continue;
 
-    if (isArtifactBlock(block)) {
-      flushProcess();
-      items.push({ kind: "artifact", block });
-      continue;
-    }
-
-    // Unknown non-canonical block: keep it visible rather than folding it away.
+    // Cards, images and unknown blocks remain outside the process fold.
     flushProcess();
     items.push({ kind: "artifact", block });
   }
@@ -130,13 +112,11 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
  * `thread_message` refused before it started has no card, so its failure row
  * stays.
  */
-export function hiddenToolCallIds(
-  blocks: Block[],
-  segments: DeliverySegment[] = groupDeliverySegments(blocks),
-): Set<string> {
+export function hiddenToolCallIds(segments: DeliverySegment[]): Set<string> {
   const hidden = new Set<string>();
-  for (const block of blocks) {
-    if (block.blockType !== "custom") continue;
+  for (const segment of segments) {
+    if (segment.kind !== "block" || segment.block.blockType !== "custom") continue;
+    const { block } = segment;
     const card = parseInvocationCard(componentBlockContent(block.content));
     if (card) hidden.add(card.toolCallId);
   }

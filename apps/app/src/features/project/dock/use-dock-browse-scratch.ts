@@ -10,7 +10,7 @@ import { useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useChatScratchSource } from "../chat/use-chat-scratch-source";
 import { schemeLabel } from "../context/context-schemes";
-import type { ScratchSource } from "../context/use-catalog-menu-source";
+import type { ScratchSource } from "../context/use-scratch-catalogs";
 import { displayedChatThreadId, useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useDockDocumentStore } from "./dock-document-store";

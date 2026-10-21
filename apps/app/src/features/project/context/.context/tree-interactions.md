@@ -6,7 +6,7 @@ for feature-level contracts first.
 ## Shared nested rows
 
 Work Files, the context sidebar, and the phone browser render ordinary nested
-folders through `TreeChildren`/`ContextTreeEntry`. Search supplies visible ids
+folders through `TreeChildren`. Search supplies visible ids
 with ancestor closure, not a filtered catalog: rename and move collision checks
 always see all siblings. Search disclosure is temporary; it never overwrites
 the normal expansion state. A newly created Work note stays visible for naming
@@ -171,8 +171,10 @@ files keep their name through `setLocation`, folders through `setFolderLocation`
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
-The chat's Scratch renders actual entries through `ContextTreeEntry` and its
-`TreeEnvProvider`, retaining lineage or Work authority. Rename, Move… and Delete share the Files implementations through
+The chat's Scratch renders one owner-bound `TreeEnvProvider` and `TreeChildren`
+per real catalog. Earlier notes is a navigation disclosure outside the second
+lineage tree, not a menu-node projection or a mutable catalog folder. Selected
+files open directly with their known owner. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
 operation selection. Creation is absent. One surface-owned deletion coordinator
 and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic

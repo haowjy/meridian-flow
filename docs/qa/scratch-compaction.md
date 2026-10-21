@@ -50,3 +50,10 @@ Cold ordering: script a held `return_result` or `spawn` followed by prose in the
 same model response. After reload, the paired call must appear once as neutral
 Not run before compaction, never as a report or a hidden call. Ordinary failed
 `return_result` calls separated from their result by prose retain their reason.
+
+Tree composition: in a No Work chat create nested Scratch, then explicitly rebind
+it to a named Work with different nested Scratch. Both catalog trees must remain
+browsable in Files and the rail; Earlier notes itself offers no mutations.
+Rename/move/delete inside Earlier notes retain lineage ownership, while an archived
+Work makes only the Work tree read-only. Preserve disclosure after reload and show
+cached entries alongside refresh failure/Retry.

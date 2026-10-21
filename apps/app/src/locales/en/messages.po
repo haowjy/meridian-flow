@@ -2021,6 +2021,7 @@ msgstr "Duplicate"
 msgid "Earlier"
 msgstr "Earlier"
 
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/menu-tree.ts
 msgid "Earlier notes"
 msgstr "Earlier notes"
@@ -3018,7 +3019,7 @@ msgstr "No report text was returned."
 msgid "No scratch notes match “{search}”."
 msgstr "No scratch notes match “{search}”."
 
-#: src/features/project/context/use-catalog-menu-source.ts
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
