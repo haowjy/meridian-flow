@@ -432,7 +432,7 @@
     "packages/agent-edit/src/diff/attribution.test.ts": 38,
     "packages/agent-edit/src/diff/diff.test.ts": 8,
     "packages/agent-edit/src/diff/merge.test.ts": 46,
-    "packages/agent-edit/src/diff/review.test.ts": 11,
+    "packages/agent-edit/src/diff/review.test.ts": 12,
     "packages/agent-edit/src/diff/writer.test.ts": 3,
     "packages/agent-edit/src/lineage/range-set.test.ts": 3,
     "packages/agent-edit/src/links/assign-refs.test.ts": 3,

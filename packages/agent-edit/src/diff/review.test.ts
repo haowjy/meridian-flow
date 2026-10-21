@@ -165,6 +165,40 @@ describe("group ids", () => {
 });
 
 describe("draft positions", () => {
+  it("keeps a moved block separate from an adjacent paragraph-ending replacement", () => {
+    const base = [
+      "The crane watched the silent valley.",
+      "Lin held a copper token beneath the old gate.",
+      "Beyond the bridge, the river carried fallen leaves.",
+    ];
+    const draft = [
+      base[0].replace("silent valley", "roaring canyon"),
+      base[2],
+      base[1].replace("copper token", "silver compass"),
+    ];
+    const p = project(base, draft);
+    const d = schema.topNodeType.create(null, doc(draft));
+    expect(p.groups).toHaveLength(1);
+    expect(p.groups[0].kind).toBe("move");
+    const hunks = p.groups[0].hunks;
+    expect(hunks).toHaveLength(3);
+    expect(hunks[0].removed).toEqual([{ type: "text", text: " silent valley" }]);
+    const inline = hunks[0].inserted;
+    expect(inline && d.textBetween(inline.from, inline.to)).toBe(" roaring canyon");
+    expect(hunks[1].removed).toEqual([para(base[1]).toJSON()]);
+    expect(hunks[1].inserted).toBeNull();
+    expect(hunks[1].anchor).toBe(p.blockStarts[1]);
+    expect(hunks[2].removed).toEqual([]);
+    expect(hunks[2].inserted).toEqual({ from: p.blockStarts[2], to: d.content.size - 1 });
+    const ids = p.groups.map((g) => g.id);
+    expect(
+      textOf(applySpanPatches(doc(base), composeGroups(schema, p, ids, "apply"), "base")),
+    ).toEqual(draft);
+    expect(
+      textOf(applySpanPatches(doc(draft), composeGroups(schema, p, ids, "discard"), "draft")),
+    ).toEqual(base);
+  });
+
   it("green covers exactly the inserted text and the red anchor sits at a removed block", () => {
     const base = [A, B, C];
     const draft = [A, C.replace("harbor", "dangerous harbor")];

@@ -83,7 +83,8 @@ export function hunkKind(bt: readonly Tok[], h: Hunk): HunkKind {
 /**
  * diff-match-patch's cleanupSemantic rule in token units: an equality between two hunks is absorbed
  * into one replacement when it is no longer than either neighbouring edit. An equality holding a
- * block-start token is never absorbed, so a change never crosses a paragraph break by cleanup.
+ * block-start token is never absorbed. Neither may cleanup swallow a neighbouring hunk's block
+ * boundary on either side, so an inline edit and a whole-block removal/addition keep separate paint.
  */
 export function cleanupHunks(
   hunks: readonly Hunk[],
@@ -114,7 +115,11 @@ export function cleanupHunks(
   function absorbable(a: Hunk, b: Hunk): boolean {
     const eq = b.from - a.to;
     if (eq > size(a) || eq > size(b)) return false;
-    for (let i = a.to; i < b.from; i++) if (isBlockTok(bt[i])) return false;
+    // A leading block token already in a may be an attribute edit followed by its first changed word.
+    for (let i = a.to > a.from ? a.from + 1 : a.from; i < b.to; i++)
+      if (isBlockTok(bt[i])) return false;
+    for (let i = a.ins.length ? a.sfrom + 1 : a.sfrom; i < b.sfrom + b.ins.length; i++)
+      if (isBlockTok(st[i])) return false;
     return true;
   }
 }

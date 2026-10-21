@@ -26,7 +26,11 @@ A **change** is one `ReviewGroup` (type name; `changeId` on the wire is its
 content-derived `id`): hunks join when fewer than `CHANGE_MARGIN` (3) unchanged
 words separate them, across paragraph breaks, and a block removed in one place
 and added in another joins both places as a `move` group so Apply and Discard
-can never take half of one. A group carries the draft positions the editor
+can never take half of one. Grouping joins review actions, not paint: semantic
+cleanup may join inline edits within a paragraph but cannot absorb a neighbouring
+block boundary on either side. An existing whole-block move removal stays
+separate from an adjacent inline replacement so it anchors between paragraphs.
+A group carries the draft positions the editor
 decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
 short excerpt. A hunk containing changed block attributes carries expanded `formatContext` paint:
 its own replacement plus aligned unchanged text from the affected block, split
