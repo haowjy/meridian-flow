@@ -12,6 +12,11 @@ always see all siblings. Search disclosure is temporary; it never overwrites
 the normal expansion state. A newly created Work note stays visible for naming
 even when its name does not match the search.
 
+Indentation counts visible expandable parents, not catalog depth: standalone
+Work Files and phone lists start at zero; rail sections start at one. The shared
+child group paints its parent guide above row highlights without taking pointer
+input. Section headers and folder rows use the same disclosure-center geometry.
+
 The chat Files menu combines this same shared Scratch browser with chat-owned
 uploads. Scratch queries wait for resolved Work/lineage authority; an unresolved
 owner never falls back to a project-wide query. There are no thread folders or

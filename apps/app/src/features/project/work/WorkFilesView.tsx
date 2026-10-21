@@ -165,7 +165,7 @@ export function WorkFilesView({
               },
             }}
           >
-            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={0} />
           </TreeEnvProvider>
         ) : !intake.note ? (
           <WorkFileGroupNote>
