@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- RP-20 now expects `eN` edit receipts and `draft (wN)` Work labels; its historical last-run evidence is unchanged.
+
 - Owner-handle migration backfills commit in bounded pages without retaining an exclusive Work-table lock. Concurrent Work creation shares the backfill counter, and interrupted upgrades resume without renumbering handles.
 
 - Owner-handle addresses and `eN` edit receipts now integrate with text-based draft review. Owner-handle migrations follow the draft-review cutover without resetting stored data. Runtime probes and browser fixtures seed permanent handles too.
