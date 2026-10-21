@@ -4611,8 +4611,8 @@ msgid "This Work is archived."
 msgstr "This Work is archived."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This Work is archived. Unarchive it to apply or discard its changes."
-msgstr "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgid "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgstr "This Work is archived. Unarchive it to apply or discard its changes."
 
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."

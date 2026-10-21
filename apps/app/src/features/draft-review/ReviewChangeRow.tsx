@@ -1,5 +1,6 @@
 /**
- * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets and failures grow below the control row.
+ * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets. Failures are the
+ * file's, shown once in its reserved status line (`DraftCommandStatus`), never under a row.
  * The red and green text claims its width first: when the line is full the byline truncates before it, but only down
  * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
  */
@@ -9,8 +10,6 @@ import { Check, X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, discardLabel } from "./ReviewChangeParts";
-import { ReviewMessageText } from "./ReviewMessageText";
-import type { BranchCommandFailure } from "./review-command-types";
 import { changeExcerpt, type ReviewChange } from "./review-model";
 
 export type ReviewChangeRowProps = {
@@ -21,9 +20,6 @@ export type ReviewChangeRowProps = {
   /** Disposition is locked (a command is in flight, or the Work is archived). */
   disabled: boolean;
   canApply?: boolean;
-
-  /** Why the last command on this change did not land. */
-  draftFailure?: BranchCommandFailure | null;
   onFocus: () => void;
   onApply: () => void;
   onDiscard: () => void;
@@ -39,8 +35,6 @@ export function ReviewChangeRow({
   arrived = false,
   disabled,
   canApply = true,
-
-  draftFailure,
   onFocus,
   onApply,
   onDiscard,
@@ -66,7 +60,7 @@ export function ReviewChangeRow({
       data-arrived={arrived ? "true" : undefined}
       onClick={onFocus}
       className={cn(
-        "group flex cursor-pointer flex-col items-stretch gap-2 rounded-md border border-transparent px-2 py-1 transition-colors",
+        "group flex cursor-pointer items-center rounded-md border border-transparent px-2 py-1 transition-colors",
         focused ? "border-border-subtle bg-card" : "hover:bg-sidebar-accent/50",
         arrived && "meridian-review-row-arrived",
       )}
@@ -152,11 +146,6 @@ export function ReviewChangeRow({
           </span>
         ) : null}
       </div>
-      {draftFailure ? (
-        <p role="status" className="min-w-0 break-words text-caption text-destructive">
-          <ReviewMessageText failure={draftFailure} />
-        </p>
-      ) : null}
     </li>
   );
 }

@@ -70,7 +70,21 @@ export function useWorkBranchCommands({
       heldNotice.current = value;
       setNotice(value);
     };
+    // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
+    // has read the archive, which another tab or device may have made.
     const start = (
+      mode: "apply" | "discard",
+      draft: DraftReviewSelection,
+      target: ChangeTarget,
+    ): CommandStart => {
+      const started = dispatch(mode, draft, target);
+      void started.outcome.then((outcome) => {
+        if (outcome.kind === "change-refused" && outcome.code === "work_archived")
+          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+      });
+      return started;
+    };
+    const dispatch = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
       target: ChangeTarget,

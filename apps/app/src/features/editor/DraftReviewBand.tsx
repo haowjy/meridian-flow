@@ -17,8 +17,8 @@
  * narrow for both. Label collapse and invisible phone hit boxes also belong to
  * the identity row (document-identity-row.css).
  *
- * Refusals the review holds are not here: they need a line of their own and
- * sit under the row (`DraftReviewFailureNotices`).
+ * Refusals are not here. The focused change's bar carries the open draft's;
+ * the rest sit under the row (`DraftReviewFailureNotices`).
  */
 
 import { t } from "@lingui/core/macro";
@@ -32,12 +32,14 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
+import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import {
   type ReviewHeaderModel,
   useReviewFailures,
@@ -249,7 +251,7 @@ function ShowChangesToggle({
   );
 }
 
-/** The refusals the review holds, as lines under the identity row; nothing when there are none. */
+/** The refusals no change bar shows, as lines under the identity row; nothing when there are none. */
 export function DraftReviewFailureNotices({
   documentId,
   itemKey,
@@ -259,7 +261,9 @@ export function DraftReviewFailureNotices({
   itemKey: string;
   onOpenDraft: (row: ReviewFileTarget) => void;
 }) {
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
+  const { controller } = useDraftReview();
+  const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
+  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   if (!commandError && failedElsewhere.length === 0) return null;
   return (
     <div className="shrink-0 text-caption" data-draft-review-notices>

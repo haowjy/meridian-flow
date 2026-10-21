@@ -1,17 +1,14 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. A file's refused command shows once, in its status line. */
 
 import { t } from "@lingui/core/macro";
-import { useLingui } from "@lingui/react";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
-import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
-import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
@@ -191,18 +188,8 @@ function DockFileLine({
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
-  // Ownership comes from the rows that will actually render, not the kind of document.
-  const renderedItems =
-    expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
-      ? items
-      : [];
-  const failures = dock
-    .fileFailures(file)
-    .filter((held) => !renderedItems.some((item) => item.draftFailure === held));
-  const trouble =
-    failures.length > 0 || file.status === "error" ? (
-      <FileTrouble file={file} failures={failures} row={!summary} />
-    ) : null;
+  // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
+  const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
   if (!summary && !expanded) return null;
   return (
     <div
@@ -233,69 +220,9 @@ function DockFileLine({
   );
 }
 
-/**
- * What went wrong on a file, in the strip's error voice: a command or launch
- * that did not land, and a preview that did not load. They are independent, so
- * both show when both are held, and Retry stays with the unreadable preview.
- */
-function FileTrouble({
-  file,
-  failures,
-  row = false,
-}: {
-  file: DockFile;
-  failures: readonly BranchCommandFailure[];
-  row?: boolean;
-}) {
-  const unreadable = file.status === "error";
-  if (failures.length === 0 && !unreadable) return null;
-  return (
-    <>
-      {failures.map((failure) => (
-        <TroubleLine key={failure.code} row={row} code={failure.code}>
-          <ReviewMessageText failure={failure} />
-        </TroubleLine>
-      ))}
-      {unreadable ? (
-        <TroubleLine
-          row={row}
-          code="unreadable"
-          action={
-            file.retry ? (
-              <button
-                type="button"
-                onClick={file.retry}
-                className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-              >
-                <Trans>Retry</Trans>
-              </button>
-            ) : null
-          }
-        >
-          <Trans>Changes couldn't load.</Trans>
-        </TroubleLine>
-      ) : null}
-    </>
-  );
-}
-
-function TroubleLine({
-  row,
-  code,
-  action,
-  children,
-}: {
-  row: boolean;
-  code: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const { i18n } = useLingui();
-  const text = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
-    // Read the localized rendered copy, including refusal reasons, without duplicating it.
-    if (text.current) text.current.title = text.current.textContent ?? "";
-  }, [children, i18n.locale]);
+/** A preview that did not load, in the strip's error voice, with Retry beside it. */
+function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
+  const message = t`Changes couldn't load.`;
   return (
     <p
       className={cn(
@@ -303,12 +230,20 @@ function TroubleLine({
         row ? "max-w-[50%]" : "flex-1",
       )}
       role="alert"
-      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: code }}
+      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: "unreadable" }}
     >
-      <span ref={text} className="min-w-0 flex-1 truncate">
-        {children}
+      <span className="min-w-0 flex-1 truncate" title={message}>
+        {message}
       </span>
-      {action}
+      {file.retry ? (
+        <button
+          type="button"
+          onClick={file.retry}
+          className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+        >
+          <Trans>Retry</Trans>
+        </button>
+      ) : null}
     </p>
   );
 }
