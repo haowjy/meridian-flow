@@ -6,10 +6,7 @@ import {
   type DraftImagePreviewTarget,
   isDraftImagePath,
 } from "@/features/draft-review/DraftImagePreview";
-import type {
-  BranchCommandFailure,
-  ChangeCommandState,
-} from "@/features/draft-review/review-command-types";
+import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   itemChange,
@@ -22,11 +19,6 @@ import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { type DockFile, dockFile, isOnStrip, totalChanges } from "./draft-dock-files";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
-
-/** Failures held on a file: selective commands and the draft itself (including Review launches). */
-export type DockFileFailure =
-  | { kind: "changes"; failure: Extract<ChangeCommandState, { phase: "failed" }> }
-  | { kind: "draft"; failure: BranchCommandFailure };
 
 export function useDraftDock({
   threadId,
@@ -89,7 +81,6 @@ export function useDraftDock({
           items: (row.draft.wholeItem ? [itemChange(row.draft)] : (read?.listedChanges ?? [])).map(
             (change) => ({
               change,
-              failure: null,
             }),
           ),
 
@@ -142,9 +133,9 @@ export function useDraftDock({
     [actionableFiles, runner],
   );
 
-  const fileFailures = (file: DockFile): DockFileFailure[] => {
+  const fileFailures = (file: DockFile): BranchCommandFailure[] => {
     const failure = controller.owner.state(file.row.draft.itemKey).failure;
-    return failure ? [{ kind: "draft", failure }] : [];
+    return failure ? [failure] : [];
   };
 
   return {

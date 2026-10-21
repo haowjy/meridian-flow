@@ -10,12 +10,13 @@ import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
+import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
-import { DockFailureText } from "./DraftDockMessages";
 import type { DockFile } from "./draft-dock-files";
-import type { DockFileFailure, DraftDockModel } from "./useDraftDock";
+import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
@@ -195,19 +196,9 @@ function DockFileLine({
     expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
       ? items
       : [];
-  const failures = dock.fileFailures(file).filter(
-    (held) =>
-      !renderedItems.some((item) => {
-        if (held.kind === "draft") return item.draftFailure === held.failure;
-        if (item.draftFailure || !item.failure) return false;
-        return (
-          item.failure.code === held.failure.code &&
-          item.failure.mode === held.failure.mode &&
-          item.failure.serverCode === held.failure.serverCode &&
-          item.failure.serverReason === held.failure.serverReason
-        );
-      }),
-  );
+  const failures = dock
+    .fileFailures(file)
+    .filter((held) => !renderedItems.some((item) => item.draftFailure === held));
   const trouble =
     failures.length > 0 || file.status === "error" ? (
       <FileTrouble file={file} failures={failures} row={!summary} />
@@ -253,7 +244,7 @@ function FileTrouble({
   row = false,
 }: {
   file: DockFile;
-  failures: readonly DockFileFailure[];
+  failures: readonly BranchCommandFailure[];
   row?: boolean;
 }) {
   const unreadable = file.status === "error";
@@ -261,8 +252,8 @@ function FileTrouble({
   return (
     <>
       {failures.map((failure) => (
-        <TroubleLine key={failure.kind} row={row} code={failure.failure.code}>
-          <DockFailureText failure={failure} fileName={file.name} />
+        <TroubleLine key={failure.code} row={row} code={failure.code}>
+          <ReviewMessageText failure={failure} />
         </TroubleLine>
       ))}
       {unreadable ? (

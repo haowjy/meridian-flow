@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removed obsolete per-change failure plumbing; draft command failures stay on their existing review and dock surfaces.
+
 - Draft review reads the text (#862 re-landed on the lock-free store). Review is the difference between the live text a draft is reviewed against (`review_base`, server-written) and the draft, computed in the browser. Only red (removed) and green (added), writer typing and formatting included; no olive. Moves, cut and paste, Ctrl+Z and concurrent edits never corrupt it. A paragraph the draft removed and live then edited shows its byline, Apply and Discard (#945).
 - Discard on one document is an edit of its draft, one undoable step: Ctrl+Z in the editor, or Undo on the "Discarded" notice in the dock or Work page. The row leaves and the notice paints at the click, before the write-back. Discard all and document removal still close drafts; other tabs leave review on close (`4205`).
 - Apply sends the frozen click (the text the writer saw and the changes clicked), merges it into current live, and never answers "stale". Clicks on one document apply in order, one at a time; a lost answer retries the same command. The trail credits each conversation with only its own changed passages.

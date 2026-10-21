@@ -3,16 +3,15 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
+import { ChangeAuthor, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
-import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
+import type { BranchCommandFailure } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;
   disabled: boolean;
 
-  failure: ChangeCommandState | null;
   draftFailure?: BranchCommandFailure | null;
   onApply: () => void;
   onDiscard: () => void;
@@ -24,7 +23,6 @@ export function ReviewChangeBar({
   change,
   disabled,
 
-  failure,
   draftFailure,
   onApply,
   onDiscard,
@@ -79,13 +77,9 @@ export function ReviewChangeBar({
           </Button>
         </span>
       </div>
-      {failure || draftFailure ? (
+      {draftFailure ? (
         <p role="status" className="min-w-0 pr-2 text-meta text-destructive">
-          {draftFailure ? (
-            <ReviewMessageText failure={draftFailure} />
-          ) : failure ? (
-            <ChangeFailureText failure={failure} />
-          ) : null}
+          <ReviewMessageText failure={draftFailure} />
         </p>
       ) : null}
     </section>
