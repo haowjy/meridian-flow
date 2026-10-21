@@ -6,14 +6,13 @@ import {
   baseViewDelta,
   blocksEqual,
   composeGroups,
-  REVIEW_BASE_FRAGMENT,
   readApplyRecord,
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
 import type { ApplyClick, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { Node as PMNode, Schema } from "@tiptap/pm/model";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import {
@@ -69,7 +68,6 @@ type Binding = {
   runtime: ReviewRuntime;
   notices: Set<() => void>;
   stop(): void;
-  cache: WeakMap<Schema, readonly PMNode[]>;
 };
 type Entry = {
   ref: DraftRef;
@@ -169,10 +167,7 @@ export class DraftCommandOwner {
           lookup: (body) => observeDraftClick(ref, body),
           changed: () => {
             const binding = owned.binding;
-            if (binding) {
-              binding.cache = new WeakMap();
-              binding.runtime.invalidateBase();
-            }
+            binding?.runtime.invalidateBase();
             const pending = owned.queue.clicks.length > 0;
             this.setState(
               ref.itemKey,
@@ -241,41 +236,29 @@ export class DraftCommandOwner {
       session,
       runtime: hold.runtime,
       notices: new Set(),
-      cache: new WeakMap(),
       stop: () => {},
     };
     entry.binding = binding;
-    const invalidate = () => {
-      binding.cache = new WeakMap();
-      binding.runtime.invalidateBase();
-    };
     binding.runtime.setBaseProvider((_room, schema) => {
-      let cached = binding.cache.get(schema);
-      if (!cached) {
-        const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
-        cached = readBase(session.document, schema);
-        for (const click of entry.queue.clicks)
-          if (!recorded.has(click.body.commandId))
-            cached = applyBase(schema, cached, click.optimistic, click.patched);
-        binding.cache.set(schema, cached);
-      }
-      return cached;
+      const recorded = new Set(readApplyRecord(session.document).map((row) => row.commandId));
+      let base: readonly PMNode[] = readBase(session.document, schema);
+      for (const click of entry.queue.clicks)
+        if (!recorded.has(click.body.commandId))
+          base = applyBase(schema, base, click.optimistic, click.patched);
+      return base;
     });
-    const base = session.document.getXmlFragment(REVIEW_BASE_FRAGMENT);
     const record = session.document.getArray(APPLY_RECORD_ROOT);
     const observe = () => {
-      invalidate();
+      binding.runtime.invalidateBase();
       entry.queue.observe(
         readApplyRecord(session.document).flatMap((row) => (row.commandId ? [row.commandId] : [])),
       );
     };
-    base.observeDeep(invalidate);
     record.observeDeep(observe);
     let stopSession = () => {};
     binding.stop = () => {
       stopSession();
       for (const end of binding.notices) end();
-      base.unobserveDeep(invalidate);
       record.unobserveDeep(observe);
       binding.runtime.setBaseProvider((room, schema) => readBase(room.document, schema));
       hold.release();
