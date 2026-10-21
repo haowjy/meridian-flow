@@ -81,3 +81,15 @@ ownership resolves, the menu must not fetch a global Scratch catalog. Two No Wor
 lineages show different Scratch; forks/subagents retain their lineage's Scratch,
 and an actual handoff starts fresh. Rebinding changes the source, never copies
 notes. Uploads remain attached to their source primary chat throughout.
+
+## Tree guides, spacing and row actions
+
+Compare expanded Manuscript in the sidebar with nested Scratch in Work Files
+and the phone browser. Each visible expandable parent has one continuous guide
+through its children, aligned with its disclosure arrow. Hover and select a
+child: the guide stays above the fill, without blocking clicks or focus.
+Standalone lists start flush at their first depth (no phantom parent indent);
+real nesting adds one step. Check inline creation, rename, and filtered Work
+Files too. On both page and sidebar, hovering the ellipsis has a distinct fill
+from the hovered row. Repeat in light and dark themes, with a fine pointer;
+phone coarse-pointer rows and action targets remain at least 44px tall.

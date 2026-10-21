@@ -169,7 +169,7 @@ function MobileFolderTree({
           <TreeChildren
             parentId={dir.entryId}
             parentPath={dir.entryId === catalog.root.entryId ? "" : dir.path}
-            depth={1}
+            depth={0}
           />
           {!pending && catalog.children(dir.entryId).length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">

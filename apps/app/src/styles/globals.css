@@ -898,9 +898,6 @@
 .shelf-surface .hover\:bg-sidebar-accent\/40:hover {
   background-color: var(--color-shelf-muted);
 }
-.shelf-surface .hover\:bg-sidebar-accent:hover {
-  background-color: var(--color-shelf-hover);
-}
 
 /*
  * Tab-chip grammar — geometry for the places a surface RISES out of the
