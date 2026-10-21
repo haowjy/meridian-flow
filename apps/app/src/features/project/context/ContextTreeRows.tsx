@@ -65,7 +65,21 @@ function useTreeEnv(): TreeEnv {
   return env;
 }
 
-/** Child rows and their parent guide; standalone lists start at depth zero. */
+/** A visible child group, which may span more than one catalog. */
+export function TreeGroup({ depth, children }: { depth: number; children: ReactNode }) {
+  return (
+    <div className="relative isolate">
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 z-10 border-l border-border-subtle"
+        style={{ left: rowPaddingLeft(depth) }}
+      />
+    </div>
+  );
+}
+
+/** The sole catalog child renderer; standalone lists start at depth zero. */
 export function TreeChildren({
   parentId,
   parentPath,
@@ -79,7 +93,7 @@ export function TreeChildren({
   const children = env.catalog.children(parentId);
   const siblings = children;
   return (
-    <div className="relative isolate">
+    <>
       {env.creation?.creating?.parentPath === parentPath ? (
         <CreateRow
           kind={env.creation?.creating.kind}
@@ -97,14 +111,7 @@ export function TreeChildren({
             <FileRow key={child.entryId} file={child} depth={depth} siblings={siblings} />
           ),
         )}
-      {depth > 0 ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 z-10 border-l border-border-subtle"
-          style={{ left: rowPaddingLeft(depth) }}
-        />
-      ) : null}
-    </div>
+    </>
   );
 }
 
@@ -210,7 +217,9 @@ function DirRow({
         </div>
       </EntryInteractionShell>
       {isOpen ? (
-        <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
+        <TreeGroup depth={depth + 1}>
+          <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
+        </TreeGroup>
       ) : null}
     </>
   );

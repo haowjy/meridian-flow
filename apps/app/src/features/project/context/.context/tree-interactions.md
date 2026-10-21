@@ -14,7 +14,8 @@ even when its name does not match the search.
 
 Indentation counts visible expandable parents, not catalog depth: standalone
 Work Files and phone lists start at zero; rail sections start at one. The shared
-child group paints its parent guide above row highlights without taking pointer
+`TreeGroup` spans all visible children, including Earlier notes and the current
+Work’s separate catalog. It paints its parent guide above row highlights without taking pointer
 input. Section headers and folder rows use the same disclosure-center geometry.
 
 The chat Files menu combines this same shared Scratch browser with chat-owned
