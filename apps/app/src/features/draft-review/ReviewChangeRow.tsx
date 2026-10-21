@@ -8,9 +8,9 @@ import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
+import { ChangeAuthor, ChangeDot, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
-import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
+import type { BranchCommandFailure } from "./review-command-types";
 import { changeExcerpt, type ReviewChange } from "./review-model";
 
 export type ReviewChangeRowProps = {
@@ -23,7 +23,6 @@ export type ReviewChangeRowProps = {
   canApply?: boolean;
 
   /** Why the last command on this change did not land. */
-  failure: ChangeCommandState | null;
   draftFailure?: BranchCommandFailure | null;
   onFocus: () => void;
   onApply: () => void;
@@ -41,7 +40,6 @@ export function ReviewChangeRow({
   disabled,
   canApply = true,
 
-  failure,
   draftFailure,
   onFocus,
   onApply,
@@ -152,13 +150,9 @@ export function ReviewChangeRow({
           ) : null}
         </span>
       </div>
-      {failure || draftFailure ? (
+      {draftFailure ? (
         <p role="status" className="min-w-0 max-w-[50%] text-caption text-destructive">
-          {draftFailure ? (
-            <ReviewMessageText failure={draftFailure} />
-          ) : failure ? (
-            <ChangeFailureText failure={failure} />
-          ) : null}
+          <ReviewMessageText failure={draftFailure} />
         </p>
       ) : null}
     </li>

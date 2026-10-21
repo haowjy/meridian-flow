@@ -7,10 +7,3 @@ export type ServerRefusal = {
   removal?: DocumentRemovalRecord;
 };
 export type BranchCommandFailure = { code: string } & ServerRefusal;
-export type ChangeCommandMode = "apply" | "discard";
-export type ChangeFailureCode = string;
-export type ChangeCommandState = {
-  phase: "failed";
-  code: ChangeFailureCode;
-  mode: ChangeCommandMode;
-} & ServerRefusal;

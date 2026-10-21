@@ -1,6 +1,6 @@
 /**
  * The small pieces every surface that shows a change shares: its colour dot,
- * who made it, and why a command on it did not land. The row, the bar and the
+ * and who made it. The row, the bar and the
  * phone's sheet are made of these, so a change reads the same everywhere.
  */
 import { t } from "@lingui/core/macro";
@@ -18,9 +18,7 @@ import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
-import { RefusalReason } from "./ReviewMessageText";
 import { writerIn } from "./review-attribution";
-import type { ChangeFailureCode, ServerRefusal } from "./review-command-types";
 import { type ChatRef, changeTone, type ReviewChange } from "./review-model";
 
 /** A dot in the change's colour: green for text it wrote, red for text it only removed. */
@@ -278,36 +276,6 @@ function openChat(chat: ChatRef, openThread: (threadId: string) => void) {
       ...chat.reveal,
       ...(chat.reveal.subagentThreadId ? { subagentBlock: "card" } : {}),
     });
-}
-
-export function ChangeFailureText({
-  failure: { code, serverCode, serverReason },
-}: {
-  failure: { code: ChangeFailureCode } & Partial<ServerRefusal>;
-}) {
-  switch (code) {
-    case "gone":
-      return <Trans>That change is no longer in the draft.</Trans>;
-    case "blocked":
-      return <Trans>Apply couldn't finish</Trans>;
-    case "unknown":
-      return (
-        <Trans>
-          Couldn't confirm whether this applied. Check what is left before you try again.
-        </Trans>
-      );
-    case "offline":
-      return <Trans>Couldn't apply yet. Try again in a moment.</Trans>;
-    case "refused":
-      return (
-        <>
-          <Trans>Couldn't apply this change.</Trans>
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
-        </>
-      );
-    case "server-error":
-      return <Trans>Couldn't apply this change. Try again.</Trans>;
-  }
 }
 
 /** The Discard button's name. */

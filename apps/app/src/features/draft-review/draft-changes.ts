@@ -2,13 +2,12 @@
 
 import { useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import type { BranchCommandFailure, ChangeCommandState } from "./review-command-types";
+import type { BranchCommandFailure } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeItem = {
   change: ReviewChange;
   draftFailure?: BranchCommandFailure | null;
-  failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
 };
 
 /** Presentation data can be shared without focus or command authority. */
@@ -52,5 +51,5 @@ export function useChangeItems(
   changes: readonly ReviewChange[],
 ): { items: readonly ReviewChangeItem[] } {
   const failure = useDraftCommandState(draft?.itemKey ?? "").failure;
-  return { items: changes.map((change) => ({ change, failure: null, draftFailure: failure })) };
+  return { items: changes.map((change) => ({ change, draftFailure: failure })) };
 }
