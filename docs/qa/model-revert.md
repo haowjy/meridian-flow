@@ -13,32 +13,56 @@ wasn't reverted because its text changed or is already gone." Undo and redo are 
 
 ## Setup
 
-Start a mock-provider stack in the checkout under test (`pnpm dev`; find its URLs with `pnpm portless:list`), then
-from that checkout:
+Run commands from the tested checkout's root, with `./mf` authenticated and a default project available (see
+[CLI setup](../debugging.md#set-up-and-debug-with-the-cli)). Auto-apply writes directly to the manuscript. Draft mode
+writes into a named Work, a task context whose shared pending edits wait for the writer's Apply.
+Reuse the project and private agent; create a fresh document and chat for each case, and a fresh Work for each draft case.
+
+Start a mock-provider stack in the checkout under test (`MODEL_PROVIDER=mock pnpm dev`; find its URLs with
+`pnpm portless:list`). Create a private mock-bound agent rather than using General, whose saved model may be a real
+provider. From that checkout:
 
 ```bash
 P=$(./mf project default --json | jq -r .projectId)
-SEL=$(./mf api GET "/api/agents?projectId=$P&limit=100" --json | jq -c '.agents[] | select(.slug=="general") | .selection')
-W=$(./mf api POST "/api/projects/$P/works" --data '{"name":"revert check"}' --json | jq -r .id)
+AGENT=revert-probe-$(date +%s)
+./mf api POST /api/agents --data "$(jq -nc --arg slug "$AGENT" \
+  '{slug:$slug,content:"---\nname: Revert Probe\nmode: primary\nmodel: mock-llm-v1\n---\nFollow the writer."}')" --json
+SEL=$(./mf api GET "/api/agents?projectId=$P&limit=100" --json | jq -c --arg slug "$AGENT" \
+  '.agents[] | select(.slug==$slug) | .selection')
 D=manuscript://revert-check-1          # a fresh document per case
 ./mf doc put "$D" --text 'The cat sat on the mat.' --overwrite
 
-# Auto-apply: a chat with no Work; writes land in the live document.
-T=$(./mf thread create --title 'revert check' --json | jq -r .threadId)
-# Draft mode instead: a chat bound to the Work; writes wait in the Work's draft until the writer applies them.
+```
+
+Choose **one** mode for each case.
+
+Auto-apply (no named Work):
+
+```bash
+T=$(./mf thread create --agent "$AGENT" --title 'revert check' --json | jq -r .threadId)
+```
+
+Draft mode instead:
+
+```bash
+W=$(./mf api POST "/api/projects/$P/works" --data "$(jq -nc --arg name "$AGENT draft $(date +%s)" '{name:$name}')" --json | jq -r .id)
 T=$(./mf api POST /api/threads --json --data "$(jq -nc --arg id "$(node -p 'crypto.randomUUID()')" \
   --arg p "$P" --arg w "$W" --argjson s "$SEL" \
   '{id:$id,projectId:$p,title:"revert check",agentSelection:$s,workId:$w,aiWriteMode:"draft"}')" | jq -r .id)
 ```
 
-Each model step is one mocked message: a `read`, then a `write`. Read before every write, since a write refuses a
-passage the model hasn't seen:
+Each model step is one mocked message. Read before replacing a passage the model has not seen. Revert itself
+needs no read; it uses the recorded edit identity:
 
 ```bash
 mock() { jq -nc --argjson a "$1" --arg n "$2" '[{toolCalls:[{name:$n,args:$a}]},{text:"ok"}]'; }
-./mf thread send "$T" read  --ref "$D" --mock "$(mock "{\"path\":\"$D\"}" read)" --json >/dev/null
-./mf thread send "$T" write --ref "$D" --json --mock "$(mock "{\"command\":\"replace\",\"path\":\"$D\",\"find\":\"The cat sat on the mat.\",\"content\":\"The cat sat on the mat. The big black dog ran.\"}" write)"
+./mf thread send "$T" read --mock "$(mock "{\"path\":\"$D\"}" read)" --json >/dev/null
+./mf thread send "$T" write --json --mock "$(mock "{\"command\":\"replace\",\"path\":\"$D\",\"find\":\"The cat sat on the mat.\",\"content\":\"The cat sat on the mat. The big black dog ran.\"}" write)"
 ./mf thread view "$T" --last 1 --full --json   # the tool result: `write: w1`, and the version (live, or draft)
+
+# After the case's intervening edit, use the handle returned by the first write.
+EDIT=w1
+./mf thread send "$T" revert --json --mock "$(mock "{\"command\":\"revert\",\"path\":\"$D\",\"edit\":\"$EDIT\"}" write)"
 ```
 
 In draft mode the first write into a fresh Work can answer `region_changed`; read again and repeat it. Take the
@@ -73,15 +97,26 @@ only the words it changed ([#969](https://github.com/haowjy/meridian-flow/issues
 
 For all-skipped cases, expect `reverted: w1 (0 of 1 parts)`, the numbered reason, and a document address to read.
 For partial cases, confirm the ordinary write receipt includes the document address and the reverted-part count.
-Neither result may include the skipped part's before, after, or current paragraph as a refusal quote. Successful
+For cases whose table gives a generic reason, assert the `not reverted: part <n>:` shape and unchanged document;
+classification may distinguish edited text from inaccessible structure. Neither result may include the skipped part's before, after, or current paragraph as a refusal quote. Successful
 write echoes still show applied changes through their existing path.
 
-After a skipped revert, script an ordinary `read`, then a `replace` based on that read. Confirm the replacement
-lands and preserves unrelated writer text. This checks that recovery needs no special current-text echo.
+After the **Edited inside N** case, the document still contains `The big brown dog ran.`. Read, then deliberately
+replace that sentence:
+
+```bash
+./mf thread send "$T" read --mock "$(mock "{\"path\":\"$D\"}" read)" --json
+./mf thread send "$T" replace --mock "$(mock "{\"command\":\"replace\",\"path\":\"$D\",\"find\":\"The big brown dog ran.\",\"content\":\"The brown dog rested.\"}" write)" --json
+```
+
+Expect `The cat sat on the mat. The brown dog rested.` in the destination, with the cat sentence unchanged.
+This checks that recovery needs no special current-text echo.
 
 ## In the browser
 
-With `agent-browser`, signed in as the writer, with the document open in the editor and the chat beside it:
+Open the discovered app URL at `/p/$P/chats/$T` in an authenticated `agent-browser` session. Open the seeded
+document through the Files tree; for a draft, open its pending document row in the Work. Keep the editor and chat
+visible together:
 
 1. Auto-apply, Plain case: after the revert the editor shows `The cat sat on the mat.` and the chat shows the revert
    as an "Edited 1 document" step with Undo.
@@ -90,4 +125,6 @@ With `agent-browser`, signed in as the writer, with the document open in the edi
 3. Auto-apply, Edited inside N, typing `brown` in the editor yourself: the text keeps `brown`, and expanding the
    chat's failed step shows "That change wasn't reverted because its text changed or is already gone."
 
-Screenshot the editor with the chat for each step, and attach them with the command output to the PR or run record.
+Screenshot the editor with the chat for each step. Record the source commit, date, provider, commands and observed
+results in the work item; attach masked screenshots to the PR. Delete the run's fixture documents/chats/Works and
+close its browser session afterward.
