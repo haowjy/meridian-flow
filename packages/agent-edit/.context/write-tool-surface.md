@@ -86,4 +86,5 @@ The host owns policy and notices, and handles do not reach the writer card.
 `region_changed` is in the reversal statuses (`WriteErrorStatus`, contracts'
 `write-reversal.ts`) but no undo, redo or revert runs the region check. Revert
 needs none: it works by Yjs identity and skips any part edited since, listing it
-with the current text of the blocks still holding it (W62).
+by its 1-based immutable part ordinal and reason. Revert does not quote skipped
+text; the model uses ordinary `read` when it needs the passage.

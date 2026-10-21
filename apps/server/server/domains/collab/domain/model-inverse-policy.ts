@@ -4,14 +4,12 @@ import { randomUUID } from "node:crypto";
 import {
   type ComputedInverse,
   type DocumentEditResult,
-  fragmentOf,
   type InverseSelection,
   type ModelInverseCommand,
   type PreparedEditRoots,
   prepareEditRoots,
   removedFile,
 } from "@meridian/agent-edit/integration";
-import { blockTextAt } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
@@ -177,11 +175,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (held) blocking.add(held);
         const changed =
           state.state !== "active" && state.state !== "undone" && !inspection.rolledBack(part);
-        // Located by identity only: blocks still holding the part's items, never by content.
-        const now =
-          eligible(part) && !held && changed
-            ? blockTextAt(fragmentOf(view), [...part.effect.inserted, ...part.effect.deleted])
-            : null;
         const reason = !eligible(part)
           ? "already removed"
           : held
@@ -192,15 +185,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? "already removed"
                 : !changed
                   ? null
-                  : now !== null
-                    ? `edited since; now ${JSON.stringify(now)}`
-                    : "its paragraph was replaced or removed";
-        if (reason) {
-          const excerpt = store.describePart(document, part);
-          skipped.push(
-            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}`,
-          );
-        } else selection.push({ part, direction: "invert" });
+                  : state.reasons.includes("inaccessible ancestor")
+                    ? "paragraph replaced or removed"
+                    : "edited since";
+        if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
+        else selection.push({ part, direction: "invert" });
       }
       return { selection, skipped };
     }
@@ -317,7 +306,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!selection.selection.length)
           return {
             status: "nothing_to_revert",
-            message: `Nothing of ${entry.handle} is left as you wrote it.\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} and make a new replace.`,
+            message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
           };
         apply(selection.selection, "revert", []);
       } else

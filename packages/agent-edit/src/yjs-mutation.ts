@@ -248,50 +248,6 @@ export function textInRanges(
     .join("");
 }
 
-/**
- * Plain text of the visible top-level blocks that still hold these items (inserted or
- * tombstoned), one line per block in document order; `null` when none survives. A block that
- * was itself removed or rebuilt contributes nothing: no surviving identity says which current
- * block replaced it.
- */
-export function blockTextAt(
-  fragment: Y.XmlFragment,
-  ranges: readonly { client: number; clock: number; len: number }[],
-): string | null {
-  const doc = fragment.doc;
-  if (!doc) return null;
-  const blocks = new Set<Y.Item>();
-  for (const range of ranges)
-    for (let clock = range.clock; clock < range.clock + range.len; ) {
-      const item = findItem(doc, Y.createID(range.client, clock));
-      if (!item) break;
-      clock = item.id.clock + item.length;
-      let top: Y.Item | null = item;
-      while (top && top.parent !== fragment)
-        top = top.parent instanceof Y.AbstractType ? top.parent._item : null;
-      if (top && !top.deleted) blocks.add(top);
-    }
-  // Nested blocks (list items, cells) take a line each; inline runs within a block join.
-  const text = (type: unknown): string => {
-    if (type instanceof Y.XmlText)
-      return type
-        .toDelta()
-        .map((op: { insert: unknown }) => (typeof op.insert === "string" ? op.insert : ""))
-        .join("");
-    if (!(type instanceof Y.XmlElement)) return "";
-    const children = type.toArray();
-    const inline = children.some((child) => child instanceof Y.XmlText);
-    return children
-      .map(text)
-      .filter((part) => inline || part)
-      .join(inline ? "" : "\n");
-  };
-  const lines: string[] = [];
-  for (let item = fragment._start; item; item = item.right)
-    if (blocks.has(item)) lines.push(text(item.content.getContent()[0]));
-  return lines.length ? lines.join("\n") : null;
-}
-
 /** Transaction deltas only; state-vector encoding would repeat old tombstones. */
 export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Array[] {
   const updates: Uint8Array[] = [];
