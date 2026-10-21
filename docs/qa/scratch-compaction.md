@@ -43,7 +43,7 @@ are not provider-performance evidence. Avoid concurrent globally queued scripts.
 Verify ownership independently: another chat in the same Work sees the same
 Scratch; independent No Work chats do not; a No Work fork and subagent share
 the source lineage; an actual handoff starts a new lineage. Rebinding moves no
-notes. Complete [the Files browser checks](chat-uploads-menu.md) on desktop and
+notes. Complete [the Files browser checks](chat-files.md) on desktop and
 phone and capture the compaction/held rows after reloading the chat.
 
 Cold ordering: script a held `return_result` or `spawn` followed by prose in the

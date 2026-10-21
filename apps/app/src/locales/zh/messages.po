@@ -237,10 +237,6 @@ msgstr ""
 msgid "{count, plural, one {# document removed} other {# documents removed}}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "{count, plural, one {# file} other {# files}}"
-#~ msgstr ""
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -2210,14 +2206,6 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "Files attached in this chat, {count}"
-#~ msgstr ""
-
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "Files in this chat"
-#~ msgstr ""
-
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
 msgstr "筛选子代理"
@@ -3013,10 +3001,6 @@ msgstr ""
 msgid "No model"
 msgstr ""
 
-#: src/features/project/context/use-catalog-menu-source.ts
-#~ msgid "No notes yet. The AI keeps its notes for this chat here."
-#~ msgstr ""
-
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr ""
@@ -3072,10 +3056,6 @@ msgstr "未报告"
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
 msgstr ""
-
-#: src/features/chat/ToolRow.tsx
-#~ msgid "Not run during the notes step"
-#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Not saved yet (keep this tab open until you're back online)"
