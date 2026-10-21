@@ -84,5 +84,7 @@ Successful edits expose immutable `w<N>` handles to model tools. `read(format:
 "edits")` pages those handles; undo/redo take counts and revert names one edit.
 The host owns policy and notices, and handles do not reach the writer card.
 `region_changed` is in the reversal statuses (`WriteErrorStatus`, contracts'
-`write-reversal.ts`) but no undo, redo or revert runs the region check today; a
-revert reaches it only once M2b routes it through the write door.
+`write-reversal.ts`) but no undo, redo or revert runs the region check. Revert
+needs none: it works by Yjs identity and skips any part edited since, listing it
+by its 1-based immutable part ordinal and reason. Revert does not quote skipped
+text; the model uses ordinary `read` when it needs the passage.
