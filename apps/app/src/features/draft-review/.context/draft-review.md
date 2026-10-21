@@ -109,7 +109,13 @@ with an item failure; sent heads keep their same-id settlement across session
 replacement. Transient disconnects keep acknowledgement barriers pending.
 A record alone proves landing; an applied answer without
 the record keeps its contribution. Closed/refused answers remove only their
-own contribution. A terminal close cancels unsent clicks and observes a sent
+own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
+the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
+so no surface shows a refusal line. Other refusals still move prose in two cases,
+Show changes off (header fallback line) and a long message wrapping in the
+between-paragraph bar; both are open in [#992](https://github.com/haowjy/meridian-flow/issues/992),
+which needs one feedback surface outside the manuscript flow rather than another
+per-width fix. A terminal close cancels unsent clicks and observes a sent
 head's durable outcome; applied then needs no room record. Feedback starts at
 500 ms in reserved footer space. No queue or optimistic base persists. Queue changes invalidate its optimistic
 contribution independently of account UI notifications; the account publishes only

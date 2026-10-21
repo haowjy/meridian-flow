@@ -155,7 +155,11 @@ deleter even for rebased base text that never existed in the draft. Recreated
 blocks do not bound that witness: the candidate region extends to retained base
 containers, and competing or uncovered tombstones leave the byline empty. A
 surviving container, or one with ordinary character tombstones, cannot borrow
-another block's author. Only proven Undo deletions of Discard base copies are
+another block's author. A live write that replaces the whole document deletes
+the unchanged neighbours a removed paragraph was bounded by; the server rebuilds
+them and the removed paragraph's slot as new server-owned blocks, so no retained
+container bounds the deletion witness and that removal correctly names nobody; do not infer an
+author from position, and do not treat the empty byline as a layout bug. Only proven Undo deletions of Discard base copies are
 excluded from that guard, so undoing Discard preserves the original block byline.
 
 Deletion evidence addresses the actual item ID, never an ancestor reached by a restoration link;
