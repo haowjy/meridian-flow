@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- A refused review command shows once and never moves manuscript text: on the focused change's bar (in its own row when the bar sits between paragraphs), else under the identity row; in Work Files and the dock, in the file's status line. A refusal because the Work was archived reverts silently under the archived notice, so nothing stale remains after Unarchive. Unavailable Apply/Discard controls stay hidden on locked drafts.
+- A refused review command shows once and never moves manuscript text: on the focused change's bar (in its own row when the bar sits between paragraphs), else under the identity row; in Work Files and the dock, in the file's status line. A refusal because the Work was archived reverts silently under the archived notice, so nothing stale remains after Unarchive; the phone now shows that notice, and freezes the editor, while reviewing an archived Work's draft, as the desktop does. Unavailable Apply/Discard controls stay hidden on locked drafts.
 
 - Remove the unused presented-document input chain from review room ownership.
 
