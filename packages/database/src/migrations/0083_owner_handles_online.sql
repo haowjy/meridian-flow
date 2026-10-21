@@ -1,4 +1,6 @@
 -- migration: no-transaction
+-- REQUIRES ALL WRITERS STOPPED (old and new release) from before 0082 until 0083 completes;
+-- a chat created mid-cutover breaks the next chat's handle. See packages/database/.context/CONTEXT.md.
 -- Online half of 0082_owner_handles. Re-runnable, with each data page committed.
 -- This temporary seek index bounds work per page without sorting the whole table.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS owner_handle_cutover_pending ON works (created_at, id)

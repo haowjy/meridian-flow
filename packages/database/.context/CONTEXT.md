@@ -18,7 +18,7 @@ VALID`, validate separately, and build or drop indexes `CONCURRENTLY`. A
 no-transaction file starts with its marker, isolates each concurrent statement
 in its own breakpoint, and makes every statement re-runnable. The runner drops
 only INVALID remnants named by concurrent builds; it never drops a valid index.
-`lock_timeout` brackets only statements that need an ACCESS EXCLUSIVE lock.
+`lock_timeout` brackets statements that need an ACCESS EXCLUSIVE lock, and each page of a no-transaction backfill (0083) so a row or counter wait fails fast instead of queueing.
 
 A no-transaction SQL file may declare a colocated TypeScript companion with
 `-- migration: code <file>.ts sha256:<digest>`. History validation checks its
@@ -91,8 +91,15 @@ application creation, including concurrent inserts and soft-deleted Works; No
 Work stays null. Restart skips assigned handles and never lowers copied thread
 counters. Constraint validation and concurrent index work happen outside DDL
 transactions. The final short transaction removes the trigger and retired
-columns/tables; it does no population-dependent work. This does not change the
-stopped-server policy for the preceding draft-review conversion.
+columns/tables; it does no population-dependent work. "Online" here means bounded
+transactions and concurrent index builds, not old and new releases serving
+together: stop every application server and worker, old and new, before 0082 and
+start only the new release after 0083 completes. The thread-handle counter moves
+from `project_thread_counters` to `project_handle_counters` once per project, so a
+chat created by either release mid-cutover leaves the new counter behind, and the
+next chat in that project fails on `threads_project_ref`. Retry a failed 0083 with
+writers still stopped; never restart the old release on a partly converted schema.
+The old release also still reads `works.slug`, which 0083 drops.
 
 Migration `0068` renames metadata and replaces
 both trail functions atomically. `0069` preserves opaque document-draft IDs and
