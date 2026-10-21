@@ -304,7 +304,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
     case "insufficient_redo":
       return t`There isn't enough left to redo.`;
     case "nothing_to_revert":
-      return t`There was nothing to revert.`;
+      return t`That change wasn't reverted because its text changed or is already gone.`;
     case "work_archived":
       return t`That change can't be made because this Work's drafts are archived.`;
     case "permission_denied":
