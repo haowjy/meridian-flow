@@ -71,10 +71,12 @@ keyboard; mobile review never becomes an editable Editor.
 
 ## Files browser and phone chrome
 
-`MobileContextBrowser` is one level per screen: Files root → scheme → folder →
-file. `?scheme`, `?folder`, and `?path` are route-owned. Missing folders are
-honest dead ends. Upload rows omit generic Delete, and draft-owned removal
-remains identity/revision-bound.
+`MobileContextBrowser` chooses a project scheme, then renders its nested subtree
+with the same `TreeChildren` rows and inline forms as desktop. Folder disclosure
+expands in place. The parsed route still owns the starting scheme/folder and
+file navigation; missing folders are honest dead ends. Draft-owned removal
+remains identity/revision-bound. The chat Files menu separately combines shared
+Scratch with the primary chat's uploads.
 
 The `+` action creates in the current scheme/folder through shared
 `ContextCreateKind`, `useCreateContextEntry`, and validation. Enter/Done or

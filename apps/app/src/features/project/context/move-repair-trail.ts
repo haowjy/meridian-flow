@@ -1,7 +1,7 @@
 /** Resolve retained placement intent against the picker's currently available folders. */
 import type { ResourceDestination } from "@meridian/resource-replica";
 import type { DrillNode } from "@/components/app/DrillInMenu";
-import type { ProjectMenuSource } from "./use-catalog-menu-source";
+import type { ProjectMenuSource } from "./use-project-menu-source";
 
 export function moveRepairTrail(
   source: Pick<ProjectMenuSource, "tree" | "folderFor">,

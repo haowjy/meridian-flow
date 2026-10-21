@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
-import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
+import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
@@ -73,7 +73,7 @@ export function DockHeader({
         {screen !== "chat" ? threadSelect : null}
         {screen !== "chat" && threadId ? (
           <>
-            <ChatUploadsMenu projectId={projectId} threadId={threadId} />
+            <ChatFilesMenu projectId={projectId} threadId={threadId} />
             <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
           </>
         ) : null}

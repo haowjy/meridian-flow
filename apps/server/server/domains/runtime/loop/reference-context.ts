@@ -10,6 +10,7 @@ import {
   type FrontierLookup,
   isAgentEditResultEnvelope,
   type ObservationFrontier,
+  type ReadToolInput,
   renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
 import type { ReadReferenceOccurrence } from "@meridian/contracts/protocol";
@@ -34,6 +35,7 @@ export interface ReferenceReader {
       threadId: string;
       turnId: string;
       signal?: AbortSignal;
+      input?: ReadToolInput;
       /** The read records its frontier, chained from this lookup. */
       recordingFrontier?: FrontierLookup;
     },

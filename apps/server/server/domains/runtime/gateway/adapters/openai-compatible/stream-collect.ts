@@ -144,16 +144,11 @@ export function mapFinishReason(
   reason: string | null | undefined,
   hasToolCalls: boolean,
 ): FinishReason {
-  // Chat Completions finish_reason (SDK-confirmed union: 'stop' | 'length' |
-  // 'tool_calls' | 'content_filter' | 'function_call' | null). `null` means
-  // streaming is in progress; only the final content chunk carries a non-null
-  // value. Some compatible providers also emit tool-call deltas without setting
-  // finish_reason='tool_calls', so observed tool calls take precedence so the
-  // orchestrator always executes tools whenever a call was actually assembled.
-  if (hasToolCalls || reason === "tool_calls") return "tool_use";
+  // Partial or filtered tool calls are not executable, even when assembled.
   if (reason === "length") return "max_tokens";
-  if (reason === "stop") return "end_turn";
   if (reason === "content_filter") return "error";
+  // Compatible providers may omit tool_calls on otherwise successful output.
+  if (hasToolCalls || reason === "tool_calls") return "tool_use";
   return "end_turn";
 }
 

@@ -15,7 +15,6 @@ import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
-import { workFileRowClass } from "./WorkFileRows";
 
 export function WorkChangeFile({
   projectId,
@@ -88,7 +87,11 @@ export function WorkChangeFile({
         ) : (
           <button
             type="button"
-            className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
+            className={cn(
+              "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover",
+              "w-auto flex-1 pl-1",
+              touch && "min-h-11",
+            )}
             disabled={!file.contextLocation || (file.draft.hasDraft === false && !imageOpenable)}
             onClick={() => review()}
           >

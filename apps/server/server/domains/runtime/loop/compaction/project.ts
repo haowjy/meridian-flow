@@ -14,6 +14,7 @@ import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
 import { bakeHasHistoryTool } from "../history-tool-availability.js";
 import { referenceReadText } from "../reference-context.js";
+import { importantFileText } from "./important-files.js";
 import type { CompactionPlan } from "./plan.js";
 import { resolveCut, retainedTail } from "./tail.js";
 
@@ -199,7 +200,10 @@ function projectActiveHistory(
     .flatMap((block) => {
       const reference = referenceOccurrenceContent(block);
       if (!reference?.read) return [];
-      const textContent = `Current text of ${reference.uri}, re-shown after the summary:\n${referenceReadText(reference.read.result)}`;
+      const textContent = importantFileText(
+        reference.read.input ?? { path: reference.uri },
+        referenceReadText(reference.read.result),
+      );
       return [{ ...block, turnId: synthetic.turn.id, textContent, content: textContent }];
     })
     .sort((a, b) => a.sequence - b.sequence);

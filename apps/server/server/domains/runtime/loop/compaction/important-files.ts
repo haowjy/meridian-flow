@@ -1,89 +1,214 @@
-/**
- * The documents a compaction re-shows in full after its summary (C10): the ones
- * the conversation's results showed most recently, within a document count and
- * a token budget. A summary cannot credit the model with having seen a
- * document; the re-shown current text can.
- */
+/** Model-ranked document selections a compaction re-shows, within its token budget. */
+import {
+  type ReadToolInput,
+  ReadToolInputSchema,
+  splitDocumentFile,
+} from "@meridian/agent-edit/integration";
+import { documentPathKey, parseContextUri } from "@meridian/contracts";
 import type { DocumentRevisionEvidence, ReferenceOccurrence } from "@meridian/contracts/protocol";
+import type { JsonObject } from "@meridian/contracts/threads";
+import type { TokenizerFamily } from "../../gateway/index.js";
+import { modelToolSchema } from "../../tools/model-tool-schema.js";
 import type { RecordedDocuments } from "./elide.js";
+import { estimateModelPartTokens } from "./estimate.js";
 
-export const IMPORTANT_FILES_MAX = 5;
-const IMPORTANT_FILES_MAX_TOKENS = 20_000;
-const IMPORTANT_FILES_WINDOW_FRACTION = 0.1;
-/** Compaction estimates text at 3 bytes per token wherever it lacks a tokenizer. */
-const BYTES_PER_TOKEN = 3;
-/** Skipped documents still cost a read, so the search for five that fit stops here. */
-const IMPORTANT_FILES_MAX_READS = 2 * IMPORTANT_FILES_MAX;
+const KEEP_OPEN_HEADING = "## Documents to keep open";
+const RECENT_DOCUMENTS_COUNT = 3;
 
-/** Estimation slack kept under the trigger: the budget counts bytes, the next request counts tokens. */
-const TRIGGER_MARGIN_TOKENS = 1_000;
+export const KEEP_OPEN_INSTRUCTION_LINES = [
+  KEEP_OPEN_HEADING,
+  "End the summary with this section: one JSON object of ordinary read arguments per line, most important first. No tool calls or code fences.",
+  "Use the read tool's arguments exactly, including path, selectors, format and version. Name only documents this conversation showed. Leave the section empty if none apply.",
+  "The read input schema is:",
+  JSON.stringify(modelToolSchema(ReadToolInputSchema)),
+  "Failed or oversized reads are omitted, never retried with different arguments. The server replaces this list with the reads it actually re-shows.",
+  "",
+  "Example:",
+  '{"path":"scratch://@/c12/plan"}',
+  '{"path":"manuscript://Chapter 1#the-duel"}',
+  '{"path":"manuscript://Chapter 2","in":"2194"}',
+  '{"path":"manuscript://Chapter 3","in":[40,95]}',
+];
 
-/**
- * Tokens the re-shown documents may add: a fraction of the window, capped, and never more than
- * the headroom the successor has under the auto-compaction trigger. The successor then cannot
- * land over the trigger, which would compact again at the next boundary.
- */
-export function reshowBudgetTokens(input: {
-  usableWindowTokens: number;
-  triggerTokens: number | null;
-  baseTokens: number;
-}): number {
-  const headroom =
-    input.triggerTokens === null
-      ? Number.POSITIVE_INFINITY
-      : input.triggerTokens - input.baseTokens - TRIGGER_MARGIN_TOKENS;
-  return Math.max(
-    0,
-    Math.min(
-      IMPORTANT_FILES_MAX_TOKENS,
-      Math.floor(input.usableWindowTokens * IMPORTANT_FILES_WINDOW_FRACTION),
-      headroom,
+/** Remove both server-directed sections, even when followed by another summary section. */
+export function parseImportantFiles(text: string): { summary: string; listedLines: string[] } {
+  const summary: string[] = [];
+  const listedLines: string[] = [];
+  let section: "keep" | "omit" | null = null;
+  for (const line of text.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    const heading = trimmed
+      .match(/^#{1,6}\s+(.+?)\s*$/u)?.[1]
+      ?.replace(/[\s:#]+$/u, "")
+      .trim()
+      .toLowerCase();
+    if (heading === "documents to keep open" || heading === "documents not re-shown") {
+      section = heading === "documents to keep open" ? "keep" : "omit";
+      continue;
+    }
+    if (/^#{1,6}\s/u.test(trimmed)) section = null;
+    if (section === null) summary.push(line);
+    if (section !== "keep") continue;
+    const item = trimmed.replace(/^(?:[-*+]|\d+[.)])\s+/u, "").trim();
+    if (item) listedLines.push(item);
+  }
+  return { summary: summary.join("\n").trim(), listedLines };
+}
+
+/** A validated read, pinned to the shown document rather than just its current path. */
+interface ImportantFileCandidate {
+  documentId: string;
+  uri: string;
+  input: ReadToolInput;
+}
+
+/** JSONB reorders object keys; pricing and replay must label the same input byte-for-byte. */
+export function readInputLabel(input: JsonObject): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(input).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
     ),
   );
 }
 
-/** Documents in `recorded` (history order), most recently shown first, one entry per document. */
-export function importantFileCandidates(recorded: RecordedDocuments): DocumentRevisionEvidence[] {
-  const seen = new Set<string>();
-  const candidates: DocumentRevisionEvidence[] = [];
-  for (const refs of [...recorded.values()].reverse()) {
-    for (const ref of [...(refs ?? [])].reverse()) {
-      if (!ref.uri || seen.has(ref.documentId)) continue;
-      seen.add(ref.documentId);
-      candidates.push(ref);
-    }
+/** Exact projected text, shared with budget estimation. Saved input is display-only on replay. */
+export function importantFileText(input: JsonObject, text: string): string {
+  return `Read result for ${readInputLabel(input)}, re-shown after the summary:\n${text}`;
+}
+
+/** Estimator slack only; the written list is priced and reserved separately. */
+const TRIGGER_MARGIN_TOKENS = 1_000;
+
+/**
+ * Re-shown text and its list may use half the trigger headroom, less estimator slack.
+ * The list can still exceed the budget on its own; it is then the only thing written.
+ */
+export function reshowBudgetTokens(input: {
+  triggerTokens: number | null;
+  baseTokens: number;
+}): number {
+  if (input.triggerTokens === null) return Number.POSITIVE_INFINITY;
+  return Math.max(
+    0,
+    Math.floor((input.triggerTokens - input.baseTokens) / 2) - TRIGGER_MARGIN_TOKENS,
+  );
+}
+
+/** Model-listed shown URIs first, then the three most recent documents, deduplicated by id. */
+export function importantFileCandidates(
+  recorded: RecordedDocuments,
+  listedLines: readonly string[],
+): { candidates: ImportantFileCandidate[]; unknownUriCount: number } {
+  const newestFirst = [...recorded.values()]
+    .reverse()
+    .flatMap((refs) => [...(refs ?? [])].reverse());
+  const byUri = new Map<string, DocumentRevisionEvidence>();
+  const recent: ImportantFileCandidate[] = [];
+  const recentIds = new Set<string>();
+  for (const ref of newestFirst) {
+    if (!ref.uri) continue;
+    if (!byUri.has(ref.uri)) byUri.set(ref.uri, ref);
+    if (recentIds.has(ref.documentId)) continue;
+    recentIds.add(ref.documentId);
+    if (recent.length < RECENT_DOCUMENTS_COUNT)
+      recent.push({ documentId: ref.documentId, uri: ref.uri, input: { path: ref.uri } });
   }
-  return candidates;
+  const seen = new Set<string>();
+  const candidates: ImportantFileCandidate[] = [];
+  let unknownUriCount = 0;
+  for (const line of listedLines) {
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      unknownUriCount++;
+      continue;
+    }
+    const path = value && typeof value === "object" && "path" in value ? value.path : undefined;
+    if (typeof path !== "string") {
+      unknownUriCount++;
+      continue;
+    }
+    const { filePath, fragment } = splitDocumentFile(path);
+    const parsedUri = parseContextUri(documentPathKey(filePath));
+    const ref = parsedUri.ok ? byUri.get(parsedUri.value.normalized) : undefined;
+    if (!ref?.uri) {
+      unknownUriCount++;
+      continue;
+    }
+    // An identifiable invalid request must not return as a recent whole read either.
+    const duplicate = seen.has(ref.documentId);
+    seen.add(ref.documentId);
+    const parsed = ReadToolInputSchema.safeParse(value);
+    if (!parsed.success) {
+      unknownUriCount++;
+      continue;
+    }
+    if (!duplicate)
+      candidates.push({
+        documentId: ref.documentId,
+        uri: ref.uri,
+        input: { ...parsed.data, path: ref.uri + (fragment === undefined ? "" : `#${fragment}`) },
+      });
+  }
+  for (const candidate of recent) {
+    if (seen.has(candidate.documentId)) continue;
+    seen.add(candidate.documentId);
+    candidates.push(candidate);
+  }
+  return { candidates, unknownUriCount };
 }
 
 /**
- * Reads candidates in order until `IMPORTANT_FILES_MAX` are kept. A document
- * whose full text does not fit the remaining budget is skipped, never
+ * The documents the successor now holds, written back into the summary. Built
+ * from the reads that were admitted, so the list and the blocks cannot disagree.
+ */
+export function documentsSection(labels: readonly string[]): string {
+  if (!labels.length) return "";
+  return [KEEP_OPEN_HEADING, ...labels.map((label) => `- ${label}`)].join("\n");
+}
+
+/**
+ * Reads candidates in priority order until the budget is spent. A document
+ * whose selected text does not fit the remaining budget is skipped, never
  * truncated: a truncated copy would be a partial read with its own listing.
  * `read` answers null for a document that cannot be read.
  */
 export async function chooseImportantFiles<T extends { text: string }>(input: {
-  candidates: readonly DocumentRevisionEvidence[];
+  candidates: readonly ImportantFileCandidate[];
   budgetTokens: number;
-  read: (reference: ReferenceOccurrence) => Promise<T | null>;
-}): Promise<{ reference: ReferenceOccurrence; read: T }[]> {
-  let remaining = input.budgetTokens;
-  const kept: { reference: ReferenceOccurrence; read: T }[] = [];
-  for (const candidate of input.candidates.slice(0, IMPORTANT_FILES_MAX_READS)) {
-    if (kept.length === IMPORTANT_FILES_MAX) break;
-    const uri = candidate.uri as string;
+  tokenizer: TokenizerFamily;
+  read: (reference: ReferenceOccurrence, input: ReadToolInput) => Promise<T | null>;
+}): Promise<{ reference: ReferenceOccurrence; input: ReadToolInput; read: T }[]> {
+  // The rewritten list is part of the summary: reserve the longest one it can become.
+  const listTokens = estimateModelPartTokens(
+    {
+      type: "text",
+      text: `\n\n${documentsSection(input.candidates.map((candidate) => readInputLabel(candidate.input)))}`,
+    },
+    input.tokenizer,
+  );
+  let remaining = Math.max(0, input.budgetTokens - listTokens);
+  const kept: { reference: ReferenceOccurrence; input: ReadToolInput; read: T }[] = [];
+  for (const candidate of input.candidates) {
+    // Nothing more can fit; the list stops where the reads stopped.
+    if (remaining <= 0) break;
+    const uri = candidate.uri;
     const reference: ReferenceOccurrence = {
       type: "reference",
       documentId: candidate.documentId,
       uri,
       text: uri,
     };
-    const read = await input.read(reference);
+    const read = await input.read(reference, candidate.input);
     if (!read) continue;
-    const tokens = Math.ceil(Buffer.byteLength(read.text, "utf8") / BYTES_PER_TOKEN);
+    const tokens = estimateModelPartTokens(
+      { type: "text", text: importantFileText(candidate.input, read.text) },
+      input.tokenizer,
+    );
     if (tokens > remaining) continue;
     remaining -= tokens;
-    kept.push({ reference, read });
+    kept.push({ reference, input: candidate.input, read });
   }
   return kept;
 }
