@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removed the command owner's duplicate optimistic-base cache; the room runtime alone caches queue folds.
+
 - Review room readiness and failures now read directly from the room owner instead of copied presentation state.
 
 - Removed obsolete per-change failure plumbing; draft command failures stay on their existing review and dock surfaces.

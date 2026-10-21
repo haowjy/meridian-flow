@@ -93,7 +93,7 @@ list omission alone must not infer local Discard or successful Apply.
 
 `AccountFeatureLifetime.draftCommands` is shared by editor, chat and Work
 surfaces. `bind(ref, session)` joins one stable draft-row queue and installs a replaceable
-session binding (runtime, cached base provider and root observers). A pending
+session binding (runtime, base-fold provider and Apply-record observer). A pending
 queue owns a room reader that follows replacement sessions even without a surface.
 Retiring a session detaches that binding, not the draft queue. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
 snapshot, the reviewed base blocks (O), selected ids, the result of applying those
@@ -117,7 +117,8 @@ owner observes only hidden/closed lifecycle transitions. Listed-room snapshots
 combine stable text and per-item command records, including deferred Discard.
 Apply callbacks refresh discovery when the item's FIFO drains, not after every head.
 
-The base provider folds `applyBase` over unrecorded clicks in order. Base,
+The base provider folds `applyBase` over unrecorded clicks in order; only the
+runtime caches that fold per schema and observes `review_base`. Base,
 record and queue changes invalidate it; typing only reprojects. Group targets
 must still describe equal base and prose at capture; a changed pre-click
 projection is refreshed and reported locally, never reinterpreted by its
