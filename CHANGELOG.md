@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Model revert lists what a skipped passage says now (M2b, W62). Revert stays by Yjs identity: removes the edit's own text, restores what it deleted, never matches by text. A part edited since stays and its line ends `edited since; now "<current paragraph>"`; a part whose paragraph was rebuilt or deleted says `its paragraph was replaced or removed`, no guessed text. All-skipped message no longer runs into "Read …". Chat card for an all-skipped revert: "That change wasn't reverted because its text changed or is already gone." (was "There was nothing to revert.").
+- Model revert reports skipped parts by number and reason, without repeating their old or current text. Read the document for the passage. Revert behavior is unchanged. An all-skipped chat step now says "That change wasn't reverted because its text changed or is already gone."
 - Compaction re-reads documents with ordinary read arguments, including sections, ranges, outlines and versions. Failed reads are omitted without widening scope; partial reads never stand in for unseen text.
 - File-tree guides stay visible over highlights, including expanded Manuscript. Standalone file lists use less indentation; sidebar action hover matches page behavior.
 

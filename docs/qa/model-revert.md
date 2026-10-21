@@ -3,13 +3,10 @@
 Checks the model's `write {command: "revert", edit: "w1"}`, which takes back one of the model's earlier edits (here
 `w1`, the handle its write result printed). Revert finds that edit's text by Yjs item identity, never by matching
 text: it deletes what the edit inserted and restores what it deleted. An edit is stored as one or more parts, and each
-part reverts or is skipped on its own. A part someone changed since is skipped:
-
-- if a paragraph still holds the part's text (or the remains of text it deleted), the result line ends
-  `edited since; now "<that paragraph as it reads now>"`;
-- if that paragraph was itself rebuilt (turned into a heading, say) or deleted, the line ends
-  `its paragraph was replaced or removed`, with no text, because nothing but text matching could say which paragraph
-  replaced it.
+part reverts or is skipped on its own. Skipped parts are listed by their immutable 1-based part number and reason,
+for example `not reverted: part 1: edited since`. The result quotes neither the edit's before/after text nor the
+passage's current text. Part numbers identify parts of the named edit, not current document blocks; use ordinary
+`read` for the current passage.
 
 When every part is skipped the tool status is `nothing_to_revert`, and the chat's failed step reads "That change
 wasn't reverted because its text changed or is already gone." Undo and redo are separate commands, not covered here.
@@ -58,19 +55,29 @@ N is the model's first write.
 |---|---|---|
 | Plain | N appends ` The dog ran across the yard.`; nothing else | `reverted: w1 (1 of 1 parts)` and a new handle; text `The cat sat on the mat.` |
 | Typing elsewhere | the same N; then a new paragraph `Lin Feng drew his sword.` | success; the original sentence and the new paragraph remain |
-| Edited inside N | N appends ` The big black dog ran.`; then `black` → `brown` | `nothing_to_revert`; `edited since; now "The cat sat on the mat. The big brown dog ran."`; text unchanged |
+| Edited inside N | N appends ` The big black dog ran.`; then `black` → `brown` | `nothing_to_revert`; `not reverted: part 1: edited since`; text unchanged |
 | Repeated text, original edited | seed `The night was dark.` / `Lin Feng walked on.`; N inserts another `The night was dark.` after the first; the first then becomes `The night was cold.` | success; `The night was cold.` / `Lin Feng walked on.` (N's copy went, not the writer's) |
-| Repeated text, N's copy edited | the same, but N's copy becomes `The night was cold.` | `nothing_to_revert`; `now "The night was cold."`; text unchanged |
-| Emptied paragraph | N adds the paragraph `The dog ran across the yard.`; then its text is deleted, leaving the paragraph empty | `nothing_to_revert`; `edited since; now ""` |
-| Paragraph rebuilt | N adds the paragraph `The dog ran across the yard.`; then it is turned into a heading | `nothing_to_revert`; `its paragraph was replaced or removed`; the heading stays |
-| Existing paragraph rebuilt | N appends ` The dog ran.` to the seed paragraph; then that paragraph is turned into a heading | `nothing_to_revert`; `its paragraph was replaced or removed`; the heading stays |
-| N deleted a sentence | seed `AAA went first. BBB stood still. CCC came last.`; N removes `BBB stood still. `; then `first` → `home`, `last` → `early` | draft: success, `AAA went home. BBB stood still. CCC came early.`; auto-apply: `nothing_to_revert`, `now "AAA went home. CCC came early."` (see below) |
+| Repeated text, N's copy edited | the same, but N's copy becomes `The night was cold.` | `nothing_to_revert`; a numbered skipped-part reason, without quoting the passage; text unchanged |
+| Emptied paragraph | N adds the paragraph `The dog ran across the yard.`; then its text is deleted, leaving the paragraph empty | `nothing_to_revert`; a numbered skipped-part reason, without quoting the empty paragraph |
+| Paragraph rebuilt | N adds the paragraph `The dog ran across the yard.`; then it is turned into a heading | `nothing_to_revert`; a numbered skipped-part reason, without quoting the heading; the heading stays |
+| Existing paragraph rebuilt | N appends ` The dog ran.` to the seed paragraph; then that paragraph is turned into a heading | `nothing_to_revert`; a numbered skipped-part reason, without quoting the heading; the heading stays |
+| N deleted a sentence | seed `AAA went first. BBB stood still. CCC came last.`; N removes `BBB stood still. `; then `first` → `home`, `last` → `early` | draft: success, `AAA went home. BBB stood still. CCC came early.`; auto-apply: `nothing_to_revert`, a numbered skipped-part reason (see below) |
 | Revert of a revert | the Plain case's revert; then revert the handle it printed | N's sentence is back |
-| Two parts | seed three paragraphs; one range replace over all three changes the first and third; then the first is edited | `reverted: w1 (1 of 2 parts)` and one `not reverted:` line naming the first paragraph's current text |
+| Two parts | seed three paragraphs; one range replace over all three changes the first and third; then the first is edited | `reverted: w1 (1 of 2 parts)` and `not reverted: part 1: edited since`, without quoting the skipped passage |
 
 **Why auto-apply differs in "N deleted a sentence":** a live write stores its whole paragraph as deleted and
 reinserted text, so any later change in that paragraph, even to words N kept, skips the part. A draft write stores
 only the words it changed ([#969](https://github.com/haowjy/meridian-flow/issues/969)).
+
+## Compact-result recovery
+
+For all-skipped cases, expect `reverted: w1 (0 of 1 parts)`, the numbered reason, and a document address to read.
+For partial cases, confirm the ordinary write receipt includes the document address and the reverted-part count.
+Neither result may include the skipped part's before, after, or current paragraph as a refusal quote. Successful
+write echoes still show applied changes through their existing path.
+
+After a skipped revert, script an ordinary `read`, then a `replace` based on that read. Confirm the replacement
+lands and preserves unrelated writer text. This checks that recovery needs no special current-text echo.
 
 ## In the browser
 
