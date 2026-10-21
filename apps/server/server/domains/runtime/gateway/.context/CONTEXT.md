@@ -44,6 +44,14 @@ or `content_filtered` patterns; other 4xx are non-retryable provider errors.
 `context_overflow` with metered partial usage so the runtime can perform one
 cold compaction retry.
 
+Provider terminal failure/truncation takes precedence over accumulated tool calls:
+OpenAI incomplete/failed responses and compatible length/content-filter finishes
+never become successful tool-use just because a call was streamed earlier.
+
+The dev mock reports request-derived synthetic input usage, so long histories
+reach real compaction boundaries. These counters test control flow, not provider
+pricing or cache performance.
+
 Malformed tool-argument JSON is repaired at the gateway helper or surfaced as a
 typed parse refusal. Tool execution still validates the original Zod contract;
 provider advertisement is not argument authority.

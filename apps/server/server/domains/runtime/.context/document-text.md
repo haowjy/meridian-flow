@@ -14,6 +14,11 @@ observation time. A null revision means unverifiable and is never resolved
 against current content. Empty evidence is explicit; failed lookups and edits
 fail closed.
 
+A pre-compaction held tool result (`isNotesStepHeldResult`) executed nothing.
+Exclude it from document pairing and edit records; retain its not-run output
+verbatim in compaction and history instead of treating missing evidence as a
+stale successful write.
+
 Staged mutation results start with null. The response-settlement receipt supplies
 the revision captured at apply, and `persistCommittedWriteResult` copies it
 without a second read; a reread would misattribute an intervening writer edit.
