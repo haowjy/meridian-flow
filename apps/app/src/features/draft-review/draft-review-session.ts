@@ -3,9 +3,6 @@ import type { ReviewFocus } from "./review-model";
 export type DraftReviewSelection = { documentId: string; itemKey: string };
 export type InlineDraftReview = DraftReviewSelection & {
   kind: "inline";
-  roomName?: string;
-  roomError?: boolean;
-  projectionIdentity?: string;
   focus?: ReviewFocus | null;
   shown?: boolean;
 };
@@ -24,9 +21,6 @@ export type DraftReviewState = {
 };
 export type DraftReviewAction =
   | (DraftReviewSelection & { type: "enterInline" })
-  | (DraftReviewSelection & { type: "roomResolved"; roomName: string })
-  | (DraftReviewSelection & { type: "roomFailed" })
-  | (DraftReviewSelection & { type: "inlineModelAvailable"; identity: string })
   | (DraftReviewSelection & { type: "inlineShown"; shown: boolean })
   | (DraftReviewSelection & { type: "changeFocused"; focus: ReviewFocus | null })
   | { type: "marksVisible"; visible: boolean }
@@ -45,12 +39,7 @@ export function draftReviewReducer(
 ): DraftReviewState {
   switch (action.type) {
     case "enterInline":
-      if (
-        state.surface.kind === "inline" &&
-        matches(state.surface, action) &&
-        !state.surface.roomError
-      )
-        return state;
+      if (state.surface.kind === "inline" && matches(state.surface, action)) return state;
       return {
         ...state,
         surface: { kind: "inline", documentId: action.documentId, itemKey: action.itemKey },
@@ -79,20 +68,10 @@ export function draftReviewReducer(
   const review = state.surface;
   if (review.kind !== "inline" || !matches(review, action)) return state;
   switch (action.type) {
-    case "roomResolved":
-      return review.roomName === action.roomName && !review.roomError
-        ? state
-        : { ...state, surface: { ...review, roomName: action.roomName, roomError: false } };
-    case "roomFailed":
-      return review.roomError ? state : { ...state, surface: { ...review, roomError: true } };
     case "inlineShown":
       return review.shown === action.shown
         ? state
         : { ...state, surface: { ...review, shown: action.shown } };
-    case "inlineModelAvailable":
-      return review.projectionIdentity === action.identity
-        ? state
-        : { ...state, surface: { ...review, projectionIdentity: action.identity } };
     case "changeFocused":
       return review.focus?.id === action.focus?.id && review.focus?.frame === action.focus?.frame
         ? state

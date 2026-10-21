@@ -125,7 +125,7 @@ export function EditorView(props: EditorViewProps) {
     snapshot.connectionState.reason === WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason;
   // Only a failed review room is terminal. A draft-only tab whose route has no
   // review item yet is `pending`; a gone draft is the lifecycle closing its tab.
-  const terminal = review?.roomError || schemaStale;
+  const terminal = (review && roomOwner.error) || schemaStale;
 
   // Review chrome (the header, its change list, the phone's sheet) shows with
   // the review body and never before it, and then stays for the draft, even
@@ -205,13 +205,12 @@ export function EditorView(props: EditorViewProps) {
               session={reviewSession}
               editor={reviewEditor}
               surface={props.reviewSurface}
-              onModelAvailable={(identity, documentId, itemKey) => {
+              onModelAvailable={() => {
                 setConstructed((current) =>
                   current?.key === reviewKey && !current.modelReady
                     ? { ...current, modelReady: true }
                     : current,
                 );
-                controller.inlineReviewModelAvailable(identity, documentId, itemKey);
               }}
             />
           </div>
@@ -290,13 +289,11 @@ function ReviewRuntime({
   session: DocumentSession;
   editor: Editor | null;
   surface?: ReviewSurface;
-  onModelAvailable: (identity: string, documentId: string, itemKey: string) => void;
+  onModelAvailable: () => void;
 }) {
   useInlineReviewSync({
     editor,
     session,
-    documentId: review.documentId,
-    itemKey: review.itemKey,
     surface,
     onInlineModelAvailable: onModelAvailable,
   });

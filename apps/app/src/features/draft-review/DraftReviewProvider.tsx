@@ -170,9 +170,9 @@ export function useDraftReviewScopeValue({
     (documentId: string, itemKey: string) =>
       controller.inlineReview?.documentId === documentId &&
       controller.inlineReview.itemKey === itemKey
-        ? controller.reviewRoomName
+        ? roomOwner.roomName
         : null,
-    [controller.inlineReview, controller.reviewRoomName],
+    [controller.inlineReview, roomOwner.roomName],
   );
 
   useReviewRefresh({

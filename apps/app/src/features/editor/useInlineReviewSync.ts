@@ -8,17 +8,13 @@ import { useReviewRuntime, useReviewState } from "@/features/draft-review/useRev
 export function useInlineReviewSync({
   editor,
   session,
-  documentId,
-  itemKey,
   surface,
   onInlineModelAvailable,
 }: {
   editor: Editor | null;
   session: DocumentSession | null;
-  documentId: string;
-  itemKey: string;
   surface?: ReviewSurface;
-  onInlineModelAvailable?: (identity: string, documentId: string, itemKey: string) => void;
+  onInlineModelAvailable?: () => void;
 }) {
   const runtime = useReviewRuntime(session);
   const { frame } = useReviewState(runtime);
@@ -26,7 +22,6 @@ export function useInlineReviewSync({
     if (editor && !editor.isDestroyed) return runtime?.attachEditor(editor, surface);
   }, [runtime, editor, surface]);
   useEffect(() => {
-    if (frame && editor && frame.doc === editor.state.doc)
-      onInlineModelAvailable?.(`${itemKey}:projection`, documentId, itemKey);
-  }, [frame, editor, itemKey, documentId, onInlineModelAvailable]);
+    if (frame && editor && frame.doc === editor.state.doc) onInlineModelAvailable?.();
+  }, [frame, editor, onInlineModelAvailable]);
 }

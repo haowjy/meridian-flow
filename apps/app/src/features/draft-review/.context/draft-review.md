@@ -79,6 +79,10 @@ identity, so rebinding an editor cannot drop discovery already scheduled by a pu
 
 ## Other lifecycle boundaries
 
+The room owner supplies the selected address's room name and read error directly.
+Presentation state retains selection, focus, marks and `shown`, not room readiness.
+Retry belongs to the addressed room read; editor model readiness stays local to its mount.
+
 `useAiDraftLauncher.openReviewFile` is the shared listed-file launch adapter.
 A draft-only editor is the document's single workspace tab in its review Work,
 not a second tab. Closing its review is not Discard. Catalog removal and
