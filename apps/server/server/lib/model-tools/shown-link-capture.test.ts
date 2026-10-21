@@ -48,8 +48,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const DRAFT_ID = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
+const BRANCH_ID = crypto.randomUUID();
+const BRANCH: LinkView = { kind: "branch", branchId: BRANCH_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -166,7 +166,6 @@ async function harness(
   // Each plain read shows a fact of its own, so a retried read is told apart.
   let plainReads = 0;
   const documentSync = {
-    ensureDocument: async () => {},
     readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
       value: {
@@ -177,15 +176,15 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
-    drafts: { viewForWork: async () => ({ kind: "live" }) },
+    branches: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled
-      // in a reply's pinned draft, not the live grant it was routed with.
+      // in a reply's pinned branch view, not the live grant it was routed with.
       read: async (_command: unknown, context: { includeNodes?: boolean }) => {
         if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
         const n = plainReads++;
         await options.read?.();
-        return success("read", [fact(91 + 10 * n)], DRAFT);
+        return success("read", [fact(91 + 10 * n)], BRANCH);
       },
       write: async (
         _command: unknown,
@@ -234,7 +233,7 @@ async function harness(
     storeRegistry: registry,
   }).forWork({ workId: crypto.randomUUID(), workHandle: null } as never, PROJECT, USER, new Map(), {
     threadId: crypto.randomUUID(),
-    draftWork: null,
+    branchWork: null,
   });
   call.context = { port, resolution: { thread: { projectId: PROJECT } } as never };
   const registrations = createModelToolRegistrations(deps).map(
@@ -386,7 +385,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -535,7 +534,10 @@ const rows: Array<{
             input: z.object({}),
             execution: {
               type: "server",
-              handler: async () => ({ ...outcome, shown: showingOf(TARGET, outcome) }),
+              handler: async () => ({
+                ...outcome,
+                evidence: { shown: showingOf(TARGET, outcome) },
+              }),
             },
           },
         ],
@@ -545,7 +547,7 @@ const rows: Array<{
         { threadId: "thread" as ThreadId, turnId: "turn" as TurnId, agentSlug: null },
       );
       check(JSON.stringify(executed.result), "persisted result").not.toMatch(HOST_FACTS);
-      check(executed.shown, "evidence still travels beside it").toHaveLength(1);
+      check(executed.evidence?.shown, "evidence still travels beside it").toHaveLength(1);
       return { store: h.store, threadId: "thread", shown: {} };
     },
   },
@@ -652,14 +654,16 @@ const rows: Array<{
               toolCallId: toolCall.id,
               output: "read",
               result: {},
-              shown: [
-                {
-                  documentId: SOURCE,
-                  holderUri: "user://source",
-                  view: { kind: "live" },
-                  links: [fact(93)],
-                },
-              ],
+              evidence: {
+                shown: [
+                  {
+                    documentId: SOURCE,
+                    holderUri: "user://source",
+                    view: { kind: "live" },
+                    links: [fact(93)],
+                  },
+                ],
+              },
             }),
           },
           eventSink: { emit() {} },
@@ -709,7 +713,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`) },
+        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`) },
       };
     },
   },
@@ -800,7 +804,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT_ID}`) },
+        shown: { [TARGET]: expected([fact(101)], `branch:${BRANCH_ID}`) },
       };
     },
   },

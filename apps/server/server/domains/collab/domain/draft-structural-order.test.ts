@@ -7,7 +7,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
-import { blockItemKey, type ReviewHunk } from "@meridian/contracts/drafts";
+import { blockItemKey, type ReviewHunk } from "@meridian/contracts/branches";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";

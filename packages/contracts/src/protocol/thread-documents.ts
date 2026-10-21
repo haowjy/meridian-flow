@@ -40,11 +40,8 @@ export interface TurnLiveLineageDocumentItem {
 export type TurnReceiptState =
   | "live-active"
   | "live-reversed"
-  | "branch-active"
-  | "branch-reversed"
   | "work-active"
   | "work-reversed"
-  | "rollback-pending"
   | "cant_undo_dependent"
   | "expired";
 

@@ -2,17 +2,12 @@
 
 import {
   createAgentEditCodecFactory,
-  type DocumentCoordinator,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  COLLAB_SCHEMA_VERSION,
-  createCollabYDoc,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
@@ -21,23 +16,20 @@ import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
 } from "../test-support/in-memory-pending-settlement-store.js";
-import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
-import {
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "./branch-critical-sections.js";
+import { MemoryDraftStore, memoryDraft, testDraftRow } from "../test-support/memory-draft-store.js";
 import { createBranchPushService } from "./branch-push.js";
 import type {
-  BranchJournalReadStore,
-  BranchJournalRow,
+  BranchPushReadStore,
   PreparedDiscardCommit,
   PreparedPushCommit,
   PushCommitStore,
   PushLineageRow,
   SettlementBatchIdentity,
 } from "./branch-push-contracts.js";
-import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
+import type { DraftJournalRow } from "./draft-journal.js";
+import type { DraftSnapshot, DraftStore } from "./draft-store.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
@@ -60,33 +52,26 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
-function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
+/** A draft row and the content its checkpoint starts with. */
+type SeededDraft = { documentDraft: DraftSnapshot; state: Uint8Array };
+
+function draftFromDoc(draftId: string, documentId: DocumentId, doc: Y.Doc): SeededDraft {
   return {
-    branchId,
-    documentId,
-    kind: "work_draft",
-    upstreamBranchId: null,
-    draftId: "draft-1",
-    workId: WORK_ID,
-    threadId: null,
-    status: "active",
-    generation: 1,
+    documentDraft: testDraftRow({ draftId, documentId, workId: WORK_ID }),
     state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 
 function rowFor(
-  branch: BranchSnapshot,
+  documentDraft: DraftSnapshot,
   id: number,
   updateData: Uint8Array,
   updateMeta?: unknown,
-): BranchJournalRow {
+): DraftJournalRow {
   return {
     id,
-    branchId: branch.branchId,
-    generation: branch.generation,
+    draftId: documentDraft.draftId,
+    generation: documentDraft.generation,
     wId: id,
     source: "agent",
     threadId: THREAD_ID,
@@ -99,11 +84,11 @@ function rowFor(
   };
 }
 
-class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
+class StateBackedPushStores implements BranchPushReadStore, PushCommitStore {
   readonly pushes: PushLineageRow[];
 
   constructor(
-    readonly rows: BranchJournalRow[],
+    readonly rows: DraftJournalRow[],
     pushes: readonly PushLineageRow[],
     private readonly journal: ReturnType<typeof createInMemoryJournal>,
     private readonly settlements: InMemoryPendingSettlementStore,
@@ -111,72 +96,71 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     this.pushes = [...pushes];
   }
 
-  async listActiveJournalRows(branchId: string, generation: number) {
+  async listActiveJournalRows(draftId: string, generation: number) {
     return this.rows.filter(
-      (row) =>
-        row.branchId === branchId && row.generation === generation && row.status === "active",
+      (row) => row.draftId === draftId && row.generation === generation && row.status === "active",
     );
   }
 
-  async listReviewableJournalRows(branchId: string, generation: number) {
+  async listReviewableJournalRows(draftId: string, generation: number) {
     return this.rows.filter(
       (row) =>
-        row.branchId === branchId &&
+        row.draftId === draftId &&
         row.generation === generation &&
         (row.status === "active" || row.status === "rollback_pending"),
     );
   }
 
   async listConcurrentJournalRows(
-    branchId: string,
+    draftId: string,
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ) {
     return this.rows.filter(
       (row) =>
-        row.branchId !== branchId &&
+        row.draftId !== draftId &&
         row.generation <= generation &&
         row.status === "pushed" &&
         row.id > (options.afterJournalId ?? 0) &&
         this.pushes.some(
-          (push) => push.branchId === row.branchId && push.documentId === options.documentId,
+          (push) => push.draftId === row.draftId && push.documentId === options.documentId,
         ),
     );
   }
 
-  async latestPushForBranch(branchId: string, generation: number) {
+  async latestPushForDraft(draftId: string, generation: number) {
     return (
       [...this.pushes]
         .reverse()
-        .find((push) => push.branchId === branchId && push.branchGeneration === generation) ?? null
+        .find((push) => push.draftId === draftId && push.draftGeneration === generation) ?? null
     );
   }
 
   async listJournalRowsForTurn(input: {
-    branchId?: string;
+    draftId?: string;
     generation?: number;
     threadId: ThreadId;
     turnId: TurnId;
-    statuses?: readonly BranchJournalRow["status"][];
+    statuses?: readonly DraftJournalRow["status"][];
   }) {
     return this.rows.filter(
       (row) =>
         row.threadId === input.threadId &&
         row.turnId === input.turnId &&
-        (input.branchId === undefined || row.branchId === input.branchId) &&
+        (input.draftId === undefined || row.draftId === input.draftId) &&
         (input.generation === undefined || row.generation === input.generation) &&
         (!input.statuses || input.statuses.includes(row.status)),
     );
   }
 
-  async listJournalRowsForBranch(input: {
-    branchId: string;
+  async listJournalRowsForDraft(input: {
+    draftId: string;
     generation: number;
     throughJournalId?: number;
   }) {
     return this.rows.filter(
       (row) =>
-        row.branchId === input.branchId &&
+        row.draftId === input.draftId &&
         row.generation === input.generation &&
         (input.throughJournalId === undefined || row.id <= input.throughJournalId),
     );
@@ -217,10 +201,6 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     throw new Error("review regression store does not support discard");
   }
 
-  async lockDraftWorks(): Promise<ReadonlySet<string>> {
-    return new Set();
-  }
-
   async commitTurnRedo(_input: PreparedDiscardCommit): Promise<void> {
     throw new Error("review regression store does not support redo");
   }
@@ -230,16 +210,20 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
   }
 
   private async insertPush(input: PreparedPushCommit): Promise<PushLineageRow> {
-    const upstreamUpdateSeq = await this.journal.append(input.branch.documentId, input.pushUpdate, {
-      origin: `push:${input.branch.branchId}`,
-      seq: 0,
-    });
+    const upstreamUpdateSeq = await this.journal.append(
+      input.documentDraft.documentId,
+      input.pushUpdate,
+      {
+        origin: `push:${input.documentDraft.draftId}`,
+        seq: 0,
+      },
+    );
     for (const candidate of input.journalRows) candidate.status = "pushed";
     const push: PushLineageRow = {
       id: this.pushes.length + 1,
-      branchId: input.branch.branchId,
-      branchGeneration: input.branch.generation,
-      documentId: input.branch.documentId,
+      draftId: input.documentDraft.draftId,
+      draftGeneration: input.documentDraft.generation,
+      documentId: input.documentDraft.documentId,
       journalIds: input.journalRows.map((row) => row.id),
       upstreamUpdateSeq,
       idempotencyKey: input.idempotencyKey,
@@ -254,9 +238,8 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 
 function serviceFixture(input: {
   links?: DocumentLinkScopes;
-  criticalSections?: BranchCriticalSections;
-  branches: readonly BranchSnapshot[];
-  rows: BranchJournalRow[];
+  drafts: readonly SeededDraft[];
+  rows: DraftJournalRow[];
   pushes?: readonly PushLineageRow[];
   journal: ReturnType<typeof createInMemoryJournal>;
   liveDocs: ReadonlyMap<DocumentId, Y.Doc>;
@@ -268,35 +251,22 @@ function serviceFixture(input: {
     input.journal,
     settlements,
   );
-  const branches = new Map(input.branches.map((branch) => [branch.branchId, branch]));
-  const branchStore: BranchStore = {
-    ...unimplementedBranchMutations(),
-    deferUntilCommit(callback) {
-      callback();
-      return true;
-    },
-    async getBranch(branchId) {
-      return branches.get(branchId) ?? null;
-    },
-    async updateBranchSnapshot() {
-      return true;
-    },
-  };
-  const liveCoordinator: DocumentCoordinator = {
+  const draftStore: DraftStore = new MemoryDraftStore(
+    input.drafts.map((seeded) => memoryDraft(seeded.documentDraft, seeded.state)),
+  );
+  const liveCoordinator: Pick<LiveDocumentCoordinator, "withDocument"> = {
     async withDocument(documentId, run) {
       const doc = input.liveDocs.get(documentId as DocumentId);
       if (!doc) throw new Error(`Missing live document ${documentId}`);
       return run(doc);
     },
-    async recover() {},
   };
   return {
     stores,
     service: createBranchPushService({
       links: input.links ?? createStaticDocumentLinkScopes(),
-      criticalSections: input.criticalSections,
       changeEventDelivery: { deliver() {} },
-      branchStore,
+      draftStore,
       journalReadStore: stores,
       commitStore: stores,
       settlementStore: settlements,
@@ -308,17 +278,19 @@ function serviceFixture(input: {
   };
 }
 
-async function blindConflictFixture(
-  options: { links?: DocumentLinkScopes; criticalSections?: BranchCriticalSections } = {},
-) {
+async function blindConflictFixture(options: { links?: DocumentLinkScopes } = {}) {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
-  const contentBranchDoc = cloneDoc(contentLive);
-  const doomed = model.getBlocks(toDocHandle(contentBranchDoc))[0];
-  if (!doomed) throw new Error("Missing branch block");
-  const beforeDelete = Y.encodeStateVector(contentBranchDoc);
-  model.deleteBlock(toDocHandle(contentBranchDoc), doomed);
-  const contentBranch = branchFromDoc("branch_content", CONTENT_ID, contentBranchDoc);
-  const row = rowFor(contentBranch, 1, Y.encodeStateAsUpdate(contentBranchDoc, beforeDelete));
+  const contentDraftDoc = cloneDoc(contentLive);
+  const doomed = model.getBlocks(toDocHandle(contentDraftDoc))[0];
+  if (!doomed) throw new Error("Missing draft block");
+  const beforeDelete = Y.encodeStateVector(contentDraftDoc);
+  model.deleteBlock(toDocHandle(contentDraftDoc), doomed);
+  const contentDraft = draftFromDoc("draft_content", CONTENT_ID, contentDraftDoc);
+  const row = rowFor(
+    contentDraft.documentDraft,
+    1,
+    Y.encodeStateAsUpdate(contentDraftDoc, beforeDelete),
+  );
   const journal = createInMemoryJournal();
   await journal.append(CONTENT_ID, Y.encodeStateAsUpdate(contentLive), {
     origin: "system",
@@ -337,49 +309,25 @@ async function blindConflictFixture(
     origin: "human:writer",
     seq: 0,
   });
-  Y.applyUpdate(contentBranchDoc, Y.encodeStateAsUpdate(contentLive));
-  contentBranch.state = Y.encodeStateAsUpdate(contentBranchDoc);
-  contentBranch.stateVector = Y.encodeStateVector(contentBranchDoc);
+  Y.applyUpdate(contentDraftDoc, Y.encodeStateAsUpdate(contentLive));
+  contentDraft.state = Y.encodeStateAsUpdate(contentDraftDoc);
 
   const fixture = serviceFixture({
     ...options,
-    branches: [contentBranch],
+    drafts: [contentDraft],
     rows: [row],
     journal,
     liveDocs: new Map([[CONTENT_ID, contentLive]]),
   });
-  return { ...fixture, contentBranch };
+  return { ...fixture, contentDraft: contentDraft.documentDraft };
 }
 
 describe("branch push review regressions", () => {
-  it("opens the link scope before branch locks", async () => {
-    const criticalSections = createBranchCriticalSections();
-    let loaded = false;
-    const fixture = await blindConflictFixture({
-      criticalSections,
-      links: {
-        ...createStaticDocumentLinkScopes(),
-        async within<T>(_key: LinkScopeKey, operation: () => Promise<T>) {
-          // Nested settlement reuses the operation's snapshot, just as the adapter does.
-          if (!loaded) {
-            await criticalSections.withBranches(["branch_content"], async () => {
-              loaded = true;
-            });
-          }
-          return operation();
-        },
-      },
-    });
-    const result = await fixture.service.pushToLive({ branchId: fixture.contentBranch.branchId });
-    expect(result.status).toBe("pushed");
-    expect(loaded).toBe(true);
-  });
-
   it("always applies writer-overlapping whole pushes", async () => {
     const whole = await blindConflictFixture();
     await expect(
       whole.service.pushToLive({
-        branchId: whole.contentBranch.branchId,
+        draftId: whole.contentDraft.draftId,
       }),
     ).resolves.toMatchObject({ status: "pushed" });
   });

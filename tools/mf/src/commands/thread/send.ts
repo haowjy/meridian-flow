@@ -38,6 +38,7 @@ import {
 } from "../../core/command";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { LiveDiff, LiveReason } from "./live-view";
@@ -89,7 +90,7 @@ export type SendInput = {
 async function resolveReferences(session: Session, threadId: string, refs: string[]) {
   if (!refs.length) return [];
   const snapshot = await session.request("GET", apiThreadSnapshotPath(threadId), undefined, {
-    parse: threadSnapshotSchema.safeParse,
+    decode: jsonResponse(threadSnapshotSchema),
   });
   const projectId = snapshot.thread.projectId;
   const references = [];
@@ -110,7 +111,7 @@ async function resolveReferences(session: Session, threadId: string, refs: strin
 async function resolveSkills(session: Session, threadId: string, slugs: string[]) {
   if (!slugs.length) return [];
   const available = await session.request("GET", apiThreadSkillsPath(threadId), undefined, {
-    parse: threadAvailableSkillsResponseSchema.safeParse,
+    decode: jsonResponse(threadAvailableSkillsResponseSchema),
   });
   return slugs.map((slug) => {
     const skill = available.skills.find((entry) => entry.slug === slug);
@@ -145,7 +146,7 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
           references: [...message.references],
           activatedSkillSlugs: [...message.activatedSkillSlugs],
         } satisfies SendMessageRequest,
-        { parse: sendMessageResponseSchema.safeParse },
+        { decode: jsonResponse(sendMessageResponseSchema) },
       );
     } catch (error) {
       if (
@@ -160,7 +161,7 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
           "GET",
           apiThreadAdmissionPath(input.threadId, submissionId),
           undefined,
-          { parse: admissionLookupSchema.safeParse },
+          { decode: jsonResponse(admissionLookupSchema) },
         );
       } catch {
         throw new CliError("unproven", "Admission lookup failed", {

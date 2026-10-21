@@ -4,7 +4,6 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "../contracts.js";
 import type { ResponseSaveResult, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
 import type { PostDurabilityNoticeService } from "./reversal-notices.js";
 
@@ -26,6 +25,7 @@ export function createResponseWriteFinalizer(input: {
     /** One save step for every reply, live and drafted documents together (D42). */
     async finalizeResponseCommit(responseIdentity, ctx, beforeTransactionCommit) {
       const result = await input.agentEdit.commitResponse(responseIdentity.editScopeId, {
+        ...(ctx.recordingFrontier ? { recordingFrontier: ctx.recordingFrontier } : {}),
         beforeTransactionCommit: async (saved) => {
           await beforeTransactionCommit?.(mapResult(saved));
           // These effects belong to a committed response, never to its save attempt.
@@ -41,7 +41,7 @@ export function createResponseWriteFinalizer(input: {
                   documentIds: saved.documents.map((document) => document.documentId),
                 });
               }
-              // The save's owned session already checkpointed every drafted peer.
+              // The save already checkpointed every drafted peer.
               // Refreshes are independent: one document's failure skips no other.
               const failures: unknown[] = [];
               for (const document of saved.documents) {

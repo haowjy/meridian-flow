@@ -10,8 +10,9 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
+import type { ApplyBlockChange } from "./branch-push-contracts.js";
 import { documentDifference } from "./document-difference.js";
+import type { DraftJournalRow } from "./draft-journal.js";
 
 export class BranchPushEffectVerificationError extends Error {
   constructor(
@@ -28,7 +29,7 @@ export class BranchPushEffectVerificationError extends Error {
 
 export function assertRowsIntegrated(
   doc: Y.Doc,
-  rows: readonly BranchJournalRow[],
+  rows: readonly DraftJournalRow[],
   operation: string,
 ): void {
   const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
@@ -48,16 +49,16 @@ export function assertRowsIntegrated(
   }
 }
 
-export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
-  return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
+export function wholeDraftPushUpdate(input: { draftDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
+  return Y.encodeStateAsUpdate(input.draftDoc, Y.encodeStateVector(input.liveDoc));
 }
 
-export function publicationBlockChanges(input: {
+export function applyBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
   renderBlock?(doc: Y.Doc, block: BlockRef): string;
-}): PublicationBlockChange[] {
+}): ApplyBlockChange[] {
   return documentDifference(input.beforeDoc, input.afterDoc, input.model)
     .flatMap((entry) => {
       if (entry.kind === "equal") return [];
@@ -87,33 +88,36 @@ export function publicationBlockChanges(input: {
 }
 
 export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
+  const handle = toDocHandle(doc);
+  // One pass for every id: `getBlockId` per block rescans all siblings, quadratic in blocks.
+  const ids = model.getDocumentBlockIds(handle);
   const result = new Map<string, string>();
-  for (const block of model.getBlocks(toDocHandle(doc))) {
-    result.set(model.getBlockId(block), model.getText(block));
+  for (const [index, block] of model.getBlocks(handle).entries()) {
+    result.set(ids[index] as string, model.getText(block));
   }
   return result;
 }
 
 export function stablePushIdempotencyKey(input: {
-  branchId: string;
+  draftId: string;
   generation: number;
   journalIds: number[];
 }): string {
   return createHash("sha256")
-    .update(input.branchId)
+    .update(input.draftId)
     .update("\0")
     .update(String(input.generation))
     .update("\0")
     .update([...input.journalIds].sort((a, b) => a - b).join(","))
     .digest("hex");
 }
-export class BranchPeerIntegrationError extends Error {
+export class DraftPeerIntegrationError extends Error {
   constructor(
     readonly operation: string,
     readonly journalIds: readonly number[],
   ) {
     super(`${operation} left pending Yjs dependencies for journal rows ${journalIds.join(",")}`);
-    this.name = "BranchPeerIntegrationError";
+    this.name = "DraftPeerIntegrationError";
   }
 }
 
@@ -122,10 +126,9 @@ export function assertNoPendingIntegration(
   operation: string,
   journalIds: readonly number[],
 ): void {
-  const store = (doc as unknown as { store?: { pendingStructs?: unknown; pendingDs?: unknown } })
-    .store;
-  if (hasPending(store?.pendingStructs) || hasPending(store?.pendingDs)) {
-    throw new BranchPeerIntegrationError(operation, journalIds);
+  const { pendingStructs, pendingDs } = doc.store;
+  if (hasPending(pendingStructs) || hasPending(pendingDs)) {
+    throw new DraftPeerIntegrationError(operation, journalIds);
   }
 }
 

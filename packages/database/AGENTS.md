@@ -27,5 +27,7 @@ domain persistence and transaction propagation live in the server.
   baseline requires it; legacy imports are a separate ETL.
 - Rollup columns are maintained by application repositories/projectors, not
   database triggers, except for the documented thread activity projection.
+  Triggers on draft journal and edit-receipt inserts run inside a writer
+  keystroke's row lock; keep them cheap and JIT off (see `.context/CONTEXT.md`).
   Yjs head/checkpoint relationships and immutable edit storage are contracts;
   see [`.context/CONTEXT.md`](.context/CONTEXT.md).

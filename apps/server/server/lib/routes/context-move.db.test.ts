@@ -16,6 +16,10 @@ import {
   createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository,
   createProjectRepositoryForTest,
 } from "../../domains/projects/test-support/project-repository.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -133,6 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
       });
@@ -148,11 +153,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     async function yjsState(documentId: string) {
-      const branches = await db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.documentId, documentId));
-      const branchIds = new Set(branches.map((branch) => branch.id));
+      const drafts = await db
+        .select({ id: schema.documentDrafts.id })
+        .from(schema.documentDrafts)
+        .where(eq(schema.documentDrafts.documentId, documentId));
+      const draftIds = new Set(drafts.map((documentDraft) => documentDraft.id));
       return {
         checkpoints: await db
           .select()
@@ -166,8 +171,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentYjsUpdates)
           .where(eq(schema.documentYjsUpdates.documentId, documentId)),
-        journal: (await db.select().from(schema.branchWriteJournal)).filter((row) =>
-          branchIds.has(row.branchId),
+        journal: (await db.select().from(schema.draftWriteJournal)).filter((row) =>
+          draftIds.has(row.draftId),
         ),
       };
     }
@@ -187,10 +192,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         handle: "w1",
       });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");
@@ -359,7 +366,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const options = { operationId, expected: { kind: "file" as const, documentId: DOCUMENT_ID } };
       const deleted = await port.delete(uri, options);
       expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [DOCUMENT_ID] } });
-      const replacement = await port.write(uri, "replacement writing");
+      const replacement = await port.createTrackedDocument(uri, "replacement writing");
       expect(replacement.ok).toBe(true);
       await expect(port.delete(uri, options)).resolves.toEqual(deleted);
       await expect(port.read(uri)).resolves.toMatchObject({
@@ -458,7 +465,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(schema.works)
         .set({ archivedAt: new Date() })
         .where(eq(schema.works.id, workId));
-      await expect(port.write("scratch://@w1/new", "blocked")).resolves.toMatchObject({
+      await expect(
+        port.createTrackedDocument("scratch://@w1/new", "blocked"),
+      ).resolves.toMatchObject({
         ok: false,
         error: { code: "context_unavailable" },
       });
@@ -540,7 +549,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expected: { kind: "folder", nodeId: folderId },
         operationId: crypto.randomUUID(),
       });
-      await port.write("manuscript://Renamed/Untitled 1", "Occupied");
+      await port.createTrackedDocument("manuscript://Renamed/Untitled 1", "Occupied");
       await expect(
         moveContextEntry({
           port,
@@ -749,6 +758,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             fileAccess: createAllowAllFileAccess(),
             projectRepo: createProjectRepositoryForTest({ db }),
             workRepo: createDrizzleProjectWorkRepository({
+              removal: createTestDocumentRemoval(db),
               db,
               lineageScratch: createDrizzleLineageScratchLifecycle(db),
               fileAccessChanges: createLocalFileAccessChanges(),
@@ -1033,7 +1043,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId,
         createdByUserId: USER_ID,
       });
-      const created = await port.write("scratch://@c12/Unassigned", "portable", {
+      const created = await port.createTrackedDocument("scratch://@c12/Unassigned", "portable", {
         origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
       });
       expect(created).toMatchObject({
@@ -1171,7 +1181,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({ ok: true });
       await expect(
-        port.write(`scratch://@w1/Source/Nested/chapter`, "Chapter", {
+        port.createTrackedDocument(`scratch://@w1/Source/Nested/chapter`, "Chapter", {
           origin: { type: "human", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ ok: true });
@@ -1245,7 +1255,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("writes nothing into holders and counts only incoming links that name the moved documents", async () => {
       const { projectId, port } = await arrangeUntitled();
       const write = async (uri: string) => {
-        const written = await port.write(uri, "Text.", {
+        const written = await port.createTrackedDocument(uri, "Text.", {
           origin: { type: "human", userId: USER_ID },
         });
         if (!written.ok || !written.value.documentId) throw new Error(`write failed: ${uri}`);
@@ -1349,7 +1359,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       // Renumber two linked chapters in sequence: the first takes the address the second
       // vacated. Each move counts its own incoming link; the holder and its index stay put.
-      const chapterOne = await write("manuscript://Chapter 1");
+      // The project's first chapter already lives there: overwrite it.
+      const overwritten = await port.write("manuscript://Chapter 1", "Text.", {
+        origin: { type: "human", userId: USER_ID },
+      });
+      if (!overwritten.ok || !overwritten.value.documentId) throw new Error("overwrite failed");
+      const chapterOne = overwritten.value.documentId;
       const chapterTwo = await write("manuscript://Chapter 2");
       await db
         .insert(schema.documentLinks)

@@ -1,12 +1,13 @@
-/** Mount binding: cancellation, external wakes, and keyed accessibility presentation. */
-import { t } from "@lingui/core/macro";
+/** Mount binding: cancellation and external wakes. A failed send is a card (`chatCards`), never announced here. */
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { JournalSwitch } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useReducer, useRef } from "react";
 import {
+  CHAT_SUBMISSIONS_STORAGE_PREFIX,
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
+  submissionReplayChanged,
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import {
@@ -18,10 +19,9 @@ import { threadAvailability } from "@/client/chat-submissions/thread-availabilit
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announceError, clearAnnouncement, type ThreadStoreActions } from "@/client/stores";
+import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
-import { controlStatusCopy } from "./thread-controls/control-copy";
 
 const NO_SWITCHES: readonly JournalSwitch[] = [];
 
@@ -53,12 +53,6 @@ export function useChatSubmissions(
       !signal.aborted &&
       getChatSubmissionAccountId() === accountId &&
       getChatSubmissionEpoch() === epoch;
-    const announcementKeys = new Set<string>();
-    const clearRowAnnouncement = (recordId: string) => {
-      const key = `${accountId}:${recordId}`;
-      clearAnnouncement(key);
-      announcementKeys.delete(key);
-    };
     const owner = new ChatSubmissionOwner({
       accountId,
       threadId,
@@ -69,18 +63,6 @@ export function useChatSubmissions(
       queryClient,
       actions: latest.current.actions,
       changed: render,
-      failed: (recordId) => {
-        const key = `${accountId}:${recordId}`;
-        announcementKeys.add(key);
-        announceError(t`Couldn't send your message.`, { key });
-      },
-      failedSwitch: (entry) => {
-        if (!entry.control) return;
-        const key = `${accountId}:${entry.recordId}`;
-        announcementKeys.add(key);
-        announceError(controlStatusCopy(entry.control, "failed"), { key });
-      },
-      clear: clearRowAnnouncement,
       focusComposer: () => latest.current.focusComposer(),
       dissolveChat: () => latest.current.dissolveChat(),
     });
@@ -103,9 +85,15 @@ export function useChatSubmissions(
     };
     wake();
     const unsubscribe = subscribeChatSubmissions(owner.rebuild);
-    const storage = () => {
+    const storage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return;
+      if (
+        event.key !== null &&
+        !event.key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:`)
+      )
+        return;
       owner.rebuild();
-      wake();
+      if (event.key === null || submissionReplayChanged(event.oldValue, event.newValue)) wake();
     };
     window.addEventListener("storage", storage);
     window.addEventListener("online", wake);
@@ -133,7 +121,6 @@ export function useChatSubmissions(
     return () => {
       unregisterDeletion();
       lifetime.abort();
-      for (const key of announcementKeys) clearAnnouncement(key);
       owner.dispose();
       if (driver.current === owner) driver.current = null;
       unsubscribe();

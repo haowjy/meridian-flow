@@ -175,7 +175,7 @@ it("preserves literal href syntax in decoded document addresses", () => {
 });
 
 describe("isDraftedScheme", () => {
-  it("drafts the four durable namespaces", () => {
+  it("allows document drafts in the four durable namespaces", () => {
     expect(["manuscript", "kb", "user", "unfiled"].map((s) => isDraftedScheme(s as never))).toEqual(
       [true, true, true, true],
     );

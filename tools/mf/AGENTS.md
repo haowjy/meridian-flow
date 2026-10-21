@@ -23,7 +23,7 @@ Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
   failure after a proving read preserves that result and marks observation incomplete.
 - **Success claims require validated evidence.** Every domain-success claim printed by
   `./mf` comes from a contracts-validated response (or the shared client's validated
-  protocol evidence). Pass `parse` on HTTP reads that feed a claim; never assert an
+  protocol evidence). Pass a contracts JSON decoder on HTTP reads that feed a claim; never assert an
   unknown body into success. Identity/reference projections validate only their declared
   inputs and cannot authorize writes. Diagnostic-only `project list`, `log` and
   `thread context` retain casts; generic `api` prints raw server data and its exit 0

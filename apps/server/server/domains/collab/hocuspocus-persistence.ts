@@ -1,7 +1,7 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { UpdateMeta } from "@meridian/agent-edit/integration";
-import { branchRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -9,11 +9,6 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
-import type {
-  BranchCoordinator,
-  BranchSnapshot,
-  BranchStore,
-} from "./domain/branch-coordinator.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
   documentAuthority,
@@ -25,13 +20,17 @@ import {
   admitWriterUpdate,
   ReservedWriterClientIdError,
 } from "./domain/document-mutation-policy.js";
+import type { DraftCoordinator } from "./domain/draft-coordinator.js";
+import type { DraftStore } from "./domain/draft-store.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "./domain/ports/checkpoint-authority.js";
+import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
+import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
   documentId: string;
@@ -50,10 +49,10 @@ type CheckpointSlot = {
 };
 
 type HocuspocusPersistenceDeps = {
-  journal: CheckpointJournal;
+  journal: CheckpointJournal & LiveWriterJournal;
   backgroundTasks?: DetachedWorkTracker;
-  branchStore?: BranchStore;
-  branchCoordinator?: BranchCoordinator;
+  draftStore?: DraftStore;
+  draftCoordinator?: DraftCoordinator;
   hocuspocus(): Hocuspocus | null;
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
@@ -66,27 +65,28 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
-  /** A writer's update to a draft branch is durable (the draft's own links register, §10.7). */
-  onBranchWriterUpdateAdmitted?(branchId: string): void;
+  /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
+  onDraftWriterUpdateAdmitted?(draftId: string): void;
   offlineReconciliation?: OfflineReconciliation;
 };
 
 export type HocuspocusPersistenceService = Pick<
   CollabTransport,
-  | "resolveBranchHocuspocusRoom"
+  | "resolveDraftHocuspocusRoom"
   | "loadHocuspocusDocument"
-  | "loadHocuspocusBranchState"
+  | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
   | "currentLiveGeneration"
   | "validateHocuspocusDocument"
-  | "admitBranchWriterUpdate"
+  | "admitDraftWriterUpdate"
   | "persistConnectionUpdate"
   | "storeHocuspocusDocument"
-  | "storeHocuspocusBranch"
+  | "storeHocuspocusDraft"
   | "drainHocuspocusPersistence"
-  | "drainHocuspocusBranchPersistence"
-  | "closeHocuspocusBranchRoom"
-  | "rejectStaleBranchSyncStep1"
+  | "drainHocuspocusDraftPersistence"
+  | "closeHocuspocusDraftRoom"
+  | "rejectStaleDraftSyncStep1"
+  | "enrollHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 > & {
   writerIngressBarrier: WriterIngressBarrier;
@@ -135,7 +135,7 @@ export function createHocuspocusPersistenceService(
         (entry) =>
           !documentId ||
           entry.documentId === documentId ||
-          (documentId.startsWith("branch:") && entry.documentId.startsWith(`${documentId}:gen:`)),
+          (documentId.startsWith("draft:") && entry.documentId.startsWith(`${documentId}:gen:`)),
       );
       if (pending.length === 0) return;
       await Promise.allSettled(pending.map((entry) => entry.promise));
@@ -319,16 +319,16 @@ export function createHocuspocusPersistenceService(
     };
   }
 
-  function requireBranchStore(): BranchStore {
-    if (!deps.branchStore) throw new Error("Branch Hocuspocus rooms require a branch store");
-    return deps.branchStore;
+  function requireDraftStore(): DraftStore {
+    if (!deps.draftStore) throw new Error("Draft Hocuspocus rooms require a draft store");
+    return deps.draftStore;
   }
 
-  function requireBranchCoordinator(): BranchCoordinator {
-    if (!deps.branchCoordinator) {
-      throw new Error("Branch Hocuspocus rooms require a branch coordinator");
+  function requireDraftCoordinator(): DraftCoordinator {
+    if (!deps.draftCoordinator) {
+      throw new Error("Draft Hocuspocus rooms require a draft coordinator");
     }
-    return deps.branchCoordinator;
+    return deps.draftCoordinator;
   }
 
   function retireRoom(documentId: DocumentId, document: Y.Doc): void {
@@ -367,22 +367,22 @@ export function createHocuspocusPersistenceService(
       return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
     },
 
-    async resolveBranchHocuspocusRoom(branchId, generation) {
-      const branch = await requireBranchStore().getBranch(branchId);
+    async resolveDraftHocuspocusRoom(draftId, generation) {
+      const documentDraft = await requireDraftStore().getDraft(draftId);
       if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        !branch.workId ||
-        branch.generation !== generation
+        documentDraft?.status !== "active" ||
+        documentDraft.kind !== "work_draft" ||
+        !documentDraft.workId ||
+        documentDraft.generation !== generation
       )
         return null;
       return {
-        branchId: branch.branchId,
-        documentId: branch.documentId,
-        workId: branch.workId,
-        generation: branch.generation,
-        schemaVersion: branch.schemaVersion,
-        status: branch.status,
+        draftId: documentDraft.draftId,
+        documentId: documentDraft.documentId,
+        workId: documentDraft.workId,
+        generation: documentDraft.generation,
+        schemaVersion: documentDraft.schemaVersion,
+        status: documentDraft.status,
       };
     },
 
@@ -399,18 +399,48 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    async loadHocuspocusBranchState(branchId, generation) {
-      const branch = await requireBranchStore().getBranch(branchId);
+    async loadHocuspocusDraftState(draftId, generation) {
+      const documentDraft = await requireDraftStore().getDraft(draftId);
       if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        branch.generation !== generation
+        documentDraft?.status !== "active" ||
+        documentDraft.kind !== "work_draft" ||
+        documentDraft.generation !== generation
       )
         return undefined;
-      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
-        state: Y.encodeStateAsUpdate(doc),
-        generation: snapshot.generation,
-      }));
+      // The read can land after a reset: the room loads only its own generation.
+      return requireDraftCoordinator().readDraft(draftId, async (doc, snapshot) =>
+        snapshot.status === "active" && snapshot.generation === generation
+          ? { state: Y.encodeStateAsUpdate(doc), generation }
+          : undefined,
+      );
+    },
+
+    enrollHocuspocusDraftRoom({ draftId, generation, document }) {
+      const hocuspocus = deps.hocuspocus();
+      if (!hocuspocus) return;
+      const enrollment = (async () => {
+        // The load read the draft before its room became a delivery recipient: whatever
+        // committed in between, a transition or a reset, reached no room.
+        if (!(await whenRoomRegistered(hocuspocus, document))) return;
+        const base = await requireDraftCoordinator().reconcileRegisteredRoom({
+          draftId,
+          generation,
+          room: document,
+          trigger: "enrollment",
+        });
+        if (!base) closeRoom(hocuspocus, document);
+      })().catch((cause: unknown) => {
+        if (!deps.eventSink) return;
+        emitEvent(deps.eventSink, {
+          level: "error",
+          source: "collab.hocuspocus",
+          name: "draft_room_enrollment.failed",
+          correlation: { draftId, draftGeneration: generation },
+          payload: unknownToEventPayload(cause),
+        });
+      });
+      // A store of this room, and a drain of this draft, wait the enrollment out.
+      trackAppend(draftRoomName(draftId, generation), enrollment);
     },
 
     async admitLiveWriterUpdate(input) {
@@ -437,29 +467,21 @@ export function createHocuspocusPersistenceService(
               throw new Error("retired-durable-authority-generation");
             }
           },
-          // Reconnects replay cached state and delete sets that Yjs would discard
-          // on apply; admitting them wastes storage and pollutes safety signals.
+          // A fast path only: reconnects replay cached state and delete sets the room already
+          // holds, refused here without a transaction. The room lags admissions still in their
+          // transaction, so the journal judges novelty again under the document lock (#946).
           isContained: () => documentContainment.contains(input.document, input.update),
           async append() {
             const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
             ingressGenerations.set(input.documentId, generation);
             const admitted = admittedByDocument.get(input.documentId) ?? new Map();
             admittedByDocument.set(input.documentId, admitted);
-            const append = deps.journal.appendWriterUpdate
-              ? deps.journal.appendWriterUpdate(
-                  input.documentId,
-                  input.update,
-                  deps.metaForOrigin(input.origin),
-                  authority,
-                )
-              : deps.journal
-                  .append(
-                    input.documentId,
-                    input.update,
-                    deps.metaForOrigin(input.origin),
-                    authority,
-                  )
-                  .then((seq) => ({ seq, joinedSettlement: false }));
+            const append = deps.journal.appendWriterUpdate(
+              input.documentId,
+              input.update,
+              deps.metaForOrigin(input.origin),
+              authority,
+            );
             const tracked = append.catch((cause) => {
               recordDroppedConnectionUpdate(input.documentId);
               emitPersistenceAppendFailure(input.documentId, cause);
@@ -474,7 +496,9 @@ export function createHocuspocusPersistenceService(
             }
           },
         });
-        if (!admission.admitted) return { admitted: false, joinedSettlement: false };
+        // Refused before the lock, or under it: another copy of this update was stored first.
+        if (!admission.admitted || admission.value.status === "contained")
+          return { admitted: false, joinedSettlement: false };
         deps.onLiveUpdatePersisted?.(input.documentId);
         return {
           admitted: true,
@@ -508,26 +532,26 @@ export function createHocuspocusPersistenceService(
       });
     },
 
-    admitBranchWriterUpdate(input) {
-      const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
+    admitDraftWriterUpdate(input) {
+      const queueKey = draftRoomName(input.draftId, input.expectedGeneration);
       const admission = (async () => {
         try {
-          const { admitted } = await requireBranchCoordinator().commitWriterUpdate({
-            branchId: input.branchId,
+          const { admitted } = await requireDraftCoordinator().commitWriterUpdate({
+            draftId: input.draftId,
             expectedGeneration: input.expectedGeneration,
             updateData: input.update,
             actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
             roomDocument: input.document,
           });
-          if (admitted) deps.onBranchWriterUpdateAdmitted?.(input.branchId);
+          if (admitted) deps.onDraftWriterUpdateAdmitted?.(input.draftId);
         } catch (cause) {
           if (
             cause instanceof ReservedNamespaceAdmissionError ||
             cause instanceof ReservedWriterClientIdError
           ) {
             deps.emitAgentEditInvariantViolation({
-              message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
-              branchId: input.branchId,
+              message: `Rejected client-authored provenance update for draft ${input.draftId}.`,
+              draftId: input.draftId,
               originType: input.origin.type,
             });
           }
@@ -565,11 +589,10 @@ export function createHocuspocusPersistenceService(
       afterCallerCommit(() => startCheckpoint(documentId, pending));
     },
 
-    async storeHocuspocusBranch(branchId, _document) {
-      await drainPending(`branch:${branchId}`);
-      // Every branch mutation is durable before it reaches a Hocuspocus room.
-      // Re-checkpointing here can inherit the publisher's async lock context
-      // and re-enter the branch critical section.
+    async storeHocuspocusDraft(draftId, _document) {
+      await drainPending(`draft:${draftId}`);
+      // Every draft mutation is durable before it reaches a Hocuspocus room, so a room
+      // store has nothing to write: it only waits out this draft's pending stores.
     },
 
     async drainHocuspocusPersistence() {
@@ -577,16 +600,16 @@ export function createHocuspocusPersistenceService(
       await drainCheckpoints();
     },
 
-    drainHocuspocusBranchPersistence(branchId) {
-      return drainPending(`branch:${branchId}`);
+    drainHocuspocusDraftPersistence(draftId) {
+      return drainPending(`draft:${draftId}`);
     },
 
-    closeHocuspocusBranchRoom(branchId) {
+    closeHocuspocusDraftRoom(draftId) {
       // Narrow ops/test affordance kept for the durable shadow probe fixture T6;
-      // production reset paths use the branch coordinator reset callback.
+      // production reset paths use the draft coordinator reset callback.
       const hocuspocus = deps.hocuspocus();
       if (!hocuspocus) return;
-      const roomPrefix = `branch:${branchId}:gen:`;
+      const roomPrefix = `draft:${draftId}:gen:`;
       for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
         name.startsWith(roomPrefix),
       )) {
@@ -596,8 +619,8 @@ export function createHocuspocusPersistenceService(
 
     async disconnectLiveGeneration(documentId, generation) {
       const hocuspocus = deps.hocuspocus();
-      // Hocuspocus publishes a room only after all load hooks complete. Its
-      // registered continuation publishes before this one retires and evicts it.
+      // Hocuspocus serves a room only after all load hooks complete. Its
+      // registered continuation runs before this one retires and evicts it.
       void hocuspocus?.loadingDocuments?.get(documentId)?.then(
         (loaded) => {
           if (
@@ -617,23 +640,30 @@ export function createHocuspocusPersistenceService(
       retireRoom(documentId, document);
     },
 
-    async rejectStaleBranchSyncStep1(input) {
-      const branch = await requireBranchStore().getBranch(input.branchId);
-      if (
-        branch?.status !== "active" ||
-        branch.kind !== "work_draft" ||
-        branch.generation !== input.generation ||
-        !branchSyncStep1IsStale(input.clientStateVector, branch)
-      ) {
-        return false;
-      }
-      recordDroppedConnectionUpdate(branchRoomName(input.branchId, input.generation));
+    async rejectStaleDraftSyncStep1(input) {
+      // Before Hocuspocus answers the tab's step 1 from the room, the room catches up on
+      // whatever committed that it missed: another process's commits, a dropped delivery
+      // (decision D27). The tab's own exchange then brings the tab current, read-only or not.
+      const base = await requireDraftCoordinator().reconcileRegisteredRoom({
+        draftId: input.draftId,
+        generation: input.generation,
+        room: input.room,
+        trigger: "handshake",
+      });
+      const stale =
+        base?.snapshot.kind === "work_draft" &&
+        draftSyncStep1IsStale(input.clientStateVector, {
+          stateVector: Y.encodeStateVector(base.replica.doc),
+          discardedStateVector: base.snapshot.discardedStateVector,
+        });
+      if (!stale) return false;
+      recordDroppedConnectionUpdate(draftRoomName(input.draftId, input.generation));
       if (deps.eventSink) {
         emitEvent(deps.eventSink, {
           level: "warn",
           source: "collab.hocuspocus",
-          name: "branch_sync_step1.fenced",
-          correlation: { branchId: input.branchId, branchGeneration: input.generation },
+          name: "draft_sync_step1.fenced",
+          correlation: { draftId: input.draftId, draftGeneration: input.generation },
           payload: {},
         });
       }
@@ -646,11 +676,18 @@ export function createHocuspocusPersistenceService(
   };
 }
 
-function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSnapshot): boolean {
-  if (!branch.discardedStateVector) return false;
+/**
+ * A client vector past the draft's current clocks only where a reset discarded them: the
+ * tab still holds the previous generation's content.
+ */
+function draftSyncStep1IsStale(
+  clientStateVector: Uint8Array,
+  documentDraft: { stateVector: Uint8Array; discardedStateVector?: Uint8Array | null },
+): boolean {
+  if (!documentDraft.discardedStateVector) return false;
   const clientClocks = Y.decodeStateVector(clientStateVector);
-  const currentClocks = Y.decodeStateVector(branch.stateVector);
-  const discardedClocks = Y.decodeStateVector(branch.discardedStateVector);
+  const currentClocks = Y.decodeStateVector(documentDraft.stateVector);
+  const discardedClocks = Y.decodeStateVector(documentDraft.discardedStateVector);
   for (const [client, clientClock] of clientClocks) {
     const currentClock = currentClocks.get(client) ?? 0;
     if (clientClock <= currentClock) continue;

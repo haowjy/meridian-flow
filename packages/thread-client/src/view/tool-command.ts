@@ -1,7 +1,7 @@
 /** Maps tool views to writer-facing commands and labels. */
-import type { Block, JsonValue } from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/protocol";
 import { parseWorkReceipt, type WorkReceipt } from "@meridian/contracts/works";
-import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
+import type { ToolView } from "./group-delivery-segments";
 
 export type ToolCommand =
   | "read"
@@ -45,20 +45,6 @@ export type { WorkReceipt } from "@meridian/contracts/works";
 
 export function workReceipt(tool: ToolView): WorkReceipt | null {
   return parseWorkReceipt(tool.metadata?.workReceipt);
-}
-
-/** Every factual Work receipt a turn's tool results carry, in block order. */
-export function turnWorkReceipts(blocks: Block[]): WorkReceipt[] {
-  return groupDeliverySegments(blocks).flatMap((segment) => {
-    if (segment.kind === "tool") return workReceiptOrNone(segment.tool);
-    if (segment.kind === "tool-run") return segment.tools.flatMap(workReceiptOrNone);
-    return [];
-  });
-}
-
-function workReceiptOrNone(tool: ToolView): WorkReceipt[] {
-  const receipt = workReceipt(tool);
-  return receipt ? [receipt] : [];
 }
 
 function workToolCommand(tool: ToolView): ToolCommand {

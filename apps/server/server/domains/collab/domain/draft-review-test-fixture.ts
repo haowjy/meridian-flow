@@ -5,7 +5,7 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 
-import type { IndexedDraftUpdate } from "./draft-review-operations.js";
+import type { IndexedDraftUpdate } from "./draft-review-operation-graph.js";
 
 export const schema = buildDocumentSchema();
 export const codec = mdxCodec({ schema });

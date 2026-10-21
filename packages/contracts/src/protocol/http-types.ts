@@ -112,7 +112,7 @@ export type ProjectContextTreeScheme = ContextUriScheme;
 
 /**
  * Where the writer's create lands, the same identity-based address a move carries. The
- * server joins a draft's hidden document waiting there; omitted, the create is nameless
+ * server joins a branch's hidden document waiting there; omitted, the create is nameless
  * and lands in `folderPath` as `Untitled N`.
  */
 export type CreateUntitledDestination = {
@@ -147,7 +147,7 @@ export type CreateUntitledContextDocumentResponse = {
 };
 
 /**
- * The create became an existing document: a draft's hidden one at the destination.
+ * The create became an existing document: a branch's hidden one at the destination.
  * `documentId` is the joined document, not the submitted id, which now forwards to it.
  */
 export type CreateUntitledContextDocumentJoined = {
@@ -701,33 +701,7 @@ export const cancelTurnResponseSchema = z.object({
 });
 export type CancelTurnResponse = z.infer<typeof cancelTurnResponseSchema>;
 
-export type ThreadSnapshotAncestor = {
-  id: string;
-  title: string | null;
-  agentName: string | null;
-};
-
-export type ThreadSnapshotResponse = {
-  threadId: string;
-  thread: Thread;
-  turns: Turn[];
-  /** Token totals across every model response billed to this thread, all turn branches included. */
-  threadUsage: {
-    inputTokens: number;
-    cacheReadTokens: number;
-    cacheReportedInputTokens: number;
-    cacheReportedCalls: number;
-    cacheWriteTokens: number;
-    outputTokens: number;
-    cacheResets: number;
-  };
-  liveState: ThreadLiveState;
-  actionRequired: boolean;
-  /** First event position after this snapshot; clients reject it below their stored floor. */
-  nextSeq: string;
-  /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
-  ancestors: ThreadSnapshotAncestor[];
-};
+export type { ThreadSnapshotAncestor, ThreadSnapshotResponse } from "./thread-snapshot.js";
 
 /** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
 export type TranscriptPageResponse = {

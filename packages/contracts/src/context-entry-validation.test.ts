@@ -3,8 +3,8 @@ import { validateContextEntryName, validateContextEntryPath } from "./context-en
 
 describe("context entry validation", () => {
   it.each([
-    "Drafts/@notes.md",
-    "Drafts/~b7/x.md",
+    "Branches/@notes.md",
+    "Branches/~b7/x.md",
   ])("reserves authority-like segment in %j", (raw) => {
     const result = raw.includes("/")
       ? validateContextEntryPath(raw)

@@ -18,6 +18,10 @@ import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
 } from "../../domains/file-policy/index.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -75,6 +79,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
       });
@@ -90,10 +95,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const routeDeps = {
         contextPorts,
@@ -108,6 +115,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId === THREAD_ID ? ({ threadId, workId: NO_WORK_ID } as never) : null,
         },
         works: createDrizzleProjectWorkRepository({
+          removal: createTestDocumentRemoval(db),
           lineageScratch: createDrizzleLineageScratchLifecycle(db),
           db,
           fileAccessChanges: createLocalFileAccessChanges(),
@@ -135,9 +143,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.changeTrailShells,
         schema.pendingNotices,
         schema.agentEditWidCounters,
-        schema.branchWriteJournal,
+        schema.draftWriteJournal,
         schema.pushLineage,
-        schema.documentBranches,
+        schema.documentDrafts,
         schema.documentYjsCheckpoints,
         schema.documentYjsHeads,
         schema.documentYjsUpdates,
@@ -222,7 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const port = await threadPort(fixture);
       const created = await settlesWithin(
         `seed ${path}`,
-        port.write(`manuscript://${path}`, `Existing ${path}.\n`),
+        port.createTrackedDocument(`manuscript://${path}`, `Existing ${path}.\n`),
       );
       if (!created.ok || !created.value.documentId) throw new Error(`could not seed ${path}`);
       await fixture.collab.drainHocuspocusPersistence();

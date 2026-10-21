@@ -188,7 +188,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    may still use its touch-row name.
 
 Known independent issue: a mounted project can recreate a deleted Work's shared
-draft and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
+branch and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
 Record this separately from Scratch availability; never delete real branches to force restoration.
 
 Clean up `zz-probe` notes and chats and close only the owned browser profiles.

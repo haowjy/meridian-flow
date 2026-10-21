@@ -67,7 +67,7 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
 /** One Work's draft-only presentation of a document: the draft item it shows and its tab-generation fence. */
 export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
 
-/** Work id to that Work's entry; one entry per Work whose draft creates the document. */
+/** Work id to that Work's entry; one entry per Work whose branch creates the document. */
 export type ReviewEntries = Record<string, ReviewEntry>;
 
 export type ContextTab =
@@ -170,7 +170,7 @@ export function isDraftOnly(tab: ContextTab | EditorTabCandidate): boolean {
   return Object.keys(reviewEntriesOf(tab)).length > 0;
 }
 
-/** The entry Work `workId` has on this tab, if its draft creates the document. */
+/** The entry Work `workId` has on this tab, if its branch creates the document. */
 export function reviewEntryOf(
   tab: ContextTab | EditorTabCandidate,
   workId: string,

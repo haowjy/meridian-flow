@@ -5,7 +5,7 @@
 import type { Database } from "@meridian/database";
 import { documentEditParts, documentEdits } from "@meridian/database";
 import { and, eq, inArray } from "drizzle-orm";
-import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
+import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
 
@@ -23,8 +23,8 @@ export async function readTurnEditTargets(
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
     .where(
       and(
-        // Lineage hides tombstoned documents, and a Discarded draft-created one has no storage left to lock.
-        documentNotDeletedSql(documentEdits.documentId),
+        // Lineage hides tombstoned documents, and a Discarded branch-created one has no storage left to lock.
+        livingDocumentSql(documentEdits.documentId),
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
         query.responseIdentity

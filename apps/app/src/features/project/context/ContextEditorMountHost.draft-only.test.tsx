@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A draft-only document under review is hosted by its branch room alone; a live document requests review while its review room resolves. */
+/** A draft-only document under review is hosted by its draft room alone; a live document requests review while its review room resolves. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ComponentProps, useState } from "react";
@@ -16,12 +16,13 @@ const resourceReplica = vi.hoisted(() => ({
 }));
 
 vi.mock("./account-feature-context", () => ({
+  useOptionalProjectContextAvailabilityCoordinator: () => null,
   useContextRemovalCoordinator: () => ({ writerClose: vi.fn() }),
   useAccountResourceReplica: () => resourceReplica,
   useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
   useLiveDocumentSessionRegistry: () => ({
     whenRefusedRoomDropped: () => null,
-    observeBranchRoom: () => () => undefined,
+    observeDraftRoom: () => () => undefined,
   }),
 }));
 const review = vi.hoisted(() => ({

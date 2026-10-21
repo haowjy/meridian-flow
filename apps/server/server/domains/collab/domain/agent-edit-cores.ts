@@ -1,15 +1,17 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
-  DiscardedWriteReason,
   ReadCommand,
   ResponseCommitSuccessResult,
+  RetiredWriteReason,
   StagedWriteRejectionReason,
   WriteCommand,
   WriteContext,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type * as Y from "yjs";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -29,22 +31,28 @@ export type RoutedReadContext = WriteContext & { grant: FileGrant; liveVersion?:
 export type RefusedResponseDocument =
   | {
       documentId: DocumentId;
-      /** The policy's refusal under the save's locks; its copy is the tool's to write. */
+      /** The policy's permission refusal under the save's locks; its copy is the tool's to write. */
       denial: FileAccessDenied;
     }
   | {
       documentId: DocumentId;
       /**
-       * The draft its writes were pinned to moved on before the save (closed, or this
-       * document's draft applied or discarded): the save never re-drafts them (§2.5).
+       * The document is not found, or its draft closed because it was removed: the writes are
+       * dropped with the record's copy. Null when there is no record: the document went with
+       * its source or Work, or stands again.
+       */
+      removed: DocumentRemovalRecord | null;
+    }
+  | {
+      documentId: DocumentId;
+      /**
+       * The branch its writes were pinned to moved on before the save (closed, or this
+       * document's draft applied or discarded): the save never retargets them to a new branch (§2.5).
        */
       reason: StagedWriteRejectionReason;
     };
 
-/**
- * A model call's outcome. An undo or redo that reversed some of its writes but
- * was refused for others names the refused ones; the tool writes the copy.
- */
+/** An inverse may reverse some writes and name the policy refusals for the rest. */
 export type RoutedWriteOutcome = WriteOutcome & {
   refusedWrites?: { writeIds: string[]; denial: FileAccessDenied }[];
 };
@@ -54,7 +62,7 @@ export type ResponseSaveResult = ResponseCommitSuccessResult & {
   refused: RefusedResponseDocument[];
 };
 
-type ResponseTransactionOptions = Parameters<AgentEditCore["commitResponse"]>[1] & {
+type ResponseTransactionOptions = NonNullable<Parameters<AgentEditCore["commitResponse"]>[1]> & {
   beforeTransactionCommit?(result: ResponseSaveResult): void | Promise<void>;
 };
 
@@ -68,21 +76,29 @@ export type LiveAgentEditCore = AgentEditCore & {
 // A reply's created set isn't asked of the pool: a create is a row in the tree view.
 export type ThreadPeerAgentEditCore = Omit<
   AgentEditCore,
-  "read" | "write" | "commitResponse" | "responseDocuments"
+  "read" | "write" | "commitResponse" | "prepareResponse" | "responseDocuments" | "readRoom"
 > & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
+  /**
+   * The room copy a call on this document would read: the reply's pinned destination with its
+   * surviving staged writes, the thread's Work draft, or live. The caller disposes it.
+   */
+  readRoom(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+    responseId?: string | null;
+    live: boolean;
+  }): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /**
-   * Retire exactly these peers on `documentId` after their branches closed or were deleted:
-   * their staged writes are refused with the reason, then their runtimes and pulled baselines
-   * go. Durable branch rows are the caller's; other threads and documents are untouched.
+   * Retire exactly these peers on `documentId` after their drafts closed or were deleted:
+   * their staged writes are refused with the reason. Durable draft rows are the caller's;
+   * other threads and documents are untouched.
    */
   retireThreadPeers(
     documentId: string,
-    peers: readonly { threadId: string; peerBranchId: string; reason: DiscardedWriteReason }[],
+    peers: readonly { threadId: string; peerDraftId: string; reason: RetiredWriteReason }[],
   ): Promise<void>;
-  /** Where this reply's writes to a document go, once it has written there. */
-  responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(
     responseId: string,
     options?: ResponseTransactionOptions,

@@ -1,7 +1,7 @@
 /** Whole-draft failures and inline review completion. End states share the existing review/path row rather than adding a banner. */
 import { Plural, Trans } from "@lingui/react/macro";
-import type { DraftCommandFailure } from "@/client/query/draft-command-record";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { BranchCommandFailure } from "@/client/query/branch-command-record";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
@@ -17,9 +17,9 @@ export function ReviewFailureNotices({
   touch = false,
   className,
 }: {
-  commandError: DraftCommandFailure | null;
+  commandError: BranchCommandFailure | null;
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
-  failedElsewhere?: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
+  failedElsewhere?: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   onOpenNext: (row: ReviewFileTarget) => void;
   touch?: boolean;
   /** The inset of whatever hosts the notices. */

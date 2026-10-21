@@ -87,8 +87,25 @@ Worktree cleanup is target-first and commit-bound. It refuses the primary,
 current, dirty, locked, detached, live, or insufficiently evidenced target;
 revalidates ownership, liveness, and the planned ref OID before destructive
 steps; and performs targeted stop, database removal, worktree removal, work-item
-completion, and ref deletion in that order. Batch cleanup needs explicit risk
-acknowledgement and exact merged-PR evidence (ancestry alone is not enough).
+completion, and ref deletion in that order. Targeted eligibility is the planned
+commit contained in another surviving ref (the branch's own local and
+remote-tracking refs never count, resolved against the configured remote names:
+a pushed branch is not merged) or one exact merged pull request, whichever base
+branch it merged into. Containment proves preservation, not completion: the work
+survives in the named ref, and the plan, the readiness gate, and the human
+confirmation are what judge the lane finished. Containment is revalidated
+against its ref before every action, symbolic refs never count as containers (an
+alias can point at the deleted branch), and a remote-tracking candidate must
+still exist upstream and still contain the commit when planning checks it (a
+branch that moved is refreshed once), so a deleted or reset integration branch
+cannot be cited. PR evidence rests on
+GitHub's merge record rather than a local ref. Cleanup executes one run at a
+time per repository: a second run refuses while one is executing, because two
+runs' containment refs can be each other's branches, and a stale lock refuses
+too rather than risking two owners; an interrupted run can leave a stale lock
+that the refusal's message names for deletion. Batch cleanup needs explicit risk
+acknowledgement and an exact merged PR into the base branch, and keeps refusing
+duplicate exact records (ancestry alone is not enough).
 Target-only `--force` permits managed dev-stack and Nx shutdown despite cwd
 occupants, then rechecks that only known shell/tmux executables remain before
 dropping the database and removing the checkout. It never signals those user
@@ -97,10 +114,15 @@ the deleted directory. Unknown processes, unreadable attributed processes,
 inspection failures, active work items and dirty state still block. Force does
 not bypass merge evidence, branch/HEAD revalidation or structural protections,
 and is rejected with `--auto`. Git worktree removal itself never uses `--force`.
-Never infer staleness from branch ancestry or a branch name, and add no cleanup
-script that bypasses the shared resolver in `lib/worktree-cleanup.ts`. Prune a side-lane
-branch when it merges into its integration branch: once that branch is
-squash-merged, no automatic proof survives, and
+Never infer staleness from a branch name, and add no cleanup
+script that bypasses the shared resolver in `lib/worktree-cleanup.ts`; batch
+staleness needs an exact merged PR, while targeted cleanup's containment is
+confirmed by the human at the prompt. Prune a side-lane
+branch when it merges into its integration branch: containment, or the lane's
+own merged PR, proves it then, and either proof survives only while the
+integration ref or the PR record does. Once the integration branch is
+squash-merged and its ref deleted, a lane with no PR of its own has no automatic
+proof left, and
 [`WORKTREE-CLEANUP.md`](../WORKTREE-CLEANUP.md) reconstructs evidence for the
 targeted `--manually-verified <reason>` path. That path replaces only automatic
 eligibility discovery; every structural, readiness, and commit-movement guard

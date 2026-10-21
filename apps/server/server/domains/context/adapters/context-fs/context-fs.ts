@@ -11,9 +11,9 @@ import {
   type Filetype,
   filetypeForKnownPath,
   filetypeForPath,
-  folderDocumentName,
   type ParsedDocumentFilename,
   parseDocumentFilename,
+  type RetractionCause,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -22,9 +22,9 @@ import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   BoundWrite,
-  BranchPeerShadowAccess,
   DocumentCreationAggregate,
   DocumentLinkScopes,
+  DraftPeerShadowAccess,
   EffectiveReadVersion,
   HashlineRead,
   MarkdownDocumentStore,
@@ -105,7 +105,7 @@ export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
-    Pick<BranchPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
+    Pick<DraftPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -216,11 +216,10 @@ export class ContextFS implements ContextSchemeAdapter {
       deps.documentCreation ??
       createDocumentCreationAggregate({
         atomic: (operation) => deps.store.transaction(operation),
-        ensureDocument: (documentId) => deps.documentSync.ensureDocument(documentId),
       });
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction: deps.commandTransaction ?? {
-        run: (operation) => deps.store.transaction(() => operation({ draft: null })),
+        run: (operation) => deps.store.transaction(() => operation({ branch: null })),
       },
       serializeThroughCallbacks: true,
       mapThrownError: (error) =>
@@ -285,8 +284,8 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * What reads see: a draft placement's Work's active draft, unless the thread asked for
-   * the live text; live otherwise. Resolved once per command, never creating a draft.
+   * What reads see: a draft placement's Work's active branch, unless the thread asked for
+   * the live text; live otherwise. Resolved once per command, never creating a branch.
    */
   private readTreeView(): Promise<TreeView> {
     return this.placement.readView(this.readView?.version);
@@ -294,7 +293,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * The document at `path` in `view` under its canonical name, or null. A path two of the
-   * view's files share is the draft clash fault, never one of them.
+   * view's files share is the clash fault, never one of them.
    */
   private async findDocumentAt(
     view: TreeView,
@@ -383,6 +382,8 @@ export class ContextFS implements ContextSchemeAdapter {
     const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
     const existing = await this.boundWrites.lookup(path);
     if (!existing.ok) return existing;
+    // A whole-file write overwrites a document; it never creates one (creation is `create`).
+    if (!existing.value) return Err({ code: "not_found" });
     const bound = await this.boundWrites.bind(
       path,
       existing.value,
@@ -390,7 +391,6 @@ export class ContextFS implements ContextSchemeAdapter {
       actor ? "current" : undefined,
     );
     if (!bound.ok) return bound;
-    if (!existing.value) return this.liveCreate.create(path, bound.value, options);
     return this.commandExecutor.run(() => this.overwriteInTransaction(path, bound.value, options));
   }
 
@@ -538,14 +538,15 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * Reverse this adapter's create of `documentId` for a rolled-back reply or a failed
-   * create write (§12.5): a live create is deleted by the router; a draft's create ends
-   * the draft's use unless another contribution makes it stand.
+   * create write (§12.5): a live create is deleted by the router; a branch's create ends
+   * the branch's use unless another contribution makes it stand.
    */
   retractCreate(
     _path: string,
     documentId: string,
+    cause: RetractionCause,
   ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
-    return this.placement.retract(documentId);
+    return this.placement.retract(documentId, cause);
   }
 
   writeBinary(
@@ -696,9 +697,9 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!view) return null;
     const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
     // Without a separate draft both versions are the same document (D3).
-    const drafted = sourceDestination(this.scheme, view.draftWork).kind === "draft";
-    return view.version !== "live" && drafted && view.draftWork
-      ? { ...reader, destination: "draft", workId: view.draftWork.id as WorkId }
+    const drafted = sourceDestination(this.scheme, view.branchWork).kind === "draft";
+    return view.version !== "live" && drafted && view.branchWork
+      ? { ...reader, destination: "draft", workId: view.branchWork.id as WorkId }
       : { ...reader, destination: "live" };
   }
 
@@ -804,6 +805,7 @@ export class ContextFS implements ContextSchemeAdapter {
       const committed = await this.mutationStore.commitMove({
         source,
         linkNoteProjectId: prepared.linkNoteProjectId,
+        actorUserId: prepared.actorUserId,
         destinationSourceId: prepared.destinationSourceId,
         destinationParentToken: prepared.destinationParentToken,
         destinationCreateFolders: prepared.destinationCreateFolders,
@@ -825,6 +827,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const committed = await this.mutationStore.commitMove({
       source,
       linkNoteProjectId: prepared.linkNoteProjectId,
+      actorUserId: prepared.actorUserId,
       destinationSourceId: prepared.destinationSourceId,
       destinationParentToken: prepared.destinationParentToken,
       destinationCreateFolders: prepared.destinationCreateFolders,

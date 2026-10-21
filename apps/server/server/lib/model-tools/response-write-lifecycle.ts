@@ -3,20 +3,22 @@
  * that saves every staged write in one transaction, and the rollback.
  */
 import type {
-  ConcurrentEditInfo,
+  FrontierLookup,
+  ObservationFrontier,
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
 } from "@meridian/agent-edit/integration";
+import { removedWriteRefusal, type WriteRejection } from "@meridian/agent-edit/integration";
 import type { ModelResponseIdentity } from "@meridian/contracts";
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type {
+  DocumentRemovalRecord,
+  PermissionDeniedReason,
+  RetractionCause,
+} from "@meridian/contracts/protocol";
+import type { RefusedResponseDocument } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
-import type { FileAccessDenied } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
-import {
-  deletedFileMessage,
-  isPermissionDenial,
-  permissionDeniedMessage,
-} from "../file-access-denial-copy.js";
+import { isPermissionDenial, permissionDeniedMessage } from "../file-access-denial-copy.js";
 import { contextErrorMessage, type ToolWiringDeps } from "./tool-context.js";
 
 type StagedCreateCleanup = {
@@ -30,7 +32,7 @@ export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
   commitResponse(
     responseIdentity: ModelResponseIdentity,
-    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    ctx: SaveContext,
     beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
@@ -39,35 +41,55 @@ export interface AgentEditResponseWriteLifecycle {
   ): Promise<void>;
 }
 
+/** A save records each document's frontier, chained from the model's latest one (this lookup). */
+type SaveContext = Pick<ToolHandlerContext, "threadId" | "turnId"> & {
+  recordingFrontier?: FrontierLookup;
+};
+
 type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       receipts: Array<{ documentId: string; receipt: ResponseCommitWriteReceipt }>;
-      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      /** Host-only: the saved documents' frontiers at the save's after-state, for those that recorded one. */
+      frontiers: Array<{ documentId: string; frontier: ObservationFrontier }>;
       /** Documents the save left out, with the copy their writes' results now carry (D29). */
-      refused: Array<{ documentId: string; message: string; reason?: PermissionDeniedReason }>;
+      refused: Array<{ documentId: string } & SaveRefusal>;
     }
-  | { status: "draft_closed"; responseId: string; mode: "draft" };
+  | { status: "branch_closed"; responseId: string; mode: "draft" };
 
-/** Why the reply's save left out a document's changes (D29, D42). */
-function refusedAtSave(denial: FileAccessDenied): {
+/** A save refusal's copy, with the policy's reason or the removal's (`rejected`, `removal`). */
+type SaveRefusal = {
   message: string;
   reason?: PermissionDeniedReason;
-} {
-  if (!isPermissionDenial(denial)) return { message: deletedFileMessage("save") };
+  rejected?: WriteRejection;
+  removal?: DocumentRemovalRecord;
+};
+
+/** Why the reply's save left out a document's changes (D29, D42). */
+function refusedAtSave(
+  refusal: Exclude<RefusedResponseDocument, { reason: unknown }>,
+): SaveRefusal {
+  if ("removed" in refusal) return removedWriteRefusal(refusal.removed);
+  const { denial } = refusal;
+  // The fence turns every `not_found` into `removed`; only permission refusals remain here.
+  if (!isPermissionDenial(denial)) return removedWriteRefusal(null);
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
 /**
  * Reverse a reply's create (contract §12.5): a live create is deleted; a drafted one ends
- * its draft's use of the document, unless another thread's committed text makes it stand.
+ * its branch's use of the document, unless another thread's committed text makes it stand.
  */
 export async function retractCreatedTrackedDocument(input: {
   port: ContextPort;
   path: string;
   documentId: string;
+  cause: RetractionCause;
 }): Promise<void> {
-  const retracted = await input.port.retractCreate(input.path, { documentId: input.documentId });
+  const retracted = await input.port.retractCreate(input.path, {
+    documentId: input.documentId,
+    cause: input.cause,
+  });
   if (!retracted.ok) throw new Error(contextErrorMessage(retracted.error));
 }
 
@@ -84,7 +106,7 @@ export function createAgentEditResponseWriteLifecycle(
     const discarded = new Set(discardedDocumentIds);
     for (const record of records) {
       if (!discarded.has(record.documentId)) continue;
-      await retractCreatedTrackedDocument(record);
+      await retractCreatedTrackedDocument({ ...record, cause: "reply_rolled_back" });
     }
   }
 
@@ -103,14 +125,14 @@ export function createAgentEditResponseWriteLifecycle(
 
     async commitResponse(
       responseIdentity: ModelResponseIdentity,
-      ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+      ctx: SaveContext,
       beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
       const responseId = responseIdentity.editScopeId;
       const mapResult = (
         result: Awaited<ReturnType<typeof deps.documentSync.finalizeResponseCommit>>,
       ): ResponseWriteLifecycleCommitResult => {
-        if (result.status === "draft_closed") {
+        if (result.status === "branch_closed") {
           return { status: result.status, responseId: result.responseId, mode: result.mode };
         }
         return {
@@ -118,16 +140,16 @@ export function createAgentEditResponseWriteLifecycle(
           receipts: result.documents.flatMap((document) =>
             document.receipts.map((receipt) => ({ documentId: document.documentId, receipt })),
           ),
-          concurrentEdits: result.documents.flatMap((document) =>
-            document.concurrentEdits
-              ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
+          frontiers: result.documents.flatMap((document) =>
+            document.frontier
+              ? [{ documentId: document.documentId, frontier: document.frontier }]
               : [],
           ),
           // A refusal with a reason is receipted write by write in `documents`.
           refused: result.refused.flatMap((refusal) =>
-            "denial" in refusal
-              ? [{ documentId: refusal.documentId, ...refusedAtSave(refusal.denial) }]
-              : [],
+            "reason" in refusal
+              ? []
+              : [{ documentId: refusal.documentId, ...refusedAtSave(refusal) }],
           ),
         };
       };

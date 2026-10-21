@@ -19,6 +19,25 @@
  * scope. Local edits still unacknowledged at that close were refused, and a
  * reconnect would replay them from this Y.Doc, so the transport resets instead
  * and the owner rebuilds the room from the server's state.
+ *
+ * A draft room's update refusal (`1008`) is bounded. One refusal reconnects
+ * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
+ * with no acknowledgement between them, the room ends `DRAFT_UPDATES_REFUSED`
+ * and keeps its outbox for the owner to show. Live rooms never count. A
+ * `4207 draft-prefix-missing` close is not a refusal: the server received an
+ * update before the bytes it depends on, and the reconnect's handshake repairs
+ * that, so it reconnects like any drop and never counts.
+ *
+ * A draft room's handshake upload goes first. The client's SyncStep2 is the
+ * whole Y.Doc diffed against the server's state vector, so it carries every
+ * byte the server lacks, including edits replayed before this transport
+ * existed. Updates offered on an open socket before its SyncStep2 (the offline
+ * queue's flush, keys typed during the handshake) would reach the server ahead
+ * of the bytes they depend on; the socket holds them and releases them, in
+ * order, right after the SyncStep2. Only transmission waits, never typing.
+ * Live rooms keep the provider's order: their server marks the SyncStep2 for
+ * offline collision reconciliation, and moving queued bytes into it would
+ * change what is reconciled.
  */
 import {
   HocuspocusProvider,
@@ -39,19 +58,22 @@ import {
 } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
+import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
-import type {
-  DocumentSessionAccess,
-  DocumentSessionConnectionState,
-  DocumentSessionResetReason,
-  DocumentSessionTransportProvider,
-  ResetDisposition,
+import {
+  type DocumentSessionAccess,
+  type DocumentSessionConnectionState,
+  type DocumentSessionResetReason,
+  type DocumentSessionTransportProvider,
+  DRAFT_UPDATES_REFUSED,
+  type ResetDisposition,
 } from "@/core/editor/document-session";
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import {
   createServerAcknowledgementTracker,
+  readDocumentSyncType,
   type ServerAcknowledgementTracker,
 } from "./server-acknowledgement";
 import { notifyYjsRoomAttached, TappedWebSocket } from "./tapped-websocket";
@@ -64,18 +86,32 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 // WebSocket.OPEN; the provider's own queue-or-send decision uses the same test.
 const SOCKET_OPEN = 1;
 
+// The server's close for a draft frame it would not admit (policy violation).
+const DRAFT_UPDATE_REFUSED_CODE = 1008;
+const MAX_DRAFT_UPDATE_REFUSALS = 3;
+
+function isDraftRoom(roomName: string): boolean {
+  return roomName.startsWith("draft:");
+}
+
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
   private reconnectGeneration = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly acknowledgement: ServerAcknowledgementTracker;
+  private readonly handshakeUploadFirst: boolean;
+  // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
+  private handshakeUploaded = false;
+  private heldUpdates: Uint8Array[] = [];
 
   constructor(
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
     acknowledgement: ServerAcknowledgementTracker,
+    handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
+    this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
   // The provider emits "open" only after this listener (registered in the base
@@ -83,6 +119,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // 4.3 also clears retry cancellation on native open, before the first frame
   // settles the attempt. Keep it until resolution so retry-now can fence that loop.
   override async onOpen(event: Event) {
+    this.dropHeldUpdates();
     this.acknowledgement.beginConnection();
     const cancel = this.cancelWebsocketRetry;
     void super.onOpen(event);
@@ -92,13 +129,38 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // Every document frame passes here, whether the provider sent it directly,
   // flushed it from the offline queue, or replied to a server SyncStep1.
   // Counted before the write so a synchronous reply cannot overtake it. A frame
-  // the base class will queue (socket not open) invalidates instead.
+  // the base class will queue (socket not open) invalidates instead. A held
+  // Update is counted only when it is released and written.
   override send(message: unknown) {
     if (message instanceof Uint8Array) {
-      if (this.webSocket?.readyState === SOCKET_OPEN) this.acknowledgement.noteFrameSent(message);
+      const open = this.webSocket?.readyState === SOCKET_OPEN;
+      if (open && this.handshakeUploadFirst && !this.handshakeUploaded) {
+        const syncType = readDocumentSyncType(message);
+        if (syncType === messageYjsUpdate) {
+          this.heldUpdates.push(message);
+          return;
+        }
+        if (syncType === messageYjsSyncStep2) {
+          this.acknowledgement.noteFrameSent(message);
+          super.send(message);
+          this.handshakeUploaded = true;
+          const released = this.heldUpdates;
+          this.heldUpdates = [];
+          for (const update of released) this.send(update);
+          return;
+        }
+      }
+      if (open) this.acknowledgement.noteFrameSent(message);
       else this.acknowledgement.noteFrameQueued(message);
     }
     super.send(message);
+  }
+
+  // A socket that closes before its SyncStep2 never writes what it held; the
+  // next socket's SyncStep2 carries those bytes.
+  private dropHeldUpdates(): void {
+    this.handshakeUploaded = false;
+    this.heldUpdates = [];
   }
 
   override onMessage(event: MessageEvent) {
@@ -127,6 +189,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   }
 
   override onClose(parameters: onCloseParameters): void {
+    this.dropHeldUpdates();
     const shouldConnect = this.shouldConnect;
     // Retain library cleanup/status/queue semantics, but own its otherwise
     // untracked delayed-close timer. The abortable retry still owns failures
@@ -187,11 +250,12 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.BRANCH_GENERATION_STALE.reason]: "superseded",
-  [WS_CLOSE.BRANCH_STALE.reason]: "rebuild",
+  [WS_CLOSE.DRAFT_GENERATION_STALE.reason]: "superseded",
+  [WS_CLOSE.DRAFT_STALE.reason]: "rebuild",
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
+  [WS_CLOSE.DOCUMENT_DELETED.reason]: "removed",
 };
 
 export function classifyDocumentTransportClose(
@@ -202,10 +266,7 @@ export function classifyDocumentTransportClose(
   const reason = event.reason as DocumentSessionResetReason;
   const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
   if (disposition) {
-    if (
-      (disposition === "superseded" || disposition === "rebuild") &&
-      !roomName.startsWith("branch:")
-    )
+    if ((disposition === "superseded" || disposition === "rebuild") && !isDraftRoom(roomName))
       return null;
     if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
     return { kind: "reset", reason, disposition, code: event.code };
@@ -233,7 +294,10 @@ export function createHocuspocusDocumentTransport({
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
-    if (acknowledged && !terminal) outbox = null;
+    if (acknowledged && !terminal) {
+      outbox = null;
+      refusals = 0;
+    }
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
   const websocket = new RoomScopedHocuspocusWebsocket(
@@ -243,11 +307,13 @@ export function createHocuspocusDocumentTransport({
       autoConnect: false,
     },
     acknowledgement,
+    isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
   let currentAccess: DocumentSessionAccess | null = null;
   let outbox: Uint8Array | null = null;
+  let refusals = 0;
   let terminal = false;
   let destroyed = false;
   let resolveSynced!: () => void;
@@ -323,12 +389,27 @@ export function createHocuspocusDocumentTransport({
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (event.reason === WS_CLOSE.ACCESS_CHANGED.reason) {
-      // Frozen until the reconnect's authenticated message names the new scope.
+    if (
+      event.reason === WS_CLOSE.ACCESS_CHANGED.reason ||
+      event.reason === WS_CLOSE.DOCUMENT_DELETED.reason
+    ) {
+      // Frozen until the reconnect's authenticated message names the new scope;
+      // a removed document has no reconnect, so it stays read-only.
       publishAccess("read");
     }
     const state = classifyDocumentTransportClose(roomName, event, outbox !== null);
-    if (state) publishTerminal(state);
+    if (state) {
+      publishTerminal(state);
+      return;
+    }
+    // Only a genuine refusal counts; 4207 draft-prefix-missing is a plain reconnect.
+    if (
+      event.code === DRAFT_UPDATE_REFUSED_CODE &&
+      isDraftRoom(roomName) &&
+      outbox !== null &&
+      ++refusals >= MAX_DRAFT_UPDATE_REFUSALS
+    )
+      publishTerminal({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: event.code });
   }
 
   function handleStateless({ payload }: onStatelessParameters): void {

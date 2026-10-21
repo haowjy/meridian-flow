@@ -276,7 +276,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   };
 }
 
-export type { WorkCatalogEntry } from "@meridian/contracts/works";
 // ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";
@@ -285,7 +284,10 @@ export { createDrizzleUserRepository } from "./adapters/user-repository/drizzle.
 export { createInMemoryUserRepository } from "./adapters/user-repository/in-memory.js";
 export {
   createWorkProjectionMutation,
+  type LockedWorkWriteSet,
   type WorkProjectionMutation,
+  type WorkWriteOptions,
+  type WorkWriteSet,
 } from "./adapters/work-projection-mutation.js";
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
@@ -304,8 +306,8 @@ export {
   type EnsureUserInput,
   type UserRepository,
 } from "./ports/user-repository.js";
-export type { WorkDraftDisposal } from "./ports/work-draft-disposal.js";
-export type { WorkDraftPendingCounts } from "./ports/work-draft-pending-counts.js";
+export type { WorkBranchDisposal } from "./ports/work-branch-disposal.js";
+export type { WorkBranchPendingCounts } from "./ports/work-branch-pending-counts.js";
 export {
   type CreateWorkInput,
   type ListWorksOptions,

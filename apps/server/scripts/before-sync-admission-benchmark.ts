@@ -38,7 +38,7 @@ const journal = {
   },
   async appendWriterUpdate() {
     sequence += 1;
-    return { seq: sequence, joinedSettlement: false };
+    return { status: "appended", seq: sequence, joinedSettlement: false };
   },
 } as unknown as UpdateJournal;
 const currentAdmission = createHocuspocusPersistenceService({

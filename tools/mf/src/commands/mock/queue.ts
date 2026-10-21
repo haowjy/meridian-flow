@@ -10,6 +10,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 
 const MOCK_HINT =
   "Scripting needs the in-process mock model: start the stack with MODEL_PROVIDER=mock (or no provider keys).";
@@ -28,7 +29,7 @@ export async function enqueueMockScript(
   };
   try {
     return await session.request("POST", API_DEBUG_MOCK_MODEL_SCRIPT_PATH, script, {
-      parse: mockModelScriptEnqueuedSchema.safeParse,
+      decode: jsonResponse(mockModelScriptEnqueuedSchema),
     });
   } catch (error) {
     if (error instanceof CliError && error.code === "not_found") {
@@ -56,6 +57,6 @@ export async function removeMockScript(session: Session, id: string): Promise<vo
     "DELETE",
     `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}?id=${encodeURIComponent(id)}`,
     undefined,
-    { parse: mockModelScriptStateSchema.safeParse },
+    { decode: jsonResponse(mockModelScriptStateSchema) },
   );
 }

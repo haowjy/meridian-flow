@@ -159,7 +159,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         return async () => {
           const journal = createDrizzleJournal(db);
           const snapshot = await journal.read(documentId);
-          if (!snapshot.authority || !journal.appendWriterUpdate) throw new Error("No writer path");
+          if (!snapshot.authority) throw new Error("No writer path");
           await journal.appendWriterUpdate(
             documentId,
             update,
@@ -215,7 +215,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             act: async () =>
               (
                 await ok(
-                  port.write("manuscript://imported", "[T](moved/target) and [S](soon).", imported),
+                  port.createTrackedDocument(
+                    "manuscript://imported",
+                    "[T](moved/target) and [S](soon).",
+                    imported,
+                  ),
                 )
               ).documentId ?? "",
             refs: () => [targetRef, expect.not.stringMatching(soon ?? "")],

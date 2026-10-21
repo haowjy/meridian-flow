@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
-import { createDrizzleWorkDraftPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-branch-push.ts";
+import { createDrizzleWorkBranchPendingStore } from "../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
 import { createDrizzleLineageScratchLifecycle } from "../../apps/server/server/domains/context/adapters/lineage-scratch-lifecycle.ts";
 import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";
@@ -21,6 +21,7 @@ import { createDrizzleProjectRepository } from "../../apps/server/server/domains
 import { createWorkProjectionMutation } from "../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
+import { createTestRemovalDeps } from "../../apps/server/server/test-support/document-removal.js";
 import { applyDevEnvToProcess } from "./lib/dev-env";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -87,7 +88,7 @@ async function main(): Promise<void> {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
-    pending: createDrizzleWorkDraftPendingStore(db),
+    pendingCounts: createDrizzleWorkBranchPendingStore(db),
   });
 
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
     await cleanupSmokeRows(db);
 
     const workRepository = createDrizzleWorkRepository({
+      removal: createTestRemovalDeps(db, workProjectionMutation).documentRemoval,
       lineageScratch,
       db,
       projectionMutation: workProjectionMutation,

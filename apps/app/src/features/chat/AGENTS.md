@@ -8,8 +8,9 @@ adapter only.
 
 ## Mental model
 
-- `partitionTurn` converts ordered blocks into one ordered list of Process, Text,
-  and Artifact items. Process runs fold by block order and are collapsed by
+- `groupDeliverySegments` pairs tool identities across a whole turn;
+  `partitionTurn` keeps those typed views in one ordered list of Process, Text,
+  Report and Artifact items. Process runs fold by block order and are collapsed by
   default, live or settled. Text and artifacts stay visible and close the
   current process run. Render keys are positional (`turnId::sequence`), never
   block IDs.
@@ -56,16 +57,26 @@ adapter only.
   classes per file; only new documents are one whole-draft item. Each document
   name opens its own review and there is no summary-wide Review command. Work-wide
   lists and Apply all stay on the Work page. Coarse-pointer targets stay 44px.
-- A temporary problem the writer can act on (a failed Stop, a refused Retry, out of
-  usage) is a `NoticeCard`, the card every chat failure uses, never a text line under
-  or beside a control. A failed Stop and out of usage carry a button (Try again, Add
+- **Every chat failure is a `FailureCard` from `chatCards`** (`@meridian/thread-client`), the one
+  projection that decides which card exists, its copy key, action and anchor (a turn, a queued
+  command's row, a writer message, or the composer's card stack). `ChatCards.tsx` draws each
+  card where it is anchored and decides nothing; `chat-card-copy.ts` words it. No bare
+  `text-destructive` line reports a chat failure, and a card never passes `announce`.
+  **One announcer** (`useChatCardAnnouncer`) speaks each card key once, only for a card the
+  writer watched appear (a card present when the history settles is silent), and clears the
+  live region when the card ends. Hooks never call `announceError` for a chat failure.
+  A temporary problem the writer can act on (a failed Stop, a refused or lost Retry, a failed
+  compaction, out of usage) is such a card, never a text line under or beside a control. A failed Stop and out of usage carry a button (Try again, Add
   usage); a held row is only the queued bubble, and the usage card says why. A failure shows
   only while it can be acted on: once a turn follows a failed reply, it leaves no line,
-  and with no content no row (`viewTranscript` decides; a refused Retry's card keeps it).
+  and with no content no row (`viewTranscript` decides; a card anchored on it keeps it).
   The attempt itself is forgotten server-side (`turns.forgotten_by_turn_id`): the
   snapshot keeps the turn stamped `forgottenBy`, `viewTranscript` hides it, and the
-  `meridian.turns.forgotten` frame stamps held turns. A refused Retry keeps its failed
-  reply drawn.
+  `meridian.turns.forgotten` frame stamps held turns. A card anchored on a turn keeps its
+  row drawn (`anchoredTurnIds`). A lost Retry is a card on the failed reply ("Couldn't start
+  the retry." with Try again), never an errored stand-in. A failed manual compaction's card
+  has Try again, which sends `/compact` again with its instructions; an autocompaction's
+  failure stays quiet.
 - Stop (the [composer's one button](../../components/app/composer/AGENTS.md))
   hands the waiting messages back as one editable message, in send order with
   blank lines between them, above typed text. A handed-back message never
@@ -86,8 +97,8 @@ adapter only.
   `useHandBack` adapts the package's hand-back operation (draft store, run-state port,
   `fetch`); `useChatStop` and `useQueueControls` press it, `useSendNow` posts
   `postSendNow`. They hold no rules.
-- **The queue's cards** come from `handBackCards` and sit in the composer's notice stack
-  (`HandBackCards`), because a committed hand-back has already removed its rows. Try
+- **The queue's cards** come from `chatCards` and sit in the composer's card stack
+  (`AnchoredCards anchor="composer"`, usage first), because a committed hand-back has already removed its rows. Try
   again replays the same request; a refused one offers Dismiss only. A queued
   `/compact` or switch whose Stop failed is a card in that control's row ("Couldn't stop
   the compaction.", Try again in Stop's place). No red text lines.

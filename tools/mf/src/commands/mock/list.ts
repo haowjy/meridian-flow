@@ -4,6 +4,7 @@ import {
   mockModelScriptStateSchema,
 } from "@meridian/contracts/protocol";
 import type { CommandSpec } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { renderState } from "./queue";
 
 export const mockListCommand: CommandSpec = {
@@ -15,7 +16,7 @@ export const mockListCommand: CommandSpec = {
     const session = await ctx.session();
     ctx.out.result(
       await session.request("GET", API_DEBUG_MOCK_MODEL_SCRIPT_PATH, undefined, {
-        parse: mockModelScriptStateSchema.safeParse,
+        decode: jsonResponse(mockModelScriptStateSchema),
       }),
       renderState,
     );

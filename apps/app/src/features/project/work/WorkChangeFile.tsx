@@ -4,11 +4,11 @@ import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import {
-  clearDraftCommandFailure,
-  draftCommandFailure,
-  useDraftCommandRecords,
-} from "@/client/query/draft-command-record";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+  branchCommandFailure,
+  clearBranchCommandFailure,
+  useBranchCommandRecords,
+} from "@/client/query/branch-command-record";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
@@ -18,10 +18,9 @@ import {
 } from "@/features/draft-review/draft-changes";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import { useDraftView } from "@/features/draft-review/useDraftView";
-import type { WorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
+import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
-import { workFileRowClass } from "./WorkFileRows";
 
 export function WorkChangeFile({
   projectId,
@@ -34,15 +33,15 @@ export function WorkChangeFile({
   workId: string;
   file: ReviewFileTarget;
   /** The scope that sends this file's per-change commands. */
-  controller: WorkDraftCommands;
+  controller: WorkBranchCommands;
   touch: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { openReviewFile } = useAiDraftLauncher();
   const [previewing, setPreviewing] = useState(false);
-  const records = useDraftCommandRecords();
+  const records = useBranchCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
-  const refused = draftCommandFailure(records, draft);
+  const refused = branchCommandFailure(records, draft);
   const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
   if (
     expanded &&
@@ -55,7 +54,7 @@ export function WorkChangeFile({
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
   const review = (focusOperationIds?: readonly string[]) =>
-    file.draft.branchGeneration !== null
+    file.draft.draftGeneration !== null
       ? openReviewFile(file, workId, focusOperationIds)
       : imageOpenable && setPreviewing(true);
 
@@ -91,9 +90,13 @@ export function WorkChangeFile({
         ) : (
           <button
             type="button"
-            className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
+            className={cn(
+              "focus-ring flex min-h-10 w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors motion-reduce:transition-none hover:bg-dropdown-hover",
+              "w-auto flex-1 pl-1",
+              touch && "min-h-11",
+            )}
             disabled={
-              !file.contextLocation || (file.draft.branchGeneration === null && !imageOpenable)
+              !file.contextLocation || (file.draft.draftGeneration === null && !imageOpenable)
             }
             onClick={() => review()}
           >
@@ -108,7 +111,7 @@ export function WorkChangeFile({
       {refused && !view.items.some((item) => item.draftFailure) ? (
         <InlineErrorRow
           message={<ReviewMessageText failure={refused} />}
-          onDismiss={() => clearDraftCommandFailure(draft)}
+          onDismiss={() => clearBranchCommandFailure(draft)}
         />
       ) : null}
       {expanded && !wholeDocument ? (

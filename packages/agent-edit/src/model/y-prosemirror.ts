@@ -396,14 +396,6 @@ function collectText(type: Y.XmlElement | Y.XmlText): string {
     .join("");
 }
 
-interface YTextItem {
-  id: { client: number; clock: number };
-  length: number;
-  deleted: boolean;
-  content: { constructor?: { name?: string } };
-  right: YTextItem | null;
-}
-
 /**
  * Yjs splits text items at deletion boundaries while preserving their item
  * clocks. Expanding the live string items into clock units therefore gives us
@@ -413,16 +405,14 @@ function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
   const lineage: ContentLineage[] = [];
   const visit = (type: Y.XmlElement | Y.XmlText) => {
     if (type instanceof Y.XmlText) {
-      let item = (type as unknown as { _start: YTextItem | null })._start;
-      while (item) {
-        if (!item.deleted && item.content.constructor?.name === "ContentString") {
+      for (let item = type._start; item; item = item.right) {
+        if (!item.deleted && item.content instanceof Y.ContentString) {
           lineage.push({
             clientID: item.id.client,
             clock: item.id.clock,
             length: item.length,
           });
         }
-        item = item.right;
       }
       return;
     }

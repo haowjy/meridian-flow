@@ -114,7 +114,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
   );
   function Card() {
     const [receipt, set] = useState<import("@meridian/contracts/protocol").TurnReceiptChip>({
-      state: "branch-active",
+      state: "live-active",
       control: "undo",
     });
     setReceipt = set;
@@ -123,7 +123,12 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
         threadId="chat"
         turn={{ id: "turn" } as Turn}
         documents={[
-          { documentId: "doc", uri: "manuscript://chapter.md", path: "chapter.md", scope: "draft" },
+          {
+            documentId: "doc",
+            uri: "manuscript://chapter.md",
+            path: "chapter.md",
+            scope: "draft",
+          },
         ]}
         receipt={receipt}
         changeTrail={{
@@ -189,7 +194,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
               {
                 uri: "manuscript://chapter.md",
                 status: "reversed",
-                destination: { kind: "draft", branchId: "draft" },
+                destination: { kind: "draft", draftId: "draft" },
               },
             ],
             acceptedParts: 1,
@@ -212,7 +217,7 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
           expect(document.body.textContent).toContain("“Mara” → “I”");
           expect(document.body.textContent).toContain("discarded");
           expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
-            "Undone in your draft. Apply it to change your manuscript.",
+            "Undone in your drafts. Apply them to change your manuscript.",
           );
         });
         await act(async () => {

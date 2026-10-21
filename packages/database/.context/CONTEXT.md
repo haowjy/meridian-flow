@@ -44,6 +44,32 @@ fixture can be retired only after a later frozen migration supersedes it.
 
 ## Schema contracts
 
+A document tombstone has a non-null deletion reason exactly when it has
+`deleted_at`. User, Work and system-cause fields identify its actor; legacy
+actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
+remains its restore marker. Restore clears all removal fields. A closed draft
+has its own `closed_cause`, independent of the document's current removal
+(`discarded` or `document_removed`), so Work restore does not erase why a
+draft closed. Migrations 0072–0074 add the record, backfill in bounded,
+re-runnable no-transaction pages, retire existing tombstones' active drafts
+and tree uses, then validate. The pending-part pass is independently paged;
+an interrupted cutover must finish before serving traffic.
+
+
+A `branches` row is a Work's pending file tree. `document_drafts` stores each
+document version, with writes in `draft_write_journal`; `branch_tree_changes`
+and `branch_commands` belong to the whole branch. The `branch_push_*` tables
+retain their batch-level names. Migration `0068` renames metadata and replaces
+both trail functions atomically. `0069` preserves opaque document-draft IDs and
+rewrites JSON in native-primary-key pages of at most 500 rows, committing each
+receipt's origin/placement and each settlement's payload/tag together. Link views
+and their tuple digests change together (equivalent showings retain the greatest
+sequence), then the pending-placement index is replaced concurrently. Command
+fingerprints retain their original canonical key/kind encoding in
+`collab/domain/branch-commands.ts`; stored hashes alone cannot be translated after
+an API vocabulary change.
+
+
 Drizzle timestamp helpers use JS `Date` mode. The small set of string-mode
 columns is deliberate; do not extend it casually. Never bind a JS `Date` inside
 a raw `sql` fragment: use a typed comparator or an explicit timestamptz cast.
@@ -68,11 +94,22 @@ Forward-turn inverses and write provenance live in immutable `document_edits`
 and `document_edit_parts`; the legacy reconstruction tables and the unused
 mutation provenance sink are retired.
 
+The change-trail signal triggers on `draft_write_journal`, `document_edits`
+and `document_edit_parts` fire inside a writer keystroke's draft row lock,
+three per key, so their cost is that writer's save latency and every other
+writer's wait on the draft. `change_trail_owners` is defined only in migrations
+(the current body is `0068_draft_branch_names.sql`, not `src/functions/`):
+a replacement keeps `SET jit = off` (its recursive CTE's unbounded estimate
+otherwise makes PostgreSQL compile LLVM code on every call, 15 ms empty and
+hundreds once the tables grow), its primary-key journal lookup and its early
+returns for inserts that have no owners. Measure an append's `holdMs` before
+and after any change to these triggers.
+
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
 owned rows identify exactly what a restore revives; their FKs are `ON DELETE
 SET NULL` so a stale marker never deletes, and purge deletes marked rows
-explicitly. Draft branches carry no marker: soft delete leaves drafts alone and
+explicitly. Branches and their drafts carry no marker: soft delete leaves them alone and
 purge disposes of them. The dropped `works.visibility` and `persistence` were
 speculative and must not return; if multi-writer sharing or ephemeral-Work GC
 comes back, design new columns. No Work is a locked Work, not a sharing
@@ -89,6 +126,13 @@ a `COLLAB_SCHEMA_VERSION` bump still needs an additive migration advancing both
 Postgres column defaults. The checkpoint range capture function stays one SQL
 statement: a client-managed savepoint spanning awaits can roll back sibling
 operations queued on the same connection.
+
+`observation_frontiers` rows belong to the transcript block that showed the
+model a document (`source_block_id`, cascading with the block, so a fork finds
+inherited rows by block id with nothing copied). The model's frontier for a room
+is the row with the greatest `recorded_seq` among a conversation's blocks, read
+through the `(room_key, recorded_seq DESC NULLS LAST)` index; the runtime owns when rows are
+written and replaced ([runtime document text](../../../apps/server/server/domains/runtime/.context/document-text.md#observation-frontiers)).
 
 Billing stores Stripe customer identity on `users.stripe_customer_id`; credit
 lots represent grants and purchases. The partial free-tier uniqueness guard

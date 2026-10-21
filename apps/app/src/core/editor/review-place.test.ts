@@ -7,7 +7,7 @@
  * the real editors, Yjs binding and DOM walk are under test.
  */
 import { getBlockItemId } from "@meridian/agent-edit";
-import { blockItemKey } from "@meridian/contracts/drafts";
+import { blockItemKey } from "@meridian/contracts/branches";
 import { Editor } from "@tiptap/core";
 import { afterEach, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";

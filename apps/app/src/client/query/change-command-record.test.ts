@@ -3,7 +3,7 @@
  * writer applied or discarded a change, and what a held failure follows.
  */
 
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse } from "@meridian/contracts/branches";
 import { beforeEach, describe, expect, it } from "vitest";
 import { listed } from "@/test-support/draft-review-scope";
 import {
@@ -12,9 +12,9 @@ import {
   currentChangeCommandRecords,
   failChangeCommand,
   readPreviewAfterChangeCommands,
-  releaseDraftCommand,
-  resetDraftCommandRecords,
-} from "./draft-command-record";
+  releaseBranchCommand,
+  resetBranchCommandRecords,
+} from "./branch-command-record";
 import { previewWithoutKeys } from "./draft-projection";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", itemKey: "x" };
@@ -31,10 +31,10 @@ function preview(): DraftPreviewResponse {
   });
   return {
     status: "active",
-    draftId: "d",
+    branchId: "d",
     item: { ...listed, itemKey: "x" },
     itemKey: "x",
-    branchGeneration: 1,
+    draftGeneration: 1,
     reviewRoomName: "room",
 
     liveRevisionToken: "l",
@@ -63,7 +63,7 @@ function preview(): DraftPreviewResponse {
 }
 
 describe("change command record", () => {
-  beforeEach(() => resetDraftCommandRecords());
+  beforeEach(() => resetBranchCommandRecords());
 
   describe("a selection of several changes", () => {
     const both = {
@@ -96,7 +96,7 @@ describe("change command record", () => {
       expect(changeCommandState(currentChangeCommandRecords(), draft, both)).not.toMatchObject({
         phase: "failed",
       });
-      releaseDraftCommand(draft);
+      releaseBranchCommand(draft);
 
       failChangeCommand(draft, both, "discard", "stale");
       await readPreviewAfterChangeCommands(draft, async () => preview());
@@ -136,7 +136,7 @@ describe("change command record", () => {
         serverCode: "work_archived",
         serverReason: "The server's reason",
       });
-      releaseDraftCommand(draft);
+      releaseBranchCommand(draft);
       expect(changeCommandState(currentChangeCommandRecords(), draft, c)).toMatchObject({
         mode: "discard",
         code: "refused",

@@ -3,7 +3,7 @@
  * a surface shows. A change is a selection of one class; the chat strip's
  * command is a selection of every actionable change of the chat. Pure data.
  */
-import type { ChangeSelection } from "@/client/query/draft-command-record";
+import type { ChangeSelection } from "@/client/query/branch-command-record";
 import type { ReviewChange } from "./review-changes";
 
 /** The selection naming these changes' classes and every operation they hold. */

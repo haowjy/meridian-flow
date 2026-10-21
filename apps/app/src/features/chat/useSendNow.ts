@@ -5,7 +5,7 @@
  * from the server means this attempt requested no cancellation, which is not a failure.
  *
  * The control's state reuses `stopStatus`: pending at once, stopping while the record still shows
- * the cancelled execution, idle after. A failed Send now is a card (`handBackCards`).
+ * the cancelled execution, idle after. A failed Send now is a card (`chatCards`).
  */
 import { t } from "@lingui/core/macro";
 import type { SendNowRequest } from "@meridian/contracts/threads";
@@ -18,7 +18,7 @@ import {
 } from "@meridian/thread-client";
 import { useCallback, useRef, useState } from "react";
 import { postCommand } from "@/client/api/threads-api";
-import { announce, announceError, useRunState, useThreadActions } from "@/client/stores";
+import { announce, useRunState, useThreadActions } from "@/client/stores";
 
 export type SendNow = {
   /** Whether the record shows an open reply with a queue behind it. */
@@ -43,6 +43,8 @@ export function useSendNow(threadId: string): SendNow {
   }>({ request: "idle", cancelledExecutionId: null });
   const [failed, setFailed] = useState<FailedSendNow | null>(null);
   const busyRef = useRef(false);
+  /** Posts of the current body: a Try again is a new attempt of the same request. */
+  const attempts = useRef({ key: "", count: 0 });
 
   const status: StopStatus = stopStatus(view, { ...command, failedStops: [] });
   const busy = status === "pending" || status === "stopping";
@@ -52,6 +54,12 @@ export function useSendNow(threadId: string): SendNow {
     (body: SendNowRequest) => {
       setCommand({ request: "pending", cancelledExecutionId: null });
       setFailed(null);
+      const key = body.seenExecutionId;
+      attempts.current = {
+        key,
+        count: attempts.current.key === key ? attempts.current.count + 1 : 1,
+      };
+      const attempt = attempts.current.count;
       void postSendNow(
         {
           http: postCommand,
@@ -75,8 +83,8 @@ export function useSendNow(threadId: string): SendNow {
           kind: "send-now",
           status: outcome.kind,
           request: body,
+          attempt,
         });
-        announceError(t`Couldn't send now.`);
       });
     },
     [threadId],

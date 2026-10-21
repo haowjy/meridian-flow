@@ -1,20 +1,29 @@
 // Revocable response helpers and accepted replay across draft generation changes.
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { setTestHook } from "../../../shared/test-hooks.js";
 import {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
   PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
+  schema,
   THREAD_ID,
   USER_ID,
   WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
-import { setupResponseDraft } from "../test-support/document-edit-receipt-fixture.js";
+import {
+  createResponse,
+  responseContext,
+  setupResponseDraft,
+} from "../test-support/document-edit-receipt-fixture.js";
 import { reviewDriver } from "../test-support/draft-review-requests.js";
+import { readDraftContent } from "../test-support/draft-store-seam.js";
 
 async function expectScopedReplay(
   fixture: ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>,
@@ -22,23 +31,19 @@ async function expectScopedReplay(
 ) {
   const { createEffectiveDocumentReader } = await import("../domain/effective-document-reader.js");
   const reader = createEffectiveDocumentReader({
-    branches: fixture.branchStore,
-    branchCoordinator: fixture.branchCoordinator,
-    branchPulls: fixture.branchPulls,
-    liveCoordinator: fixture.liveCoordinator,
+    drafts: fixture.draftStore,
+    draftPulls: fixture.draftPulls,
     agentEdit: fixture.collab.agentEdit(),
     documents: fixture.runtime.markdownDocuments,
     model: fixture.runtime.model,
     codec: fixture.runtime.codec,
     links: fixture.links,
-    drafts: {
+    branches: {
       viewForWork: async (workId) => {
-        const { draftId } = await fixture.collab.draftReview.items({ workId: workId as never });
-        return draftId ? { kind: "draft", draftId } : { kind: "live" };
+        const { branchId } = await fixture.collab.draftReview.items({ workId: workId as never });
+        return branchId ? { kind: "branch", branchId } : { kind: "live" };
       },
     },
-    retirePeers: async () => {},
-    deferUntilCommit: () => false,
   });
   const args = {
     documentId: ALPHA_ID,
@@ -76,7 +81,7 @@ describe("response helper replay (Postgres)", () => {
     false,
     true,
   ])("first write paused during Discard rebases on the current generation (empty: %s)", async (empty) => {
-    const { fixture, branchId, responseId, write, review } = await setupResponseDraft(
+    const { fixture, draftId, responseId, write, review } = await setupResponseDraft(
       db,
       harness,
       empty,
@@ -88,31 +93,29 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the write before it leases its branches, so Discard commits ahead of it.
-    const withLeases = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
+    // Pause the write before it reads its drafts, so Discard commits ahead of it.
     let paused = false;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (!paused) {
         paused = true;
         entered();
         await gate;
       }
-      return withLeases(...args);
-    };
+    });
     const writing = write("green", "lime");
     await waiting;
     try {
       await review("gold");
     } finally {
       release();
-      fixture.branchCoordinator.withLeases = withLeases;
+      unhook();
     }
     expect(await writing).toMatchObject({ status: "success", phase: "staged" });
     expect(await harness.commit(responseId)).toMatchObject({
       status: "committed",
       documents: [{ updateCount: 1 }],
     });
-    expect(await fixture.draftMarkdown(branchId)).toBe(
+    expect(await fixture.draftMarkdown(draftId)).toBe(
       empty ? "red\n\nblue\n\nlime\n" : "red\n\nazure\n\nlime\n",
     );
   });
@@ -136,11 +139,11 @@ describe("response helper replay (Postgres)", () => {
         message: "Write did not land: the user discarded the text it edited. Re-read and retry.",
       })),
     );
-    expect(await draft.fixture.draftMarkdown(draft.branchId)).toBe(markdown);
-    expect(await harness.branchGeneration(draft.branchId)).toBe(generation);
+    expect(await draft.fixture.draftMarkdown(draft.draftId)).toBe(markdown);
+    expect(await harness.draftGeneration(draft.draftId)).toBe(generation);
   }
   it("held read replays after Discard empties the persisted draft", async () => {
-    const { fixture, branchId, responseId, read, write, review } = await setupResponseDraft(
+    const { fixture, draftId, responseId, read, write, review } = await setupResponseDraft(
       db,
       harness,
       true,
@@ -153,17 +156,15 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Pause the read before it leases any branch, so Discard commits ahead of it.
-    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
+    // Pause the read before it reads any draft, so Discard commits ahead of it.
     let once = true;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
         await gate;
       }
-      return original(...args);
-    };
+    });
     const reading = read();
     await waiting;
     try {
@@ -178,7 +179,7 @@ describe("response helper replay (Postgres)", () => {
         result.result.blocks?.flatMap((group) => group.items.map((item) => item.body)),
       ).toEqual(["red", "blue", "lime"]);
     } finally {
-      fixture.branchCoordinator.withLeases = original;
+      unhook();
     }
     expect(await read()).toMatchObject({ status: "success" });
     expect(
@@ -187,19 +188,21 @@ describe("response helper replay (Postgres)", () => {
         workId: WORK_ID,
       }),
     ).toEqual([]);
-    const { createDrizzleWorkDraftPendingStore } = await import("./drizzle-branch-push.js");
-    expect(await createDrizzleWorkDraftPendingStore(db).countPendingByWorkIds([WORK_ID])).toEqual(
+    const { createDrizzleWorkBranchPendingStore } = await import(
+      "./drizzle-work-branch-pending.js"
+    );
+    expect(await createDrizzleWorkBranchPendingStore(db).countPendingByWorkIds([WORK_ID])).toEqual(
       new Map(),
     );
     expect(await harness.commit(responseId)).toMatchObject({
       status: "committed",
       documents: [{ updateCount: 1 }],
     });
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nlime\n");
-    expect(await harness.branchGeneration(branchId)).toBe(2);
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\nlime\n");
+    expect(await harness.draftGeneration(draftId)).toBe(2);
   });
   it("reply replays after Apply empties the persisted draft", async () => {
-    const { fixture, branchId, responseId, write, review } = await setupResponseDraft(
+    const { fixture, draftId, responseId, write, review } = await setupResponseDraft(
       db,
       harness,
       true,
@@ -210,16 +213,21 @@ describe("response helper replay (Postgres)", () => {
       status: "committed",
       documents: [{ updateCount: 1 }],
     });
-    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\nlime\n");
-    expect(await harness.branchGeneration(branchId)).toBe(2);
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\nlime\n");
+    expect(await harness.draftGeneration(draftId)).toBe(2);
   });
   it("whole Discard rolls back the only staged document in a reply", async () => {
-    const { fixture, branchId, responseId, write } = await setupResponseDraft(db, harness, true);
+    const { fixture, draftId, responseId, write } = await setupResponseDraft(db, harness, true);
     expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
+    const open = await fixture.draftStore.getDraft(draftId);
     expect(await reviewDriver(fixture.collab.draftReview).discardAll()).toMatchObject({
       status: "discarded",
     });
-    // Discard all closes the draft: the save refuses the write with its receipt (contract §2.2).
+    // Closing the branch's drafts is a review-membership input: it moves their revision (§2.5).
+    expect((await fixture.draftStore.getDraft(draftId))?.revision).toBeGreaterThan(
+      open?.revision ?? Number.POSITIVE_INFINITY,
+    );
+    // Discard all closes the branch: the save refuses the write with its receipt (contract §2.2).
     const saved = await harness.commit(responseId);
     expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount: 0 }] });
     expect(saved.documents[0]?.receipts).toEqual([
@@ -230,7 +238,7 @@ describe("response helper replay (Postgres)", () => {
         }),
       }),
     ]);
-    expect(await fixture.branchStore.getBranch(branchId)).toMatchObject({ status: "closed" });
+    expect(await fixture.draftStore.getDraft(draftId)).toMatchObject({ status: "closed" });
   });
   it("save reports dropped dependent writes once while a held write replays", async () => {
     const draft = await setupResponseDraft(db, harness);
@@ -244,16 +252,14 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
     let once = true;
-    fixture.branchCoordinator.withLeases = async (...args) => {
+    const unhook = setTestHook("draft.beforeAccess", async () => {
       if (once) {
         once = false;
         entered();
         await gate;
       }
-      return original(...args);
-    };
+    });
     const writing = write("lime", "olive");
     await waiting;
     try {
@@ -267,7 +273,7 @@ describe("response helper replay (Postgres)", () => {
       expect(result.status).toBe("success");
       expect(result.result.message?.split("Dropped writes:")).toHaveLength(3);
     } finally {
-      fixture.branchCoordinator.withLeases = original;
+      unhook();
     }
     expect((await read()).result.message).toBeUndefined();
     await expectDroppedCommit(draft, dropped, 2, "red\n\nazure\n\nolive\n");
@@ -321,51 +327,90 @@ describe("response helper replay (Postgres)", () => {
     expect(await read()).toMatchObject({ status: "success" });
     await expectDroppedCommit(draft, dropped, updateCount, markdown, generation);
   });
-  it("failed save CAS leaves an accepted fresh replay for retry", async () => {
-    const draft = await setupResponseDraft(db, harness);
-    const { fixture, branchId, responseId, write, review } = draft;
-    const dropped = [await write("gold", "gild"), await write("gild", "bronze")];
+  it("a save whose second document moves between capture and commit folds the move and commits once", async () => {
+    const { fixture, draftId, responseId, context, write } = await setupResponseDraft(db, harness);
+    const core = fixture.collab.agentEdit();
+    const writeBeta = (
+      command: "create" | "replace",
+      content: string,
+      ctx: ReturnType<typeof responseContext>,
+    ) =>
+      core.write(
+        {
+          command,
+          file: "beta.md",
+          documentId: BETA_ID,
+          ...(command === "create"
+            ? { content, overwrite: true }
+            : { find: "Beta seeded.", content }),
+          tool_use_id: `beta-${command}`,
+        },
+        { ...ctx, createdDocument: false },
+      );
+    // Beta's draft is durable before this reply saves: an earlier reply made it.
+    const earlier = await createResponse(db, 3);
+    expect(await writeBeta("create", "Beta seeded.", responseContext(earlier))).toMatchObject({
+      phase: "staged",
+    });
+    expect(await harness.commit(earlier)).toMatchObject({ status: "committed" });
+    const beta = await fixture.draftStore.resolveWorkDraftForThread(BETA_ID, THREAD_ID);
     expect(await write("green", "lime")).toMatchObject({ status: "success", phase: "staged" });
-    await review("gold");
-    const original = fixture.branchStore.commitBranchMutation.bind(fixture.branchStore);
-    let refused = false;
-    fixture.branchStore.commitBranchMutation = async (request) => {
-      if (!refused && request.branchId === branchId) {
-        refused = true;
-        return false;
+    expect(await writeBeta("replace", "Beta staged.", context)).toMatchObject({ phase: "staged" });
+    const rowsOf = async (id: string) =>
+      (
+        await db
+          .select({ id: schema.draftWriteJournal.id })
+          .from(schema.draftWriteJournal)
+          .where(
+            and(
+              eq(schema.draftWriteJournal.draftId, id),
+              eq(schema.draftWriteJournal.source, "agent"),
+            ),
+          )
+      ).length;
+    const before = { alpha: await rowsOf(draftId), beta: await rowsOf(beta.draftId) };
+
+    const original = fixture.draftStore.appendRows.bind(fixture.draftStore);
+    const appends: string[] = [];
+    fixture.draftStore.appendRows = async (request) => {
+      appends.push(request.draftId === draftId ? "alpha" : "beta");
+      if (appends.length === 2 && request.draftId === beta.draftId) {
+        // A frame on another connection moves Beta after the attempt judged it.
+        await db
+          .update(schema.documentDrafts)
+          .set({ revision: sql`${schema.documentDrafts.revision} + 1` })
+          .where(eq(schema.documentDrafts.id, beta.draftId));
       }
       return original(request);
     };
+    let saved: Awaited<ReturnType<typeof harness.commit>>;
     try {
-      await expect(harness.commit(responseId)).rejects.toThrow();
+      saved = await harness.commit(responseId);
     } finally {
-      fixture.branchStore.commitBranchMutation = original;
+      fixture.draftStore.appendRows = original;
     }
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
-    const lease = await fixture.collab.agentEdit().prepare(responseId, ALPHA_ID);
-    if (!lease) throw new Error("Missing prepared lease");
-    try {
-      // A post-failure exposure is itself an accepted fresh replay, not a raw buffer peek.
-      expect(
-        fixture.model.getBlocks(lease.doc).map((block) => fixture.model.getText(block)),
-      ).toEqual(["red", "azure", "lime"]);
-    } finally {
-      lease.dispose();
-    }
-    await expectDroppedCommit(draft, dropped, 1, "red\n\nazure\n\nlime\n");
+    // An append is sequenced, not fenced: Beta's move is folded into its committed prefix
+    // under the row lock, and the save commits in its first attempt.
+    expect(appends).toEqual(["alpha", "beta"]);
+    expect(saved).toMatchObject({ status: "committed" });
+    expect(await rowsOf(draftId)).toBe(before.alpha + 1);
+    expect(await rowsOf(beta.draftId)).toBe(before.beta + 1);
+    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nazure\n\nlime\n");
+    expect(await fixture.draftMarkdown(beta.draftId)).toBe("Beta staged.\n");
   });
   it("retired ambient peer and aborted rollback cannot replace a replayed helper", async () => {
-    const { fixture, branchId, responseId, read, write, review } = await setupResponseDraft(
+    const { fixture, draftId, responseId, read, write, review } = await setupResponseDraft(
       db,
       harness,
       false,
     );
     const writer = async () => {
-      const snapshot = await fixture.branchStore.getBranch(branchId);
-      if (!snapshot) throw new Error("Missing branch");
+      const snapshot = await fixture.draftStore.getDraft(draftId);
+      if (!snapshot) throw new Error("Missing draft");
+      const content = await readDraftContent(fixture.draftStore, draftId);
       const room = new Y.Doc({ gc: false });
       try {
-        Y.applyUpdate(room, snapshot.state);
+        Y.applyUpdate(room, content);
         const updates: Uint8Array[] = [];
         room.on("update", (update) => updates.push(update));
         const text = (room.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
@@ -376,8 +421,8 @@ describe("response helper replay (Postgres)", () => {
           text.insert(0, "pink");
         });
         expect(
-          await fixture.branchCoordinator.commitWriterUpdate({
-            branchId,
+          await fixture.draftCoordinator.commitWriterUpdate({
+            draftId,
             expectedGeneration: snapshot.generation,
             updateData: Y.mergeUpdates(updates),
             roomDocument: room,
@@ -395,15 +440,16 @@ describe("response helper replay (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.branchCoordinator.readBranch.bind(fixture.branchCoordinator);
+    // Hold the write at its room read while the writer commits.
+    const original = fixture.draftCoordinator.copyDraft.bind(fixture.draftCoordinator);
     let once = true;
-    fixture.branchCoordinator.readBranch = async (branch, fn) => {
-      if (once && branch === branchId && String(fn).includes("listConcurrentJournalRows")) {
+    fixture.draftCoordinator.copyDraft = async (documentDraft) => {
+      if (once && documentDraft === draftId) {
         once = false;
         entered();
         await gate;
       }
-      return original(branch, fn);
+      return original(documentDraft);
     };
     const writing = write("green", "lime");
     await waiting;
@@ -415,17 +461,17 @@ describe("response helper replay (Postgres)", () => {
     try {
       expect(await writing).toMatchObject({ status: "success" });
     } finally {
-      fixture.branchCoordinator.readBranch = original;
+      fixture.draftCoordinator.copyDraft = original;
     }
     await review("pink");
     expect(await read()).toMatchObject({ status: "success" });
     // An aborted rollback must not replace the helper with this ambient peer.
     await writer();
-    const { draftId } = await fixture.collab.draftReview.items({ workId: WORK_ID });
-    await fixture.branchPulls.pullThreadPeer({
+    const { branchId } = await fixture.collab.draftReview.items({ workId: WORK_ID });
+    await fixture.draftPulls.ensureThreadPeer({
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
-      draftId: draftId ?? undefined,
+      branchId: branchId ?? undefined,
     });
     await expect(
       runInDrizzleTransaction(db, async () => {
@@ -440,6 +486,6 @@ describe("response helper replay (Postgres)", () => {
       status: "committed",
       documents: [{ updateCount: 1 }],
     });
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\nlime\n");
+    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nazure\n\nlime\n");
   });
 });

@@ -26,7 +26,7 @@ import {
   loadDocumentAddresses,
   presentSourceId,
 } from "../tree/tree-addresses.js";
-import { DrizzleContextTreeMutationStore } from "./context-fs/drizzle-tree-mutation-store.js";
+import { inspectTreeLocation } from "./context-fs/drizzle-tree-mutation-store.js";
 
 type CoordinateKey = Pick<
   DocumentCoordinates,
@@ -241,11 +241,7 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           project: input.scheme === "user" ? { personalOf: input.userId } : { id: input.projectId },
         });
         if (!sourceId) return null;
-        const current = await new DrizzleContextTreeMutationStore(db).inspect(
-          sourceId,
-          input.path,
-          input.view,
-        );
+        const current = await inspectTreeLocation(db, sourceId, input.path, input.view);
         if (current)
           return current.kind === "file"
             ? { kind: "current", documentId: current.nodeId as DocumentId }

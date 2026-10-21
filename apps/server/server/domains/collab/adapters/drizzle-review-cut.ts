@@ -1,7 +1,7 @@
 /**
- * Read-only repeatable-read review capture (contract §3.2): the branch, the live journal, the
+ * Read-only repeatable-read review capture (contract §3.2): the draft, the live journal, the
  * item as the identity module resolves it, and both link views, all from one snapshot. A
- * document the draft only edited and whose branch has no effect still has a cut (G+1).
+ * document the branch only edited and whose draft has no effect still has a cut (G+1).
  */
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { Database } from "@meridian/database";
@@ -11,24 +11,26 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import { assertReadableBranch, type BranchStore } from "../domain/branch-coordinator.js";
+import { DraftChangeRefusal } from "../domain/branch-push-contracts.js";
+import type { BranchReviewIdentity } from "../domain/branch-review-identity.js";
+import type { DraftJournalReadStore } from "../domain/draft-journal.js";
+import { DraftCorruptError } from "../domain/draft-resolver.js";
 import {
-  type BranchJournalReadStore,
-  DraftChangeRefusal,
-} from "../domain/branch-push-contracts.js";
-import { BranchCorruptError } from "../domain/branch-resolver.js";
-import type { DraftReviewIdentity } from "../domain/draft-review-identity.js";
+  assertReadableDraft,
+  type DraftStore,
+  materializeDraftRead,
+} from "../domain/draft-store.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../domain/ports/document-link-scope.js";
 import type { ReadReviewCut } from "../domain/ports/review-cut.js";
-import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
+import { readHeadRevision } from "./drizzle-document-authority-head.js";
 
 export function createDrizzleReviewCut(input: {
   db: Database;
   journal: UpdateJournal;
-  branches: BranchStore;
-  rows: BranchJournalReadStore;
+  drafts: DraftStore;
+  rows: DraftJournalReadStore;
   links: DocumentLinkScopes;
-  identity: DraftReviewIdentity;
+  identity: BranchReviewIdentity;
   resolveThreadTitles(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }): ReadReviewCut {
   return (address) =>
@@ -36,44 +38,49 @@ export function createDrizzleReviewCut(input: {
       // The first read fixes the database snapshot. Live journal replay below is
       // database-only and joins it, so no room/network wait holds this snapshot.
       const resolved = await input.identity.resolveReviewItem(address);
-      if (!resolved?.draftBranchId) throw new DraftChangeRefusal("gone");
-      const branch = await input.branches.getBranch(resolved.draftBranchId);
+      if (!resolved?.draftId) throw new DraftChangeRefusal("gone");
+      const read = await input.drafts.readDraftAt(resolved.draftId);
+      const documentDraft = read?.documentDraft;
       if (
-        branch?.kind !== "work_draft" ||
-        branch.status !== "active" ||
-        branch.draftId !== resolved.draftId ||
-        branch.documentId !== resolved.documentId
+        !read ||
+        documentDraft?.kind !== "work_draft" ||
+        documentDraft.status !== "active" ||
+        documentDraft.branchId !== resolved.branchId ||
+        documentDraft.documentId !== resolved.documentId
       )
         throw new DraftChangeRefusal("gone");
-      assertReadableBranch(branch);
+      assertReadableDraft(documentDraft);
       const live = await input.journal.read(resolved.documentId);
-      const revision = await readLiveReviewRevision(
-        currentDrizzleDb(input.db),
-        resolved.documentId,
-      );
-      const history = await input.rows.listJournalRowsForBranch({
-        branchId: branch.branchId,
-        generation: branch.generation,
+      const revision = await readHeadRevision(currentDrizzleDb(input.db), resolved.documentId);
+      const history = await input.rows.listJournalRowsForDraft({
+        draftId: documentDraft.draftId,
+        generation: documentDraft.generation,
       });
       const liveDoc = materialize(live);
-      const draftDoc = createCollabYDoc({ gc: false });
+      let draftDoc: Y.Doc;
       try {
-        try {
-          Y.applyUpdate(draftDoc, branch.state);
-        } catch (cause) {
-          throw new BranchCorruptError({
-            branchId: branch.branchId,
-            documentId: branch.documentId,
-            generation: branch.generation,
-            cause,
-          });
-        }
-        const draftView = { kind: "draft" as const, draftId: resolved.draftId };
+        draftDoc = materializeDraftRead(read);
+      } catch (cause) {
+        liveDoc.destroy();
+        throw new DraftCorruptError({
+          draftId: documentDraft.draftId,
+          documentId: documentDraft.documentId,
+          generation: documentDraft.generation,
+          cause,
+        });
+      }
+      // The cut's own bytes, detached before the link scope binds the document.
+      const state =
+        read.tail.length === 0 && read.checkpoint
+          ? read.checkpoint.state
+          : Y.encodeStateAsUpdate(draftDoc);
+      try {
+        const branchView = { kind: "branch" as const, branchId: resolved.branchId };
         return await input.links.within({ documentId: resolved.documentId }, async () => {
           await input.links.prepare({
             holders: [
               { documentId: resolved.documentId, view: LIVE_VIEW },
-              { documentId: resolved.documentId, view: draftView },
+              { documentId: resolved.documentId, view: branchView },
             ],
             docs: [liveDoc, draftDoc],
           });
@@ -81,13 +88,13 @@ export function createDrizzleReviewCut(input: {
             ...new Set(history.flatMap((row) => (row.threadId ? [row.threadId] : []))),
           ]);
           return {
-            branch,
+            documentDraft: { ...documentDraft, state },
             history,
             live: { state: Y.encodeStateAsUpdate(liveDoc), revision },
             item: resolved.item,
             links: {
               live: input.links.holder({ documentId: resolved.documentId, view: LIVE_VIEW }),
-              draft: input.links.holder({ documentId: resolved.documentId, view: draftView }),
+              draft: input.links.holder({ documentId: resolved.documentId, view: branchView }),
             },
             threadTitles,
           };

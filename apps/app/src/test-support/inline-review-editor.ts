@@ -4,7 +4,7 @@
  * server sends. Anchors are real Yjs relative positions, so every mark and
  * widget resolves the way it does in review.
  */
-import type { ReviewDeletedSpan, ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewDeletedSpan, ReviewOperation } from "@meridian/contracts/branches";
 import { Editor } from "@tiptap/core";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";

@@ -1,14 +1,15 @@
-import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
-/** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
+/** Public collab-domain reverseTurn coverage over Drizzle draft infrastructure. */
 
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestDocumentRemoval } from "../../test-support/document-removal.js";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
   CREATED_DOC_ID,
-  createWorkDraftFixture,
+  createWorkBranchFixture,
   DOC_ID,
   DRAFT_DESTINATION,
   PROJECT_ID,
@@ -17,7 +18,7 @@ import {
   TURN_2_ID,
   TURN_ID,
   USER_ID,
-} from "./test-support/work-draft-fixture.js";
+} from "./test-support/work-branch-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -28,7 +29,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const {
-      branchWriteJournal,
+      draftWriteJournal,
       documentMarkdownProjections,
       documentYjsUpdates,
       documents,
@@ -36,7 +37,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     } = await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } =
+      createWorkBranchFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);
@@ -71,7 +73,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore: new DrizzleContextTreeMutationStore(db, {
+          removal: createTestDocumentRemoval(db),
+        }),
         documentCreation: collab,
         documentSync: {
           ...collab,
@@ -84,7 +88,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       try {
-        const created = await context.write("fresh.md", "Seed.");
+        const created = await context.createTrackedDocument("fresh.md", "Seed.");
         expect(created.ok).toBe(true);
         if (!created.ok || !created.value.documentId) throw new Error("Missing created document");
         await expect(
@@ -463,9 +467,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
 
       const rows = await db
-        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-        .from(branchWriteJournal)
-        .orderBy(branchWriteJournal.id);
+        .select({ id: draftWriteJournal.id, status: draftWriteJournal.status })
+        .from(draftWriteJournal)
+        .orderBy(draftWriteJournal.id);
       expect(rows).toEqual([
         expect.objectContaining({ status: "active" }),
         expect.objectContaining({ status: "active" }),

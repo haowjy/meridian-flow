@@ -47,7 +47,8 @@ external IDs fail closed rather than merging accounts.
 `ProjectWorkAuthorityResolver` is the only projects-domain mint for opaque,
 stable Work URI authority and offers exact same-project ID/handle resolution plus
 transactional locking. `listWorkCatalog` owner-gates the requested collection
-and enriches it with one set-oriented pending-draft count read.
+and serves each Work's stored pending count (`works.pending_document_count`, the
+badge) from the same row as its revision; it counts nothing at read time.
 
 `createWork` creates metadata without binding a thread or enqueueing Work
 context. `updateWorkTransition` is the shared metadata policy for human PATCH
@@ -76,11 +77,46 @@ writer Chat rebind changes a chat's Work; model tools cannot rebind it.
 
 Lifecycle writes lock the Work row and publish `{ workId }` through
 `FileAccessChanges` in the same transaction so Scratch, Uploads, and draft
-rooms reconnect at their new access level. Work context mutations and
-reviewable branch-journal creation use that same lifecycle lock.
+rooms reconnect at their new access level. Work context mutations use that
+same lifecycle lock. Archive, unarchive and restore lock no draft row
+and bump no draft revision. Delete removes Work-owned documents through the tree
+removal kernel, closing their drafts permanently; restore revives documents,
+not those closed drafts. Collab's append keeps the Work predicate in its
+row `UPDATE` and rechecks the lifecycle in a fresh read once it holds the row;
+every other draft write takes the Work through the boundary below and so orders
+itself against the transition. The window that leaves: a writer key whose
+post-lock read ran before the transition committed and whose `COMMIT` came
+after (finalization and inserts, a few milliseconds, however long it waited for
+the row) lands in the archived draft; every later key is refused, and unarchive
+admits the next. The window is accepted rather than a Work lock on every
+keystroke (collab `.context/CONTEXT.md`).
+
+Collab's lifecycle and structural branch and draft writes take Work rows only
+through `adapters/work-projection-mutation.ts`, the Works mutation boundary: the
+one owner of Work-first lock order (Work, branch, document, draft). A
+transaction that locks a Work through the boundary recounts it at commit:
+`lockWorks(set)` locks the set's Works (opening a branch, Apply's batch plan, a
+reply save's grants), `mutate(set, operation)` is `lockWorks` then the write
+(closing a branch through Discard, draft writes, the draft-effect projection).
+At commit each locked Work's pending count is reconciled once (one SQL aggregate
+over collab's membership rule, `WorkBranchPendingCounts`, however many locks the
+transaction took) against the stored value, and only a Work whose count moved
+gets a revision bump and a Works-changed notice. A write that leaves the count
+alone sends nothing: the count is the only thing collab's writes change in a
+Works snapshot. Apply's completion, which places draft rows and clears their
+`blocking` under `lockWorks`, is covered the same way. `touchWorks(set, at)` is
+activity (`lastActivityAt`: a turn, a document edit, Apply completion) and
+always notifies; lifecycle and metadata writes notify directly. A writer
+keystroke is an append and never enters the boundary, even one that moves its
+draft in or out of review: the independent draft-effect projection runs after
+every append (and its sweep after a crash) and reconciles through `mutate`
+then. Because the comparison is
+against the stored value, not a count taken before the transaction, a count an
+append moved outside the boundary is still announced by the next reconcile
+(the `effect-projection` probe's staging arm).
 
 Work deletion soft-deletes primary chats and live Work context rows, marking
-those children with `deletedByWorkId`. Drafts and their branches remain until
+those children with `deletedByWorkId`. Branches and their drafts remain until
 purge, so restore clears exactly the rows marked by that deletion; independently
 trashed children remain trashed. A deleted Work cannot restore a child by a
 separate path. Document and folder cascades advance location versions.
@@ -90,8 +126,8 @@ returns HTTP 410 `work_restore_expired` even if the purge worker has not run;
 references that retain a source Work extend storage retention, never the
 restore deadline. Purge
 processes eligible Works in batches, removes owned rows and blobs best-effort,
-and disposes originated drafts through collab's Work-draft disposal seam.
-It tombstones hidden draft-created nodes before deleting draft rows. Purge also
+and disposes originated branches through collab's Work-branch disposal seam.
+It tombstones hidden branch-created nodes before deleting branch rows. Purge also
 removes lineage Scratch sources rooted in its purge set. Work delete never
 marks lineage Scratch; it hides only through lineage liveness when the delete
 trashes the last live member. A fork or handoff

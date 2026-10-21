@@ -1,5 +1,6 @@
 /** Projects the latest complete compaction over the effective transcript. */
 
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, PromptBake, Turn } from "@meridian/contracts/threads";
 import { z } from "zod";
 import {
@@ -12,8 +13,10 @@ import {
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { PromptBakeRepository } from "../../../threads/ports/repositories.js";
 import { bakeHasHistoryTool } from "../history-tool-availability.js";
+import { referenceReadText } from "../reference-context.js";
+import { importantFileText } from "./important-files.js";
 import type { CompactionPlan } from "./plan.js";
-import { type CompactionCut, resolveCut, retainedTail } from "./tail.js";
+import { resolveCut, retainedTail } from "./tail.js";
 
 /** The durable model-visible summary block written by the compaction protocol. */
 export const CompactionPropsCodec = z
@@ -36,6 +39,17 @@ export type CompactionBlockContent = JsonObject & z.infer<typeof CompactionBlock
 export interface ProjectedActiveHistory {
   turns: Turn[];
   blocks: Block[];
+}
+
+/**
+ * The projection plus the ids whose observation frontiers may credit the model
+ * (C10): the blocks after the latest complete compaction, or every effective
+ * block when there is none. The retained tail before the compaction credits
+ * nothing, though it is carried verbatim: its rows may fold credit from rows
+ * the summary replaced.
+ */
+export interface ActiveHistoryProjection extends ProjectedActiveHistory {
+  creditedBlockIds: ReadonlySet<string>;
 }
 
 function compactionPropsForTurn(turnId: string, blocks: readonly Block[]): CompactionProps {
@@ -114,10 +128,13 @@ function projectActiveHistory(
   effectiveBlocks: readonly Block[],
   threadRef: string | null,
   compactionBake?: Pick<PromptBake, "id" | "bakedTools"> | null,
-): ProjectedActiveHistory {
-  if (!effectiveTurns.some((turn) => turn.role === "compaction")) {
-    return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
-  }
+): ActiveHistoryProjection {
+  const uncompacted = (): ActiveHistoryProjection => ({
+    turns: [...effectiveTurns],
+    blocks: [...effectiveBlocks],
+    creditedBlockIds: new Set(effectiveBlocks.map((block) => block.id)),
+  });
+  if (!effectiveTurns.some((turn) => turn.role === "compaction")) return uncompacted();
 
   const turns = orderTurnsByPosition(effectiveTurns);
   const blocksByTurn = new Map<string, Block[]>();
@@ -136,7 +153,7 @@ function projectActiveHistory(
       props: compactionPropsForTurn(turn.id, effectiveBlocks),
     }));
   const activeCompaction = completeCompactions.at(-1);
-  if (!activeCompaction) return { turns: [...effectiveTurns], blocks: [...effectiveBlocks] };
+  if (!activeCompaction) return uncompacted();
   if (!threadRef)
     throw new Error(`Thread ${activeCompaction.turn.threadId} has no ref for compaction summary`);
 
@@ -177,8 +194,21 @@ function projectActiveHistory(
   );
   const tailByTurn = new Map(tail.map((slice) => [slice.turn.id, slice]));
   const elisions = new Map(metadata.elisions?.map((elision) => [elision.blockId, elision.content]));
+  // The documents the compaction re-showed ride its summary turn, after the summary, as plain
+  // text blocks that keep their ids (frontier rows cite them).
+  const reshown = (blocksByTurn.get(compaction.id) ?? [])
+    .flatMap((block) => {
+      const reference = referenceOccurrenceContent(block);
+      if (!reference?.read) return [];
+      const textContent = importantFileText(
+        reference.read.input ?? { path: reference.uri },
+        referenceReadText(reference.read.result),
+      );
+      return [{ ...block, turnId: synthetic.turn.id, textContent, content: textContent }];
+    })
+    .sort((a, b) => a.sequence - b.sequence);
   const projectedBlocks = projectedTurns.flatMap((turn) => {
-    if (turn.id === synthetic.turn.id) return [synthetic.block];
+    if (turn.id === synthetic.turn.id) return [synthetic.block, ...reshown];
     const retained = tailByTurn.get(turn.id);
     return retained
       ? retained.blocks.map((block) =>
@@ -189,7 +219,13 @@ function projectActiveHistory(
       : (blocksByTurn.get(turn.id) ?? []);
   });
 
-  return { turns: projectedTurns, blocks: projectedBlocks };
+  const creditedBlockIds = new Set([
+    ...reshown.map((block) => block.id),
+    ...afterCompaction.flatMap((turn) =>
+      (blocksByTurn.get(turn.id) ?? []).map((block) => block.id),
+    ),
+  ]);
+  return { turns: projectedTurns, blocks: projectedBlocks, creditedBlockIds };
 }
 
 /** The cold summary replaces only the cut, never the pin or the verbatim retained tail. */
@@ -216,7 +252,7 @@ export async function projectActiveHistoryWithBakes(
   blocks: readonly Block[],
   threadRef: string | null,
   promptBakes: Pick<PromptBakeRepository, "findById">,
-): Promise<ProjectedActiveHistory> {
+): Promise<ActiveHistoryProjection> {
   const compaction = activeCompaction(turns);
   const bake = compaction?.promptBakeId
     ? await promptBakes.findById(compaction.promptBakeId)

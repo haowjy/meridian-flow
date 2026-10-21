@@ -8,6 +8,10 @@ import {
 } from "../../domains/collab/test-support/document-link-scopes.js";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -79,6 +83,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
       });
@@ -99,10 +104,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let failNextCatalogWrite = true;
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
         catalogMutations: {
           async refreshSources(ids, invalidated) {
             if (failNextCatalogWrite) {
@@ -147,10 +154,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");

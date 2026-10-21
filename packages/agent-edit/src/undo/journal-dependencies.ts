@@ -1,6 +1,6 @@
 /**
  * Yjs update dependency predicates: the one rule for whether a later update
- * depends on earlier ones, used by branch replay and review closure.
+ * depends on earlier ones, used by draft replay and review closure.
  */
 import * as Y from "yjs";
 

@@ -37,7 +37,7 @@ contract owns a rule and where it is consumed.
   depends on storage kind: there is no separate binary identity mode and no
   display key (stored parts already render the writer and model name). Move and
   copy pass the source extension explicitly, never infer it from filetype.
-- Yjs protocol contracts expose only live rooms and generation-fenced branch
+- Yjs protocol contracts expose only live rooms and generation-fenced draft
   rooms. Every close pair a classifier uses lives in `WS_CLOSE`; transport-local
   lifecycle closes stay with their emitting transport.
 
@@ -95,3 +95,13 @@ cache counters, so each gateway adapter normalizes provider output before
 project-relative `assetPath`; signed URLs are render-time details only.
 Blocks describe the writer transcript. Model-only document-text elisions belong
 in compaction metadata.
+
+## Snapshot read boundary
+
+Thread snapshots compose the canonical `threadSchema` and `turnSchema` (including
+blocks, usage and model responses). Their DTO types are inferred from the schemas;
+the app and `./mf` consume the parsed result, not a widened partial check. Identity
+lookups remain explicit projections and cannot stand in for full DTO validation.
+
+Golden protocol fixtures are test-only exports at `@meridian/contracts/test-support`.
+Production barrels do not re-export test data.

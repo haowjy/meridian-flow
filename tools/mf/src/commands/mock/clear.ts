@@ -4,6 +4,7 @@ import {
   mockModelScriptStateSchema,
 } from "@meridian/contracts/protocol";
 import { type CommandSpec, stringOption } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { renderState } from "./queue";
 
 export const mockClearCommand: CommandSpec = {
@@ -20,7 +21,7 @@ export const mockClearCommand: CommandSpec = {
         "DELETE",
         `${API_DEBUG_MOCK_MODEL_SCRIPT_PATH}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
         undefined,
-        { parse: mockModelScriptStateSchema.safeParse },
+        { decode: jsonResponse(mockModelScriptStateSchema) },
       ),
       renderState,
     );

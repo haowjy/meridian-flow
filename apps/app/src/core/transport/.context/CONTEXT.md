@@ -18,7 +18,7 @@ deliver one room's 4406/4407 to every attached provider and reset healthy
 rooms. The session registry remains the per-room deduplication owner; the cost
 is one physical socket per attached room. The soft-cap warning runs when a live
 session is added but compares the registry's total session count, including
-branch sessions; it does not evict sessions or block attachments.
+draft sessions; it does not evict sessions or block attachments.
 
 The client declares its schema as the sole WebSocket subprotocol on each Yjs
 socket. `CollabSchemaWebSocket` formats the current version through
@@ -30,7 +30,7 @@ production so observation does not create a second transport path.
 
 The outbox is the session layer's evidence that the writer has typing the
 server has not acknowledged. Draft review counts it as changes at the shown
-generation, and `BranchWriterHandoff` carries it into the next generation, so
+generation, and `DraftWriterHandoff` carries it into the next generation, so
 it must be visible to every observer before anything can act on its absence.
 
 - **Store, then send.** `handleDocumentUpdate` registers on the `Y.Doc` before
@@ -50,6 +50,47 @@ it must be visible to every observer before anything can act on its absence.
 The ordering is a live transport contract, not a test-double detail. A witness
 for it must exercise `test-support/DocumentSocketHarness`, as the transport
 acknowledgement and remote whole-discard probes do.
+
+## Draft rooms: the handshake upload goes first
+
+A draft room's server appends each Update on top of the bytes it
+already holds and closes `4207 draft-prefix-missing` when an Update depends
+on bytes it lacks. Hocuspocus's own order would produce exactly that on every
+reconnect: the offline queue flushes on the socket's first inbound frame, and
+keys typed during the handshake go out at once, both before the client's
+SyncStep2 (its reply to the server's SyncStep1).
+
+So on `draft:` rooms only, `RoomScopedHocuspocusWebsocket.send` holds every
+Sync Update offered on an open socket until that socket's SyncStep2 has been
+written, then releases the held frames in order through the same `send`. Wire
+order on every draft connection is `step1, step2, [released updates],
+[new updates]`.
+
+- **The SyncStep2 is the causal prefix.** It is the whole Y.Doc diffed against
+  the server's state vector, so it carries everything the server lacks,
+  including bytes replayed into the Y.Doc before the transport existed. The
+  released frames are echoes the server contains.
+- **Counted when written, once.** A held frame reaches `noteFrameSent` only on
+  release; the tracker's handshake flag is set by the real SyncStep2.
+- **A socket that closes first writes nothing it held.** `onOpen` and
+  `onClose` drop the held frames; the next socket's SyncStep2 carries their
+  bytes. Frames offered while the socket is not open keep the base class
+  queue.
+- **No timeout.** A server that never sends SyncStep1 leaves the frames held
+  and the room unacknowledged; nothing releases them unsafely.
+- **Typing never waits.** The Y.Doc, the editor and the outbox have the key
+  at once; only transmission is deferred, by one handshake round trip.
+- **Live rooms are unchanged.** Their server marks the SyncStep2 for offline
+  collision reconciliation, so moving queued bytes into it would change what
+  is reconciled; a live socket writes in the provider's order.
+
+`4207` is not a refusal. It never counts toward the three-`1008` refusal bound
+(`MAX_DRAFT_UPDATE_REFUSALS` in `hocuspocus-document-transport.ts`; see the
+editor's `.context/CONTEXT.md`),
+keeps the outbox, and reconnects after the provider's delay like any drop.
+After handshake-first it means a server that lost committed rows or a peer that
+skips the handshake, and the next connection's SyncStep2 repairs it. Decision:
+[drafts without locks](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/drafts-without-locks.md).
 
 ## Access scope and 4409
 
@@ -78,8 +119,8 @@ while local updates are still unacknowledged: the server refused them, and a
 reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
 resets with reason `access-changed` instead of reconnecting, and
 `DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
-session. A branch (draft review) room rebuilds through
-`rebuildBranchRoom`, which starts a fresh session from the server's state. A
+session. A draft (review) room rebuilds through
+`rebuildDraftRoom`, which starts a fresh session from the server's state. A
 live room (scratch) goes through the registry's `dropRefusedRoom`, which
 revokes each lease's access: the session is torn down and its IndexedDB copy,
 which still holds the refused edits, is cleared. Editor hosts unbind at once
@@ -87,12 +128,25 @@ which still holds the refused edits, is cleared. Editor hosts unbind at once
 loads the server's state. A drop that fails leaves the refused session bound
 read-only rather than reopening again.
 
+## 4208: the document was removed
+
+A `4208 document-deleted` close is terminal for live and draft rooms alike:
+the transport freezes the room (`read`), resets with disposition `removed`
+and never reconnects on its own. Nothing rebuilds, replays or drops it, and a
+draft review keeps the terminal session painted. The registry reports each
+live room's close once (`observeRemovedRooms`) and the account lifetime asks
+the record cache again; the availability removal closes the tab and says who
+removed the document. Only a lookup after the close that proves the document
+present restarts the room, once per close: the lifetime's
+`restartRemovedRoom`, or an explicit open's bind (`restartUnavailableRoom`). See
+`features/project/context/.context/resource-catalog-and-editor-lifecycle.md`.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with
 the contracts parser, ignores unknown message types, and exposes typed,
 per-message subscriptions. Live `DocumentSession`s subscribe to
-`change_event`; branch sessions deliberately do not.
+`change_event`; draft sessions deliberately do not.
 
 ## Dev-only wire observation
 

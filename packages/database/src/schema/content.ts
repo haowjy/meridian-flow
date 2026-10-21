@@ -8,6 +8,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
+import type { DocumentRemovalCause } from "@meridian/contracts/protocol";
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
@@ -83,6 +84,10 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
+    // The Works badge: documents the Work's active branch changes, as the collab pending
+    // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
+    // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
+    pendingDocumentCount: integer("pending_document_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -221,7 +226,7 @@ export const folders = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
-    /** A draft's new folder: in no live view until placed (read only through the tree view). */
+    /** A branch's new folder: in no live view until placed (read only through the tree view). */
     hidden: boolean("hidden").notNull().default(false),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
@@ -275,13 +280,30 @@ export const documents = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
+    deletionReason: text("deletion_reason").$type<"deleted" | "discarded">(),
+    deletedByUserId: uuid("deleted_by_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    deletionCause: text("deletion_cause").$type<DocumentRemovalCause>(),
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
-    /** A draft's new document: in no live view until placed (read only through the tree view). */
+    /** A branch's new document: in no live view until placed (read only through the tree view). */
     hidden: boolean("hidden").notNull().default(false),
   },
   (table) => [
+    check(
+      "documents_removal_presence",
+      sql`(${table.deletedAt} IS NOT NULL) = (${table.deletionReason} IS NOT NULL)`,
+    ),
+    check(
+      "documents_deletion_reason_valid",
+      sql`${table.deletionReason} IN ('deleted', 'discarded')`,
+    ),
+    check(
+      "documents_deletion_cause_valid",
+      sql`${table.deletionCause} IN ('reply_rolled_back', 'create_failed', 'repair')`,
+    ),
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
@@ -318,7 +340,7 @@ export const documents = pgTable(
 );
 
 /**
- * A device's create that joined a draft's document: `fromDocumentId` is the id the device
+ * A device's create that joined a branch's document: `fromDocumentId` is the id the device
  * minted and never got a `documents` row, now meaning `toDocumentId`. No FK on the
  * source id, which names no row; deleting the target drops the forward with it.
  */

@@ -177,7 +177,9 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     turn("a3", "assistant", "u3"),
   ];
   const rowsOf = (refused?: ReadonlySet<string>) =>
-    ids(viewTranscript({ turns, refused, activity: { awaitingSubagents: false } }));
+    ids(
+      viewTranscript({ turns, anchoredTurnIds: refused, activity: { awaitingSubagents: false } }),
+    );
   expect(rowsOf()).toEqual(["u1", "u2", "p", "u3", "a3"]);
   expect(rowsOf(new Set(["f"]))).toEqual(["u1", "f", "u2", "p", "u3", "a3"]);
   // Still the latest reply: it stays, empty or not, for its Retry.
@@ -191,7 +193,13 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
     held.id === "u1" || held.id === "f" ? { ...held, forgottenBy: "u2" } : held,
   );
   const rowsAmong = (refused?: ReadonlySet<string>) =>
-    ids(viewTranscript({ turns: forgotten, refused, activity: { awaitingSubagents: false } }));
+    ids(
+      viewTranscript({
+        turns: forgotten,
+        anchoredTurnIds: refused,
+        activity: { awaitingSubagents: false },
+      }),
+    );
   expect(rowsAmong()).toEqual(["u2", "p", "u3", "a3"]);
   expect(rowsAmong(new Set(["f"]))).toEqual(["f", "u2", "p", "u3", "a3"]);
   // The anchor also outranks Retry suppression: the Retry that won stamps and supersedes the reply the
@@ -199,7 +207,7 @@ it("draws one failure for a chain of failed retries, the newest, and none for a 
   const competing = turn("r2", "assistant", "f", { status: "error", metadata: { retryOf: "f" } });
   const raced = viewTranscript({
     turns: [turn("u1", "user", null), { ...emptyFailed, forgottenBy: "r2" }, competing],
-    refused: new Set(["f"]),
+    anchoredTurnIds: new Set(["f"]),
     activity: { awaitingSubagents: false },
   });
   expect(ids(raced)).toEqual(["u1", "f", "r2"]);

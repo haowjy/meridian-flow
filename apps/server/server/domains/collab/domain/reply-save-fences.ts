@@ -1,22 +1,19 @@
-/** Identity admission and host-held leases for a reply's one save transaction. */
-import type {
-  AgentEditCore,
-  StagedWriteRejectionReason,
-  WriteContext,
-} from "@meridian/agent-edit/integration";
-import type { DraftId, LinkView } from "@meridian/contracts";
+/** Identity admission for a reply's one save transaction: grants, pins and live locks. */
+import type { AgentEditCore, WriteContext } from "@meridian/agent-edit/integration";
+import type { BranchId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { testHook } from "../../../shared/test-hooks.js";
+import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
 import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
-import type { BranchAgentEditDiagnostics } from "./branch-agent-edit.js";
-import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
-import { collabHook } from "./collab-test-hooks.js";
-import type { Drafts } from "./drafts.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { Branches } from "./branches.js";
+import { type ClosedPin, closedPinReason } from "./closed-pin-reason.js";
+import type { DraftAgentEditDiagnostics } from "./draft-agent-edit.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 
-export type ReplyPin = { draftId: DraftId; peerBranchId: string; upstreamBranchId: string };
+export type ReplyPin = { branchId: BranchId; peerDraftId: string; upstreamDraftId: string };
 export type ReplyDocument = {
   core: AgentEditCore;
   grant: FileGrant<"edit">;
@@ -32,79 +29,106 @@ export type ReplyRecord = {
   documents: Map<DocumentId, ReplyDocument>;
 };
 
+/** A drafted write's ensured peer becomes its reply document's pin, before its room read. */
 export function pinStaged(entry: ReplyDocument | undefined, staged: WriteContext): void {
-  const pulled = staged.interactionContext;
-  if (!entry || pulled?.mode !== "threadPeer" || entry.linkView.kind !== "draft") return;
-  if (!pulled.peerBranchId || !pulled.upstreamBranchId)
+  const peer = staged.interactionContext;
+  if (!entry || peer?.mode !== "threadPeer" || entry.linkView.kind !== "branch") return;
+  if (!peer.peerDraftId || !peer.upstreamDraftId)
     throw new Error("Drafted write has no reply peer identity");
   entry.pin = {
-    draftId: entry.linkView.draftId,
-    peerBranchId: pulled.peerBranchId,
-    upstreamBranchId: pulled.upstreamBranchId,
+    branchId: entry.linkView.branchId,
+    peerDraftId: peer.peerDraftId,
+    upstreamDraftId: peer.upstreamDraftId,
   };
 }
 export type ReplySaveFences = {
-  withLeases<T>(
-    record: ReplyRecord,
-    run: (lease: BranchLockLease | undefined) => Promise<T>,
-  ): Promise<T>;
   confirm(record: ReplyRecord): Promise<RefusedResponseDocument[]>;
 };
 export function createReplySaveFences(deps: {
   liveUtilityCore: AgentEditCore;
-  branches: Pick<ApplicationBranchStore, "getBranch">;
-  criticalSections: BranchCriticalSections;
-  drafts: Pick<Drafts, "shareActive">;
-  diagnostics?: Pick<BranchAgentEditDiagnostics, "replyPinMismatch">;
+  drafts: Pick<ApplicationDraftStore, "getDraft">;
+  branches: Pick<Branches, "shareActive">;
+  diagnostics?: Pick<DraftAgentEditDiagnostics, "replyPinMismatch">;
   fileAccess: Pick<FileAccess, "confirmEdit">;
+  removals: DocumentRemovals;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ReplySaveFences {
   return {
-    withLeases(record, run) {
-      const ids = [...record.documents.values()].flatMap(({ pin }) =>
-        pin ? [pin.peerBranchId, pin.upstreamBranchId] : [],
-      );
-      return ids.length ? deps.criticalSections.withBranches(ids, run) : run(undefined);
-    },
     async confirm(record) {
       const entries = [...record.documents];
       if (!entries.length) return [];
       const grants = entries.map(([, entry]) => entry.grant);
+      await testHook("save.beforeWorkLock");
       await deps.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
-      await collabHook("save.afterWorkLock");
+      await testHook("save.afterWorkLock");
+      // Works first, then the sorted live documents, never a Work after them. A removal takes
+      // the same document locks, so the confirmation below sees it or holds it off until commit.
+      await deps.lockLiveDocuments(
+        entries
+          .filter(([, entry]) => entry.core === deps.liveUtilityCore)
+          .map(([id]) => id)
+          .sort(),
+      );
+      await testHook("save.afterDocumentLock");
       const refusals = new Map<DocumentId, RefusedResponseDocument>();
-      for (const denial of await deps.fileAccess.confirmEdit(grants)) {
-        const documentId = targetDocumentId(denial.target);
-        refusals.set(documentId, { documentId, denial });
-      }
-      const active = new Map<DraftId, boolean>();
+      const denials = await deps.fileAccess.confirmEdit(grants);
+      const active = new Map<BranchId, boolean>();
+      // A closed pin is judged once its document's record is in hand: one batched lookup below.
+      const closedPins: { documentId: DocumentId; pin: Omit<ClosedPin, "removal"> }[] = [];
       for (const [documentId, { pin }] of entries.sort(([, a], [, b]) =>
-        (a.pin?.draftId ?? "").localeCompare(b.pin?.draftId ?? ""),
+        (a.pin?.branchId ?? "").localeCompare(b.pin?.branchId ?? ""),
       )) {
-        if (!pin || refusals.has(documentId)) continue;
-        if (!active.has(pin.draftId))
-          active.set(pin.draftId, Boolean(await deps.drafts.shareActive(pin.draftId)));
-        const upstream = await deps.branches.getBranch(pin.upstreamBranchId);
-        const peer = await deps.branches.getBranch(pin.peerBranchId);
-        let reason: StagedWriteRejectionReason | undefined;
-        if (!active.get(pin.draftId)) reason = "discarded_draft";
-        else if (!upstream || upstream.status === "closed") reason = "discarded_document";
-        else if (!peer || peer.status === "closed") reason = "discarded_edit";
-        else if (
-          peer.draftId !== pin.draftId ||
-          upstream.draftId !== pin.draftId ||
-          peer.upstreamBranchId !== pin.upstreamBranchId ||
+        if (!pin || denials.some((denial) => targetDocumentId(denial.target) === documentId))
+          continue;
+        if (!active.has(pin.branchId))
+          active.set(pin.branchId, Boolean(await deps.branches.shareActive(pin.branchId)));
+        const upstream = await deps.drafts.getDraft(pin.upstreamDraftId);
+        const peer = await deps.drafts.getDraft(pin.peerDraftId);
+        const judged = { branchActive: Boolean(active.get(pin.branchId)), upstream, peer };
+        if (closedPinReason({ ...judged, removal: undefined })) {
+          closedPins.push({ documentId, pin: judged });
+          continue;
+        }
+        if (
+          peer?.branchId !== pin.branchId ||
+          upstream?.branchId !== pin.branchId ||
+          peer.upstreamDraftId !== pin.upstreamDraftId ||
           peer.documentId !== documentId ||
           upstream.documentId !== documentId ||
           peer.threadId !== record.threadId ||
           peer.kind !== "thread_peer" ||
           upstream.kind !== "work_draft"
         ) {
-          reason = "integration";
+          refusals.set(documentId, { documentId, reason: "integration" });
           deps.diagnostics?.replyPinMismatch({ documentId, threadId: record.threadId, pin });
         }
-        if (reason) refusals.set(documentId, { documentId, reason });
+      }
+      // A deleted document answers `not_found`; the record says who deleted it.
+      const removals = await deps.removals.lookup([
+        ...denials
+          .filter((denial) => denial.reason === "not_found")
+          .map((denial) => targetDocumentId(denial.target)),
+        ...closedPins.map((pin) => pin.documentId),
+      ]);
+      for (const denial of denials) {
+        const documentId = targetDocumentId(denial.target);
+        refusals.set(
+          documentId,
+          denial.reason === "not_found"
+            ? { documentId, removed: removals.get(documentId) ?? null }
+            : { documentId, denial },
+        );
+      }
+      for (const { documentId, pin } of closedPins) {
+        const reason = closedPinReason({ ...pin, removal: removals.get(documentId) });
+        if (!reason) continue;
+        refusals.set(
+          documentId,
+          typeof reason === "object"
+            ? { documentId, removed: reason.removed }
+            : { documentId, reason },
+        );
       }
       const denied = new Set<AgentEditCore>();
       for (const [documentId, refusal] of refusals) {
@@ -118,11 +142,11 @@ export function createReplySaveFences(deps: {
             record.responseId,
             documentId,
             refusal.reason,
-            entry.pin?.peerBranchId,
+            entry.pin?.peerDraftId,
           );
         } else if (record.threadId) {
           // A denial carries the policy's document-level copy; the writes are dropped (D29, D42).
-          await entry.core.invalidateThreadDocument(documentId, record.threadId);
+          entry.core.dropStaged(documentId, record.threadId);
           denied.add(entry.core);
         }
       }
@@ -133,12 +157,6 @@ export function createReplySaveFences(deps: {
       }
       // Refused participants still own per-write receipts and must save them.
       markReplyConfirmed([...record.documents.keys()]);
-      await deps.lockLiveDocuments(
-        [...record.documents]
-          .filter(([, entry]) => entry.core === deps.liveUtilityCore)
-          .map(([id]) => id)
-          .sort(),
-      );
       return [...refusals.values()];
     },
   };

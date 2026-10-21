@@ -402,7 +402,9 @@ else
         userText: "Continue again.",
       });
       expect((await secondRun.execute()).status).toBe("complete");
-      const secondC = (await rig.repos.turns.findById(secondRun.executionTurnId))!;
+      const secondC = (await rig.repos.turns.listByThread(rig.threadId))
+        .reverse()
+        .find((turn) => turn.role === "compaction" && turn.status === "complete")!;
       expect(secondC.role).toBe("compaction");
       expect(rig.summarizer.calls[1].changedDocuments).not.toContain("kb://old-chapter");
       expect(rig.summarizer.calls[1].changedDocuments).not.toContain("chapter");
@@ -412,7 +414,7 @@ else
       const secondElisions = (secondC.metadata as JsonObject).elisions as JsonObject[];
       expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
-      expect(promptBytes(rig.gateway.requests[2])).not.toContain("FRESH-READ TEXT");
+      expect(promptBytes(rig.gateway.requests.at(-1)!)).not.toContain("FRESH-READ TEXT");
       expect((await rig.repos.blocks.findById(results[1].id))!.content).toMatchObject({
         output: "FRESH-READ TEXT",
       });
@@ -1350,16 +1352,18 @@ else
         userText: "Continue.",
       });
       expect((await run.execute()).status).toBe("complete");
-      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-6);
       expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
         ["assistant", "complete"],
         ["user", "complete"],
+        ["system", "complete"],
+        ["assistant", "complete"],
         ["compaction", "complete"],
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
-      // A, C and B are one execution. B, reserved after C, is for the writer's
-      // message A left (not the one A delivered), and delivers it; one end.
+      // The notes assistant delivers the late writer message before C. B has
+      // no outstanding receipt; the whole continuation is still one execution.
       const rows = await db
         .select({
           id: schema.turns.id,
@@ -1367,12 +1371,12 @@ else
           reservedFor: schema.turns.reservedForUserTurnIds,
         })
         .from(schema.turns)
-        .where(inArray(schema.turns.id, [tail[0]?.id, tail[2]?.id, tail[3]?.id] as never[]));
+        .where(inArray(schema.turns.id, [tail[0]?.id, tail[4]?.id, tail[5]?.id] as never[]));
       const byId = new Map(rows.map((row) => [row.id, row]));
       expect(
-        [tail[0], tail[2], tail[3]].map((turn) => byId.get(turn?.id as never)?.executionId),
+        [tail[0], tail[4], tail[5]].map((turn) => byId.get(turn?.id as never)?.executionId),
       ).toEqual([run.executionId, run.executionId, run.executionId]);
-      expect(byId.get(tail[3]?.id as never)?.reservedFor).toEqual([tail[1]?.id]);
+      expect(byId.get(tail[5]?.id as never)?.reservedFor).toEqual([]);
       const [delivered] = await db
         .select({ byTurnId: schema.threadInboxMessages.deliveredByTurnId })
         .from(schema.threadInboxMessages)
@@ -1547,7 +1551,7 @@ else
         });
         return {
           kind: "complete",
-          text: "The earlier scene is complete.",
+          text: 'The earlier scene is complete.\n\n## Documents to keep open\n- {"path":"kb://notes"}\n- {"path":"manuscript://never-shown"}',
           model: "summary-model",
           modelResponses: [],
         };
@@ -1557,14 +1561,23 @@ else
           result("first-tool", "Earlier scene. ".repeat(1000)),
           result("last-tool", "Latest group."),
           {
+            content: [{ type: "text", text: "Notes done." }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 10000, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+          {
             ...result("successor-tool", "Next group."),
             usage: { inputTokens: 100, outputTokens: 10 },
           },
         ],
         onStream: async (call) => {
           if (call === 1) rig.setThreshold(undefined);
-          if (call === 2) rig.setThreshold(2500);
-          if (call === 3) {
+          // Leave room for the re-show after reserving half-headroom and estimator slack.
+          if (call === 2) rig.setThreshold(5000);
+          if (call === 4) {
             const latest = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
             expect(latest?.role).toBe("assistant");
             expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(latest?.id);
@@ -1573,6 +1586,26 @@ else
         },
       });
       rig = await fixture({ history: "brief history", gateway, summarizer });
+      // A document the history showed: the compaction re-shows it after the summary.
+      const [historyTurn] = await rig.repos.turns.listByThread(rig.threadId);
+      await rig.repos.blocks.create({
+        turnId: historyTurn.id,
+        blockType: "text",
+        sequence: 5,
+        status: "complete",
+        content: {
+          type: "reference",
+          text: "Notes",
+          documentId: "00000000-0000-4000-8000-000000000099",
+          uri: "kb://notes",
+          read: { result: "OLD NOTES TEXT", revision: "old" },
+        },
+      });
+      rig.deps.referenceReader.read = async () => ({
+        result: "RESHOWN NOTES TEXT",
+        revision: "new",
+        evidence: { shown: [] },
+      });
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -1583,13 +1616,19 @@ else
       const tail = turns.slice(-3);
       expect(tail.map((turn) => turn.role)).toEqual(["assistant", "compaction", "assistant"]);
       expect(tail[1].metadata).toMatchObject({
-        compactedThrough: { turnId: tail[0].id, blockSequence: 2 },
+        compactedThrough: { turnId: turns.at(-5)!.id, blockSequence: 2 },
       });
       expect((await rig.repos.blocks.listByTurn(tail[1].id))[0].content).toMatchObject({
-        props: { excludedTurnCount: 3 },
+        props: {
+          excludedTurnCount: 3,
+          summary:
+            'The earlier scene is complete.\n\n## Documents to keep open\n- {"path":"kb://notes"}',
+        },
       });
       expect(rig.summarizer.calls).toHaveLength(1);
-      expect(rig.summarizer.calls[0].retainedMessages).toEqual([
+      const retainedMessages = rig.summarizer.calls[0].retainedMessages;
+      if (!retainedMessages) throw new Error("Missing retained suffix");
+      expect(retainedMessages.slice(0, 3)).toEqual([
         { role: "user", content: [{ type: "text", text: "Continue." }] },
         {
           role: "assistant",
@@ -1622,13 +1661,21 @@ else
       const coldSource = JSON.stringify(rig.summarizer.calls[0].projection);
       expect(coldSource).not.toContain("Latest group.");
       expect(coldSource).not.toContain("Continue.");
-      const request = rig.gateway.requests[2];
-      expect(rig.gateway.requests).toHaveLength(4);
-      const later = rig.gateway.requests[3];
+      expect(JSON.stringify(retainedMessages.slice(3))).toContain("Before the compaction summary");
+      expect(retainedMessages.at(-1)).toEqual({
+        role: "assistant",
+        content: [{ type: "text", text: "Notes done." }],
+      });
+      const request = rig.gateway.requests[3];
+      expect(rig.gateway.requests).toHaveLength(5);
+      const later = rig.gateway.requests[4];
       expect(later.tools).toEqual(request.tools);
       expect(JSON.stringify(later.messages.slice(0, request.messages.length))).toBe(
         JSON.stringify(request.messages),
       );
+      // The re-shown document survives the successor's tool call: both requests carry it.
+      expect(promptBytes(request)).toContain("RESHOWN NOTES TEXT");
+      expect(promptBytes(later)).toContain("RESHOWN NOTES TEXT");
       expect(promptBytes({ ...request, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
         "compacted request bytes",
       );

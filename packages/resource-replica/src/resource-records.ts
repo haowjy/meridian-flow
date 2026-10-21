@@ -209,7 +209,7 @@ export type NamespaceIntent = ResourceKey & {
         provisionalName?: string;
         /**
          * Where the writer put the document, sent with the create so the server can join a
-         * draft's document waiting there. Absent for a nameless create (the editor's New document).
+         * branch's document waiting there. Absent for a nameless create (the editor's New document).
          */
         destination?: ResourceDestination;
       }

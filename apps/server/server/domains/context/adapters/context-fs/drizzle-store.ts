@@ -1,7 +1,7 @@
 /**
  * Drizzle ContextDocumentStore for one Meridian context source. Reads go through one tree
- * view (live, or one draft's); live creates reveal a hidden document at their path rather
- * than inserting a twin, and a draft's creates make hidden rows through the tree owner.
+ * view (live, or one branch's); live creates reveal a hidden document at their path rather
+ * than inserting a twin, and a branch's creates make hidden rows through the tree owner.
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";

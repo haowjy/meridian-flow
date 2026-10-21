@@ -15,6 +15,10 @@ import {
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../collab/composition.js";
@@ -111,10 +115,12 @@ if (!RUN) {
         const service = (db: Database) => {
           const catalog = createDrizzleContextCatalog(db);
           const contextPorts = createProductionUnifiedContextPortFactory({
+            pendingBranch: createTestWorkProjectionMutation(db),
             links: createTestDocumentLinkScopes(db),
             db,
+            removal: createTestDocumentRemoval(db),
             documentSync: collab,
-            drafts: collab.drafts,
+            branches: collab.branches,
             catalogMutations: catalog,
           });
           return createUploadIntake({
@@ -246,6 +252,7 @@ if (!RUN) {
         const collab = createCollabDomain({
           ...testLinkDeps(db),
           db: db,
+          ...createTestRemovalDeps(db),
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
           catalogMutations: catalog,
@@ -258,10 +265,12 @@ if (!RUN) {
           }),
         );
         const contextPorts = createProductionUnifiedContextPortFactory({
+          pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
+          removal: createTestDocumentRemoval(db),
           documentSync: collab,
-          drafts: collab.drafts,
+          branches: collab.branches,
           catalogMutations: catalog,
         });
         const service = createUploadIntake({
@@ -329,10 +338,12 @@ if (!RUN) {
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
+        removal: createTestDocumentRemoval(database.current),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
         catalogMutations: catalog,
       });
       const service = createUploadIntake({

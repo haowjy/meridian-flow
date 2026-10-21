@@ -18,6 +18,7 @@ import type {
   DocumentFileType,
   Filetype,
   MoveContextEntryRequest,
+  RetractionCause,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup/links";
@@ -48,8 +49,8 @@ export interface ThreadContextView {
   threadId: string;
   /** The reply in progress, whose own staged writes reads still see. */
   responseId?: string | null;
-  /** The Work whose draft this thread's drafted writes land in; null outside draft mode (D40). */
-  draftWork: WorkRef | null;
+  /** The Work whose branch this thread's drafted writes land in; null outside draft mode (D40). */
+  branchWork: WorkRef | null;
   version?: "draft" | "live";
 }
 
@@ -109,7 +110,7 @@ export type ContextCreateUntitledDocumentResult =
       name: string;
       workId?: string;
     }
-  /** The create became a draft's document; `documentId` is that document, at its current address. */
+  /** The create joined a branch's document; `documentId` is that document, at its current address. */
   | {
       status: "joined";
       documentId: string;
@@ -133,7 +134,7 @@ export interface ContextCreateUntitledDocumentOptions {
   origin: WriteProvenance;
   /**
    * The writer's chosen place for this document, the same identity-based address a move
-   * carries. The create joins a draft's hidden document waiting there. Without it the
+   * carries. The create joins a branch's hidden document waiting there. Without it the
    * create is nameless: `Untitled N` in the home URI's folder.
    */
   destination?: { parent: NonNullable<MoveContextEntryRequest["destinationParent"]>; name: string };
@@ -303,6 +304,7 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 }
 
 export interface ContextDeleteOptions extends ContextWriteOptions {
+  removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
 }
@@ -330,7 +332,7 @@ export interface ContextPort {
   /** Read a text file by URI. `not_found` if it does not exist. */
   read(uri: string): Promise<Result<ContextReadResult, ContextError>>;
 
-  /** Write text content to a URI, creating parent folders as needed. */
+  /** Overwrite the document at a URI with text. `not_found` when none lives there: it never creates. */
   write(
     uri: string,
     content: string,
@@ -387,11 +389,14 @@ export interface ContextPort {
 
   /**
    * Reverse a create this port made, for a rolled-back reply or a failed create write
-   * (contract §12.5): a live create is deleted; a draft's create ends the draft's use of
-   * the document unless the draft's branch already holds committed text. A draft-mode
-   * port's `delete` never reverses a draft's create.
+   * (contract §12.5): a live create is deleted; a branch's create ends the branch's use of
+   * the document unless the document's draft already holds committed text. A draft-mode
+   * port's `delete` never reverses a branch's create.
    */
-  retractCreate(uri: string, options: { documentId: string }): Promise<Result<void, ContextError>>;
+  retractCreate(
+    uri: string,
+    options: { documentId: string; cause: RetractionCause },
+  ): Promise<Result<void, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

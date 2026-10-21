@@ -9,7 +9,10 @@ import {
 } from "react";
 import type { ContextTab } from "@/client/stores";
 import { useContextTabs } from "@/client/stores";
-import { useAccountResourceProjection } from "./context/account-feature-context";
+import {
+  useAccountResourceProjection,
+  useOptionalRemovedNotices,
+} from "./context/account-feature-context";
 import { projectResourceTab } from "./context/context-tab-from-file";
 import { resolveEditorPresentation } from "./context/editor-presentation";
 import type { VisibleEditorRoute } from "./context/resolve-visible-editor-tab";
@@ -193,6 +196,11 @@ export function useDesktopEditorPresentation<
     visibleTab: presentation.visible ? tab : null,
   };
 }
+/**
+ * The dock's document as the catalog places it. A document that vanished
+ * closes the slot and reports itself to the dock's removed-documents notice,
+ * which says why once availability proves a removal.
+ */
 export function useDesktopDockPresentation(projectId: string, screen: ScreenKey) {
   const document = useDockDocument(screen, projectId);
   const { records, placement } = useAccountResourceProjection(projectId);
@@ -201,9 +209,13 @@ export function useDesktopDockPresentation(projectId: string, screen: ScreenKey)
     : null;
   const gone = projected?.kind === "removed" || projected?.kind === "terminal";
   const close = useDockDocumentStore((state) => state.closeDocument);
+  const notices = useOptionalRemovedNotices();
+  const goneTab = gone ? document?.tab : undefined;
   useEffect(() => {
-    if (gone) close();
-  }, [gone, close]);
+    if (!goneTab) return;
+    notices?.presentedRemoved(projectId, "dock", [goneTab]);
+    close();
+  }, [goneTab, close, notices, projectId]);
   return gone || !document
     ? null
     : projected?.kind === "projected"

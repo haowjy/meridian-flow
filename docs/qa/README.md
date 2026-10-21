@@ -13,16 +13,31 @@ with a browser confirmation.
 Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
+A gate's probe runs on its own fresh stack and database, from a detached
+checkout pinned to the commit under test. Never reuse another lane's stack or
+probe the integration worktree's: a checkout that moves under a watching dev
+server, or a reused database, produces regressions that vanish on a clean
+stack.
 
-- [Runtime protocols](runtime-probes.md): RP-1 through RP-17, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
+- [Runtime protocols](runtime-probes.md): RP-1 through RP-20, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`. Their durable halves are RP-13 and RP-14.
 - [Stop and hand-back](stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
+- [Failure cards](failure-cards.md): the failed reply, refused and lost Retry, failed compaction, handoff brief and live-region clearing, driven in the browser with injected faults.
 - [Queue controls](queue-controls.md): QC-01 to QC-08, the queued look, the x, Cancel queue, Send now and every failure card, driven in the browser with injected faults.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text, the `cN` ref steps, and SY-01 to SY-07, the live-sync recipes (join, reload, navigate, another client's message, Stop, a held write-mode switch, a network gap).
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
-- [Chat uploads menu](chat-uploads-menu.md): the top-bar list of a chat's files: add, open, delete, fork source and dock restore.
+- [Chat Files menu](chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
+- [Crash and two processes](crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.ts`.
+- [Lock-free drafts seam probes](drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, sampled Discard, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
+- [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
+- [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
+- [#871 cells](871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is swept, and the region refusal.
+- [Selected keep-open reads](selected-keep-open.md): compaction uses ordinary read arguments, with ordinary observation credit and whole-only duplicate elision.
+- [Scratch before compaction](scratch-compaction.md): zero to three calls, honest held results, summary, bypasses, cancellation and unchanged ownership.
+- [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the branch store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
+- [Drain Apply settlement](drain-apply-settlement.md): the `DRAIN_APPLY_SETTLEMENT=1` cutover switch refuses a new Apply with 503, replays a known command id and recovers.
 - [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Document adoption across a reload](document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Draft review](draft-review.md): visual editor and review workflows.

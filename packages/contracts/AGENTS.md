@@ -1,15 +1,16 @@
 # @meridian/contracts
 
 Shared TypeScript wire contracts for IDs, DTOs, protocols, thread events,
-agents, context URIs, document links, works, drafts, and observability. This
+agents, context URIs, document links, works, branches, and observability. This
 package defines boundary vocabulary; it does not own server adapters, storage,
 React, or provider behavior.
 
 ## Mental model
 
-- `drafts/` is review-card vocabulary. The durable backend primitive is a
-  branch, not a legacy draft table; see [`src/drafts/AGENTS.md`](src/drafts/AGENTS.md)
-  and its [context](src/drafts/.context/CONTEXT.md).
+- `branches/` owns review DTOs. A branch is a Work's pending file tree; a
+  draft is one document's pending version (`document_drafts`). See
+  [`src/branches/AGENTS.md`](src/branches/AGENTS.md) and its
+  [context](src/branches/.context/CONTEXT.md).
 - Protocol unions are canonical definitions. WebSocket classifiers use the
   `WS_CLOSE` registry, pending transcript kinds use `PENDING_PLACEHOLDER_ROLES`,
   and thread controls use `ControlBody`.

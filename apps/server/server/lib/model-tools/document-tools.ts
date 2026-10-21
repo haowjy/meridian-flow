@@ -5,7 +5,9 @@
  */
 
 import type {
+  AgentEditResultV1,
   DocumentCommandName,
+  FrontierLookup,
   ReadToolInput,
   WriteCommand,
   WriteOutcome,
@@ -14,11 +16,11 @@ import type {
 import {
   documentNotFoundMessage,
   formatDocumentFile,
+  isDocumentNotFoundError,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
 import { documentPathKey } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
   type FileDestination,
@@ -27,11 +29,12 @@ import {
 } from "../../domains/file-policy/index.js";
 import {
   isSkillsUri,
+  type ResultEvidence,
   readSkill,
   refuseSkillWrite,
-  type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
+import { removedFileResult } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import {
   binaryCopySelectionMessage,
@@ -44,14 +47,16 @@ import {
 } from "./copy-source.js";
 import {
   documentGrant,
+  documentNotFoundError,
   fileAccessDeniedError,
   firstRefusal,
   inContainer,
   keptDraftReader,
+  removalBehind,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
-import { showingOf, threadShownLinks } from "./shown-link-capture.js";
+import { evidenceOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -204,12 +209,12 @@ async function writeUnderGrant(
   ctx: ToolHandlerContext,
   uploadsChat: string | null | undefined,
 ): Promise<
-  | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
-  | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
+  | (WriteOutcome & { isError: false; evidence: ResultEvidence })
+  | (WriteToolErrorOutput & { evidence?: ResultEvidence })
 > {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
-  let written: RoutedWriteOutcome;
+  let written: WriteOutcome;
   try {
     written = await deps.documentSync
       .agentEdit()
@@ -223,57 +228,106 @@ async function writeUnderGrant(
         ...(uploadsChat ? { uploadsChat } : {}),
         grant,
         shownLinks: threadShownLinks(deps, ctx.threadId),
+        ...(ctx.frontiers ? { frontiers: ctx.frontiers } : {}),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
+    // A removal that won the document's lock after the grant (a pull, a staged or immediate
+    // commit): the model's interim answer is `document_not_found`, with the record's sentence.
+    if (isDocumentNotFoundError(cause))
+      return cause.removal
+        ? removedFileResult(parsed.command, cause.removal, address.filePath)
+        : documentNotFoundError(parsed.command, address.filePath);
     if (!(cause instanceof FileEditRefusedError)) throw cause;
-    return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
+    const refusal = firstRefusal(cause);
+    return fileAccessDeniedError(
+      parsed.command,
+      refusal,
+      address.filePath,
+      await removalBehind(deps, principal, refusal),
+    );
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
-  // was a partial failure's echo. An error without echo text carries no facts.
-  const shown = showingOf(address.documentId, written);
-  if (written.isError) return { isError: true, output: written.result, shown };
-  // The showing is host-only evidence: it leaves here only as `shown`.
-  const { showing: _showing, ...outcome } = written;
-  return { ...withDestination(outcome, grant.destination), shown } as WriteOutcome & {
+  // was a partial failure's echo and a region refusal's current text. Whatever
+  // frontier a result carries records, error or not.
+  const evidence = evidenceOf(address.documentId, written);
+  if (written.isError) return { isError: true, output: written.result, evidence };
+  // Showing and frontier are host-only: they leave here only as `evidence`.
+  const { showing: _showing, frontier: _frontier, ...outcome } = written;
+  return { ...withDestination(outcome, grant.destination), evidence } as WriteOutcome & {
     isError: false;
-    shown: ShownLinkShowing[];
+    evidence: ResultEvidence;
+  };
+}
+
+/** Shared tracked read: ordinary tool arguments, optionally pinned to a known identity. */
+export async function readTrackedDocument(
+  deps: ToolWiringDeps,
+  input: ReadToolInput,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
+  options: { expectedDocumentId?: string; recordingFrontier?: FrontierLookup } = {},
+): Promise<{
+  output: AgentEditResultV1;
+  revision: string | null;
+  isError?: true;
+  metadata?: ReturnType<typeof documentRevisionMetadata>;
+  evidence?: ResultEvidence;
+}> {
+  const { path, format, version, ...selection } = input;
+  const call = await resolveToolCall(deps, ctx, version);
+  if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
+  const address = await resolveDocumentAddress(call.context, "read", path);
+  if (isToolError(address)) return { ...address, revision: null };
+  if (options.expectedDocumentId !== undefined && address.documentId !== options.expectedDocumentId)
+    return {
+      ...writeToolError(
+        "read",
+        "Referenced document is no longer available at this URI.",
+        "document_not_found",
+      ),
+      revision: null,
+    };
+  const reader =
+    version === "draft"
+      ? await keptDraftReader(deps, call.principal, call.execution, address.documentId)
+      : call.principal;
+  const grant = await documentGrant(deps, reader, "read", address, "read");
+  if (isToolError(grant)) return { ...grant, revision: null };
+  const outcome = await readDocument(
+    deps,
+    grant,
+    address,
+    {
+      selection,
+      format,
+      ...(version ? { version } : {}),
+      ...(options.recordingFrontier ? { recordingFrontier: options.recordingFrontier } : {}),
+    },
+    ctx,
+  );
+  if (outcome.isError) return { isError: true, output: outcome.result, revision: outcome.revision };
+  recordTouchInBackground(deps, address.documentId, ctx);
+  const notice = await deps.contextPorts.chatFiles.notice(
+    call.context.resolution.thread.projectId,
+    path,
+    address.uri,
+  );
+  return {
+    output: notice ? { ...outcome.result, ...notice } : outcome.result,
+    revision: outcome.revision,
+    metadata: documentRevisionMetadata(address, outcome.revision),
+    evidence: evidenceOf(address.documentId, outcome),
   };
 }
 
 export function createReadHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const { path, format, version, ...selection } = input as ReadToolInput;
-    if (isSkillsUri(path)) return readSkill(deps, ctx.threadId, input as ReadToolInput);
-    const call = await resolveToolCall(deps, ctx, version);
-    if (isToolError(call)) return writeToolError("read", call.output.message);
-    const address = await resolveDocumentAddress(call.context, "read", path);
-    if (isToolError(address)) return address;
-    const reader =
-      version === "draft"
-        ? await keptDraftReader(deps, call.principal, call.execution, address.documentId)
-        : call.principal;
-    const grant = await documentGrant(deps, reader, "read", address, "read");
-    if (isToolError(grant)) return grant;
-    const outcome = await readDocument(
-      deps,
-      grant,
-      address,
-      { selection, format, ...(version ? { version } : {}) },
-      ctx,
-    );
-    if (outcome.isError) return { isError: true, output: outcome.result };
-    recordTouchInBackground(deps, address.documentId, ctx);
-    const notice = await deps.contextPorts.chatFiles.notice(
-      call.context.resolution.thread.projectId,
-      path,
-      address.uri,
-    );
-    return {
-      output: notice ? { ...outcome.result, ...notice } : outcome.result,
-      metadata: documentRevisionMetadata(address, outcome.revision),
-      shown: showingOf(address.documentId, outcome),
-    };
+    const parsed = input as ReadToolInput;
+    if (isSkillsUri(parsed.path)) return readSkill(deps, ctx.threadId, parsed);
+    const { revision: _revision, ...result } = await readTrackedDocument(deps, parsed, ctx, {
+      ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+    });
+    return result;
   };
 }
 
@@ -318,7 +372,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
         // A binary copy lands where a create would: in a draft-mode chat, a hidden row
-        // holding the draft's own object (12b-Q2).
+        // holding the branch's own object (12b-Q2).
         return inContainer(deps, principal, parsed.command, target, () =>
           copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
         );
@@ -375,6 +429,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             port: context.port,
             path: parsed.path,
             documentId: address.documentId,
+            cause: "create_failed",
           });
         } catch (error) {
           return writeToolError(
@@ -386,7 +441,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
       }
-      return { isError: true, output: outcome.output, shown: outcome.shown };
+      return { isError: true, output: outcome.output, evidence: outcome.evidence };
     }
     if (stagedCreate) {
       const responseId = ctx.responseIdentity?.editScopeId;
@@ -429,7 +484,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }
           : {}),
       },
-      shown: outcome.shown,
+      evidence: outcome.evidence,
     };
   };
 }

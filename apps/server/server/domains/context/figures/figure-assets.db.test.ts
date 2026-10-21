@@ -1,4 +1,5 @@
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
+
 /** Postgres-backed coverage for independent figure asset identity. */
 
 import { createDb } from "@meridian/database";
@@ -13,7 +14,9 @@ import {
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
@@ -99,10 +102,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("creates a distinct binary asset without changing the host document", async () => {
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
+        removal: createTestDocumentRemoval(db),
         documentSync: collab,
-        drafts: collab.drafts,
+        branches: collab.branches,
       });
       const service = createFigureAssetService({
         objectStore,

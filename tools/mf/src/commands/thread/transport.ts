@@ -14,6 +14,7 @@ import {
 import WebSocket from "ws";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
+import { jsonResponse } from "../../core/session";
 
 export function createThreadClient(session: Session): ThreadSocketClient {
   const url = new URL(API_THREADS_WS_PATH, session.serverUrl);
@@ -30,7 +31,7 @@ export function createThreadClient(session: Session): ThreadSocketClient {
         : new CliError("protocol", `Thread socket error: ${error.message}`, { details: error }),
     cancelTurn: (threadId, turnId) =>
       session.request("POST", apiThreadCancelPath(threadId, turnId), undefined, {
-        parse: cancelTurnResponseSchema.safeParse,
+        decode: jsonResponse(cancelTurnResponseSchema),
       }),
   });
 }

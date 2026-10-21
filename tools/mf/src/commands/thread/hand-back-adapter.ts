@@ -10,8 +10,10 @@ import {
   type HandBackCommand,
   type HandBackOperation,
   type HandBackOutcome,
+  type HandBackReplay,
   type HttpPort,
   INITIAL_RUN_STATE_VIEW,
+  nextOccurrence,
   type RunStateView,
   receiveRecord,
   viewRunStatePort,
@@ -19,12 +21,16 @@ import {
 import { CliError } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
+import { unknownJsonResponse } from "../../core/session";
 
 /** The HTTP port over a session: a status and decoded body, or `status: null` for no answer. */
 export function sessionHttp(session: Session): HttpPort {
   return async (path, body) => {
     try {
-      return { status: 200, body: await session.request("POST", path, body) };
+      return {
+        status: 200,
+        body: await session.request("POST", path, body, { decode: unknownJsonResponse }),
+      };
     } catch (error) {
       if (!(error instanceof CliError)) throw error;
       return error.httpStatus === undefined
@@ -72,7 +78,7 @@ export function refusedError(label: string, status: number): CliError {
 
 type Input =
   | { press: { kind: "stop"; view: RunStateView } | { kind: "queue"; ids: readonly string[] } }
-  | { replay: HandBackCommand };
+  | { replay: HandBackReplay };
 
 /**
  * Runs one hand-back command (a fresh press or an exact replay) through the shared operation and
@@ -88,7 +94,11 @@ export async function runHandBack(options: {
 }): Promise<Extract<HandBackOutcome, { kind: "confirmed" }>> {
   const { out, session, threadId, label, replayCommand, input } = options;
   let view = INITIAL_RUN_STATE_VIEW;
-  let held: HandBackCommand | null = "replay" in input ? input.replay : null;
+  // CLI replay imports a wire request, not a saved client occurrence.
+  let held: HandBackCommand | null =
+    "replay" in input
+      ? { ...input.replay, occurrence: nextOccurrence(0, crypto.randomUUID()) }
+      : null;
   const bodyOf = (command: HandBackCommand) =>
     command.kind === "stop"
       ? command.body

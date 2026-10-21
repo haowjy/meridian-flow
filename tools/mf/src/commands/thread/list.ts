@@ -6,6 +6,7 @@ import {
   listThreadsResponseSchema,
 } from "@meridian/contracts/protocol";
 import { type CommandSpec, intOption, stringOption } from "../../core/command";
+import { jsonResponse } from "../../core/session";
 import { resolveProjectId, resolveWorkId } from "../project/resolve";
 import { renderThreadList, type ThreadListRow, threadListRow } from "./transcript";
 
@@ -29,12 +30,12 @@ export const threadListCommand: CommandSpec = {
     if (projectRaw !== undefined || workRaw !== undefined) {
       const projectId = await resolveProjectId(session, projectRaw);
       ({ threads } = await session.request("GET", apiProjectThreadsPath(projectId), undefined, {
-        parse: listThreadsResponseSchema.safeParse,
+        decode: jsonResponse(listThreadsResponseSchema),
       }));
       if (workRaw !== undefined) workId = await resolveWorkId(session, projectId, workRaw);
     } else {
       ({ threads } = await session.request("GET", API_THREADS_PATH, undefined, {
-        parse: listThreadsResponseSchema.safeParse,
+        decode: jsonResponse(listThreadsResponseSchema),
       }));
     }
     const rows: ThreadListRow[] = threads

@@ -114,7 +114,7 @@ describe("draft review class-replay", () => {
   it.each([
     { label: "shared client with adjacent rewrite", adjacentRewrite: true, freshPeers: false },
     { label: "fresh chat peers (reported operation 72)", adjacentRewrite: false, freshPeers: true },
-  ])("publishes every class and its preview complement ($label)", ({
+  ])("applies every class and its preview complement ($label)", ({
     adjacentRewrite,
     freshPeers,
   }) => {
@@ -166,7 +166,7 @@ describe("draft review class-replay", () => {
         expect(from).toBeGreaterThanOrEqual(0);
       }),
     }));
-    // A fresh peer's transaction delta has no cumulative branch deletes and
+    // A fresh peer's transaction delta has no cumulative draft deletes and
     // stays independently selectable, unlike the shared client's clock prefix.
     const independent = { id: 76, block: 4, find: "flowing", replacement: "flowing north" };
     edits.push(independent);
@@ -238,13 +238,13 @@ describe("draft review class-replay", () => {
                   .join("")
               : hunk.insertedBlock?.display,
         }));
-      const published = computeDraftReviewHunks({
+      const reviewed = computeDraftReviewHunks({
         liveDoc: live,
         draftDoc: applied,
         model,
         draftUpdates: updates.filter((row) => rowIds.has(row.id)),
       });
-      expect(signature(published.hunks), classId).toEqual(
+      expect(signature(reviewed.hunks), classId).toEqual(
         signature(preview.hunks.filter((hunk) => hunk.operationIds.some((id) => ids.has(id)))),
       );
       expect(signature(remaining.hunks), classId).toEqual(

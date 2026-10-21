@@ -22,7 +22,7 @@ import {
   sortLsEntries,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
-import { containerReadonly, withDraftWork } from "./file-access.js";
+import { containerReadonly, withBranchWork } from "./file-access.js";
 import {
   contextToolError,
   isToolError,
@@ -40,7 +40,7 @@ async function listingCall(
 ): Promise<ToolCall | ToolErrorOutput> {
   const call = await resolveToolCall(deps, ctx, version);
   if (isToolError(call) || version !== "live") return call;
-  return { ...call, principal: withDraftWork(call.principal, null) };
+  return { ...call, principal: withBranchWork(call.principal, null) };
 }
 
 /** `ls scratch://@` and `ls uploads://@` list owners, each a distinct container of its own. */
@@ -144,7 +144,7 @@ export function createSearchHandler(deps: ToolWiringDeps) {
         }),
       ),
       // Only returned, authorized hits were shown, and only the passages their text shows whole.
-      shown: hits.flatMap(({ hit }) => shownPassages(hit, pattern, verbose)),
+      evidence: { shown: hits.flatMap(({ hit }) => shownPassages(hit, pattern, verbose)) },
       metadata: {
         documentRevisions: hits.map(
           ({ hit: { documentId, uri, revision } }) =>

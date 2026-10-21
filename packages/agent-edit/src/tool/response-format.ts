@@ -1,15 +1,14 @@
 // Formats document-write responses for the model tool surface.
-import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
+import type { ApplyEchoHunk } from "../apply/types.js";
+import type { DestructiveSweepReport } from "./commit-detection.js";
 import type { CopySummary } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import {
   type AgentEditBlockGroup,
   type AgentEditResultCommand,
   modelBlockItem,
-  modelConcurrentResult,
   modelResult,
 } from "./model-result.js";
-import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
   WriteErrorDetail,
   WriteErrorStatus,
@@ -24,7 +23,6 @@ export interface ApplySuccessResponseInput {
   writeId?: string;
   settlementId?: string;
   echo: ApplyEchoHunk[];
-  concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
   lateSweep?: DestructiveSweepReport;
   awarenessDegraded?: boolean;
@@ -68,9 +66,6 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
         ? { copied: { from: input.copied.summary.from, blocks: input.copied.summary.blocks } }
         : {}),
       ...(blocks.length > 0 || input.lateSweep ? { blocks } : {}),
-      ...(input.concurrentEdits
-        ? { concurrent: modelConcurrentResult(input.concurrentEdits) }
-        : {}),
       ...(input.awarenessDegraded ? { awarenessDegraded: true } : {}),
       ...(input.documentEmpty ? { documentEmpty: true } : {}),
     },
@@ -111,6 +106,7 @@ export function toOutcome(
     ...(result.error ? { error: result.error } : {}),
     ...(result.nodes ? { nodes: result.nodes } : {}),
     ...(result.showing ? { showing: result.showing } : {}),
+    ...(result.frontier ? { frontier: result.frontier } : {}),
     result: model,
   };
   if (result.status === "success") {
@@ -162,7 +158,7 @@ export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorSta
     status === "cant_redo_users_undo" ||
     status === "nothing_to_revert" ||
     status === "work_archived" ||
-    status === "read_required" ||
+    status === "region_changed" ||
     status === "binary_file" ||
     status === "permission_denied" ||
     status === "internal_error"

@@ -8,7 +8,7 @@ miss: stale-row windows, silent
 no-op verbs, stuck pending states.
 
 Ownership and command contracts: [draft-review reference](../../apps/app/src/features/draft-review/.context/draft-review.md). The shared
-`draft-command-executor.ts` admits commands; `EditorView` owns paint readiness,
+`branch-command-executor.ts` admits commands; `EditorView` owns paint readiness,
 not `useReviewRoomOwner`. `PresentedReviewScope` and
 `usePresentedDraftReview` share the one presented-document review across Editor
 and dock hosts.
@@ -22,7 +22,7 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Browsing live with no `?work=`, there is no Version chip for another Work's draft; the open
+  Browsing live with no `?work=`, there is no Version chip for another Work's drafts; the open
   document's draft hint (below) says so instead. Use `?work=<the drafting Work>` for the chip.
 
 Capture `agent-browser console` and `errors` at the end of every scenario —
@@ -77,6 +77,35 @@ Capture request/click/input/response times, pre/post selection and block text,
 a screenshot and independent draft/live readbacks. An insertion sent while a
 paint cover still holds the page is not evidence about the successor's caret.
 
+## Archive while typing into a draft
+
+Archive takes no lock on the draft ([the archive window][archive-window]): a
+key whose server check finished before Archive committed may land in the archived
+draft; every later key is refused. Open a 50k-word document draft in an owned named Work in one
+tab, start native typing at 200 ms a key, and archive the Work from a second tab's
+Works catalog mid-burst. Keep typing for two seconds after the click, then unarchive and
+type five more keys. PASS: the first tab's editor turns read-only in place without a
+reload or a jump in scroll position; each key typed before that is either saved or shown
+as not saved, never silently dropped; the keys after unarchive are acknowledged; and the
+draft read with `./mf` after a reload equals what the editor showed while archived plus
+the post-unarchive keys. A `1008 draft-update-admission-failed` close is expected only
+for a key sent between Archive's commit and the read-only notice, and no `4207` appears.
+Record the archive click time, each close and the notice's arrival. The seam
+behind it is the `archive-in-flight-append` probe in
+[drafts-lock-free-probes.md](drafts-lock-free-probes.md).
+
+[archive-window]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/work-lifecycle-fences-drafts.md
+
+## Per-change Discard of a long writer change
+
+Type more than 500 keystrokes into one paragraph of an owned draft (each frame is one
+member part of the same change), wait until `./mf` shows the draft's revision has
+stopped moving, then open the change list at phone width (390px) and Discard the
+writer's row. PASS: the `/draft/discard` POST answers 200 with at most 500
+`memberPartKeys` and `memberPartKeysComplete: false`, the writer's text leaves the draft, the model's change stays, and no
+"Couldn't discard this change" appears. While the typed frames are still arriving the
+row answers "This change was updated"; that is the typed stale refusal, not a failure.
+
 ## Review across document schemes
 
 In a named draft-mode Work, use the mock model to create `kb://Place`,
@@ -110,7 +139,7 @@ Use tool `path` arguments, not the agent-edit core's internal `file` name.
 
 Read the Work's drafts and the document preview through `./mf api`. PASS:
 two selectable classes, one heading-level change and one bold change. Open the
-Editor with that Work ID and draft ID; its change list uses the usual rows,
+Editor with that Work ID and the item's `itemKey`; its change list uses the usual rows,
 with localized `Heading 2 → 3` and `Bold on “red”` descriptions. Both blocks
 are tinted, with no duplicate struck-through copy of their unchanged text.
 
@@ -133,12 +162,16 @@ the requested rows. Discard sends the saved `closureClassIds`, `admissionTokens`
 tokens (not operation IDs): an independent paragraph admission must not refuse it,
 while changed evidence for the same class must return `stale`. A grown class
 with surviving immutable members also returns `stale`, including after a re-fork;
-a disappeared class or absent fallback-only class returns `gone`. Refresh
+a disappeared class or absent fallback-only class returns `gone`, but only when the
+request's `memberPartKeysComplete` is true: a sampled list with no listed survivor
+returns `stale`, because a sample cannot prove that no member survives
+(`d18-sampled-discard` in the [seam probes](drafts-lock-free-probes.md) runs this schedule
+with 502 members). Refresh
 the preview after a refused command: the selected closed class alone settles. Repeat after another per-change Discard re-forks the
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's
 rows/token. An unknown or closed draft returns `gone` without provisioning a
-replacement. A corrupt preview never repairs or publishes document content.
+replacement. A corrupt preview never repairs or writes document content.
 
 The DB concurrency contract injects append, re-fork and status commits after
 every awaited snapshot query and at read-port entry/return. Run it with
@@ -178,7 +211,7 @@ row's Review a silent no-op).
 ## Probe B — no verb re-enable window during dispositions
 
 Regression guard for the pump-tail window (mutations dropped `isPending`
-before the workDrafts refetch settled, re-enabling verbs against stale rows
+before the workBranchDrafts refetch settled, re-enabling verbs against stale rows
 for ~200ms).
 
 1. Stage 2–3 drafts across documents. Open the Work page's Files tab and the
@@ -203,7 +236,7 @@ for ~200ms).
 ## Probe C — active-only disposition and recovery journey
 
 1. Apply a draft on an existing document. PASS: its active row disappears,
-   live content matches the whole current branch (including writer edits made
+   live content matches the whole current draft (including writer edits made
    after the last preview), and no closed draft receipt or per-card Undo
    appears.
 2. Open a surviving peer mark and confirm it offers evidence/navigation only.
@@ -279,8 +312,8 @@ for ~200ms).
 
 ## Probe G — the chat-scoped draft dock
 
-Use real chat writes, not synthetic database branches: selective Discard needs
-individually addressable branch journal rows. Run at desktop width and on the
+Use real chat writes, not synthetic database drafts: selective Discard needs
+individually addressable draft journal rows (`draft_write_journal`). Run at desktop width and on the
 phone (390px, coarse pointer), recreating the fixture before each disposition.
 Set it up with [`./mf`](../debugging.md), then use the browser only to exercise
 and inspect the surfaces.
@@ -340,8 +373,8 @@ and inspect the surfaces.
    chat's changes?" with Keep and Discard. Keep does nothing; confirming takes
    only Lore pass's changes, including the shared class.
 5. Open Dialogue pass. Once loaded, its new document is one change with Apply,
-   Discard and Review. Apply publishes it; Discard removes it. Review opens it
-   without publishing. Verify whole-command payloads from draft dock, row and bar.
+   Discard and Review. Apply lands it; Discard removes it. Review opens it
+   without applying. Verify whole-command payloads from draft dock, row and bar.
 6. Open Untouched. PASS: no draft dock, although the Work has pending changes. After
    Pacing pass's last change is handled, its draft dock also disappears, even while
    Lore pass's other changes remain.
@@ -390,7 +423,7 @@ from CLI success. Record screenshots and the fresh API reads per action.
    Discarding then No changes left appears only in the existing review/path row. A formatting-only draft says formatting remains, not finished.
    Next draft preserves sorted-file position; Back to live is offered when alone.
 5. No Work-page link or success toast appears in either list. Phone sheet title
-   says Changes without a count, and its list button has no count badge. Whole-draft Discard lives in the version menu and dispatches without
+   says Changes without a count, and its list button has no count badge. Discard all lives in the version menu and dispatches without
    an approval dialog. The list button remains usable while review enters/leaves and marks hide.
 
 6. **Marks, rows and arrivals.** With list open, hide marks, step Previous/Next
@@ -624,7 +657,7 @@ on refusal, without a navigation change.
   Do not use the chat receipt's Undo: this probes the writer's own Undo.
 - For missing-anchor handoff, use the controlled real-Yjs regression rather
   than timing a browser race:
-  `pnpm --filter @meridian/app test src/core/editor/branch-writer-handoff.test.ts`.
+  `pnpm --filter @meridian/app test src/core/editor/draft-writer-handoff.test.ts`.
   Same-generation rebuilds retain wholly/partly pending carries until late
   anchors arrive. A synced newer generation retires its source: rescue unrelated
   typing whose own anchors survive under a fresh client, drop the unanchorable
@@ -653,7 +686,7 @@ and every staged result's settlement ID, not only its grouped `eN` handle.
   Discard azure. Read and save still succeed, with a failed bronze receipt
   and exactly `red / blue / green`.
 - Stage `gold → gild`, `gild → bronze` and independent `green → lime`.
-  Discard gold and refuse the next Work-draft `commitBranchMutation` once
+  Discard gold and refuse the next Work-draft journal append (`DraftStore.appendRows`) once
   through that existing test port. Restore it and retry. Both rejected
   settlement IDs remain, lime commits, and the draft is `red / azure / lime`.
 - In that grouped-handle reply, the next tool names the document and handle
@@ -675,7 +708,7 @@ or database required):
 
 ```bash
 taskset -c 0-7 pnpm exec vitest run \
-  apps/server/server/domains/collab/domain/branch-response-replay.test.ts
+  apps/server/server/domains/collab/domain/draft-response-replay.test.ts
 ```
 
 - Two chats plan on `Alpha Beta.`. Commit A's `Beta → Gamma`, then replay B's
@@ -731,7 +764,7 @@ reuse another worktree's project, database, thread or browser session.
    live reads remain seeded until Apply. There must be one addition, not two.
 4. Apply that document's draft via
    `POST /api/projects/<project>/works/<work>/documents/<document>/draft/apply`
-   with `{"draftId":"<draft ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
+   with `{"branchId":"<branch ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
    Assert the entire `content` value, including terminal newlines:
    insertion `"Seed.\n\nAdded once.\n"`; replacement `"Alpha Gamma.\n"`.
 5. For named partial skips, script a turn inserting `One addition.` and
@@ -747,7 +780,7 @@ reuse another worktree's project, database, thread or browser session.
    card, without a success screen or a global toast.
 
 The durable PostgreSQL matrix adds split placement, overlapping parts in one
-view, branch-keyed restoration holds and release, typing inside restored text,
+view, draft-keyed restoration holds and release, typing inside restored text,
 selective Discard of an inverse, staged-response dependency drops, per-response
 rollback and checkpoint failure after root commit. Run it with:
 
@@ -770,7 +803,7 @@ and replaying either class alone must leave the other paragraph unchanged.
 Every inverse row must own its metadata client and have no map-entry anchors
 into another inverse row.
 
-### Receipt hold and publication regression checks
+### Receipt hold and Apply regression checks
 
 - Apply turn A's `Beta → Gamma`. In the same draft, turn B replaces
   `Blue → Silver`, then Undo B restores `Blue`. Undo A and Redo A must
@@ -779,12 +812,12 @@ into another inverse row.
   B's unrelated hold must not choose A's destination. Apply leaves the latter
   text unchanged, with no extra restored copy.
 - For mixed applied/pending parts, use the card's Undo button. The card says
-  **Undone in your draft. Apply it to change your manuscript.** beside its
+  **Undone in your drafts. Apply them to change your manuscript.** beside its
   outcome, not in a toast. The live manuscript remains unchanged until Apply.
 - Connect a live Yjs room before acting on a document with no active draft.
   Keep the connection and its local replica open through Undo and Redo. Drive
   actions with `./mf`; inspect only that replica between actions, never a
-  document read, reopen or reconnect that could repair a missing publication.
+  document read, reopen or reconnect that could repair a missing Apply.
   The replica must receive each committed inverse. The DB room regression
   also injects immediate-live failed-response rollback into that same schedule.
 - Extend the long-history correctness case with a 10,000-character deletion
@@ -802,7 +835,7 @@ then wait for the empty trail to settle while the edit remains unapplied.
 Apply the draft, repeat with another edit and Discard, and read the trail through
 `./mf api GET /api/threads/<thread-id>/change-trails`. Each late disposition
 must reopen the producing trail and settle at a higher version. Unapplied drafts
-must not publish themselves. An empty or failed assistant turn must also settle.
+must not apply themselves. An empty or failed assistant turn must also settle.
 
 For the commit-to-worker crash window, use the PostgreSQL lifecycle suite:
 
@@ -814,8 +847,8 @@ Its restart checks commit before constructing a fresh aggregate adapter on a
 separate connection. Receipt and placement rollback must leave the signal log
 unchanged; committed invalidation must survive destroying warm state. A lower
 sequence committed after consumption must remain discoverable, and failed
-consumption must restore the signals with the shell and outbox. Pending
-live publication must delay settlement. These are DB integration checks, not a
+consumption must restore the signals with the shell and outbox. A pending
+live write must delay settlement. These are DB integration checks, not a
 claim that this manual writer workflow passed.
 
 ## Model Undo and Redo counts
@@ -891,7 +924,9 @@ draft. A reply's staged edits to other documents must still finish.
 The repeatable service-seam check is
 `DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts`.
 It also checks that retirement waits for transaction commit and closes only A's
-peer room. It also gates retirement after commit, evicts the old reply entry as
+peer room. Run inside a caller's root transaction, item and whole Discard retire no
+peer, close no room and revoke no reply helper before the root commits, none after
+it rolls back, and once per document after it commits. It also gates retirement after commit, evicts the old reply entry as
 a refusal would, and stages a fresh peer's write in the same open reply before
 releasing that gate; the fresh write and room must survive. This is DB integration evidence, not a browser or live-runtime probe.
 
@@ -908,7 +943,7 @@ for the old click. Independent typing in another change still admits.
 
 DB evidence: `collab/review-disposition.db.test.ts` exercises deletion and
 independent typing through the durable coordinator. Queue/retry evidence:
-`client/query/draft-command-executor.test.tsx` includes changed-effect evidence
+`client/query/branch-command-executor.test.tsx` includes changed-effect evidence
 with unchanged stable keys. These are integration/adapter checks, not browser
 smoke verification.
 
@@ -934,10 +969,10 @@ it is listed.
 3. **Work page Apply all during the reply.** Work page, Files tab, "All changes" menu, Apply all changes. PASS: live
    has the text saved before the click, and the document is still under Changes to review for the late writes.
 4. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at 390x844 too: the question
-   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "You discarded
-   this draft, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
+   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "This draft
+   was discarded, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
 5. **Live-edit staleness.** Not covered here: an Apply with tokens from before a live edit refuses as `stale`, tested
-   by the DB suite (`draft-tree.apply-staleness.db.test.ts`).
+   by the DB suite (`branch-tree.apply-staleness.db.test.ts`).
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass. The API-level answers
 (`commandId` resend, conflict, unknown, `whole_item`, `cant_undo_elsewhere`) are covered by tests, not by this recipe.
@@ -945,7 +980,7 @@ Capture `agent-browser console` and `errors` at the end of each: clean is part o
 ## Cold-open waterfall and the ahead-link chip (browser)
 
 Open a drafted document's review cold: a fresh `agent-browser` session with the auth state loaded, then `open` the
-review URL (`/editor/<scheme>/<name>?work=<workId>&item=<draftId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
+review URL (`/editor/<scheme>/<name>?work=<workId>&item=<branchId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
 init script, enlarge the Resource Timing buffer (Vite loads hundreds of modules), and watch for the first appearance
 of the draft's text in `document.body.innerText`. Record, ordered by start time: the address admission request
 (`reviewWorkId` and `itemKey` in its query), the draft preview request, the `/ws/yjs` connect and open, and the first
@@ -958,14 +993,14 @@ the `links/resolve` response held by an owned fetch seam. A live chapter holding
 exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
 
 
-## A writer's New file joins the draft's document (browser, #757)
+## A writer's New file joins a branch's new document (browser, #757)
 
-A draft's new document is a real document with a draft, hidden live only because it is a
-draft. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
+A branch's new document is a real document with a draft, hidden live until its creation is
+applied or joined. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
 with an ordinary draft over it. The device's instant create carries its destination, so the
 server joins the document waiting there. The only device work is identity: the reservation's id
-becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
-text stays in the draft for review.
+becomes the joined id, and what the writer typed is kept. No draft text is merged; the document's draft
+stays pending for review.
 
 Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work with
 `aiWriteMode: "draft"` and a thread bound to it. `./mf thread send <thread> go --mock @script`
@@ -974,7 +1009,7 @@ then the phone 390x844 with touch emulation.
 
 1. **Online.** Open the project. Sidebar, Manuscript, New file, `Chapter 2`, Enter, and type a
    line at once.
-   PASS: one `Chapter 2` row and one tab, on the draft's document (same id as the Work's draft
+   PASS: one `Chapter 2` row and one tab, on the branch's document (same id as the Work's review
    item, read with `./mf api`); the typed line is kept; the Work's review item is an edit, not
    new. As soon as the create's answer lands, with no reload or navigation, the open document
    shows the "Live" chip with the version menu, and Draft opens that draft's review. Measure
@@ -985,7 +1020,7 @@ then the phone 390x844 with touch emulation.
    line, set offline off. PASS: the same as step 1 once the connection returns; before it, the
    row sits at `Chapter 2` in the Manuscript, not under Unfiled.
 3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
-   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
+   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the joined document; the rename is
    not offered for repair.
 4. **A link's Create.** The Create button exists only on a link that reads "doesn't exist yet", and
    following an "In a draft" link opens the review instead. So make the link in the editor (select
@@ -1007,12 +1042,12 @@ With no `?work=` the document shows the draft hint instead of the Live chip (see
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
 
-## An open document says when a draft has changes to it (browser, #757)
+## An open document says when a Work has drafts for it (browser, #757)
 
-`GET /api/projects/:p/documents/:d/drafts` answers the active drafts in the project with changes to the
-document (`draftId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
-review. The editor shows a line under the identity row for every draft other than the one the view works
-in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
+`GET /api/projects/:p/documents/:d/branches` answers the active branches in the project with changes to the
+document (`branchId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
+review. The editor shows a line under the identity row for every branch other than the one the view works
+in: "A Work has drafts for this (Northern Arc)" with Review, or "2 Works have drafts for this" with a
 menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
 at 390x844.
 
@@ -1022,7 +1057,24 @@ at 390x844.
    `MutationObserver` on `[data-document-draft-hint]`); note `uptime`.
 2. **A live document a draft edits.** Open it with no Work and from Work B: the hint. Open it in Work A: the
    Live chip only, no hint.
-3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
+3. **After Discard** of Work A's drafts (Work page, Discard all changes): the hint goes on this device at
    once, and on another device on focus or the catalog wake.
 4. **A document no draft touches** shows no hint.
-5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.
+5. **Two drafts** edit one document: "2 Works have drafts for this", and Review lists both by label.
+
+## Vocabulary rename upgrade (#880)
+
+Upgrade a populated database through `0067` without resetting it, then apply
+`0068_draft_branch_names.sql` and `0069_draft_branch_values_online.sql`. Check a
+pending document and peer, journal and publication references, receipt origin
+and placement JSON, a staged tree payload, and a recorded command result.
+The draft IDs use `draft_`; their parent set uses `branchId`. Both trail
+functions must still return the journal's owners after the table rename.
+
+Start `pnpm dev` with `MODEL_PROVIDER=mock`. Use `./mf` to create a Work and chat,
+switch the chat to draft mode, and script a document edit. The Work's
+`/branches` list and the document's `/branches` hint return the same `branchId`.
+Open the draft in the browser: the copy says Draft, not Branch. Apply in the
+browser and confirm the live document changed and its pending row disappeared.
+Repeat with `./mf api POST …/branches/apply` and a new `commandId`; read live
+again, inspect browser errors, capture screenshots, and stop the dev stack.

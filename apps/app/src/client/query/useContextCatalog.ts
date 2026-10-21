@@ -695,7 +695,7 @@ export function useContextCatalogWake(
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const transport = useOptionalThreadTransport();
-  // A create that joined a draft's document now is that document, so its draft list is
+  // A create that joined a branch's new document now is that document, so its draft list is
   // stale: the writer sees the draft's review at once, not at the next reload or hint.
   useEffect(
     () =>
@@ -732,20 +732,20 @@ export function useContextCatalogWake(
 
 /** Every draft read of the project: each Work's list and each document's hints. */
 function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
-  void queryClient.invalidateQueries(allWorkDraftsOf(projectId));
+  void queryClient.invalidateQueries(allWorkDraftListsOf(projectId));
   void queryClient.invalidateQueries({
     queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
   });
 }
 
 /** Every mounted draft list of the project, whatever Work it belongs to. */
-function allWorkDraftsOf(projectId: string) {
+function allWorkDraftListsOf(projectId: string) {
   return {
     predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
       queryKey[0] === "projects" &&
       queryKey[1] === projectId &&
       queryKey[2] === "works" &&
-      queryKey[4] === "drafts",
+      queryKey[4] === "branches",
   };
 }
 
@@ -778,7 +778,7 @@ function advancesDraftRefresh(
  * draft-only tab whose draft was disposed elsewhere. A Work-scoped hint names its Work, so only
  * that Work's list re-reads; a project-wide hint cannot, so every list of the project does. A hint
  * that installs no revision newer than the last one handled re-reads nothing, and a user-scoped
- * catalog holds no project drafts.
+ * catalog holds no project branches.
  */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
@@ -796,8 +796,8 @@ export function pullContextCatalogOnHint(
       if (!advancesDraftRefresh(queryClient, requestedScope, next.appliedRevision)) return;
       void queryClient.invalidateQueries(
         requestedScope.kind === "work"
-          ? { queryKey: projectQueryKeys.workDrafts(projectId, requestedScope.workId) }
-          : allWorkDraftsOf(projectId),
+          ? { queryKey: projectQueryKeys.workBranchDrafts(projectId, requestedScope.workId) }
+          : allWorkDraftListsOf(projectId),
       );
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.documentDraftHintsOf(projectId),

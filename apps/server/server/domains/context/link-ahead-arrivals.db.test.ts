@@ -53,7 +53,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     await db.insert(projects).values({ id: projectId, userId, name: "Arrivals", slug: "arrivals" });
     await db.insert(works).values([
       { projectId, createdByUserId: userId, name: "No Work", isNoWork: true },
-      { id: workId, projectId, createdByUserId: userId, name: "Draft", handle: "w1" },
+      { id: workId, projectId, createdByUserId: userId, name: "Branch", handle: "w1" },
     ]);
     await db.insert(contextSources).values([
       {
@@ -107,7 +107,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(chapter)).toBeNull();
       const first = await create("manuscript://ch1");
       expect(await settlement(chapter)).toBe(first);
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, first));
+      await db
+        .update(documents)
+        .set({ deletionReason: "deleted", deletedAt: new Date() })
+        .where(eq(documents.id, first));
       const second = await create("manuscript://ch1");
       expect(second).not.toBe(first);
       expect(await settlement(chapter)).toBe(first);
@@ -268,11 +271,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       expect(await settlement(castRef)).toBe(cast);
 
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
-      const moved = await create("manuscript://drafts/ch2.toml");
-      const vacated = await register("manuscript://drafts/ch2.toml");
+      const moved = await create("manuscript://branches/ch2.toml");
+      const vacated = await register("manuscript://branches/ch2.toml");
       expect(await settlement(vacated)).toBe(moved);
       const destination = await register("manuscript://part-two/ch2.toml");
-      expect(await port.move("manuscript://drafts", "manuscript://part-two")).toMatchObject({
+      expect(await port.move("manuscript://branches", "manuscript://part-two")).toMatchObject({
         ok: true,
       });
       expect(await settlement(destination)).toBe(moved);

@@ -19,8 +19,9 @@ import { contextSources, documents, folders } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { testHook } from "../../../shared/test-hooks.js";
 import { renderFilename } from "../context/paths.js";
-import { draftReachKept, loadSourceOwners, type SourceOwner } from "./draft-ownership.js";
+import { branchReachKept, loadSourceOwners, type SourceOwner } from "./branch-ownership.js";
 import {
   absorbAt,
   applySplit,
@@ -31,7 +32,6 @@ import {
 } from "./folder-normalization.js";
 import { bumpLocationVersions, recordLocationHistory } from "./node-locations.js";
 import { ensureLiveFolderPath } from "./placement.js";
-import { treeHook } from "./test-hooks.js";
 import { chainPrefix, loadFolderChains } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, type NodeRef } from "./tree-view.js";
 import {
@@ -91,7 +91,7 @@ function filenameOf(node: {
 
 /**
  * Move one live node. Returns the documents that actually relocated (what arrivals
- * settle): a folder leaving where drafts can hold it leaves its hidden contents behind.
+ * settle): a folder leaving where branches can hold it leaves its hidden contents behind.
  */
 export async function moveNode(
   db: Database,
@@ -122,14 +122,14 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
   const owners = await sourceOwners(db, [current.node.contextSourceId, to.contextSourceId]);
   const fromOwner = owners.get(current.node.contextSourceId);
   const toOwner = owners.get(to.contextSourceId);
-  // A folder leaving where drafts can hold it (to a source fewer drafts may hold, §8.3, or to
+  // A folder leaving where branches can hold it (to a source fewer branches may hold, §8.3, or to
   // a Work-owned or lineage Scratch source, which is never drafted) splits off the hidden
   // contents it owns, and they stay.
   const splitsHidden =
     ref.kind === "folder" &&
     (!fromOwner ||
       !toOwner ||
-      !draftReachKept(fromOwner.owner, toOwner.owner) ||
+      !branchReachKept(fromOwner.owner, toOwner.owner) ||
       (toOwner.undrafted && !fromOwner.undrafted));
 
   // Everything the folder carries, hidden included, before anything moves.
@@ -156,7 +156,7 @@ async function prepareMove(db: Database, move: NodeMove): Promise<Result<Prepare
       id: node.id,
       hidden: node.hidden,
       from: { contextSourceId: node.contextSourceId, path: from },
-      // Hidden contents never leave where their drafts hold them: they split off and stay.
+      // Hidden contents never leave where their branches hold them: they split off and stay.
       to:
         splitsHidden && node.hidden
           ? null
@@ -223,7 +223,7 @@ async function installMove(
   move: NodeMove,
   prepared: PreparedMove,
 ): Promise<Result<void, MoveFault>> {
-  await treeHook("moves.beforeInstall");
+  await testHook("moves.beforeInstall");
   const tx = currentDrizzleDb(db);
   const { node, to } = move;
   if (prepared.split.boundaries.length > 0) await applySplit(db, prepared.split);

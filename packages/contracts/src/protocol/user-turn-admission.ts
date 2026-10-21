@@ -4,7 +4,7 @@ import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
-import type { JsonValue } from "../threads/index.js";
+import type { JsonObject, JsonValue } from "../threads/index.js";
 
 export type ReferenceOccurrence = {
   type: "reference";
@@ -127,9 +127,9 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
-/** Server-generated snapshot; never accepted in a submitted reference. */
+/** Server-generated snapshot; input is validated before execution, then display-only JSON on replay. Never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue; revision: string | null };
+  read?: { result: JsonValue; revision: string | null; input?: JsonObject };
 };
 
 export function referenceOccurrenceContent(block: {
@@ -166,7 +166,9 @@ export function referenceOccurrenceContent(block: {
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).length !== 2 ||
+      Object.keys(read).filter((key) => key !== "input").length !== 2 ||
+      ("input" in read &&
+        (!read.input || typeof read.input !== "object" || Array.isArray(read.input))) ||
       !("result" in read) ||
       read.result === undefined ||
       !("revision" in read) ||

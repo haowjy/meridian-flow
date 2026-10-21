@@ -1,14 +1,14 @@
-/** In-memory cores and branch history for thread-peer pool unit tests. */
+/** In-memory cores and draft history for thread-peer pool unit tests. */
 import type {
   AgentEditCore,
   ResponseCommitSuccessResult,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DraftId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
-import type { BranchSnapshot } from "../domain/branch-coordinator.js";
-import type { Draft } from "../domain/ports/draft-store.js";
+import type { DraftSnapshot } from "../domain/draft-store.js";
+import type { Branch } from "../domain/ports/branch-store.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -34,127 +34,165 @@ function createFakeAgentEditCore(
   name: string,
   options: { onWrite?(command: WrittenCommand, context: { threadId?: string }): void } = {},
 ) {
-  const committed = (responseId: string): ResponseCommitSuccessResult => ({
-    status: "committed",
-    responseId,
-    documentCount: 1,
-    updateCount: 1,
-    documents: [{ documentId: `${name}-doc`, updateCount: 1, receipts: [] }],
-    stagedCreates: { committed: [], discarded: [] },
-  });
+  // Each staged write's settlement, so its save answers it with a receipt.
+  const staged = new Map<string, { documentId: string; settlementId: string }[]>();
+  const committed = (responseId: string): ResponseCommitSuccessResult => {
+    const writes = staged.get(responseId) ?? [];
+    staged.delete(responseId);
+    return {
+      status: "committed",
+      responseId,
+      documentCount: 1,
+      updateCount: 1,
+      documents: writes.length
+        ? writes.map(({ documentId, settlementId }) => ({
+            documentId,
+            updateCount: 1,
+            receipts: [{ settlementId, result: success.result, revision: null }],
+          }))
+        : [{ documentId: `${name}-doc`, updateCount: 1, receipts: [] }],
+      stagedCreates: { committed: [], discarded: [] },
+    } as unknown as ResponseCommitSuccessResult;
+  };
   const fake = {
     read: vi.fn(async (..._args: unknown[]) => success),
-    write: vi.fn(async (command: WrittenCommand, context: { threadId?: string }) => {
-      options.onWrite?.(command, context);
-      return success;
-    }),
+    write: vi.fn(
+      async (
+        command: WrittenCommand,
+        context: { threadId?: string; responseIdentity?: { editScopeId: string } },
+      ) => {
+        options.onWrite?.(command, context);
+        const responseId = context.responseIdentity?.editScopeId;
+        if (!responseId || !command.documentId) return success;
+        const settlementId = `${name}-${staged.size}-${command.documentId}`;
+        staged.set(responseId, [
+          ...(staged.get(responseId) ?? []),
+          { documentId: command.documentId, settlementId },
+        ]);
+        return { ...success, phase: "staged", settlementId } as WriteOutcome;
+      },
+    ),
     commitResponse: vi.fn(async (responseId: string, commit?: FakeCommitOptions) => {
       commit?.deferFinalization?.({ commit() {}, abort() {} });
       return committed(responseId);
     }),
+    // An attempt that persists nothing of its own and installs through `commitResponse`.
+    prepareResponse: vi.fn(async (responseId: string, commit?: FakeCommitOptions) => ({
+      consume: async () => {},
+      install: () => fake.commitResponse(responseId, commit),
+      dispose() {},
+      fail: async (cause: unknown): Promise<never> => {
+        throw cause;
+      },
+    })),
     rollbackResponse: vi.fn(async (responseId: string, _options?: unknown) => ({
       status: "rolledBack" as const,
       responseId,
       stagedCreates: { committed: [], discarded: [] },
     })),
     hasResponseDocument: vi.fn((_responseId: string, _documentId: string) => false),
-    prepare: vi.fn(async () => null),
     responseDocuments: vi.fn((_responseId: string) => ({
       staged: [`${name}-doc`],
       created: [] as string[],
     })),
     refuseStaged: vi.fn((..._args: unknown[]) => {}),
-    retirePeer: vi.fn(async (..._args: unknown[]) => {}),
-    invalidateThreadDocument: vi.fn(async (..._args: unknown[]) => {}),
-    evictThread: vi.fn(async (..._args: unknown[]) => {}),
+    retirePeer: vi.fn((..._args: unknown[]) => {}),
+    dropStaged: vi.fn((..._args: unknown[]) => {}),
   };
   return Object.assign(fake, { asCore: () => fake as unknown as AgentEditCore });
 }
 
-export const FAKE_DRAFT_ID = "draft-1" as DraftId;
+export const FAKE_BRANCH_ID = "branch-1" as BranchId;
 export const FAKE_UPSTREAM_ID = "upstream-1";
 
-/** A pull that names a fresh peer each call, as a reply's replacement peer would be. */
-function fakePulls() {
-  let pulled = 0;
+/** An ensure that names a fresh peer each call, as a reply's replacement peer would be. */
+function fakeEnsures() {
+  let ensured = 0;
   return vi.fn(
-    async (_input: { documentId: DocumentId; threadId: ThreadId; draftId?: DraftId }) => ({
-      peerBranchId: `peer-${++pulled}`,
-      upstreamBranchId: FAKE_UPSTREAM_ID,
-      branchGeneration: 1,
-      attributionBaseline: new Uint8Array(),
+    async (_input: { documentId: DocumentId; threadId: ThreadId; branchId?: BranchId }) => ({
+      peerDraftId: `peer-${++ensured}`,
+      upstreamDraftId: FAKE_UPSTREAM_ID,
     }),
   );
 }
 
-/** In-process cores with an observed thread-peer pull. */
+/** In-process cores with an observed thread-peer ensure. */
 export function createFakeThreadPeerCores() {
   return {
     liveCore: createFakeAgentEditCore("live"),
     threadCore: createFakeAgentEditCore("thread"),
-    pullThreadPeer: fakePulls(),
+    ensureThreadPeer: fakeEnsures(),
   };
 }
 
-/** The Work draft the pool pins a drafted write to. */
-export function createFakeDrafts() {
+/** Draft lookups for a pool whose thread always has the fake Work draft and no other row. */
+export const fakeWorkDrafts = {
+  getDraft: async () => null,
+  resolveWorkDraftForThread: async () =>
+    ({ draftId: FAKE_UPSTREAM_ID, generation: 1, status: "active" }) as never,
+};
+
+/** The Work branch the pool pins a drafted write to. */
+export function createFakeBranches() {
   return {
     viewForWork: vi.fn(async (_workId: unknown) => ({
-      kind: "draft" as const,
-      draftId: FAKE_DRAFT_ID,
+      kind: "branch" as const,
+      branchId: FAKE_BRANCH_ID,
     })),
-    ensureActiveForWrite: vi.fn(async (_input: unknown) => ({ id: FAKE_DRAFT_ID }) as Draft),
-    shareActive: vi.fn(async (_draftId: DraftId) => ({ id: FAKE_DRAFT_ID }) as Draft | null),
+    ensureActiveForWrite: vi.fn(async (_input: unknown) => ({ id: FAKE_BRANCH_ID }) as Branch),
+    shareActive: vi.fn(async (_branchId: BranchId) => ({ id: FAKE_BRANCH_ID }) as Branch | null),
   };
 }
 
-type FakeBranch = {
+type FakeDraft = {
   generation?: number;
   status: "active" | "closed";
   kind: "thread_peer" | "work_draft";
-  draftId: DraftId;
+  branchId: BranchId;
   documentId: string;
   threadId: string | null;
-  upstreamBranchId: string | null;
+  upstreamDraftId: string | null;
 };
 
 /**
- * The branch rows a reply's pins name. Every `peer-N` the fake pull hands out is an active
+ * The draft rows a reply's pins name. Every `peer-N` the fake pull hands out is an active
  * peer of `thread` on `document` under the one fake upstream, until a test closes or deletes it.
  */
-export function createFakeBranchTable(input: { documentId: string; threadId: string }) {
-  const overrides = new Map<string, FakeBranch | null>();
+export function createFakeDraftTable(input: { documentId: string; threadId: string }) {
+  const overrides = new Map<string, FakeDraft | null>();
   return {
-    set: (branchId: string, branch: FakeBranch | null) => overrides.set(branchId, branch),
-    close: (branchId: string) => {
-      const row = overrides.get(branchId) ?? defaultRow(branchId);
-      if (row) overrides.set(branchId, { ...row, status: "closed" });
+    set: (draftId: string, documentDraft: FakeDraft | null) =>
+      overrides.set(draftId, documentDraft),
+    close: (draftId: string) => {
+      const row = overrides.get(draftId) ?? defaultRow(draftId);
+      if (row) overrides.set(draftId, { ...row, status: "closed" });
     },
-    getBranch: vi.fn(
-      async (branchId: string) =>
-        (overrides.has(branchId)
-          ? overrides.get(branchId)
-          : defaultRow(branchId)) as BranchSnapshot | null,
+    resolveWorkDraftForThread: fakeWorkDrafts.resolveWorkDraftForThread,
+    getDraft: vi.fn(
+      async (draftId: string) =>
+        (overrides.has(draftId)
+          ? overrides.get(draftId)
+          : defaultRow(draftId)) as DraftSnapshot | null,
     ),
   };
-  function defaultRow(branchId: string): FakeBranch | null {
-    if (branchId === FAKE_UPSTREAM_ID)
+  function defaultRow(draftId: string): FakeDraft | null {
+    if (draftId === FAKE_UPSTREAM_ID)
       return {
         status: "active",
         kind: "work_draft",
-        draftId: FAKE_DRAFT_ID,
+        branchId: FAKE_BRANCH_ID,
         documentId: input.documentId,
         threadId: null,
-        upstreamBranchId: null,
+        upstreamDraftId: null,
       };
-    if (!branchId.startsWith("peer-")) return null;
+    if (!draftId.startsWith("peer-")) return null;
     return {
       status: "active",
       kind: "thread_peer",
-      draftId: FAKE_DRAFT_ID,
+      branchId: FAKE_BRANCH_ID,
       documentId: input.documentId,
       threadId: input.threadId,
-      upstreamBranchId: FAKE_UPSTREAM_ID,
+      upstreamDraftId: FAKE_UPSTREAM_ID,
     };
   }
 }
@@ -202,7 +240,7 @@ export function fakeEditGrant(
       ancestors: [],
       ...(destination.kind === "draft"
         ? {
-            draftWork: {
+            branchWork: {
               id: destination.workId,
               slug: destination.workHandle,
               isNoWork: false,

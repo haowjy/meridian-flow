@@ -1,21 +1,28 @@
+import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
-export const hostSaveLeaseBrand: unique symbol = Symbol("HostSaveLease");
-export interface HostSaveLease {
-  readonly [hostSaveLeaseBrand]: true;
-}
-export type DiscardedWriteReason = Extract<StagedWriteRejectionReason, `discarded_${string}`>;
+/** Why a retired thread peer's staged writes did not land: a Discard, or the document's removal. */
+export type RetiredWriteReason = Exclude<
+  StagedWriteRejectionReason,
+  "discard" | "inverse" | "integration"
+>;
 
-/** The helper's authority base, independent of the generations its staged writes name. */
-export interface StagedHelperCut {
+/**
+ * Where a reply's edit scope began writing into a document's room: the room copy's
+ * host generation and Yjs snapshot (`Y.encodeSnapshotV2`, state vector and delete set) at the
+ * scope's first stage. Reconcile reads only what retired or inverted since it.
+ */
+export interface StagedCut {
   generation: number;
-  state: Uint8Array;
+  snapshot: Uint8Array;
 }
 
 /**
  * Why a staged write did not land. `discarded_*` come from a Discard that retired the thread's peer:
- * the whole draft, this created document, or this edited document's text.
+ * the whole branch, this created document, or this edited document's text. `removed` is the
+ * document's removal, with its record; null when a removal closed the draft but the document
+ * stands again (a Work Restore).
  */
 export type StagedWriteRejectionReason =
   | "discard"
@@ -23,23 +30,113 @@ export type StagedWriteRejectionReason =
   | "integration"
   | "discarded_draft"
   | "discarded_document"
-  | "discarded_edit";
+  | "discarded_edit"
+  | { removed: DocumentRemovalRecord | null };
 
-export interface StagedWriteReplayResult {
-  rejectedWrites?: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
-  keptEntries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
-  helperState: Uint8Array;
-  helperCut: StagedHelperCut;
+/** One edit scope's staged entries for one document, with the cut the scope began at. */
+export interface StagedRoomEntries {
+  cut: StagedCut;
+  entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+}
+
+/** The staged writes that survive reconcile, and the refused ones, by `mutation.writeId`. */
+export interface StagedReconcile {
+  kept: readonly string[];
+  rejected: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
+}
+
+/**
+ * A call's copy of a document's room: private, gc-off, the room's committed state with the
+ * scope's kept entries applied. The caller owns `doc` and destroys it. `room` is the host's
+ * label for the room the copy was read from (null records no frontier); `generation` is the
+ * host generation a scope cut taken from this copy names.
+ */
+export interface RoomRead extends StagedReconcile {
+  doc: Y.Doc;
+  room: string | null;
+  generation: number;
+}
+
+/** A document's state before a save's kept rows, and with them. */
+export interface SaveCut {
   beforeState: Uint8Array;
+  afterState: Uint8Array;
+}
+
+/** A save of one scope's entries: the kept and refused ones, and where they went. */
+export interface StagedWriteSaveResult extends StagedReconcile {
+  /** The room the rows append into; null records no frontier when the host cannot name it. */
+  room: string | null;
+  /**
+   * The host's prepared write, always present. `no-effect` says there is nothing to persist,
+   * and is valid only with no kept entries; the caller refuses it otherwise rather than
+   * certify writes nobody stored.
+   */
+  write: StagedWriteCommit | { kind: "no-effect" };
+}
+
+/**
+ * What a save requires of its document, judged by the host inside the append under the
+ * document's lock, on the state the rows would follow (the cut's `beforeState`), before
+ * anything is written. False refuses the save: `persist` rejects with SavePreconditionRefused.
+ */
+export type SavePrecondition = (beforeState: Uint8Array) => boolean;
+
+/** A save whose precondition its document failed under the lock: nothing was appended. */
+export class SavePreconditionRefused extends Error {
+  constructor(readonly docId: string) {
+    super(`Save precondition refused on ${docId}`);
+    this.name = "SavePreconditionRefused";
+  }
+}
+
+/**
+ * A host's prepared write of a save's kept entries, owned by the caller: nothing is persisted
+ * until `persist` runs inside the caller's commit scope; `transfer` hands the write to the host
+ * once that scope completed, and the host installs it (a live host delivers it to open
+ * editors) when the enclosing root transaction commits, never before, or at once when there is
+ * none; `dispose` drops it on any unwind.
+ *
+ * `persist` resolves the save's only cut: the document as the host's serialization of the
+ * append (its document lock) found it, and with the kept rows. Someone else's rows that landed
+ * between preparing and appending are in its `beforeState`, so the report names what the rows
+ * swept of them; the rows themselves are Yjs updates and land the same either way.
+ */
+export interface StagedWriteCommit {
+  kind: "write";
+  persist(): Promise<SaveCut>;
+  transfer(): void;
+  dispose(): void;
+}
+
+/**
+ * A room read whose bound draft a writer's Discard took. The host names which Discard, so the
+ * call is refused with that reason instead of failing.
+ */
+export class DocumentAccessLostError extends Error {
+  constructor(
+    readonly reason: RetiredWriteReason,
+    options?: ErrorOptions,
+  ) {
+    super(`Document access lost: ${reason}`, options);
+    this.name = "DocumentAccessLostError";
+  }
 }
 
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
+  /** The document's removal record, when it is missing because it was removed. */
+  readonly removal?: DocumentRemovalRecord;
 
-  constructor(docId: string, message = `Document not found: ${docId}`) {
+  constructor(
+    docId: string,
+    message = `Document not found: ${docId}`,
+    options: { removal?: DocumentRemovalRecord } = {},
+  ) {
     super(message);
     this.name = "DocumentNotFoundError";
     this.docId = docId;
+    if (options.removal) this.removal = options.removal;
   }
 }
 
@@ -48,74 +145,60 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 }
 
 /**
- * Serializes port callers against the host-owned canonical Y.Doc (live or branch).
- * Mutations through other transports require the host's separate concurrency fence.
+ * A host's documents (live or draft) as agent-edit reaches them: `readRoom` is the one way a
+ * call gets a document to render, plan from or record, and `prepareSave` the one way any write
+ * lands, a reply's or one outside a reply alike. Neither serializes against other callers.
  */
 export interface DocumentCoordinator {
-  /** Rebuild/replay staged writes under the host's existing generation lock.
-   * The host admits only whole logical writes and returns an isolated accepted replay result.
-   * commit=true journals survivors in the ambient response transaction.
-   */
-  withStagedWrites?(input: {
-    docId: string;
-    sourceDoc: Y.Doc;
-    helperCut: StagedHelperCut;
-    entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
-    commit: boolean;
-    access?: DocumentLockOptions;
-  }): Promise<StagedWriteReplayResult>;
-
-  /** Immutable host generation bound to this canonical document, when supported. */
-  documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;
   /**
-   * Acquire coordinator access to a document's canonical Y.Doc for the duration of fn.
-   * Serializes concurrent callers for the same docId; different documents run concurrently.
-   * Rejects with DocumentNotFoundError when the document is missing; other
-   * rejections are runtime failures and surface as retryable internal errors.
+   * A private copy of the room's committed state with `staged`'s surviving entries applied,
+   * named by the room it was read from. Rejects with DocumentNotFoundError when the document
+   * is missing.
    */
-  withDocument<T>(
+  readRoom(
     docId: string,
-    fn: (doc: Y.Doc) => Promise<T>,
-    options?: DocumentLockOptions,
-  ): Promise<T>;
+    staged: StagedRoomEntries | null,
+    access?: DocumentAccess,
+  ): Promise<RoomRead>;
 
   /**
-   * Optional origin-aware description of the updates currently present in the
-   * coordinated doc after `sinceStateVector`. Generic live-doc adapters omit this
-   * and callers treat the delta as human-origin for backward compatibility.
+   * One save of a scope's entries, reconciled against its cut on the current room and prepared
+   * without touching the host until `persist`. A document that doesn't exist yet saves onto an
+   * empty one. `precondition` is judged inside the append, never before it.
+   */
+  prepareSave(
+    input: StagedRoomEntries & {
+      docId: string;
+      access?: DocumentAccess;
+      precondition?: SavePrecondition;
+    },
+  ): Promise<StagedWriteSaveResult>;
+
+  /**
+   * Optional origin-aware description of the updates present in `doc` (the save's before
+   * state, frozen: the host reports only what it contains) that `baselineDoc` (the view the
+   * writes planned on) doesn't contain: containment is the only skip. Hosts that omit it have
+   * the whole delta treated as the writer's.
    */
   concurrentUpdatesSince?(input: {
     docId: string;
     doc: Y.Doc;
     baselineDoc?: Y.Doc;
     sinceStateVector: Uint8Array;
-    afterJournalId?: number;
-    liveJournalSeq?: number;
-    attemptId?: string;
-    reportingCut?: Uint8Array;
-    access?: DocumentLockOptions;
+    access?: DocumentAccess;
   }): Promise<ConcurrentUpdate[]>;
-
-  /**
-   * Replay persisted-but-not-applied updates on startup or recovery.
-   * Idempotent: safe to call multiple times; applies only updates missing from the coordinated doc.
-   */
-  recover(docId: string): Promise<void>;
 }
 
-export interface DocumentLockOptions {
-  /** Maximum wait to acquire the lock. Callback duration is not timed. */
-  timeoutMs?: number;
-  signal?: AbortSignal;
+/** How a caller reaches a host document. */
+export interface DocumentAccess {
   /**
-   * The host branch a staged thread-peer write was pinned to (`InteractionContext.branchId`):
-   * the coordinator resolves exactly this one and never provisions another.
+   * The thread peer a draft-mode call is bound to (`InteractionContext.peerDraftId`): the host
+   * reads and saves exactly its Work draft and never provisions another.
    */
-  pinnedBranchId?: string;
+  pinnedDraftId?: string;
   /**
-   * A host lock the caller already holds over this document (a reply's save takes its
-   * branches' locks before its transaction); the coordinator runs under it instead of
-   * acquiring its own. Opaque to this package.
+   * The Work draft a draft read bound to no peer reads, as the caller already resolved it; a
+   * host resolves the thread's Work draft itself when this is absent.
    */
-  lease?: HostSaveLease;
+  workDraftId?: string;
 }

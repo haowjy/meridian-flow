@@ -486,7 +486,7 @@ export function createDrizzleContextCatalog(
       .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
     const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
     const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
-    // Only roots this scope has published or publishes now: a hidden node a draft let go
+    // Only roots this scope has published or publishes now: a hidden node a branch let go
     // (Discard) was never in a live scope, and naming it would leak it.
     const invalidatedRoots = [...new Set(invalidatedRootIds)].filter(
       (id) => oldById.has(id) || nextById.has(id),
@@ -588,7 +588,7 @@ export function createDrizzleContextCatalog(
    * Reconcile `scopes` against the authoritative tree. Only a namespace change (a live
    * file, folder or source added, removed, changed or invalidated) allocates a namespace
    * observation version, and it stamps only the scopes that changed. A scope without one,
-   * such as a draft's hidden-only lifecycle, keeps its published entries and stamps, so it
+   * such as a branch's hidden-only lifecycle, keeps its published entries and stamps, so it
    * publishes at most its authority entries.
    */
   async function reconcileScopes(

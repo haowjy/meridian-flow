@@ -16,12 +16,12 @@ import type {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
-import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { CompactionDecision } from "./compaction/decision.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
 import type { InboxWorkSelection } from "./next-inbox-work.js";
 import type { InboxMessage, InboxReader, Lease, MessageDraft } from "./ports.js";
+import type { ReferenceEvidence } from "./reference-context.js";
 
 /** The same request id arrived with a different body: refused, as an admission is. */
 export class HandBackConflictError extends Error {
@@ -64,10 +64,11 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   signal?: AbortSignal;
   continueTask?: boolean;
   /**
-   * Records adopted reference reads' shown links under the turn whose request
-   * carries them, inside the adoption commit; required when a drain has any.
+   * Records adopted reference reads' evidence (shown links under the turn whose
+   * request carries them, frontiers on their blocks) inside the adoption commit,
+   * after its blocks are projected; required when a drain has any.
    */
-  recordShown?: (turnId: TurnId, shown: readonly ShownLinkShowing[]) => Promise<void>;
+  recordEvidence?: (turnId: TurnId, evidence: ReferenceEvidence) => Promise<void>;
   /** Admits the run's execution; `adopted` are the outstanding messages it now answers. */
   admit?: (turn: Turn, adopted: readonly InboxMessage[]) => Promise<void>;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */
@@ -77,7 +78,10 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     | { kind: "assistant" }
     | {
         kind: "placeholder";
-        complete: (prepared: TCurrent | undefined, failure: unknown | undefined) => Promise<Turn>;
+        complete: (
+          prepared: TCurrent | undefined,
+          failure: unknown | undefined,
+        ) => Promise<{ turn: Turn; blocks: Block[] }>;
       };
   /** Prepare image decisions/breaks before the next assistant turn is reserved. */
   prepareNextContext: (
@@ -90,7 +94,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     blocks: Block[];
     requiresSplit: boolean;
     compaction?: CompactionDecision;
-    context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+    context?: import("./request-preparation.js").PreparedContinuation;
     successorFailure?: unknown;
   }>;
 };
@@ -119,10 +123,12 @@ export type AdoptedBatch<TCurrent = undefined> = {
    */
   terminal?: boolean;
   completed?: Turn;
+  /** Blocks the completion persisted (a compaction's summary and re-shown documents). */
+  completedBlocks?: Block[];
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;
-  context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+  context?: import("./request-preparation.js").PreparedContinuation;
   /**
    * The reply ends at this request boundary for a queued switch. An assistant
    * exits through a success close; a placeholder comes back `terminal`.
@@ -250,8 +256,7 @@ export interface RuntimeDelivery
      */
     localCancellation?: () => TerminalCause | null;
     settleSummaryResponses?: () => Promise<void>;
-    continueWith?: DeliveryBoundary;
-  }): Promise<
-    { kind: "split"; adopted: AdoptedBatch } | { kind: "completed"; completion: FinalizedExecution }
-  >;
+    /** Ask the loop for a guarded continuation when input still waits. Never prepares it. */
+    continueOnPending?: boolean;
+  }): Promise<{ kind: "continue" } | { kind: "completed"; completion: FinalizedExecution }>;
 }

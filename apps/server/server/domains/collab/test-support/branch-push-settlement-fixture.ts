@@ -5,6 +5,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { expect } from "vitest";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import type { EventSink } from "../../observability/index.js";
 import { createDrizzlePendingSettlementStore } from "../adapters/drizzle-pending-settlement.js";
 import {
@@ -42,15 +43,15 @@ export const COLD_SCENARIO_IDS = Object.fromEntries(
 /** The three documents a multi-document settlement batch pushes together. */
 export const SETTLEMENT_BATCH = [DEFAULT_ALPHA_ID, BETA_ID, GAMMA_ID] as const;
 
-/** One staged destructive push per batch document; their branch ids in batch order. */
+/** One staged destructive push per batch document; their draft ids in batch order. */
 export async function seedSettlementBatch(
   harness: ReturnType<typeof createHarness>,
 ): Promise<string[]> {
-  const branchIds: string[] = [];
+  const draftIds: string[] = [];
   for (const documentId of SETTLEMENT_BATCH) {
-    branchIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
+    draftIds.push(await harness.seedDestructivePush(`batch-${documentId}`, documentId));
   }
-  return branchIds;
+  return draftIds;
 }
 
 /** The caller owns hook registration and connection teardown. */
@@ -89,6 +90,8 @@ export function claimProbeStore(db: Database, eventSink?: EventSink) {
     {} as never,
     undefined,
     eventSink,
+    { steps: [] },
+    createTestWorkProjectionMutation(db),
   );
 }
 
@@ -233,19 +236,6 @@ export async function expectLiveSweepOnly(
       expect(change).not.toHaveProperty("writerProtection");
     }
   }
-}
-
-export function expectSweepClassification(
-  harness: ReturnType<typeof createHarness>,
-  swept: boolean,
-): void {
-  expect(harness.changeEvents()).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        changes: expect.arrayContaining([expect.objectContaining({ swept })]),
-      }),
-    ]),
-  );
 }
 
 export async function observeSettlement(

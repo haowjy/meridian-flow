@@ -74,19 +74,9 @@ describe("per-write journal encoding", () => {
       classes: 1,
     },
   ])("$name", async ({ sameChat, reread, sentence, dependent, classes, overwrite }) => {
-    let client = 50000;
-    const docs: Y.Doc[] = [];
     const h = createWriteToolHarness(
       { "chapter.md": original },
-      {
-        semanticProvenance: createSemanticProvenanceWriter(),
-        createRuntimeDoc: () => {
-          const doc = new Y.Doc({ gc: false });
-          doc.clientID = client++;
-          docs.push(doc);
-          return doc;
-        },
-      },
+      { semanticProvenance: createSemanticProvenanceWriter() },
     );
     const draft = h.liveDoc("chapter.md");
     const live = clone(draft);
@@ -110,7 +100,6 @@ describe("per-write journal encoding", () => {
           interactionContext: {
             mode: "threadPeer" as const,
             afterJournalId: i,
-            branchGeneration: 1,
           },
         };
         if (i === 0 || !sameChat || reread)
@@ -177,7 +166,6 @@ describe("per-write journal encoding", () => {
     } finally {
       live.destroy();
       draft.destroy();
-      for (const doc of docs) doc.destroy();
     }
   });
 });

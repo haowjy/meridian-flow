@@ -1,6 +1,3 @@
-import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
-import { createLocalFileAccessChanges } from "../../domains/file-policy/index.js";
-import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
 /** Route seam coverage for create-with-content followed by the public read projection. */
 
 import { eq } from "drizzle-orm";
@@ -12,8 +9,17 @@ import {
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
 import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
-import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
+import {
+  createAllowAllFileAccess,
+  createLocalFileAccessChanges,
+} from "../../domains/file-policy/index.js";
+import { createDrizzleProjectWorkRepository } from "../../domains/projects/index.js";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
+import {
+  createTestDocumentRemoval,
+  createTestRemovalDeps,
+} from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -79,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
       });
@@ -105,10 +112,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab,
         hocuspocus,
         contextPorts: createProductionUnifiedContextPortFactory({
+          pendingBranch: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db,
+          removal: createTestDocumentRemoval(db),
           documentSync: collab,
-          drafts: collab.drafts,
+          branches: collab.branches,
         }),
       };
     }
@@ -174,6 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               fileAccess: drizzleFileAccess(db),
               projectRepo: createDrizzleProjectRepository({ db }),
               workRepo: createDrizzleProjectWorkRepository({
+                removal: createTestDocumentRemoval(db),
                 db,
                 lineageScratch: createDrizzleLineageScratchLifecycle(db),
                 fileAccessChanges: createLocalFileAccessChanges(),

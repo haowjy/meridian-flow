@@ -11,6 +11,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import {
@@ -27,6 +28,7 @@ import { createInMemoryEventSink } from "../observability/index.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes, testLinkDeps } from "./test-support/document-link-scopes.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
 
 const documentSchema = buildDocumentSchema();
 
@@ -77,7 +79,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // Threads here carry no Agent binding; each acts as an `edit` agent in its Work.
     const chains = new Map<string, AgentChain>();
     const fileAccess = createFileAccess({
-      facts: createDrizzleFileFacts(db),
+      facts: createDrizzleFileFacts(db, createTestWorkProjectionMutation(db)),
       grants: createOwnerFileGrants(),
       readAgentChain: async (threadId) => {
         const chain = chains.get(threadId);
@@ -85,7 +87,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return chain;
       },
     });
-    /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's draft. */
+    /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's drafts. */
     function agent(threadId: string, workId: string, draftMode: boolean): Principal {
       const chain: AgentChain = [
         {
@@ -100,7 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         accountId: USER_ID as never,
         agent: {
           chain,
-          draftWork: draftMode
+          branchWork: draftMode
             ? { id: workId as WorkId, handle: handles.get(workId) ?? null }
             : null,
         },
@@ -136,6 +138,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         ...(links ? { links } : {}),
         db,
+        ...createTestRemovalDeps(db),
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
         catalogMutations: createDrizzleContextCatalog(db),
@@ -609,7 +612,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_B_ID as never,
       });
       const agentEdit = collab.agentEdit();
-      // Each reply drafts lore.md into its own Work and writes the other Work's scratch.
+      // Each reply branches lore.md into its own Work and writes the other Work's scratch.
       const replies = [
         { threadId: THREAD_ID, workId: WORK_ID, responseId: RESPONSE_ID, other: SCRATCH_B_ID },
         { threadId: THREAD_B_ID, workId: WORK_B_ID, responseId: RESPONSE_B_ID, other: SCRATCH_ID },
@@ -699,9 +702,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function journalStatuses() {
       const rows = await db
-        .select({ status: schema.branchWriteJournal.status })
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.turnId, TURN_ID as never));
+        .select({ status: schema.draftWriteJournal.status })
+        .from(schema.draftWriteJournal)
+        .where(eq(schema.draftWriteJournal.turnId, TURN_ID as never));
       return rows.map((row) => row.status);
     }
 
@@ -804,21 +807,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const [workDraft] = await db
         .select()
-        .from(schema.documentBranches)
+        .from(schema.documentDrafts)
         .where(
           and(
-            eq(schema.documentBranches.documentId, KB_ID as never),
-            eq(schema.documentBranches.kind, "work_draft"),
-            isNull(schema.documentBranches.threadId),
+            eq(schema.documentDrafts.documentId, KB_ID as never),
+            eq(schema.documentDrafts.kind, "work_draft"),
+            isNull(schema.documentDrafts.threadId),
           ),
         );
       if (!workDraft) throw new Error("expected a kept Work draft for lore.md");
       return async () => {
-        const [row] = await db
-          .select({ state: schema.documentBranches.state })
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, workDraft.id));
-        return markdownOf(row?.state);
+        return markdownOf(await draftContent(db, workDraft.id));
       };
     }
 

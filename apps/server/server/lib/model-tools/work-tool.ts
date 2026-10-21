@@ -39,7 +39,17 @@ import {
  * its own: the chat's mode is in its work context (D62).
  */
 function modelWork(work: Work): ModelWork {
-  const { handle, name, goal, status, archivedAt, createdAt, updatedAt, lastActivityAt } = work;
+  const {
+    handle,
+    name,
+    goal,
+    status,
+    archivedAt,
+    createdAt,
+    updatedAt,
+    lastActivityAt,
+    pendingDocumentCount,
+  } = work;
   return {
     handle,
     name,
@@ -49,9 +59,7 @@ function modelWork(work: Work): ModelWork {
     createdAt,
     updatedAt,
     lastActivityAt,
-    ...(work.unpushedChangeCount !== undefined
-      ? { pendingChangeCount: work.unpushedChangeCount }
-      : {}),
+    pendingDocumentCount,
   };
 }
 
@@ -251,7 +259,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
   show: onSelectedWork(async (deps, thread, work) => {
     const [threads, drafts] = await Promise.all([
       deps.threads.listRecentByWork(thread.projectId, work.id, 10),
-      deps.drafts.draftReview.list({ projectId: thread.projectId, workId: work.id }),
+      deps.branches.draftReview.list({ projectId: thread.projectId, workId: work.id }),
     ]);
     return {
       work: modelWork(work),

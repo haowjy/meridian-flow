@@ -10,7 +10,7 @@ import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";

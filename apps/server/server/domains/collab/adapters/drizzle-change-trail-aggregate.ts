@@ -516,7 +516,7 @@ async function reconcileTerminalOwners(
           ELSE NOT EXISTS (SELECT 1 FROM turns WHERE turns.thread_id = shell.thread_id
             AND turns.status NOT IN ('complete', 'cancelled', 'error')) END AS terminal,
         NOT EXISTS (
-          SELECT 1 FROM branch_write_journal journal
+          SELECT 1 FROM draft_write_journal journal
           CROSS JOIN LATERAL change_trail_owners('{}', ARRAY[journal.id]) affected
           WHERE journal.status = 'rollback_pending' AND affected.thread_id = shell.thread_id
             AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id

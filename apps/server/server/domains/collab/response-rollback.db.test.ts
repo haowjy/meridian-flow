@@ -13,7 +13,6 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -21,6 +20,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetDatabase(db));
@@ -234,21 +234,20 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
           ),
         ),
       ).toMatchObject({ status: "success", phase: "committed" });
-    const betaBranch = await view.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
-    betaBranch.doc.destroy();
-    const [branch] = await db
+    const betaDraft = await view.draftStore.resolveWorkDraftForThread(BETA_ID, THREAD_ID);
+    const [documentDraft] = await db
       .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, betaBranch.branchId));
+      .from(schema.documentDrafts)
+      .where(eq(schema.documentDrafts.id, betaDraft.draftId));
     const doc = new Y.Doc({ gc: false });
     try {
-      Y.applyUpdate(doc, branch.state);
+      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.branchCoordinator.commitWriterUpdate({
-        branchId: branch.id,
-        expectedGeneration: branch.generation,
+      await view.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.id,
+        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,
@@ -265,12 +264,12 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
     );
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     expect(await harness.liveMarkdown(BETA_ID)).toBe("Delta Echo.\n\nGreen.\n");
-    expect(await view.draftMarkdown(branch.id)).toBe("Delta Am!ber.\n\nGreen.\n");
+    expect(await view.draftMarkdown(documentDraft.id)).toBe("Delta Am!ber.\n\nGreen.\n");
     expect(
       await db
         .select()
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.status, "rollback_pending")),
+        .from(schema.draftWriteJournal)
+        .where(eq(schema.draftWriteJournal.status, "rollback_pending")),
     ).toHaveLength(1);
     expect(
       await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),

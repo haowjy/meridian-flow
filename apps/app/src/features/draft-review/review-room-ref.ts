@@ -3,7 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
-import type { BranchRoomRef } from "@/core/editor/branch-room-pool";
+import type { DraftRoomRef } from "@/core/editor/draft-room-pool";
 
 export function reviewRoomRef(
   queryClient: QueryClient,
@@ -14,7 +14,7 @@ export function reviewRoomRef(
     itemKey: string;
   },
   roomKey: string,
-): BranchRoomRef {
+): DraftRoomRef {
   return {
     roomKey,
     writerLoss() {
@@ -38,7 +38,7 @@ export function reviewRoomRef(
     async changed() {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),
+          queryKey: projectQueryKeys.workBranchDrafts(draft.projectId, draft.workId),
         }),
         queryClient.invalidateQueries({
           queryKey: projectQueryKeys.workDraftPreview(

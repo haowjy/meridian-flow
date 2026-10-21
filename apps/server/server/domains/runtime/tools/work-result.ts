@@ -5,7 +5,7 @@
  * `historySummary` reads the typed value.
  */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -19,7 +19,7 @@ export interface ModelWork {
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
-  pendingChangeCount?: number | null;
+  pendingDocumentCount: number;
 }
 
 /** `work show`: the Work, its recent chats and its drafts. */
@@ -102,7 +102,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 
 /**
  * One Work: handle, name, status, then the goal cut to `goalLength` (0 omits it),
- * pending changes only when there are some, and archived. `verbose` adds a line of dates.
+ * how many documents have pending changes only when some do, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
@@ -110,7 +110,7 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
     workRef(work),
     name,
     goalLength > 0 && work.goal ? clip(work.goal, goalLength) : undefined,
-    work.pendingChangeCount ? pending(work.pendingChangeCount) : undefined,
+    work.pendingDocumentCount ? pending(work.pendingDocumentCount) : undefined,
     work.archivedAt ? "(archived)" : undefined,
   ].filter((fact) => fact !== undefined);
   const line = facts.join("  ");
@@ -130,7 +130,9 @@ function workRef(work: Pick<ModelWork, "handle">): string {
 }
 
 function pending(count: number): string {
-  return count === 1 ? "1 pending change" : `${count} pending changes`;
+  return count === 1
+    ? "1 document with pending changes"
+    : `${count} documents with pending changes`;
 }
 
 /** The text cut to `length` at a word boundary, marked with `…`. */

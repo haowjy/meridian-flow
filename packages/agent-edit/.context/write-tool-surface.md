@@ -18,9 +18,11 @@ later response reusing a provider ID is a new attempt.
 
 ## Response commit lifecycle
 
-With `responseId`, create/insert/replace/remove mutate the session runtime and
-buffer exact updates and metadata in the committer. Without it, the command
-appends and projects immediately. Undo and redo are save boundaries: the host
+With `responseId`, create/insert/replace/remove plan on the view, echo on the
+call's room copy and buffer the exact captured update and metadata in the
+committer. Without it, the command is an immediate save (`saveNow`): it appends
+and projects at once. The draft host instead runs such a write as a one-entry
+reply, through the reply's save. Undo and redo are save boundaries: the host
 settles buffered writes before executing an inverse.
 
 Lifecycle ownership is exclusive:
@@ -33,16 +35,19 @@ Lifecycle ownership is exclusive:
   response so a late handler cannot reopen it.
 
 The attempt records journal acceptance before reporting or projection. Before
-acceptance, rollback can restore/evict speculative runtime state. After
+acceptance, rollback drops the buffer; nothing else holds the speculative
+state. After
 acceptance, failures recover from the journal; rollback is not allowed to claim
 that durable work vanished. A projection/report failure after durable acceptance
 returns degraded awareness rather than ordinary unqualified success.
 
 Phase-C apply snapshots around awaited concurrent detection and rechecks
 immediately before synchronous `Y.applyUpdate`. Peer retirement revokes the
-matching document epoch, including leases issued before the first staged write;
-it never revokes a replacement peer. `dropForThread` may mutate only Buffered
-state. Create cleanup is eligible only for pre-commit discard.
+matching document epoch, including a room read bound before the first staged
+write, and the revoked call is refused with the retirement's reason; it never
+revokes a replacement peer. A host's room read that finds its bound draft taken
+by a Discard throws `DocumentAccessLostError(reason)`, refused the same way.
+`dropStaged` may mutate only Buffered state. Create cleanup is eligible only for pre-commit discard.
 
 ## Mutation and selector contracts
 
@@ -58,12 +63,12 @@ runs before dispatch. Copies pass nodes from host read results rather than
 reading source documents inside the kernel, so whitespace and blank paragraphs
 survive and copied blocks receive fresh identities.
 
-`interaction-mode.ts` owns mutation mode and its context. The mode and branch
+`interaction-mode.ts` owns mutation mode and its context. The mode and draft
 generation are required end to end. Unexpected failures report safe identity
 metadata to the observer and collapse to model-facing `internal_error`; observer
 failures never alter mutation control flow.
 
-The package calls its human locator `file`; a host may publish a different path
+The package calls its human locator `file`; a host may show a different path
 name. Internal `documentId` remains storage/journal/runtime identity and is
 never inferred from writer-facing prose.
 
@@ -78,3 +83,6 @@ host tests cover placement, restoration, stack policy, and rollback.
 Successful edits expose immutable `e<N>` handles to model tools. `read(format:
 "edits")` pages those handles; undo/redo take counts and revert names one edit.
 The host owns policy and notices, and handles do not reach the writer card.
+`region_changed` is in the reversal statuses (`WriteErrorStatus`, contracts'
+`write-reversal.ts`) but no undo, redo or revert runs the region check today; a
+revert reaches it only once M2b routes it through the write door.

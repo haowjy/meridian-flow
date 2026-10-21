@@ -27,7 +27,7 @@ export function createStaticDocumentLinkScopes(
         catalog?.documents.find((entry) => entry.uri === uri)?.documentId ?? "",
         undefined,
       ),
-    draftCreatedAt: () => null,
+    branchCreatedAt: () => null,
     // No holder bindings without a registry; a reader door pins the catalog's own entry.
     pinHolder: async ({ documentId, uri }) => {
       const entry = catalog?.documents.find((each) =>

@@ -3,7 +3,7 @@ import {
   documentBasename,
   type ReviewFileTarget,
   sortDraftFiles,
-} from "@/client/query/work-draft-files";
+} from "@/client/query/work-branch-files";
 
 /**
  * The draft the review moves to when the writer is done with this one: the next

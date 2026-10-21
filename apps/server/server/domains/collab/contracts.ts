@@ -1,12 +1,17 @@
 /** Public contracts for the collab domain. */
-import type { Hocuspocus } from "@hocuspocus/server";
+import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type {
-  ConcurrentEditInfo,
+  FrontierLookup,
+  ObservationFrontier,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { DraftId, LinkView } from "@meridian/contracts";
-import type { DraftCommandResult } from "@meridian/contracts/drafts";
-import type { ReversalOutcome } from "@meridian/contracts/protocol";
+import type { BranchId, LinkView } from "@meridian/contracts";
+import type { BranchCommandResult } from "@meridian/contracts/branches";
+import type {
+  DocumentRemovalRecord,
+  ReversalOutcome,
+  TurnReceiptChip,
+} from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -19,34 +24,30 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { WorkDraftDisposal } from "../projects/index.js";
+import type { WorkBranchDisposal } from "../projects/index.js";
 import type {
   RefusedResponseDocument,
-  RoutedWriteOutcome,
   ThreadPeerAgentEditCore,
 } from "./domain/agent-edit-cores.js";
 
-export type { RefusedResponseDocument, RoutedWriteOutcome };
+export type { RefusedResponseDocument };
 
-import type { DocumentCreationAggregate } from "./domain/document-creation.js";
-import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
-import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
+import type { ApplyItemRef } from "./domain/branch-apply.js";
 import type {
+  BranchCommandEnvelope,
   CommandLookup,
   CommandLookupKey,
-  DraftCommandEnvelope,
-} from "./domain/draft-commands.js";
-import type { ApplyItemRef } from "./domain/draft-publication.js";
-import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
-import type { DraftReviewItem } from "./domain/draft-review-items.js";
-import type { Drafts } from "./domain/drafts.js";
+} from "./domain/branch-commands.js";
+import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
+import type { DraftReviewItem } from "./domain/branch-review-items.js";
+import type { Branches } from "./domain/branches.js";
+import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
-import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
-import type { DocumentDraftOrigin } from "./domain/ports/work-draft-pending-store.js";
+import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { DerivedReview } from "./domain/review-cut.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
-import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
 export type UpdateOrigin =
   | { type: "user"; userId: string }
@@ -118,11 +119,11 @@ export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
   primeReservedNamespaceIndex(document: Y.Doc): void;
   headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
-  resolveBranchHocuspocusRoom(
-    branchId: string,
+  resolveDraftHocuspocusRoom(
+    draftId: string,
     generation: number,
   ): Promise<{
-    branchId: string;
+    draftId: string;
     documentId: DocumentId;
     /** The Work whose draft the room is; its lifecycle caps the room's access. */
     workId: WorkId;
@@ -131,8 +132,8 @@ export type CollabTransport = {
     status: "active";
   } | null>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
-  loadHocuspocusBranchState(
-    branchId: string,
+  loadHocuspocusDraftState(
+    draftId: string,
     generation: number,
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   admitLiveWriterUpdate(input: {
@@ -143,9 +144,17 @@ export type CollabTransport = {
     expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  /**
+   * The removed document a room serves, with its record (a draft room's by its retained draft,
+   * at any status, never reopened), or null while it lives. Unauthorized: the gateway reads it
+   * only where it is already refusing, and answers `4208` only to a reader of the document.
+   */
+  roomRemoval(
+    room: { documentId: DocumentId } | { draftId: string },
+  ): Promise<{ documentId: DocumentId; removal: DocumentRemovalRecord } | null>;
   validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  admitBranchWriterUpdate(input: {
-    branchId: string;
+  admitDraftWriterUpdate(input: {
+    draftId: string;
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
@@ -161,16 +170,30 @@ export type CollabTransport = {
     reconcileOffline?: boolean;
   }): void;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
+  storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
-  drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
-  /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
-  closeHocuspocusBranchRoom(branchId: string): void;
-  rejectStaleBranchSyncStep1(input: {
-    branchId: string;
+  drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
+  /** Narrow close affordance for durable shadow-probe T6 and draft reset plumbing. */
+  closeHocuspocusDraftRoom(draftId: string): void;
+  /**
+   * A tab's SyncStep1 on a draft room: reconciles `room` against the committed draft, then
+   * true when the tab still holds content a reset discarded (decision D27).
+   */
+  rejectStaleDraftSyncStep1(input: {
+    draftId: string;
     generation: number;
     clientStateVector: Uint8Array;
+    room: Y.Doc;
   }): Promise<boolean>;
+  /**
+   * Called from a draft room's load hook: once Hocuspocus registers the room, brings it up to
+   * what committed while it loaded, or closes it when its generation is stale (decision D26).
+   */
+  enrollHocuspocusDraftRoom(input: {
+    draftId: string;
+    generation: number;
+    document: HocuspocusDocument;
+  }): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
@@ -185,15 +208,6 @@ export type ReverseThreadContextInput = {
   direction: "undo" | "redo";
   turnId: TurnId;
 };
-
-export class ReverseThreadContextError extends Error {
-  constructor(
-    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export type TurnReversalAccess = {
   reverseTurn(input: {
@@ -224,7 +238,13 @@ export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  ensureDocument(documentId: string): Promise<void>;
+  /** The create's own step for an empty create: its authority, empty, in its transaction. */
+  initializeEmptyDocument(documentId: DocumentId): Promise<void>;
+  /**
+   * Explicit repair of a living document whose authority is absent, from its stored
+   * projection; a no-op when it has authority. Called only on an explicit touch.
+   */
+  repairDocumentAuthority(documentId: DocumentId): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
@@ -262,6 +282,8 @@ export type MarkdownDocumentStore = LinkBinder & {
 
 export type DocumentProjectionRefresher = {
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
+  /** One pass of the draft-effect projection's sweep over stale drafts (design §3.2). */
+  draftEffects: { sweep(): Promise<number>; flush(): Promise<void> };
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
@@ -274,12 +296,13 @@ export type ResponseWriteCommitDocument = {
   documentId: DocumentId;
   updateCount: number;
   receipts: ResponseCommitWriteReceipt[];
-  concurrentEdits?: ConcurrentEditInfo;
   lateSweep?: import("@meridian/agent-edit/integration").DestructiveSweepReport;
+  /** Host-only, when the save recorded one: the document's frontier at the save's after-state. */
+  frontier?: ObservationFrontier;
 };
 
-export type DraftClosedFinalizeResult = {
-  status: "draft_closed";
+export type BranchClosedFinalizeResult = {
+  status: "branch_closed";
   responseId: string;
   mode: "draft";
   documents: [];
@@ -295,7 +318,7 @@ export type ResponseWriteCommitFinalizeResult =
       refused: RefusedResponseDocument[];
       awarenessDegraded?: boolean;
     }
-  | DraftClosedFinalizeResult;
+  | BranchClosedFinalizeResult;
 
 export type ResponseWriteRollbackFinalizeResult = {
   stagedCreates: ResponseWriteStagedCreates;
@@ -304,7 +327,7 @@ export type ResponseWriteRollbackFinalizeResult = {
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
-    ctx: { threadId: ThreadId; turnId: TurnId },
+    ctx: { threadId: ThreadId; turnId: TurnId; recordingFrontier?: FrontierLookup },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
@@ -332,6 +355,8 @@ export type ReviewSelectionCommand =
       closureClassIds: readonly string[];
       admissionTokens: readonly string[];
       memberPartKeys: readonly string[];
+      /** False when the client sent a sample: absence then proves nothing. */
+      memberPartKeysComplete: boolean;
       liveRevisionToken: string;
       draftRevisionToken?: string;
     };
@@ -341,7 +366,7 @@ export type ReviewSelectionCommand =
  * belongs to a different command. The route maps these to HTTP.
  */
 export type CommandOutcome =
-  | { kind: "result"; result: DraftCommandResult }
+  | { kind: "result"; result: BranchCommandResult }
   | { kind: "pending" }
   | { kind: "blocked" }
   | { kind: "conflict" };
@@ -350,30 +375,32 @@ export type CommandOutcome =
 export type ModelDraftRow = {
   documentId: DocumentId;
   documentName: string | null;
-  contextLocation: import("@meridian/contracts/drafts").ThreadDraftListItem["contextLocation"];
+  contextLocation: import("@meridian/contracts/branches").ThreadDraftListItem["contextLocation"];
   createdDocument?: boolean;
 };
 
 export type DraftPreviewResult =
   | (DerivedReview & { threadTitles: ReadonlyMap<string, string> })
   | { status: "gone"; itemKey: string }
-  | { status: "corrupt"; draftId: DraftId; itemKey: string; branchGeneration: number };
+  | { status: "corrupt"; branchId: BranchId; itemKey: string; draftGeneration: number };
 
 export type DraftReviewApi = {
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ModelDraftRow[]>;
-  /** The review list route's one read: the active draft's listed items with live text tokens. */
+  /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { workId: WorkId }): Promise<{
-    draftId: DraftId | null;
+    branchId: BranchId | null;
     items: DraftReviewItem[];
     threadTitles: ReadonlyMap<string, string>;
   }>;
-  /** Every active draft in the project with changes to the document, oldest first. */
-  draftsChangingDocument(input: {
+  /** Every active branch in the project with changes to the document, oldest first. */
+  branchesChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
-  }): Promise<DocumentDraftOrigin[]>;
-  /** The Work's active draft's listed items, live text tokens unread: what Apply authorizes. */
-  items(input: { workId: WorkId }): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }>;
+  }): Promise<DocumentBranchOrigin[]>;
+  /** The Work's active branch's listed items, live text tokens unread: what Apply authorizes. */
+  items(input: {
+    workId: WorkId;
+  }): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
   resolveItem(input: { workId: WorkId; itemKey: string }): Promise<ResolvedReviewItem | null>;
   resolveItemByDocument(input: {
     workId: WorkId;
@@ -385,23 +412,23 @@ export type DraftReviewApi = {
     workId: WorkId;
     item: DraftReviewItem;
     userId: UserId;
-    envelope: DraftCommandEnvelope;
+    envelope: BranchCommandEnvelope;
     tokens?: Omit<ApplyItemRef, "itemKey">;
     signal?: AbortSignal;
   }): Promise<CommandOutcome>;
   applyAll(input: {
     workId: WorkId;
-    draftId: DraftId;
+    branchId: BranchId;
     items: readonly ApplyItemRef[];
     userId: UserId;
-    envelope: DraftCommandEnvelope;
+    envelope: BranchCommandEnvelope;
     signal?: AbortSignal;
   }): Promise<CommandOutcome>;
   applyChanges(input: {
     workId: WorkId;
     itemKey: string;
     userId: UserId;
-    envelope: DraftCommandEnvelope;
+    envelope: BranchCommandEnvelope;
     selection: Extract<ReviewSelectionCommand, { kind: "apply" }>;
     signal?: AbortSignal;
   }): Promise<CommandOutcome>;
@@ -409,36 +436,34 @@ export type DraftReviewApi = {
     workId: WorkId;
     item: DraftReviewItem;
     userId: UserId;
-    envelope: DraftCommandEnvelope;
+    envelope: BranchCommandEnvelope;
   }): Promise<CommandOutcome>;
   discardChanges(input: {
     workId: WorkId;
     itemKey: string;
     userId: UserId;
-    envelope: DraftCommandEnvelope;
+    envelope: BranchCommandEnvelope;
     selection: Extract<ReviewSelectionCommand, { kind: "discard" }>;
   }): Promise<CommandOutcome>;
   discardAll(input: {
     workId: WorkId;
-    draftId: DraftId;
+    branchId: BranchId;
     userId: UserId;
-    envelope: DraftCommandEnvelope;
+    envelope: BranchCommandEnvelope;
   }): Promise<CommandOutcome>;
 };
 
-export type CollabDrafts = {
+export type CollabBranches = {
   draftReview: DraftReviewApi;
 };
 
-/** The one drafts resolver (Work → active draft, made only at the write boundary). */
-export type CollabDraftResolver = {
-  drafts: Drafts;
+/** The one branch resolver (Work → active branch, made only at the write boundary). */
+export type CollabBranchResolver = {
+  branches: Branches;
   /** A drain for the debounced registration of writers' review-room edits (§10.7). */
-  draftLinks: Pick<DraftBranchAheadRegistration, "flush">;
-  /** Every branch of a draft leased before its transaction: what closing the draft needs. */
-  draftLeases: DraftBranchLeases;
-  /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
-  workDraftDisposal: WorkDraftDisposal;
+  draftLinks: Pick<DraftAheadRegistration, "flush">;
+  /** Work purge's disposal of the purged Work's branches through the locked Discard kernel (§2.6). */
+  workBranchDisposal: WorkBranchDisposal;
 };
 
 export type TurnLiveLineageAccess = {
@@ -449,7 +474,6 @@ export type TurnLiveLineageAccess = {
 
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
-  countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
 
 /**
@@ -461,7 +485,7 @@ export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
   | { destination: "draft"; workId: WorkId };
 
-export type BranchPeerShadowAccess = {
+export type DraftPeerShadowAccess = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
@@ -469,7 +493,7 @@ export type BranchPeerShadowAccess = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
-  flushBranchLivePull(documentId: DocumentId): Promise<void>;
+  flushDraftLivePull(documentId: DocumentId): Promise<void>;
   readEffectiveMarkdown(
     input: {
       documentId: DocumentId;
@@ -489,21 +513,20 @@ export type BranchPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * The draft's branch on a document it just created or joined, seeded from its live
+   * The branch's draft for a document it just created or joined, seeded from its live
    * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
    * idempotent against a racing peer ensure (contract §6.2 step 5).
    */
-  ensureCreatedDraftBranch(input: { documentId: DocumentId; draftId: DraftId }): Promise<void>;
+  ensureCreatedDocumentDraft(input: { documentId: DocumentId; branchId: BranchId }): Promise<void>;
   /**
-   * Reverse a draft create's branch (contract §12.5, O-11), in the caller's transaction:
-   * `stands` when the draft's branch on the document (or a thread peer of it) holds a
-   * contribution; otherwise the branches go and, once the transaction commits, their
-   * pooled cores, caches and rooms are retired.
+   * Reverse a branch create's draft (contract §12.5, O-11), in the caller's transaction:
+   * `stands` when the branch's draft on the document (or a thread peer of it) holds a
+   * contribution; otherwise closes the drafts, which retire after commit.
    */
-  retractCreatedDraftBranch(input: {
+  retractCreatedDocumentDraft(input: {
     documentId: DocumentId;
-    draftId: DraftId;
-  }): Promise<"retracted" | "stands">;
+    branchId: BranchId;
+  }): Promise<"stands" | "retracted">;
 };
 
 export type DocumentAttribution = {
@@ -517,13 +540,15 @@ export type DocumentAttribution = {
 
 /** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
-  /** Drops debounced live-to-draft pulls that haven't started; running pulls finish. */
+  /**
+   * Drops debounced live-to-draft pulls and projection runs that haven't started; running
+   * ones finish.
+   */
   dispose(): void;
 };
 
 export type CollabDomain = CollabTransport &
   CollabLifecycle &
-  DocumentAuthorityHeads &
   AgentEditAccess &
   TurnReversalAccess &
   MarkdownDocumentStore &
@@ -533,13 +558,9 @@ export type CollabDomain = CollabTransport &
   DocumentCheckpoints &
   DocumentAttribution &
   BranchPushAccess &
-  BranchPeerShadowAccess &
-  CollabDrafts &
-  CollabDraftResolver &
+  DraftPeerShadowAccess &
+  CollabBranches &
+  CollabBranchResolver &
   DocumentCreationAggregate;
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";
-export type {
-  DocumentAuthorityHead,
-  DocumentAuthorityHeads,
-} from "./domain/ports/document-authority-heads.js";

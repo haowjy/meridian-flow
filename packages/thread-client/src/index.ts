@@ -1,5 +1,7 @@
 /** Platform-neutral client behavior shared by the app and ./mf. */
 
+export * from "./cards";
+export * from "./commands";
 export * from "./hand-back";
 export { buildMessageDoc } from "./message/build";
 export {
@@ -66,6 +68,8 @@ export {
   type ToolView,
 } from "./view/group-delivery-segments";
 export type { DirectInvocationResult } from "./view/invocation-direct-result";
+export { latestRow } from "./view/latest-row";
+export { type NormalizedTurns, normalizeTurns, type TurnFacts } from "./view/normalize-turns";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
 export { replyDrawsNothing } from "./view/reply-draws-nothing";
 export { placeStandIns } from "./view/retry-stand-ins";

@@ -5,16 +5,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import {
+  type BranchCommandOutcome,
   type CommandStart,
-  type DraftCommandOutcome,
   newestKnownProposal,
   type SelectionCommand,
-} from "@/client/query/draft-command-executor";
+} from "@/client/query/branch-command-executor";
 import {
   clearDraftReviewLaunchFailure,
-  pendingDraftCommand,
-  useDraftCommandRecords,
-} from "@/client/query/draft-command-record";
+  pendingBranchCommand,
+  useBranchCommandRecords,
+} from "@/client/query/branch-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { noteReviewNavigation } from "@/core/editor/review-place";
 import {
@@ -27,7 +27,7 @@ import {
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
 import { draftClaim, useReviewCommandCompletion } from "./useReviewCommandCompletion";
-import { useWorkDraftCommands, type WorkDraftCommands } from "./useWorkDraftCommands";
+import { useWorkBranchCommands, type WorkBranchCommands } from "./useWorkBranchCommands";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
@@ -63,7 +63,7 @@ export type DraftReviewController = {
   isApplying: boolean;
   canApplyReviewedDraft: boolean;
   /** Dispatch the normalized target through this review's Work authority. */
-  commandChange: WorkDraftCommands["commandChange"];
+  commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
   isDisposing: boolean;
   /**
@@ -115,7 +115,7 @@ export type DraftReviewController = {
   enterInlineReview: (documentId: string, itemKey: string) => void;
   /**
    * The editor's room reports it is of a generation the server has closed
-   * (`branch-generation-stale`). The review asks for a fresh read and keeps its
+   * (`draft-generation-stale`). The review asks for a fresh read and keeps its
    * place; it neither exits nor guesses the new room.
    */
   exitInlineReview: () => void;
@@ -127,12 +127,12 @@ export type DraftReviewController = {
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
   startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
-  apply: (documentId: string, itemKey: string) => Promise<DraftCommandOutcome>;
-  discard: (documentId: string, itemKey: string) => Promise<DraftCommandOutcome>;
+  apply: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
+  discard: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
   disposeDrafts: (
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
-  ) => Promise<DraftCommandOutcome[]>;
+  ) => Promise<BranchCommandOutcome[]>;
 };
 
 export function useDraftReviewController({
@@ -150,7 +150,7 @@ export function useDraftReviewController({
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
   const { state, dispatch } = stateOwner;
-  const commands = useWorkDraftCommands({ projectId, work, threadId });
+  const commands = useWorkBranchCommands({ projectId, work, threadId });
   const stateRef = useRef(state);
   const activeRef = useRef(true);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
@@ -165,9 +165,9 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
 
-  const commandRecords = useDraftCommandRecords();
+  const commandRecords = useBranchCommandRecords();
   const activeCommand = inlineReview
-    ? pendingDraftCommand(commandRecords, { projectId, workId, ...inlineReview })
+    ? pendingBranchCommand(commandRecords, { projectId, workId, ...inlineReview })
     : null;
   const isApplying = activeCommand?.target === "all" && activeCommand.mode === "apply";
   const isDisposing = activeCommand !== null;
@@ -187,7 +187,7 @@ export function useDraftReviewController({
         type: "enterInline",
         documentId,
         itemKey,
-        branchGeneration: newestKnownProposal(queryClient, draft),
+        draftGeneration: newestKnownProposal(queryClient, draft),
         claim: draftClaim(queryClient, draft),
       });
     },
@@ -299,7 +299,7 @@ export function useDraftReviewController({
         ...start,
         outcome: start.outcome.then((outcome) => {
           if (outcome.kind === "applied" || outcome.kind === "discarded")
-            dispatch({ type: "reviewDisposed", ...draft, branchGeneration: generation });
+            dispatch({ type: "reviewDisposed", ...draft, draftGeneration: generation });
           return outcome;
         }),
       };

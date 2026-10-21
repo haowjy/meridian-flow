@@ -7,7 +7,7 @@ export const RUNTIME_URI_SYSTEM_INSTRUCTION = [
   "- Append `#heading-slug` to a path to target one section.",
   "- `kb://` is the project knowledge base: characters, places, canon.",
   "- `unfiled://` holds project documents not yet filed anywhere; renaming one does not file it.",
-  "- `scratch://` is this chat’s working notes, never the manuscript. In a Work it means the Work’s shared Scratch. With No Work it means notes shared with this chat’s forks and subagents. A handoff starts fresh notes. `scratch://@w3/…` is a Work’s notes and `scratch://@c12/…` a No Work chat’s; copy the handle from Work context. Move notes you want to keep for the project into `kb://` or `manuscript://`.",
+  "- `scratch://` holds quick, ephemeral working notes and shared work in progress, never the manuscript or a self-handoff summary. In a named Work it means the Work’s shared Scratch. With No Work it means notes shared with this chat’s forks and subagents at `scratch://@c12/…` (use the first chat handle from Work context). A handoff starts fresh notes. `scratch://@w3/…` is a Work’s Scratch. Move notes you want to keep for the project into `kb://` or `manuscript://`.",
   "- `uploads://` holds files the user attached to this chat. Another chat’s are at `uploads://@c12/…`; you can read them but not change them.",
   "- `user://` is the user's personal files.",
   "- File and folder names cannot start with `@`.",
