@@ -173,6 +173,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const held = holder(part),
           state = states[i];
         if (held) blocking.add(held);
+        const changed =
+          state.state !== "active" && state.state !== "undone" && !inspection.rolledBack(part);
         const reason = !eligible(part)
           ? "already removed"
           : held
@@ -181,17 +183,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? "rolled back"
               : state.state === "undone"
                 ? "already removed"
-                : state.reasons.includes("inaccessible ancestor")
-                  ? "its paragraph was removed"
-                  : state.state !== "active"
-                    ? "edited since"
-                    : null;
-        if (reason) {
-          const excerpt = store.describePart(document, part);
-          skipped.push(
-            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}`,
-          );
-        } else selection.push({ part, direction: "invert" });
+                : !changed
+                  ? null
+                  : state.reasons.includes("inaccessible ancestor")
+                    ? "paragraph replaced or removed"
+                    : "edited since";
+        if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
+        else selection.push({ part, direction: "invert" });
       }
       return { selection, skipped };
     }
@@ -308,7 +306,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!selection.selection.length)
           return {
             status: "nothing_to_revert",
-            message: `Nothing of ${entry.handle} is left as you wrote it. ${skipped.join("\n")} Read ${document.uri} and make a new replace.`,
+            message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
           };
         apply(selection.selection, "revert", []);
       } else
