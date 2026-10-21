@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Put change-card failures below controls without overlap, including dock and Work Files rows; hide unavailable Apply/Discard controls on locked drafts.
+
 - Remove the unused presented-document input chain from review room ownership.
 
 - Remove obsolete draft command failure messages and restrict failure codes to the produced vocabulary.

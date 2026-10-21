@@ -1,5 +1,5 @@
 /**
- * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets and failures stay inline.
+ * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets and failures grow below the control row.
  * The red and green text claims its width first: when the line is full the byline truncates before it, but only down
  * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
  */
@@ -66,7 +66,7 @@ export function ReviewChangeRow({
       data-arrived={arrived ? "true" : undefined}
       onClick={onFocus}
       className={cn(
-        "group flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1 transition-colors",
+        "group flex cursor-pointer flex-col items-stretch gap-2 rounded-md border border-transparent px-2 py-1 transition-colors",
         focused ? "border-border-subtle bg-card" : "hover:bg-sidebar-accent/50",
         arrived && "meridian-review-row-arrived",
       )}
@@ -121,37 +121,39 @@ export function ReviewChangeRow({
             <ChangeAuthor fit="first" change={change} touch={touch} className="justify-end" />
           ) : null}
         </div>
-        <span className="flex shrink-0 items-center">
-          <IconButton
-            size="xs"
-            tooltip={discardLabel()}
-            disabled={disabled}
-            className={iconButton}
-            onClick={(event) => {
-              event.stopPropagation();
-              onDiscard();
-            }}
-          >
-            <X aria-hidden />
-          </IconButton>
-          {canApply ? (
+        {!disabled ? (
+          <span className="flex shrink-0 items-center">
             <IconButton
               size="xs"
-              tooltip={t`Apply`}
+              tooltip={discardLabel()}
               disabled={disabled}
+              className={iconButton}
               onClick={(event) => {
                 event.stopPropagation();
-                onApply();
+                onDiscard();
               }}
-              className={cn("text-primary hover:text-primary", iconButton)}
             >
-              <Check aria-hidden />
+              <X aria-hidden />
             </IconButton>
-          ) : null}
-        </span>
+            {canApply ? (
+              <IconButton
+                size="xs"
+                tooltip={t`Apply`}
+                disabled={disabled}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onApply();
+                }}
+                className={cn("text-primary hover:text-primary", iconButton)}
+              >
+                <Check aria-hidden />
+              </IconButton>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       {draftFailure ? (
-        <p role="status" className="min-w-0 max-w-[50%] text-caption text-destructive">
+        <p role="status" className="min-w-0 break-words text-caption text-destructive">
           <ReviewMessageText failure={draftFailure} />
         </p>
       ) : null}

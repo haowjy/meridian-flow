@@ -34,8 +34,8 @@ it never partitions the text.
   content. Byline overlays never split a box.
 - Unknown attribution is not known-empty membership: show the text without a
   byline until classification arrives. Do not erase the dock while loading it.
-- Components own layout, receive command callbacks, and keep chrome and rows
-  one line. `PaintHold` owns pane continuity; feedback never displaces prose.
+- Components own layout, receive command callbacks, and keep attribution and controls
+  on one line. Failure text grows below that line; locked rows offer no disposition controls. `PaintHold` owns pane continuity; feedback never displaces prose.
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
 Browser verification recipes live in [draft review QA](../../../../../docs/qa/draft-review.md).
