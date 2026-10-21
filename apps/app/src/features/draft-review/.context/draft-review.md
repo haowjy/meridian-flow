@@ -81,7 +81,9 @@ identity, so rebinding an editor cannot drop discovery already scheduled by a pu
 
 The room owner supplies the selected address's room name and read error directly.
 Presentation state retains selection, focus, marks and `shown`, not room readiness.
-Retry belongs to the addressed room read; editor model readiness stays local to its mount.
+Cached active metadata keeps its room mounted after a metadata refetch failure.
+Initial metadata failure retries metadata; room acquisition failure retries the room read.
+Editor model readiness stays local to its mount.
 
 `useAiDraftLauncher.openReviewFile` is the shared listed-file launch adapter.
 A draft-only editor is the document's single workspace tab in its review Work,
