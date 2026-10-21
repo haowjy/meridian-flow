@@ -9,8 +9,7 @@
 - Remove obsolete draft command failure messages and restrict failure codes to the produced vocabulary.
 
 - Keep usable draft reviews mounted after metadata refresh failures; retry metadata and room acquisition at their own failure seams.
-- Kept moved-paragraph review paint separate from adjacent word changes at paragraph boundaries (#986).
-- Kept moved-block review paint separate from adjacent word changes, including unpunctuated heading edits, while preserving split/join, Apply, Discard and rebase composition (#986).
+- Keep moved-block review paint separate from adjacent word changes, including full heading renames and heading-level changes, while preserving split/join, Apply, Discard and rebase composition (#986).
 
 - Corrected the removed-paragraph QA expectation to name its remover rather than always the writer.
 
