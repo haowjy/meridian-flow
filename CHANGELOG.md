@@ -11,6 +11,7 @@
 - Draft rooms keep unsent typing in IndexedDB like live documents (#940, online reload and offline typing).
 - Model Undo, Redo and Revert, turn receipts and pending lists read each AI write's fate (applied, pending, discarded) from the text; stored `placement` removed.
 - Migrations 0075–0081 convert existing Work drafts to text-derived review, restartable under row locks with online indexes, then retire draft generations, placement and settlement storage. Cutover refuses unrepaired drafts and unfinished Apply. The migration runner can run digest-pinned TypeScript conversions in ledger order.
+- Model revert reports skipped parts by number and reason, without repeating their old or current text. Read the document for the passage. Revert behavior is unchanged. An all-skipped chat step now says "That change wasn't reverted because its text changed or is already gone."
 - Compaction re-reads documents with ordinary read arguments, including sections, ranges, outlines and versions. Failed reads are omitted without widening scope; partial reads never stand in for unseen text.
 - File-tree guides stay visible over highlights, including expanded Manuscript. Standalone file lists use less indentation; sidebar action hover matches page behavior.
 

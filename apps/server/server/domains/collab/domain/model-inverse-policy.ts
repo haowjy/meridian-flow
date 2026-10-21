@@ -156,7 +156,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           state.state === "undone"
             ? "already removed"
             : state.reasons.includes("inaccessible ancestor")
-              ? "its paragraph was removed"
+              ? "paragraph replaced or removed"
               : state.state !== "active"
                 ? "edited since"
                 : null;
@@ -170,12 +170,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 : kernelReason && part.disposition === "discarded"
                   ? "discarded"
                   : kernelReason;
-        if (reason) {
-          const excerpt = store.describePart(document, part);
-          skipped.push(
-            `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}: ${reason}`,
-          );
-        } else selection.push({ part, direction: "invert" });
+        if (reason) skipped.push(`part ${part.ordinal + 1}: ${reason}`);
+        else selection.push({ part, direction: "invert" });
       }
       return { selection, skipped };
     }
@@ -279,7 +275,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         if (!selection.selection.length)
           return {
             status: "nothing_to_revert",
-            message: `Nothing of ${entry.handle} is left as you wrote it. ${skipped.join("\n")} Read ${document.uri} and make a new replace.`,
+            message: `reverted: ${entry.handle} (0 of ${skipped.length} parts)\nnot reverted: ${skipped.join("\nnot reverted: ")}\nRead ${document.uri} for current text.`,
           };
         apply(selection.selection, "revert", []);
       } else
