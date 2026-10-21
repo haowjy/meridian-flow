@@ -151,8 +151,6 @@ export async function releaseDocumentStorage(
       .set({
         state: Buffer.alloc(0),
         stateVector: Buffer.alloc(0),
-        liveCut: null,
-        discardedStateVector: null,
       })
       .where(
         inArray(

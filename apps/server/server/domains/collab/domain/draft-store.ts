@@ -35,8 +35,6 @@ export type DraftSnapshot = {
   status: DraftStatus;
   /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
   closedCause: "discarded" | "document_removed" | null;
-  /** The re-fork epoch: room name, journal grouping, edit placement. A reset bumps it. */
-  generation: number;
   /** Bumped by every committed write to the draft; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
@@ -46,13 +44,15 @@ export type DraftSnapshot = {
   /** Derived from the origin Work as read, never stored: anything but `active` is frozen. */
   lifecycle: DraftWorkLifecycle;
   hasEffect: boolean;
-  blocking: boolean;
-  discardedStateVector?: Uint8Array | null;
   schemaVersion: CollabSchemaVersion;
 };
 
 /** A journal row past the checkpoint, applied on read. */
-export type DraftTailRow = { id: number; update: Uint8Array; source: "agent" | "writer" };
+export type DraftTailRow = {
+  id: number;
+  update: Uint8Array;
+  source: "agent" | "writer" | "server";
+};
 
 /**
  * One point-in-time read of a draft: its row, its checkpoint and its tail, from one statement.
@@ -64,13 +64,6 @@ export type DraftRead = {
   checkpoint: { state: Uint8Array; stateVector: Uint8Array } | null;
   tail: readonly DraftTailRow[];
 };
-
-/**
- * A work draft's effect baseline (`live_cut`), the live state its `has_effect` is measured
- * against. `state` is null for a legacy draft created
- * before every creator stored one; the projection job establishes it with a pull.
- */
-export type EffectBaseline = { state: Uint8Array | null };
 
 /** One logical write's edit receipts, captured on the document the append commits into. */
 export type AppendReceiptGroup = {
@@ -86,9 +79,8 @@ export type AppendDraftJournalInput = {
   /** One logical tool write, shared by its segment rows. */
   documentEditKey?: string;
   draftId: string;
-  generation: number;
   updateData: Uint8Array;
-  source: "agent" | "writer";
+  source: "agent" | "writer" | "server";
   wId?: number | null;
   toolCallId?: string | null;
   threadId?: ThreadId | null;
@@ -126,12 +118,12 @@ export type AppendFinalization =
 export type AppendRowsInput = {
   draftId: string;
   documentId: DocumentId;
-  expectedGeneration: number;
+  /** Background rebases keep archived drafts current; incoming edits require active Work. */
+  work?: "active" | "any";
   /** The checkpoint and highest row the caller's base replica holds. */
   base: DraftReadSince;
   /**
-   * Runs under the row lock. Production's is synchronous: nothing awaits while the row is
-   * held. A test fixture may reserve write ordinals here.
+   * Runs under the row lock, including async committed-live and recovery receipt reads.
    */
   finalize(read: DraftRead): AppendFinalization | Promise<AppendFinalization>;
 };
@@ -146,15 +138,8 @@ export type AppendRowsOutcome =
   | Exclude<AppendFinalization, { status: "appended" }>;
 
 /**
- * What else a rewrite must not race: a pull is fenced by an unfinished settlement on its
- * document (`fenced` while it is pending, `blocked` once it is terminally blocked); a
- * settlement's own reset is not; Discard and close fence on neither.
- */
-export type RewriteFence = { kind: "pending-settlement" } | { kind: "none" };
-
-/**
  * `exact` commits only at the revision the rewrite was computed at; `fold` commits over any
- * appends since its checkpoint cursor (a pull applies them, a reset discards them).
+ * appends since its checkpoint cursor.
  */
 export type RewritePolicy =
   | { kind: "exact"; revision: number }
@@ -166,38 +151,12 @@ export type RewriteOperation =
    * stay. The coordinator schedules it once a committed writer frame leaves the tail past its
    * bound (decision D10).
    */
-  | { kind: "compact" }
-  /**
-   * Live (or the upstream) merged into the draft. A work draft's `effect` was computed on the
-   * candidate against `liveCut`, its new baseline, before the rewrite locked anything.
-   */
-  | { kind: "pull"; effect?: PullEffect }
-  /** A content rewrite the draft's owning Work must admit: a thread peer catching up its upstream. */
-  | { kind: "checkpoint" }
-  /** A re-fork: the next generation, the tail discarded with its clocks fenced. */
-  | {
-      kind: "reset";
-      editDisposition: "discarded" | "retired";
-      schemaVersion: CollabSchemaVersion;
-    };
-
-/**
- * A pull's effect against its new baseline, judged on the candidate. When a `fold` applies
- * rows the candidate lacked, the checkpoint is no longer the candidate: `refolded` judges the
- * folded checkpoint instead, under the row lock, and only then (frames rarely land inside a
- * pull's short commit window).
- */
-export type PullEffect = {
-  hasEffect: boolean;
-  liveCut: Uint8Array;
-  refolded?(doc: Y.Doc): boolean;
-};
+  { kind: "compact" };
 
 export type CommitRewriteInput = {
   draftId: string;
   policy: RewritePolicy;
-  fence: RewriteFence;
-  /** The rewritten checkpoint. A `fold` pull applies the tail into it. */
+  /** The rewritten checkpoint. A `fold` applies the tail into it. */
   doc: Y.Doc;
   operation: RewriteOperation;
 };
@@ -208,9 +167,8 @@ export type RewriteOutcome =
       revision: number;
       checkpointRevision: number;
       seq: number;
-      generation: number;
     }
-  | { status: "moved" | "fenced" | "blocked" | "closed" };
+  | { status: "moved" | "closed" };
 
 /**
  * A stale draft and its keyset position in the sweep's order. `updatedAt` is the stored
@@ -222,8 +180,11 @@ export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
-  /** A work draft's effect baseline; null for a draft that carries no effect. */
-  readEffectBaseline(draftId: string): Promise<EffectBaseline | null>;
+  /** Candidate block ids whose deletion is certified by a server row's receipt. */
+  serverDeletedBlocks(
+    draftId: string,
+    ids: readonly { client: number; clock: number }[],
+  ): Promise<ReadonlySet<string>>;
   /**
    * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
    * rolled back the revision bump and everything registered inside it before it returns.
@@ -256,7 +217,7 @@ export type DraftStore = {
 export class DraftStaleUpdateError extends Error {
   // `subject` names what went stale, "Draft <id>" or "Branch <id>"; no caller reads it.
   constructor(readonly subject: string) {
-    super(`${subject} update did not apply to the current generation`);
+    super(`${subject} update did not apply to the active draft`);
     this.name = "DraftStaleUpdateError";
   }
 }

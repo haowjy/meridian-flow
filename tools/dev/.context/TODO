@@ -30,3 +30,9 @@
   override); moving one without the other lets JSONL mirror writes rebuild Nitro
   and orphan in-flight replies. Export one typed dev-runtime path both consume.
   Evidence: `work/draft-review-repair/final5-rebuild-report.md` in the docs repo.
+
+- Make `db:generate` derive its next numeric filename ordinal from the highest
+  existing tag, not Drizzle's journal idx. The frozen idx/tag offset makes default
+  generation overwrite older snapshots (MIG reproduced 0071/0072 overwrites
+  after tag 0076). Until automated, follow the timestamp-prefix workflow in
+  `packages/database/.context/CONTEXT.md`; never rewrite applied identities.

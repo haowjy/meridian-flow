@@ -37,8 +37,8 @@ contract owns a rule and where it is consumed.
   depends on storage kind: there is no separate binary identity mode and no
   display key (stored parts already render the writer and model name). Move and
   copy pass the source extension explicitly, never infer it from filetype.
-- Yjs protocol contracts expose only live rooms and generation-fenced draft
-  rooms. Every close pair a classifier uses lives in `WS_CLOSE`; transport-local
+- Yjs protocol contracts expose only live rooms and stable-identity draft
+  rooms (`draft:<draftId>`, no generation). Every close pair a classifier uses lives in `WS_CLOSE`; transport-local
   lifecycle closes stay with their emitting transport.
 
 ## Context ownership and URIs
@@ -73,8 +73,7 @@ link destinations; stored links are never respelt in place, they carry refs and
 spell on read. `document-ref.ts` owns `doc:<uuid>` and `ahead:<uuid>` refs (only
 canonical UUIDs parse), the only ahead-ref mint, the ahead-address rule, and
 preservation of malformed present refs so they resolve as gone instead of
-falling back to the link's address. `document-
-link.ts` owns written-link classification and stored-link resolution over a
+falling back to the link's address. `document-link.ts` owns written-link classification and stored-link resolution over a
 host `LinkCatalog`.
 
 Addresses are decoded canonical URIs; stored `href` and `src` values are

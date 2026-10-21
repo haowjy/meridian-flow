@@ -29,7 +29,6 @@ it("only the named end-of-use sites close or delete a document draft", () => {
       const text = readFileSync(path, "utf8");
       return (
         /\.update\(documentDrafts\)\s*\.set\(\{\s*status:\s*"closed"/.test(text) ||
-        /bumpDraftRevisions\([^;]*\{\s*status:\s*"closed"/.test(text) ||
         /\.delete\(documentDrafts\)/.test(text)
       );
     })

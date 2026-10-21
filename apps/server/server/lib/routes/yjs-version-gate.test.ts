@@ -16,7 +16,7 @@ import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import { clientSchemaVersionFromRequest, createHocuspocus } from "../yjs-ws-handler.js";
 
-const draftRoomName = "draft:draft_1:gen:3";
+const draftRoomName = "draft:draft_1";
 const liveDocumentName = "00000000-0000-4000-8000-000000000101";
 const userId = "00000000-0000-4000-8000-000000000102";
 const version = (major: number, minor: number, patch = 0): CollabSchemaVersion => ({
@@ -52,7 +52,6 @@ function versionGateServices(
     currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,
-      joinedSettlement: false,
     })),
     flushDraftLivePull: vi.fn(async () => undefined),
   };

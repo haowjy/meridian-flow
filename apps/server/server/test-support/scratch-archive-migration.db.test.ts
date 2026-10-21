@@ -14,7 +14,7 @@ import {
   archiveId as id,
   seedScratchArchive,
 } from "./scratch-archive-fixture.js";
-import { createScratchDatabase } from "./staged-migrations.js";
+import { createScratchDatabase, stageThrough } from "./staged-migrations.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
@@ -189,7 +189,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         await target`SELECT conname FROM pg_constraint WHERE conrelid = 'context_sources'::regclass AND NOT convalidated`,
       ).toEqual([]);
       // The current app reads the migrated rows at the current schema.
-      await cp(migrations, directory, { recursive: true });
+      await stageThrough(migrations, directory, currentJournal, currentJournal.entries.length);
       await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       expect(
         await target`SELECT document_id AS id, markdown FROM document_markdown_projections ORDER BY document_id`,

@@ -20,8 +20,8 @@ import { useLayoutEffect } from "react";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { WriterHandoffLossNotice } from "@/features/editor/WriterHandoffLossNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
@@ -29,6 +29,7 @@ import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner"
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
+import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
@@ -172,19 +173,29 @@ function PhoneDocument({
   children?: React.ReactNode;
 }) {
   // The room's scope follows the Work; the presentation is what keeps the phone from typing.
-  const archived = useDockArchivedWork(projectId, tab);
+  const { controller } = useDraftReview();
+  const review = controller.inlineReview;
+  const reviewing = review?.documentId === tab.documentId && review.shown;
+  const archived = useDockArchivedWork(projectId, tab, reviewing ? controller.workId : null);
   return (
-    <div className="relative min-h-0 flex-1">
-      {children}
-      <ContextDocumentHost
-        container="editor"
-        projectId={projectId}
-        tab={tab}
-        active
-        readOnly={Boolean(archived)}
-        presentation={PHONE_DOCUMENT_PRESENTATION}
-      />
-    </div>
+    <>
+      {/* The archived Work's line, as above a desktop document: it also explains a review's
+          missing Apply and Discard. */}
+      {archived ? (
+        <ArchivedWorkNotice projectId={projectId} work={archived} className="shrink-0 px-2 pt-2" />
+      ) : null}
+      <div className="relative min-h-0 flex-1">
+        {children}
+        <ContextDocumentHost
+          container="editor"
+          projectId={projectId}
+          tab={tab}
+          active
+          readOnly={Boolean(archived)}
+          presentation={PHONE_DOCUMENT_PRESENTATION}
+        />
+      </div>
+    </>
   );
 }
 
@@ -336,7 +347,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   // resumes and a failed open can retry. The phone keeps its route and its review presentation.
   return (
     <MobileDocumentReview projectId={projectId} tab={activeTab}>
-      <WriterHandoffLossNotice projectId={projectId} documentId={activeTab.documentId} />
       <PhoneDocument projectId={projectId} tab={activeTab}>
         <PassageNotice documentId={activeTab.documentId} />
       </PhoneDocument>

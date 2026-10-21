@@ -137,7 +137,7 @@ export function ReviewAddressOwner({
         locator: locatorOf(presented),
       };
       if (presented.container === "editor" && pendingItemKey === inline.itemKey) return;
-      const changeId = review.controller.focus?.classId;
+      const changeId = review.controller.focus?.id;
       if (
         requestedItemKey !== inline.itemKey ||
         ((changeId || !presented.review?.changeId) && presented.review?.changeId !== changeId)

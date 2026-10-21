@@ -5,7 +5,8 @@
  *
  * Addressability is not listing: it answers for every document the Work's active branch has
  * a view of (an active draft, or a change row), and says whether the list shows it. The
- * item is the tree-derived observation read for every such document, listed or not.
+ * item is the metadata-only tree observation for every such document, listed or not.
+ * Receipt membership enriches listed items downstream, never address resolution.
  */
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, parseDraftItemKey } from "@meridian/contracts";

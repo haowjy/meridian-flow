@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The review's one refresh owner: what makes the open review read its draft
- * again, and how often. Real Yjs documents and a real query client; the clock
+ * again, and how often. Independent live Yjs documents and a real query client; the clock
  * is the only fake.
  */
 
@@ -22,15 +22,16 @@ afterEach(async () => {
 });
 
 const review = { documentId: "document-a", itemKey: "draft-a" };
-const previewKey = projectQueryKeys.workDraftPreview("p", "w", "document-a", "draft-a");
+const metadataKey = projectQueryKeys.workDraftMetadata("p", "w", "document-a", "draft-a");
 
 function Owner() {
   useReviewRefresh({
     projectId: "p",
     workId: "w",
     review,
-    session: sessions.get("room-a"),
-    liveSession: null,
+    runtime: null,
+    session: null,
+    liveSession: sessions.get("room-a"),
   });
   return null;
 }
@@ -40,7 +41,7 @@ async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
   const invalidated: string[] = [];
   vi.spyOn(client, "invalidateQueries").mockImplementation(async (filters) => {
     invalidated.push(
-      JSON.stringify(filters?.queryKey) === JSON.stringify(previewKey) ? "preview" : "list",
+      JSON.stringify(filters?.queryKey) === JSON.stringify(metadataKey) ? "metadata" : "list",
     );
   });
   await withReactRoot(
@@ -74,7 +75,7 @@ describe("useReviewRefresh", () => {
       await wait(499);
       expect(invalidated()).toEqual([]);
       await wait(2);
-      expect(invalidated().sort()).toEqual(["list", "preview"]);
+      expect(invalidated().sort()).toEqual(["list", "metadata"]);
     });
   });
 
@@ -85,7 +86,7 @@ describe("useReviewRefresh", () => {
         await wait(200);
       }
       // 6s of writing with no pause longer than 200ms: it read along the way.
-      expect(invalidated().filter((kind) => kind === "preview").length).toBeGreaterThanOrEqual(2);
+      expect(invalidated().filter((kind) => kind === "metadata").length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -93,11 +94,11 @@ describe("useReviewRefresh", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const answers: Array<(room: string) => void> = [];
     const options = {
-      queryKey: previewKey,
+      queryKey: metadataKey,
       queryFn: () => new Promise<string>((resolve) => answers.push(resolve)),
       staleTime: 0,
     };
-    client.setQueryData(previewKey, "old-room");
+    client.setQueryData(metadataKey, "old-room");
     const observer = new QueryObserver(client, options);
     const unsubscribe = observer.subscribe(() => {});
     let acquired: string | undefined;
@@ -122,7 +123,7 @@ describe("useReviewRefresh", () => {
           // Edits arrived while discovery was held: they need a fresh read too.
           expect(answers).toHaveLength(2);
           await act(async () => answers[1]?.("latest"));
-          expect(client.getQueryData(previewKey)).toBe("latest");
+          expect(client.getQueryData(metadataKey)).toBe("latest");
         },
       );
     } finally {
@@ -144,8 +145,9 @@ describe("useReviewRefresh", () => {
         projectId: "p",
         workId: "w",
         review,
-        session: sessions.get("room-a"),
-        liveSession: bound ? sessions.get("live-a") : null,
+        runtime: null,
+        session: null,
+        liveSession: bound ? sessions.get("room-a") : null,
       });
       return null;
     }
@@ -160,7 +162,7 @@ describe("useReviewRefresh", () => {
         await act(async () => rebind(true));
         await wait(400);
         expect(invalidate).toHaveBeenCalledWith(
-          expect.objectContaining({ queryKey: previewKey }),
+          expect.objectContaining({ queryKey: metadataKey }),
           expect.anything(),
         );
       },

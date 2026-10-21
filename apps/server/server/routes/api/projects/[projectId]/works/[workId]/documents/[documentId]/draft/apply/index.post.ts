@@ -1,23 +1,20 @@
-/** Apply one of this Work's drafts: 200 applied, 202 pending, 409 held or stale. */
+/** Apply one frozen click on this document’s draft. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
-  handleApplyWorkDraftRequest,
-  parseDraftApplyItem,
+  handleApplyClickRequest,
   selectBranchRouteServices,
 } from "../../../../../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const result = await handleApplyWorkDraftRequest(selectBranchRouteServices(app), {
+  const result = await handleApplyClickRequest(selectBranchRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     userId: user.userId,
-    request: parseDraftApplyItem(await readBody(event)),
-    signal: event.req.signal,
+    request: await readBody(event),
   });
-  event.res.status = result.httpStatus;
-  return result.body;
+  return result;
 });

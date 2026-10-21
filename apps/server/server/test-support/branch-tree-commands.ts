@@ -8,11 +8,14 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
-import type { BranchCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type {
+  BranchCommandPendingResponse,
+  BranchCommandResult,
+  ThreadDraftListItem,
+} from "@meridian/contracts/branches";
 import type { CreateUntitledContextDocumentAnswer } from "@meridian/contracts/protocol";
-import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
-import { branchPushSettlementBatches, works } from "@meridian/database/schema";
+import { works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -25,9 +28,6 @@ import type { ContextPort } from "../domains/context/ports/context-port.js";
 import { createTreeReader, LIVE_TREE } from "../domains/context/tree/tree-view.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
-  type CommandRouteResult,
-  handleApplyAllWorkBranchRequest,
-  handleApplyWorkDraftRequest,
   handleDiscardAllWorkBranchRequest,
   handleDiscardWorkDraftRequest,
   handleWorkBranchListRequest,
@@ -41,7 +41,6 @@ import {
 import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
-import { expirePendingSettlementClaims } from "./settlement-claims.js";
 
 type ComposedRuntimes = ReturnType<typeof useComposedRuntimes>;
 export type ScenarioRuntime = Awaited<ReturnType<ComposedRuntimes["compose"]>>;
@@ -106,7 +105,7 @@ export interface ScenarioWriter {
     work: ScenarioWork,
     documentId: DocumentId,
     edit: (doc: Y.Doc) => void,
-  ): Promise<{ draftId: string; generation: number }>;
+  ): Promise<{ draftId: string }>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -135,7 +134,11 @@ export interface BranchTreeCommands {
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
     options?: { branchId?: string },
-  ): Promise<BranchCommandResult | BranchCommandResult[]>;
+  ): Promise<
+    | BranchCommandResult
+    | BranchCommandPendingResponse
+    | (BranchCommandResult | BranchCommandPendingResponse)[]
+  >;
   /**
    * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
    * the purge sweep runs.
@@ -147,12 +150,6 @@ export interface BranchTreeCommands {
   items(work: ScenarioWork): Promise<ThreadDraftListItem[]>;
   /** The statuses of every branch whose origin is the Work, oldest first. */
   branchStatuses(work: ScenarioWork): Promise<string[]>;
-  /** Every settlement batch's state (they belong to no user: suites clear them per case). */
-  batchStates(): Promise<string[]>;
-  /** As if the warm owner died: its claim on every pending batch has expired. */
-  expirePendingClaims(): Promise<void>;
-  /** Recovery's pass over every recoverable batch; how many it settled. */
-  recover(): Promise<number>;
   /**
    * The resolve route's answer for one stored link, read in a Work's view or live, from
    * `baseUri` (null for chat) and, when given, the holder pinned by id.
@@ -175,28 +172,8 @@ export interface BranchTreeCommands {
     href: string;
     holder: { uri: string; id: DocumentId };
   }): Promise<{ id: string; inBranch?: true } | string>;
-  /**
-   * The per-document Apply route core, one call per document in order, each with the
-   * tokens its item rendered unless `tokens` says otherwise (`none`: the legacy request).
-   */
-  apply(
-    work: ScenarioWork,
-    documentIds: readonly DocumentId[],
-    options?: { tokens?: "rendered" | "none" },
-  ): Promise<CommandRouteResult[]>;
-  /**
-   * The Apply all route core over the items the review list rendered (or `items`, as a
-   * dock would send what it rendered earlier), for the Work's active branch (or `branchId`).
-   */
-  applyAll(
-    work: ScenarioWork,
-    options?: { items?: readonly ThreadDraftListItem[]; branchId?: string },
-  ): Promise<BranchCommandResult>;
   /** The Work branch's draft of this document, as its review room names it. */
-  documentDraft(
-    work: ScenarioWork,
-    documentId: DocumentId,
-  ): Promise<{ draftId: string; generation: number }>;
+  documentDraft(work: ScenarioWork, documentId: DocumentId): Promise<{ draftId: string }>;
 }
 
 /** The review item of `documentId`; throws when the list has none. */
@@ -217,17 +194,6 @@ export function typeLink(href: string, aheadId: string) {
     text.insert(0, "Kael", { link: { href, ref: `ahead:${aheadId}`, title: null } });
     paragraph.insert(0, [text]);
     doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-  };
-}
-
-/** The tokens an item rendered, as a request carries them. */
-function refOf(item: ThreadDraftListItem) {
-  return {
-    locationToken: item.tokens.locationToken,
-    ...(item.tokens.liveTextToken === null ? {} : { liveTextToken: item.tokens.liveTextToken }),
-    ...(item.tokens.draftGenerationToken === null
-      ? {}
-      : { draftGenerationToken: item.tokens.draftGenerationToken }),
   };
 }
 
@@ -472,18 +438,17 @@ export function branchTreeCommands(
       const sync = ports().documentSync;
       const room = await documentDraft(work, documentId);
       const document = new Y.Doc({ gc: false });
-      const loaded = await sync.loadHocuspocusDraftState(room.draftId, room.generation);
+      const loaded = await sync.loadHocuspocusDraftState(room.draftId);
       if (loaded) Y.applyUpdate(document, loaded.state);
       const before = Y.encodeStateVector(document);
       edit(document);
       await sync.admitDraftWriterUpdate({
         draftId: room.draftId,
-        expectedGeneration: room.generation,
         update: Y.encodeStateAsUpdate(document, before),
         origin: { type: "user", userId },
         document,
       });
-      return { draftId: room.draftId, generation: room.generation };
+      return { draftId: room.draftId };
     },
   };
 
@@ -491,11 +456,8 @@ export function branchTreeCommands(
     const review = ports().documentSync.draftReview;
     const item = await review.resolveItemByDocument({ workId: work.id, documentId });
     if (!item) throw new Error(`No draft of ${documentId} in ${work.handle}`);
-    const preview = await review.preview({ workId: work.id, itemKey: item.itemKey });
-    if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
-    const room = parseYjsRoomName(preview.reviewRoomName);
-    if (room?.kind !== "draft") throw new Error(`Not a draft room: ${preview.reviewRoomName}`);
-    return { draftId: room.draftId, generation: room.generation };
+    if (!item.draftId || !item.item.hasDraft) throw new Error("Missing draft room");
+    return { draftId: item.draftId };
   }
 
   function view(of: ScenarioWork | "live"): ScenarioView {
@@ -587,7 +549,7 @@ export function branchTreeCommands(
         })
       ).body;
     }
-    const results: BranchCommandResult[] = [];
+    const results: (BranchCommandResult | BranchCommandPendingResponse)[] = [];
     await eachItem(work, items, "discard", async ({ documentId, branchId, itemKey }) => {
       results.push(
         (
@@ -627,17 +589,6 @@ export function branchTreeCommands(
     async branchStatuses(work) {
       return (await world.branches.byOriginWork(work.id)).map((branch) => branch.status);
     },
-    async batchStates() {
-      return (
-        await world.db
-          .select({ state: branchPushSettlementBatches.state })
-          .from(branchPushSettlementBatches)
-      ).map((row) => row.state);
-    },
-    async expirePendingClaims() {
-      await expirePendingSettlementClaims(world.db);
-    },
-    recover: () => ports().documentSync.recoverPendingLiveSettlements(),
     storedLinks: (documentId) =>
       ports().documentSync.withLiveDocument(documentId, async ({ doc }) =>
         extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map((link) => ({
@@ -660,50 +611,6 @@ export function branchTreeCommands(
             ...(answer.inBranch ? { inBranch: true as const } : {}),
           }
         : answer.state;
-    },
-    async apply(work, documentIds, options = {}) {
-      const { items } = await review(work);
-      const results: CommandRouteResult[] = [];
-      for (const documentId of documentIds) {
-        const item = items.find((candidate) => candidate.documentId === documentId);
-        if (!item?.draftGeneration) throw new Error(`No draft of ${documentId} to apply`);
-        results.push(
-          await handleApplyWorkDraftRequest(routes(), {
-            projectId,
-            workId: work.id,
-            documentId,
-            userId,
-            request: {
-              branchId: item.branchId,
-              itemKey: item.itemKey,
-              commandId: randomUUID(),
-              ...(options.tokens === "none" ? {} : refOf(item)),
-            },
-          }),
-        );
-      }
-      return results;
-    },
-    async applyAll(work, options = {}) {
-      const listed = options.items ? null : await review(work);
-      const items = options.items ?? listed?.items ?? [];
-      const branchId =
-        options.branchId ??
-        items[0]?.branchId ??
-        (await ports().documentSync.branches.activeForWork(work.id))?.id;
-      if (!branchId) throw new Error(`${work.handle} has no branch to apply`);
-      return (
-        await handleApplyAllWorkBranchRequest(routes(), {
-          projectId,
-          workId: work.id,
-          userId,
-          request: {
-            branchId,
-            commandId: randomUUID() as never,
-            items: items.map((item) => ({ itemKey: item.itemKey, ...refOf(item) })),
-          },
-        })
-      ).body;
     },
   };
 }

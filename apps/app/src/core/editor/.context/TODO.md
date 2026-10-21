@@ -21,9 +21,6 @@ Affected paths: `document-session.ts` and `features/editor/SyncStatus.tsx`.
 
 - Preserve cursor/selection deliberately across live and review remounts; scroll
   restoration is currently best effort.
-- Consolidate remaining review entry/exit, preview, and fallback routing around
-  the draft-review controller. Per-change commands, focus, and the change list
-  already use the controller.
 
 ## Block identity probe
 

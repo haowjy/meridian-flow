@@ -1,9 +1,0 @@
-# Database follow-ups
-
-- Drop the rename arm in `capture_change_trail_signal()`'s `document_edit_parts` branch
-  (`src/migrations/0068_draft_branch_names.sql`): the clause that returns early when a
-  part's `placement` differs from its old value only by `branchId` → `draftId`. It exists
-  so `0069`'s backfill doesn't re-signal every receipt's whole history to the change trail,
-  and is dead once `0069` finishes. Remove it in the migration that drops
-  `document_edit_parts.placement` (the draft review re-landing derives part disposition
-  from the text). Keep the plain `NEW.placement = OLD.placement` early return.

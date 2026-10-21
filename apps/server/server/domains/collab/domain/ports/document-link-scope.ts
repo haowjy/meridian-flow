@@ -56,7 +56,7 @@ export interface ScopePrepareRequest {
   written?: readonly PMNode[];
   /** The writing chat: a bare written `uploads://` is loaded at the address it will be bound to. */
   uploadsChat?: string;
-  /** Views a `reader` will resolve in, beside the holders' (their branches' settlements load too). */
+  /** Views a `reader` will resolve in, beside the holders'. */
   views?: readonly LinkView[];
 }
 

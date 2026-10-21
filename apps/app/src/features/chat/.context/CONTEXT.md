@@ -18,10 +18,10 @@ draft-control changes can be understood independently.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
   Auto-apply control, neutral shared presentation, New-chat and chat-detail adapters, and
   composer sizing.
-- [Draft review](../../draft-review/.context/draft-review.md) — inline review session, pending projection,
-  freshness, and draft-only tabs (owned by `features/draft-review`).
-- [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
-  never render, a divider as a closing row, and optimistic writer
+- [Draft review](../../draft-review/.context/draft-review.md) — room-derived text review, frozen Apply
+  queues, local Discard history and draft-only tabs. `useDraftDock` scopes the
+  chat's changes; projection and commands belong to `features/draft-review`.
+- [Compaction surfaces](compaction-surfaces.md) — divider rows, non-rendered compaction bookkeeping turns, a divider as a closing row, and optimistic writer
   controls (`/compact`, withdrawal).
 - [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
   creation and its failure, the brief card, a fork's inherited view, and
@@ -52,7 +52,7 @@ draft-control changes can be understood independently.
 
 - Transcript links follow through `useChatLinkFollowing.ts` over the shared
   [`features/links`](../../links/AGENTS.md) follower; its header holds chat's
-  scope, destination, and visibility rules, including the known deleted-Work gap.
+  scope, destination and visibility rules.
 
 - Every `ChatView` is owned by a project workspace and receives its required
   project ID from `ChatScreen`. Child-thread doors use the project shell's

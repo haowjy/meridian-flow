@@ -16,9 +16,6 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
-import { fencedSelection, testEnvelope } from "./draft-review-requests.js";
-
-type ReceiptFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
 export async function stageDraft(
   db: ReturnType<typeof createTestDatabase>,
@@ -129,7 +126,6 @@ export async function setupResponseDraft(
   });
   if (!resolved) throw new Error("staged draft has no review item");
   const target = { workId: WORK_ID, itemKey: resolved.itemKey };
-  const review = (after: string, apply = false) => reviewChange(fixture, target, after, apply);
   const read = () =>
     fixture.collab
       .agentEdit()
@@ -149,39 +145,5 @@ export async function setupResponseDraft(
       },
       context,
     );
-  return { fixture, draftId, rows, target, review, responseId, context, read, write };
-}
-export async function reviewChange(
-  fixture: ReceiptFixture,
-  target: Parameters<ReceiptFixture["collab"]["draftReview"]["preview"]>[0],
-  after: string,
-  apply = false,
-) {
-  const preview = await fixture.collab.draftReview.preview(target);
-  if (preview.status !== "active") throw new Error("Missing active preview");
-  const op = preview.operations.find((op) => op.afterExcerpt === after);
-  if (!op) throw new Error(`Missing ${after}: ${JSON.stringify(preview.operations)}`);
-  const operationIds = [op.operationId];
-  const selection = fencedSelection(preview, operationIds);
-  const envelope = testEnvelope({
-    workId: target.workId,
-    kind: apply ? "apply_changes" : "discard_changes",
-    branchId: preview.branchId,
-  });
-  const outcome = await (apply
-    ? fixture.collab.draftReview.applyChanges({
-        ...target,
-        userId: USER_ID as never,
-        envelope,
-        selection: { kind: "apply", ...selection },
-      })
-    : fixture.collab.draftReview.discardChanges({
-        ...target,
-        userId: USER_ID as never,
-        envelope,
-        selection: { kind: "discard", ...selection },
-      }));
-  expect(outcome.kind === "result" ? outcome.result : outcome).toMatchObject({
-    status: apply ? "applied" : "discarded",
-  });
+  return { fixture, draftId, rows, target, responseId, context, read, write };
 }

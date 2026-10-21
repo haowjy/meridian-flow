@@ -1,12 +1,11 @@
 /**
  * The command record (contract §4.6): one writer command, one effect. The service looks a
  * `commandId` up before it resolves anything, the effect transaction claims it as its first
- * write, and the step that makes the command terminal stores its result. `blocked` is never
- * stored: it is derived from the command's batch.
+ * write, and the effect transaction stores its result.
  */
 import { createHash } from "node:crypto";
 import type { BranchCommandId, BranchId, UserId, WorkId } from "@meridian/contracts";
-import type { BranchCommandKind, BranchCommandResult } from "@meridian/contracts/branches";
+import type { BranchCommandKind, StoredBranchCommandResult } from "@meridian/contracts/branches";
 
 /** Who sent which command and what it said: the identity a resend must match exactly. */
 export type BranchCommandEnvelope = {
@@ -44,14 +43,7 @@ function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
-      .map(([key, item]): [string, unknown] => [
-        key === "branchId"
-          ? "draftId"
-          : key === "draftGenerationToken"
-            ? "branchGenerationToken"
-            : key,
-        item,
-      ])
+      .map(([key, item]): [string, unknown] => [key === "branchId" ? "draftId" : key, item])
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
@@ -64,8 +56,7 @@ export type CommandLookup =
   /** Another digest, Work or account under this id: reveals nothing. */
   | { kind: "conflict" }
   | { kind: "pending"; branchId: BranchId | null }
-  | { kind: "done"; commandKind: BranchCommandKind; result: BranchCommandResult }
-  | { kind: "blocked" };
+  | { kind: "done"; commandKind: BranchCommandKind; result: StoredBranchCommandResult };
 
 /** What a lookup needs; the observation route has no body to digest, so it names none. */
 export type CommandLookupKey = Pick<BranchCommandEnvelope, "commandId" | "workId" | "accountId"> & {

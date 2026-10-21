@@ -16,10 +16,6 @@ import { appendTailOrder } from "./append-tail-order.mts";
 import { archiveInFlightAppend } from "./archive-in-flight-append.mts";
 import { clientResync } from "./client-resync.mts";
 import { d12CreateDuringArchive } from "./d12-create-during-archive.mts";
-import { d12PullBeforeArchive } from "./d12-pull-before-archive.mts";
-import { d13RecaptureReleasesRow } from "./d13-recapture-releases-row.mts";
-import { d18SampledDiscard } from "./d18-sampled-discard.mts";
-import { d20BlockedSettlementPull } from "./d20-blocked-settlement-pull.mts";
 import { d22ConcurrentUndo } from "./d22-concurrent-undo.mts";
 import { d23ArchivedDraftRebases } from "./d23-archived-draft-rebases.mts";
 import { effectProjection } from "./effect-projection.mts";
@@ -29,21 +25,11 @@ import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
 import { liveDuplicateFrame } from "./live-duplicate-frame.mts";
 import { migrationOnline } from "./migration-online.mts";
-import { reviewUnpulledLive } from "./review-unpulled-live.mts";
-import {
-  coldLoadCommit,
-  coldLoadReset,
-  droppedDelivery,
-  readOnlyHandshake,
-} from "./room-enrollment.mts";
+import { coldLoadCommit, droppedDelivery, readOnlyHandshake } from "./room-enrollment.mts";
 import { twoProcessCompaction, twoProcessFold, twoProcessFrames } from "./two-process-frames.mts";
 
 const PROBES: readonly Probe[] = [
-  d12PullBeforeArchive,
   d12CreateDuringArchive,
-  d13RecaptureReleasesRow,
-  d18SampledDiscard,
-  d20BlockedSettlementPull,
   f1InverseGrant,
   f1InverseDeadlock,
   d22ConcurrentUndo,
@@ -52,7 +38,6 @@ const PROBES: readonly Probe[] = [
   twoProcessFold,
   twoProcessCompaction,
   coldLoadCommit,
-  coldLoadReset,
   droppedDelivery,
   readOnlyHandshake,
   // Phase 4: CRDT-native appends (design phase4-crdt-appends §9).
@@ -66,7 +51,6 @@ const PROBES: readonly Probe[] = [
   migrationOnline,
   clientResync,
   // A draft's review while live is ahead of its last pull (owner report, live-edit-review).
-  reviewUnpulledLive,
   // A live update relayed onto a second socket of its room is journaled once (#946).
   liveDuplicateFrame,
 ];

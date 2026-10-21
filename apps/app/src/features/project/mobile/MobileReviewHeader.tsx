@@ -44,8 +44,8 @@ export function MobileReviewHeader({
               finished
                 ? undefined
                 : {
-                    canApply: controller.canApplyReviewedDraft,
-                    applying: controller.isApplying,
+                    canApply: header.canApply,
+                    applying: header.completing === "apply",
                     onApply: header.applyDraft,
                     onDiscard: header.discardDraft,
                   }
@@ -56,7 +56,6 @@ export function MobileReviewHeader({
         <ReviewStateInline
           touch
           finished={finished}
-          unlisted={header.unlisted}
           completing={header.completing}
           next={header.next}
           draftOnly={header.draftOnly}

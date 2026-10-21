@@ -11,7 +11,11 @@ import {
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
 import type { AppendDraftJournalInput } from "./draft-store.js";
-import { appendProvenanceFacts, validateClientUpdateAdmission } from "./provenance.js";
+import {
+  appendProvenanceFacts,
+  primeReservedNamespaceIndex,
+  validateClientUpdateAdmission,
+} from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -33,12 +37,33 @@ function fullReplacementIr() {
 }
 
 describe("document mutation policy operations", () => {
+  it("admits reconnect tombstones of server roots but refuses a new base deletion", () => {
+    const room = new Y.Doc({ gc: false });
+    room.clientID = 1;
+    room.getArray("review_base").push(["old", "current"]);
+    primeReservedNamespaceIndex(room);
+    const peer = new Y.Doc({ gc: false });
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(room));
+    peer.clientID = 123456;
+    peer.getArray("review_base").delete(0, 1);
+    const deletion = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room));
+    expect(() => validateClientUpdateAdmission(room, deletion)).toThrow("deletes reserved");
+    room.getArray("review_base").delete(0, 1);
+    peer.getText("prosemirror").insert(0, "typing after reconnect");
+    const reconnect = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room));
+    expect(validateClientUpdateAdmission(room, reconnect)).toEqual({ reservedClientId: null });
+    peer.getArray("review_base").delete(0, 1);
+    const mixed = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room));
+    expect(() => validateClientUpdateAdmission(room, mixed)).toThrow("deletes reserved");
+    peer.destroy();
+    room.destroy();
+  });
+
   it("validates a semantic edit's IR before any of its rows applies", () => {
     const target = new Y.Doc({ gc: false });
     const before = Y.encodeStateAsUpdate(target);
     const row: AppendDraftJournalInput = {
       draftId: "draft-1",
-      generation: 1,
       source: "agent",
       updateData: updateWith("agent"),
       semanticEditIr: fullReplacementIr(),
@@ -82,15 +107,6 @@ describe("document mutation policy operations", () => {
     expect(Y.encodeStateVector(target)).toEqual(Y.encodeStateVector(live));
   });
 
-  it("refuses replacement while old-generation settlement is unresolved", async () => {
-    const port = replacementPort({ unresolvedSettlements: vi.fn(async () => 1) });
-
-    await expect(replaceAuthorityGeneration(port, "checkpoint-1")).rejects.toEqual(
-      expect.objectContaining({ code: "authority_head_busy" }),
-    );
-    expect(port.replaceGeneration).not.toHaveBeenCalled();
-  });
-
   it("rejects Y.Doc-only checkpoints rather than re-minting provenance", async () => {
     const port = replacementPort({
       loadCheckpoint: vi.fn(async () => ({
@@ -121,7 +137,6 @@ function replacementPort(
       doc: new Y.Doc({ gc: false }),
     })),
     loadCheckpoint: vi.fn(async () => checkpoint),
-    unresolvedSettlements: vi.fn(async () => 0),
     replaceGeneration: vi.fn(async () => 4n),
     disconnectGeneration: vi.fn(async () => undefined),
     ...overrides,

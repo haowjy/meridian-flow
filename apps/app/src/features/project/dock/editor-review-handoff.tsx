@@ -10,13 +10,10 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  clearDraftReviewLaunchFailure,
-  failDraftReviewLaunch,
-} from "@/client/query/branch-command-record";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { ContextUri } from "@/lib/context-uri";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { type PresentedDocument, usePresentedDocument } from "../presented-document";
@@ -30,12 +27,8 @@ export type AiDraftLaunchTarget = {
   contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
   isNew?: boolean;
-  /**
-   * Operations of the change to focus once this review has painted (the
-   * strip's Review, a Work page change row). When none is in the review any
-   * more, it opens at the top.
-   */
-  focusOperationIds?: readonly string[];
+  /** A projection-local change to focus, only if that projection still paints. */
+  focus?: ReviewFocus;
 };
 
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
@@ -91,14 +84,6 @@ export function EditorReviewHandoffProvider({
 
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
-      const draft = {
-        projectId,
-        workId: target.workId,
-        documentId: target.documentId,
-        itemKey: target.itemKey,
-      };
-      // A new attempt retires the previous attempt's message.
-      clearDraftReviewLaunchFailure(draft);
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
@@ -150,8 +135,6 @@ export function EditorReviewHandoffProvider({
           latest.current = null;
           setIntent(null);
         }
-        // The failure belongs on the draft the writer tried to open.
-        failDraftReviewLaunch(draft);
         throw error;
       } finally {
         if (latest.current?.sequence === staged.sequence || claimed.current === staged.sequence) {
@@ -226,12 +209,12 @@ export function EditorReviewIntentClaimant({
     review.controller.enterInlineReview(intent.documentId, intent.itemKey);
     // The latest launch decides the focus: one without it clears an older request.
     setFocus(
-      intent.focusOperationIds?.length
+      intent.focus
         ? {
             sequence: intent.sequence,
             documentId: intent.documentId,
             itemKey: intent.itemKey,
-            operationIds: intent.focusOperationIds,
+            focus: intent.focus,
           }
         : null,
     );

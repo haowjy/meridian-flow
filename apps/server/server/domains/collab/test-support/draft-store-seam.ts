@@ -27,14 +27,13 @@ export function proseDraftUpdate(text = "drafted"): Uint8Array {
 export async function appendDraftRows(
   store: Pick<DraftStore, "readDraftAt" | "appendRows">,
   draftId: string,
-  rows: readonly Omit<AppendDraftJournalInput, "draftId" | "generation">[],
+  rows: readonly Omit<AppendDraftJournalInput, "draftId">[],
 ): Promise<readonly number[]> {
   const read = await store.readDraftAt(draftId);
   if (!read) throw new Error(`Draft ${draftId} does not exist`);
   const journals = rows.map((row) => ({
     ...row,
     draftId,
-    generation: read.documentDraft.generation,
   }));
   const candidate = materializeDraftRead(read);
   let doc: Y.Doc | undefined;
@@ -42,14 +41,14 @@ export async function appendDraftRows(
     const outcome = await store.appendRows({
       draftId,
       documentId: read.documentDraft.documentId,
-      expectedGeneration: read.documentDraft.generation,
       base: {
         checkpointRevision: read.documentDraft.checkpointRevision,
         seq: Math.max(read.documentDraft.checkpointSeq, ...read.tail.map((row) => row.id)),
       },
-      finalize(prefix) {
-        const judged = finalizeAppend(prefix, {
+      async finalize(prefix) {
+        const judged = await finalizeAppend(prefix, {
           candidate,
+          candidateState: Y.encodeStateAsUpdate(candidate),
           rows: journals,
           containment: createDocumentContainment(),
           validateWriter: () => {},
@@ -68,18 +67,16 @@ export async function appendDraftRows(
 }
 
 /**
- * A resolved draft with its content: generation and document come from one read, so a test
- * never pairs one generation's identity with another's content.
+ * A resolved draft with its content, read together through the draft store.
  */
 export async function readResolvedDraft(
   store: Pick<DraftStore, "readDraftAt">,
   resolved: { draftId: string },
-): Promise<{ draftId: string; generation: number; doc: Y.Doc }> {
+): Promise<{ draftId: string; doc: Y.Doc }> {
   const read = await store.readDraftAt(resolved.draftId);
   if (!read) throw new Error(`Draft ${resolved.draftId} does not exist`);
   return {
     draftId: read.documentDraft.draftId,
-    generation: read.documentDraft.generation,
     doc: materializeDraftRead(read),
   };
 }

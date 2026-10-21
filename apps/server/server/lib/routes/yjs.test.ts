@@ -25,7 +25,7 @@ import {
   type DraftHandshakeState,
 } from "../yjs-ws-handler.js";
 
-const documentName = "draft:draft_1:gen:3";
+const documentName = "draft:draft_1";
 
 const payload = new Uint8Array([1, 2, 3]);
 
@@ -40,7 +40,7 @@ function services(stale: boolean) {
     documentSync: {
       roomRemoval: vi.fn(async () => null),
       repairDocumentAuthority: vi.fn(async () => {}),
-      rejectStaleDraftSyncStep1: vi.fn(async () => stale),
+      reconcileHocuspocusDraftRoom: vi.fn(async () => !stale),
       admitDraftWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
@@ -68,7 +68,9 @@ function connectionConfig() {
 describe("Yjs draft handshake route guard", () => {
   it("pulls live changes into a Work draft without blocking draft-room connection", async () => {
     const live = new Y.Doc({ gc: false });
-    live.getText("content").insert(0, "live advanced");
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("live advanced")]);
+    live.getXmlFragment("prosemirror").insert(0, [paragraph]);
     const loadedRoom = new Y.Doc({ gc: false });
     let releasePull: (() => void) | undefined;
     const pullBlocked = new Promise<void>((resolve) => {
@@ -80,16 +82,15 @@ describe("Yjs draft handshake route guard", () => {
           draftId: "draft_1",
           documentId: "document-1" as never,
           workId: "work-1" as never,
-          generation: 3,
         }),
         new Y.Doc({ gc: false }),
       ),
     ]);
     // The pull's rewrite waits here, so the room connects before the pull commits.
-    const commitRewrite = store.commitRewrite.bind(store);
-    store.commitRewrite = async (rewrite) => {
+    const appendRows = store.appendRows.bind(store);
+    store.appendRows = async (append) => {
       await pullBlocked;
-      return commitRewrite(rewrite);
+      return appendRows(append);
     };
     const draftCoordinator = createDraftCoordinator({
       onAppendCommitted: () => {},
@@ -104,6 +105,7 @@ describe("Yjs draft handshake route guard", () => {
         withDocument: async (_documentId, fn) => fn(live),
       },
       draftCoordinator,
+      liveJournal: { read: async () => ({ checkpoint: Y.encodeStateAsUpdate(live), updates: [] }) },
       drafts: {
         listActiveWorkDraftIds: async () => ["draft_1"],
         ensureThreadPeerDraft: async () => ({
@@ -124,7 +126,6 @@ describe("Yjs draft handshake route guard", () => {
             draftId: "draft_1",
             documentId: "document-1",
             workId: "work-1",
-            generation: 3,
             schemaVersion: COLLAB_SCHEMA_VERSION,
             status: "active",
           })),
@@ -151,16 +152,20 @@ describe("Yjs draft handshake route guard", () => {
       } as never),
     ).resolves.toBeUndefined();
     expect(flushDraftLivePull).toHaveBeenCalledWith("document-1");
-    expect(loadedRoom.getText("content").toString()).toBe("");
+    expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe("");
 
     releasePull?.();
     await flushDraftLivePull.mock.results[0]?.value;
     await vi.waitFor(() => {
-      expect(loadedRoom.getText("content").toString()).toBe("live advanced");
+      expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe(
+        "<paragraph>live advanced</paragraph>",
+      );
     });
     const persisted = new Y.Doc({ gc: false });
     Y.applyUpdate(persisted, await readDraftContent(store, "draft_1"));
-    expect(persisted.getText("content").toString()).toBe("live advanced");
+    expect(persisted.getXmlFragment("prosemirror").toString()).toBe(
+      "<paragraph>live advanced</paragraph>",
+    );
   });
 
   it("rejects hostile draft payloads before returning them to Hocuspocus", async () => {
@@ -181,13 +186,12 @@ describe("Yjs draft handshake route guard", () => {
         payload,
         userId: "user-1" as never,
         context: {
-          draftSyncState: new Map([["draft_1:3", "passed"]]),
+          draftSyncState: new Map([["draft_1", "passed"]]),
         },
       }),
     ).rejects.toMatchObject({ reason: "draft-update-admission-failed", code: 1008 });
     expect(admitDraftWriterUpdate).toHaveBeenCalledWith({
       draftId: "draft_1",
-      expectedGeneration: 3,
       update: new Uint8Array([1, 2, 3]),
       origin: { type: "user", userId: "user-1" },
       document,
@@ -213,7 +217,7 @@ describe("Yjs draft handshake route guard", () => {
       payload,
       userId: "user-1" as never,
       context: {
-        draftSyncState: new Map([["draft_1:3", "passed"]]),
+        draftSyncState: new Map([["draft_1", "passed"]]),
       },
     });
 
@@ -242,8 +246,8 @@ describe("Yjs draft handshake route guard", () => {
         userId: "user-1" as never,
         context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-stale-doc", code: 4205 });
-    expect(state.get("draft_1:3")).toBe("rejected");
+    ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
+    expect(state.get("draft_1")).toBe("rejected");
   });
 
   it("keeps a rejected room rejected when a later step1 would pass", async () => {
@@ -258,7 +262,7 @@ describe("Yjs draft handshake route guard", () => {
         userId: "user-1" as never,
         context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-stale-doc" });
+    ).rejects.toMatchObject({ reason: "draft-prefix-missing" });
     await expect(
       admitWriterSync({
         services: services(false),
@@ -269,12 +273,12 @@ describe("Yjs draft handshake route guard", () => {
         userId: "user-1" as never,
         context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-stale-doc", code: 4205 });
-    expect(state.get("draft_1:3")).toBe("rejected");
+    ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
+    expect(state.get("draft_1")).toBe("rejected");
   });
 
   it("clears draft sync state through the route close handler", async () => {
-    const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
+    const state = new Map<string, DraftHandshakeState>([["draft_1", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
@@ -290,7 +294,7 @@ describe("Yjs draft handshake route guard", () => {
   });
 
   it("clears draft sync state through the route error handler", async () => {
-    const state = new Map<string, DraftHandshakeState>([["draft_1:3", "rejected"]]);
+    const state = new Map<string, DraftHandshakeState>([["draft_1", "rejected"]]);
     const handleClose = vi.fn();
     const gateway = createYjsGateway(gatewayServices());
     const connection = {
@@ -360,11 +364,11 @@ describe("Yjs live writer admission", () => {
     let commit: (() => void) | undefined;
     const admitLiveWriterUpdate = vi.fn(
       () =>
-        new Promise<{ admitted: true; joinedSettlement: boolean }>((resolve) => {
+        new Promise<{ admitted: true }>((resolve) => {
           events.push("accept");
           commit = () => {
             events.push("journal");
-            resolve({ admitted: true, joinedSettlement: true });
+            resolve({ admitted: true });
           };
         }),
     );
@@ -426,7 +430,6 @@ describe("Yjs live writer admission", () => {
     const payload = new Uint8Array([0, 0]);
     const admitLiveWriterUpdate = vi.fn(async () => ({
       admitted: false as const,
-      joinedSettlement: false as const,
     }));
 
     await expect(
@@ -442,7 +445,7 @@ describe("Yjs live writer admission", () => {
         userId: "user-1" as never,
         expectedGeneration: 1n,
       }),
-    ).resolves.toEqual({ admitted: false, joinedSettlement: false });
+    ).resolves.toEqual({ admitted: false });
   });
 
   it("rejects a failed admission and accepts the client's resubmitted update", async () => {
@@ -450,7 +453,7 @@ describe("Yjs live writer admission", () => {
     const admitLiveWriterUpdate = vi
       .fn()
       .mockRejectedValueOnce(new Error("journal down"))
-      .mockResolvedValueOnce({ admitted: true, joinedSettlement: false });
+      .mockResolvedValueOnce({ admitted: true });
     const input = {
       services: {
         ...services(false),
@@ -470,7 +473,6 @@ describe("Yjs live writer admission", () => {
     });
     await expect(admitWriterSync(input)).resolves.toEqual({
       admitted: true,
-      joinedSettlement: false,
     });
     expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
   });
@@ -487,12 +489,11 @@ describe("Yjs room access", () => {
       bindHocuspocus: vi.fn(),
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),
-      admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true, joinedSettlement: false })),
+      admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true })),
       resolveDraftHocuspocusRoom: vi.fn(async () => ({
         draftId: "draft_1",
         documentId: liveRoom,
         workId: "work-1",
-        generation: 3,
         schemaVersion: COLLAB_SCHEMA_VERSION,
         status: "active",
       })),

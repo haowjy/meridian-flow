@@ -278,8 +278,10 @@ describe("inverse integration (postgres)", () => {
     expect(
       (outcome.skips ?? []).map((skip) => [skip.before, skip.after, skip.reason]).sort(),
     ).toEqual([
-      ["blue", "azure", "discarded"],
-      ["red", "gold", "discarded"],
+      // Discard released the draft's bytes. Live has unrelated item identities, so
+      // receipts cannot manufacture snippets from it.
+      ["", "", "discarded"],
+      ["", "", "discarded"],
     ]);
   });
 

@@ -18,7 +18,6 @@ import {
   documentYjsHeads,
   documentYjsUpdates,
   folders,
-  linkAheadRefs,
   users,
   works,
 } from "@meridian/database/schema";
@@ -30,7 +29,6 @@ import {
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { setTestHook } from "../../shared/test-hooks.js";
-import { typeLink } from "../../test-support/branch-tree-commands.js";
 import {
   type BranchTreeScenario,
   branchTreeScenario,
@@ -166,125 +164,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const got = await runtime.ports.objectStore.get(key);
       return got.ok ? "stored" : got.error.code;
     }
-
-    it("keeps a shared hidden document for the branch still using it, and the last Discard tombstones it, its folders and its storage (D-1)", async () => {
-      const { runtime, s } = await start();
-      const [ascension, beacon] = [
-        await s.work("Ascension", "draft"),
-        await s.work("Beacon", "draft"),
-      ];
-      const ORI = "manuscript://lore/deep/ori";
-      // A live ahead ref at the path before any branch creates it: a branch's document binds nothing.
-      const one = await s.writer.createDocument("chapter-one", "[Ori](lore/deep/ori) waits.");
-      const [registered] = await db
-        .select({ aheadId: linkAheadRefs.aheadId })
-        .from(linkAheadRefs)
-        .where(eq(linkAheadRefs.path, "lore/deep/ori"));
-      const waiting = registered?.aheadId ?? "";
-      const ori = await s.model(ascension).create("lore/deep/ori", "Ascension's Ori.");
-      expect
-        .soft(await s.model(beacon).create("lore/deep/ori", "Beacon's Ori."), "joined")
-        .toBe(ori);
-      expect
-        .soft(
-          await s.liveMeaning({
-            ref: `ahead:${waiting}`,
-            href: ORI,
-            holder: { uri: "manuscript://chapter-one", id: one },
-          }),
-          "the live ref reads Ori in a draft, bound to nothing",
-        )
-        .toEqual({ id: ori, inBranch: true });
-      // A holder whose link was written ahead: chapter two, edited in Beacon, applied alone.
-      const two = await s.writer.createDocument("chapter-two", "Two.");
-      await s.model(beacon).edit("chapter-two", "Two.", "Two, drafted.");
-      const bound = crypto.randomUUID();
-      await s.writer.editDraft(beacon, two, typeLink(ORI, bound));
-      expect.soft((await s.apply(beacon, [two], { tokens: "none" }))[0]?.httpStatus).toBe(200);
-      const chapterTwo = { uri: "manuscript://chapter-two", id: two };
-      const chapterOne = { uri: "manuscript://chapter-one", id: one };
-      expect
-        .soft(
-          await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
-          "still ahead, read in a draft",
-        )
-        .toEqual({ id: ori, inBranch: true });
-      // A picture of Beacon's own, with its own bytes (12b-Q2).
-      await livePicture(runtime, s, "charts/chart.png");
-      await s.model(beacon).copy("charts/chart.png", "lore/map.png");
-      const map = (await s.review(beacon)).items.find((item) => item.binary)
-        ?.documentId as DocumentId;
-      expect.soft(await objectAt(runtime, map), "the copy's own bytes").toBe("stored");
-      const versionBefore = (await row(ori))?.version ?? 0n;
-
-      // Ascension discards Ori: Beacon still uses it, so it stays hidden for Beacon.
-      expect
-        .soft(await s.discard(ascension, [ori]))
-        .toMatchObject([{ status: "discarded", branchId: expect.any(String), itemClosed: true }]);
-      expect
-        .soft(await row(ori), "kept for Beacon")
-        .toMatchObject({ hidden: true, tombstone: false });
-      expect
-        .soft(await s.view(beacon).read("lore/deep/ori"), "Beacon still reads it")
-        .toMatchObject({
-          ok: true,
-          value: { content: expect.stringContaining("Beacon's Ori.") },
-        });
-      expect
-        .soft(await s.view(ascension).stat("lore/deep/ori"), "gone from Ascension's view")
-        .toMatchObject({ ok: false });
-      expect
-        .soft(await s.branchStatuses(ascension), "an item Discard never closes")
-        .toEqual(["active"]);
-
-      // Beacon discards everything: the last use ends, in one command.
-      const beaconBranchId = (await s.review(beacon)).items[0]?.branchId ?? "";
-      expect
-        .soft(await s.discard(beacon, "all"), "Discard all")
-        .toEqual({ status: "discarded", branchId: beaconBranchId });
-      expect.soft(await s.branchStatuses(beacon), "closed").toEqual(["closed"]);
-      expect
-        .soft(await row(ori), "tombstoned once, still hidden")
-        .toEqual({ hidden: true, tombstone: true, version: versionBefore + 1n });
-      expect
-        .soft(await storageOf(ori), "its live Yjs, every draft on it, its projection: released")
-        .toEqual({ yjs: 0, drafts: 0, projection: 0 });
-      expect.soft(await rowsNaming(ori), "no branch names it").toEqual([]);
-      expect.soft(await foldersNamed(s, "deep"), "its hidden folder, bottom-up").toEqual([]);
-      expect.soft(await foldersNamed(s, "lore"), "and the one above").toEqual([]);
-      expect.soft(await row(map), "Beacon's picture tombstoned").toMatchObject({ tombstone: true });
-      expect.soft(await objectAt(runtime, map), "and its bytes deleted").toBe("not_found");
-      expect.soft(await s.view("live").ls(""), "nothing of the branches is live").toMatchObject({
-        ok: true,
-        value: expect.not.arrayContaining([expect.objectContaining({ name: "lore" })]),
-      });
-      expect
-        .soft(
-          await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
-          "the applied link: Doesn't exist yet",
-        )
-        .toBe("missing");
-      expect
-        .soft(
-          await s.liveMeaning({ ref: `ahead:${waiting}`, href: ORI, holder: chapterOne }),
-          "the live ref: Doesn't exist yet",
-        )
-        .toBe("missing");
-      const later = await s.writer.createDocument("lore/deep/ori", "A new Ori.");
-      expect.soft(later, "a new live document").not.toBe(ori);
-      expect
-        .soft(
-          await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
-          "which the applied link now reads",
-        )
-        .toEqual({ id: later });
-      expect
-        .soft(
-          await s.liveMeaning({ ref: `ahead:${waiting}`, href: ORI, holder: chapterOne }),
-          "and so does the live ref",
-        )
-        .toEqual({ id: later });
-    });
 
     it("leaves one tombstone and no orphan when two branches discard a shared document at once (D-2)", async () => {
       const { s } = await start();
@@ -437,64 +316,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toContain(ori);
       expect
         .soft(await s.view(beacon).read("lore/ori"), "Beacon's staged text survived")
-        .toMatchObject({
-          ok: true,
-          value: { content: expect.stringContaining("BEACON STAGED TEXT.") },
-        });
-    });
-
-    it("refuses a corrupt draft's preview, and Discard repairs it without touching another Work's staged reply (corrupt reset)", async () => {
-      const { runtime, s } = await start();
-      const [ascension, beacon] = [
-        await s.work("Ascension", "draft"),
-        await s.work("Beacon", "draft"),
-      ];
-      const chapter = await s.writer.createDocument("chapter", "Live words.");
-      await s.model(ascension).edit("chapter", "Live words.", "Ascension's words.");
-      await s.model(beacon).edit("chapter", "Live words.", "Beacon's words.");
-      const staged = await s.model(beacon).reply();
-      expect((await staged.call("read", { path: "manuscript://chapter" })).isError).toBeFalsy();
-      const write = await staged.call("write", {
-        command: "replace",
-        path: "manuscript://chapter",
-        find: "Beacon's words.",
-        content: "BEACON STAGED TEXT.",
-      });
-      expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
-      // The seam: Ascension's draft row no longer decodes.
-      const item = (await s.review(ascension)).items.find((each) => each.documentId === chapter);
-      const draftId = (
-        await runtime.ports.documentSync.draftReview.resolveItemByDocument({
-          workId: ascension.id,
-          documentId: chapter,
-        })
-      )?.draftId;
-      if (!draftId) throw new Error("No draft for the chapter");
-      await db
-        .update(documentDrafts)
-        .set({ state: Buffer.from([255, 255, 255, 255]) })
-        .where(eq(documentDrafts.id, draftId));
-
-      const review = runtime.ports.documentSync.draftReview;
-      const itemKey = item?.itemKey ?? "";
-      expect
-        .soft(await review.preview({ workId: ascension.id, itemKey }), "the preview refuses")
-        .toMatchObject({ status: "corrupt", branchId: item?.branchId, itemKey });
-      expect
-        .soft(await s.discard(ascension, [chapter]), "Discard repairs it")
-        .toMatchObject([{ status: "discarded" }]);
-      expect
-        .soft(await review.preview({ workId: ascension.id, itemKey }), "the review is whole again")
-        .toMatchObject({ status: "active", operations: [] });
-      const saved = (await staged.save()) as {
-        status: string;
-        receipts: { documentId: string }[];
-        refused: unknown[];
-      };
-      expect.soft(saved.refused, "Beacon's reply refuses nothing").toEqual([]);
-      expect.soft(saved.receipts.map((receipt) => receipt.documentId)).toContain(chapter);
-      expect
-        .soft(await s.view(beacon).read("chapter"), "Beacon's staged text survived")
         .toMatchObject({
           ok: true,
           value: { content: expect.stringContaining("BEACON STAGED TEXT.") },

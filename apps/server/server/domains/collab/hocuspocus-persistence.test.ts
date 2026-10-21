@@ -10,7 +10,6 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
-import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterAppend, LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
@@ -95,7 +94,6 @@ describe("createHocuspocusPersistenceService draft room storage", () => {
 
     const admission = persistence.admitDraftWriterUpdate({
       draftId: DRAFT_ID,
-      expectedGeneration: 2,
       update: writerUpdate(),
       origin: { type: "user", userId: "user-1" as never },
       document: boundDoc({ gc: false }),
@@ -219,7 +217,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     await expect(
       persistence.admitDraftWriterUpdate({
         draftId: DRAFT_ID,
-        expectedGeneration: 2,
         update: humanUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: roomDoc,
@@ -253,85 +250,11 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     await expect(
       persistence.admitDraftWriterUpdate({
         draftId: DRAFT_ID,
-        expectedGeneration: 2,
         update: staleUpdate,
         origin: { type: "user", userId: "user-1" as never },
         document: staleRoomDoc,
       }),
     ).rejects.toThrow(DraftStaleUpdateError);
-  });
-
-  it("fences a retained stale client at the draft SyncStep1 handshake", async () => {
-    const discardedDoc = tombstoneBearingDoc();
-    discardedDoc.getText("content").insert(discardedDoc.getText("content").length, " stale");
-    const currentDoc = docWithText("current generation");
-    const current = draftSnapshot(currentDoc);
-    const snapshot = {
-      ...current,
-      documentDraft: {
-        ...current.documentDraft,
-        generation: 3,
-        discardedStateVector: Y.encodeStateVector(discardedDoc),
-      },
-    };
-    const draftStore = new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]);
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftStore,
-      draftCoordinator: createDraftCoordinator({
-        onAppendCommitted: () => {},
-        store: draftStore,
-      }),
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await expect(
-      persistence.rejectStaleDraftSyncStep1({
-        draftId: DRAFT_ID,
-        generation: 3,
-        clientStateVector: Y.encodeStateVector(discardedDoc),
-        room: docWithText("current generation"),
-      }),
-    ).resolves.toBe(true);
-  });
-});
-
-describe("createHocuspocusPersistenceService writer ingress", () => {
-  it("suppresses contained reconnect updates without advancing writer ingress", async () => {
-    const liveDocument = tombstoneBearingDoc();
-    const journal = fakeJournal();
-    const onLiveUpdatePersisted = vi.fn();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-      onLiveUpdatePersisted,
-    });
-    const ingressGeneration = await persistence.writerIngressBarrier.drain(DOCUMENT_ID);
-    const fullState = Y.encodeStateAsUpdate(liveDocument);
-    const containedDeleteSet = Y.diffUpdate(fullState, Y.encodeStateVector(liveDocument));
-    expect(Y.decodeUpdate(containedDeleteSet).structs).toHaveLength(0);
-
-    for (const update of [fullState, containedDeleteSet, new Uint8Array([0, 0])]) {
-      await expect(
-        persistence.admitLiveWriterUpdate({
-          documentId: DOCUMENT_ID,
-          document: liveDocument,
-          update,
-          origin: { type: "user", userId: "user-1" },
-          expectedGeneration: 1n,
-        }),
-      ).resolves.toEqual({ admitted: false, joinedSettlement: false });
-      expect(
-        persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, ingressGeneration),
-      ).toBe(true);
-    }
-
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-    expect(onLiveUpdatePersisted).not.toHaveBeenCalled();
   });
 
   it("admits novel insertion and delete-only updates", async () => {
@@ -358,7 +281,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
       }),
-    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
+    ).resolves.toEqual({ admitted: true });
 
     const deletionClient = cloneDoc(liveDocument);
     const beforeDeletion = Y.encodeStateVector(deletionClient);
@@ -374,7 +297,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
         origin: { type: "user", userId: "user-1" },
         expectedGeneration: 1n,
       }),
-    ).resolves.toEqual({ admitted: true, joinedSettlement: false });
+    ).resolves.toEqual({ admitted: true });
 
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       1,
@@ -549,7 +472,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
           events.push("journal:start");
           commit = () => {
             events.push("journal:commit");
-            resolve({ status: "appended", seq: 1, joinedSettlement: true });
+            resolve({ status: "appended", seq: 1 });
           };
         }),
     );
@@ -576,7 +499,7 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     await Promise.resolve();
     expect(events).toEqual(["journal:start"]);
     commit?.();
-    await expect(admission).resolves.toEqual({ admitted: true, joinedSettlement: true });
+    await expect(admission).resolves.toEqual({ admitted: true });
     expect(events).toEqual(["journal:start", "journal:commit", "apply/broadcast/ack"]);
   });
 
@@ -622,53 +545,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       expect.objectContaining({ name: "persistence_append.failed" }),
     ]);
   });
-
-  it("drains started admissions and detects a later generation", async () => {
-    const liveDocument = boundDoc({ gc: false });
-    const resolvers: Array<() => void> = [];
-    const journal = fakeJournal();
-    journal.appendWriterUpdate = vi.fn(
-      () =>
-        new Promise<LiveWriterAppend>((resolve) => {
-          resolvers.push(() =>
-            resolve({ status: "appended", seq: resolvers.length, joinedSettlement: false }),
-          );
-        }),
-    );
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const first = persistence.admitLiveWriterUpdate({
-      documentId: DOCUMENT_ID,
-      document: liveDocument,
-      update: writerUpdate(),
-      origin: { type: "user", userId: "user-1" },
-      expectedGeneration: 1n,
-    });
-    const drain = persistence.writerIngressBarrier.drain(DOCUMENT_ID);
-    resolvers[0]?.();
-    const generation = await drain;
-    await first;
-    expect(persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, generation)).toBe(
-      true,
-    );
-
-    const second = persistence.admitLiveWriterUpdate({
-      documentId: DOCUMENT_ID,
-      document: liveDocument,
-      update: writerUpdate(),
-      origin: { type: "user", userId: "user-1" },
-      expectedGeneration: 1n,
-    });
-    expect(persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, generation)).toBe(
-      false,
-    );
-    resolvers[1]?.();
-    await second;
-  });
 });
 
 function writerUpdate(): Uint8Array {
@@ -710,7 +586,6 @@ function draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8
       draftId: DRAFT_ID,
       documentId: DOCUMENT_ID,
       workId: "work-1" as never,
-      generation: 2,
     }),
     state: Y.encodeStateAsUpdate(doc),
   };
@@ -721,7 +596,6 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
     appendWriterUpdate: vi.fn(async () => ({
       status: "appended" as const,
       seq: 1,
-      joinedSettlement: false,
     })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");

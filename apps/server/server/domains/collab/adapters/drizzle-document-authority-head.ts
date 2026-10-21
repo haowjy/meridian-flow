@@ -19,7 +19,7 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentRefusal, livingDocumentSql } from "../../context/tree/living-document.js";
 
@@ -149,26 +149,6 @@ export async function findHeadSchemaVersion(
   return row ? unpackCollabSchemaVersion(row.schemaVersion) : null;
 }
 
-/**
- * The live text's revision: every admission moves the next sequence and every replacement the
- * generation, so it is equal exactly while no admission landed. A document gains its first
- * head only by materialization, which changes the revision too.
- */
-export async function readHeadRevision(
-  db: Pick<Database, "select">,
-  documentId: string,
-): Promise<string> {
-  const [head] = await db
-    .select({
-      authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
-      next: documentYjsHeads.nextAdmissionSequence,
-    })
-    .from(documentYjsHeads)
-    .where(eq(documentYjsHeads.documentId, documentId as DocumentId));
-  return head ? `${head.authorityId}:${head.generation}:${head.next}` : "uninitialized";
-}
-
 /** Why a document has no head to write or read: its removal, its absence, else no head. */
 export async function refusedAuthority(
   db: AuthorityHeadDb,
@@ -207,10 +187,9 @@ export async function replaceGeneration(
   input: { documentId: DocumentId; checkpointId: number; expectedGeneration: bigint },
 ): Promise<
   | { ok: true; generation: bigint; checkpointId: number }
-  | { ok: false; code: "authority_head_busy" | "checkpoint_incomplete" | "stale_generation" }
+  | { ok: false; code: "checkpoint_incomplete" | "stale_generation" }
 > {
-  const { branchPushSettlementBatches, branchPushSettlementOutbox, documentYjsCheckpoints } =
-    await import("@meridian/database");
+  const { documentYjsCheckpoints } = await import("@meridian/database");
   const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 
   return db.transaction(async (tx) => {
@@ -220,22 +199,6 @@ export async function replaceGeneration(
     if (head.generation !== input.expectedGeneration) {
       return { ok: false as const, code: "stale_generation" as const };
     }
-    const [pending] = await txDb
-      .select({ pushId: branchPushSettlementOutbox.pushId })
-      .from(branchPushSettlementOutbox)
-      .innerJoin(
-        branchPushSettlementBatches,
-        eq(branchPushSettlementBatches.id, branchPushSettlementOutbox.batchId),
-      )
-      .where(
-        and(
-          eq(branchPushSettlementOutbox.documentId, input.documentId),
-          inArray(branchPushSettlementBatches.state, ["pending", "blocked"]),
-        ),
-      )
-      .limit(1);
-    if (pending) return { ok: false as const, code: "authority_head_busy" as const };
-
     const [checkpoint] = await txDb
       .select()
       .from(documentYjsCheckpoints)

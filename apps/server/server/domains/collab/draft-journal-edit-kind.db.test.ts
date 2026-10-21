@@ -4,22 +4,22 @@ import { documentEditParts, documentEdits, draftWriteJournal } from "@meridian/d
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import { createDrizzleDraftJournalReadStore } from "./adapters/drizzle-branch-push.js";
+import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
-  resetSettlementFixture,
-} from "./test-support/branch-push-settlement-fixture.js";
-import { THREAD_ID } from "./test-support/change-trail-postgres-harness.js";
+  resetDatabase,
+  THREAD_ID,
+} from "./test-support/change-trail-postgres-harness.js";
 import { commitDraftEdit } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
-beforeEach(() => resetSettlementFixture(db));
+beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
-it("returns editKind from the pending part's origin, whatever its placement or text became", async () => {
+it("returns editKind from the pending part's origin, independent of current text", async () => {
   const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha base.", "edit-kind");
@@ -39,7 +39,7 @@ it("returns editKind from the pending part's origin, whatever its placement or t
     const [plain, undone, partless] = rows;
     if (!plain || !undone || !partless) throw new Error("journal rows are missing");
     // The writes above left one `write` edit part per row. Make the second an inverse edit
-    // whose part was moved off its draft, and strip the third of any part.
+    // and strip the third of any part.
     const [undoPart] = await db
       .select({ id: documentEditParts.id, editId: documentEditParts.editId })
       .from(documentEditParts)
@@ -50,16 +50,12 @@ it("returns editKind from the pending part's origin, whatever its placement or t
       .set({ kind: "undo" })
       .where(eq(documentEdits.id, undoPart.editId));
     await db
-      .update(documentEditParts)
-      .set({ placement: { kind: "retired" } as never })
-      .where(eq(documentEditParts.id, undoPart.id));
-    await db
       .delete(documentEditParts)
       .where(sql`${documentEditParts.origin}->>'rowId' = ${String(partless.id)}`);
-    const read = createDrizzleDraftJournalReadStore(db);
+    const read = createDrizzleDraftReplayJournalReads(db);
     const kinds = (found: Awaited<ReturnType<typeof read.listJournalRowsForDraft>>) =>
       found.map((row) => [row.id, row.editKind]);
-    const input = { draftId: documentDraft.draftId, generation: documentDraft.generation };
+    const input = { draftId: documentDraft.draftId };
 
     // Inside an open transaction, a row inserted earlier in it is read.
     await runInDrizzleTransaction(db, async () => {

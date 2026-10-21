@@ -1,5 +1,5 @@
 {
-  "id": "5f9a0eb2-0253-41d5-9eeb-6748f1da1bef",
+  "id": "7d2bb360-9345-4795-99f3-b221659aaa21",
   "prevId": "e7495b9a-6cf4-4080-b1ce-4ee9d35e6715",
   "version": "7",
   "dialect": "postgresql",
@@ -1421,20 +1421,14 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.project_handle_counters": {
-      "name": "project_handle_counters",
+    "public.project_thread_counters": {
+      "name": "project_thread_counters",
       "schema": "",
       "columns": {
         "project_id": {
           "name": "project_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
+          "primaryKey": true,
           "notNull": true
         },
         "n": {
@@ -1446,9 +1440,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "project_handle_counters_project_id_projects_id_fk": {
-          "name": "project_handle_counters_project_id_projects_id_fk",
-          "tableFrom": "project_handle_counters",
+        "project_thread_counters_project_id_projects_id_fk": {
+          "name": "project_thread_counters_project_id_projects_id_fk",
+          "tableFrom": "project_thread_counters",
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
@@ -1460,23 +1454,10 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "project_handle_counters_project_id_kind_pk": {
-          "name": "project_handle_counters_project_id_kind_pk",
-          "columns": [
-            "project_id",
-            "kind"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "project_handle_counters_kind_valid": {
-          "name": "project_handle_counters_kind_valid",
-          "value": "\"project_handle_counters\".\"kind\" IN ('thread', 'work')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.prompt_bakes": {
@@ -6562,8 +6543,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "handle": {
-          "name": "handle",
+        "slug": {
+          "name": "slug",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -6696,8 +6677,8 @@
           "method": "btree",
           "with": {}
         },
-        "works_project_handle": {
-          "name": "works_project_handle",
+        "works_project_slug": {
+          "name": "works_project_slug",
           "columns": [
             {
               "expression": "project_id",
@@ -6706,14 +6687,14 @@
               "nulls": "last"
             },
             {
-              "expression": "handle",
+              "expression": "slug",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"works\".\"handle\" IS NOT NULL",
+          "where": "\"works\".\"slug\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6780,17 +6761,17 @@
           "name": "works_name_nonempty",
           "value": "btrim(\"works\".\"name\") <> ''"
         },
-        "works_no_work_handle": {
-          "name": "works_no_work_handle",
-          "value": "(\"works\".\"is_no_work\" AND \"works\".\"handle\" IS NULL) OR (NOT \"works\".\"is_no_work\" AND \"works\".\"handle\" IS NOT NULL)"
+        "works_no_work_slug": {
+          "name": "works_no_work_slug",
+          "value": "(\"works\".\"is_no_work\" AND \"works\".\"slug\" IS NULL) OR (NOT \"works\".\"is_no_work\" AND \"works\".\"slug\" IS NOT NULL)"
         },
         "works_no_work_not_archived": {
           "name": "works_no_work_not_archived",
           "value": "NOT \"works\".\"is_no_work\" OR \"works\".\"archived_at\" IS NULL"
         },
-        "works_handle_valid": {
-          "name": "works_handle_valid",
-          "value": "\"works\".\"handle\" IS NULL OR \"works\".\"handle\" ~ '^w[1-9][0-9]*$'"
+        "works_slug_valid": {
+          "name": "works_slug_valid",
+          "value": "\"works\".\"slug\" IS NULL OR \"works\".\"slug\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'"
         },
         "works_status_length": {
           "name": "works_status_length",
@@ -8608,7 +8589,7 @@
       "checkConstraints": {
         "branch_commands_kind_valid": {
           "name": "branch_commands_kind_valid",
-          "value": "\"branch_commands\".\"kind\" IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')"
+          "value": "\"branch_commands\".\"kind\" IN ('apply_click', 'apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_branch')"
         },
         "branch_commands_state_valid": {
           "name": "branch_commands_state_valid",
@@ -10895,7 +10876,7 @@
       "checkConstraints": {
         "draft_write_journal_source_valid": {
           "name": "draft_write_journal_source_valid",
-          "value": "\"draft_write_journal\".\"source\" IN ('agent', 'writer')"
+          "value": "\"draft_write_journal\".\"source\" IN ('agent', 'writer', 'server')"
         },
         "draft_write_journal_status_valid": {
           "name": "draft_write_journal_status_valid",

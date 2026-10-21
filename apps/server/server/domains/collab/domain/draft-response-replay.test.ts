@@ -4,94 +4,9 @@ import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { reconcileStagedDraftWrites } from "./draft-response-replay.js";
 
-it("drops a whole multi-segment write and its later dependency, never its independent sibling", () => {
-  const live = new Y.Doc({ gc: false });
-  live.getText("chapter").insert(0, "red blue green");
-  const draft = cloneYDoc(live),
-    helper = cloneYDoc(draft);
-  const delta = (doc: Y.Doc, mutate: () => void) => {
-    const updates: Uint8Array[] = [];
-    const collect = (update: Uint8Array) => updates.push(update);
-    doc.on("update", collect);
-    doc.transact(mutate);
-    doc.off("update", collect);
-    return Y.mergeUpdates(updates);
-  };
-  const retired = delta(draft, () => {
-    draft.getText("chapter").delete(0, 3);
-    draft.getText("chapter").insert(0, "gold");
-  });
-  Y.applyUpdate(helper, retired);
-  const segment = (writeId: string, mutate: (doc: Y.Doc) => void): JournalBatchAppendEntry => {
-    const peer = cloneYDoc(helper);
-    try {
-      const update = delta(peer, () => mutate(peer));
-      Y.applyUpdate(helper, update);
-      return {
-        docId: "chapter",
-        update,
-        meta: { origin: "agent:thread", seq: 0 },
-        mutation: {
-          mode: "threadPeer",
-          threadId: "thread",
-          turnId: null,
-          actorKind: "agent",
-          writeId,
-        },
-      };
-    } finally {
-      peer.destroy();
-    }
-  };
-  const rows = [
-    segment("lost", (doc) => doc.getText("chapter").insert(2, "X")),
-    segment("lost", (doc) => doc.getText("chapter").insert(doc.getText("chapter").length, "!")),
-    segment("dependent", (doc) => doc.getText("chapter").insert(3, "Y")),
-    segment("independent", (doc) => doc.getText("chapter").insert(7, "Z")),
-  ];
-  const current = cloneYDoc(live);
-  try {
-    const kept = reconcileStagedDraftWrites(current, rows, [retired], Y.snapshot(draft));
-    expect(kept.keptEntries.map((row) => row.mutation?.writeId)).toEqual(["independent"]);
-    expect(kept.rejectedWrites).toEqual([
-      { writeId: "lost", reason: "discard" },
-      { writeId: "dependent", reason: "discard" },
-    ]);
-    expect(current.getText("chapter").toString()).toBe("red Zblue green");
-    // The command boundary now sends one envelope with ordered parts; storage expands rows.
-    const logical = cloneYDoc(live);
-    const mutation = rows[0].mutation;
-    if (!mutation) throw new Error("Missing test edit identity");
-    try {
-      const parts = rows.slice(0, 2).map((row) => row.update);
-      const envelopes = [
-        { ...rows[0], update: Y.mergeUpdates(parts), mutation: { ...mutation, editParts: parts } },
-        ...rows.slice(2),
-      ];
-      expect(
-        reconcileStagedDraftWrites(
-          logical,
-          envelopes,
-          [retired],
-          Y.snapshot(draft),
-        ).keptEntries.map((entry) => entry.mutation?.writeId),
-      ).toEqual(["independent"]);
-      expect(logical.getText("chapter").toString()).toBe("red Zblue green");
-    } finally {
-      logical.destroy();
-    }
-  } finally {
-    current.destroy();
-    live.destroy();
-    draft.destroy();
-    helper.destroy();
-  }
-});
-
 it.each([
   "chat replacement",
   "writer deletion",
-  "writer deletion after refork",
 ])("admits ordinary concurrent %s like a Yjs peer", (concurrent) => {
   const base = new Y.Doc({ gc: false });
   base.getText("chapter").insert(0, "Alpha Beta.");
@@ -123,14 +38,9 @@ it.each([
     },
   };
   try {
-    expect(
-      reconcileStagedDraftWrites(
-        current,
-        [entry],
-        concurrent === "writer deletion after refork" ? [Y.encodeStateAsUpdate(base)] : [],
-        Y.snapshot(base),
-      ).keptEntries,
-    ).toEqual([entry]);
+    expect(reconcileStagedDraftWrites(current, [entry], Y.snapshot(base)).keptEntries).toEqual([
+      entry,
+    ]);
     expect(current.getText("chapter").toString()).toBe(expected.getText("chapter").toString());
     expect(current.store.pendingStructs).toBeNull();
     expect(current.store.pendingDs).toBeNull();
@@ -174,7 +84,7 @@ it("protects planning-visible identities removed by an explicit inverse", () => 
     },
   };
   try {
-    const replay = reconcileStagedDraftWrites(current, [entry], [], cut, inverse);
+    const replay = reconcileStagedDraftWrites(current, [entry], cut, inverse);
     expect(replay.keptEntries).toEqual([]);
     expect(replay.rejectedWrites).toEqual([{ writeId: "replacement", reason: "inverse" }]);
     expect(current.getText("chapter").toString()).toBe("Alpha Beta.");

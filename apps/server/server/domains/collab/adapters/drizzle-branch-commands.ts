@@ -1,10 +1,10 @@
 /** Postgres command record (contract §4.6): lookup, claim in the effect transaction, settlement. */
 
-import type { BranchCommandResult } from "@meridian/contracts/branches";
+import type { StoredBranchCommandResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import { branchCommands, branchPushSettlementBatches } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
-import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { branchCommands } from "@meridian/database/schema";
+import { eq, sql } from "drizzle-orm";
+import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type {
   BranchCommandEnvelope,
   BranchCommands,
@@ -15,7 +15,7 @@ import type {
 export function createDrizzleBranchCommands(db: Database): BranchCommands {
   return {
     async lookup(envelope) {
-      return lookupCommand(db as unknown as DrizzleDb, envelope);
+      return lookupCommand(currentDrizzleDb(db), envelope);
     },
   };
 }
@@ -33,13 +33,8 @@ export async function lookupCommand(
       kind: branchCommands.kind,
       state: branchCommands.state,
       result: branchCommands.result,
-      batchState: branchPushSettlementBatches.state,
     })
     .from(branchCommands)
-    .leftJoin(
-      branchPushSettlementBatches,
-      eq(branchPushSettlementBatches.id, branchCommands.settlementBatchId),
-    )
     .where(eq(branchCommands.id, envelope.commandId))
     .limit(1);
   if (!row) return { kind: "none" };
@@ -53,7 +48,6 @@ export async function lookupCommand(
   if (row.state === "done" && row.result) {
     return { kind: "done", commandKind: row.kind, result: row.result };
   }
-  if (row.batchState === "blocked") return { kind: "blocked" };
   return { kind: "pending", branchId: row.branchId };
 }
 
@@ -65,7 +59,7 @@ export async function lookupCommand(
 export async function claimCommandWithinTx(
   db: DrizzleDb,
   envelope: BranchCommandEnvelope,
-  settled?: BranchCommandResult,
+  settled?: StoredBranchCommandResult,
 ): Promise<boolean> {
   const [claimed] = await db
     .insert(branchCommands)
@@ -83,28 +77,4 @@ export async function claimCommandWithinTx(
     .onConflictDoNothing()
     .returning({ id: branchCommands.id });
   return Boolean(claimed);
-}
-
-/** An Apply's staging transaction records the batch its command now waits on. */
-export async function attachBatchWithinTx(
-  db: DrizzleDb,
-  commandId: string,
-  batchId: string,
-): Promise<void> {
-  await db
-    .update(branchCommands)
-    .set({ settlementBatchId: batchId })
-    .where(eq(branchCommands.id, commandId));
-}
-
-/** Completion or withdrawal of the command's batch: its terminal result, same transaction. */
-export async function settleCommandForBatchWithinTx(
-  db: DrizzleDb,
-  batchId: string,
-  result: BranchCommandResult,
-): Promise<void> {
-  await db
-    .update(branchCommands)
-    .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
-    .where(and(eq(branchCommands.settlementBatchId, batchId), eq(branchCommands.state, "pending")));
 }

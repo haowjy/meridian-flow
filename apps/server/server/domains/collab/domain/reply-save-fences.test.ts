@@ -77,15 +77,6 @@ describe("reply save fence", () => {
     expect(record.documents.has(DOCUMENT)).toBe(true);
   });
 
-  it("admits a pin after the upstream's generation moved: a pin authorizes identity only", async () => {
-    const { fences, record, drafts } = scenario();
-    drafts.set(FAKE_UPSTREAM_ID, {
-      ...(await drafts.getDraft(FAKE_UPSTREAM_ID))!,
-      generation: 9,
-    } as never);
-    await expect(fences.confirm(record)).resolves.toEqual([]);
-  });
-
   it.each([
     [
       "branch closed",
