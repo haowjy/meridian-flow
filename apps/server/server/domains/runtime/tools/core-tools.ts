@@ -47,7 +47,7 @@ const WorkRefSchema = z
     const trimmed = raw.trim();
     const handle = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
     if (!handle) {
-      context.addIssue({ code: "custom", message: 'must name a Work by handle, e.g. "w3"' });
+      context.addIssue({ code: "custom", message: 'Expected a Work handle, e.g. "w3".' });
       return z.NEVER;
     }
     return handle;
@@ -88,7 +88,7 @@ const WorkVerboseSchema = z
   .optional();
 
 const WorkSelectorSchema = z.object({
-  work: WorkRefSchema.describe('Work handle, e.g. "w3" or "@w3".'),
+  work: WorkRefSchema.describe('Work handle, e.g. "w3".'),
 });
 
 export const WorkCommandSchema = z.discriminatedUnion("command", [
@@ -137,7 +137,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
       command: z.literal("switch"),
       work: WorkRefSchema.nullable()
         .optional()
-        .describe('Work handle, e.g. "w3" or "@w3"; omit or null for No Work.'),
+        .describe('Work handle, e.g. "w3"; omit or null for No Work.'),
     })
     .strict()
     .describe("Move this conversation to another Work. Needs the user's approval."),

@@ -45,7 +45,7 @@ const FindAroundSchema = z
 
 const FindAllSchema = z.boolean().describe("Every match of `find`. Needs `find`.");
 
-const EDIT_HANDLE_MESSAGE = "Expected an edit handle such as e5.";
+const EDIT_HANDLE_MESSAGE = "Expected an edit handle, e.g. e5.";
 
 const READ_FIELDS = {
   before: z

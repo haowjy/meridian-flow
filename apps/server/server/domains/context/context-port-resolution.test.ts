@@ -199,15 +199,15 @@ describe("owner lookup", () => {
     });
     await expect(lookup.workReference("project", "Gone")).resolves.toMatchObject({
       ok: false,
-      message: "Unknown Work Gone. List Works with work list.",
+      message: "Unknown Work Gone. Use work list.",
     });
     await expect(lookup.scratchOwners("project")).resolves.toEqual([
       { uri: "scratch://@w3/", label: "Tea Notes" },
       { uri: "scratch://@w4/", label: "w9 (archived)" },
-      { uri: "scratch://@c12/", label: '"Dragon fight" (chat c12, No Work)' },
+      { uri: "scratch://@c12/", label: '"Dragon fight"' },
     ]);
     await expect(lookup.uploadOwners("project")).resolves.toEqual([
-      { uri: "uploads://@c15/", label: '"Map research" (chat c15)' },
+      { uri: "uploads://@c15/", label: '"Map research"' },
     ]);
   });
 });

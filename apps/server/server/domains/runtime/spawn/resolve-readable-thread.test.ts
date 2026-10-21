@@ -82,7 +82,7 @@ describe("resolveReadableThread", () => {
     ).toMatchObject({
       error: {
         message:
-          "Thread is not connected to this conversation. Its uploads are at uploads://@c2/ and its scratch notes at scratch://@c2/.",
+          "Thread is not connected to this conversation. Files: uploads://@c2/ and scratch://@c2/.",
       },
     });
   });

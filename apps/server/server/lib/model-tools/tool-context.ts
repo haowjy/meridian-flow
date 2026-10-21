@@ -209,7 +209,9 @@ export function contextErrorMessage(error: ContextError): string {
     // the agent; this storage-side refusal only follows an archive mid-call.
     const work = error.workHandle ? `Work ${error.workHandle}` : "The requested Work";
     return error.reason === "work_archived"
-      ? `${work} is archived, so this change wasn't made.`
+      ? error.workHandle
+        ? `${work} is archived; change not made.`
+        : `${work} is archived, so this change wasn't made.`
       : `${work} is unavailable.`;
   }
   if (error.code === "invalid_uri" && error.unknownScheme !== undefined) {
