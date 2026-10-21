@@ -248,12 +248,15 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
         const lineage = await deps.lineages.byRef(projectId, handle);
         return lineage ? { owner: `chat ${chatTitle(lineage.title ?? null)}` } : null;
       }
+      // Measured on deepseek-flash: without the reached address and "is w3", the
+      // model read this as an alias and wrote to the handle anyway (6/6).
+      const address = formatParsedContextUri("scratch", "", authority);
       const reached =
         authority.kind === "work"
-          ? `Work ${handle} is "${(await deps.workByHandle(projectId, handle))?.name ?? ""}".`
-          : `These are chat ${handle}'s notes.`;
+          ? `Work ${handle} "${(await deps.workByHandle(projectId, handle))?.name ?? ""}"`
+          : `chat ${handle}'s notes`;
       return {
-        notice: `${reached} Work "${handle}" is at ${workAddress(named.handle)}… .`,
+        notice: `${address} is ${reached}. The Work named "${handle}" is ${named.handle} at ${workAddress(named.handle)}… .`,
       };
     }
 
