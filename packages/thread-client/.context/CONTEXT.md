@@ -56,6 +56,11 @@ and says what it left out. The decision and its rejected alternatives are in the
 Turn-metadata readers (compaction, handoff seed, thread references) live in
 `@meridian/contracts/threads` because they mirror the server's metadata codecs.
 
+Pre-compaction held results use the shared contracts discriminator
+`isNotesStepHeldResult`. They remain visible neutral tool rows, even for tools
+whose successful invocation normally becomes a custom card or child report.
+They contribute neither a successful receipt nor a child `return_result`.
+
 ## Message documents
 
 Non-editor callers use `buildMessageDoc`: skills, prose and references are inline
@@ -388,3 +393,11 @@ visible. The guard still fences every product callback, state transition, and
 reconnect decision for stale socket generations. Lifecycle observers receive
 only the socket epoch, numeric close code, and `wasClean`; URL and raw close
 reason text do not cross the core observer contract.
+
+## Durable tool pairing
+
+Delivery views pair tool identities across the complete turn before splitting
+ordered prose/process folds. Results can follow intervening model text in a cold
+snapshot; the normalized ToolView travels into each fold without encoding it back into
+protocol blocks. Visibility, reports, folds and Work receipts consume the same
+turn-wide normalization. Source blocks remain unchanged identity/raw data.

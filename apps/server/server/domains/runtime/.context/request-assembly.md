@@ -41,6 +41,11 @@ and commits the epoch with the turn. Deploys, Agent revision changes, model
 changes, and cache timers never rebake a live thread. Mid-thread Work refreshes,
 notices, child results, and skill bodies are durable conversation turns instead.
 
+Request preparation loads Agent, prefix, history and reference state once, then
+can render the prepared context again with the optional Scratch-update marker.
+The run installs the prepared context and continuation only after the boundary
+commits; a losing prepare attempt changes no in-process continuation state.
+
 ## History and cache
 
 `context-builder.ts` renders persisted system turns as user messages wrapped in

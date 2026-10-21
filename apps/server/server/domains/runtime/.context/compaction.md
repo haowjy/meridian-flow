@@ -8,6 +8,30 @@ call is the shared [summarizer](summarizer.md); orphan C is repaired by
 Rationale: the [run preparation protocol][kb-run-prep] and
 [summarizer/overflow][kb-summarizer] decisions.
 
+## Optional Scratch update
+
+Before eligible automatic compaction, the loop may append a durable
+`compaction_notes` system update and let the ordinary response loop make at most
+three **tool calls total**. Scratch is shared working state, not a second
+continuation summary: no handoff file, reserved folder, or ownership change.
+A tool-free response goes straight to the normal summary. Reads, listings,
+searches and writes count, including failed, denied and out-of-scope attempts.
+Surplus calls and non-Scratch operations persist a neutral `notes_step` held
+result and never execute or replay. Ordinary permissions and response-save
+transactions still apply. Held results are not document evidence, edits, errors
+or successful receipts, including in compaction and `thread_history` projections.
+
+Admission needs a prior assistant response in this prompt epoch, two remaining
+model iterations under both the local cap and shared tree-turn budget, and input headroom for another output reserve. Manual and
+forced overflow compaction bypass the step. A result that exhausts optional headroom ends it. The forced summary uses the
+actual input window as its fit limit, not the lower automatic trigger; the
+trigger still sizes the preferred retained tail. An indivisible pinned tail
+that exceeds the real window remains an ordinary context-too-large failure. A committed marker prevents Retry or
+process recovery from reopening the allowance in the same epoch. No marker is
+installed before the prepared boundary commits. The summary is due after the
+step even if the next estimate falls below the trigger. Normal cancellation,
+credit, tree and iteration budgets govern every additional model request.
+
 ## Protocol
 
 Reservation, summary preparation, and successor completion are separate

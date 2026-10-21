@@ -15,7 +15,7 @@ import { schemeLabel } from "./context-schemes";
 import { destinationOwner } from "./identity-location";
 import { isFolderWithin } from "./menu-tree";
 import { moveRepairTrail } from "./move-repair-trail";
-import { useProjectMenuSource } from "./use-catalog-menu-source";
+import { useProjectMenuSource } from "./use-project-menu-source";
 
 export type MoveEntry = {
   id: string;
