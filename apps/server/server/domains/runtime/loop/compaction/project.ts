@@ -201,7 +201,7 @@ function projectActiveHistory(
       const reference = referenceOccurrenceContent(block);
       if (!reference?.read) return [];
       const textContent = importantFileText(
-        reference.uri,
+        reference.read.input ?? { path: reference.uri },
         referenceReadText(reference.read.result),
       );
       return [{ ...block, turnId: synthetic.turn.id, textContent, content: textContent }];

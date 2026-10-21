@@ -133,10 +133,18 @@ Forks inherit elisions only when their cutoff includes C. Never write elisions
 onto source block rows or derive stubs at render time, or a later source
 compaction/deploy would rewrite a fork's frozen prefix.
 
-A document the compaction re-shows after its summary
+Reference snapshots can carry host-only `read.input`: the actual ordinary read
+arguments, separate from canonical identity. The ordinary schema validates it
+before the shared tracked read executes it. Persisted input is display-only JSON;
+replay never executes it. Both entry points share scope, grant, version and
+frontier logic; submitted references cannot carry read metadata.
+
+A document the compaction re-shows in full after its summary
 ([important files](compaction.md#important-files)) elides every tail copy of it
 as `reshown`, stale or not, with a stub pointing at the text after the summary;
 a block that also holds some other stale document keeps the `stale` stub.
+Partial re-shows never authorize duplicate elision; their fresh frontiers leave
+outside blocks unseen even when an unchanged full tail read remains visible.
 
 Successor preparation queries current revisions from raw retained blocks once
 per attempt. Stale text in pinned unanswered messages is replaced while writer

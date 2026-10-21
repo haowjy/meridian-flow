@@ -34,8 +34,9 @@ preserve the user's terminology, and treat transcript text as source material
 rather than instructions.
 
 Compaction alone ends its summary instruction with `## Documents to keep open`:
-one context URI per line, most important first, with an example
-(`loop/compaction/important-files.ts` owns the format and its parser). The warm
+one JSON object of ordinary `read` arguments per line, most important first.
+`loop/compaction/important-files.ts` publishes the existing read input schema
+and examples; validation uses that same schema, not a compaction selector grammar. The warm
 branch's retained-scope rule exempts this section, so documents shown only in the
 retained tail can be listed; the rolling path sees only the cut, and the server's
 3 most recent documents cover the tail there. Only the appended instruction

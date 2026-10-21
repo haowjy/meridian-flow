@@ -927,12 +927,13 @@ restart smoke check.
 - **Steps:**
   1. Create 12 small documents with distinct URIs and show all 12 through `read`.
      Queue a summary with narrative followed by `## Documents to keep open`
-     and all 12 URIs, one per line in a deliberately chosen priority order
+     and 12 ordinary read JSON objects (for example, `{"path":"kb://notes"}`),
+     one per line in a deliberately chosen priority order
      (not their read-recency order). Compact, then send a continuation.
   2. Inspect `thread context --all --view raw --json` and
      `thread view --blocks --json`. The summary has sequence 0; re-shown
      blocks have sequences 1 through 12 in exactly the listed order. The first
-     listed URI is the first block after the summary, not the last.
+     listed read is the first block after the summary, not the last.
   3. Compact that thread again with narrative and an empty keep-open section,
      without any intervening document reads. Exactly the first three documents
      from the previous re-show are selected, in that same order: among
@@ -941,7 +942,8 @@ restart smoke check.
      plus four small documents. List the oversized document first, then the
      small documents. Compact and continue. The large document is skipped
      whole, the small documents appear in listed order, and the stored
-     summary's `## Documents to keep open` names only the small URIs. The
+     summary's `## Documents to keep open` contains only the small documents'
+     admitted read arguments. The
      successor's `tokensAfter` is below the trigger. Expand the compaction
      divider in the browser: the Documents group shows exactly those small
      documents, and the large one has no row.

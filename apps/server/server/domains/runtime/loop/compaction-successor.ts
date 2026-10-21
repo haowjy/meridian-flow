@@ -1,4 +1,5 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
+import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -29,6 +30,7 @@ import {
   documentsSection,
   importantFileCandidates,
   parseImportantFiles,
+  readInputLabel,
   reshowBudgetTokens,
 } from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
@@ -71,16 +73,17 @@ interface ReshownDocuments {
   blocks: ReturnType<typeof contentForBlockInput>[];
   /** Recorded with the blocks: a fresh frontier chain, like an @-mentioned document's. */
   evidence: ReferenceEvidence;
-  documentIds: ReadonlySet<string>;
-  /** The admitted documents, in read order: the summary's list after the reads. */
-  uris: string[];
+  /** Documents whose whole text was re-shown: only their copies are elided from the tail. */
+  fullyReshownDocumentIds: ReadonlySet<string>;
+  /** The admitted labels, in read order: the summary's list after the reads. */
+  labels: string[];
 }
 
 const NO_RESHOWN: ReshownDocuments = {
   blocks: [],
   evidence: NO_REFERENCE_EVIDENCE,
-  documentIds: new Set(),
-  uris: [],
+  fullyReshownDocumentIds: new Set(),
+  labels: [],
 };
 
 function fittingEstimate(context: AssembledNextTurnContext) {
@@ -106,7 +109,7 @@ function fittingEstimate(context: AssembledNextTurnContext) {
 }
 
 /**
- * Reads the pre-compaction history's model-ranked and recent documents in full, through the
+ * Reads the pre-compaction history's model-ranked selections and recent documents, through the
  * reference reader (the server's one read door), each as a block on the compaction turn with
  * evidence recorded like an @-mentioned document's: a frontier chained from nothing.
  */
@@ -150,7 +153,7 @@ async function reshowImportantFiles(args: {
     candidates,
     budgetTokens: args.budgetTokens,
     tokenizer: args.tokenizer,
-    read: async (reference) => {
+    read: async (reference, readInput) => {
       args.assertNoResponseScope();
       input.signal?.throwIfAborted();
       try {
@@ -159,7 +162,9 @@ async function reshowImportantFiles(args: {
           turnId: placeholder.id,
           ...(input.signal ? { signal: input.signal } : {}),
           recordingFrontier: async () => null,
+          input: readInput,
         });
+        input.signal?.throwIfAborted();
         return read.evidence ? { ...read, text: referenceReadText(read.result) } : null;
       } catch (error) {
         // A document that cannot be re-shown costs the compaction nothing but that document.
@@ -175,14 +180,16 @@ async function reshowImportantFiles(args: {
       }
     },
   });
-  const documentIds = new Set(kept.map(({ reference }) => reference.documentId));
-  const blocks = kept.map(({ reference, read }, index) =>
+  const blocks = kept.map(({ reference, input: readInput, read }, index) =>
     contentForBlockInput({
       turnId: placeholder.id,
       blockType: "text",
       sequence: index + 1,
       status: "complete",
-      content: { ...reference, read: { result: read.result, revision: read.revision } },
+      content: {
+        ...reference,
+        read: { result: read.result, revision: read.revision, input: readInput },
+      },
     }),
   );
   return {
@@ -195,8 +202,19 @@ async function reshowImportantFiles(args: {
           : [],
       ),
     },
-    documentIds,
-    uris: kept.map(({ reference }) => reference.uri),
+    fullyReshownDocumentIds: new Set(
+      kept
+        .filter(
+          ({ input }) =>
+            input.in === undefined &&
+            input.around === undefined &&
+            input.version === undefined &&
+            (input.format === undefined || input.format === "full") &&
+            splitDocumentFile(input.path).fragment === undefined,
+        )
+        .map(({ reference }) => reference.documentId),
+    ),
+    labels: kept.map(({ input }) => readInputLabel(input)),
   };
 }
 
@@ -279,7 +297,9 @@ export async function prepareCompactionSuccessor(args: {
     };
     // The request this compaction would hand the successor, including its final summary text.
     const stage = (reshown: ReshownDocuments) => {
-      const summary = [parsed.summary, documentsSection(reshown.uris)].filter(Boolean).join("\n\n");
+      const summary = [parsed.summary, documentsSection(reshown.labels)]
+        .filter(Boolean)
+        .join("\n\n");
       // Projection reads only the summary text; its provisional block is not persisted.
       const projectedSummary = localBlockFromEvent(
         contentForBlockInput({
@@ -291,7 +311,7 @@ export async function prepareCompactionSuccessor(args: {
         retainedSuffix: decision.plan.retainedSuffix,
         recorded,
         current,
-        reshown: reshown.documentIds,
+        reshown: reshown.fullyReshownDocumentIds,
         policies,
       });
       const metadata = { ...(placeholder.metadata as JsonObject), elisions };
