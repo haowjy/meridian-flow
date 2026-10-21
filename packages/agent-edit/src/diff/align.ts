@@ -217,7 +217,10 @@ function unitHunks(
     if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
       hunks.push({ from: 0, to: base.toks.length, sfrom: 0, ins: draft.toks });
     else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
-    memo.hunks = hunks.map((raw) => ({ raw, refined: refine(base.toks, [raw]) }));
+    memo.hunks = separateBlocks(base, draft, hunks).map((raw) => ({
+      raw,
+      refined: refine(base.toks, [raw]),
+    }));
   }
   const relocate = (h: Hunk): Hunk => ({
     ...h,
@@ -231,6 +234,59 @@ function unitHunks(
     // Keep the raw neighbour bounds until canonicalization, and share its moved pure hunks.
     out.push({ raw, refined: unit.refined.map((h) => (h === unit.raw ? raw : relocate(h))) });
   }
+}
+
+/**
+ * An unmatched interval may include a paragraph's changed tail and whole removed/added blocks.
+ * Keep complete blocks independent of the partial blocks at either edge, even without punctuation
+ * between them. A split/join with no complete consumed block stays one structural replacement.
+ */
+function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
+  const complete = (side: Side, from: number, to: number): [number, number] => {
+    const block = from === side.toks.length ? side.blocks.length : side.blockOf[from];
+    const interior = side.starts[block] < from;
+    const first = block + (interior ? 1 : 0);
+    const end = to === side.toks.length ? side.blocks.length : side.blockOf[to];
+    if (first < end) return [side.starts[first], side.starts[end]];
+    // With no complete block, a partial tail belongs before the complete run on the other side;
+    // a partial block starting at its boundary belongs after it (the next aligned word's prefix).
+    return interior ? [to, to] : [from, from];
+  };
+  const out: Hunk[] = [];
+  for (const h of hunks) {
+    if (h.from === h.to || !h.ins.length) {
+      out.push(h);
+      continue;
+    }
+    const sto = h.sfrom + h.ins.length;
+    const [b0, b1] = complete(B, h.from, h.to);
+    const [s0, s1] = complete(S, h.sfrom, sto);
+    if (b0 === b1 && s0 === s1) {
+      out.push(h);
+      continue;
+    }
+    let b = h.from;
+    let s = h.sfrom;
+    const start = out.length;
+    for (const [to, send] of [
+      [b0, s0],
+      [b1, s1],
+      [h.to, sto],
+    ]) {
+      if (to > b || send > s) {
+        const prev = out.length > start ? out.at(-1) : undefined;
+        // One pure insertion at a position (or contiguous deletion) remains one edit. In particular,
+        // an added block plus a split's new paragraph start must not become competing insertions.
+        if (prev && ((prev.from === prev.to && b === to) || (!prev.ins.length && s === send))) {
+          prev.to = to;
+          prev.ins = S.toks.slice(prev.sfrom, send);
+        } else out.push({ from: b, to, sfrom: s, ins: S.toks.slice(s, send) });
+      }
+      b = to;
+      s = send;
+    }
+  }
+  return out;
 }
 
 /** Keep small split/join gaps whole. Large unmatched runs pair in order, not by token search. */

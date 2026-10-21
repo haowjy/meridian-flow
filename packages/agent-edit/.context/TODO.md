@@ -36,18 +36,3 @@ through `prepareSave` when M2b moves revert to the write door.
   indirection testable.
 - Revisit OSS packaging and surgical formatting from real merge observations,
   not from a speculative abstraction.
-
-## Mixed inline/block raw review hunks
-
-A separate alignment limitation surfaced while fixing #986's semantic-cleanup
-paint bug: without an unchanged punctuation token between a trailing replacement
-and a removed paragraph, `align.ts` can emit both as one raw replacement before
-cleanup runs. Reproduce with base `["The crane watched the silent valley", "Lin
-held a copper token beneath the old gate.", "Beyond the bridge, the river carried
-fallen leaves."]` and draft `["The crane watched the roaring canyon", "Beyond
-the bridge, the river carried fallen leaves.", "Lin held a silver compass beneath
-the old gate."]`. The first raw hunk already includes P1's tail and all of Lin;
-the source removal therefore still paints inline. Investigate preserving complete
-block removals/additions independently of adjacent inline replacements in raw
-alignment, without changing split/join composition or inventing painter-side
-move heuristics. This is not introduced or resolved by the cleanup boundary fix.
