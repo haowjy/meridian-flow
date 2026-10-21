@@ -373,7 +373,7 @@ export function createMarkdownDocumentEngine(
               await deps.afterWrite?.({ documentId, threadId: hook.threadId, markdown });
           };
           if (!deps.deferUntilCommit?.(apply)) await apply();
-          return { sequence: BigInt(seq), joined: 0 };
+          return { sequence: BigInt(seq) };
         },
       },
       { source: authorshipSource(origin), update },

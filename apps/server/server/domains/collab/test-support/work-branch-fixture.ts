@@ -23,7 +23,6 @@ import { createDrizzleContextCatalog } from "../../context/adapters/context-cata
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
-import { applyDraftDocument } from "./apply-draft-document.js";
 import { convergedReview } from "./converged-review.js";
 import { createTestDocumentLinkScopes } from "./document-link-scopes.js";
 
@@ -139,17 +138,6 @@ export function createWorkBranchFixture(db: Database) {
       .insert(threadWorks)
       .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
   }
-  /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
-  async function applyDraft(
-    collab: ReturnType<typeof createTestCollab>,
-    documentId: string,
-  ): Promise<void> {
-    await applyDraftDocument(collab.draftReview, {
-      workId: WORK_ID as never,
-      documentId: documentId as never,
-      userId: USER_ID as never,
-    });
-  }
 
   async function currentDraftId(
     collab: ReturnType<typeof createTestCollab>,
@@ -163,7 +151,7 @@ export function createWorkBranchFixture(db: Database) {
     return draft.draftId;
   }
 
-  return { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId };
+  return { hocuspocus, createTestCollab, reset, dispose, currentDraftId };
 }
 
 function fakeHocuspocus() {

@@ -43,8 +43,7 @@ leaves the other bound, and the dock passes its visibility as the host's
 
 The dock's review launch adapter keeps the chip, Next draft and auto-advance
 inside the dock while the draft dock and Work list still launch into the
-Editor. Both are writer-unconfirmed defaults; flipping one changes only that
-adapter.
+Editor. These destinations are adapter policy, not room or command ownership.
 
 ## Local layout
 
@@ -56,9 +55,10 @@ identities cannot flash on screen. Project/Work changes fence old claims.
 The document review address belongs to the occupant and is included in its
 layout identity. The presented review is shared through `useActiveReviewBinding`;
 draft-only settlement and address writes do not bump the document open revision.
-A launch may carry `focusOperationIds`. The review claimant runs
-`FocusOpenedReview` only after that review paints and its preview is loaded;
-ids absent from the preview open at the top.
+A launch carries `ReviewFocus`: a group id with its immutable projection frame.
+`FocusOpenedReview` waits for review paint and resolves only within that same
+projection. A stale frame or a persisted bare id opens without that selection;
+no server preview or operation-id lookup restores it.
 
 ## Review and paint
 

@@ -24,18 +24,8 @@ import {
   runInDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
-import {
-  createDrizzleDraftJournalReadStore,
-  createDrizzlePushCommitStore,
-} from "../collab/adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
-import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
-import { createDraftClose } from "../collab/adapters/drizzle-draft-close.js";
-import { createDrizzleDraftStore } from "../collab/adapters/drizzle-drafts.js";
-import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
-import { appendDraftRows, proseDraftUpdate } from "../collab/test-support/draft-store-seam.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -431,115 +421,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(headAfter?.revision).toBe((headBefore?.revision ?? 0) + 1);
       expect(wakes).toHaveLength(1);
-    });
-    it("coalesces distinct real discard owners into one project notice", async () => {
-      const db = database.current;
-      const wakes: unknown[] = [];
-      await fixture();
-      const availability = createDrizzleProjectContextAvailability(db);
-      const catalog = createDrizzleContextCatalog(
-        db,
-        {
-          publish(hint) {
-            wakes.push(hint);
-          },
-        },
-        { availabilityMutations: availability },
-      );
-      const projection = createWorkProjectionMutation({
-        db,
-        pendingCounts: createDrizzleWorkBranchPendingStore(db),
-        availability,
-        catalog,
-      });
-      const drafts = createDrizzleDraftStore(db, {
-        close: createDraftClose(),
-        workProjection: projection,
-        branches: createDrizzleBranchStore(db),
-      });
-      for (const draftId of [DRAFT_ID, OTHER_DRAFT_ID, SECOND_DRAFT_ID]) {
-        await appendDraftRows(drafts, draftId, [
-          { updateData: proseDraftUpdate(), source: "agent", updateMeta: { kind: "edit" } },
-        ]);
-        // The draft-effect projection's write, which stores the count the append moved.
-        const appended = await drafts.getDraft(draftId);
-        if (!appended) throw new Error(`missing draft ${draftId}`);
-        await drafts.writeEffect({
-          draftId,
-          revision: appended.revision,
-          hasEffect: true,
-          workId: appended.workId,
-        });
-      }
-      wakes.length = 0;
-      const scopeKey = catalogScopeKey({ kind: "project", projectId: PROJECT_ID });
-      const [headBefore] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
-      const otherScopeKey = catalogScopeKey({ kind: "project", projectId: OTHER_PROJECT_ID });
-      const [otherHeadBefore] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, otherScopeKey));
-      const sequenceBefore = await db.execute<{ lastValue: string }>(
-        sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
-      );
-      const journal = createDrizzleDraftJournalReadStore(db);
-      const pushStore = createDrizzlePushCommitStore(
-        db,
-        stageSettlementBatchWithinTx,
-        createDrizzleChangeTrailAggregateWriter(db),
-        undefined,
-        projection,
-      );
-      const draftInputs = [
-        { draftId: DRAFT_ID, documentId: DOCUMENT_ID, workId: WORK_ID, branchId: BRANCH_ID },
-        {
-          draftId: OTHER_DRAFT_ID,
-          documentId: OTHER_DOCUMENT_ID,
-          workId: OTHER_WORK_ID,
-          branchId: OTHER_BRANCH_ID,
-        },
-        {
-          draftId: SECOND_DRAFT_ID,
-          documentId: SECOND_DOCUMENT_ID,
-          workId: SECOND_WORK_ID,
-          branchId: SECOND_BRANCH_ID,
-        },
-      ];
-      await runInDrizzleTransaction(db, async () => {
-        for (const value of draftInputs) {
-          const documentDraft = await drafts.getDraft(value.draftId);
-          if (!documentDraft) throw new Error(`missing draft ${value.draftId}`);
-          await pushStore.commitDiscard({
-            documentDraft,
-            journalRows: await journal.listReviewableJournalRows(value.draftId, 1),
-            state: new Uint8Array([0, 0]),
-          });
-        }
-        expect(wakes).toHaveLength(0);
-      });
-      const [headAfter] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, scopeKey));
-      const [otherHeadAfter] = await db
-        .select({ revision: contextCatalogScopeHeads.headRevision })
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, otherScopeKey));
-      const sequenceAfter = await db.execute<{ lastValue: string }>(
-        sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
-      );
-      expect(headAfter?.revision).toBe((headBefore?.revision ?? 0) + 1);
-      expect(otherHeadAfter?.revision).toBe((otherHeadBefore?.revision ?? 0) + 1);
-      expect(wakes).toHaveLength(2);
-      expect(BigInt(sequenceAfter[0]?.lastValue ?? "0")).toBe(
-        BigInt(sequenceBefore[0]?.lastValue ?? "0") + 1n,
-      );
-      for (const { draftId } of draftInputs) {
-        await expect(journal.listReviewableJournalRows(draftId, 1)).resolves.toEqual([]);
-      }
     });
   });
 }

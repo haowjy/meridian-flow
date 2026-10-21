@@ -4,8 +4,8 @@ export const WS_CLOSE = {
   AUTH_FAILED: { code: 4401, reason: "auth_failed" },
   AUTH_ERROR: { code: 1011, reason: "auth_error" },
   PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
-  DRAFT_STALE: { code: 4205, reason: "draft-stale-doc" },
-  DRAFT_GENERATION_STALE: { code: 4206, reason: "draft-generation-stale" },
+  /** Terminal: this draft ended. The transport reason names its close cause. */
+  DRAFT_CLOSED: { code: 4205, reason: "discarded" },
   /**
    * A draft update arrived before the update it depends on reached the draft's journal. Not a
    * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.

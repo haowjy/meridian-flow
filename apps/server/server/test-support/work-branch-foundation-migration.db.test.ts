@@ -371,6 +371,22 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
       // D62's pair (0046/0047, the chat-owned write mode and run identity) over the rows the
       // foundation just reshaped; chat-write-mode-migration.db.test.ts checks its data moves.
       await rm(directory, { recursive: true, force: true });
+      await stageThrough(
+        migrations,
+        directory,
+        journal,
+        journalIndex(journal, "0077_draft_review_preflight"),
+      );
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
+      // These synthetic empty checkpoints never ran main's projection or settlement worker.
+      // Model their cutover prerequisites; the populated runtime probe proves real draining.
+      await target`UPDATE document_drafts SET live_cut = state
+        WHERE kind = 'work_draft' AND status = 'active' AND live_cut IS NULL`;
+      await target`UPDATE branch_push_settlement_batches SET state = 'abandoned',
+        abandoned_at = now(), last_error_code = 'fixture_withdrawn', blocked_at = NULL,
+        completed_at = NULL, claim_token = NULL, claim_kind = NULL, claimed_at = NULL,
+        lease_expires_at = NULL WHERE state NOT IN ('completed', 'abandoned')`;
+      await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, journal.entries.length);
       await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       expect(
@@ -500,6 +516,17 @@ describe.skipIf(!enabled)("Pending draft creates across the foundation upgrade (
       await stageThrough(MIGRATIONS, directory, journal, names);
       await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
       await seedPendingCreates(target);
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(
+        MIGRATIONS,
+        directory,
+        journal,
+        journalIndex(journal, "0077_draft_review_preflight"),
+      );
+      await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });
+      // Untouched empty draft copies stand in for main's projection repair before cutover.
+      await target`UPDATE document_drafts SET live_cut = state
+        WHERE kind = 'work_draft' AND status = 'active' AND live_cut IS NULL`;
       await rm(directory, { recursive: true, force: true });
       await stageThrough(MIGRATIONS, directory, journal, journal.entries.length);
       await runMigrations({ databaseUrl: scratch.url, migrationsDirectory: directory });

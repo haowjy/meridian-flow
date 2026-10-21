@@ -2,11 +2,27 @@
 
 ## [Unreleased]
 
+- Owner-handle addresses and `eN` edit receipts now integrate with text-based draft review. Owner-handle migrations follow the draft-review cutover without resetting stored data.
+
 - Addresses name an owner by its handle: a Work's notes are `scratch://@w3/`, a chat's files `uploads://@c15/`, and a No Work chat's notes `scratch://@c12/`. Every Work gets a permanent handle (`w1`, `w2`, ...) when it is created, and the old Work slugs and the `@/` spelling are gone. A wrong address now gets a correction that names the owner it meant, for example a Work's name answers with its handle, and `ls scratch://@` and `ls uploads://@` list every owner with its handle and label. Work names stay unique among Works that are not deleted.
 - When the AI reads or writes a Work's or a chat's notes or files by its handle, the result names that owner beside the address, for example `scratch://@w1/outline (Work "Tea Arc")`, so a renamed Work is visible in the answer itself.
 - Path segments beginning with `~` are reserved for branches, which are not addressable yet: `manuscript://~b7/Chapter 12` is refused with a pointer to the bare address, and files and folders cannot be named that way. `scratch://@/` and `uploads://@/` are refused too; `ls scratch://@` and `ls uploads://@` list owners.
 - A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@c3/map` spelling, instead of minting a link to a file that does not exist.
 - Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@name`) are no longer an address.
+- Moving a paragraph next to an AI change keeps both readable: the move paints as one red and one green block, the neighbouring change keeps its word-level marks, including full heading renames and level changes (#986).
+- Ctrl+Z after moving an AI-written block restores its conversation byline, not "You".
+- A refused review command shows once and never covers its controls. A refusal because the Work was archived reverts silently under the archived notice; the phone now shows that notice and freezes an archived Work's draft, as desktop does. Unavailable Apply and Discard are hidden on locked drafts. Remaining text displacement in two rare cases: #992.
+- A usable draft review stays open when a background metadata refresh fails; Retry retries whichever step failed.
+- Dense draft review projection got faster: cleanup no longer rescans merged replacements on every edit.
+- Draft review reads the text (#862 re-landed on the lock-free store). Review is the difference between the live text a draft is reviewed against (`review_base`, server-written) and the draft, computed in the browser. Only red (removed) and green (added), writer typing and formatting included; no olive. Moves, cut and paste, Ctrl+Z and concurrent edits never corrupt it. A paragraph the draft removed and live then edited shows its byline, Apply and Discard (#945).
+- Discard on one document is an edit of its draft, one undoable step: Ctrl+Z in the editor, or Undo on the "Discarded" notice in the dock or Work page. The row leaves and the notice paints at the click, before the write-back. Discard all and document removal still close drafts; other tabs leave review on close (`4205`).
+- Apply sends the frozen click (the text the writer saw and the changes clicked), merges it into current live, and never answers "stale". Clicks on one document apply in order, one at a time; a lost answer retries the same command. The trail credits each conversation with only its own changed passages.
+- A draft keeps one identity from seed to close: seeded fresh from live, newer live arrives as a server rebase written inside the append that commits it, and typing a rebase deleted is recovered. Removed draft generations, reset, close code `4206`, inverse holds, settlement batches and server-computed review.
+- Bylines come from Yjs item identity and AI receipts: writer edits say "You", AI changes link to their conversation, subagent changes reveal the spawn card.
+- Next, Previous and list selection scroll to the change (#973).
+- Draft rooms keep unsent typing in IndexedDB like live documents (#940, online reload and offline typing).
+- Model Undo, Redo and Revert, turn receipts and pending lists read each AI write's fate (applied, pending, discarded) from the text; stored `placement` removed.
+- Migrations 0075–0081 convert existing Work drafts to text-derived review, restartable under row locks with online indexes, then retire draft generations, placement and settlement storage. Cutover refuses unrepaired drafts and unfinished Apply. The migration runner can run digest-pinned TypeScript conversions in ledger order.
 - Model revert reports skipped parts by number and reason, without repeating their old or current text. Read the document for the passage. Revert behavior is unchanged. An all-skipped chat step now says "That change wasn't reverted because its text changed or is already gone."
 - Compaction re-reads documents with ordinary read arguments, including sections, ranges, outlines and versions. Failed reads are omitted without widening scope; partial reads never stand in for unseen text.
 - File-tree guides stay visible over highlights, including expanded Manuscript. Standalone file lists use less indentation; sidebar action hover matches page behavior.

@@ -1,20 +1,7 @@
-/**
- * Discard (contract §12): one kernel for one item, the whole branch and Work purge. The
- * public command `discardItems` (writer and model) holds no draft: an item Discard
- * holds its items' live documents (the live scope it resets from), then each attempt runs
- * the store's one transaction: the Work, active (D30), the branch, the namespaces and
- * documents, and the kernel. The kernel resets each item's text from live, folding away
- * every frame that landed before it (a writer's frame then misses its revision), or closes
- * every draft with the branch, and ends the branch's use of what it created: what no branch
- * uses any more is tombstoned and its storage released. Every draft it closes retires once
- * the transaction's root commits, and never inside the Discard's own live scopes; objects
- * are released after commit. Purge runs the kernel in its own transaction after its own
- * lifecycle proof (§2.6).
- */
+/** End a hidden creation's branch use, or close a whole Work branch, with post-commit retirement. */
 import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { BranchCommandResult } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type * as Y from "yjs";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { BranchCommandEnvelope } from "./branch-commands.js";
 import type { Branches } from "./branches.js";
@@ -53,19 +40,18 @@ export type DiscardItem = {
   origin: "created" | "edited";
 };
 
-export type DiscardKernelInput = { userId?: UserId } /**
- * Item text resets need the live documents they reset from, and the attempt that owns
- * each reset until it completes.
- */ & (
-  | {
-      branchId: BranchId;
-      selection: { kind: "items"; items: readonly DiscardItem[] };
-      liveDocs: ReadonlyMap<DocumentId, Y.Doc>;
-      attempt: Attempt;
-    }
-  /** A whole Discard closes every draft and resets no text (purge passes this). */
-  | { branchId: BranchId; selection: { kind: "whole" } }
-);
+export type DiscardKernelInput = {
+  userId?: UserId;
+  branchId: BranchId;
+  selection: DiscardSelection;
+};
+
+export class BranchDiscardApplicableStateChangedError extends Error {
+  constructor() {
+    super("This document is no longer a hidden creation");
+    this.name = "BranchDiscardApplicableStateChangedError";
+  }
+}
 
 export type DiscardKernelResult = {
   /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
@@ -104,9 +90,6 @@ type CommandClaim = { envelope: BranchCommandEnvelope; result: BranchCommandResu
 
 export function createBranchDiscard(deps: {
   branches: Pick<Branches, "byIds">;
-  liveCoordinator: {
-    withDocument<T>(documentId: string, run: (doc: Y.Doc) => Promise<T>): Promise<T>;
-  };
   store: BranchDiscardStore;
   /**
    * Runs the Discard, holding back the retirement of the drafts its commit closed until it
@@ -119,24 +102,6 @@ export function createBranchDiscard(deps: {
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
   attemptScope?: AttemptScope;
 }): BranchDiscard {
-  /** Every one of these live documents' coordinator leases, in document-id order. */
-  function withLiveDocuments<T>(
-    ids: readonly DocumentId[],
-    run: (docs: ReadonlyMap<DocumentId, Y.Doc>) => Promise<T>,
-  ): Promise<T> {
-    const ordered = [...new Set(ids)].sort();
-    const docs = new Map<DocumentId, Y.Doc>();
-    const step = (index: number): Promise<T> => {
-      const id = ordered[index];
-      if (id === undefined) return run(docs);
-      return deps.liveCoordinator.withDocument(id, async (doc) => {
-        docs.set(id, doc);
-        return step(index + 1);
-      });
-    };
-    return step(0);
-  }
-
   /**
    * The locked kernel again when the branch moved: each attempt's commit scope opens inside
    * the live scopes it took (process-level locks before the database's), and a miss leaves
@@ -194,20 +159,11 @@ export function createBranchDiscard(deps: {
     command: CommandClaim | undefined,
     userId: UserId | undefined,
   ): Promise<DiscardKernelResult | null> {
-    const textDocuments = selected.flatMap((item) => (item.draftId ? [item.documentId] : []));
-    return withLiveDocuments(textDocuments, (liveDocs) =>
-      commitDiscard(attempt, {
-        workId,
-        kernel: {
-          userId,
-          branchId,
-          selection: { kind: "items", items: selected },
-          liveDocs,
-          attempt,
-        },
-        ...(command ? { command } : {}),
-      }),
-    );
+    return commitDiscard(attempt, {
+      workId,
+      kernel: { userId, branchId, selection: { kind: "items", items: selected } },
+      ...(command ? { command } : {}),
+    });
   }
 
   return {

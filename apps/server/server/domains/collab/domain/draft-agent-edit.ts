@@ -60,8 +60,7 @@ export function createDraftAgentEditCoordinator(input: {
   function draftRows(draftId: string, entries: readonly JournalBatchAppendEntry[]) {
     return entries.flatMap((entry) => {
       const mutation = entry.mutation;
-      if (mutation?.mode !== "threadPeer")
-        throw new Error("thread_peer_commit_missing_draft_generation");
+      if (mutation?.mode !== "threadPeer") throw new Error("thread_peer_commit_missing_identity");
       return (mutation.editParts ?? [entry.update]).map((updateData) => ({
         draftId,
         source: "agent" as const,
@@ -80,10 +79,6 @@ export function createDraftAgentEditCoordinator(input: {
   /** The peer of the access running now: attribution inside it resolves no other identity. */
   const accessedPeer = new AsyncLocalStorage<string>();
 
-  /**
-   * One scope's entries reconciled on `doc`, a copy of the Work draft at `generation`: only a
-   * retirement or an inverse since the scope's cut drops a whole logical write.
-   */
   /**
    * Entries an earlier peer of this scope accepted, when that peer has since closed: a Discard
    * took them, and its retirement will say so. Until it does, no view shows them and no save
@@ -121,31 +116,22 @@ export function createDraftAgentEditCoordinator(input: {
   async function reconcile(
     draftId: string,
     doc: Y.Doc,
-    generation: number,
     staged: StagedRoomEntries,
     peerDraftId: string | undefined,
   ): Promise<{ keptEntries: JournalBatchAppendEntry[] } & Pick<StagedReconcile, "rejected">> {
-    if (staged.cut.generation > generation)
-      throw new Error("Response cut belongs to a future draft generation");
     const refused = await retiredPeerEntries(staged.entries, peerDraftId);
     const entries = staged.entries.filter((entry) => !refused.has(entry.mutation?.writeId ?? ""));
     const cut = Y.decodeSnapshotV2(staged.cut.snapshot);
-    const retired: Uint8Array[] = [];
     const inverses: Uint8Array[] = [];
-    // Every intervening generation can contain an inverse; the cut excludes already observed
-    // removals without a second sequence fence.
-    for (let at = staged.cut.generation; at <= generation; at++) {
-      for (const row of await input.journalRows.listJournalRowsForDraft({
-        draftId,
-        generation: at,
-      })) {
-        const observed = Y.snapshotContainsUpdate(cut, row.updateData);
-        if (at === staged.cut.generation && at < generation && observed)
-          retired.push(row.updateData);
-        if (!observed && row.editKind && row.editKind !== "write") inverses.push(row.updateData);
-      }
+    for (const row of await input.journalRows.listJournalRowsForDraft({ draftId })) {
+      if (
+        !Y.snapshotContainsUpdate(cut, row.updateData) &&
+        row.editKind &&
+        row.editKind !== "write"
+      )
+        inverses.push(row.updateData);
     }
-    const replay = reconcileStagedDraftWrites(doc, entries, retired, cut, inverses);
+    const replay = reconcileStagedDraftWrites(doc, entries, cut, inverses);
     return {
       keptEntries: replay.keptEntries,
       rejected: [
@@ -205,12 +191,11 @@ export function createDraftAgentEditCoordinator(input: {
           if (bound && snapshot.status !== "active")
             throw new DraftStaleUpdateError(`Draft ${workDraftId}`);
           const replay = staged
-            ? await reconcile(workDraftId, doc, snapshot.generation, staged, peer)
+            ? await reconcile(workDraftId, doc, staged, peer)
             : { keptEntries: [], rejected: [] };
           return {
             doc,
             room: draftRoom(workDraftId),
-            generation: snapshot.generation,
             kept: replay.keptEntries.flatMap((entry) =>
               entry.mutation?.writeId ? [entry.mutation.writeId] : [],
             ),
@@ -239,14 +224,8 @@ export function createDraftAgentEditCoordinator(input: {
       return underAccess(peerId, async (workDraftId) => {
         const { result, write } = await drafts.prepareStagedRows(
           workDraftId,
-          async (doc, snapshot) => {
-            const replay = await reconcile(
-              workDraftId,
-              doc,
-              snapshot.generation,
-              { cut, entries },
-              peerId,
-            );
+          async (doc) => {
+            const replay = await reconcile(workDraftId, doc, { cut, entries }, peerId);
             return {
               result: {
                 kept: replay.keptEntries.flatMap((entry) =>
@@ -345,7 +324,7 @@ export type DraftLookupWithSnapshots = WorkDraftLookup &
       draftId: string,
     ): Promise<Pick<
       DraftSnapshot,
-      "upstreamDraftId" | "branchId" | "generation" | "status" | "closedCause" | "documentId"
+      "upstreamDraftId" | "branchId" | "status" | "closedCause" | "documentId"
     > | null>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
@@ -362,7 +341,7 @@ async function resolveThreadDraftId(
   return (await input.drafts.resolveThreadDraft(documentId, input.threadId)).draftId;
 }
 
-/** The upstream draft's journal rows on its current generation. */
+/** The upstream draft's journal rows. */
 async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
@@ -381,8 +360,8 @@ async function concurrentUpstreamJournalRows(
     (await input.drafts.resolveThreadDraft(documentId, input.threadId)).draftId;
   const upstreamDraftId = (await input.drafts.getDraft(peerId))?.upstreamDraftId;
   if (!upstreamDraftId) return [];
-  return input.draftCoordinator.readDraft(upstreamDraftId, (_doc, snapshot) =>
-    input.journalRows.listConcurrentJournalRows(upstreamDraftId, snapshot.generation, {
+  return input.draftCoordinator.readDraft(upstreamDraftId, (_doc, _snapshot) =>
+    input.journalRows.listConcurrentJournalRows(upstreamDraftId, {
       documentId,
     }),
   );

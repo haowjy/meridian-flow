@@ -1,19 +1,17 @@
 /** The checkpoint + tail draft store in memory, for unit tests whose flows write a draft. */
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import {
-  type AppendDraftJournalInput,
-  type AppendRowsInput,
-  type AppendRowsOutcome,
-  type CommitRewriteInput,
-  type DraftRead,
-  type DraftReadSince,
-  type DraftSnapshot,
-  type DraftStore,
-  type EffectBaseline,
-  mergeStateVectors,
-  type RewriteOutcome,
-  type StaleEffectCursor,
+import type {
+  AppendDraftJournalInput,
+  AppendRowsInput,
+  AppendRowsOutcome,
+  CommitRewriteInput,
+  DraftRead,
+  DraftReadSince,
+  DraftSnapshot,
+  DraftStore,
+  RewriteOutcome,
+  StaleEffectCursor,
 } from "../domain/draft-store.js";
 
 /** A draft row, defaulting every field the test does not name. */
@@ -28,19 +26,21 @@ export function testDraftRow(
     threadId: null,
     status: "active",
     closedCause: null,
-    generation: 1,
     revision: 0,
     checkpointRevision: 0,
     checkpointSeq: 0,
     lifecycle: "active",
     hasEffect: false,
-    blocking: false,
     schemaVersion: COLLAB_SCHEMA_VERSION,
     ...input,
   };
 }
 
-type MemoryRow = { id: number; generation: number; update: Uint8Array; source: "agent" | "writer" };
+type MemoryRow = {
+  id: number;
+  update: Uint8Array;
+  source: "agent" | "writer" | "server";
+};
 
 /** A draft as the store keeps it: the row, its checkpoint and every journal row it has. */
 export type MemoryDraft = DraftSnapshot & {
@@ -107,23 +107,23 @@ export class MemoryDraftStore implements DraftStore {
       documentDraft: rowOf(documentDraft),
       checkpoint: held ? null : documentDraft.checkpoint,
       tail: documentDraft.rows
-        .filter((row) => row.generation === documentDraft.generation && row.id > after)
+        .filter((row) => row.id > after)
         .map(({ id, update, source }) => ({ id, update, source })),
     };
   }
 
-  async readEffectBaseline(draftId: string): Promise<EffectBaseline | null> {
-    const documentDraft = this.drafts.get(draftId);
-    if (documentDraft?.kind !== "work_draft") return null;
-    return { state: documentDraft.liveCut ?? null };
+  async serverDeletedBlocks(
+    _draftId: string,
+    _ids: readonly { client: number; clock: number }[],
+  ): Promise<ReadonlySet<string>> {
+    return new Set();
   }
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
     if (
       documentDraft?.status !== "active" ||
-      documentDraft.lifecycle !== "active" ||
-      documentDraft.generation !== input.expectedGeneration
+      (input.work !== "any" && documentDraft.lifecycle !== "active")
     )
       return { status: "refused" };
     const read = this.readNow(input.draftId, input.base);
@@ -184,44 +184,20 @@ export class MemoryDraftStore implements DraftStore {
         : documentDraft.checkpointRevision !== input.policy.checkpointRevision
     )
       return { status: "moved" };
-    const tail = documentDraft.rows.filter(
-      (row) => row.generation === documentDraft.generation && row.id > documentDraft.checkpointSeq,
-    );
-    const { operation } = input;
-    // A fold applies what landed after its cursor; a reset discards it.
-    let folded = 0;
-    if (input.policy.kind === "fold" && operation.kind !== "reset") {
+    const tail = documentDraft.rows.filter((row) => row.id > documentDraft.checkpointSeq);
+    // A fold applies what landed after its cursor.
+    if (input.policy.kind === "fold") {
       const after = input.policy.seq;
       for (const row of tail) {
         if (row.id <= after) continue;
         Y.applyUpdate(input.doc, row.update);
-        folded += 1;
       }
-    }
-    if (operation.kind === "reset") {
-      documentDraft.discardedStateVector = tail.reduce(
-        (vector, row) =>
-          mergeStateVectors(vector, Y.encodeStateVector(Y.parseUpdateMeta(row.update).to)),
-        mergeStateVectors(documentDraft.discardedStateVector, documentDraft.checkpoint.stateVector),
-      );
-      documentDraft.generation += 1;
-      documentDraft.schemaVersion = operation.schemaVersion;
     }
     documentDraft.checkpoint = {
       state: Y.encodeStateAsUpdate(input.doc),
       stateVector: Y.encodeStateVector(input.doc),
     };
-    if (operation.kind === "reset") {
-      documentDraft.liveCut = documentDraft.checkpoint.state;
-      documentDraft.hasEffectRevision = documentDraft.revision + 1;
-    }
-    if (operation.kind === "pull" && operation.effect) {
-      const { effect } = operation;
-      documentDraft.liveCut = effect.liveCut;
-      documentDraft.hasEffect =
-        folded && effect.refolded ? effect.refolded(input.doc) : effect.hasEffect;
-      documentDraft.hasEffectRevision = documentDraft.revision + 1;
-    }
+
     documentDraft.checkpointSeq = Math.max(0, ...documentDraft.rows.map((row) => row.id));
     documentDraft.revision += 1;
     documentDraft.checkpointRevision = documentDraft.revision;
@@ -230,7 +206,6 @@ export class MemoryDraftStore implements DraftStore {
       revision: documentDraft.revision,
       checkpointRevision: documentDraft.checkpointRevision,
       seq: documentDraft.checkpointSeq,
-      generation: documentDraft.generation,
     };
   }
 
@@ -238,7 +213,6 @@ export class MemoryDraftStore implements DraftStore {
     const id = this.nextRowId++;
     documentDraft.rows.push({
       id,
-      generation: row.generation,
       update: row.updateData,
       source: row.source,
     });

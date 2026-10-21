@@ -70,7 +70,6 @@ export const d12CreateDuringArchive: Probe = {
       const frame = await settled(
         harness.coordinator.commitWriterUpdate({
           draftId: documentDraft.draftId,
-          expectedGeneration: read.documentDraft.generation,
           roomDocument: room,
           updateData: update,
         }),

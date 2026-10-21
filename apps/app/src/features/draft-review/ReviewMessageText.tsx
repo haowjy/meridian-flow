@@ -3,14 +3,16 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { BranchCommandFailure, ServerRefusal } from "@/client/query/branch-command-record";
 import { RemovedDocumentApplyRefusal } from "@/features/project/context/RemovedDocumentNotice";
+import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {
   switch (serverCode) {
-    case "work_archived":
-      return msg`This Work is archived. Unarchive it to apply or discard its changes.`;
+    case "review_updated":
+      return msg`The review updated. Choose the change again.`;
+    case "unavailable":
+      return msg`Apply is temporarily unavailable.`;
     case "work_not_found":
       return msg`This Work no longer exists.`;
     case "draft_not_found":
@@ -43,7 +45,7 @@ function answersAlone(serverCode: string | undefined): boolean {
  * comes from the failure's code. The one renderer for a whole-draft and a
  * per-change refusal.
  */
-export function RefusalReason({ serverCode, serverReason, removal }: Partial<ServerRefusal>) {
+function RefusalReason({ serverCode, serverReason, removal }: Partial<ServerRefusal>) {
   const { i18n } = useLingui();
   // Apply never revives a removed document: the record says who removed it, and nothing to retry.
   if (serverCode === "deleted_live")
@@ -66,8 +68,6 @@ export function ReviewMessageText({
   failure: BranchCommandFailure;
 }) {
   switch (code) {
-    case "apply-offline":
-      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
     case "apply-refused":
       return (
         <>
@@ -75,24 +75,12 @@ export function ReviewMessageText({
           <RefusalReason serverCode={serverCode} serverReason={serverReason} removal={removal} />
         </>
       );
-    case "apply-server-error":
-      return <Trans>Couldn't apply this draft. Try again.</Trans>;
-    case "apply-blocked":
-      return <Trans>Apply couldn't finish</Trans>;
     case "discard-unknown":
       return (
         <Trans>
           Couldn't confirm whether this discarded. Check what is left before you try again.
         </Trans>
       );
-    case "apply-unknown":
-      return (
-        <Trans>
-          Couldn't confirm whether this applied. Check what is left before you try again.
-        </Trans>
-      );
-    case "discard-offline":
-      return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
     case "discard-refused":
       return (
         <>
@@ -100,8 +88,6 @@ export function ReviewMessageText({
           <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
-    case "discard-server-error":
-      return <Trans>Couldn't discard this draft. Try again.</Trans>;
     case "review-failed":
       return <Trans>Couldn't open this draft. Try again.</Trans>;
   }

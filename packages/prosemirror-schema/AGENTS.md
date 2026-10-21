@@ -2,7 +2,7 @@
 
 Shared ProseMirror structural contract used by the TipTap/Yjs editor and server
 collab code. It owns node and mark specs, schema versioning, the Yjs fragment
-name, client-ID policy, restoration claims, and the Y.Doc factory; DOM and
+name, client-ID policy and the Y.Doc factory; DOM and
 editor runtime behavior stay outside this package.
 
 ## Rules
@@ -14,9 +14,8 @@ editor runtime behavior stay outside this package.
 - `PROSEMIRROR_FRAGMENT_NAME` is the shared Y.XmlFragment name. Import it from
   the protocol subpath when a consumer only needs the name.
 - Random authoring docs use `createCollabYDoc()` so they avoid the reserved
-  server-authored client-ID band. Restoration claims are untrusted input;
-  server collab certifies them and no consumer treats the claims map as
-  authorship authority.
+  server-authored client-ID band. Review restoration belongs to the diff kernel,
+  not this schema package.
 - A schema version change follows the append-only history and compatibility
   rules in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 

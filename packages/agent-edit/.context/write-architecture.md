@@ -200,6 +200,14 @@ diff is not a per-write deletion delta. Live writes merge one update; draft
 segments use fresh clients and keep independent logical writes separate unless
 Yjs dependencies join them.
 
+Forward-inverse receipt capture uses the canonical lineage range algebra through
+field adapters; retained item-span lookup stays in `yjs-mutation.ts`. It normalizes
+update spans as ranges. It removes
+cross-part insert/delete transients range-wise, then intersects each range with
+the retained `prosemirror` item structs; other roots and GC structs never expand
+into per-clock identities. The published effects remain clock-ordered, deduplicated
+and adjacency-merged, including items nested under the prose fragment.
+
 ## Draft write granularity
 
 One logical draft write may contain paragraph-level segments. Each segment is

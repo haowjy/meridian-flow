@@ -10,11 +10,10 @@ export type RetiredWriteReason = Exclude<
 
 /**
  * Where a reply's edit scope began writing into a document's room: the room copy's
- * host generation and Yjs snapshot (`Y.encodeSnapshotV2`, state vector and delete set) at the
- * scope's first stage. Reconcile reads only what retired or inverted since it.
+ * Yjs snapshot (`Y.encodeSnapshotV2`, state vector and delete set) at the
+ * scope's first stage. Reconcile reads only what inverted since it.
  */
 export interface StagedCut {
-  generation: number;
   snapshot: Uint8Array;
 }
 
@@ -48,13 +47,11 @@ export interface StagedReconcile {
 /**
  * A call's copy of a document's room: private, gc-off, the room's committed state with the
  * scope's kept entries applied. The caller owns `doc` and destroys it. `room` is the host's
- * label for the room the copy was read from (null records no frontier); `generation` is the
- * host generation a scope cut taken from this copy names.
+ * label for the room the copy was read from (null records no frontier).
  */
 export interface RoomRead extends StagedReconcile {
   doc: Y.Doc;
   room: string | null;
-  generation: number;
 }
 
 /** A document's state before a save's kept rows, and with them. */

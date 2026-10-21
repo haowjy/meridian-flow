@@ -280,7 +280,7 @@ describe("DocumentSession status derivation", () => {
   it("reports reset as access-lost so draft review exits after server room close", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "draft:draft-1:gen:1",
+      roomKey: "draft:draft-1",
       persistence: { kind: "none" },
       transportFactory: factory,
     });
@@ -288,9 +288,9 @@ describe("DocumentSession status derivation", () => {
 
     current().emit({
       kind: "reset",
-      reason: WS_CLOSE.DRAFT_STALE.reason,
+      reason: WS_CLOSE.DRAFT_CLOSED.reason,
       disposition: "rebuild",
-      code: WS_CLOSE.DRAFT_STALE.code,
+      code: WS_CLOSE.DRAFT_CLOSED.code,
     });
 
     expect(session.getSnapshot()).toMatchObject({
@@ -304,7 +304,7 @@ describe("DocumentSession status derivation", () => {
   it("emits a terminal close that arrives while already offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "draft:draft-1:gen:1",
+      roomKey: "draft:draft-1",
       persistence: { kind: "none" },
       transportFactory: factory,
     });

@@ -14,7 +14,7 @@ export interface DraftResolver {
 }
 
 /** A resolved draft's identity and state as its row was read; no content. */
-export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "generation" | "status" | "lifecycle">;
+export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "status" | "lifecycle">;
 
 export class DraftNotFoundError extends Error {
   readonly documentId: DocumentId;
@@ -32,13 +32,11 @@ export class DraftCorruptError extends Error {
   readonly draftId: string;
   readonly documentId: DocumentId;
   readonly threadId: ThreadId | undefined;
-  readonly generation: number | undefined;
 
   constructor(input: {
     draftId: string;
     documentId: DocumentId;
     threadId?: ThreadId;
-    generation?: number;
     cause?: unknown;
   }) {
     super(
@@ -50,6 +48,5 @@ export class DraftCorruptError extends Error {
     this.draftId = input.draftId;
     this.documentId = input.documentId;
     this.threadId = input.threadId;
-    this.generation = input.generation;
   }
 }

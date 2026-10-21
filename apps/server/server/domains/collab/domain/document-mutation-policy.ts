@@ -36,15 +36,13 @@ export type MutationTarget = {
 
 export type FreshAuthorshipPort = {
   readMutationTarget(): MutationTarget | Promise<MutationTarget>;
-  /** Runs under lockDocumentMutation and atomically journals, joins every unresolved
-   * same-generation settlement (incrementing join_version), and records the new head. */
-  admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint; joined: number }>;
+  /** Journals under the document mutation lock and records the new authority head. */
+  admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint }>;
 };
 
 export type AuthorityGenerationReplacementPort = {
   readMutationTarget(): MutationTarget | Promise<MutationTarget>;
   loadCheckpoint(checkpointId: string): Promise<AuthorityHeadCheckpoint | null>;
-  unresolvedSettlements(generation: bigint): Promise<number>;
   /** Installs state and manifest in a fresh generation in the same transaction as the fence. */
   replaceGeneration(
     checkpoint: AuthorityHeadCheckpoint,
@@ -55,7 +53,7 @@ export type AuthorityGenerationReplacementPort = {
 
 export class DocumentMutationPolicyError extends Error {
   constructor(
-    readonly code: "invalid_mutation" | "authority_head_busy" | "checkpoint_incomplete",
+    readonly code: "invalid_mutation" | "checkpoint_incomplete",
     message: string,
   ) {
     super(message);
@@ -88,7 +86,10 @@ export async function admitWriterUpdate<T>(input: {
  * replica; finalization judges the committed prefix again when that moved (design §2.2).
  */
 export function assertWriterAuthorship(targetDocument: Y.Doc, update: Uint8Array): void {
-  const admission = validateFreshAuthorship(targetDocument, update, { kind: "writer" });
+  // Reconnect snapshots include server-owned structs the prefix already holds. They
+  // author nothing twice; only novel structs and the incoming delete set need admission.
+  const novel = Y.diffUpdate(update, Y.encodeStateVector(targetDocument));
+  const admission = validateFreshAuthorship(targetDocument, novel, { kind: "writer" });
   if (admission.reservedClientId !== null) {
     throw new ReservedWriterClientIdError(admission.reservedClientId);
   }
@@ -98,7 +99,7 @@ export function assertWriterAuthorship(targetDocument: Y.Doc, update: Uint8Array
 export async function admitFreshAuthorship(
   port: FreshAuthorshipPort,
   mutation: { source: AuthorshipSource; update: Uint8Array },
-): Promise<{ sequence: bigint; joined: number }> {
+): Promise<{ sequence: bigint }> {
   const targetValue = port.readMutationTarget();
   const target = isPromise(targetValue) ? await targetValue : targetValue;
   const admission = validateFreshAuthorship(target.doc, mutation.update, mutation.source);
@@ -109,7 +110,7 @@ export async function admitFreshAuthorship(
     update: mutation.update,
     attribution: mutation.source,
   });
-  return { sequence: admitted.sequence, joined: admitted.joined };
+  return { sequence: admitted.sequence };
 }
 
 function validateFreshAuthorship(
@@ -134,7 +135,7 @@ function validateFreshAuthorship(
 
 /**
  * `source` replicated whole into `target` from a frozen copy: the identity replication every
- * draft seed, pull and reset uses. The candidate's provenance is validated before `target`
+ * thread-peer seed and pull uses. The candidate's provenance is validated before `target`
  * changes; persistence belongs to the draft store.
  */
 export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
@@ -172,7 +173,10 @@ export function admitSegmentRows(
       for (const row of writeRows) assertNonEmptyUpdate(row.updateData);
     }
     for (const row of writeRows) {
-      if (row.source === "agent") assertFreshAgentUpdate(doc, row.updateData);
+      if (row.source === "agent") {
+        assertFreshAgentUpdate(doc, row.updateData);
+        validateClientUpdateAdmission(doc, row.updateData);
+      }
       Y.applyUpdate(doc, row.updateData);
     }
   }
@@ -237,12 +241,6 @@ export async function replaceAuthorityGeneration(
     );
   }
   const current = await port.readMutationTarget();
-  if ((await port.unresolvedSettlements(current.generation)) > 0) {
-    throw new DocumentMutationPolicyError(
-      "authority_head_busy",
-      "Durable authority head has unresolved old-generation settlements",
-    );
-  }
   // The port installs a new Y.Doc. Checkpoint bytes are deliberately never applied to current.doc.
   const generation = await port.replaceGeneration(checkpoint, current.generation);
   await port.disconnectGeneration(current.generation);

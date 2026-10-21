@@ -5,7 +5,7 @@
  * belong to no user) deleted before each case. Skipped without a test database.
  */
 import { createDb, type Database } from "@meridian/database";
-import { branchPushSettlementBatches, users } from "@meridian/database/schema";
+import { users } from "@meridian/database/schema";
 import { afterAll, beforeEach, describe } from "vitest";
 import {
   type BranchTreeScenario,
@@ -32,7 +32,7 @@ export function describeBranchTreeDb(
     afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
     beforeEach(async () => {
-      await deleteDrizzleRows(db, [users, branchPushSettlementBatches]);
+      await deleteDrizzleRows(db, [users]);
     });
     cases(async () => {
       const runtime = await runtimes.compose();

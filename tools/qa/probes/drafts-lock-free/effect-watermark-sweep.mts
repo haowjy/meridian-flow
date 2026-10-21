@@ -1,5 +1,5 @@
 /**
- * Phase 4 (design §3.2 sweep, §3.3 legacy baselines, R5/R6/G5/G6, review C1): the watermark
+ * Phase 4 (design §3.2 sweep, R5/R6/G5/G6, review C1): the watermark
  * `has_effect_revision` says which judgements are stale, and a finite keyset sweep repairs them.
  *
  * (a) a key committed with no projection job leaves the watermark behind and the badge stale;
@@ -10,22 +10,15 @@
  *     while the 50 answer `contended`; no projection connection waits on one lock longer than
  *     the 100 ms `lock_timeout` (per lock acquisition, C1); the next tick is a new pass;
  *     releasing the Work lets the 50 land on their backoff.
- * (d) legacy rows (null `live_cut`, `has_effect` true, watermark -1): one sweep establishes each
- *     resolvable baseline through `pullWorkDraft` and ends fresh; the one on a document with a
- *     terminally blocked settlement is diagnosed once, stays at -1, takes no further live
- *     snapshot across three ticks, and lands fresh once the batch completes and a key arrives.
- *
- * (c) and (d) first mark every other probe's draft fresh, so the sweep sees only their rows.
+ * (c) first marks every other draft fresh, so the sweep sees only its rows.
  * Negative control on `586e58ae1e`: there is no watermark column, no job and no store door.
  */
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { observe, type Probe, Y } from "./harness.mts";
+import { observe, type Probe, type Y } from "./harness.mts";
 import {
   draftRow,
   durableDoc,
   type EffectWrite,
-  judgedEffect,
   keystroke,
   openProjected,
   openRoom,
@@ -42,7 +35,7 @@ export const effectWatermarkSweep: Probe = {
   name: "effect-watermark-sweep",
   decision: "D28 (§3.2–3.3 R5/R6/G5/G6)",
   expected:
-    "(a) the sweep repairs an unprojected key; (b) a compaction's stale watermark is re-judged; (c) one fair pass of two pages, the idle Work's draft written within 2 s, no lock wait past 100 ms; (d) legacy baselines established, the blocked one parked after one capture",
+    "(a) the sweep repairs an unprojected key; (b) a compaction's stale watermark is re-judged; (c) one fair pass of two pages, the idle Work's draft written within 2 s, no lock wait past 100 ms",
   async run(harness) {
     await runArms({
       async "a-unprojected-key"() {
@@ -98,7 +91,7 @@ export const effectWatermarkSweep: Probe = {
               checkpointRevision: read.documentDraft.checkpointRevision,
               seq: 0,
             },
-            fence: { kind: "none" },
+
             operation: { kind: "compact" },
           });
           checkpoint.destroy();
@@ -238,152 +231,12 @@ export const effectWatermarkSweep: Probe = {
           for (const live of lives) live.destroy();
         }
       },
-
-      async "d-legacy-baselines"() {
-        await markEverythingFresh();
-        const legacy = async (label: string, typed: boolean) => {
-          const draft = await seedDraft(harness, label);
-          if (typed) {
-            const tab = await openRoom(harness, phase4Coordinator(harness), draft);
-            for (const token of [" one", " two"]) await tab.send(keystroke(tab.room, token));
-            const read = await harness.store.readDraftAt(draft.draftId);
-            if (!read) throw new Error("draft missing");
-            const checkpoint = await durableDoc(harness, draft.draftId);
-            await harness.store.commitRewrite({
-              draftId: draft.draftId,
-              doc: checkpoint,
-              policy: {
-                kind: "fold",
-                checkpointRevision: read.documentDraft.checkpointRevision,
-                seq: 0,
-              },
-              fence: { kind: "none" },
-              operation: { kind: "compact" },
-            });
-            checkpoint.destroy();
-            tab.room.destroy();
-          }
-          // What the pre-phase-4 creator left: no baseline, the schema default effect, -1.
-          await harness.raw`update document_drafts set live_cut = null, has_effect = true,
-            has_effect_revision = -1 where id = ${draft.draftId}`;
-          return draft;
-        };
-        const empty = await legacy("legacy-empty", false);
-        const typed = await legacy("legacy-typed", true);
-        const blocked = await legacy("legacy-blocked", false);
-        const batchId = await blockSettlement(blocked);
-        const before = Object.fromEntries(
-          await Promise.all(
-            [empty, typed, blocked].map(
-              async (d) => [d.draftId, await draftRow(harness, d.draftId)] as const,
-            ),
-          ),
-        );
-        const p = await openProjected(harness);
-        try {
-          await p.projection().sweep();
-          const resolved = await within(
-            5_000,
-            async () => {
-              const rows = await Promise.all(
-                [empty, typed].map((d) => draftRow(harness, d.draftId)),
-              );
-              return rows.map((row) => row.watermark === row.revision);
-            },
-            (fresh) => fresh.every(Boolean),
-          );
-          for (const draft of [empty, typed]) {
-            const row = await draftRow(harness, draft.draftId);
-            const baseline = await baselineText(draft.draftId);
-            observe(`d ${draft.draftId.slice(0, 15)}`, {
-              row,
-              baseline,
-              live: await harness.liveText(draft.documentId),
-            });
-            assert.ok(row.liveCutStored, "the pull wrote the baseline");
-            assert.equal(
-              baseline,
-              await harness.liveText(draft.documentId),
-              "equal to live's state",
-            );
-            assert.ok(row.revision > (before[draft.draftId]?.revision ?? 0), "revision bumped");
-            assert.equal(row.hasEffect, await judgedEffect(harness, draft.draftId));
-          }
-          const capturesAfterFirst = p.captures.get(blocked.documentId) ?? 0;
-          for (let tick = 0; tick < 3; tick += 1) await p.projection().sweep();
-          const capturesAfterTicks = p.captures.get(blocked.documentId) ?? 0;
-          const parked = await draftRow(harness, blocked.draftId);
-          const diagnosed = p.blocked.filter((entry) => entry.draftId === blocked.draftId).length;
-          await harness.raw`update branch_push_settlement_batches set state = 'completed',
-            completed_at = now(), blocked_at = null where id = ${batchId}`;
-          const tab = await openRoom(harness, p.coordinator, blocked);
-          const key = await tab.send(keystroke(tab.room, " wake"));
-          tab.room.destroy();
-          const woke = await within(
-            3_000,
-            () => draftRow(harness, blocked.draftId),
-            (row) => row.watermark === row.revision,
-          );
-          observe("d blocked", {
-            capturesAfterFirst,
-            capturesAfterTicks,
-            parked,
-            diagnosed,
-            key,
-            woke: woke.observation,
-            resolvedMs: resolved.elapsedMs,
-          });
-          assert.equal(diagnosed, 1, "diagnosed once");
-          assert.equal(parked.watermark, -1, "stays stale");
-          assert.equal(
-            capturesAfterTicks,
-            capturesAfterFirst,
-            "no further live snapshot across three ticks",
-          );
-          assert.equal(key, "appended");
-        } finally {
-          p.dispose();
-          for (const draft of [empty, typed, blocked]) draft.live.destroy();
-        }
-      },
     });
 
     /** Every other probe's draft judged fresh, so a sweep sees only this arm's rows. */
     async function markEverythingFresh() {
       await harness.raw`update document_drafts set has_effect_revision = revision
         where kind = 'work_draft' and has_effect_revision < revision`;
-    }
-
-    /** The baseline's text, or null when none is stored. */
-    async function baselineText(draftId: string): Promise<string | null> {
-      const [row] = await harness.raw<{ live_cut: Uint8Array | null }[]>`
-        select live_cut from document_drafts where id = ${draftId}`;
-      if (!row?.live_cut) return null;
-      const doc = new Y.Doc({ gc: false });
-      Y.applyUpdate(doc, new Uint8Array(row.live_cut));
-      const text = doc.getXmlFragment("prosemirror").toString();
-      doc.destroy();
-      return text;
-    }
-
-    /** A terminally blocked settlement on the draft's document (D22), as the r3/r4 fixture. */
-    async function blockSettlement(draft: {
-      draftId: string;
-      generation: number;
-      documentId: string;
-      live: Y.Doc;
-    }) {
-      const batchId = randomUUID();
-      await harness.raw`insert into branch_push_settlement_batches (id, state, blocked_at, last_error_code)
-        values (${batchId}, 'blocked', now(), 'corrupt_settlement_authority')`;
-      const [push] = await harness.raw<{ id: string }[]>`
-        insert into push_lineage (draft_id, draft_generation, document_id, journal_ids, idempotency_key)
-        values (${draft.draftId}, ${draft.generation}, ${draft.documentId}, '{}', ${randomUUID()}) returning id`;
-      const bytes = Buffer.from(Y.encodeStateAsUpdate(draft.live));
-      await harness.raw`insert into branch_push_settlement_outbox
-        (push_id, batch_id, document_id, document_title, lock_cut_update, push_update, trail_seed)
-        values (${push?.id ?? ""}, ${batchId}, ${draft.documentId}, 'blocked', ${bytes}, ${bytes}, '{}')`;
-      return batchId;
     }
   },
 };

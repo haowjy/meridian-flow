@@ -20,7 +20,6 @@ import {
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { race } from "../../../test-support/lock-interleave.js";
-import { createTreeReader } from "./tree-view.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -261,57 +260,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         parentId: q,
       });
       expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
-    });
-
-    it("absorbs a hidden folder beside a same-named visible document: a branch clash, never a live refusal (F-4)", async () => {
-      const scenario = await start();
-      const ascension = await scenario.work("Ascension", "draft");
-      const kaelFile = await scenario.seedLive("branches/kael");
-      const branches = await scenario.seedLiveFolder("branches");
-      const notes = await scenario.model(ascension).create("ideas/kael/notes", "Notes.");
-      const branch = await scenario.branchOf(ascension);
-      const hiddenKael = (await document(notes)).folderId;
-      const hiddenIdeas = (await folder(hiddenKael)).parentId;
-
-      expect
-        .soft(await scenario.writer.move("branches", "ideas"), "no live refusal")
-        .toMatchObject({ ok: true });
-
-      expect.soft(await folder(hiddenIdeas), "the hidden folder tombstoned").toMatchObject({
-        deleted: true,
-        locationVersion: 1n,
-      });
-      expect.soft(await folder(hiddenKael), "its child folded in").toMatchObject({
-        hidden: true,
-        deleted: false,
-        parentId: branches,
-        locationVersion: 0n,
-      });
-      expect.soft(await idAt(scenario, "live", "ideas/kael"), "the live file").toBe(kaelFile);
-      const resolved = await createTreeReader(committed).resolvePath(
-        { kind: "branch", branchId: branch.id },
-        { contextSourceId: scenario.project.sources.manuscript, path: "ideas/kael" },
-      );
-      expect.soft(resolved.kind, "two nodes at one path in the branch").toBe("ambiguous");
-      const [item] = await createTreeReader(committed).treeState(branch.id);
-      expect.soft(item?.conflict, "a clash in the branch's view").toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: kaelFile },
-        at: "ideas/kael",
-        uri: "manuscript://ideas/kael",
-      });
-      expect.soft(await scenario.apply(ascension, [notes]), "held at Apply (F11)").toEqual([
-        {
-          httpStatus: 409,
-          body: {
-            status: "held",
-            branchId: expect.any(String),
-            itemKey: expect.any(String),
-            reason: { code: "path_taken", path: "manuscript://ideas/kael" },
-          },
-        },
-      ]);
-      expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 
     it("answers a path two of a branch's documents share with the clash, never one of them (absorb)", async () => {

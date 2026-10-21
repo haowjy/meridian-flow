@@ -17,7 +17,6 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useWorkBranchDrafts, type WorkDraftListStatus } from "@/client/query/useWorkBranchDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
-import type { PresentedDocument } from "@/features/project/presented-document";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
@@ -25,7 +24,6 @@ import {
   useDraftReviewController,
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
-import { useReconcileReviewFocus } from "./useReconcileReviewFocus";
 import { useReviewRefresh } from "./useReviewRefresh";
 import { type ReviewRoomOwner, useReviewRoomOwner } from "./useReviewRoomOwner";
 
@@ -97,13 +95,11 @@ export function useDraftReviewScopeValue({
   work,
   stateOwner,
   threadId = null,
-  presented,
 }: {
   projectId: string | null;
   /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
   work: Work | null;
   stateOwner?: DraftReviewStateOwner;
-  presented?: PresentedDocument | null;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
 }): DraftReviewContextValue {
@@ -132,10 +128,7 @@ export function useDraftReviewScopeValue({
     workId: effectiveWorkId,
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
-    disposing: controller.isDisposing,
-    presented,
   });
-  useReconcileReviewFocus(controller, presented);
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
@@ -173,17 +166,19 @@ export function useDraftReviewScopeValue({
     (documentId: string, itemKey: string) =>
       controller.inlineReview?.documentId === documentId &&
       controller.inlineReview.itemKey === itemKey
-        ? controller.reviewRoomName
+        ? roomOwner.roomName
         : null,
-    [controller.inlineReview, controller.reviewRoomName],
+    [controller.inlineReview, roomOwner.roomName],
   );
 
   useReviewRefresh({
     projectId,
     workId,
     review: controller.inlineReview,
+    runtime: roomOwner.runtime,
     session: roomOwner.session,
     liveSession:
+      !activeEditorProjection?.inReview &&
       activeEditorProjection?.documentId === controller.inlineReview?.documentId
         ? (activeEditorProjection?.session ?? null)
         : null,

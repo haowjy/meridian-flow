@@ -18,7 +18,7 @@ it. Persistence revalidates both under the document mutation lock and drops
 stale bytes instead of relabeling them. Restore retires warm handles and
 rooms; late load and connection completion revalidate before use.
 
-## Only materialization makes a head (W52)
+## Only explicit creation makes a head
 
 `adapters/drizzle-document-authority-head.ts` is the one writer of
 `document_yjs_heads`: `initializeHead`, `allocateAdmission`, `advanceHead`
@@ -46,7 +46,7 @@ Everything else requires an existing head and creates nothing. Draft creation
 lock. A miss answers `DocumentNotFoundError`, carrying the removal record
 (`removal`) when the document was removed.
 
-`allocateAdmission` is the one live-write boundary (journal and settlement): a
+`allocateAdmission` is the one live-write boundary (journal): a
 removal that won the mutation lock refuses every later frame, staged save
 install and Apply member there.
 
@@ -57,14 +57,14 @@ read a retained head for history; with `{ living: true }`, read under the
 mutation lock, they gate every other door that mutates retained history:
 version replacement and an explicit checkpoint refuse with the record; a
 background checkpoint store and compaction do nothing. `advanceHead`, which
-every checkpoint insert passes, is the backstop. `readHeadRevision` is the live
-text's revision the review list's fingerprints and the review action fence
-compare. Journal-row edit links (`document_yjs_updates.edit_id`) are written
+every checkpoint insert passes, is the backstop. Frozen Apply reads committed
+live through the mutation-locked journal read in `drizzle-apply-click.ts`; no
+live fingerprint or review revision token fences the click. Journal-row edit links (`document_yjs_updates.edit_id`) are written
 only beside the admission that inserted the row. Reads of a deleted document's
 history stay open; only purge deletes it.
 
 A removal refuses as a `DocumentNotFoundError` carrying the removal record, so
-every not-found mapping, the model's included, answers a removal as
+every not-found mapping, including model tool results, answers a removal as
 `document_not_found` with who removed it (status and words once, agent-edit's
 `removedFile` in `removal-copy.ts`) until the model gets its own `document_deleted` answer. A
 reply's write the removal stopped, refused when staged or at the save, is one
@@ -99,9 +99,8 @@ agent-edit, so unchanged items retain identity and concurrent admissions merge
 as peers. Do not lower it with a whole-fragment state-vector diff: that loses
 provenance and can reattribute kept prose. Durable projection and trail actions
 serialize a private scratch document from the committed update, never a warm
-live room that a WebSocket may mutate during serialization. Push completion
-derives its projection from the durable journal at completion time; a prepared
-push commit never carries a Markdown projection or live snapshot.
+live room that a WebSocket may mutate during serialization. Atomic Apply
+records that committed live projection in its own transaction; see [Apply](apply.md).
 
 ## Checkpoints and ingress
 

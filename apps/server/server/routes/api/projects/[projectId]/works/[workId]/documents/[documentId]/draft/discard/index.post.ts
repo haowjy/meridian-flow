@@ -4,7 +4,7 @@ import { defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleDiscardWorkDraftRequest,
-  parseDraftDiscardSelection,
+  parseDraftDiscardItem,
   selectBranchRouteServices,
 } from "../../../../../../../../../../lib/branch-review-route.js";
 
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     userId: user.userId,
-    request: parseDraftDiscardSelection(await readBody(event)),
+    request: parseDraftDiscardItem(await readBody(event)),
   });
   event.res.status = result.httpStatus;
   return result.body;

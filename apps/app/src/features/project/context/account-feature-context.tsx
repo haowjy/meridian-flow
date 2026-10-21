@@ -29,6 +29,8 @@ import type { ProjectContextAvailabilityCoordinator } from "./project-context-av
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 import type { RemovedNoticeStore } from "./removed-notice-store";
 
+const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
+
 const AccountEpochContext = createContext<AbortSignal | null>(null);
 const AccountIdContext = createContext<string | null>(null);
 
@@ -175,7 +177,9 @@ function AccountFeatureProviders({
                 <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
-                      {children}
+                      <DraftCommandsContext.Provider value={lifetime.draftCommands}>
+                        {children}
+                      </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
                 </RemovedNoticesAccountContext.Provider>
@@ -310,4 +314,10 @@ export function useAccountId(): string {
  */
 export function useOptionalAccountEpochSignal(): AbortSignal | null {
   return useContext(AccountEpochContext);
+}
+
+export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] {
+  const owner = useContext(DraftCommandsContext);
+  if (!owner) throw new Error("AccountFeatureComposition is required");
+  return owner;
 }

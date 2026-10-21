@@ -221,9 +221,6 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
  * and threads. `deleteDrizzleRows` adds their dependents.
  */
 export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
-  schema.branchPushOutboxUpdates,
-  schema.branchPushSettlementOutbox,
-  schema.branchPushSettlementBatches,
   schema.changeTrailDeliveryOutbox,
   schema.changeTrailDocumentDetails,
   schema.changeTrailDocumentOccurrences,

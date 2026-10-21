@@ -26,8 +26,7 @@ client.
 ### `DocumentCoordinator` (`src/ports/document-coordinator.ts`)
 
 `readRoom(docId, staged, access)` is every model call's read: a disposable
-copy of the room the host holds (`doc`, the `room` label it read, its
-`generation`), with the edit scope's staged entries reconciled against the
+copy of the room the host holds (`doc` and the stable `room` label it read), with the edit scope's staged entries reconciled against the
 scope's first-stage snapshot cut. The host answers which entries it `kept`
 (applied to the copy) and which it `rejected`, with reasons; a rejected entry
 leaves the scope and never reappears. A live host reads without taking the
@@ -68,10 +67,11 @@ whenever entries were kept. A draft host's append is finalized under the draft
 row lock against the committed prefix, which is its cut and what
 `finalizeAppend` judges the precondition on; a fully contained append's before
 and after are both that prefix. Neither host fences a WebSocket transport from
-this port: nothing applies to a live room inside a transaction (LOCK-WS, collab
-`websocket-concurrency.md`). An ordinary CRDT write commits as an unfenced
+this port: nothing applies to a live room inside a transaction. See the
+[WebSocket concurrency contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md). An ordinary CRDT write commits as an unfenced
 append. Whole Discard
-retires only the addressed peer/document epoch. A host's response-attempt
+retires only the addressed peer/draft identity; it never transfers a staged
+write to a replacement draft. A host's response-attempt
 surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
 once, from `integration.ts`.
 

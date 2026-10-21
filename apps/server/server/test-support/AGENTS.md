@@ -46,10 +46,10 @@ consumers. Do not regenerate historical fixture bytes with current writers.
 Branch-tree suites build one world per case: `branch-tree-seeds.ts` writes rows the
 way the product leaves them (no runtime); `branch-tree-commands.ts` drives the
 composed runtime (model replies, the writer's route cores, readers' ports,
-review commands: `review`, `apply` and `applyAll` call the review route cores
-with the tokens their items rendered, `discard` the per-document Discard or Discard
+review commands: `review` calls the list route core; the old settlement Apply verbs are deleted; lane A restores atomic Apply coverage.
+`discard` calls the per-document Discard or Discard
 all, `purge` deletes the Work, ages it past the cutoff and runs the purge sweep;
-readers such as `view(...).text`, `liveMeaning` and `batchStates`);
+readers such as `view(...).text`, `liveMeaning` );
 `branch-tree-scenario.ts` joins the two, and `branch-tree-suite.ts` is the committing
 describe block those suites share.
 Assert through these verbs (what the writer or a reader sees), not raw tables. Seed only states the

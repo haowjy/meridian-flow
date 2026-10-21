@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 export type ReviewStateProps = {
   finished: boolean;
   /** The draft is open and lists no change: what remains is handled by Apply draft or Discard draft. */
-  unlisted?: boolean;
+
   /** The last change's command is in flight: nothing is finished yet. */
   completing?: "apply" | "discard" | null;
   next: ReviewFileTarget | null;
@@ -30,7 +30,7 @@ export function ReviewStatusContent({
     );
   }
   if (finished) return <Trans>No changes left</Trans>;
-  return <Trans>Formatting changes remain</Trans>;
+  return <Trans>No changes left</Trans>;
 }
 
 export function ReviewNextAction({

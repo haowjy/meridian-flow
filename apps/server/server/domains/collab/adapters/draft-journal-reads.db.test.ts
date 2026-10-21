@@ -6,7 +6,7 @@ import {
   closeDatabase,
   runInDrizzleTransaction,
 } from "../test-support/change-trail-postgres-harness.js";
-import { createDrizzleDraftJournalReadStore } from "./drizzle-branch-push.js";
+import { createDrizzleDraftReplayJournalReads } from "./drizzle-draft-journal-reads.js";
 
 const { createDb } = await import("@meridian/database");
 
@@ -16,11 +16,11 @@ describe("draft journal reads (Postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   it("attribution's concurrent-row read uses the save transaction's connection", async () => {
-    const reads = createDrizzleDraftJournalReadStore(db);
+    const reads = createDrizzleDraftReplayJournalReads(db);
     const outcome = await runInDrizzleTransaction(db, () =>
       Promise.race([
         reads
-          .listConcurrentJournalRows("00000000-0000-4000-8000-0000000008f1", 0, {
+          .listConcurrentJournalRows("00000000-0000-4000-8000-0000000008f1", {
             documentId: ALPHA_ID as DocumentId,
           })
           .then(() => "served"),

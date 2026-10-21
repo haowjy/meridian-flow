@@ -9,7 +9,7 @@ export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export type { Branches } from "./domain/branches.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
-export { DraftPrefixMissingError } from "./domain/draft-store.js";
+export { DraftPrefixMissingError, DraftStaleUpdateError } from "./domain/draft-store.js";
 export {
   type BindHolder,
   type BindMarkdownInput,

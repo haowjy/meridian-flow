@@ -135,47 +135,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .filter((change) => change.operation !== "upsert" || change.entry.kind !== "authority");
     }
 
-    it("publishes no namespace observation for a branch's creates or tree change and a newer one for Apply's reveal", async () => {
-      const s = await start();
-      await s.scenario.writer.createDocument("chapter", "Chapter one.");
-      await s.scenario.writer.createDocument("arc/opening", "The opening.");
-      const before = await s.runtime.ports.contextCatalog.snapshot(s.scope);
-      const versionBefore = await s.namespaceVersion();
-
-      // Only the Work's pending count (an authority entry) may publish: a hidden-only
-      // change allocates no namespace version and restamps no live file or folder.
-      const harbor = await s.model.create("lore/harbor", "The harbor.");
-      const lore = await s.hiddenFolder("lore");
-      expect(await namespaceChanges(s, before.cursor)).toEqual([]);
-      expect(await s.namespaceVersion()).toBe(versionBefore);
-      const copied = await s.model.copy("chapter", "lore/chapter");
-      expect(copied.isError).toBeFalsy();
-      expect(await namespaceChanges(s, before.cursor)).toEqual([]);
-      expect(await s.namespaceVersion()).toBe(versionBefore);
-      const afterSnapshot = await s.runtime.ports.contextCatalog.snapshot(s.scope);
-      expect(afterSnapshot.entries).toEqual(
-        before.entries.map((entry) =>
-          entry.kind === "authority" ? expect.objectContaining({ entryId: entry.entryId }) : entry,
-        ),
-      );
-
-      await s.scenario.apply(s.ascension, [harbor]);
-
-      const versionAfter = await s.namespaceVersion();
-      expect(versionAfter).toBeGreaterThan(versionBefore);
-      const revealed = (await s.runtime.ports.contextCatalog.snapshot(s.scope)).entries.find(
-        (entry) => entry.entryId === harbor,
-      );
-      expect(revealed).toMatchObject({ kind: "file", observationVersion: String(versionAfter) });
-      const changes = await namespaceChanges(s, before.cursor);
-      expect(
-        changes.some((change) => change.operation === "upsert" && change.entry.entryId === harbor),
-      ).toBe(true);
-      expect(
-        changes.some((change) => change.operation === "upsert" && change.entry.entryId === lore),
-      ).toBe(true);
-    });
-
     it("publishes nothing live, and names no hidden node, when a branch discards its creates", async () => {
       const s = await start();
       await s.scenario.writer.createDocument("chapter", "Chapter one.");

@@ -108,7 +108,6 @@ it.each([
         Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
         await view.draftCoordinator.commitWriterUpdate({
           draftId: documentDraft.id,
-          expectedGeneration: documentDraft.generation,
           updateData: change(doc),
           actorUserId: USER_ID,
           roomDocument: doc,

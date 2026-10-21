@@ -1,13 +1,27 @@
 /** Live→Work draft pulls (debounced and at tool boundaries), and a thread peer's identity step. */
 
-import { isDocumentNotFoundError, type RetiredWriteReason } from "@meridian/agent-edit/integration";
+import {
+  blocksEqual,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+  rebase,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
+import {
+  type DocumentCoordinator,
+  isDocumentNotFoundError,
+  type RetiredWriteReason,
+  type UpdateJournal,
+} from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DocumentRemovals } from "../../context/ports/document-removal.js";
 import type { Branches } from "./branches.js";
 import { closedPinReason } from "./closed-pin-reason.js";
-import type { DraftCoordinator, PullOutcome } from "./draft-coordinator.js";
+import type { DraftCoordinator } from "./draft-coordinator.js";
 import { DraftCasConflictError, type DraftSnapshot, DraftStaleUpdateError } from "./draft-store.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
@@ -23,20 +37,13 @@ export type WorkDraftLookup = {
   }): Promise<{ documentDraft: Pick<DraftSnapshot, "draftId" | "upstreamDraftId"> }>;
 };
 
+export type EnsuredThreadPeer = { peerDraftId: string; upstreamDraftId: string };
+
 export type DraftPullService = {
   scheduleLivePull(documentId: DocumentId): void;
   /** Drops debounced pulls that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  /**
-   * Live merged into one work draft, answered for that draft: the projection job's way to
-   * establish a legacy draft's baseline (design §3.3). Deleted with the null-baseline arm.
-   */
-  pullWorkDraft(input: { documentId: DocumentId; draftId: string }): Promise<PullOutcome>;
-  /**
-   * A draft-mode write's thread peer (identity only, until M4): an existing active peer on
-   * the branch, or a new one forked from the Work draft. Never reads or merges content.
-   */
   ensureThreadPeer(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -44,15 +51,10 @@ export type DraftPullService = {
   }): Promise<EnsuredThreadPeer>;
 };
 
-export type EnsuredThreadPeer = {
-  peerDraftId: string;
-  upstreamDraftId: string;
-};
-
 /**
- * A draft-mode call whose bound peer lost to a Discard after its ensure (a stale, CAS-lost,
- * closed or missing peer, Work draft or branch), carrying the peer and upstream it had bound so
- * a caller can say which one went. Any other failure is not wrapped.
+ * A thread-peer pull whose draft operations lost to a Discard (stale, CAS-lost, closed or missing
+ * draft, or an upstream closed after its read), carrying the peer and upstream it had
+ * captured so a caller can say which one went. Any other failure of the pull is not wrapped.
  */
 export class ThreadPeerPullLost extends Error {
   constructor(
@@ -116,6 +118,7 @@ export function createDraftPullService(input: {
   drafts: WorkDraftLookup;
   debounceMs?: number;
   maxDebounceMs?: number;
+  liveJournal: Pick<UpdateJournal, "read">;
   diagnostics?: DraftPullDiagnostics;
 }): DraftPullService {
   const debounceMs = input.debounceMs ?? 2000;
@@ -156,33 +159,74 @@ export function createDraftPullService(input: {
     return doc;
   }
 
-  /**
-   * Whether a pending settlement on the document fenced any draft's pull (the one outcome
-   * that re-arms, D20); `blocked` and `closed` drafts are done until something
-   * new arrives.
-   */
-  async function pullLive(documentId: DocumentId): Promise<{ fenced: boolean }> {
-    // Most documents have no Work draft; skip the snapshot (a room open and
-    // release) for them. Re-list before pulling: a draft can close in
-    // between, and one opened since waits for the next pull.
-    if ((await input.drafts.listActiveWorkDraftIds(documentId)).length === 0)
-      return { fenced: false };
-    // Snapshot before any transaction opens: the snapshot takes its own connection,
-    // and taking it while holding another lets concurrent pulls hold every pooled
-    // connection and wait on each other forever.
-    const liveDoc = await liveSnapshot(documentId);
-    let fenced = false;
+  const schema = buildDocumentSchema();
+
+  async function committedLive(documentId: DocumentId): Promise<Y.Doc> {
+    const cut = await input.liveJournal.read(documentId);
+    const doc = new Y.Doc({ gc: false });
     try {
-      // One draft at a time, each attempt its own root transaction (decision D13). A pull
-      // folds the frames that commit meanwhile; nothing waits on it.
-      for (const draftId of await input.drafts.listActiveWorkDraftIds(documentId)) {
-        const outcome = await input.draftCoordinator.pullFromDoc({ draftId, upstream: liveDoc });
-        if (outcome === "fenced") fenced = true;
+      if (cut.checkpoint) Y.applyUpdate(doc, cut.checkpoint);
+      for (const row of cut.updates) Y.applyUpdate(doc, row.update);
+      return doc;
+    } catch (cause) {
+      doc.destroy();
+      throw cause;
+    }
+  }
+
+  async function pullLive(documentId: DocumentId): Promise<void> {
+    const drafts = await input.drafts.listActiveWorkDraftIds(documentId);
+    if (!drafts.length) return;
+    const live = await committedLive(documentId);
+    try {
+      const blocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+      for (const draftId of drafts) {
+        const base = await input.draftCoordinator.loadBase(draftId);
+        if (base.snapshot.status !== "active") continue;
+        if (
+          blocksEqual(
+            readBlocks(base.replica.doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+            blocks,
+          )
+        )
+          continue;
+        const write = input.draftCoordinator.prepareAppend(base, [], {
+          work: "any",
+          async authorServerRows(prefix) {
+            // A committed Apply in this prefix also committed its live row. Read live after
+            // the draft lock, without taking live's lock or importing any of its Yjs identity.
+            const current = await committedLive(documentId);
+            try {
+              const nextBase = readBlocks(
+                current.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                schema,
+              );
+              const reviewBase = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+              const oldBase = readBlocks(reviewBase, schema);
+              if (blocksEqual(oldBase, nextBase)) return [];
+              const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+              const merged = rebase(schema, oldBase, nextBase, readBlocks(fragment, schema));
+              return captureMutationUpdates(prefix, () =>
+                prefix.transact(() => {
+                  writeBlocks(fragment, schema, merged.blocks);
+                  writeBlocks(reviewBase, schema, nextBase);
+                }),
+              );
+            } finally {
+              current.destroy();
+            }
+          },
+        });
+        try {
+          await write.persist();
+          await write.transfer();
+        } finally {
+          write.dispose();
+        }
       }
     } finally {
-      liveDoc.destroy();
+      live.destroy();
     }
-    return { fenced };
   }
 
   async function run(documentId: DocumentId): Promise<void> {
@@ -203,19 +247,13 @@ export function createDraftPullService(input: {
     const entry = current ?? {};
     const running = outsideCallerTransactions(() =>
       pullLive(documentId)
-        .then(({ fenced }) => {
+        .then(() => {
           // A queued snapshot may include newer edits; its retries still need these timers.
           if (entry.queued) return;
           if (entry.debounce) clearTimeout(entry.debounce);
           if (entry.max) clearTimeout(entry.max);
           entry.debounce = undefined;
           entry.max = undefined;
-          // Decision D20: a settlement's completion schedules no pull, so a fenced pull re-arms
-          // its debounce, one capture and merge per period, until the settlement completes or
-          // is withdrawn and the next run commits. Only `fenced` (a pending settlement)
-          // re-arms: a terminally `blocked` one never lifts by itself (D22), and a closed
-          // draft leaves the active list, so neither keeps the timer alive.
-          if (fenced) armDebounce(documentId, entry);
         })
         .finally(() =>
           outsideCallerTransactions(() => {
@@ -267,17 +305,6 @@ export function createDraftPullService(input: {
 
     flushLivePull(documentId) {
       return run(documentId);
-    },
-
-    pullWorkDraft({ documentId, draftId }) {
-      return outsideCallerTransactions(async () => {
-        const liveDoc = await liveSnapshot(documentId);
-        try {
-          return await input.draftCoordinator.pullFromDoc({ draftId, upstream: liveDoc });
-        } finally {
-          liveDoc.destroy();
-        }
-      });
     },
 
     ensureThreadPeer(inputPeer) {

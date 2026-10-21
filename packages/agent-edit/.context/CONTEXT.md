@@ -23,6 +23,8 @@ Read the page that owns the seam you are changing:
 Deferred work remains in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
 alternatives live in [ALTERNATIVES.md](ALTERNATIVES.md).
 
+- [Diff review](diff-review.md) — pure text review, composition, rebase and local Discard.
+
 ## Host revision identity
 
 The required `DocumentLinksPort.revision(doc, scope)` identifies the exact
@@ -34,7 +36,7 @@ without proof of the original apply state, returns null.
 ## Pinned reconstruction adapter
 
 The browser-safe package subpath `@meridian/agent-edit/yjs-mutation` exports only
-`src/yjs-mutation.ts`. It owns the Yjs 13.6.31 retained-struct lookup, root/nested
+`src/yjs-mutation.ts`. It owns the Yjs 13.6.31 retained/decoded-struct lookup, clock-ordered text splitting, root/nested
 parent resolution, fresh-item integration and tombstone splitting/transfer.
 The dependency is exactly pinned in package.json. Recovery and forward-inverse
 hosts choose operations, supply identity mapping and own transaction/lifecycle

@@ -21,7 +21,7 @@ edited or created, as soon as the reply finishes. Apply and Discard never create
 or change it, and Undo never erases its turn-owned record. Pending draft lineage
 shows the same “Edited N documents” card before Apply.
 
-This checkout diverges for created documents ([#843][issue-843], fix planned):
+Created-document counts currently violate that contract ([#843][issue-843]):
 the count reads edit targets that resolve to a live address, and a document the
 reply created in a draft has none until Apply reveals it. A reply that only
 creates draft documents shows no card until Apply makes one appear. Settled live trails
@@ -30,7 +30,7 @@ add retained Before/After excerpts; pending draft rows name the edited files.
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
 is not counted as an edit and offers no Undo. Undoing a text copy reverses its
-staged create and leaves an empty document, the same as undoing any create
+staged create content and leaves the created document empty
 (document delete is not in the tool surface); the receipt shows it as undone
 and the document stays openable.
 
@@ -46,7 +46,7 @@ unavailable outcome with HTTP 200. The mutation invalidates the turn query,
 expands the receipt, and retains the returned reason while refreshed lineage
 withdraws the action. Do not reduce the result to transport success or clear the
 local reason merely because the refreshed control becomes `view_change`; both
-recreate click-and-nothing.
+hide the semantic refusal after a successful HTTP response.
 
 Every refusal is visible, and the receipt's reason line is where it shows.
 Copy covers the whole wire status union through an exhaustive switch that fails
@@ -61,11 +61,13 @@ Undo reverses the turn's remaining edits where they are now: pending in the
 Work's document drafts or already applied to live. Draft and live writes remain one atomic
 command. The receipt immediately shows Undoing/Redoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
-Pending Undo preserves its generation so Redo can restore it. Review Discard is
-terminal, not Undo: discarded rows never authorize Redo even while other changes
-keep the draft open. Apply/Discard generation resets withdraw old draft
-authority without affecting applied live authority. The server's existing
-dependency and archived-Work guards still apply.
+Inverse eligibility comes from the inverse kernel's identity classification.
+The derived applied/pending/discarded disposition chooses a skipped part's copy,
+never grants or refuses Redo; in particular, the model's own Undo must remain
+redoable when the kernel allows it. Review text Discard is a separate local
+edit in the same stable room, not receipt Undo or a generation reset. Terminal
+closure retires that draft identity without changing committed live authority.
+Dependency and archived-Work guards still apply.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review
