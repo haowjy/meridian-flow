@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Compaction can keep a document section or block range open instead of the whole file. Missing selections retry a whole-file read; partial reads never stand in for unseen text.
+- Compaction re-reads documents with ordinary read arguments, including sections, ranges, outlines and versions. Failed reads are omitted without widening scope; partial reads never stand in for unseen text.
 - File-tree guides stay visible over highlights, including expanded Manuscript. Standalone file lists use less indentation; sidebar action hover matches page behavior.
 
 - AI may update shared Scratch with up to three tool calls before automatic compaction. The compaction summary carries continuation context; no handoff file or per-chat folders. Unexecuted calls stay marked as not run.

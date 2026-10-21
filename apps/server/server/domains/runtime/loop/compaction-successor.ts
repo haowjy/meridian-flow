@@ -1,4 +1,5 @@
 /** Retry-local compaction values and the reusable placeholder completion transaction. */
+import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, Thread, Turn } from "@meridian/contracts/threads";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -28,8 +29,8 @@ import {
   chooseImportantFiles,
   documentsSection,
   importantFileCandidates,
-  importantFileLabel,
   parseImportantFiles,
+  readInputLabel,
   reshowBudgetTokens,
 } from "./compaction/important-files.js";
 import { estimateRequestTokens, type ProjectedActiveHistory } from "./compaction/index.js";
@@ -152,7 +153,7 @@ async function reshowImportantFiles(args: {
     candidates,
     budgetTokens: args.budgetTokens,
     tokenizer: args.tokenizer,
-    read: async (reference, selector) => {
+    read: async (reference, readInput) => {
       args.assertNoResponseScope();
       input.signal?.throwIfAborted();
       try {
@@ -161,7 +162,7 @@ async function reshowImportantFiles(args: {
           turnId: placeholder.id,
           ...(input.signal ? { signal: input.signal } : {}),
           recordingFrontier: async () => null,
-          ...(selector ? { selector } : {}),
+          input: readInput,
         });
         input.signal?.throwIfAborted();
         return read.evidence ? { ...read, text: referenceReadText(read.result) } : null;
@@ -179,7 +180,7 @@ async function reshowImportantFiles(args: {
       }
     },
   });
-  const blocks = kept.map(({ reference, selector, read }, index) =>
+  const blocks = kept.map(({ reference, input: readInput, read }, index) =>
     contentForBlockInput({
       turnId: placeholder.id,
       blockType: "text",
@@ -187,7 +188,7 @@ async function reshowImportantFiles(args: {
       status: "complete",
       content: {
         ...reference,
-        read: { result: read.result, revision: read.revision, ...(selector ? { selector } : {}) },
+        read: { result: read.result, revision: read.revision, input: readInput },
       },
     }),
   );
@@ -202,11 +203,18 @@ async function reshowImportantFiles(args: {
       ),
     },
     fullyReshownDocumentIds: new Set(
-      kept.filter(({ selector }) => !selector).map(({ reference }) => reference.documentId),
+      kept
+        .filter(
+          ({ input }) =>
+            input.in === undefined &&
+            input.around === undefined &&
+            input.version === undefined &&
+            (input.format === undefined || input.format === "full") &&
+            splitDocumentFile(input.path).fragment === undefined,
+        )
+        .map(({ reference }) => reference.documentId),
     ),
-    labels: kept.map(({ reference, selector }) =>
-      importantFileLabel({ uri: reference.uri, selector }),
-    ),
+    labels: kept.map(({ input }) => readInputLabel(input)),
   };
 }
 

@@ -189,18 +189,22 @@ function CompactionDocument({ document }: { document: DividerDocument }) {
       Icon={BookOpen}
       quietIcon
       title={<CommandTitle verb={t`Read`} parameter={<DocumentName path={document.uri} />} />}
-      expand={() => (
-        <ClippedProse
-          className="text-tier-quoted"
-          footer={
-            <span className="flex min-w-0 text-meta">
-              <DocumentName path={document.uri} label="open" />
-            </span>
-          }
-        >
-          <Markdown variant="compact">{document.body}</Markdown>
-        </ClippedProse>
-      )}
+      expand={
+        document.body
+          ? () => (
+              <ClippedProse
+                className="text-tier-quoted"
+                footer={
+                  <span className="flex min-w-0 text-meta">
+                    <DocumentName path={document.uri} label="open" />
+                  </span>
+                }
+              >
+                <Markdown variant="compact">{document.body}</Markdown>
+              </ClippedProse>
+            )
+          : undefined
+      }
     />
   );
 }

@@ -1621,7 +1621,8 @@ else
       expect((await rig.repos.blocks.listByTurn(tail[1].id))[0].content).toMatchObject({
         props: {
           excludedTurnCount: 3,
-          summary: "The earlier scene is complete.\n\n## Documents to keep open\n- kb://notes",
+          summary:
+            'The earlier scene is complete.\n\n## Documents to keep open\n- {"path":"kb://notes"}',
         },
       });
       expect(rig.summarizer.calls).toHaveLength(1);
