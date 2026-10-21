@@ -76,7 +76,7 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   return { ...work, documentId, draftId: documentDraft.draftId };
 }
 
-function inverseService(harness: Harness, label: string) {
+function inverseService(harness: Harness, handle: string) {
   return createDrizzleTurnInverseService({
     onDraftCommitted: () => {},
     db: harness.db,
@@ -92,9 +92,10 @@ function inverseService(harness: Harness, label: string) {
         }
       },
       recover: async () => {},
+      deliver: async () => {},
     } as never,
     draftCoordinator: { async deliverCommitted() {} },
-    resolveDocumentUri: async () => `@${label}/probe.md`,
+    resolveDocumentUri: async () => `scratch://@${handle}/probe.md`,
     refreshDocument: async () => {},
     flushLivePull: async () => {},
     notices: { record: async () => {} },
@@ -161,7 +162,7 @@ export const d22ConcurrentUndo: Probe = {
     }
     {
       const seeded = await seedModelDraftWrite(harness, "two-undo-draft");
-      const inverse = inverseService(harness, "two-undo-draft");
+      const inverse = inverseService(harness, seeded.handle);
       const undo = () =>
         inverse.modelInverse(
           {
