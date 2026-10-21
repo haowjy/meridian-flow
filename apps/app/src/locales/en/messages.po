@@ -237,10 +237,6 @@ msgstr "{count, plural, one {# document discarded} other {# documents discarded}
 msgid "{count, plural, one {# document removed} other {# documents removed}}"
 msgstr "{count, plural, one {# document removed} other {# documents removed}}"
 
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "{count, plural, one {# file} other {# files}}"
-#~ msgstr "{count, plural, one {# file} other {# files}}"
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr "{count, plural, one {# match} other {# matches}}"
@@ -2210,14 +2206,6 @@ msgstr "File this document"
 msgid "Files"
 msgstr "Files"
 
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "Files attached in this chat, {count}"
-#~ msgstr "Files attached in this chat, {count}"
-
-#: src/features/chat/ChatUploadsMenu.tsx
-#~ msgid "Files in this chat"
-#~ msgstr "Files in this chat"
-
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
 msgstr "Filter subagents"
@@ -3013,10 +3001,6 @@ msgstr "No messages yet."
 msgid "No model"
 msgstr "No model"
 
-#: src/features/project/context/use-catalog-menu-source.ts
-#~ msgid "No notes yet. The AI keeps its notes for this chat here."
-#~ msgstr "No notes yet. The AI keeps its notes for this chat here."
-
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr "No plans available."
@@ -3072,10 +3056,6 @@ msgstr "Not reported"
 #: src/features/chat/ToolRow.tsx
 msgid "Not run before compaction"
 msgstr "Not run before compaction"
-
-#: src/features/chat/ToolRow.tsx
-#~ msgid "Not run during the notes step"
-#~ msgstr "Not run during the notes step"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Not saved yet (keep this tab open until you're back online)"

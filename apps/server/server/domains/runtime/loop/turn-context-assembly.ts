@@ -173,7 +173,7 @@ export async function composeLivePromptBake(
 }
 
 /** Resolved inputs can be rendered again without reads or image decisions. */
-export interface PreparedNextTurnContext
+interface PreparedNextTurnContext
   extends Omit<AssembledNextTurnContext, "tools" | "generateRequest"> {
   advertisedTools: Tool[];
   promptCacheKey: ThreadId;
