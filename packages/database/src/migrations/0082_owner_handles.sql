@@ -1,3 +1,5 @@
+-- REQUIRES ALL WRITERS STOPPED (old and new release) from before 0082 until 0083 completes;
+-- a chat created mid-cutover breaks the next chat's handle. See packages/database/.context/CONTEXT.md.
 -- Metadata-only expansion. Population-dependent work belongs to 0083, after this
 -- transaction releases its ACCESS EXCLUSIVE lock. Historical address text is not rewritten.
 SET LOCAL lock_timeout = '2s';
