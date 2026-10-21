@@ -115,8 +115,8 @@ transaction: shown links, and a frontier chained from nothing (a fresh chain). A
 document that cannot be read is skipped with a warning
 (`important_file.read_failed`); it never fails the compaction. Assembly runs
 once without them to size the budget and fail early, then once with them: that
-second pass measures `tokensAfter` with the final summary, including any
-not-re-shown note, even when no documents fit.
+second pass measures `tokensAfter` with the final summary, even when no
+documents fit.
 A retried successor preparation reads again; only the completing attempt's
 blocks and evidence persist.
 
