@@ -4,7 +4,7 @@ import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
-import type { JsonValue } from "../threads/index.js";
+import type { JsonObject, JsonValue } from "../threads/index.js";
 
 export type ReferenceOccurrence = {
   type: "reference";
@@ -127,30 +127,9 @@ export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message" | "w
 
 export type UserTurnAdmissionResult = Exclude<AdmissionLookup, { kind: "not-seen" }>;
 
-/** The read tool's supported keep-open selection, independent of document identity. */
-const selectorEndpoint = z.union([
-  z.string().regex(/^[0-9a-f]{4,}$/iu),
-  z.number().int().positive().safe(),
-]);
-export const referenceReadSelectorSchema = z.union([
-  z
-    .object({
-      fragment: z
-        .string()
-        .min(1)
-        .regex(/^[^#\s]+$/u),
-    })
-    .strict(),
-  z
-    .object({ in: z.union([selectorEndpoint, z.tuple([selectorEndpoint, selectorEndpoint])]) })
-    .strict(),
-]);
-
-export type ReferenceReadSelector = z.infer<typeof referenceReadSelectorSchema>;
-
-/** Server-generated snapshot; never accepted in a submitted reference. */
+/** Server-generated snapshot; input is validated before execution, then display-only JSON on replay. Never accepted in a submitted reference. */
 export type ReadReferenceOccurrence = ReferenceOccurrence & {
-  read?: { result: JsonValue; revision: string | null; selector?: ReferenceReadSelector };
+  read?: { result: JsonValue; revision: string | null; input?: JsonObject };
 };
 
 export function referenceOccurrenceContent(block: {
@@ -187,8 +166,9 @@ export function referenceOccurrenceContent(block: {
       !read ||
       typeof read !== "object" ||
       Array.isArray(read) ||
-      Object.keys(read).filter((key) => key !== "selector").length !== 2 ||
-      ("selector" in read && !referenceReadSelectorSchema.safeParse(read.selector).success) ||
+      Object.keys(read).filter((key) => key !== "input").length !== 2 ||
+      ("input" in read &&
+        (!read.input || typeof read.input !== "object" || Array.isArray(read.input))) ||
       !("result" in read) ||
       read.result === undefined ||
       !("revision" in read) ||

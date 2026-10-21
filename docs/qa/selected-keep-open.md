@@ -1,105 +1,100 @@
-# Selected keep-open reads after compaction
+# Ordinary read arguments after compaction
 
-- **Protects:** selected re-show scope, fresh frontier credit, whole-only tail
-  duplicate elision, fallback, ranking and exact pricing. This extends RP-4; it does not replace its lifecycle checks.
-- **Setup:** use the owned mock stack, Agent and `compact` helper from
-  [RP-4](runtime-probes.md#rp-4-proactive-autocompaction-and-byte-stable-continuation). Keep
-  raw captures outside synced work artifacts (for example `E=/tmp/keep-open-probe`).
-  Seed at least three heading sections and 100 numbered paragraphs. Use the
-  canonical `uri` returned by `doc put`, not its display filename (`.md` is
-  normally omitted). Ordinary tool arguments use `path`, not `file`.
+- **Protects:** one read contract across tool calls and compaction, selected observation
+  credit, whole-only duplicate elision, ranking and exact pricing. Extends
+  [RP-4](runtime-probes.md#rp-4-proactive-autocompaction-and-byte-stable-continuation),
+  not its lifecycle coverage.
+- **Setup:** owned mock stack, private Agent and `compact` helper from RP-4.
+  Keep raw captures outside the synced work directory, for example
+  `E=/tmp/read-arguments-probe`. Seed Arrival, The Duel and Departure plus enough
+  paragraphs for range and budget cases. Use the canonical URI from `doc put`.
+  Read the document in a chat, then send another writer/reply pair.
 
   ```bash
-  python3 - <<'PY' > "$E/chapter.md"
-  print('# Arrival\n\nOUTSIDE arrival.\n\n# The Duel\n\nDUEL selected body.\n\n# Departure\n\nOUTSIDE departure.')
-  print('\n\n'.join(f'Numbered paragraph {i} distinctive.' for i in range(1, 101)))
-  PY
-  ./mf doc put manuscript://SelectorProbe.md --text @"$E/chapter.md" --json > "$E/doc.json"
-  URI=$(jq -r .uri "$E/doc.json")
-  ./mf thread send "$T" 'Read the whole chapter.' --mock \
-    "[{\"toolCalls\":[{\"name\":\"read\",\"args\":{\"path\":\"$URI\"}}]},{\"text\":\"Read complete.\"}]" --json > "$E/read.ndjson"
-  ./mf thread send "$T" 'Keep the full copy in the tail.' --ref "$URI" \
-    --mock '[{"text":"Tail complete."}]' --json > "$E/tail.ndjson"
-  # Manual compaction has no notes step and need not reserve an assistant continuation.
-  jq -n --arg uri "$URI" '[{text:("## Objective\nContinue revising.\n\n## Documents to keep open\n"+$uri+"#the-duel")}]' > "$E/summary.json"
+  # The summary contains ordinary read arguments, not a new selector notation.
+  jq -n --arg uri "$URI" '[{text:("## Objective\nContinue revising.\n\n## Documents to keep open\n"+({path:$uri,in:[3,4]}|tojson))}]' > "$E/summary.json"
   ./mf mock script @"$E/summary.json" --json
-  compact > "$E/compact.json"
-  # Poll snapshot until THIS control's C completes; do not accept an older complete C.
+  compact > "$E/control.json"
+  # Poll for THIS control's completed compaction, not an older completed turn.
   ./mf api GET "/api/threads/$T/snapshot" --json > "$E/snapshot.json"
-  ./mf thread send "$T" 'Continue after selected compaction.' \
+  ./mf thread send "$T" 'Continue after the selected read.' \
     --mock '[{"text":"Selected continuation."}]' --json > "$E/continue.ndjson"
   ./mf thread context "$T" --all --view raw --json > "$E/requests.json"
-  eval "$(pnpm exec tsx tools/dev/print-worktree-env.ts)"
-  tools/qa/probes/observation-frontiers.sh "$T" > "$E/frontiers.txt"
   ```
 
-- **Heading/full tail/M2:** C contains one reference `read.selector.fragment`
-  `the-duel`, only the heading and its body. The actual successor request names
-  that selector and keeps the unchanged full tail read; `metadata.elisions`
-  must not mark that identity `reshown`. The C reference frontier has outside
-  block IDs in `unshown`; only its ID is credited for this document, never the
-  retained tail. A fresh null frontier initially has no `changed` listing.
-  After C, insert distinctive writer text in Arrival through the browser editor
-  (a writer Yjs session, not another AI tool). Script a `write replace` outside
-  the selection. Inspect the actual tool result/concurrent listing, receipt and
-  final document: the writer insertion survives. Also target the edge of the
-  selected section: the region includes an unshown neighbour, so the first
-  attempt gets `region_changed` with current region text. Retry the same edit
-  after that response: it lands. This is the owner's region rule, not a selector
-  defect; do not widen credit or bypass it for compaction.
-  Repeat with enough large changed outside blocks that the target falls beyond
-  the concurrent-listing byte cap, exercising unseen-projection planning (M2).
-- **Selectors:** on fresh compactable cycles repeat `in: 4`, `in: 40..95`,
-  `in: "<blockhash>"`, `in: "<startHash>".."<endHash>"`, `#<blockhash>` and
-  `#<headingHash>`, using hashes from the ordinary read. Compare exact bodies
-  and block IDs; the numeric range persists `[40,95]`, not a string. Reload,
-  send again and compare persisted-selector projection to its priced heading.
-- **Fallback/rank:** missing heading/hash and `in: 9000` each retry whole once.
-  A fitting fallback persists no selector and permits whole duplicate elision;
-  failed selections leave no frontier. List two sections for one document, then
-  whole/selected in both orders: exactly one C read, first-ranked wins. Repeat
-  compaction with no list: recent identities are whole, not inherited selectors.
-- **Exact names:** seed names with parentheses and punctuation; list them wrapped
-  in backticks/angles or with list markers. Use the matcher seam for literal
-  ` in: 40..95` or fragment-looking names the real filename grammar rejects.
-  Exact shown filenames win across decoration layers before selector parsing.
-  Unknown near-prefixes/extensions and malformed/mixed selectors stay unknown,
-  never arbitrary document resolution. A literal fragment-looking filename can
-  be checked at the matcher seam if the real filename grammar disallows it.
-- **Budget:** use a second Agent with a lower `autocompact` trigger and a large
-  document containing one tiny heading section. Calibrate with the same
-  `estimateModelPartTokens` and tokenizer: room is
-  `max(0,floor((trigger-base)/2)-1000)`, with all requested selector-bearing
-  keep-open list lines reserved first. Show selected success where whole fails;
-  A missing selector with oversized whole fallback is omitted from the final
-  list, records no frontier, and still allows a later small candidate. Oversized selected successes must not expand to whole. Check zero
-  room, skipped-large then small, and more than three listed identities (no
-  count cap). Exact equality fits, one token less omits; isolate those two
-  arithmetic boundaries in a disposable seam driver if live estimation cannot
-  target them cheaply. Compare the full rendered envelope, selected heading and
-  final `tokensAfter`, never a truncated body.
-- **Automatic/draft:** repeat the heading case under automatic compaction when
-  the stack supports request-derived mock usage. Queue the appropriate optional
-  Scratch responses only if that separate feature is installed, then summary
-  and continuation. The selector feature does not require a Scratch step.
-  Run draft-mode and auto-apply threads: C uses the same effective version as an
-  ordinary read. Capture both a selected C and its next compaction after reload;
-  C10 resets credit each time. Check ordinary mentions and whole keep-open too.
-- **Retry/Stop:** delay the summary, enqueue late writer input and verify only
-  winning preparation blocks/frontiers persist. Stop while summary/preparation
-  is outstanding: cancellation must not become whole fallback or commit late
-  evidence. Use the existing compaction-protocol transaction harness for a
-  precise discarded-read window that the mock cannot hold reliably.
-- **Browser (separate prober):** inspect selected continuation, the compaction divider
-  and concurrent-write receipt, confirm writer text in the editor, reload and
-  take screenshots on these same owned routes. CLI captures do not certify UI.
-- **Evidence:** exact commands and expected/actual results, control UUID, raw C
-  blocks and elisions, request captures, frontier rows, credited IDs, writer
-  mutation and final document. Report unreachable windows explicitly. Stop only
-  this stack with `pnpm dev --stop`; retain fixture IDs for the browser prober.
-This recipe is not a claim that every case passed. Record evidence and any
-unreachable cases in the active work directory.
+## Argument parity
 
-Digit-only hashes: use a real generated hash such as `2194` (Y.Doc client id 2).
-`in: "2194"` must read that hash, while `in: 2194` means position 2194.
-Check `in: "2194"..5` and persisted/replayed labels preserve endpoint types.
+For each case, execute an ordinary `read` tool call and list the identical JSON
+arguments in a fresh compaction cycle. Compare typed results, actual arguments
+saved in `read.input`, the rewritten summary list and next model request.
+
+- `{"path":"manuscript://Chapter#the-duel"}`: the heading and its section only.
+- `{"path":"manuscript://Chapter","in":[7,10]}`: four blocks by position.
+- String hash versus integer position: `"in":"2194"` versus `"in":2194` on
+  a sufficiently large real document with that generated hash. Mixed range
+  endpoints such as `"in":["2194",5]` retain their JSON types.
+- `around` with a hash: the same neighbourhood as an ordinary read.
+- `format: "outline"`: headings only, ordinary outline observation credit.
+- `format: "edits"`, including `before` with a real write handle: the ordinary
+  edits listing, accepted even when it carries no text frontier or shown links.
+- `format: "full"`: same whole-read behaviour as omitting format.
+- `version: "live"` and `version: "draft"`: create different live and Work-draft
+  text, then compare both entry points. Include an explicit retained-draft read
+  from a direct-mode thread; the existing draft-reader grant must still apply.
+- Bare manuscript paths and ordinary `.md` normalization resolve to shown
+  identities. A filename containing ` in: 7..10` remains a JSON path value, not
+  selection syntax. Unknown documents never become arbitrary reads.
+
+## No silent substitution
+
+- A missing heading/hash, invalid position or denied version is omitted, never
+  retried as a whole/default-version read. Include that document among the
+  three recent identities to catch accidental reintroduction by recent ranking.
+- A schema-invalid JSON object with an identifiable shown path (for example
+  both `in` and `around`) also suppresses that identity's recent default.
+  Malformed JSON with no identifiable path is ignored; independent recent
+  selection may still re-show a document. Do not report that as a failed-read
+  fallback.
+- First listed identity wins, even if that read fails or exceeds the budget;
+  later duplicates cannot broaden it. With no listed inputs, recent identities
+  use default `{path}` reads, not arguments inherited from old snapshots.
+- Old plain-URI/`in: 7..10` lines are not accepted as read arguments. There is no
+  compatibility parser.
+
+## Evidence and budget
+
+- Only admitted whole reads with default version may elide full tail copies.
+  Explicit `format: "full"` qualifies; fragments, `in`, `around`, outlines,
+  edits and explicit versions do not. Actual version-specific observation
+  evidence remains unchanged.
+- Selected reads leave outside blocks unshown, even if unchanged full tail
+  copies remain visible. After compaction, type distinctive outside text through
+  the browser editor, then attempt an AI replacement there. Ordinary concurrent
+  text/region-change rules must preserve the writer's change. Selection-edge
+  writes may catch up an unshown neighbour before a subsequent attempt succeeds.
+- The exact JSON input labels the budget wrapper, final list and projected read.
+  Reserve the whole candidate list before admitting results. Check zero room,
+  exact fit, one token too small, skipped-large then small, and an oversized
+  selected success with no widening retry. Use a disposable production-module
+  driver for exact arithmetic when live usage cannot target it reliably.
+- Inspect fresh frontier rows and credited block IDs. Omitted, failed,
+  oversized, cancelled and discarded preparations leave no committed evidence.
+  A successful edits read with empty evidence must still persist its result.
+
+## Lifecycle and browser
+
+- Repeat the heading case under automatic compaction: optional Scratch response,
+  summary with JSON read arguments, resumed reply. Manual and overflow compaction
+  retain their existing bypass behaviour.
+- Delay summary/preparation, enqueue late input, retry and Stop using the RP-4
+  recipe or existing protocol harness. Only the winning completion's snapshots
+  and evidence persist; cancellation is not converted into an omitted read.
+- Independent browser: expand summary and selected/outline Read rows, inspect
+  the returned text, continue, reload and inspect again. A read with no prose
+  must not offer an empty expansion. Confirm writer text remains in the editor.
+  Save screenshots and close owned browser sessions. CLI results are not UI
+  evidence.
+
+Record exact inputs, control and compaction IDs, expected/actual results and
+coverage limits in the active work directory. This recipe is not a claim every
+case passed. Remove temporary drivers and fixtures; stop only the owned stack.
