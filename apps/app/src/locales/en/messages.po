@@ -724,8 +724,8 @@ msgid "Apply all changes"
 msgstr "Apply all changes"
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Apply couldn't finish"
-msgstr "Apply couldn't finish"
+#~ msgid "Apply couldn't finish"
+#~ msgstr "Apply couldn't finish"
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
@@ -1299,12 +1299,12 @@ msgid "Couldn't apply this draft."
 msgstr "Couldn't apply this draft."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't apply this draft. Try again."
-msgstr "Couldn't apply this draft. Try again."
+#~ msgid "Couldn't apply this draft. Try again."
+#~ msgstr "Couldn't apply this draft. Try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't apply. Check your connection and try again."
-msgstr "Couldn't apply. Check your connection and try again."
+#~ msgid "Couldn't apply. Check your connection and try again."
+#~ msgstr "Couldn't apply. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
@@ -1316,8 +1316,8 @@ msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't confirm whether this applied. Check what is left before you try again."
-msgstr "Couldn't confirm whether this applied. Check what is left before you try again."
+#~ msgid "Couldn't confirm whether this applied. Check what is left before you try again."
+#~ msgstr "Couldn't confirm whether this applied. Check what is left before you try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
@@ -1380,12 +1380,12 @@ msgid "Couldn't discard this draft."
 msgstr "Couldn't discard this draft."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't discard this draft. Try again."
-msgstr "Couldn't discard this draft. Try again."
+#~ msgid "Couldn't discard this draft. Try again."
+#~ msgstr "Couldn't discard this draft. Try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't discard. Check your connection and try again."
-msgstr "Couldn't discard. Check your connection and try again."
+#~ msgid "Couldn't discard. Check your connection and try again."
+#~ msgstr "Couldn't discard. Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"

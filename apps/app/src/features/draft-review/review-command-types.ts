@@ -6,4 +6,6 @@ export type ServerRefusal = {
   serverReason?: string;
   removal?: DocumentRemovalRecord;
 };
-export type BranchCommandFailure = { code: string } & ServerRefusal;
+export type BranchCommandFailure = {
+  code: "apply-refused" | "discard-refused" | "discard-unknown" | "review-failed";
+} & ServerRefusal;
