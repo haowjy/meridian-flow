@@ -9,7 +9,7 @@ import {
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
-import { isConversationTurn } from "@meridian/contracts/threads";
+import { isConversationTurn, isNotesStepHeldResult } from "@meridian/contracts/threads";
 import { classifyHistoryItem } from "../../threads/index.js";
 import type { BlockRepository } from "../../threads/ports/repositories.js";
 import { componentHistoryText } from "../loop/component-model-text.js";
@@ -160,12 +160,15 @@ export function describeBlock(input: {
     const isError = result?.isError === true;
     // Rows from before typed results carry only `output`.
     const typed = (result?.result ?? result?.output) as JsonValue | undefined;
+    const held = isNotesStepHeldResult(typed);
     const kind = registration?.historyKind;
     const summary = !result
       ? undefined
-      : isError
-        ? failureCode(typed)
-        : registration?.historySummary?.(args, typed ?? null);
+      : held
+        ? "not run before compaction"
+        : isError
+          ? failureCode(typed)
+          : registration?.historySummary?.(args, typed ?? null);
     return {
       kind: "tool",
       tool: name,
@@ -175,7 +178,7 @@ export function describeBlock(input: {
       open: !result,
       isError,
       args,
-      write: policy?.kind === "write",
+      write: !held && policy?.kind === "write",
       documents,
       ...(result
         ? {
@@ -184,7 +187,7 @@ export function describeBlock(input: {
               (!call || !registration) && !isError
                 ? `[tool result omitted: ${!call ? "call" : "tool"} unavailable]`
                 : stringify(
-                    !isError && policy
+                    !held && !isError && policy
                       ? policy.elide(
                           { input: args, output: result.output as JsonValue, result: typed },
                           documents,

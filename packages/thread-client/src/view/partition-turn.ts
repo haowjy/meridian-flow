@@ -1,20 +1,17 @@
-/** partition-turn — folds an ordered `Block[]` into render items: process folds, prose, reports and artifacts. */
+/** partition-turn — folds normalized delivery segments into render items: process folds, prose, reports and artifacts. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { isArtifactRef } from "@meridian/contracts/interrupt";
-import {
-  type Block,
-  blockContentRecord,
-  blockPlainText,
-  type JsonValue,
-} from "@meridian/contracts/protocol";
+import { type Block, blockPlainText, type JsonValue } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue as ReportContentValue } from "@meridian/contracts/spawn";
-import { isToolDeliveryBlock } from "./block-kind";
+import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import { componentBlockContent } from "./component-block-content";
-import { groupDeliverySegments } from "./group-delivery-segments";
-import { isArtifactBlock } from "./tool-kind";
+import type { DeliverySegment, ToolView } from "./group-delivery-segments";
+import { toolInputObject } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 
-export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
+export type Run =
+  | { kind: "reasoning"; blocks: Block[] }
+  | { kind: "activity"; blocks: Block[]; tools: ToolView[] };
 
 export type RenderItem =
   | { kind: "process"; runs: Run[] }
@@ -22,31 +19,14 @@ export type RenderItem =
   | { kind: "report"; block: Block; report: ReportContentValue }
   | { kind: "artifact"; block: Block };
 
-export function isReasoningBlock(block: Block): boolean {
+function isReasoningBlock(block: Block): boolean {
   return block.blockType === "reasoning" || block.blockType === "thinking";
 }
 
-export function partitionTurn(blocks: Block[]): RenderItem[] {
-  const hidden = hiddenToolCallIds(blocks);
-  const reportCalls = new Set(
-    blocks.flatMap((block) => {
-      if (block.blockType !== "tool_use") return [];
-      const content = blockContentRecord(block);
-      return content.toolName === "return_result" && typeof content.toolCallId === "string"
-        ? [content.toolCallId]
-        : [];
-    }),
-  );
-  // return_result's typed result: `{ ok: true }`, `{ ok: false, message }`,
-  // or an executor error `{ code, message }`.
-  const resultByCall = new Map<string, Record<string, JsonValue>>();
-  for (const block of blocks) {
-    if (block.blockType !== "tool_result") continue;
-    const content = blockContentRecord(block);
-    if (typeof content.toolCallId === "string" && isRecord(content.result)) {
-      resultByCall.set(content.toolCallId, content.result);
-    }
-  }
+export function partitionTurn(
+  segments: DeliverySegment[],
+  hidden: ReadonlySet<string>,
+): RenderItem[] {
   const items: RenderItem[] = [];
   let runs: Run[] | null = null;
 
@@ -54,48 +34,51 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     if (runs && runs.length > 0) items.push({ kind: "process", runs });
     runs = null;
   };
-  const pushProcessBlock = (runKind: Run["kind"], block: Block) => {
+  const pushTool = (tool: ToolView) => {
     if (!runs) runs = [];
     const last = runs[runs.length - 1];
-    if (last && last.kind === runKind) last.blocks.push(block);
-    else runs.push({ kind: runKind, blocks: [block] } as Run);
+    if (last?.kind === "activity") {
+      last.blocks.push(tool.keyBlock);
+      last.tools.push(tool);
+    } else runs.push({ kind: "activity", blocks: [tool.keyBlock], tools: [tool] });
   };
-
-  for (const block of blocks) {
-    if (isToolDeliveryBlock(block)) {
-      const content = blockContentRecord(block);
-      const toolCallId = content.toolCallId;
-      if (block.blockType === "tool_use" && content.toolName === "return_result") {
-        const input = isRecord(content.input) ? content.input : {};
-        const result = typeof toolCallId === "string" ? resultByCall.get(toolCallId) : undefined;
-        flushProcess();
-        items.push({
-          kind: "report",
-          block,
-          report: {
-            summary: typeof input.summary === "string" ? input.summary : "",
-            ...(input.payload === undefined ? {} : { payload: input.payload }),
-            artifacts: Array.isArray(input.artifacts) ? input.artifacts.filter(isArtifactRef) : [],
-            partial: result?.ok === false || content.isError === true,
-            ...(typeof result?.message === "string" ? { reason: result.message } : {}),
-          },
-        });
-        continue;
+  for (const segment of segments) {
+    if (segment.kind !== "block") {
+      const tools = segment.kind === "tool" ? [segment.tool] : segment.tools;
+      for (const tool of tools) {
+        if (
+          tool.keyBlock.blockType === "tool_use" &&
+          tool.toolName === "return_result" &&
+          !isNotesStepHeldResult(tool.result)
+        ) {
+          const input = toolInputObject(tool);
+          const result = isRecord(tool.result) ? tool.result : {};
+          flushProcess();
+          items.push({
+            kind: "report",
+            block: tool.keyBlock,
+            report: {
+              summary: typeof input.summary === "string" ? input.summary : "",
+              ...(input.payload === undefined ? {} : { payload: input.payload }),
+              artifacts: Array.isArray(input.artifacts)
+                ? input.artifacts.filter(isArtifactRef)
+                : [],
+              partial: result.ok === false || tool.isError,
+              ...(typeof result.message === "string" ? { reason: result.message } : {}),
+            },
+          });
+        } else if (!tool.toolCallId || !hidden.has(tool.toolCallId)) pushTool(tool);
       }
-      if (
-        block.blockType === "tool_result" &&
-        typeof toolCallId === "string" &&
-        reportCalls.has(toolCallId)
-      ) {
-        continue;
-      }
-      if (typeof toolCallId === "string" && hidden.has(toolCallId)) continue;
-      pushProcessBlock("activity", block);
       continue;
     }
-
+    const { block } = segment;
     if (isReasoningBlock(block)) {
-      if (hasVisibleReasoningText(block)) pushProcessBlock("reasoning", block);
+      if (hasVisibleReasoningText(block)) {
+        if (!runs) runs = [];
+        const last = runs[runs.length - 1];
+        if (last?.kind === "reasoning") last.blocks.push(block);
+        else runs.push({ kind: "reasoning", blocks: [block] });
+      }
       continue;
     }
 
@@ -110,13 +93,7 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     // transport liveness, not deliverable content.
     if (block.blockType === ("activity" as Block["blockType"])) continue;
 
-    if (isArtifactBlock(block)) {
-      flushProcess();
-      items.push({ kind: "artifact", block });
-      continue;
-    }
-
-    // Unknown non-canonical block: keep it visible rather than folding it away.
+    // Cards, images and unknown blocks remain outside the process fold.
     flushProcess();
     items.push({ kind: "artifact", block });
   }
@@ -135,14 +112,15 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
  * `thread_message` refused before it started has no card, so its failure row
  * stays.
  */
-export function hiddenToolCallIds(blocks: Block[]): Set<string> {
+export function hiddenToolCallIds(segments: DeliverySegment[]): Set<string> {
   const hidden = new Set<string>();
-  for (const block of blocks) {
-    if (block.blockType !== "custom") continue;
+  for (const segment of segments) {
+    if (segment.kind !== "block" || segment.block.blockType !== "custom") continue;
+    const { block } = segment;
     const card = parseInvocationCard(componentBlockContent(block.content));
     if (card) hidden.add(card.toolCallId);
   }
-  for (const segment of groupDeliverySegments(blocks)) {
+  for (const segment of segments) {
     const tools =
       segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
     for (const tool of tools) {

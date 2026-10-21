@@ -10,7 +10,7 @@ import { t } from "@lingui/core/macro";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
-import { ChatUploadsMenu } from "@/features/chat/ChatUploadsMenu";
+import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 
 export type MobileChatSheetHeaderProps = {
   onClose?: () => void;
@@ -35,7 +35,7 @@ export function MobileChatSheetHeader({
     >
       {/* Relative: a refused chat rename floats under the header from here. */}
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">{threadSelect}</div>
-      <ChatUploadsMenu projectId={projectId} threadId={threadId} />
+      <ChatFilesMenu projectId={projectId} threadId={threadId} />
       {onClose ? (
         <div
           className="flex shrink-0 items-center pl-1"

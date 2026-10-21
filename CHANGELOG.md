@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 - Compaction can keep a document section or block range open instead of the whole file. Missing selections retry a whole-file read; partial reads never stand in for unseen text.
+- File-tree guides stay visible over highlights, including expanded Manuscript. Standalone file lists use less indentation; sidebar action hover matches page behavior.
+
+- AI may update shared Scratch with up to three tool calls before automatic compaction. The compaction summary carries continuation context; no handoff file or per-chat folders. Unexecuted calls stay marked as not run.
+- Work Files, sidebar and phone use one nested file tree. Chat Files shows shared Scratch and chat-owned uploads.
 
 - Compaction re-shows documents ranked by the summarizing model, then the 3 most recent, within its token budget (#871).
 

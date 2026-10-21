@@ -418,7 +418,7 @@ export async function prepareCompactionContext(
     turns: next.turns,
     blocks: next.blocks,
     requiresSplit: true,
-    context: next.assembled,
+    context: { assembled: next.assembled, continuation: { kind: "ordinary" as const } },
   };
 }
 
