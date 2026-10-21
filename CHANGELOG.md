@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Corrected #945 browser verification to edit only the live paragraph and inspect its change-card byline, rather than mistake the chat switcher for a hidden author after a whole-document rewrite.
+
 - Preserve AI conversation bylines when undoing a block move in draft review, before any Discard.
 
 - A refused review command shows once and never moves manuscript text: on the focused change's bar (in its own row when the bar sits between paragraphs), else under the identity row; in Work Files and the dock, in the file's status line. A refusal because the Work was archived reverts silently under the archived notice, so nothing stale remains after Unarchive; the phone now shows that notice, and freezes the editor, while reviewing an archived Work's draft, as the desktop does. Unavailable Apply/Discard controls stay hidden on locked drafts.

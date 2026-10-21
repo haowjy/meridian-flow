@@ -169,9 +169,20 @@ unknown evidence leaves the text and candidate dock rows on screen without
 inventing names. Release the room while an evidence response is delayed, then
 open a different room: the delayed response must not publish there.
 
-For #945, remove a paragraph in draft, then edit its live counterpart to
-`abc LIVE def`. After the live pull, review must show that full paragraph red,
-the byline of whoever removed it, and enabled Apply/Discard.
+For #945, start with three paragraphs and have an AI conversation remove the
+first in draft. In the live editor, select only the first paragraph's text and
+replace it with `abc LIVE def`. Keep the other two paragraphs unchanged throughout;
+never select the whole document and restore its neighbours afterward. A live
+pull between those writes deletes the unchanged container anchors and exercises
+a structural rewrite, not this paragraph-edit case. After the live pull, review
+must show the full `abc LIVE def` paragraph red, the remover's conversation
+byline, and enabled Apply/Discard. Repeat after reload.
+
+Check the visible name and the conversation button **inside the change card's
+`region "Change"`**, not a page-wide name match: the chat switcher and heading
+can carry the same conversation title while the card names nobody. If the slot
+looks blank, record its child count and `change.byline` / `change.chats` before
+assuming width fitting hid a mounted link.
 
 - Review groups come from text alone. A mixed-author group stays one row and
   one red/green box even when unchanged text separates its authors' edits.
