@@ -13,8 +13,11 @@ come in through the real intake.
    (Enter or Space on the trigger): the Uploads section has newest-first rows, each with the name, the
    type ("PDF", "Markdown") and when it was attached ("2 min ago") on separate
    lines. The file the sent message used has no delete action.
-3. Arrow Down and Up move between rows, Arrow Right reaches a row's actions,
-   Escape closes the menu and focus returns to the trigger.
+3. Within Uploads, Arrow Down and Up move between rows and Arrow Right reaches
+   a row's actions. Scratch uses the shared tree's Tab stops and Enter/Space
+   activation, not upload-arrow navigation. Escape closes the menu and returns
+   focus to the trigger. Expand enough Scratch folders to overflow the menu;
+   scrolling must still reach Uploads.
 4. Click a row: the menu closes, the same chip the `@` picker inserts lands in the
    composer, and the caret is in the composer.
 5. Delete an unused file: its row goes at once, and its

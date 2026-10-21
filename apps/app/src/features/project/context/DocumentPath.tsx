@@ -23,7 +23,7 @@ import { useDockBrowseScratch } from "../dock/use-dock-browse-scratch";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import type { TabLocation } from "./identity-location";
-import { useProjectMenuSource } from "./use-catalog-menu-source";
+import { useProjectMenuSource } from "./use-project-menu-source";
 
 export function DocumentPath({
   projectId,

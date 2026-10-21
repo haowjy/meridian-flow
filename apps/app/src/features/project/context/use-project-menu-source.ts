@@ -1,22 +1,7 @@
-/**
- * The tree behind a Scratch listing: what the rail's Scratch section draws and
- * what document paths and row move pickers browse.
- *
- * `useCatalogMenuSource` is one area: the chat's Scratch, a named Work's or a
- * No Work chat's lineage, with the lineage's notes under "Earlier notes" after
- * a rebind. `useProjectMenuSource` is the project browsing and placement tree: the project's
- * areas (and the Scratch the writer has on screen) as folders, opening at the
- * document's own folder. Both read the same catalogs the left tree does and
- * build their trees with `menu-tree.ts`.
- */
-import { t } from "@lingui/core/macro";
-import {
-  type ContextOwner,
-  contextOwner,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+/** Catalog-backed project areas for document paths and placement menus. */
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import type { CatalogContextView, CatalogNode } from "@/client/query/context-catalog-projection";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
 import type { ServerContextTab } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
@@ -30,122 +15,7 @@ import {
   menuEntryFor,
   menuTabFor,
 } from "./menu-tree";
-
-const NO_NOTES = () => t`No scratch notes yet.`;
-
-export type CatalogMenuSource = {
-  entryFor(
-    rowId: string,
-  ): { node: CatalogNode; catalog: CatalogContextView; owner: ContextOwner } | null;
-  tree: DrillTree;
-  /** All listed catalogs have resolved; only then may the rail prune stale folders. */
-  ready: boolean;
-  isError: boolean;
-  refetch: () => void;
-  /** The tab a picked note opens as. */
-  tabFor(rowId: string): ServerContextTab | null;
-};
-
-/** The Scratch a chat has on screen: who owns it, what to call it, and any lineage left behind. */
-export type ScratchSource = {
-  owner: ContextOwner;
-  heading: string;
-  /** A lineage whose notes stay listed under "Earlier notes" while `owner` is a Work. */
-  earlierRootThreadId?: string | null;
-};
-
-function useScratchArea(
-  projectId: string,
-  source: ScratchSource | null,
-  { listed, id }: { listed: boolean; id: string },
-): (MenuArea & { complete: boolean; isError: boolean; refetch: () => void }) | null {
-  const primary = useContextCatalogView(projectId, "scratch", {
-    ...(source?.owner ?? {}),
-    enabled: source !== null,
-  });
-  const earlier = useContextCatalogView(projectId, "scratch", {
-    ...contextOwner(null, source?.earlierRootThreadId),
-    enabled: Boolean(source?.earlierRootThreadId),
-  });
-  return useMemo(
-    () =>
-      source
-        ? {
-            id,
-            scheme: "scratch",
-            owner: source.owner,
-            name: schemeLabel("scratch"),
-            title: source.heading,
-            icon: schemeIcon("scratch"),
-            catalog: primary.catalog,
-            complete: primary.isComplete && (!source.earlierRootThreadId || earlier.isComplete),
-            isError: primary.isError || (Boolean(source.earlierRootThreadId) && earlier.isError),
-            refetch: () => {
-              void primary.refetch();
-              if (source.earlierRootThreadId) void earlier.refetch();
-            },
-            listed,
-            earlier: source.earlierRootThreadId
-              ? { catalog: earlier.catalog, rootThreadId: source.earlierRootThreadId }
-              : undefined,
-          }
-        : null,
-    [
-      earlier.catalog,
-      earlier.isComplete,
-      earlier.isError,
-      earlier.refetch,
-      id,
-      listed,
-      primary.catalog,
-      primary.isComplete,
-      primary.isError,
-      primary.refetch,
-      source,
-    ],
-  );
-}
-
-export function useCatalogMenuSource(
-  projectId: string,
-  scratch: ScratchSource | null,
-): CatalogMenuSource {
-  const heading = scratch?.heading ?? schemeLabel("scratch");
-  const area = useScratchArea(projectId, scratch, { listed: true, id: "scratch" });
-  const areas = useMemo(() => (area ? [area] : []), [area]);
-  const tree = useMemo(
-    () => buildMenuTree({ heading, empty: NO_NOTES(), areas, rooted: false }),
-    [areas, heading],
-  );
-  return {
-    tree,
-    ready: area?.complete ?? false,
-    isError: area?.isError ?? false,
-    refetch: () => area?.refetch(),
-    tabFor: (rowId) => menuTabFor(areas, rowId),
-    entryFor: (rowId) => {
-      const catalogs = area
-        ? [
-            { catalog: area.catalog, owner: area.owner },
-            ...(area.earlier
-              ? [
-                  {
-                    catalog: area.earlier.catalog,
-                    owner: { rootThreadId: area.earlier.rootThreadId },
-                  },
-                ]
-              : []),
-          ]
-        : [];
-      for (const { catalog, owner } of catalogs) {
-        if (!catalog) continue;
-        const node = menuEntryFor(catalog, rowId);
-        if (node) return { node, catalog, owner };
-      }
-      return null;
-    },
-  };
-}
+import { type ScratchSource, useScratchCatalogs } from "./use-scratch-catalogs";
 
 export type ProjectMenuSource = {
   tree: DrillTree;
@@ -197,7 +67,26 @@ export function useProjectMenuSource({
   const projectViews = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: null,
   });
-  const scratchArea = useScratchArea(projectId, scratch, { listed: true, id: "area:scratch" });
+  const { primary, earlier } = useScratchCatalogs(projectId, scratch);
+  const scratchArea = useMemo<MenuArea | null>(
+    () =>
+      scratch
+        ? {
+            id: "area:scratch",
+            scheme: "scratch",
+            owner: scratch.owner,
+            name: schemeLabel("scratch"),
+            title: scratch.heading,
+            icon: schemeIcon("scratch"),
+            catalog: primary.catalog,
+            listed: true,
+            earlier: scratch.earlierRootThreadId
+              ? { catalog: earlier.catalog, rootThreadId: scratch.earlierRootThreadId }
+              : undefined,
+          }
+        : null,
+    [scratch, primary.catalog, earlier.catalog],
+  );
   const documentScheme = document?.scheme ?? null;
   const documentOwner = document?.owner ?? null;
   const documentHeading = document?.heading ?? "";
@@ -251,10 +140,7 @@ export function useProjectMenuSource({
     hidden.catalog,
   ]);
 
-  const tree = useMemo(
-    () => buildMenuTree({ heading: title, areas, rooted: true }),
-    [areas, title],
-  );
+  const tree = useMemo(() => buildMenuTree({ heading: title, areas }), [areas, title]);
   const ownArea = hiddenNeeded
     ? areas.find((area) => area.id === "area:document")
     : sameAsScratch

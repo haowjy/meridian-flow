@@ -133,22 +133,6 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   );
 }
 
-export function ContextTreeEntry({
-  node,
-  depth,
-  siblings,
-}: {
-  node: ContextNode;
-  depth: number;
-  siblings: readonly ContextEntrySibling[];
-}) {
-  return node.kind === "dir" ? (
-    <DirRow dir={node} depth={depth} siblings={siblings} />
-  ) : (
-    <FileRow file={node} depth={depth} siblings={siblings} />
-  );
-}
-
 function DirRow({
   dir,
   depth,

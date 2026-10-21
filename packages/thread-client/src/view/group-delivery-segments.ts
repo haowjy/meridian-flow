@@ -152,19 +152,6 @@ function mergeToolResult(view: ToolView, resultBlock: Block): void {
     view.streamedOutput = fields.streamedOutput;
   }
   if (fields.metadata) view.metadata = fields.metadata;
-  // Process folds can be partitioned by intervening prose. Carry the paired
-  // result on the use so later per-fold grouping cannot lose its outcome.
-  view.keyBlock = {
-    ...view.keyBlock,
-    status: "complete",
-    content: {
-      ...blockContentRecord(view.keyBlock),
-      result: view.result,
-      isError: view.isError,
-      streamedOutput: view.streamedOutput,
-      metadata: view.metadata,
-    },
-  };
 }
 
 function toolResultOnlyView(block: Block): ToolView {
