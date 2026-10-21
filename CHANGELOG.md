@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Owner-handle migration backfills commit in bounded pages without retaining an exclusive Work-table lock. Concurrent Work creation shares the backfill counter, and interrupted upgrades resume without renumbering handles.
+
 - Owner-handle addresses and `eN` edit receipts now integrate with text-based draft review. Owner-handle migrations follow the draft-review cutover without resetting stored data. Runtime probes and browser fixtures seed permanent handles too.
 
 - Addresses name an owner by its handle: a Work's notes are `scratch://@w3/`, a chat's files `uploads://@c15/`, and a No Work chat's notes `scratch://@c12/`. Every Work gets a permanent handle (`w1`, `w2`, ...) when it is created, and the old Work slugs and the `@/` spelling are gone. A wrong address now gets a correction that names the owner it meant, for example a Work's name answers with its handle, and `ls scratch://@` and `ls uploads://@` list every owner with its handle and label. Work names stay unique among Works that are not deleted.
