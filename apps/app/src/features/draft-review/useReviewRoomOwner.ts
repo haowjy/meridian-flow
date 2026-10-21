@@ -9,7 +9,6 @@ export function useReviewRoomOwner(input: {
   workId: string;
   review: InlineDraftReview | null;
   dispatch: Dispatch<DraftReviewAction>;
-  presented?: unknown;
 }) {
   const { review, dispatch } = input;
   const commands = useDraftCommandOwner();

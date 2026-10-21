@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Remove the unused presented-document input chain from review room ownership.
+
 - Remove obsolete draft command failure messages and restrict failure codes to the produced vocabulary.
 
 - Keep usable draft reviews mounted after metadata refresh failures; retry metadata and room acquisition at their own failure seams.
