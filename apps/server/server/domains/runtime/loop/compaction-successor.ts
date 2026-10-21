@@ -179,7 +179,6 @@ async function reshowImportantFiles(args: {
       }
     },
   });
-  const documentIds = new Set(kept.map(({ reference }) => reference.documentId));
   const blocks = kept.map(({ reference, selector, read }, index) =>
     contentForBlockInput({
       turnId: placeholder.id,
