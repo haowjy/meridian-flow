@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Apply evidence now shares the kernel interval index, preserving partial-overlap evidence and insertion-only restoration ancestry.
+
 - Removed the command owner's duplicate optimistic-base cache; the room runtime alone caches queue folds.
 
 - Review room readiness and failures now read directly from the room owner instead of copied presentation state.
