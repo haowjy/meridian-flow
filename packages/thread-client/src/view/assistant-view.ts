@@ -8,11 +8,7 @@ import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { isImageBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
-import {
-  type DeliverySegment,
-  groupDeliverySegments,
-  type ToolView,
-} from "./group-delivery-segments";
+import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import {
   hiddenToolCallIds,
@@ -21,7 +17,7 @@ import {
   visibleReasoningText,
 } from "./partition-turn";
 import { type FoldDigest, foldDigest } from "./thinking-digest";
-import { turnWorkReceipts } from "./tool-command";
+import { workReceipt } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ViewRun =
@@ -69,13 +65,21 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
   if (cached) return cached;
   const blocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
   const direct = directResultsForTurn(blocks);
-  const items = partitionTurn(blocks).map((item) => viewItem(item, direct));
+  const segments = groupDeliverySegments(blocks);
+  const hidden = hiddenToolCallIds(segments);
+  const items = partitionTurn(segments, hidden).map((item) => viewItem(item, direct));
+  const tools = segments.flatMap((segment) =>
+    segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [],
+  );
   const view: AssistantView = {
     blocks,
     items,
     finalFrom: lastProcessIndex(items) + 1,
-    hiddenToolCallIds: [...hiddenToolCallIds(blocks)],
-    workReceipts: turnWorkReceipts(blocks),
+    hiddenToolCallIds: [...hidden],
+    workReceipts: tools.flatMap((tool) => {
+      const receipt = workReceipt(tool);
+      return receipt ? [receipt] : [];
+    }),
   };
   cache.set(turn.blocks, view);
   return view;
@@ -94,7 +98,7 @@ function viewItem(item: RenderItem, direct: Map<string, DirectInvocationResult>)
       const runs = item.runs.map((run): ViewRun => {
         if (run.kind === "reasoning")
           return { ...run, texts: run.blocks.map((block) => visibleReasoningText(block) ?? "") };
-        return { ...run, tools: visibleTools(groupDeliverySegments(run.blocks)) };
+        return { ...run, tools: run.tools.filter(isToolViewVisible) };
       });
       const tools = runs.flatMap((run) => (run.kind === "activity" ? run.tools : []));
       return {
@@ -111,14 +115,6 @@ function viewItem(item: RenderItem, direct: Map<string, DirectInvocationResult>)
     case "artifact":
       return artifactItem(item.block, direct.get(item.block.id) ?? null);
   }
-}
-
-function visibleTools(segments: readonly DeliverySegment[]): ToolView[] {
-  return segments.flatMap((segment) => {
-    if (segment.kind === "tool") return isToolViewVisible(segment.tool) ? [segment.tool] : [];
-    if (segment.kind === "tool-run") return segment.tools.filter(isToolViewVisible);
-    return [];
-  });
 }
 
 function artifactItem(block: Block, direct: DirectInvocationResult | null): ViewItem {

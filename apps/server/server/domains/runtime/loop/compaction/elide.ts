@@ -3,7 +3,7 @@ import {
   type DocumentRevisionEvidence,
   referenceOccurrenceContent,
 } from "@meridian/contracts/protocol";
-import type { Block, JsonObject } from "@meridian/contracts/threads";
+import { type Block, isNotesStepHeldResult, type JsonObject } from "@meridian/contracts/threads";
 import type { CompactionMetadata } from "../../../threads/index.js";
 import type { DocumentTextPolicy } from "../../tools/document-text.js";
 import { elideReferenceRead } from "../reference-context.js";
@@ -25,7 +25,7 @@ function documentPairs(blocks: readonly Block[], policies: DocumentTextPolicies)
   return blocks.flatMap((result) => {
     if (result.blockType !== "tool_result") return [];
     const content = result.content as JsonObject;
-    if (content.isError) return [];
+    if (content.isError || isNotesStepHeldResult(content.result)) return [];
     const call = calls.get(content.toolCallId);
     if (!call) return [];
     const tool = call.content as JsonObject;
@@ -41,7 +41,7 @@ export function collectRecordedDocuments(
   policies: DocumentTextPolicies,
 ): RecordedDocuments {
   const recorded = new Map<string, readonly DocumentRevisionEvidence[] | undefined>();
-  for (const { blocks } of slices) {
+  for (const { turn, blocks } of slices) {
     for (const { result } of documentPairs(blocks, policies)) {
       const metadata = (result.content as JsonObject).metadata as JsonObject | undefined;
       recorded.set(
@@ -49,7 +49,10 @@ export function collectRecordedDocuments(
         metadata?.documentRevisions as DocumentRevisionEvidence[] | undefined,
       );
     }
-    for (const block of blocks) {
+    // The recent picker reverses Map insertion order. Compaction blocks are persisted
+    // most important first, so insert their evidence backwards to favour that first block.
+    const referenceBlocks = turn.role === "compaction" ? [...blocks].reverse() : blocks;
+    for (const block of referenceBlocks) {
       const reference = referenceOccurrenceContent(block);
       if (reference?.read)
         recorded.set(block.id, [

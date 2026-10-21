@@ -11,7 +11,7 @@ import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
-import type { ScratchSource } from "../context/use-catalog-menu-source";
+import type { ScratchSource } from "../context/use-scratch-catalogs";
 
 export function useChatScratchSource(
   projectId: string,

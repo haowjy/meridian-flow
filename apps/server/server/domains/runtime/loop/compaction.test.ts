@@ -545,7 +545,9 @@ describe("compaction-owned elisions", () => {
     expect([...projected.creditedBlockIds].sort()).toEqual(["late-read", "reshown"]);
     expect(projected.blocks.find((b) => b.id === "reshown")?.turnId).toBe("c:summary");
     expect(JSON.stringify(buildContext({ thread: thread("c1"), ...projected }).messages)).toContain(
-      "Current text of manuscript://chapter, re-shown after the summary:\\nCURRENT CHAPTER",
+      JSON.stringify(
+        'Read result for {"path":"manuscript://chapter"}, re-shown after the summary:\nCURRENT CHAPTER',
+      ).slice(1, -1),
     );
     for (const status of ["pending", "error", "cancelled"] as const) {
       const uncompacted = await projectActiveHistoryWithBakes(

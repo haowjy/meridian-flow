@@ -1,7 +1,7 @@
 /**
  * Mock OpenAI-compatible HTTP server: a local Chat Completions endpoint (stream
  * + non-stream) for tests and offline dev so the gateway can run without a real
- * provider. Owns the canned-response server; depends only on node:http.
+ * provider. Owns the canned-response server and request-derived mock usage.
  *
  * Write tool scripting (optional, for gate probes — does not change default
  * behavior unless present in the user message that triggers a write):
@@ -23,6 +23,7 @@ interface ChatCompletionRequest {
   model?: string;
   messages?: Array<{ role: string; content?: unknown }>;
   stream?: boolean;
+  response_format?: unknown;
   tools?: Array<{ type: string; function?: { name: string } }>;
 }
 
@@ -47,6 +48,21 @@ function readJsonBody(req: import("node:http").IncomingMessage): Promise<unknown
     });
     req.on("error", reject);
   });
+}
+
+// Match the planner's three-byte heuristic on the wire input, not transport options.
+// This is synthetic usage, but must grow with history so compaction probes stay reachable.
+function inputTokens(body: ChatCompletionRequest): number {
+  return Math.ceil(
+    Buffer.byteLength(
+      JSON.stringify({
+        messages: body.messages ?? [],
+        tools: body.tools ?? [],
+        responseFormat: body.response_format ?? null,
+      }),
+      "utf8",
+    ) / 3,
+  );
 }
 
 function sseLine(payload: unknown): string {
@@ -277,7 +293,12 @@ function writeOpenRouterHardCancelStream(
   req.on("close", finish);
 }
 
-function buildTextStreamChunks(id: string, model: string, text: string): string[] {
+function buildTextStreamChunks(
+  id: string,
+  model: string,
+  text: string,
+  promptTokens: number,
+): string[] {
   const chunks: string[] = [];
   const words = text.split(" ");
   for (let i = 0; i < words.length; i++) {
@@ -299,9 +320,9 @@ function buildTextStreamChunks(id: string, model: string, text: string): string[
       model,
       choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
       usage: {
-        prompt_tokens: 10,
+        prompt_tokens: promptTokens,
         completion_tokens: words.length,
-        total_tokens: 10 + words.length,
+        total_tokens: promptTokens + words.length,
       },
     }),
   );
@@ -332,7 +353,9 @@ function buildWriteToolCallStreamChunks(input: {
   model: string;
   userText: string;
   callId: string;
+  promptTokens: number;
 }): string[] {
+  const { promptTokens } = input;
   const toolName = "write";
   const args = JSON.stringify({
     ...resolveMockWriteArgs(input.userText),
@@ -378,7 +401,7 @@ function buildWriteToolCallStreamChunks(input: {
       object: "chat.completion.chunk",
       model: input.model,
       choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+      usage: { prompt_tokens: promptTokens, completion_tokens: 8, total_tokens: promptTokens + 8 },
     }),
   ];
 }
@@ -387,9 +410,11 @@ function buildSingleToolCallStreamChunks(input: {
   id: string;
   model: string;
   callId: string;
+  promptTokens: number;
   toolName: string;
   args: Record<string, unknown>;
 }): string[] {
+  const { promptTokens } = input;
   const args = JSON.stringify(input.args);
   return [
     sseLine({
@@ -432,7 +457,7 @@ function buildSingleToolCallStreamChunks(input: {
       object: "chat.completion.chunk",
       model: input.model,
       choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+      usage: { prompt_tokens: promptTokens, completion_tokens: 8, total_tokens: promptTokens + 8 },
     }),
   ];
 }
@@ -441,10 +466,12 @@ function buildBackgroundWriterHelperSpawnChunks(
   id: string,
   model: string,
   userText: string,
+  promptTokens: number,
 ): string[] {
   return buildSingleToolCallStreamChunks({
     id,
     model,
+    promptTokens,
     callId: "call_mock_spawn_writer_helper_1",
     toolName: "spawn",
     args: {
@@ -456,10 +483,11 @@ function buildBackgroundWriterHelperSpawnChunks(
   });
 }
 
-function buildReturnResultChunks(id: string, model: string): string[] {
+function buildReturnResultChunks(id: string, model: string, promptTokens: number): string[] {
   return buildSingleToolCallStreamChunks({
     id,
     model,
+    promptTokens,
     callId: "call_mock_return_result_1",
     toolName: "return_result",
     args: {
@@ -468,7 +496,7 @@ function buildReturnResultChunks(id: string, model: string): string[] {
   });
 }
 
-function buildToolCallStreamChunks(id: string, model: string): string[] {
+function buildToolCallStreamChunks(id: string, model: string, promptTokens: number): string[] {
   const toolName = "get_weather";
   const args = JSON.stringify({ location: "San Francisco" });
   return [
@@ -512,7 +540,7 @@ function buildToolCallStreamChunks(id: string, model: string): string[] {
       object: "chat.completion.chunk",
       model,
       choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-      usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+      usage: { prompt_tokens: promptTokens, completion_tokens: 8, total_tokens: promptTokens + 8 },
     }),
   ];
 }
@@ -530,6 +558,7 @@ function buildScriptedStreamChunks(
   model: string,
   step: MockModelStep,
   requestCount: number,
+  promptTokens: number,
 ): string[] {
   const chunk = (delta: unknown, finishReason: string | null, usage?: unknown) =>
     sseLine({
@@ -567,9 +596,9 @@ function buildScriptedStreamChunks(
   });
   chunks.push(
     chunk({}, toolCalls.length ? "tool_calls" : "stop", {
-      prompt_tokens: 10,
+      prompt_tokens: promptTokens,
       completion_tokens: Math.max(1, words.length),
-      total_tokens: 10 + Math.max(1, words.length),
+      total_tokens: promptTokens + Math.max(1, words.length),
     }),
   );
   return chunks;
@@ -577,9 +606,16 @@ function buildScriptedStreamChunks(
 
 function writeScriptedResponse(
   res: import("node:http").ServerResponse,
-  input: { id: string; model: string; stream: boolean; step: MockModelStep; requestCount: number },
+  input: {
+    id: string;
+    model: string;
+    stream: boolean;
+    step: MockModelStep;
+    requestCount: number;
+    promptTokens: number;
+  },
 ): void {
-  const { step } = input;
+  const { step, promptTokens } = input;
   const respond = () => {
     if (res.destroyed) return;
     if (step.error) {
@@ -590,7 +626,16 @@ function writeScriptedResponse(
       return;
     }
     if (input.stream) {
-      writeSse(res, buildScriptedStreamChunks(input.id, input.model, step, input.requestCount));
+      writeSse(
+        res,
+        buildScriptedStreamChunks(
+          input.id,
+          input.model,
+          step,
+          input.requestCount,
+          input.promptTokens,
+        ),
+      );
       return;
     }
     const toolCalls = scriptedToolCalls(step, input.requestCount);
@@ -611,7 +656,11 @@ function writeScriptedResponse(
             finish_reason: toolCalls.length ? "tool_calls" : "stop",
           },
         ],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        usage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: 5,
+          total_tokens: promptTokens + 5,
+        },
       }),
     );
   };
@@ -645,6 +694,7 @@ export function createMockOpenAICompatibleServer(options?: {
 
       try {
         const body = (await readJsonBody(req)) as ChatCompletionRequest;
+        const promptTokens = inputTokens(body);
         const id = `chatcmpl-mock-${requestCount}`;
         const model = body.model ?? "mock-llm-v1";
         const writeCallId = mockToolCallId("write", requestCount);
@@ -656,6 +706,7 @@ export function createMockOpenAICompatibleServer(options?: {
             stream: body.stream === true,
             step: scripted,
             requestCount,
+            promptTokens,
           });
           return;
         }
@@ -701,7 +752,11 @@ export function createMockOpenAICompatibleServer(options?: {
                     finish_reason: "tool_calls",
                   },
                 ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+                usage: {
+                  prompt_tokens: promptTokens,
+                  completion_tokens: 8,
+                  total_tokens: promptTokens + 8,
+                },
               }),
             );
             return;
@@ -735,7 +790,11 @@ export function createMockOpenAICompatibleServer(options?: {
                     finish_reason: "tool_calls",
                   },
                 ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+                usage: {
+                  prompt_tokens: promptTokens,
+                  completion_tokens: 8,
+                  total_tokens: promptTokens + 8,
+                },
               }),
             );
             return;
@@ -767,7 +826,11 @@ export function createMockOpenAICompatibleServer(options?: {
                     finish_reason: "tool_calls",
                   },
                 ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+                usage: {
+                  prompt_tokens: promptTokens,
+                  completion_tokens: 8,
+                  total_tokens: promptTokens + 8,
+                },
               }),
             );
             return;
@@ -798,7 +861,11 @@ export function createMockOpenAICompatibleServer(options?: {
                     finish_reason: "tool_calls",
                   },
                 ],
-                usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+                usage: {
+                  prompt_tokens: promptTokens,
+                  completion_tokens: 8,
+                  total_tokens: promptTokens + 8,
+                },
               }),
             );
             return;
@@ -815,7 +882,11 @@ export function createMockOpenAICompatibleServer(options?: {
                   finish_reason: "stop",
                 },
               ],
-              usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+              usage: {
+                prompt_tokens: promptTokens,
+                completion_tokens: 5,
+                total_tokens: promptTokens + 5,
+              },
             }),
           );
           return;
@@ -858,7 +929,7 @@ export function createMockOpenAICompatibleServer(options?: {
         if (messageText(body.messages).includes("slow before output")) {
           writeSseLater(
             res,
-            buildTextStreamChunks(id, model, mockAssistantText(body.messages)),
+            buildTextStreamChunks(id, model, mockAssistantText(body.messages), promptTokens),
             200,
           );
           return;
@@ -870,19 +941,25 @@ export function createMockOpenAICompatibleServer(options?: {
         }
 
         const chunks = wantsBackgroundWriterHelperSpawn(body)
-          ? buildBackgroundWriterHelperSpawnChunks(id, model, lastUserMessageText(body.messages))
+          ? buildBackgroundWriterHelperSpawnChunks(
+              id,
+              model,
+              lastUserMessageText(body.messages),
+              promptTokens,
+            )
           : wantsReturnResult(body)
-            ? buildReturnResultChunks(id, model)
+            ? buildReturnResultChunks(id, model, promptTokens)
             : wantsWriteToolCall(body)
               ? buildWriteToolCallStreamChunks({
                   id,
                   model,
                   userText: lastUserMessageText(body.messages),
                   callId: writeCallId,
+                  promptTokens,
                 })
               : wantsToolCall(body)
-                ? buildToolCallStreamChunks(id, model)
-                : buildTextStreamChunks(id, model, mockAssistantText(body.messages));
+                ? buildToolCallStreamChunks(id, model, promptTokens)
+                : buildTextStreamChunks(id, model, mockAssistantText(body.messages), promptTokens);
         writeSse(res, chunks);
       } catch (err) {
         res.writeHead(400, { "Content-Type": "application/json" });

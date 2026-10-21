@@ -1,7 +1,7 @@
 /**
  * The one server read path (D18): the `read` tool, a copy's source read and
- * reference loading all call `readDocument`; nothing builds tool arguments to
- * reach it.
+ * reference loading all call `readDocument`. Tool and reference reads share
+ * the tracked-document adapter; private copy-source reads supply their own grant.
  */
 import type {
   DocumentVersion,
