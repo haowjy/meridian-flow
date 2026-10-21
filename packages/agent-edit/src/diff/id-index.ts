@@ -36,6 +36,18 @@ export class IdIndex {
     }
   }
 
+  /** Number of disjoint tagged intervals, after precedence has resolved overlaps. */
+  get size(): number {
+    return [...this.byClient.values()].reduce((sum, list) => sum + list.lo.length, 0);
+  }
+
+  /** Positive evidence needs any overlap, not full coverage. */
+  overlaps(client: number, clock: number, length: number): boolean {
+    if (length <= 0) return false;
+    const [tag, run] = this.run(client, clock);
+    return tag >= 0 || run < length;
+  }
+
   /** The tag of the range holding this id, or -1. */
   get(client: number, clock: number): number {
     return this.run(client, clock)[0];
