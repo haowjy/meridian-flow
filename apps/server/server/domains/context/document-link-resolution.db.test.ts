@@ -337,7 +337,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
     });
 
-    it("transports the prepared owners of a mixed catalog without resolving Work slugs again", async () => {
+    it("transports the prepared owners of a mixed catalog without resolving Work handles again", async () => {
       const db = database.current;
       const root = crypto.randomUUID();
       await db.insert(threads).values({

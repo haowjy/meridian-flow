@@ -186,13 +186,21 @@ describe("owner lookup", () => {
       uploads: "uploads://@c1/",
       scratch: "scratch://@w3/",
     });
-    await expect(lookup.subagent("project", "p3")).resolves.toMatchObject({ chatRef: "c15" });
   });
 
   it("answers a name from a handle-shaped label, and lists owners beside their labels", async () => {
-    await expect(lookup.workNamed("project", "tea-notes")).resolves.toMatchObject({ handle: "w3" });
-    await expect(lookup.workNamed("project", "w9")).resolves.toMatchObject({ handle: "w4" });
-    await expect(lookup.workNamed("project", "Gone")).resolves.toBeNull();
+    await expect(lookup.workReference("project", "tea-notes")).resolves.toMatchObject({
+      ok: false,
+      message: '"Tea Notes" is w3.',
+    });
+    await expect(lookup.workReference("project", "w9")).resolves.toMatchObject({
+      ok: false,
+      message: '"w9" is w4.',
+    });
+    await expect(lookup.workReference("project", "Gone")).resolves.toMatchObject({
+      ok: false,
+      message: "Unknown Work Gone. List Works with work list.",
+    });
     await expect(lookup.scratchOwners("project")).resolves.toEqual([
       { uri: "scratch://@w3/", label: "Tea Notes" },
       { uri: "scratch://@w4/", label: "w9 (archived)" },

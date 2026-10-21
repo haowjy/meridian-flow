@@ -242,7 +242,7 @@ export function fakeEditGrant(
         ? {
             branchWork: {
               id: destination.workId,
-              slug: destination.workHandle,
+              handle: destination.workHandle,
               isNoWork: false,
               archived: false,
               deleted: false,
