@@ -62,7 +62,6 @@ export async function migrate(sql: postgres.ReservedSql): Promise<void> {
             const converted = convertLegacyDraft({
               state: Y.encodeStateAsUpdate(doc),
               liveCut: row.live_cut,
-              neverWritten: false,
             });
             if (converted.kind !== "converted") throw new Error(`Unresolved draft ${row.id}`);
             Y.applyUpdate(doc, converted.state);

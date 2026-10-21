@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Simplified the draft-review cutover: removed an unused conversion mode and redundant preflight outbox checks, retaining missing-cut and unfinished-batch rejection.
+
 - Apply evidence now shares the kernel interval index, preserving partial-overlap evidence and insertion-only restoration ancestry.
 
 - Removed the command owner's duplicate optimistic-base cache; the room runtime alone caches queue folds.
