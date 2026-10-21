@@ -62,15 +62,6 @@ export type WorkReference = { ok: true; work: WorkOwner } | { ok: false; message
 export interface OwnerLookup {
   /** A live chat of `projectId` by its `c` handle: where its files are. Null for anything else. */
   chat(projectId: string, ref: string): Promise<ChatFileAddresses | null>;
-  /** A subagent by its `p` handle: the chat it belongs to and that chat's addresses. */
-  subagent(
-    projectId: string,
-    ref: string,
-  ): Promise<(ChatFileAddresses & { chatRef: string }) | null>;
-  /** A Work by handle, deleted ones included; null when the project never minted it. */
-  work(projectId: string, handle: string): Promise<WorkOwner | null>;
-  /** The one non-deleted Work a name (`Tea Notes` or `tea-notes`) stands for, if exactly one. */
-  workNamed(projectId: string, name: string): Promise<WorkOwner | null>;
   /** Why a Work handle reaches nothing: unknown, or deleted and perhaps still restorable. */
   unknownWork(projectId: string, handle: string): Promise<string>;
   /** A near-miss owner spelling answered with the real owner; `fallback` is the lookup-free answer. */
@@ -295,9 +286,6 @@ export function createOwnerLookup(deps: OwnerLookupDeps): OwnerLookup {
 
   return {
     chat,
-    subagent: subagentFiles,
-    work: deps.workByHandle,
-    workNamed,
     unknownWork,
     slipReason,
     async workReference(projectId, ref) {
@@ -355,9 +343,6 @@ export function bindOwners(lookup: OwnerLookup, projectId: string): ProjectOwner
 /** A lookup that knows no owners, for ports built without a database. */
 export const emptyOwnerLookup: OwnerLookup = {
   chat: async () => null,
-  subagent: async () => null,
-  work: async () => null,
-  workNamed: async () => null,
   unknownWork: async (_projectId, handle) => unknownWorkMessage(handle),
   slipReason: async (_projectId, _slip, fallback) => fallback,
   workReference: async (_projectId, ref) => ({ ok: false, message: unknownWorkMessage(ref) }),

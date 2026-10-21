@@ -25,7 +25,7 @@ const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0
 const resolve = chatReferenceResolver({
   projectId: uuid(1),
   userId: uuid(2),
-  work: { id: uuid(3), slug: null },
+  work: { id: uuid(3), handle: null },
   rootThreadId: uuid(4),
   rootThreadRef: "c1",
 } as never);
