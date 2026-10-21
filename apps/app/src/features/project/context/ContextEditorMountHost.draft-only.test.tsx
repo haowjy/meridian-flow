@@ -35,7 +35,6 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
     controller: {
       workId: "work-a",
       inlineReview: review.reviewing ? { documentId: "document-a", itemKey: "draft-a" } : null,
-      reviewRoomError: false,
     },
     reviewRoomNameForDraft: () => review.room,
     setActiveEditorDocumentId: review.publish,

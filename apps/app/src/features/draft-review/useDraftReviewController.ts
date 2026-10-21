@@ -3,7 +3,7 @@
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   type DraftReviewSelection,
@@ -49,9 +49,6 @@ export type DraftReviewController = {
   /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
-  /** The open review's room, once a read has resolved it (`inlineReview.roomName`). */
-  reviewRoomName: string | null;
-  reviewRoomError: boolean;
   /** Dispatch the normalized target through this review's Work authority. */
   commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
@@ -96,7 +93,6 @@ export type DraftReviewController = {
   enterInlineReview: (documentId: string, itemKey: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
-  inlineReviewModelAvailable: (identity: string, documentId: string, itemKey: string) => void;
   /** The review editor reports when its body is (or stops being) the painted one. */
   setInlineReviewShown: (documentId: string, itemKey: string, shown: boolean) => void;
   /** Claim/release the single review-runtime slot. */
@@ -128,16 +124,8 @@ export function useDraftReviewController({
   const { state, dispatch } = stateOwner;
   const commands = useWorkBranchCommands({ projectId, work, threadId, surface: "editor" });
   const stateRef = useRef(state);
-  const activeRef = useRef(true);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
   stateRef.current = state;
-
-  useEffect(() => {
-    activeRef.current = true;
-    return () => {
-      activeRef.current = false;
-    };
-  }, []);
 
   const inlineReview = inlineReviewFromState(state);
 
@@ -176,13 +164,6 @@ export function useDraftReviewController({
   const exitReview = useCallback(() => {
     dispatch({ type: "exitReview" });
   }, []);
-
-  const inlineReviewModelAvailable = useCallback(
-    (identity: string, documentId: string, itemKey: string) => {
-      dispatch({ type: "inlineModelAvailable", identity, documentId, itemKey });
-    },
-    [],
-  );
 
   const setInlineReviewShown = useCallback(
     (documentId: string, itemKey: string, shown: boolean) => {
@@ -249,21 +230,7 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  const { disposeDrafts } = commands;
-  const startDraft = useCallback(
-    (mode: "apply" | "discard", draft: DraftReviewSelection) => {
-      return commands.startDraft(mode, draft);
-    },
-    [commands],
-  );
-  const apply = useCallback(
-    (documentId: string, itemKey: string) => startDraft("apply", { documentId, itemKey }).outcome,
-    [startDraft],
-  );
-  const discard = useCallback(
-    (documentId: string, itemKey: string) => startDraft("discard", { documentId, itemKey }).outcome,
-    [startDraft],
-  );
+  const { disposeDrafts, startDraft, apply, discard } = commands;
 
   return useMemo(
     () => ({
@@ -271,8 +238,6 @@ export function useDraftReviewController({
       workId,
       threadId,
       inlineReview,
-      reviewRoomName: inlineReview?.roomName ?? null,
-      reviewRoomError: inlineReview?.roomError ?? false,
       commandChange: commands.commandChange,
       dispositionLocked,
       changesLocked,
@@ -286,7 +251,6 @@ export function useDraftReviewController({
       enterInlineReview,
       exitInlineReview,
       exitReview,
-      inlineReviewModelAvailable,
       setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
@@ -313,7 +277,6 @@ export function useDraftReviewController({
       enterInlineReview,
       exitInlineReview,
       exitReview,
-      inlineReviewModelAvailable,
       setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,

@@ -41,25 +41,13 @@ export function useReviewRoomOwner(input: {
         ]
       : [],
   )[0];
-  useEffect(() => {
-    if (!review || command.closed) return;
-    if (read?.roomName)
-      dispatch({
-        type: "roomResolved",
-        documentId: review.documentId,
-        itemKey: review.itemKey,
-        roomName: read.roomName,
-      });
-    else if (read?.status === "error")
-      dispatch({ type: "roomFailed", documentId: review.documentId, itemKey: review.itemKey });
-  }, [read?.roomName, read?.status, command.closed, review?.documentId, review?.itemKey, dispatch]);
   return {
     session: read?.session ?? null,
     roomName: read?.roomName ?? null,
     runtime: read?.runtime ?? null,
     reopen: read?.retry ?? (() => {}),
     inputEligible: read?.usable != null,
-    carryPending: false,
+    error: read?.status === "error",
   };
 }
 export type ReviewRoomOwner = ReturnType<typeof useReviewRoomOwner>;

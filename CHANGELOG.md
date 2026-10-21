@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Review room readiness and failures now read directly from the room owner instead of copied presentation state.
+
 - Removed obsolete per-change failure plumbing; draft command failures stay on their existing review and dock surfaces.
 
 - Draft review reads the text (#862 re-landed on the lock-free store). Review is the difference between the live text a draft is reviewed against (`review_base`, server-written) and the draft, computed in the browser. Only red (removed) and green (added), writer typing and formatting included; no olive. Moves, cut and paste, Ctrl+Z and concurrent edits never corrupt it. A paragraph the draft removed and live then edited shows its byline, Apply and Discard (#945).

@@ -39,21 +39,20 @@ const threadList: { current: ThreadListItem[] } = {
 };
 
 /** Runtime callbacks are inert; these tests own only editor lifetime and surface selection. */
+const roomOwner = { session: null, error: false };
 const controller = {
   registerInlineReviewRuntime: () => {},
   releaseInlineReviewRuntime: () => {},
-  inlineReviewModelAvailable: () => {},
   setInlineReviewShown: () => {},
   inlineReview: null as
     | import("@/features/draft-review/draft-review-session").InlineDraftReview
     | null,
-  reviewRoomError: false,
 };
 
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
-    roomOwner: { session: null },
+    roomOwner,
   }),
 }));
 
@@ -238,9 +237,8 @@ it("does not attribute the leaving review's room error to an incoming request", 
     kind: "inline",
     documentId: "leaving",
     itemKey: "failed-draft",
-    roomError: true,
   };
-  controller.reviewRoomError = true;
+  roomOwner.error = true;
   try {
     await withReactRoot(
       <Harness
@@ -259,6 +257,6 @@ it("does not attribute the leaving review's room error to an incoming request", 
     );
   } finally {
     controller.inlineReview = null;
-    controller.reviewRoomError = false;
+    roomOwner.error = false;
   }
 });
