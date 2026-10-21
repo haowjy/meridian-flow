@@ -32,7 +32,7 @@ export interface Alignment {
 export function align(B: Side, S: Side): Alignment {
   const baseToSide = new Int32Array(B.blocks.length).fill(-1);
   const sideToBase = new Int32Array(S.blocks.length).fill(-1);
-  const units: UnitHunk[] = [];
+  const hunks: Hunk[] = [];
   let bi = 0;
   let si = 0;
   let gb = 0;
@@ -41,7 +41,7 @@ export function align(B: Side, S: Side): Alignment {
     if (gb === bi && gs === si) return;
     for (const [b0, b1, s0, s1] of anchorGap(B, gb, bi, S, gs, si)) {
       if (b0 === b1 && s0 === s1) continue;
-      boundedGap(B, b0, b1, S, s0, s1, units);
+      boundedGap(B, b0, b1, S, s0, s1, hunks);
     }
   };
   for (const [op, n] of diffKeys(B.blocks.map(blockKey), S.blocks.map(blockKey))) {
@@ -59,12 +59,7 @@ export function align(B: Side, S: Side): Alignment {
     else if (op === DIFF_INSERT) si += n;
   }
   gap();
-  canonicalize(
-    B.toks,
-    S.toks,
-    units.map((unit) => unit.raw),
-  );
-  const hunks = units.flatMap((unit) => unit.refined);
+  canonicalize(B.toks, S.toks, hunks);
   return { hunks, baseToSide, sideToBase, pos: posMap(B.toks.length, hunks) };
 }
 
@@ -179,8 +174,7 @@ function anchorGap(
   return out;
 }
 
-type UnitHunk = { raw: Hunk; refined: Hunk[] };
-type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: UnitHunk[] };
+type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: Hunk[] };
 const units: UnitMemo = { next: new WeakMap() };
 const sideBoundary = {};
 
@@ -189,15 +183,7 @@ const sideBoundary = {};
  * retains small multi-paragraph runs without retaining old documents; the boundary distinguishes
  * [a] → [b, c] from [a, b] → [c]. Cached offsets belong to the unit, not its place in the document.
  */
-function unitHunks(
-  B: Side,
-  b0: number,
-  b1: number,
-  S: Side,
-  s0: number,
-  s1: number,
-  out: UnitHunk[],
-) {
+function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   let memo = units;
   const step = (node: object) => {
     let next = memo.next.get(node);
@@ -217,10 +203,7 @@ function unitHunks(
     if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
       hunks.push({ from: 0, to: base.toks.length, sfrom: 0, ins: draft.toks });
     else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
-    memo.hunks = separateBlocks(base, draft, hunks).map((raw) => ({
-      raw,
-      refined: refine(base.toks, [raw]),
-    }));
+    memo.hunks = separateBlocks(base, draft, refine(base.toks, hunks));
   }
   const relocate = (h: Hunk): Hunk => ({
     ...h,
@@ -228,25 +211,23 @@ function unitHunks(
     to: h.to + B.starts[b0],
     sfrom: h.sfrom + S.starts[s0],
   });
-  for (const unit of memo.hunks) {
-    const raw = relocate(unit.raw);
-    // Canonicalization only moves pure insertions/deletions; refinement only splits replacements.
-    // Keep the raw neighbour bounds until canonicalization, and share its moved pure hunks.
-    out.push({ raw, refined: unit.refined.map((h) => (h === unit.raw ? raw : relocate(h))) });
-  }
+  for (const h of memo.hunks) out.push(relocate(h));
 }
 
 /**
  * An unmatched interval may include a paragraph's changed tail and whole removed/added blocks.
- * Keep complete blocks independent of the partial blocks at either edge, even without punctuation
- * between them. A split/join with no complete consumed block stays one structural replacement.
+ * Keep complete blocks independent of partial edge blocks; pair complete replacements in order and
+ * detach excess blocks. Refinement can expose a partial edge by retaining a leading block token,
+ * so normalization runs after refinement. Splits/joins with no complete block stay whole.
  */
 function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
+  const blockAt = (side: Side, pos: number) =>
+    pos === side.toks.length ? side.blocks.length : side.blockOf[pos];
   const complete = (side: Side, from: number, to: number): [number, number] => {
-    const block = from === side.toks.length ? side.blocks.length : side.blockOf[from];
+    const block = blockAt(side, from);
     const interior = side.starts[block] < from;
     const first = block + (interior ? 1 : 0);
-    const end = to === side.toks.length ? side.blocks.length : side.blockOf[to];
+    const end = blockAt(side, to);
     if (first < end) return [side.starts[first], side.starts[end]];
     // With no complete block, a partial tail belongs before the complete run on the other side;
     // a partial block starting at its boundary belongs after it (the next aligned word's prefix).
@@ -265,11 +246,15 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
       out.push(h);
       continue;
     }
+    const paired = Math.min(blockAt(B, b1) - blockAt(B, b0), blockAt(S, s1) - blockAt(S, s0));
+    const bp = paired ? B.starts[blockAt(B, b0) + paired] : b0;
+    const sp = paired ? S.starts[blockAt(S, s0) + paired] : s0;
     let b = h.from;
     let s = h.sfrom;
     const start = out.length;
     for (const [to, send] of [
       [b0, s0],
+      [bp, sp],
       [b1, s1],
       [h.to, sto],
     ]) {
@@ -290,15 +275,7 @@ function separateBlocks(B: Side, S: Side, hunks: Hunk[]): Hunk[] {
 }
 
 /** Keep small split/join gaps whole. Large unmatched runs pair in order, not by token search. */
-function boundedGap(
-  B: Side,
-  b0: number,
-  b1: number,
-  S: Side,
-  s0: number,
-  s1: number,
-  out: UnitHunk[],
-) {
+function boundedGap(B: Side, b0: number, b1: number, S: Side, s0: number, s1: number, out: Hunk[]) {
   if (b1 - b0 === 1 && s1 - s0 === 1) {
     unitHunks(B, b0, b1, S, s0, s1, out);
     return;

@@ -28,9 +28,10 @@ words separate them, across paragraph breaks, and a block removed in one place
 and added in another joins both places as a `move` group so Apply and Discard
 can never take half of one. Grouping joins review actions, not paint: semantic
 cleanup may join inline edits within a paragraph but cannot absorb a neighbouring
-block boundary on either side. Raw alignment separates complete removed/added
-blocks from adjacent inline replacements, including unpunctuated heading edits.
-Semantic cleanup preserves those boundaries, so a whole-block move removal anchors between paragraphs.
+block boundary on either side. The final refined raw alignment separates complete
+removed/added blocks from adjacent inline replacements, including full block renames with no retained word
+and simultaneous block-attribute changes. Semantic cleanup preserves that invariant
+on both token sides, so a whole-block move removal anchors between paragraphs.
 A group carries the draft positions the editor
 decorates (`inserted`, `anchor`), the base content drawn red (`removed`) and a
 short excerpt. A hunk containing changed block attributes carries expanded `formatContext` paint:
@@ -49,16 +50,20 @@ Equal paragraphs anchor the diff and need no token search. Each changed
 paragraph, or small run of adjacent changed paragraphs needed to read a split or
 join together, is one **unit**. A weak trie keyed by the ordered retained base
 nodes, a side boundary, and the ordered retained draft nodes caches that unit's
-token hunks and their word/mark refinement. Within each cached unit, unmatched
-replacements separate partial edge blocks from complete consumed blocks before
-refinement and canonicalization. Pure edits stay intact; adjacent pure fragments from a separated replacement stay one edit
-(one insertion per position), preserving split/join composition and identical
-concurrent-change collapse. Intervals with no complete consumed blocks retain
-their split/join structure. Block-index lookups and at most three fragments per
-replacement keep this pass linear in the changed tokens, never a block-pair
-search. Canonicalization still runs against the raw neighbouring boundaries:
-it moves only pure insertions/deletions, whereas refinement only splits
-replacements. Like ProseMirror's view, it follows immutable node identity: a
+token hunks and their word/mark refinement. Within each cached unit, word/mark
+refinement runs before boundary separation:
+retaining a leading block token can turn a complete replacement into a partial
+edge. The final replacements separate partial edge blocks from complete consumed
+blocks, pair complete replacement blocks in order, and detach excess blocks on
+either side. Pure edits stay intact; adjacent pure fragments from one separated
+replacement stay one edit (one insertion per position), preserving split/join
+composition and identical concurrent-change collapse. Intervals with no complete
+consumed blocks retain their split/join structure. Block-index lookups and at most
+four fragments per refined replacement keep separation linear in the changed
+tokens, never a block-pair search. Canonicalization runs last against the final
+neighbouring boundaries, including newly detached pure runs: it slides only pure
+insertions/deletions, never replacements, so it cannot rejoin the separated paint.
+Like ProseMirror's view, it follows immutable node identity: a
 keystroke or AI write re-diffs only the unit whose nodes changed. Other units
 reuse their hunks; the paragraph-level pass supplies their new positions.
 Cached offsets are unit-local and publication copies them, so moving a paragraph
