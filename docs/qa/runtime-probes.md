@@ -716,7 +716,7 @@ restart smoke check.
   printf '%s\n' '# M1 Probe Chapter' '' 'The mountain stood above the mist.' '' \
     'The river cut through the valley.' '' 'The sky held a single hawk.' > "$E/chapter.md"
   ./mf doc put 'manuscript://M1 Chapter' --text @"$E/chapter.md" --json > "$E/doc.json"
-  ./mf thread create --work @/ --title 'M1 frontier auto-apply' --json > "$E/thread.json"
+  ./mf thread create --title 'M1 frontier auto-apply' --json > "$E/thread.json"
   T=$(jq -r .threadId "$E/thread.json")
   eval "$(pnpm exec tsx tools/dev/print-worktree-env.ts)"
   ```
@@ -740,7 +740,7 @@ restart smoke check.
      MODEL_PROVIDER=mock pnpm dev:restart --no-tailscale
      PARTIAL='[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Chapter","in":3}}]},{"text":"The river paragraph."}]'
      ./mf thread send "$T" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell2-same-send.ndjson"
-     ./mf thread create --work @/ --title 'M1 frontier control' --json > "$E/cell2-control-thread.json"
+     ./mf thread create --title 'M1 frontier control' --json > "$E/cell2-control-thread.json"
      CT=$(jq -r .threadId "$E/cell2-control-thread.json")
      ./mf thread send "$CT" 'Read paragraph 3 only.' --mock "$PARTIAL" --json > "$E/cell2-control-send.ndjson"
      tools/qa/probes/observation-frontiers.sh live:
@@ -792,7 +792,7 @@ restart smoke check.
      ```bash
      printf '%s\n' '# Write Probe' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-chapter.md"
      ./mf doc put 'manuscript://M1 Write' --text @"$E/write-chapter.md" --json > "$E/cell5-doc.json"
-     ./mf thread create --work @/ --title 'M1 frontier staged write' --json > "$E/cell5-thread.json"
+     ./mf thread create --title 'M1 frontier staged write' --json > "$E/cell5-thread.json"
      WT=$(jq -r .threadId "$E/cell5-thread.json")
      ./mf thread send "$WT" 'Read the chapter then rewrite the last paragraph.' \
        --mock '[{"toolCalls":[{"name":"read","args":{"path":"manuscript://M1 Write"}},{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write","in":4,"content":"Gamma paragraph, rewritten."}}]},{"text":"Rewrote gamma."}]' \
@@ -800,7 +800,7 @@ restart smoke check.
      tools/qa/probes/observation-frontiers.sh "$WT"
      printf '%s\n' '# Write Reverse' '' 'Alpha paragraph.' '' 'Beta paragraph.' '' 'Gamma paragraph.' > "$E/write-reverse.md"
      ./mf doc put 'manuscript://M1 Write Reverse' --text @"$E/write-reverse.md" --json > "$E/cell5b-doc.json"
-     ./mf thread create --work @/ --title 'M1 frontier staged write reverse' --json > "$E/cell5b-thread.json"
+     ./mf thread create --title 'M1 frontier staged write reverse' --json > "$E/cell5b-thread.json"
      WTB=$(jq -r .threadId "$E/cell5b-thread.json")
      ./mf thread send "$WTB" 'Rewrite the last paragraph then read the chapter.' \
        --mock '[{"toolCalls":[{"name":"write","args":{"command":"replace","path":"manuscript://M1 Write Reverse","in":4,"content":"Gamma paragraph, rewritten first."}},{"name":"read","args":{"path":"manuscript://M1 Write Reverse"}}]},{"text":"Wrote then read."}]' \
