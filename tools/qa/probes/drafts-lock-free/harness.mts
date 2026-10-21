@@ -149,13 +149,16 @@ export async function openHarness(
       const branchId = randomUUID() as BranchId;
       const threadId = randomUUID();
       const turnId = randomUUID();
-      const slug = `${label}-${workId.slice(0, 8)}`;
-      await raw`insert into works(id,project_id,created_by_user_id,name,slug) values (${workId},${ids.project},${ids.user},${label},${slug})`;
+      const [counter] = await raw<{ n: number }[]>`
+        insert into project_handle_counters(project_id,kind,n) values (${ids.project},'work',1)
+        on conflict (project_id,kind) do update set n=project_handle_counters.n+1 returning n`;
+      const handle = `w${counter.n}`;
+      await raw`insert into works(id,project_id,created_by_user_id,name,handle) values (${workId},${ids.project},${ids.user},${label},${handle})`;
       await raw`insert into branches(id,project_id,origin_work_id,created_by) values (${branchId},${ids.project},${workId},${ids.user})`;
       await raw`insert into threads(id,root_thread_id,project_id,created_by_user_id,title,kind,status,ai_write_mode) values (${threadId},${threadId},${ids.project},${ids.user},${label},'primary','idle','draft')`;
       await raw`insert into turns(id,thread_id,position,role,origin,status) values (${turnId},${threadId},1,'assistant','assistant','complete')`;
       await raw`insert into thread_works(thread_id,work_id,project_id,is_primary) values (${threadId},${workId},${ids.project},true)`;
-      return { workId, branchId, threadId, turnId };
+      return { workId, branchId, threadId, turnId, handle };
     },
 
     /** A live document holding one paragraph of `text`; the caller owns the returned doc. */
