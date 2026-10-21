@@ -2,34 +2,11 @@
 
 ## [Unreleased]
 
-- Corrected #945 browser verification to edit only the live paragraph and inspect its change-card byline, rather than mistake the chat switcher for a hidden author after a whole-document rewrite.
-
-- Preserve AI conversation bylines when undoing a block move in draft review, before any Discard.
-
-- A refused review command shows once and never moves manuscript text: on the focused change's bar (in its own row when the bar sits between paragraphs), else under the identity row; in Work Files and the dock, in the file's status line. A refusal because the Work was archived reverts silently under the archived notice, so nothing stale remains after Unarchive; the phone now shows that notice, and freezes the editor, while reviewing an archived Work's draft, as the desktop does. Unavailable Apply/Discard controls stay hidden on locked drafts.
-- Dense draft-review cleanup no longer rescans or copies growing replacements on every word edit (#986).
-
-- Put change-card failures below controls without overlap, including dock and Work Files rows; hide unavailable Apply/Discard controls on locked drafts.
-
-- Remove the unused presented-document input chain from review room ownership.
-
-- Remove obsolete draft command failure messages and restrict failure codes to the produced vocabulary.
-
-- Keep usable draft reviews mounted after metadata refresh failures; retry metadata and room acquisition at their own failure seams.
-- Keep moved-block review paint separate from adjacent word changes, including full heading renames and heading-level changes, while preserving split/join, Apply, Discard and rebase composition (#986).
-
-- Corrected the removed-paragraph QA expectation to name its remover rather than always the writer.
-
-- Simplified the draft-review cutover: removed an unused conversion mode and redundant preflight outbox checks, retaining missing-cut and unfinished-batch rejection.
-
-- Apply evidence now shares the kernel interval index, preserving partial-overlap evidence and insertion-only restoration ancestry.
-
-- Removed the command owner's duplicate optimistic-base cache; the room runtime alone caches queue folds.
-
-- Review room readiness and failures now read directly from the room owner instead of copied presentation state.
-
-- Removed obsolete per-change failure plumbing; draft command failures stay on their existing review and dock surfaces.
-
+- Moving a paragraph next to an AI change keeps both readable: the move paints as one red and one green block, the neighbouring change keeps its word-level marks, including full heading renames and level changes (#986).
+- Ctrl+Z after moving an AI-written block restores its conversation byline, not "You".
+- A refused review command shows once and never covers its controls. A refusal because the Work was archived reverts silently under the archived notice; the phone now shows that notice and freezes an archived Work's draft, as desktop does. Unavailable Apply and Discard are hidden on locked drafts. Remaining text displacement in two rare cases: #992.
+- A usable draft review stays open when a background metadata refresh fails; Retry retries whichever step failed.
+- Dense draft review projection got faster: cleanup no longer rescans merged replacements on every edit.
 - Draft review reads the text (#862 re-landed on the lock-free store). Review is the difference between the live text a draft is reviewed against (`review_base`, server-written) and the draft, computed in the browser. Only red (removed) and green (added), writer typing and formatting included; no olive. Moves, cut and paste, Ctrl+Z and concurrent edits never corrupt it. A paragraph the draft removed and live then edited shows its byline, Apply and Discard (#945).
 - Discard on one document is an edit of its draft, one undoable step: Ctrl+Z in the editor, or Undo on the "Discarded" notice in the dock or Work page. The row leaves and the notice paints at the click, before the write-back. Discard all and document removal still close drafts; other tabs leave review on close (`4205`).
 - Apply sends the frozen click (the text the writer saw and the changes clicked), merges it into current live, and never answers "stale". Clicks on one document apply in order, one at a time; a lost answer retries the same command. The trail credits each conversation with only its own changed passages.
