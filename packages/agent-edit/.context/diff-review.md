@@ -41,8 +41,8 @@ edit. Its row includes its own replacement and context in document order, never
 another hunk's replacement. The painter uses disjoint ranges, with a whole-block
 mark only for a standalone attribute change with no other edit in the block;
 raw token ranges, identity and composition never expand. Formatting
-has red before-text and green after-text just like prose replacements. The projection is pure and retains nothing, so a caller that
-keeps PM nodes between edits pays only for the changed region.
+has red before-text and green after-text just like prose replacements. Projection retains no mutable review state. Retained nodes reuse hunk-content
+work; grouping, global coordinates and cleanup still recompute over pending hunks.
 
 ## Only diff the units whose nodes changed
 
@@ -67,7 +67,10 @@ Like ProseMirror's view, it follows immutable node identity: a
 keystroke or AI write re-diffs only the unit whose nodes changed. Other units
 reuse their hunks; the paragraph-level pass supplies their new positions.
 Cached offsets are unit-local and publication copies them, so moving a paragraph
-or typing before it cannot mutate another unit's coordinates.
+or typing before it cannot mutate another unit's coordinates. Semantic cleanup
+queries block boundaries in constant time from the side's existing block topology.
+It carries first/last hunk endpoints through its merge passes and slices each
+final insertion once, rather than rescanning or copying growing prefixes.
 
 The size cap is a guard for one oversized unit, not the primary performance
 mechanism. Alignment never uses a wall-clock deadline: every diff-match-patch call goes through `textDiff` in `tokens.ts`, which passes `timeout: -1` (the library reads `timeout || 1`, so 0 would mean one second).

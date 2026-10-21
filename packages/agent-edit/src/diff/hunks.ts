@@ -7,7 +7,7 @@
  */
 import type { Node as PMNode } from "prosemirror-model";
 import { type Alignment, align } from "./align.js";
-import { buildSide, coreKey, isBlockTok, type Side, type Tok } from "./tokens.js";
+import { buildSide, coreKey, type Side, type Tok } from "./tokens.js";
 
 export interface Hunk {
   from: number; // base token range replaced
@@ -86,41 +86,50 @@ export function hunkKind(bt: readonly Tok[], h: Hunk): HunkKind {
  * block-start token is never absorbed. Neither may cleanup swallow a neighbouring hunk's block
  * boundary on either side, so an inline edit and a whole-block removal/addition keep separate paint.
  */
-export function cleanupHunks(
-  hunks: readonly Hunk[],
-  bt: readonly Tok[],
-  st: readonly Tok[],
-): Hunk[] {
-  const size = (h: Hunk) => Math.max(h.to - h.from, h.ins.length);
-  let cur = hunks.slice();
+function cleanupHunks(hunks: readonly Hunk[], B: Side, S: Side): Hunk[] {
+  // Carry endpoints until publication: slicing each accumulated replacement repeats its prefix.
+  type Range = { first: Hunk; last: Hunk };
+  const size = ({ first, last }: Range) =>
+    Math.max(last.to - first.from, last.sfrom + last.ins.length - first.sfrom);
+  const crossesBlock = (side: Side, from: number, to: number) =>
+    from < to &&
+    (side.starts[side.blockOf[from]] === from || side.blockOf[from] !== side.blockOf[to - 1]);
+  let cur: Range[] = hunks.map((h) => ({ first: h, last: h }));
   for (let changed = true; changed; ) {
     changed = false;
-    const out: Hunk[] = [];
+    const out: Range[] = [];
     for (const h of cur) {
       const prev = out.at(-1);
       if (prev && absorbable(prev, h)) {
-        out[out.length - 1] = {
-          from: prev.from,
-          to: h.to,
-          sfrom: prev.sfrom,
-          ins: st.slice(prev.sfrom, h.sfrom + h.ins.length) as Tok[],
-        };
+        prev.last = h.last;
         changed = true;
       } else out.push(h);
     }
     cur = out;
   }
-  return cur;
+  return cur.map(({ first, last }) =>
+    first === last
+      ? first
+      : {
+          from: first.from,
+          to: last.to,
+          sfrom: first.sfrom,
+          ins: S.toks.slice(first.sfrom, last.sfrom + last.ins.length),
+        },
+  );
 
-  function absorbable(a: Hunk, b: Hunk): boolean {
-    const eq = b.from - a.to;
+  function absorbable(a: Range, b: Range): boolean {
+    const eq = b.first.from - a.last.to;
     if (eq > size(a) || eq > size(b)) return false;
     // A leading block token already in a may be an attribute edit followed by its first changed word.
-    for (let i = a.to > a.from ? a.from + 1 : a.from; i < b.to; i++)
-      if (isBlockTok(bt[i])) return false;
-    for (let i = a.ins.length ? a.sfrom + 1 : a.sfrom; i < b.sfrom + b.ins.length; i++)
-      if (isBlockTok(st[i])) return false;
-    return true;
+    return (
+      !crossesBlock(B, a.first.from + (a.last.to > a.first.from ? 1 : 0), b.last.to) &&
+      !crossesBlock(
+        S,
+        a.first.sfrom + (a.last.sfrom + a.last.ins.length > a.first.sfrom ? 1 : 0),
+        b.last.sfrom + b.last.ins.length,
+      )
+    );
   }
 }
 
@@ -146,6 +155,6 @@ export function diffBlocks(
   const ws = whitespaceHunks(B, D, alignment);
   if (ws.length) hunks = [...hunks, ...ws].sort((x, y) => x.from - y.from || x.to - y.to);
   const raw = hunks;
-  if (opts.cleanup !== false) hunks = cleanupHunks(hunks, B.toks, D.toks);
+  if (opts.cleanup !== false) hunks = cleanupHunks(hunks, B, D);
   return { base: B, draft: D, hunks, raw, pos: posMap(B.toks.length, hunks), alignment };
 }
