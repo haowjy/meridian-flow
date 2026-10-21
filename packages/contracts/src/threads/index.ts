@@ -32,6 +32,17 @@ export type JsonValue =
 
 export type JsonObject = { [key: string]: JsonValue };
 
+/** A non-executed call, not a failure or a successful tool receipt. */
+export function isNotesStepHeldResult(result: unknown): result is { refusal: "notes_step" } {
+  return (
+    result !== null &&
+    typeof result === "object" &&
+    !Array.isArray(result) &&
+    "refusal" in result &&
+    result.refusal === "notes_step"
+  );
+}
+
 // TODO(archive-delete): make archive + delete "both real" (product decision).
 // Today `archived` is dead — nothing sets it and no UI reaches it — while
 // `deletedAt` soft-delete (the trash) is real but unwired. Intended model:

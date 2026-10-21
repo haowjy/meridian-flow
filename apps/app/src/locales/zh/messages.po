@@ -237,10 +237,6 @@ msgstr ""
 msgid "{count, plural, one {# document removed} other {# documents removed}}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "{count, plural, one {# file} other {# files}}"
-msgstr ""
-
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -600,7 +596,7 @@ msgstr ""
 msgid "Actually…"
 msgstr "其实…"
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
 msgstr ""
 
@@ -1244,7 +1240,7 @@ msgstr ""
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Continues from <0/>"
 msgstr ""
 
@@ -1434,7 +1430,7 @@ msgstr ""
 msgid "Couldn't delete this entry. Try again."
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Couldn’t delete this file. Try again."
 msgstr ""
 
@@ -1820,7 +1816,7 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Delete {name}"
 msgstr ""
 
@@ -1990,6 +1986,10 @@ msgstr ""
 msgid "Document version"
 msgstr ""
 
+#: src/features/chat/compaction/CompactionDivider.tsx
+#~ msgid "Documents"
+#~ msgstr ""
+
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -2038,6 +2038,7 @@ msgstr ""
 msgid "Earlier"
 msgstr ""
 
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/context/menu-tree.ts
 msgid "Earlier notes"
 msgstr ""
@@ -2205,7 +2206,6 @@ msgid "File it"
 msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
-#: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr ""
 
@@ -2217,19 +2217,11 @@ msgstr ""
 msgid "File this document"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/PendingDocumentPath.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
-msgstr ""
-
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "Files attached in this chat, {count}"
-msgstr ""
-
-#: src/features/chat/ChatUploadsMenu.tsx
-msgid "Files in this chat"
 msgstr ""
 
 #: src/features/chat/SubagentHeader.tsx
@@ -2976,7 +2968,6 @@ msgid "No column has been resized yet."
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
 msgstr ""
 
@@ -2988,7 +2979,7 @@ msgstr ""
 msgid "No fields required; confirm to continue."
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "No files attached in this chat yet."
 msgstr ""
 
@@ -3025,10 +3016,6 @@ msgstr ""
 msgid "No model"
 msgstr ""
 
-#: src/features/project/context/use-catalog-menu-source.ts
-msgid "No notes yet. The AI keeps its notes for this chat here."
-msgstr ""
-
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr ""
@@ -3046,6 +3033,7 @@ msgstr ""
 msgid "No scratch notes match “{search}”."
 msgstr ""
 
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes yet."
 msgstr ""
@@ -3079,6 +3067,10 @@ msgstr "未找到"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"
 msgstr "未报告"
+
+#: src/features/chat/ToolRow.tsx
+msgid "Not run before compaction"
+msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 #~ msgid "Not saved yet (keep this tab open until you're back online)"
@@ -3161,7 +3153,7 @@ msgstr ""
 msgid "Open {0} in {1}"
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 msgid "Open {name}"
 msgstr ""
 
@@ -3376,8 +3368,14 @@ msgid "Quote"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Read"
 msgstr ""
+
+#. placeholder {0}: document.uri
+#: src/features/chat/compaction/CompactionDivider.tsx
+#~ msgid "Read {0}"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Read file"
@@ -3516,9 +3514,7 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
-#: src/features/project/work/WorkFileRows.tsx
 msgid "Rename"
 msgstr ""
 
@@ -3730,6 +3726,7 @@ msgstr ""
 msgid "Scratch"
 msgstr ""
 
+#: src/features/project/chat/ChatScratch.tsx
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch couldn’t load"
 msgstr ""
@@ -4365,7 +4362,7 @@ msgstr ""
 msgid "The server couldn't do that. Try again."
 msgstr ""
 
-#: src/features/chat/ChatUploadsMenu.tsx
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr ""
@@ -5007,6 +5004,7 @@ msgstr ""
 msgid "Uploading elsewhere…"
 msgstr ""
 
+#: src/features/chat/ChatFilesMenu.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr ""

@@ -97,6 +97,13 @@ Agent reader, tool registry/executor, delivery, claim, credit ledger, child
 coordinator, interrupts, EventSink, and background tracker are required ports;
 no disabled behavior is represented by an omitted dependency.
 
+Continuation eligibility is checked before preparation or compaction; iteration
+and tree-turn spend happen only when an assistant request actually dispatches.
+Successful reply closure first asks delivery whether pending input needs another
+request. No input means success can close even if the last response spent into
+debt. Pending input goes through the same eligibility and split preparation as
+other continuations, not a separate closure-owned preparation path.
+
 ## Queue, release, and shutdown
 
 Run start and `wakeIfRunnable` share delivery's message-first selector. A

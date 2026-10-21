@@ -4,7 +4,9 @@
  * that grant. `skills://` paths go to the skill files (D52).
  */
 import type {
+  AgentEditResultV1,
   DocumentCommandName,
+  FrontierLookup,
   ReadToolInput,
   WriteCommand,
   WriteOutcome,
@@ -257,39 +259,69 @@ async function writeUnderGrant(
   };
 }
 
+/** Shared tracked read: ordinary tool arguments, optionally pinned to a known identity. */
+export async function readTrackedDocument(
+  deps: ToolWiringDeps,
+  input: ReadToolInput,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
+  options: { expectedDocumentId?: string; recordingFrontier?: FrontierLookup } = {},
+): Promise<{
+  output: AgentEditResultV1;
+  revision: string | null;
+  isError?: true;
+  metadata?: ReturnType<typeof documentRevisionMetadata>;
+  evidence?: ResultEvidence;
+}> {
+  const { path, format, version, ...selection } = input;
+  const call = await resolveToolCall(deps, ctx, version);
+  if (isToolError(call)) return { ...writeToolError("read", call.output.message), revision: null };
+  const address = await resolveDocumentAddress(call.context, "read", path);
+  if (isToolError(address)) return { ...address, revision: null };
+  if (options.expectedDocumentId !== undefined && address.documentId !== options.expectedDocumentId)
+    return {
+      ...writeToolError(
+        "read",
+        "Referenced document is no longer available at this URI.",
+        "document_not_found",
+      ),
+      revision: null,
+    };
+  const reader =
+    version === "draft"
+      ? await keptDraftReader(deps, call.principal, call.execution, address.documentId)
+      : call.principal;
+  const grant = await documentGrant(deps, reader, "read", address, "read");
+  if (isToolError(grant)) return { ...grant, revision: null };
+  const outcome = await readDocument(
+    deps,
+    grant,
+    address,
+    {
+      selection,
+      format,
+      ...(version ? { version } : {}),
+      ...(options.recordingFrontier ? { recordingFrontier: options.recordingFrontier } : {}),
+    },
+    ctx,
+  );
+  if (outcome.isError) return { isError: true, output: outcome.result, revision: outcome.revision };
+  recordTouchInBackground(deps, address.documentId, ctx);
+  return {
+    output: outcome.result,
+    revision: outcome.revision,
+    metadata: documentRevisionMetadata(address, outcome.revision),
+    evidence: evidenceOf(address.documentId, outcome),
+  };
+}
+
 export function createReadHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const { path, format, version, ...selection } = input as ReadToolInput;
-    if (isSkillsUri(path)) return readSkill(deps, ctx.threadId, input as ReadToolInput);
-    const call = await resolveToolCall(deps, ctx, version);
-    if (isToolError(call)) return writeToolError("read", call.output.message);
-    const address = await resolveDocumentAddress(call.context, "read", path);
-    if (isToolError(address)) return address;
-    const reader =
-      version === "draft"
-        ? await keptDraftReader(deps, call.principal, call.execution, address.documentId)
-        : call.principal;
-    const grant = await documentGrant(deps, reader, "read", address, "read");
-    if (isToolError(grant)) return grant;
-    const outcome = await readDocument(
-      deps,
-      grant,
-      address,
-      {
-        selection,
-        format,
-        ...(version ? { version } : {}),
-        ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
-      },
-      ctx,
-    );
-    if (outcome.isError) return { isError: true, output: outcome.result };
-    recordTouchInBackground(deps, address.documentId, ctx);
-    return {
-      output: outcome.result,
-      metadata: documentRevisionMetadata(address, outcome.revision),
-      evidence: evidenceOf(address.documentId, outcome),
-    };
+    const parsed = input as ReadToolInput;
+    if (isSkillsUri(parsed.path)) return readSkill(deps, ctx.threadId, parsed);
+    const { revision: _revision, ...result } = await readTrackedDocument(deps, parsed, ctx, {
+      ...(ctx.frontiers ? { recordingFrontier: ctx.frontiers.recording } : {}),
+    });
+    return result;
   };
 }
 

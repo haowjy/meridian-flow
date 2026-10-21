@@ -94,7 +94,7 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
     blocks: Block[];
     requiresSplit: boolean;
     compaction?: CompactionDecision;
-    context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+    context?: import("./request-preparation.js").PreparedContinuation;
     successorFailure?: unknown;
   }>;
 };
@@ -128,7 +128,7 @@ export type AdoptedBatch<TCurrent = undefined> = {
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;
-  context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+  context?: import("./request-preparation.js").PreparedContinuation;
   /**
    * The reply ends at this request boundary for a queued switch. An assistant
    * exits through a success close; a placeholder comes back `terminal`.
@@ -256,8 +256,7 @@ export interface RuntimeDelivery
      */
     localCancellation?: () => TerminalCause | null;
     settleSummaryResponses?: () => Promise<void>;
-    continueWith?: DeliveryBoundary;
-  }): Promise<
-    { kind: "split"; adopted: AdoptedBatch } | { kind: "completed"; completion: FinalizedExecution }
-  >;
+    /** Ask the loop for a guarded continuation when input still waits. Never prepares it. */
+    continueOnPending?: boolean;
+  }): Promise<{ kind: "continue" } | { kind: "completed"; completion: FinalizedExecution }>;
 }
