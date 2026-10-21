@@ -7,6 +7,7 @@
 - Path segments beginning with `~` are reserved for branches, which are not addressable yet: `manuscript://~b7/Chapter 12` is refused with a pointer to the bare address, and files and folders cannot be named that way. `scratch://@/` and `uploads://@/` are refused too; `ls scratch://@` and `ls uploads://@` list owners.
 - A bare `[map](uploads://map)` the model writes into a document binds to the chat's existing `map.png`, the same as the full `uploads://@c3/map` spelling, instead of minting a link to a file that does not exist.
 - Files attached to a Work, or to No Work, before uploads moved to chats are deleted, and a message that attached one shows the file as no longer available. Uploads without a chat handle (`uploads://@name`) are no longer an address.
+- Model revert reports skipped parts by number and reason, without repeating their old or current text. Read the document for the passage. Revert behavior is unchanged. An all-skipped chat step now says "That change wasn't reverted because its text changed or is already gone."
 - Compaction re-reads documents with ordinary read arguments, including sections, ranges, outlines and versions. Failed reads are omitted without widening scope; partial reads never stand in for unseen text.
 - File-tree guides stay visible over highlights, including expanded Manuscript. Standalone file lists use less indentation; sidebar action hover matches page behavior.
 
