@@ -51,7 +51,7 @@ export function parseImportantFiles(text: string): { summary: string; listedLine
 }
 
 /** A current read target, distinct from historical revision evidence. */
-export interface ImportantFileCandidate {
+interface ImportantFileCandidate {
   documentId: string;
   uri: string;
   selector?: ReferenceReadSelector;
