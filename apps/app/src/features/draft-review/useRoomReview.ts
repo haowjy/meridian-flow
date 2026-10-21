@@ -113,10 +113,13 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
         const current = name ? held.get(name) : null;
         const meta = metadata[index];
         const fault = current?.read.state().kind;
+        const roomFailed = fault === "error" || fault === "unavailable";
+        // Cached active metadata still addresses the retained room after a refetch fails.
+        const metadataFailed = meta?.isError && !name;
         const status =
           meta?.data?.status === "gone"
             ? "gone"
-            : meta?.isError || fault === "error" || fault === "unavailable"
+            : metadataFailed || roomFailed
               ? "error"
               : current?.session
                 ? "ready"
@@ -127,10 +130,11 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
           roomName: name ?? null,
           session: current?.session ?? null,
           usable: current?.read.usable() ?? null,
-          retry:
-            current?.read.retry ??
-            (meta?.isError ? () => void meta.refetch() : undefined) ??
-            (() => {}),
+          retry: roomFailed
+            ? current!.read.retry
+            : meta?.isError
+              ? () => void meta.refetch()
+              : () => {},
         } as const;
       }),
     [held, metadataKey, namesKey],

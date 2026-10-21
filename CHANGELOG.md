@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep usable draft reviews mounted after metadata refresh failures; retry metadata and room acquisition at their own failure seams.
+
 - Corrected the removed-paragraph QA expectation to name its remover rather than always the writer.
 
 - Simplified the draft-review cutover: removed an unused conversion mode and redundant preflight outbox checks, retaining missing-cut and unfinished-batch rejection.
