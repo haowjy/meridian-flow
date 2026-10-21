@@ -165,7 +165,7 @@ open a different room: the delayed response must not publish there.
 
 For #945, remove a paragraph in draft, then edit its live counterpart to
 `abc LIVE def`. After the live pull, review must show that full paragraph red,
-"You", and enabled Apply/Discard.
+the byline of whoever removed it, and enabled Apply/Discard.
 
 - Review groups come from text alone. A mixed-author group stays one row and
   one red/green box even when unchanged text separates its authors' edits.
