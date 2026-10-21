@@ -1551,7 +1551,7 @@ else
         });
         return {
           kind: "complete",
-          text: "The earlier scene is complete.\n\n## Documents to keep open\n- `kb://notes`\n- manuscript://never-shown",
+          text: 'The earlier scene is complete.\n\n## Documents to keep open\n- {"path":"kb://notes"}\n- {"path":"manuscript://never-shown"}',
           model: "summary-model",
           modelResponses: [],
         };
