@@ -11,12 +11,14 @@
  * Removal widgets never enter manuscript content.
  */
 
+import { recordRestorations } from "@meridian/agent-edit/diff";
 import { type Command, Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Mapping, StepMap } from "@tiptap/pm/transform";
 import { DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { isRemoteDocumentRebuild } from "@/core/editor/anchors";
 import { CHANGE_ATTR, paintDecorations } from "./decorations";
 import { mapReview, type ProjectedReview } from "./model";
@@ -334,6 +336,9 @@ export function buildInlineReviewPlugin() {
       },
     },
     view: (view) => {
+      // Draft history needs provenance before the first writer Undo, not just after Discard.
+      const history = yUndoPluginKey.getState(view.state)?.undoManager;
+      if (history) recordRestorations(history);
       const paintView = createReviewPaintView(
         view,
         (state) => draftInlineReviewPluginKey.getState(state),

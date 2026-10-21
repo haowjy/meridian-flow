@@ -84,13 +84,6 @@ export type DiscardNotice = {
   end(): void;
 };
 const EDITOR_DISCARD_ORIGIN = Symbol("editor-draft-discard");
-const histories = new WeakSet<Y.UndoManager>();
-function installRestorations(history: Y.UndoManager) {
-  if (!histories.has(history)) {
-    histories.add(history);
-    recordRestorations(history);
-  }
-}
 /**
  * A refusal the screen already explains reverts silently (offer only what
  * applies): an archived Work removes its commands and shows its own notice with
@@ -520,7 +513,7 @@ export class DraftCommandOwner {
       : new Y.UndoManager(fragment, { trackedOrigins: new Set(), captureTimeout: 0 });
     // Direct writes are not binding repairs, but still belong in the chosen history.
     history.addTrackedOrigin(origin);
-    installRestorations(history);
+    recordRestorations(history);
     history.stopCapturing();
     const write = (): CommandOutcome => {
       doc.off("update", onTextChange);

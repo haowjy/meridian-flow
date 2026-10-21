@@ -48,8 +48,12 @@ export function recordWriteBack(
   if (records.length) doc.getArray<ItemRange | RestorationLink>(RESTORED_ROOT).push(records);
 }
 
-/** Copies an UndoManager's restorations into its doc as each undo or redo pops, for the manager's life. */
+const recordedHistories = new WeakSet<Y.UndoManager>();
+
+/** Installs once per manager, recording restorations as each undo or redo pops for its life. */
 export function recordRestorations(history: Y.UndoManager): void {
+  if (recordedHistories.has(history)) return;
+  recordedHistories.add(history);
   // Keep the outer transaction open through stack-item-popped. Yjs resets its direction flag before
   // returning; restore it until transaction cleanup so afterTransaction fills the opposite stack.
   for (const method of ["undo", "redo"] as const) {

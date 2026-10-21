@@ -137,7 +137,10 @@ then clears the list overlay. Hidden pages drain on visibility change rather tha
 waiting for animation frames. Changed base or prose refuses the stale write and
 restores the row, preserving intervening edits. Only the same item's further
 Apply/Discard waits for it. Editor history tracks a dedicated Discard origin
-with stop-capture boundaries.
+with stop-capture boundaries. The draft-only editor plugin installs restoration
+recording when its view mounts, before any writer Undo/Redo. Installation is
+idempotent per manager, including the later editor Discard path. Live editors
+never install it; a replacement session mounts and records its own history.
 Direct writes never impersonate the binding origin: its delete-only transactions
 without a writer ProseMirror transaction are schema-repair evidence. A dock
 or Work notice owns a separate manager and pool lease, retains the runtime,
