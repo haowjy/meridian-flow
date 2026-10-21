@@ -17,7 +17,6 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useWorkBranchDrafts, type WorkDraftListStatus } from "@/client/query/useWorkBranchDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
-import type { PresentedDocument } from "@/features/project/presented-document";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
@@ -96,13 +95,11 @@ export function useDraftReviewScopeValue({
   work,
   stateOwner,
   threadId = null,
-  presented,
 }: {
   projectId: string | null;
   /** The Work whose drafts this scope reviews; its archived state freezes them (D30). */
   work: Work | null;
   stateOwner?: DraftReviewStateOwner;
-  presented?: PresentedDocument | null;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
 }): DraftReviewContextValue {
@@ -131,7 +128,6 @@ export function useDraftReviewScopeValue({
     workId: effectiveWorkId,
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
-    presented,
   });
 
   // Editor-host concern: this only tells the chat overlay whether the active
