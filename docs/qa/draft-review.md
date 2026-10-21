@@ -40,7 +40,12 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
    returning: only the currently presented editor scrolls.
 3. Type inside and beside a change, then Ctrl+Z. Paint follows the actual text
    while the 120 ms projection waits. Cut/paste the paragraph and Undo; repeat
-   with block drag. Removal widgets never enter pasted manuscript text.
+   with block drag. Before any Discard, Alt+Down an AI-written paragraph then
+   Ctrl+Z: original text, paint and conversation byline return. Redo and repeat
+   Undo/Redo, then Discard and Ctrl+Z: the same conversation returns once.
+   Switch drafts and return, and repeat after reopening the session. Ordinary
+   typing Undo must not invent AI attribution; live-editor Undo must not write
+   draft restoration provenance. Removal widgets never enter pasted manuscript text.
 4. Bold a word and change a heading beside a prose edit. Both remain red/green
    changes. A one-character substitution narrows to that character.
 5. Edit live in another tab. The draft receives base and prose together. No
