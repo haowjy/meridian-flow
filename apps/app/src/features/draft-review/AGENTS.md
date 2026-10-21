@@ -35,7 +35,12 @@ it never partitions the text.
 - Unknown attribution is not known-empty membership: show the text without a
   byline until classification arrives. Do not erase the dock while loading it.
 - Components own layout, receive command callbacks, and keep attribution and controls
-  on one line. Failure text grows below that line; locked rows offer no disposition controls. `PaintHold` owns pane continuity; feedback never displaces prose.
+  on one line; locked rows offer no disposition controls. `PaintHold` owns pane
+  continuity; feedback never displaces prose.
+- A draft's failure shows once per surface: the focused change's bar while it
+  shows, else the identity row's notices (`useReviewFailures`); a file's status
+  line (`DraftCommandStatus`) in Work Files and the dock, never its rows. The
+  in-flow bar puts it in its own row. Archived-Work refusals hold no failure.
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
 Browser verification recipes live in [draft review QA](../../../../../docs/qa/draft-review.md).

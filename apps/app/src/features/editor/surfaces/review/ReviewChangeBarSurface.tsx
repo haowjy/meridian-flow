@@ -6,7 +6,8 @@
  * right margin it is portalled into the manuscript's scroll pane beside the
  * change's first line, so a scroll carries it with the text. Without room it
  * moves into a block the editor opens after the paragraph the change ends in
- * (`setReviewBarSlot`), which pushes the text below it down.
+ * (`setReviewBarSlot`), which pushes the text below it down when it opens;
+ * a failure arriving later takes the bar's own row there rather than growing it.
  *
  * The change is a decoration, and the plugin rebuilds every decoration on each
  * refetch and remote write, so its element (and the slot) is looked up again
@@ -60,6 +61,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
       change={focusedItem.change}
       disabled={view.locked}
       touch={touch}
+      inFlow={placement.kind === "below"}
       draftFailure={focusedItem.draftFailure}
       onApply={() => void view.apply(focusedItem.change)}
       onDiscard={() => void view.discard(focusedItem.change)}

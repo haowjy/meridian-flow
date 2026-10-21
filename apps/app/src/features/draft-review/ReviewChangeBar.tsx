@@ -1,4 +1,11 @@
-/** Focused change attribution and Apply/Discard, one control row on desktop and phone. Failures grow below it. */
+/**
+ * Focused change attribution and Apply/Discard, one control row on desktop and
+ * phone. The bar is the one home of its draft's failure while it shows
+ * (`useReviewFailures`). Where the bar's growth moves nothing (the margin, the
+ * phone's bottom bar) the failure grows below the row. In the manuscript's flow
+ * it would push the text down, so there it takes the byline's place in a row
+ * tall enough for two lines.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@/components/ui/button";
@@ -16,6 +23,8 @@ export type ReviewChangeBarProps = {
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;
+  /** Drawn in the manuscript's flow, after the change's paragraph. */
+  inFlow?: boolean;
   className?: string;
 };
 
@@ -27,9 +36,16 @@ export function ReviewChangeBar({
   onApply,
   onDiscard,
   touch = false,
+  inFlow = false,
   className,
 }: ReviewChangeBarProps) {
   const label = discardLabel();
+  const failure = draftFailure ? (
+    <p role="status" className="min-w-0 break-words pr-2 text-meta text-destructive">
+      <ReviewMessageText failure={draftFailure} />
+    </p>
+  ) : null;
+  const failureInRow = inFlow && failure;
   return (
     <section
       aria-label={t`Change`}
@@ -42,15 +58,22 @@ export function ReviewChangeBar({
       )}
     >
       <div
-        className={cn("flex min-w-0 shrink-0 items-center", touch ? "gap-3 py-0.5" : "gap-x-1.5")}
+        className={cn(
+          "flex min-w-0 shrink-0 items-center",
+          touch ? "gap-3 py-0.5" : "gap-x-1.5",
+          // Two lines of failure fit without growing the bar.
+          inFlow && !touch && "min-h-7",
+        )}
       >
         <div className="flex min-w-0 flex-1 items-center">
-          <ChangeAuthor
-            touch={touch}
-            fit="names"
-            change={change}
-            className={touch ? "min-h-11" : undefined}
-          />
+          {failureInRow || (
+            <ChangeAuthor
+              touch={touch}
+              fit="names"
+              change={change}
+              className={touch ? "min-h-11" : undefined}
+            />
+          )}
         </div>
         {!disabled ? (
           <span
@@ -81,11 +104,7 @@ export function ReviewChangeBar({
           </span>
         ) : null}
       </div>
-      {draftFailure ? (
-        <p role="status" className="min-w-0 break-words pr-2 text-meta text-destructive">
-          <ReviewMessageText failure={draftFailure} />
-        </p>
-      ) : null}
+      {failureInRow ? null : failure}
     </section>
   );
 }

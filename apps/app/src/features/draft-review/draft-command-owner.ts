@@ -91,6 +91,14 @@ function installRestorations(history: Y.UndoManager) {
     recordRestorations(history);
   }
 }
+/**
+ * A refusal the screen already explains reverts silently (offer only what
+ * applies): an archived Work removes its commands and shows its own notice with
+ * Unarchive, so a held "archived" line would only go stale once it is unarchived.
+ */
+function shownRefusal(failure: BranchCommandFailure): BranchCommandFailure | null {
+  return failure.serverCode === "work_archived" ? null : failure;
+}
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -199,11 +207,11 @@ export class DraftCommandOwner {
             this.setState(
               ref.itemKey,
               {
-                failure: {
+                failure: shownRefusal({
                   code: "apply-refused",
                   serverCode: answer.status === "refused" ? answer.reason : "gone",
                   removal: answer.status === "closed" ? answer.removal : undefined,
-                },
+                }),
               },
               address.draftId,
             ),
@@ -363,10 +371,10 @@ export class DraftCommandOwner {
       refused: (answer) =>
         this.setState(ref.itemKey, {
           hidden: false,
-          failure: {
+          failure: shownRefusal({
             code: "apply-refused",
             serverCode: answer.status === "refused" ? answer.reason : "gone",
-          },
+          }),
         }),
     });
     this.reveals.set(ref.itemKey, queue);
@@ -673,7 +681,7 @@ export class DraftCommandOwner {
       settleOwn?.("kept");
       this.setState(ref.itemKey, {
         hidden: false,
-        failure: { code: "discard-refused", serverCode: result.status },
+        failure: shownRefusal({ code: "discard-refused", serverCode: result.status }),
       });
       return { kind: "change-refused", code: result.status };
     } catch {

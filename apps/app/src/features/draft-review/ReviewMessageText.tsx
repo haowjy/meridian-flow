@@ -13,8 +13,6 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`The review updated. Choose the change again.`;
     case "unavailable":
       return msg`Apply is temporarily unavailable.`;
-    case "work_archived":
-      return msg`This Work is archived. Unarchive it to apply or discard its changes.`;
     case "work_not_found":
       return msg`This Work no longer exists.`;
     case "draft_not_found":

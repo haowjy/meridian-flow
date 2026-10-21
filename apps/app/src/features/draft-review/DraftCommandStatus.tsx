@@ -25,7 +25,9 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
       ) : state.applying ? (
         <Trans>Applying</Trans>
       ) : state.failure ? (
-        <ReviewMessageText failure={state.failure} />
+        <span className="text-destructive">
+          <ReviewMessageText failure={state.failure} />
+        </span>
       ) : null}
     </div>
   );
