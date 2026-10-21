@@ -28,7 +28,7 @@ import {
   type DeleteTarget,
   useDeleteConfirmation,
 } from "../context/ContextEntryActions";
-import { TreeChildren, TreeEnvProvider } from "../context/ContextTreeRows";
+import { TreeChildren, TreeEnvProvider, TreeGroup } from "../context/ContextTreeRows";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { RailPaneHeader } from "../context/RailPaneHeader";
@@ -199,43 +199,47 @@ export function ChatScratchTree({
     Boolean(primary.catalog?.children(primary.catalog.root.entryId).length) || hasEarlier;
   return (
     <>
-      {hasEarlier && earlier.catalog && scratch.earlierRootThreadId ? (
-        <div>
-          <RailFolderRow
-            icon={Folder}
-            name={t`Earlier notes`}
-            depth={1}
-            expanded={expansion.isExpanded(EARLIER_NOTES_ID)}
-            onToggle={() => expansion.toggleEntry(EARLIER_NOTES_ID)}
-          />
-          {expansion.isExpanded(EARLIER_NOTES_ID) ? (
-            <ScratchCatalog
-              projectId={projectId}
-              catalog={earlier.catalog}
-              owner={{ rootThreadId: scratch.earlierRootThreadId }}
-              editable
-              depth={2}
-              openId={openId}
-              expansion={expansion}
-              onPicked={onPicked}
-              onRequestDelete={deletion.requestDelete}
+      <TreeGroup depth={1}>
+        {hasEarlier && earlier.catalog && scratch.earlierRootThreadId ? (
+          <div>
+            <RailFolderRow
+              icon={Folder}
+              name={t`Earlier notes`}
+              depth={1}
+              expanded={expansion.isExpanded(EARLIER_NOTES_ID)}
+              onToggle={() => expansion.toggleEntry(EARLIER_NOTES_ID)}
             />
-          ) : null}
-        </div>
-      ) : null}
-      {primary.catalog ? (
-        <ScratchCatalog
-          projectId={projectId}
-          catalog={primary.catalog}
-          owner={scratch.owner}
-          editable={editable}
-          depth={1}
-          openId={openId}
-          expansion={expansion}
-          onPicked={onPicked}
-          onRequestDelete={deletion.requestDelete}
-        />
-      ) : null}
+            {expansion.isExpanded(EARLIER_NOTES_ID) ? (
+              <TreeGroup depth={2}>
+                <ScratchCatalog
+                  projectId={projectId}
+                  catalog={earlier.catalog}
+                  owner={{ rootThreadId: scratch.earlierRootThreadId }}
+                  editable
+                  depth={2}
+                  openId={openId}
+                  expansion={expansion}
+                  onPicked={onPicked}
+                  onRequestDelete={deletion.requestDelete}
+                />
+              </TreeGroup>
+            ) : null}
+          </div>
+        ) : null}
+        {primary.catalog ? (
+          <ScratchCatalog
+            projectId={projectId}
+            catalog={primary.catalog}
+            owner={scratch.owner}
+            editable={editable}
+            depth={1}
+            openId={openId}
+            expansion={expansion}
+            onPicked={onPicked}
+            onRequestDelete={deletion.requestDelete}
+          />
+        ) : null}
+      </TreeGroup>
       {!hasRows && ready ? <RailEmptyHint>{t`No scratch notes yet.`}</RailEmptyHint> : null}
       {!hasRows && !ready && !isError ? <div aria-busy className="min-h-8" /> : null}
       {isError ? (
