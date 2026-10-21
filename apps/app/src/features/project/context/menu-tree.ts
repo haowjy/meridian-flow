@@ -1,14 +1,4 @@
-/**
- * The pure part of a document menu's tree: project areas as folders that hold
- * their catalogs' files, an "Earlier notes" folder in a rebound chat's Scratch,
- * and the lookups that turn a picked row back into a tab. `DrillInMenu` and the
- * rail's Scratch section both draw trees built here, so a note lists the same
- * way wherever it is browsed.
- *
- * `rooted` puts the areas themselves at the top (the dock document's menu
- * climbs to them); unrooted, the single area's own entries are the top level
- * (the rail's Scratch section).
- */
+/** Catalog-backed project areas and opening trails for path and placement menus. */
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
@@ -70,23 +60,15 @@ function areaTop(area: MenuArea): DrillNode[] {
 
 export function buildMenuTree({
   heading,
-  empty,
   areas,
-  rooted,
 }: {
   heading: string;
-  empty?: string;
   areas: readonly MenuArea[];
-  rooted: boolean;
 }): DrillTree {
   return {
     heading,
-    empty,
     children: (folderId) => {
-      if (folderId === null) {
-        if (rooted) return areas.filter((area) => area.listed).map(areaNode);
-        return areas[0] ? areaTop(areas[0]) : [];
-      }
+      if (folderId === null) return areas.filter((area) => area.listed).map(areaNode);
       const area = areas.find((candidate) => candidate.id === folderId);
       if (area) return areaTop(area);
       for (const candidate of areas) {

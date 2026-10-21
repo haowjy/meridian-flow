@@ -4,6 +4,7 @@
  * rule lives here once and never describes visible text or artifacts.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
+import { isNotesStepHeldResult } from "@meridian/contracts/threads";
 import type { ToolView } from "./group-delivery-segments";
 import {
   documentToolFailed,
@@ -44,6 +45,10 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   let steps = 0;
 
   for (const tool of tools) {
+    if (isNotesStepHeldResult(tool.result)) {
+      steps++;
+      continue;
+    }
     const path = stringInput(toolInputObject(tool), "path");
     // Successful writes belong to the turn receipt, not the process digest.
     const command = toolCommand(tool);

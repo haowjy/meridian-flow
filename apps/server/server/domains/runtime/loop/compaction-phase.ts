@@ -179,13 +179,13 @@ export async function executeCompaction({
         turns: next.turns,
         blocks: next.blocks,
         requiresSplit: true,
-        context: next.assembled,
+        context: { assembled: next.assembled, continuation: { kind: "ordinary" as const } },
         compaction: next.compaction,
       };
     },
   };
   const successor = await deps.delivery.splitAndContinue(successorBoundary);
-  return { successor, preparedContext: successor.context };
+  return { successor };
 }
 
 /** The run was cancelled before the summarizer was called: no history left the process. */

@@ -784,19 +784,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             lease,
             turnId: turn.id,
             cause: { kind: "success", finishReason: "end_turn" },
-            continueWith: {
-              lease,
-              currentTurn: turn,
-              current: { kind: "assistant" },
-              knownTurnIds: new Set([turn.id]),
-              expectedLeafTurnId: turn.id,
-              prepareNextContext: async () => ({
-                events: [],
-                turns: [],
-                blocks: [],
-                requiresSplit: false,
-              }),
-            },
+            continueOnPending: true,
           });
           expect(closed.kind).toBe("completed");
           expect((await repos.turns.findById(turn.id))?.status).toBe("cancelled");

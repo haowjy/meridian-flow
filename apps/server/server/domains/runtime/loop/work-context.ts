@@ -177,7 +177,7 @@ export function renderWorkContext(input: {
       ? [
           input.current.isNoWork
             ? `  scratch: bare scratch:// is this chat's notes at ${lineageScratch(input.rootThreadRef)}, shared with its forks and subagents. A handoff starts fresh notes.`
-            : `  scratch: bare scratch:// is this Work's notes at ${workScratch(input.current.slug)}. Earlier chat notes remain at ${lineageScratch(input.rootThreadRef)}.`,
+            : `  scratch: bare scratch:// is this Work's notes at ${workScratch(input.current.slug)}. Earlier No Work notes, if any, remain at ${lineageScratch(input.rootThreadRef)}.`,
           "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
         ]
       : []),

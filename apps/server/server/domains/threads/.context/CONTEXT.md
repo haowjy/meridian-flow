@@ -50,6 +50,11 @@ Runtime owns its brief, stop/retry behavior, and orphan recovery; see
 [`runtime/handoff`](../../runtime/.context/handoff.md) and the
 [HTTP contract](../../../../../../docs/api/thread-handoff.md).
 
+`compaction_notes` is a system-update metadata section marking an admitted
+optional Scratch-update step. It is durable conversation context, not a new
+thread, folder, or ownership boundary. Runtime reads it to avoid granting a
+fresh allowance after recovery; the writer transcript hides the instruction.
+
 ## Prompt lifetime and history
 
 A thread's system prompt and advertised tool list freeze together at first

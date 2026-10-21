@@ -10,7 +10,7 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
-import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
+import { TreeChildren, type TreeEnv, TreeEnvProvider, TreeGroup } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
   EDITOR_CONTEXT_SCHEMES,
@@ -295,7 +295,9 @@ function SchemeSection({
       {expanded && catalog && env ? (
         <TreeEnvProvider value={env}>
           <div>
-            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+            <TreeGroup depth={1}>
+              <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+            </TreeGroup>
             {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
