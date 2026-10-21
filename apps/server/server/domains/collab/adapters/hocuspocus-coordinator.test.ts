@@ -8,7 +8,7 @@ import type {
   UpdateJournal,
   UpdateMeta,
 } from "@meridian/agent-edit/integration";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   createHocuspocusCoordinatorForTest,
@@ -146,31 +146,6 @@ describe("createHocuspocusCoordinator", () => {
 
     expect(requireDoc(docs, DOC_ID)).toBe(websocketDoc);
     expect(text(websocketDoc)).toBe("initial + server");
-  });
-
-  it("delivers idempotently and rebuilds a dropped live doc from the journal", async () => {
-    const journal = new MemoryJournal();
-    const persisted = new Y.Doc({ gc: false });
-    persisted.getText("body").insert(0, "Alpha");
-    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(persisted), 0);
-
-    const live = new Y.Doc({ gc: false });
-    const docs = new Map([[DOC_ID, live]]);
-    const openLiveDoc = vi.fn(openFrom(docs));
-    const coordinator = coordinatorFor(docs, journal, openLiveDoc);
-
-    await coordinator.deliver(DOC_ID);
-    expect(text(live)).toBe("Alpha");
-    const recoveredBytes = Array.from(Y.encodeStateAsUpdate(live));
-
-    await coordinator.deliver(DOC_ID);
-    expect(text(live)).toBe("Alpha");
-    expect(Array.from(Y.encodeStateAsUpdate(live))).toEqual(recoveredBytes);
-
-    docs.delete(DOC_ID);
-    await coordinator.deliver(DOC_ID);
-    expect(text(requireDoc(docs, DOC_ID))).toBe("Alpha");
-    expect(openLiveDoc).toHaveBeenCalledTimes(1);
   });
 });
 

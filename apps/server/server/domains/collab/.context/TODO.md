@@ -1,85 +1,30 @@
 # collab TODO
 
-Open follow-ups must preserve immutable edit identity, durable authority fences,
-and the one push/discard kernels.
+- `adapters/drizzle-drafts.ts` (`ensureThreadPeerDraft`) and the live agent-edit
+  coordinator: measure paths that hold a pooled connection while acquiring
+  another, including an ambient reply transaction. Restructure on demonstrated
+  pool exhaustion; preserve lock order and independent root rebase transactions.
+- `domain/markdown-document.ts`: evaluate replacing the constrained code schema
+  with one shared schema and presentation/input policy ([#212]). Until a safe
+  conversion exists, retain the document/code rename guard so normalization
+  cannot delete existing content.
+- `adapters/drizzle-journal.ts` and draft provenance readers: profile retained
+  history decoding, materialization and encoding before choosing incremental
+  reads ([#932]). Preserve delete-only changes, committed-prefix append,
+  exact-inverse revision checks and live authority fencing. Draft generations
+  and peer content catch-up are not available optimization boundaries.
+- `domain/ports/works-mutation.ts`: determine what remains of [#931]. Keystrokes
+  already take no Work lock and count nothing; operations still take the Work
+  boundary for lifecycle ordering. Local text Discard uses ordinary append,
+  not a server Discard operation.
+- Live document persistence and mutation adapters: move the remaining live
+  in-process/advisory lock model to checkpoint, tail and revision under [#934].
+  Atomic Apply already installs its prepared room effects after root commit;
+  do not reintroduce settlement or mutate a warm room inside its transaction.
+- Response-transaction integration: replace the duplicated `deferUntilCommit`
+  declarations and participant layer with one unit-of-work port ([#935]).
 
-## Per-change Apply Undo
-
-Expose per-change Apply Undo through the existing immutable edit-part and
-forward-inverse authority. Apply currently confirms settlement only; this does
-not need a separate reversal planner or mutable receipt.
-
-## Connection ownership
-
-Audit paths that hold a pooled connection while acquiring another:
-`ensureThreadPeerDraft` when called from an ambient transaction, and the live
-agent-edit coordinator's room copy, read outside the response transaction while
-it is open. Restructure only if concurrency measurements show pool
-exhaustion; preserve the lock order and independent root pull transactions.
-
-## Empty-paragraph preview
-
-Support empty text blocks in the draft-preview anchoring seam instead of
-returning an internal error.
-
-## Code representation
-
-Evaluate moving code from a mounted constrained schema to presentation and
-input policy ([#212](https://github.com/haowjy/meridian-flow/issues/212): one
-schema everywhere, prose affordances disabled through commands, paste, and
-transaction filters rather than schema node removal, so a document/code rename
-becomes a metadata flip). Until an explicit conversion seam exists, preserve the
-current schema guard and refuse document/code renames, because remounting the
-other schema against existing content could let normalization delete it.
-
-## Attribution and retained state
-
-The concurrent-journal scan reads and decodes every row of the Work draft
-generation on each save, since containment in the view is its only skip. Profile retained
-state materialization, encodes, persistence, and live→Work pulls before
-choosing an incremental checkpoint or captured-state design. Keep delete-only
-changes, the revision fence on draft rewrites (appends are sequenced and
-unfenced), the generation fence on rooms,
-and the final concurrency fence intact. [#932] tracks the provenance side:
-sequence it after the diff-based review re-lands ([#862]), so nothing that
-change deletes is optimized first.
-
-## Generation invalidation
-
-Thread-peer and Work-draft generations remain independent. A reset must evict
-the affected thread peers individually; audit for missing invalidation paths
-before considering a unified generation API.
-
-## Draft store follow-ups
-
-These mechanisms still run beside the draft store and each has an owner.
-Do not port them onto the store or extend them.
-
-- **Apply and settlement.** Settlement claims with renewal, `plan_version`, the
-  outbox and lock cut, post-cut joins and the writer-ingress barrier
-  (`domain/branch-push-transition.ts`, `adapters/drizzle-pending-settlement.ts`)
-  are replaced, not ported, when the diff-based review re-lands ([#862]): Apply
-  becomes one bounded attempt and settlement is deleted, closing [#906].
-- **Selective-review server path.** `refreshDraftEffect`'s direct `has_effect`
-  bump (`adapters/drizzle-draft-effect.ts`), selective Discard's survivor
-  re-journal (`adapters/drizzle-branch-push.ts`), Apply staging's revision check
-  and the sampled member list (`memberPartKeysComplete`) go together with the
-  diff-based review's group-addressed wire ([#862]).
-- **Work projection on operations** ([#931]): keystrokes already take no Work
-  lock and count nothing (the projection job does it afterward), and the Works
-  mutation boundary no longer counts. Operations (pulls, Apply staging, Discard,
-  Undo, draft creation) still lock the Work for lifecycle order and touch it in
-  their own transaction. Decide whether anything of #931 remains before
-  scheduling it.
-- **Live documents** ([#934]): collab's own live paths (Markdown writes, push,
-  reversal) still use the in-process `withDocument` mutex, the advisory lock and
-  in-place room mutation (agent-edit saves only append and deliver after commit); they move to checkpoint, tail
-  and revision after [#862].
-- **One unit-of-work port** ([#935]) replaces the six `deferUntilCommit`
-  declarations and the response-transaction participant layer.
-
-[#862]: https://github.com/haowjy/meridian-flow/pull/862
-[#906]: https://github.com/haowjy/meridian-flow/issues/906
+[#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931
 [#932]: https://github.com/haowjy/meridian-flow/issues/932
 [#934]: https://github.com/haowjy/meridian-flow/issues/934

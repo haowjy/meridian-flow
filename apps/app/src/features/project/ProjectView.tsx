@@ -566,7 +566,6 @@ function HydratedReviewControllers({
   const presentedReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
-    presented,
     stateOwner: presentedReviewState,
     threadId: null,
   });

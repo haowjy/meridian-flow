@@ -1,12 +1,5 @@
 // Immutable document edit receipts, independent of compactable transport journals.
-import type {
-  DocumentId,
-  EditOrigin,
-  EditPlacement,
-  ThreadId,
-  TurnId,
-  UserId,
-} from "@meridian/contracts";
+import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -31,7 +24,7 @@ type Alias = {
   len: number;
 };
 
-export type { EditOrigin, EditPlacement } from "@meridian/contracts";
+export type { EditOrigin } from "@meridian/contracts";
 export const documentEdits = pgTable(
   "document_edits",
   {
@@ -86,18 +79,13 @@ export const documentEditParts = pgTable(
     frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),
     aliases: jsonb("aliases").$type<Alias[]>().notNull().default(sql`'[]'::jsonb`),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
-    placement: jsonb("placement").$type<EditPlacement>().notNull(),
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
-    index("document_edit_parts_pending_idx")
-      .on(sql`(${t.placement}->>'draftId')`, sql`(${t.placement}->>'generation')`)
-      .where(sql`${t.placement}->>'kind' = 'pending'`),
+    index("document_edit_parts_pending_origin_idx")
+      .on(sql`(${t.origin}->>'draftId')`)
+      .where(sql`${t.origin}->>'kind' = 'pending'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
-    check(
-      "document_edit_parts_placement_valid",
-      sql`${t.placement}->>'kind' IN ('pending','live','discarded','retired')`,
-    ),
   ],
 );

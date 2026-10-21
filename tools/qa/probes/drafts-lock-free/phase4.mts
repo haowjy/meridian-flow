@@ -3,8 +3,10 @@
  * receipts and effect columns, a process with the projection job wired as composition wires
  * it, and the pauses that order two writers by a hook or a held call rather than by a sleep.
  */
+
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import { documentEffectsEqual } from "../../../../apps/server/server/domains/collab/domain/document-content.ts";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import {
   createDraftProjection,
@@ -21,6 +23,11 @@ import {
   setTestHook,
   type TestHookPoint,
 } from "../../../../apps/server/server/shared/test-hooks.ts";
+import {
+  blocksEqual,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+} from "../../../../packages/agent-edit/src/diff/index.ts";
 import { gate, type Harness, settled, Y } from "./harness.mts";
 
 /** The resync close: not a refusal, never counted by the client (design §2.7, D30). */
@@ -132,7 +139,6 @@ export async function draftRow(harness: Harness, draftId: string) {
     checkpointSeq: Number(row.checkpoint_seq),
     hasEffect: Boolean(row.has_effect),
     watermark: row.has_effect_revision === undefined ? null : Number(row.has_effect_revision),
-    liveCutStored: row.live_cut !== null,
     updatedAt: row.updated_at as Date,
   };
 }
@@ -239,8 +245,35 @@ export async function seedDraft(harness: Harness, label: string, text = "Base") 
     branchId: work.branchId,
     liveDoc: live,
   });
-  const { generation } = await harness.readDraft(documentDraft.draftId);
-  return { ...work, documentId, live, draftId: documentDraft.draftId, generation };
+  return { ...work, documentId, live, draftId: documentDraft.draftId };
+}
+
+/** Persist live's delta, then run the production committed-live content rebase. */
+export async function rebaseLive(
+  harness: Harness,
+  coordinator: ReturnType<typeof createDraftCoordinator>,
+  documentId: DocumentId,
+  live: Y.Doc,
+): Promise<void> {
+  const committed = await harness.liveDoc(documentId);
+  try {
+    const update = Y.encodeStateAsUpdate(live, Y.encodeStateVector(committed));
+    await harness.persistence.journal.append(documentId, update, { origin: "system", seq: 0 });
+  } finally {
+    committed.destroy();
+  }
+  const pulls = createDraftPullService({
+    outsideTransaction: (operation) => operation(),
+    drafts: harness.store,
+    liveJournal: harness.persistence.journal,
+    draftCoordinator: coordinator,
+    liveCoordinator: {} as never,
+  });
+  try {
+    await pulls.flushLivePull(documentId);
+  } finally {
+    pulls.cancelScheduledPulls();
+  }
 }
 
 type Frames = {
@@ -251,11 +284,7 @@ type Frames = {
  * One tab's room in one process: frames go through `coordinator` as the gateway sends them,
  * and an admitted one is applied to the room as Hocuspocus applies it.
  */
-export async function openRoom(
-  harness: Harness,
-  coordinator: Frames,
-  draft: { draftId: string; generation: number },
-) {
+export async function openRoom(harness: Harness, coordinator: Frames, draft: { draftId: string }) {
   const room = await durableDoc(harness, draft.draftId);
   return {
     room,
@@ -263,7 +292,6 @@ export async function openRoom(
       const outcome = await frameOutcome(
         coordinator.commitWriterUpdate({
           draftId: draft.draftId,
-          expectedGeneration: draft.generation,
           updateData: update,
           roomDocument: room,
         }),
@@ -411,8 +439,7 @@ export async function workBadge(harness: Harness, workId: string) {
 
 /**
  * A process with the projection job wired as composition wires it (§3.1, §3.2): every durable
- * append marks its draft dirty. `captures` counts live snapshots per document (the legacy
- * pull); `blocked` and `failed` are the job's diagnostics.
+ * append marks its draft dirty; `failed` records projection diagnostics.
  */
 export async function openProjected(
   harness: Harness,
@@ -420,12 +447,9 @@ export async function openProjected(
 ) {
   const store = options.store ?? harness.store;
   const marks: string[] = [];
-  const blocked: { draftId: string; documentId: string }[] = [];
   const failed: { draftId: string; cause: unknown }[] = [];
-  const captures = new Map<string, number>();
   const diagnostics: DraftProjectionDiagnostics = {
     projectionFailed: (input) => void failed.push(input),
-    projectionBaselineBlocked: (input) => void blocked.push(input),
   };
   let projection: ReturnType<typeof createDraftProjection> | undefined;
   const coordinator = phase4Coordinator(harness, {
@@ -438,10 +462,10 @@ export async function openProjected(
   const pulls = createDraftPullService({
     outsideTransaction: (operation) => operation(),
     drafts: harness.store,
+    liveJournal: harness.persistence.journal,
     draftCoordinator: coordinator,
     liveCoordinator: {
       async withDocument(documentId: string, fn: (doc: Y.Doc) => Promise<unknown>) {
-        captures.set(documentId, (captures.get(documentId) ?? 0) + 1);
         const doc = await harness.liveDoc(documentId);
         try {
           return await fn(doc);
@@ -455,7 +479,6 @@ export async function openProjected(
   projection = createDraftProjection({
     coordinator,
     store,
-    pulls,
     diagnostics,
     outsideTransaction: runOutsideWrite,
     maxRuns: options.maxRuns ?? 4,
@@ -465,9 +488,7 @@ export async function openProjected(
     coordinator,
     pulls,
     marks,
-    blocked,
     failed,
-    captures,
     projection: () => job,
     dispose() {
       job.dispose();
@@ -476,18 +497,16 @@ export async function openProjected(
   };
 }
 
-/** `has_effect` as the projection must judge it: the draft against its stored `live_cut`. */
-export async function judgedEffect(harness: Harness, draftId: string): Promise<boolean | null> {
-  const [row] = await harness.raw<{ live_cut: Uint8Array | null }[]>`
-    select live_cut from document_drafts where id = ${draftId}`;
-  if (!row?.live_cut) return null;
-  const baseline = new Y.Doc({ gc: false });
+/** `has_effect` against the draft's own committed review base. */
+export async function judgedEffect(harness: Harness, draftId: string): Promise<boolean> {
   const doc = await durableDoc(harness, draftId);
+  const schema = buildDocumentSchema();
   try {
-    Y.applyUpdate(baseline, new Uint8Array(row.live_cut));
-    return !documentEffectsEqual(doc, baseline);
+    return !blocksEqual(
+      readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+      readBlocks(doc.getXmlFragment("prosemirror"), schema),
+    );
   } finally {
-    baseline.destroy();
     doc.destroy();
   }
 }

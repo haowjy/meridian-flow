@@ -253,7 +253,7 @@ function countingJournal(counters: Counters): UpdateJournal {
     appendWriterUpdate: async (_documentId, update) => {
       counters.transactions += 1;
       counters.journalBytes += update.byteLength;
-      return { status: "appended" as const, seq: counters.transactions, joinedSettlement: false };
+      return { status: "appended" as const, seq: counters.transactions };
     },
     appendBatch: async () => [],
     read: async () => ({ checkpoint: null, updates: [] }),

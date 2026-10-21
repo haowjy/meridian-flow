@@ -254,7 +254,7 @@ export function ContextViewer({
               holdsRemovedNotice={tabs.length === 0}
             />
           ) : null}
-          {controller.inlineReview?.shown ? (
+          {controller.toast ? (
             <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
           ) : null}
         </PaintHold>

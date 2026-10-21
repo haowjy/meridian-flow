@@ -1,7 +1,7 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { UpdateMeta } from "@meridian/agent-edit/integration";
-import { draftRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -22,13 +22,11 @@ import {
 } from "./domain/document-mutation-policy.js";
 import type { DraftCoordinator } from "./domain/draft-coordinator.js";
 import type { DraftStore } from "./domain/draft-store.js";
-import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
-import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
@@ -67,7 +65,6 @@ type HocuspocusPersistenceDeps = {
   onLiveUpdatePersisted?(documentId: DocumentId): void;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
   onDraftWriterUpdateAdmitted?(draftId: string): void;
-  offlineReconciliation?: OfflineReconciliation;
 };
 
 export type HocuspocusPersistenceService = Pick<
@@ -79,17 +76,15 @@ export type HocuspocusPersistenceService = Pick<
   | "currentLiveGeneration"
   | "validateHocuspocusDocument"
   | "admitDraftWriterUpdate"
-  | "persistConnectionUpdate"
   | "storeHocuspocusDocument"
   | "storeHocuspocusDraft"
   | "drainHocuspocusPersistence"
   | "drainHocuspocusDraftPersistence"
   | "closeHocuspocusDraftRoom"
-  | "rejectStaleDraftSyncStep1"
+  | "reconcileHocuspocusDraftRoom"
   | "enrollHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 > & {
-  writerIngressBarrier: WriterIngressBarrier;
   disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
 };
 
@@ -100,9 +95,6 @@ export function createHocuspocusPersistenceService(
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
-  const liveAppendTails = new Map<string, Promise<void>>();
-  const ingressGenerations = new Map<string, number>();
-  const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
   // A reconnected client has current transport authority but can replay cached
   // pre-restore structs/deletes. Handle fencing cannot identify that byte history.
   const retiredStateVectors = new Map<string, Uint8Array>();
@@ -111,31 +103,10 @@ export function createHocuspocusPersistenceService(
   const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
 
-  const writerIngressBarrier: WriterIngressBarrier = {
-    async drain(documentId) {
-      const generation = ingressGenerations.get(documentId) ?? 0;
-      const admitted = admittedByDocument.get(documentId);
-      if (admitted) {
-        await Promise.all(
-          [...admitted].flatMap(([admissionGeneration, promise]) =>
-            admissionGeneration <= generation ? [promise] : [],
-          ),
-        );
-      }
-      return generation;
-    },
-    isGenerationCurrent(documentId, generation) {
-      return (ingressGenerations.get(documentId) ?? 0) === generation;
-    },
-  };
-
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
       const pending = [...pendingAppends.values()].filter(
-        (entry) =>
-          !documentId ||
-          entry.documentId === documentId ||
-          (documentId.startsWith("draft:") && entry.documentId.startsWith(`${documentId}:gen:`)),
+        (entry) => !documentId || entry.documentId === documentId,
       );
       if (pending.length === 0) return;
       await Promise.allSettled(pending.map((entry) => entry.promise));
@@ -154,17 +125,6 @@ export function createHocuspocusPersistenceService(
         pendingAppends.delete(id);
       });
     pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
-  }
-
-  function enqueueLiveAppend(documentId: string, operation: () => Promise<void>): void {
-    const previous = liveAppendTails.get(documentId) ?? Promise.resolve();
-    const current = previous.then(operation);
-    const settled = current.catch(() => undefined);
-    liveAppendTails.set(documentId, settled);
-    void settled.finally(() => {
-      if (liveAppendTails.get(documentId) === settled) liveAppendTails.delete(documentId);
-    });
-    trackAppend(documentId, current);
   }
 
   function rejectReservedClientIdUpdate(input: {
@@ -264,28 +224,6 @@ export function createHocuspocusPersistenceService(
     }
   }
 
-  function emitOfflineReconciliationFailure(documentId: string, cause: unknown): void {
-    if (!deps.eventSink) return;
-    emitEvent(deps.eventSink, {
-      level: "error",
-      source: "collab.hocuspocus",
-      name: "offline_reconciliation.failed_after_durability",
-      correlation: { documentId },
-      payload: unknownToEventPayload(cause),
-    });
-  }
-
-  function emitOfflineReconciliationDegraded(documentId: string): void {
-    if (!deps.eventSink) return;
-    emitEvent(deps.eventSink, {
-      level: "warn",
-      source: "collab.hocuspocus",
-      name: "offline_reconciliation.evidence_degraded",
-      correlation: { documentId },
-      payload: {},
-    });
-  }
-
   function latestMetrics(): CollabPersistenceMetrics {
     const byDocument = new Map<
       string,
@@ -361,26 +299,23 @@ export function createHocuspocusPersistenceService(
   }
 
   return {
-    writerIngressBarrier,
     validateHocuspocusDocument,
     async currentLiveGeneration(documentId) {
       return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
     },
 
-    async resolveDraftHocuspocusRoom(draftId, generation) {
+    async resolveDraftHocuspocusRoom(draftId) {
       const documentDraft = await requireDraftStore().getDraft(draftId);
       if (
         documentDraft?.status !== "active" ||
         documentDraft.kind !== "work_draft" ||
-        !documentDraft.workId ||
-        documentDraft.generation !== generation
+        !documentDraft.workId
       )
         return null;
       return {
         draftId: documentDraft.draftId,
         documentId: documentDraft.documentId,
         workId: documentDraft.workId,
-        generation: documentDraft.generation,
         schemaVersion: documentDraft.schemaVersion,
         status: documentDraft.status,
       };
@@ -399,48 +334,50 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    async loadHocuspocusDraftState(draftId, generation) {
+    async loadHocuspocusDraftState(draftId) {
       const documentDraft = await requireDraftStore().getDraft(draftId);
-      if (
-        documentDraft?.status !== "active" ||
-        documentDraft.kind !== "work_draft" ||
-        documentDraft.generation !== generation
-      )
+      if (documentDraft?.status !== "active" || documentDraft.kind !== "work_draft")
         return undefined;
-      // The read can land after a reset: the room loads only its own generation.
+      // Revalidate close status on the content read, not just the metadata read.
       return requireDraftCoordinator().readDraft(draftId, async (doc, snapshot) =>
-        snapshot.status === "active" && snapshot.generation === generation
-          ? { state: Y.encodeStateAsUpdate(doc), generation }
-          : undefined,
+        snapshot.status === "active" ? { state: Y.encodeStateAsUpdate(doc) } : undefined,
       );
     },
 
-    enrollHocuspocusDraftRoom({ draftId, generation, document }) {
+    enrollHocuspocusDraftRoom({ draftId, document }) {
       const hocuspocus = deps.hocuspocus();
       if (!hocuspocus) return;
       const enrollment = (async () => {
         // The load read the draft before its room became a delivery recipient: whatever
-        // committed in between, a transition or a reset, reached no room.
+        // committed in between reached no room.
         if (!(await whenRoomRegistered(hocuspocus, document))) return;
         const base = await requireDraftCoordinator().reconcileRegisteredRoom({
           draftId,
-          generation,
           room: document,
           trigger: "enrollment",
         });
-        if (!base) closeRoom(hocuspocus, document);
+        if (!base) {
+          const ended = await requireDraftStore().getDraft(draftId);
+          closeRoom(
+            hocuspocus,
+            document,
+            ended?.closedCause === "document_removed"
+              ? WS_CLOSE.DOCUMENT_DELETED
+              : WS_CLOSE.DRAFT_CLOSED,
+          );
+        }
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {
           level: "error",
           source: "collab.hocuspocus",
           name: "draft_room_enrollment.failed",
-          correlation: { draftId, draftGeneration: generation },
+          correlation: { draftId },
           payload: unknownToEventPayload(cause),
         });
       });
       // A store of this room, and a drain of this draft, wait the enrollment out.
-      trackAppend(draftRoomName(draftId, generation), enrollment);
+      trackAppend(draftRoomName(draftId), enrollment);
     },
 
     async admitLiveWriterUpdate(input) {
@@ -472,37 +409,22 @@ export function createHocuspocusPersistenceService(
           // transaction, so the journal judges novelty again under the document lock (#946).
           isContained: () => documentContainment.contains(input.document, input.update),
           async append() {
-            const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
-            ingressGenerations.set(input.documentId, generation);
-            const admitted = admittedByDocument.get(input.documentId) ?? new Map();
-            admittedByDocument.set(input.documentId, admitted);
             const append = deps.journal.appendWriterUpdate(
               input.documentId,
               input.update,
               deps.metaForOrigin(input.origin),
               authority,
             );
-            const tracked = append.catch((cause) => {
-              recordDroppedConnectionUpdate(input.documentId);
-              emitPersistenceAppendFailure(input.documentId, cause);
-              throw cause;
-            });
-            admitted.set(generation, tracked);
-            try {
-              return await tracked;
-            } finally {
-              admitted.delete(generation);
-              if (admitted.size === 0) admittedByDocument.delete(input.documentId);
-            }
+            trackAppend(input.documentId, append);
+            return await append;
           },
         });
         // Refused before the lock, or under it: another copy of this update was stored first.
         if (!admission.admitted || admission.value.status === "contained")
-          return { admitted: false, joinedSettlement: false };
+          return { admitted: false };
         deps.onLiveUpdatePersisted?.(input.documentId);
         return {
           admitted: true,
-          joinedSettlement: admission.value.joinedSettlement,
         };
       } catch (cause) {
         if (cause instanceof ReservedWriterClientIdError) {
@@ -513,32 +435,12 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    persistConnectionUpdate(input) {
-      // The durability boundary is the awaited pre-apply admission hook. This queue
-      // retains only post-apply reconciliation work and may lag acknowledgements.
-      if (input.origin.type !== "user" || !input.reconcileOffline) return;
-      const convergedState = Y.encodeStateAsUpdate(input.document);
-      enqueueLiveAppend(input.documentId, async () => {
-        try {
-          const result = await deps.offlineReconciliation?.reconcile({
-            documentId: input.documentId,
-            incomingUpdate: input.update,
-            convergedState,
-          });
-          if (result?.degraded) emitOfflineReconciliationDegraded(input.documentId);
-        } catch (cause) {
-          emitOfflineReconciliationFailure(input.documentId, cause);
-        }
-      });
-    },
-
     admitDraftWriterUpdate(input) {
-      const queueKey = draftRoomName(input.draftId, input.expectedGeneration);
+      const queueKey = draftRoomName(input.draftId);
       const admission = (async () => {
         try {
           const { admitted } = await requireDraftCoordinator().commitWriterUpdate({
             draftId: input.draftId,
-            expectedGeneration: input.expectedGeneration,
             updateData: input.update,
             actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
             roomDocument: input.document,
@@ -605,16 +507,7 @@ export function createHocuspocusPersistenceService(
     },
 
     closeHocuspocusDraftRoom(draftId) {
-      // Narrow ops/test affordance kept for the durable shadow probe fixture T6;
-      // production reset paths use the draft coordinator reset callback.
-      const hocuspocus = deps.hocuspocus();
-      if (!hocuspocus) return;
-      const roomPrefix = `draft:${draftId}:gen:`;
-      for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
-        name.startsWith(roomPrefix),
-      )) {
-        hocuspocus.closeConnections(roomName);
-      }
+      deps.hocuspocus()?.closeConnections(draftRoomName(draftId));
     },
 
     async disconnectLiveGeneration(documentId, generation) {
@@ -640,61 +533,22 @@ export function createHocuspocusPersistenceService(
       retireRoom(documentId, document);
     },
 
-    async rejectStaleDraftSyncStep1(input) {
+    async reconcileHocuspocusDraftRoom(input) {
       // Before Hocuspocus answers the tab's step 1 from the room, the room catches up on
       // whatever committed that it missed: another process's commits, a dropped delivery
       // (decision D27). The tab's own exchange then brings the tab current, read-only or not.
       const base = await requireDraftCoordinator().reconcileRegisteredRoom({
         draftId: input.draftId,
-        generation: input.generation,
         room: input.room,
         trigger: "handshake",
       });
-      const stale =
-        base?.snapshot.kind === "work_draft" &&
-        draftSyncStep1IsStale(input.clientStateVector, {
-          stateVector: Y.encodeStateVector(base.replica.doc),
-          discardedStateVector: base.snapshot.discardedStateVector,
-        });
-      if (!stale) return false;
-      recordDroppedConnectionUpdate(draftRoomName(input.draftId, input.generation));
-      if (deps.eventSink) {
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "collab.hocuspocus",
-          name: "draft_sync_step1.fenced",
-          correlation: { draftId: input.draftId, draftGeneration: input.generation },
-          payload: {},
-        });
-      }
-      return true;
+      return !!base;
     },
 
     getPersistenceQueueMetrics() {
       return latestMetrics();
     },
   };
-}
-
-/**
- * A client vector past the draft's current clocks only where a reset discarded them: the
- * tab still holds the previous generation's content.
- */
-function draftSyncStep1IsStale(
-  clientStateVector: Uint8Array,
-  documentDraft: { stateVector: Uint8Array; discardedStateVector?: Uint8Array | null },
-): boolean {
-  if (!documentDraft.discardedStateVector) return false;
-  const clientClocks = Y.decodeStateVector(clientStateVector);
-  const currentClocks = Y.decodeStateVector(documentDraft.stateVector);
-  const discardedClocks = Y.decodeStateVector(documentDraft.discardedStateVector);
-  for (const [client, clientClock] of clientClocks) {
-    const currentClock = currentClocks.get(client) ?? 0;
-    if (clientClock <= currentClock) continue;
-    const discardedClock = discardedClocks.get(client) ?? 0;
-    if (Math.min(clientClock, discardedClock) > currentClock) return true;
-  }
-  return false;
 }
 
 function replaysRetiredGeneration(

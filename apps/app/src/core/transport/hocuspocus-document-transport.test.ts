@@ -34,7 +34,7 @@ const { classifyDocumentTransportClose, createHocuspocusDocumentTransport } = aw
 );
 
 describe("Hocuspocus document transport adapter", () => {
-  it("leaves existing terminal and draft close classifications unchanged", () => {
+  it("classifies terminal draft closes and leaves reconnects alone", () => {
     expect(
       classifyDocumentTransportClose("document-1", {
         code: 4403,
@@ -42,11 +42,11 @@ describe("Hocuspocus document transport adapter", () => {
       }),
     ).toEqual({ kind: "unauthorized", reason: "permission-denied", code: 4403 });
     expect(
-      classifyDocumentTransportClose("draft:draft-1:gen:1", {
+      classifyDocumentTransportClose("draft:draft-1", {
         code: 4205,
-        reason: "draft-stale-doc",
+        reason: "discarded",
       }),
-    ).toEqual({ kind: "reset", reason: "draft-stale-doc", disposition: "rebuild", code: 4205 });
+    ).toEqual({ kind: "reset", reason: "discarded", disposition: "closed", code: 4205 });
     expect(
       classifyDocumentTransportClose("document-1", {
         code: 1006,
@@ -58,17 +58,16 @@ describe("Hocuspocus document transport adapter", () => {
   it.each([
     {
       signal: "close",
-      contract: WS_CLOSE.DRAFT_GENERATION_STALE,
+      contract: WS_CLOSE.DRAFT_CLOSED,
       pending: true,
-      disposition: "superseded",
+      disposition: "closed",
     },
     {
       signal: "denial",
-      contract: WS_CLOSE.DRAFT_GENERATION_STALE,
+      contract: WS_CLOSE.DRAFT_CLOSED,
       pending: true,
-      disposition: "superseded",
+      disposition: "closed",
     },
-    { signal: "close", contract: WS_CLOSE.DRAFT_STALE, pending: true, disposition: "rebuild" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: "refused" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
   ] as const)("classifies $signal $contract.reason with pending=$pending", async ({
@@ -77,7 +76,7 @@ describe("Hocuspocus document transport adapter", () => {
     pending,
     disposition,
   }) => {
-    const roomName = "draft:draft-1:gen:1";
+    const roomName = "draft:draft-1";
     const document = new Y.Doc();
     const awareness = new Awareness(document);
     const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
@@ -129,7 +128,7 @@ describe("Hocuspocus document transport adapter", () => {
 
   // #940: a draft the server keeps refusing must stop resending and keep its outbox.
   it.each([
-    ["draft:draft-1:gen:1", true],
+    ["draft:draft-1", true],
     ["document-1", false],
   ] as const)("bounds repeated update refusals of %s", async (roomName, bounded) => {
     const document = new Y.Doc();
@@ -172,7 +171,7 @@ describe("Hocuspocus document transport adapter", () => {
   // D30, design §2.7: a causal gap never ends a draft refused, and an Update
   // never reaches a socket ahead of that socket's SyncStep2.
   it("reconnects a draft room through prefix-missing closes without writing held updates", async () => {
-    const roomName = "draft:draft-1:gen:1";
+    const roomName = "draft:draft-1";
     const { code, reason } = WS_CLOSE.DRAFT_PREFIX_MISSING;
     const document = new Y.Doc();
     const awareness = new Awareness(document);

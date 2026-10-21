@@ -28,8 +28,8 @@ document toolbar owning the command layer the contextual surfaces share.
   capability, the rich/plain fallback and what a refusal means. Surfaces choose
   a payload and destination; they do not call `navigator.clipboard` directly.
 - Desktop review is an editable peer in the review room; phone review is
-  read-only. Review marks, removals, authorship, and merge state come from the
-  server projection rather than client re-derivation.
+  read-only. The mounted draft and its review base decide changes; attribution
+  supplies bylines. See [draft review](../draft-review/AGENTS.md).
 - `SessionEditor` owns device reading memory for live Editor and dock mounts
   (`core/editor/use-reading-position.ts`). Review and paint-held mounts stand
   down, and explicit destinations win. Do not restore pixel scroll in a second

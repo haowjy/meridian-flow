@@ -7,7 +7,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
-import type { DraftRoomRef } from "./draft-room-pool";
 
 export type RetainedLiveDocumentReference = Readonly<{
   projectId: ProjectId;
@@ -49,6 +48,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
    * room's current session or no longer removed.
    */
   restartRemovedRoom(session: DocumentSession): Promise<boolean>;
+  closeDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
   observeDraftRoom(
@@ -57,7 +57,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   ): () => void;
   /** A fresh session for a draft room whose last one reset, synced from the server alone. */
   rebuildDraftRoom(roomKey: string): Promise<DocumentSession>;
-  retainDraftRooms(ownerId: string, rooms: readonly DraftRoomRef[]): void;
+  retainDraftRooms(ownerId: string, rooms: readonly string[]): void;
   releaseDraftRooms(ownerId: string): void;
 }
 

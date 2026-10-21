@@ -156,12 +156,21 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 - [Workspace transitions and restoration codec](../../../client/stores/context-tabs-store/editor-workspace-state.ts).
 
 
-Review-only document admission uses the existing address request. Only a route
+Review-only document admission uses `getProjectDocumentAddress`. Only a route
 with `itemKey` and a resolved Work sends its Work and per-document draft
 selector, both included in the address query key. The server alone maps that
 review item to the whole branch tree after validating it. A plain
 manuscript address remains live-only; `gateLiveView` is unchanged, and no
 caller guesses a review selector from a path or a Work's draft list.
+
+`ReadableProjectRoute` retains `useDraftMetadata` above editor address admission.
+A metadata `gone` answer and the room's terminal `4205 draft-closed` frame are two arrivals of one
+account-owned disposition: available documents leave review for live; removed
+documents use availability's removal record. Catalog invalidation must not
+unmount the room first and strand the destination as unavailable. Unknown or
+failed metadata reads never prove closure. See the
+[review runtime](../../draft-review/.context/draft-review.md) for command and
+room ownership.
 
 ### Who decides what
 

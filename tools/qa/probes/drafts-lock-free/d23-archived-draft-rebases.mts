@@ -33,6 +33,7 @@ export const d23ArchivedDraftRebases: Probe = {
     const pulls = createDraftPullService({
       outsideTransaction: independently,
       drafts: harness.store,
+      liveJournal: harness.persistence.journal,
       draftCoordinator: harness.coordinator,
       liveCoordinator: {
         withDocument: async (_id: string, run: (doc: typeof live) => unknown) => run(live),
@@ -40,7 +41,8 @@ export const d23ArchivedDraftRebases: Probe = {
     });
     try {
       await harness.works.archive(workId);
-      appendToFirstParagraph(live, " AFTER ARCHIVE");
+      const update = appendToFirstParagraph(live, " AFTER ARCHIVE");
+      await harness.persistence.journal.append(documentId, update, { origin: "system", seq: 0 });
       await pulls.flushLivePull(documentId as DocumentId);
       const archived = await harness.readDraft(documentDraft.draftId);
       observe("archived", archived);
@@ -56,7 +58,6 @@ export const d23ArchivedDraftRebases: Probe = {
         const frame = await settled(
           harness.coordinator.commitWriterUpdate({
             draftId: documentDraft.draftId,
-            expectedGeneration: read.documentDraft.generation,
             updateData: Y.encodeStateAsUpdate(room, before),
             roomDocument: room,
           }),

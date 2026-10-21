@@ -1,6 +1,12 @@
 // Forward inverse receipts, cold lineage tracing, classification and admission.
 import * as Y from "yjs";
 import {
+  intersectLineageRanges,
+  type LineageRange,
+  normalizeLineageRanges,
+  subtractLineageRanges,
+} from "../lineage/range-set.js";
+import {
   allItems,
   ancestorItems,
   changedRedone,
@@ -9,6 +15,7 @@ import {
   hydrateRedone,
   itemIsInFragment,
   itemIsVisible,
+  itemsInRange,
   snapshotRedone,
 } from "../yjs-mutation.js";
 import { shouldDeleteUndoItem } from "./delete-filter.js";
@@ -96,18 +103,39 @@ function ranges(keys: Iterable<Key>): EditRange[] {
   }
   return out;
 }
+const lineageRange = (range: EditRange): LineageRange => ({
+  clientID: range.client,
+  clock: range.clock,
+  length: range.len,
+});
+const editRange = (range: LineageRange): EditRange => ({
+  client: range.clientID,
+  clock: range.clock,
+  len: range.length,
+});
+const normalizedRanges = (ranges: readonly EditRange[]): EditRange[] =>
+  normalizeLineageRanges(ranges.map(lineageRange)).map(editRange);
+function proseRanges(doc: Y.Doc, input: readonly EditRange[]): EditRange[] {
+  const out: EditRange[] = [];
+  for (const range of input)
+    for (const { item, clock, len } of itemsInRange(doc, range))
+      if (inFragment(doc, item)) out.push({ client: range.client, clock, len });
+  return normalizedRanges(out);
+}
 const find = (doc: Y.Doc, k: Key) => findItem(doc, parse(k)) ?? undefined;
 const inFragment = (doc: Y.Doc, item: Y.Item) => itemIsInFragment(doc, item, ROOT);
 function rawEffect(update: Uint8Array): EditEffect {
   const decoded = Y.decodeUpdate(update);
   return {
-    inserted: ranges(
+    inserted: normalizedRanges(
       decoded.structs
         .filter((s): s is Y.Item => s instanceof Y.Item)
-        .flatMap((s) => clocks([{ client: s.id.client, clock: s.id.clock, len: s.length }])),
+        .map((s) => ({ client: s.id.client, clock: s.id.clock, len: s.length })),
     ),
-    deleted: [...decoded.ds.clients].flatMap(([client, rs]) =>
-      rs.map((r) => ({ client, clock: r.clock, len: r.len })),
+    deleted: normalizedRanges(
+      [...decoded.ds.clients].flatMap(([client, rs]) =>
+        rs.map((r) => ({ client, clock: r.clock, len: r.len })),
+      ),
     ),
   };
 }
@@ -121,21 +149,23 @@ export function captureEditParts(
   receipts: readonly { update: Uint8Array; frontier: EditFrontier }[],
 ): CapturedPart[] {
   const raw = receipts.map((r) => rawEffect(r.update));
-  const inserted = new Set(raw.flatMap((e) => clocks(e.inserted))),
-    deleted = new Set(raw.flatMap((e) => clocks(e.deleted)));
-  const transient = new Set([...inserted].filter((k) => deleted.has(k)));
-  const keep = (k: Key) => {
-    const item = find(doc, k);
-    return !transient.has(k) && !!item && inFragment(doc, item);
-  };
+  const inserted = normalizedRanges(raw.flatMap((effect) => effect.inserted)),
+    deleted = normalizedRanges(raw.flatMap((effect) => effect.deleted)),
+    transient = intersectLineageRanges(inserted.map(lineageRange), deleted.map(lineageRange));
   return receipts.map((receipt, i) => {
     if (!receipt.frontier) throw new Error("Missing edit frontier");
     return {
       update: receipt.update,
       frontier: receipt.frontier,
       effect: {
-        inserted: ranges(clocks(raw[i].inserted).filter(keep)),
-        deleted: ranges(clocks(raw[i].deleted).filter(keep)),
+        inserted: subtractLineageRanges(
+          proseRanges(doc, raw[i].inserted).map(lineageRange),
+          transient,
+        ).map(editRange),
+        deleted: subtractLineageRanges(
+          proseRanges(doc, raw[i].deleted).map(lineageRange),
+          transient,
+        ).map(editRange),
       },
       aliases: [],
     };

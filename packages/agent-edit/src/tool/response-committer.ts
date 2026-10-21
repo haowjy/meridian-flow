@@ -163,8 +163,6 @@ export interface RoomCopy {
   doc: Y.Doc;
   /** The room the copy was read from; null records no frontier. */
   room: string | null;
-  /** The host generation a scope cut taken from this copy names. */
-  generation: number;
   /** The edit scope's acceptance epoch the call was bound to before the read. */
   lifetime: DocumentLifetime | null;
   dispose(): void;
@@ -531,8 +529,8 @@ export function createResponseCommitter(deps: {
         docBuffer.rejectedUpdates = [...(docBuffer.rejectedUpdates ?? []), ...rejected];
         enqueueNotices(responseId, docId, rejected);
       }
-      const { doc, room, generation } = read;
-      return { doc, room, generation, lifetime: token, dispose: () => doc.destroy() };
+      const { doc, room } = read;
+      return { doc, room, lifetime: token, dispose: () => doc.destroy() };
     }
   }
 

@@ -4,8 +4,8 @@
  * complete prefix. The append drops its revision predicate; this is what keeps the fold exact.
  *
  * - Arm 1: process A's frame holds at `draft.append.beforeCommit` (rows inserted, row held);
- *   process B's live pull waits on A's row (`pg_stat_activity`); after A commits, the pull's
- *   checkpoint covers A's id, the tail is empty and A's token is materialized.
+ *   process B's content rebase waits on A's row (`pg_stat_activity`); after A commits, the rebase
+ *   appends and an explicit compaction covers A's id, leaving an empty tail and A's token.
  * - Arm 2 (negative control, raw SQL): a low-id `INSERT` with no row lock held open while a
  *   higher row commits and a fold runs; the fold waits only on the insert's FK lock, its
  *   checkpoint passes the low id, and the low row vanishes from materialization. The hazard
@@ -31,6 +31,7 @@ import {
   nth,
   openProcess,
   pauseAt,
+  rebaseLive,
   runArms,
   seedDraft,
   tabOn,
@@ -40,7 +41,7 @@ export const appendTailOrder: Probe = {
   name: "append-tail-order",
   decision: "D28 (§1 tail order)",
   expected:
-    "arm 1: the pull waits on A's row, then checkpoint_seq >= A's id, tail 0, A's token durable; arm 2: the unlocked low row falls below checkpoint_seq and vanishes",
+    "arm 1: the rebase waits on A's row, then compaction checkpoint_seq >= A's id, tail 0, A's token durable; arm 2: the unlocked low row falls below checkpoint_seq and vanishes",
   async run(harness) {
     await runArms({
       async "1-fold-waits-for-the-held-append"() {
@@ -52,7 +53,6 @@ export const appendTailOrder: Probe = {
         const warm = keystroke(a.room, " warm", 930_000);
         await a.coordinator.commitWriterUpdate({
           draftId: draft.draftId,
-          expectedGeneration: draft.generation,
           updateData: warm,
           roomDocument: a.room,
         });
@@ -63,7 +63,6 @@ export const appendTailOrder: Probe = {
             frameOutcome(
               a.coordinator.commitWriterUpdate({
                 draftId: draft.draftId,
-                expectedGeneration: draft.generation,
                 updateData: keystroke(a.room, " HELD", 930_001),
                 roomDocument: a.room,
               }),
@@ -72,26 +71,44 @@ export const appendTailOrder: Probe = {
           await pause.entered;
           appendToFirstParagraph(draft.live, " LIVE");
           const pull = independently(() =>
-            b.coordinator.pullFromDoc({ draftId: draft.draftId, upstream: draft.live }),
+            rebaseLive(other, b.coordinator, draft.documentId, draft.live),
           );
           const waiting = await harness.waitForLockWaiter(/document_drafts/);
           pause.release();
           const outcome = await frame;
-          const pulled = await pull;
+          await pull;
+          const read = await harness.store.readDraftAt(draft.draftId);
+          if (!read) throw new Error("draft missing");
+          const folded = materializeDraftRead(read);
+          try {
+            await harness.store.commitRewrite({
+              draftId: draft.draftId,
+              doc: folded,
+              policy: {
+                kind: "fold",
+                checkpointRevision: read.documentDraft.checkpointRevision,
+                seq: read.tail.at(-1)?.id ?? read.documentDraft.checkpointSeq,
+              },
+              operation: { kind: "compact" },
+            });
+          } finally {
+            folded.destroy();
+          }
           const row = await draftRow(harness, draft.draftId);
           const durable = await harness.readDraft(draft.draftId);
-          const aId = nth(await journalRows(harness, draft.draftId), -1).id;
+          const aId = nth(
+            (await journalRows(harness, draft.draftId)).filter((row) => row.source === "writer"),
+            -1,
+          ).id;
           observe("arm 1", {
             waiting,
             outcome,
-            pulled,
             aId,
             checkpointSeq: row.checkpointSeq,
             tail: durable.tail,
             text: durable.text,
           });
           assert.equal(outcome, "appended");
-          assert.equal(pulled, "pulled");
           assert.ok(row.checkpointSeq >= aId, "the fold's checkpoint covers A's row");
           assert.equal(durable.tail, 0);
           assert.match(durable.text, / HELD/);
@@ -107,17 +124,22 @@ export const appendTailOrder: Probe = {
 
       async "2-unlocked-insert-hazard"() {
         const draft = await seedDraft(harness, "tail-hazard");
-        const { draftId, generation } = draft;
-        const low = appendToFirstParagraph(tabOn(draft.live, 940_001), " LOW");
-        const high = appendToFirstParagraph(tabOn(draft.live, 940_002), " HIGH");
+        const { draftId } = draft;
+        const base = await durableDoc(harness, draftId);
+        const lowTab = tabOn(base, 940_001);
+        const highTab = tabOn(base, 940_002);
+        const low = appendToFirstParagraph(lowTab, " LOW");
+        const high = appendToFirstParagraph(highTab, " HIGH");
+        base.destroy();
+        lowTab.destroy();
+        highTab.destroy();
         const inserted = gate();
         const finish = gate();
         let lowId = 0;
         // The unsequenced writer: an INSERT with no draft row lock, held open.
         const lowWriter = harness.raw.begin(async (tx) => {
-          const [row] =
-            await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
-            values (${draftId}, ${generation}, ${Buffer.from(low)}, 'writer', 0) returning id`;
+          const [row] = await tx`insert into draft_write_journal (draft_id, update_data, source)
+            values (${draftId}, ${Buffer.from(low)}, 'writer') returning id`;
           lowId = Number(row?.id);
           inserted.open();
           await finish.wait;
@@ -127,9 +149,8 @@ export const appendTailOrder: Probe = {
           let highId = 0;
           await harness.raw.begin(async (tx) => {
             await tx`update document_drafts set revision = revision + 1 where id = ${draftId}`;
-            const [row] =
-              await tx`insert into draft_write_journal (draft_id, generation, update_data, source, draft_base_update_seq)
-              values (${draftId}, ${generation}, ${Buffer.from(high)}, 'writer', 0) returning id`;
+            const [row] = await tx`insert into draft_write_journal (draft_id, update_data, source)
+              values (${draftId}, ${Buffer.from(high)}, 'writer') returning id`;
             highId = Number(row?.id);
           });
           const read = await harness.store.readDraftAt(draftId);
@@ -144,7 +165,7 @@ export const appendTailOrder: Probe = {
                 checkpointRevision: read.documentDraft.checkpointRevision,
                 seq: highId,
               },
-              fence: { kind: "none" },
+
               operation: { kind: "compact" },
             }),
           );

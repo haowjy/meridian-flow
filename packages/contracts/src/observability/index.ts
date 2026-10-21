@@ -35,7 +35,6 @@ export interface EventCorrelation {
   errorCode?: string;
   documentId?: string;
   draftId?: string;
-  draftGeneration?: number;
   /** Operational ids of branch-push settlement and draft-lineage diagnostics. */
   batchId?: string;
   pushId?: string;
@@ -56,7 +55,7 @@ export interface EventCorrelation {
 
 export interface TraceStreamRef {
   /**
-   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:draft:<id>:gen:3`,
+   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:draft:<id>`,
    * `thread:<threadId>`, or `gateway:<gatewayCallId>`.
    */
   streamId: string;

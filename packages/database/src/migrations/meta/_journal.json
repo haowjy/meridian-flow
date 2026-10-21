@@ -484,6 +484,55 @@
       "when": 1792387204654,
       "tag": "0074_document_removal_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792420087193,
+      "tag": "0075_draft_server_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792424068880,
+      "tag": "0076_atomic_apply_trail",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792428197732,
+      "tag": "0077_draft_review_preflight",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792428234424,
+      "tag": "0078_draft_review_convert",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792428280639,
+      "tag": "0079_draft_review_online",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792428283747,
+      "tag": "0080_draft_review_retire",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1792428329463,
+      "tag": "0081_draft_review_validate",
+      "breakpoints": true
     }
   ]
 }

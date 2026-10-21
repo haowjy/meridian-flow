@@ -16,7 +16,6 @@ export function isRolledBack(history: readonly StoredInversePart[], part: Stored
 export function effectiveActionIndex(
   history: readonly StoredInversePart[],
   keys: ReadonlySet<string>,
-  consumptionEligible: (part: StoredInversePart) => boolean = () => true,
 ) {
   const rolledBack = new Set(
     history.filter((part) => part.kind === "rollback").flatMap((part) => part.targets.map(partKey)),
@@ -36,7 +35,7 @@ export function effectiveActionIndex(
   }
   const consumption = new Map<string, Set<string>>();
   for (const part of effective) {
-    if (part.kind !== "redo" || !consumptionEligible(part)) continue;
+    if (part.kind !== "redo") continue;
     for (const id of part.consumes) {
       const targets = consumption.get(id) ?? new Set<string>();
       for (const target of part.targets) targets.add(partKey(target));

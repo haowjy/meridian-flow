@@ -12,9 +12,7 @@
  *     asked, the removal's sentence once it proves one, and "Access lost"
  *     for any other answer
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
- *     A draft room has no local cache, so its edits live only in this
- *     tab's memory; it says "Not saved yet (keep this tab open until you're
- *     back online)" instead. It begins when the status is `offline` or when `adoptionStalled` (a cached
+ *     It begins when the status is `offline` or when `adoptionStalled` (a cached
  *     session that is `detached` because adopting it failed). It stays through
  *     the reconnect until the server has acknowledged every local change
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
@@ -166,11 +164,7 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
   ) : snapshot.status === "access-lost" ? (
     <Trans>Access lost (not saving to the server)</Trans>
   ) : phase === "awaiting" ? (
-    snapshot.room.kind === "draft" ? (
-      <Trans>Not saved yet (keep this tab open until you're back online)</Trans>
-    ) : (
-      <Trans>Saved locally (offline)</Trans>
-    )
+    <Trans>Saved locally (offline)</Trans>
   ) : phase === "confirmed" ? (
     <Trans>Back online (all changes saved)</Trans>
   ) : null;

@@ -13,7 +13,6 @@ import {
   errorMessageOf,
   unknownToEventPayload,
 } from "../../observability/index.js";
-import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftAgentEditDiagnostics } from "../domain/draft-agent-edit.js";
 import type { DraftAheadDiagnostics } from "../domain/draft-ahead-registration.js";
@@ -23,7 +22,6 @@ import type { WriterFrameDiagnostics } from "../domain/draft-writer-frames.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
-import type { DraftReviewDiagnostics } from "../domain/work-branch-review-service.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
 import type { RoomDeliveryDiagnostics } from "./hocuspocus-coordinator.js";
 
@@ -40,16 +38,6 @@ export function createDraftProjectionDiagnostics(
         name: "projection.failed",
         correlation: { draftId },
         payload: unknownToEventPayload(cause),
-      });
-    },
-    projectionBaselineBlocked({ draftId, documentId }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft",
-        name: "projection_baseline_blocked",
-        correlation: { draftId, documentId },
-        payload: {},
       });
     },
   };
@@ -115,7 +103,7 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         payload: { clocks: clocks.slice(0, 16) },
       });
     },
-    roomReconciled({ draftId, generation, trigger, ...payload }) {
+    roomReconciled({ draftId, trigger, ...payload }) {
       if (!eventSink) return;
       // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
       // registering behind a commit that landed during its load is the expected race.
@@ -123,7 +111,7 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         level: trigger === "frame" ? "warn" : "info",
         source: "collab.draft",
         name: "room_reconciled",
-        correlation: { draftId, draftGeneration: generation },
+        correlation: { draftId },
         payload: { trigger, ...payload },
       });
     },
@@ -240,23 +228,6 @@ export function createAgentEditInvariantDiagnostic(
       name: "invariant_violation",
       payload,
     });
-  };
-}
-
-export function createSweepProjectionDiagnostics(
-  eventSink?: EventSink,
-): SweepProjectionDiagnostics {
-  return {
-    unavailable({ pushId, documentId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.change_event",
-        name: "sweep_projection.unavailable",
-        correlation: { pushId: String(pushId) },
-        payload: { documentId, ...unknownToEventPayload(cause) },
-      });
-    },
   };
 }
 
@@ -524,20 +495,5 @@ function idempotencyHitObserver(
       name: "write.idempotency_hit",
       payload: { ...event },
     });
-  };
-}
-
-export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
-  return {
-    unattributedHunks({ documentId, hunkIds }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft_review",
-        name: "attribution.incomplete",
-        correlation: { documentId },
-        payload: { hunkCount: hunkIds.length },
-      });
-    },
   };
 }

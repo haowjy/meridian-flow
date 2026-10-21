@@ -247,7 +247,6 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
       await view.draftCoordinator.commitWriterUpdate({
         draftId: documentDraft.id,
-        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,

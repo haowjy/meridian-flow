@@ -94,17 +94,6 @@ export function mergeTrailChanges(
   return [...folded.values()].map((change, ordinal) => ({ ...change, ordinal }));
 }
 
-export function refinePushChanges(
-  provisional: readonly TrailChangeV1[],
-  contribution: readonly TrailChangeV1[],
-): TrailChangeV1[] {
-  const contributionKeys = new Set(contribution.map(canonicalChangeKey));
-  const retained = provisional.filter(
-    (change) => !contributionKeys.has(canonicalChangeKey(change)),
-  );
-  return mergeTrailChanges(retained, contribution);
-}
-
 export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTrailAggregateWriter {
   let cursor: { thread_id: string; turn_key: string } | undefined;
   const writer: ChangeTrailAggregateWriter = {
@@ -128,26 +117,19 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             .from(changeTrailShells)
             .where(eq(changeTrailShells.id, trailId))
             .limit(1);
-          if (input.settlementRefinement?.currentVersion && !existingShell) {
-            throw new Error(`Cannot refine missing change trail ${trailId}`);
-          }
-          const version = input.settlementRefinement?.currentVersion
-            ? (existingShell?.version as number)
-            : (existingShell?.version ?? 0) + 1;
-          if (!input.settlementRefinement?.currentVersion) {
-            await tx
-              .insert(changeTrailShells)
-              .values({
-                id: trailId,
-                threadId: trail.owner.threadId as ThreadId,
-                turnId: trail.owner.kind === "turn" ? (trail.owner.turnId as TurnId) : null,
-                ownerKind: trail.owner.kind,
-                version,
-                changeCount: trail.counts.changes,
-                documentCount: trail.counts.documents,
-              })
-              .onConflictDoNothing();
-          }
+          const version = (existingShell?.version ?? 0) + 1;
+          await tx
+            .insert(changeTrailShells)
+            .values({
+              id: trailId,
+              threadId: trail.owner.threadId as ThreadId,
+              turnId: trail.owner.kind === "turn" ? (trail.owner.turnId as TurnId) : null,
+              ownerKind: trail.owner.kind,
+              version,
+              changeCount: trail.counts.changes,
+              documentCount: trail.counts.documents,
+            })
+            .onConflictDoNothing();
 
           const existingDetails = await tx
             .select({
@@ -157,44 +139,10 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             })
             .from(changeTrailDocumentDetails)
             .where(eq(changeTrailDocumentDetails.trailId, trailId));
-          const refinedPushIds = new Set<string | null>(input.settlementRefinement?.pushIds ?? []);
-          const incomingPushIds = new Set([
-            ...trail.changes.map((change) => change.pushId),
-            ...refinedPushIds,
-          ]);
           const persistedChanges = existingDetails.flatMap(
             (detail) => detail.changes as TrailChangeV1[],
           );
-          const persistedPushChanges = persistedChanges.filter((change) =>
-            incomingPushIds.has(change.pushId),
-          );
-          const incomingKeys = new Set(trail.changes.map(canonicalChangeKey));
-          const refinementIsComplete = input.settlementRefinement
-            ? true
-            : persistedPushChanges.length === incomingKeys.size &&
-              persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
-          const retiredPushIds = new Set<string | null>(
-            input.settlementRefinement?.retiredPushIds ?? [],
-          );
-          const replacement = input.settlementRefinement
-            ? refinePushChanges(
-                persistedPushChanges.filter((change) => !retiredPushIds.has(change.pushId)),
-                trail.changes,
-              )
-            : trail.changes;
-          const changes = input.settlementRefinement?.currentVersion
-            ? refinementIsComplete
-              ? mergeTrailChanges(
-                  persistedChanges.filter((change) => !incomingPushIds.has(change.pushId)),
-                  replacement,
-                )
-              : persistedChanges
-            : mergeTrailChanges(
-                input.settlementRefinement
-                  ? persistedChanges.filter((change) => !refinedPushIds.has(change.pushId))
-                  : persistedChanges,
-                replacement,
-              );
+          const changes = mergeTrailChanges(persistedChanges, trail.changes);
 
           const pushIds = [
             ...new Set(
@@ -323,102 +271,17 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             changeCount: allChanges.length,
             documentCount: details.length,
           };
-          if (input.settlementRefinement?.currentVersion) {
-            await tx
-              .update(changeTrailDeliveryOutbox)
-              .set(counts)
-              .where(
-                and(
-                  eq(changeTrailDeliveryOutbox.trailId, trailId),
-                  eq(changeTrailDeliveryOutbox.version, version),
-                  eq(changeTrailDeliveryOutbox.eventKind, "updated"),
-                ),
-              );
-          } else {
-            await tx.insert(changeTrailDeliveryOutbox).values({
-              eventId: deterministicUuid(`change-trail-event:${trailId}:${version}:updated`),
-              threadId: trail.owner.threadId as ThreadId,
-              trailId,
-              version,
-              eventKind: "updated",
-              ...counts,
-            });
-          }
+          await tx.insert(changeTrailDeliveryOutbox).values({
+            eventId: deterministicUuid(`change-trail-event:${trailId}:${version}:updated`),
+            threadId: trail.owner.threadId as ThreadId,
+            trailId,
+            version,
+            eventKind: "updated",
+            ...counts,
+          });
         }
         return committed;
       });
-    },
-    async replacePushContributions(contributions, context) {
-      const byTrail = new Map<
-        string,
-        { owner: NormalizedTrail["owner"]; changes: TrailChangeV1[] }
-      >();
-      const documentTitles = new Map<string, string>();
-      for (const { replacement, retire } of contributions) {
-        for (const [documentId, title] of replacement.documentTitles) {
-          documentTitles.set(documentId, title);
-        }
-        for (const { owner, changes } of replacement.targets) {
-          const key = trailIdForOwner(owner);
-          const target = byTrail.get(key) ?? { owner, changes: [] };
-          if (!retire) target.changes.push(...changes);
-          byTrail.set(key, target);
-        }
-      }
-      return writer.record({
-        trails: [...byTrail.values()].map(({ owner, changes }) => ({
-          owner,
-          changes,
-          counts: {
-            changes: changes.length,
-            documents: new Set(changes.map((change) => change.documentId)).size,
-          },
-        })),
-        documentTitles,
-        settlementRefinement: {
-          pushIds: contributions.map(({ pushId }) => pushId),
-          currentVersion: context.refineCurrentVersion,
-          retiredPushIds: contributions.flatMap(({ pushId, retire }) => (retire ? [pushId] : [])),
-        },
-      });
-    },
-    async reopenOwners(owners) {
-      const tx = currentDrizzleDb(db);
-      const sortedOwners = [
-        ...new Map(owners.map((owner) => [trailIdForOwner(owner), owner])).entries(),
-      ].sort(([left], [right]) => left.localeCompare(right));
-      for (const [trailId] of sortedOwners) {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${trailId}))`);
-      }
-      for (const [trailId, owner] of sortedOwners) {
-        const [reopened] = await tx
-          .update(changeTrailShells)
-          .set({
-            state: "building",
-            version: sql`${changeTrailShells.version} + 1`,
-            settledAt: null,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(changeTrailShells.id, trailId), eq(changeTrailShells.state, "settled")))
-          .returning({
-            version: changeTrailShells.version,
-            changeCount: changeTrailShells.changeCount,
-            documentCount: changeTrailShells.documentCount,
-          });
-        if (!reopened) continue;
-        await tx
-          .insert(changeTrailDeliveryOutbox)
-          .values({
-            eventId: deterministicUuid(`change-trail-event:${trailId}:${reopened.version}:updated`),
-            threadId: owner.threadId as ThreadId,
-            trailId,
-            version: reopened.version,
-            eventKind: "updated",
-            changeCount: reopened.changeCount,
-            documentCount: reopened.documentCount,
-          })
-          .onConflictDoNothing();
-      }
     },
     async reconcileTerminalOwners() {
       cursor = await reconcileTerminalOwners(db, cursor);
@@ -519,12 +382,6 @@ async function reconcileTerminalOwners(
           SELECT 1 FROM draft_write_journal journal
           CROSS JOIN LATERAL change_trail_owners('{}', ARRAY[journal.id]) affected
           WHERE journal.status = 'rollback_pending' AND affected.thread_id = shell.thread_id
-            AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
-        ) AND NOT EXISTS (
-          SELECT 1 FROM branch_push_settlement_outbox pending
-          JOIN branch_push_settlement_batches batch ON batch.id = pending.batch_id
-          CROSS JOIN LATERAL change_trail_owners('{}', '{}', ARRAY[pending.push_id]) affected
-          WHERE batch.state = 'pending' AND affected.thread_id = shell.thread_id
             AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
         ) AS ready
       FROM change_trail_shells shell JOIN threads thread ON thread.id = shell.thread_id

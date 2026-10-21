@@ -7,13 +7,22 @@ import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
@@ -26,8 +35,12 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { readRecentRoutes, type WorkingSetHydrationPlan } from "@/client/working-set";
+import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
-import { useContextRemovalCoordinator } from "../context/account-feature-context";
+import {
+  useContextRemovalCoordinator,
+  useDraftCommandOwner,
+} from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -241,7 +254,16 @@ function ReadableProjectDestination({
         subscribe: (listener) => router.history.subscribe(listener),
         flush: () => router.history.flush(),
         settlePendingTraversal: () => router.history.settlePendingTraversal(),
-        replaceEntry: (href, state) => router.history.replace(href, state, { ignoreBlocker: true }),
+        replaceEntry: (href, state) => {
+          // Same-entry repairs must not restore the pre-jump scroll over an editor-owned destination.
+          void router.navigate({
+            href,
+            state,
+            replace: true,
+            resetScroll: false,
+            ignoreBlocker: true,
+          });
+        },
         navigate: (href, options) =>
           router.navigate({
             href,
@@ -376,6 +398,33 @@ function ReadableProjectDestination({
       getProjectDocumentAddress,
     ),
   );
+  // Keep the authoritative draft read above address admission: catalog invalidation can
+  // unmount the editor before its terminal room frame arrives.
+  const closingDocumentId = address.itemKey ? parseDraftItemKey(address.itemKey)?.documentId : null;
+  const closingRef =
+    closingDocumentId && address.itemKey && addressWorkId
+      ? {
+          projectId,
+          workId: addressWorkId,
+          documentId: closingDocumentId,
+          itemKey: address.itemKey,
+        }
+      : null;
+  const closeMetadata = useDraftMetadata(closingRef ? [closingRef] : [])[0];
+  const draftCommands = useDraftCommandOwner();
+  const closeSnapshot = () => {
+    const state = draftCommands.state(address.itemKey ?? "");
+    return JSON.stringify([state.closed, state.removed, state.checkingClose, state.liveUri]);
+  };
+  useSyncExternalStore(draftCommands.subscribe, closeSnapshot, closeSnapshot);
+  const closeState = draftCommands.state(address.itemKey ?? "");
+  useLayoutEffect(() => {
+    if (closingRef && closeMetadata?.data?.status === "gone")
+      void draftCommands.metadataGone(closingRef);
+  }, [draftCommands, closingRef?.itemKey, closeMetadata?.dataUpdatedAt]);
+  useEffect(() => {
+    if (closingRef && documentLookup.data?.kind === "unavailable") void closeMetadata?.refetch();
+  }, [closingRef?.itemKey, documentLookup.dataUpdatedAt]);
   const { selection } = useContextRemovalProject(projectId);
   const boundDocumentId = routeContinuityDocumentId({
     selection,
@@ -462,7 +511,15 @@ function ReadableProjectDestination({
           ? "error"
           : "loading"
         : documentResult.kind === "unavailable"
-          ? "unavailable"
+          ? closingRef &&
+            !closeState.removed &&
+            (closeMetadata?.isFetching ||
+              (!closeMetadata?.isError &&
+                (closeMetadata?.dataUpdatedAt ?? 0) <= documentLookup.dataUpdatedAt) ||
+              closeState.checkingClose ||
+              closeState.closed)
+            ? "loading"
+            : "unavailable"
           : undefined));
   // A review address names its document: when it is unavailable because the
   // document was removed, it says so instead. A plain path names no document
@@ -593,6 +650,26 @@ function ReadableProjectDestination({
       changeId: itemKey ? changeId : undefined,
     });
   }, []);
+  useEffect(() => {
+    if (!address.itemKey || !closeState.closed || closeState.removed) return;
+    const current = latest.current;
+    if (!current.navigation) return;
+    const live = closeState.liveUri ? parseContextUri(closeState.liveUri) : null;
+    void current.navigation.replaceIfCurrent(current.navigation.capture(), {
+      ...current.address,
+      ...(live
+        ? {
+            destination: {
+              kind: "document",
+              scheme: live.scheme,
+              path: live.path.replace(/^\/+/, ""),
+            },
+          }
+        : {}),
+      itemKey: undefined,
+      changeId: undefined,
+    });
+  }, [address.itemKey, closeState.closed, closeState.removed, closeState.liveUri]);
   const closeDestination = useCallback(
     (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
       const current = latest.current;

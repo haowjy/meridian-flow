@@ -3,7 +3,6 @@ import type { BranchId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { DraftResolver, ResolvedDraft } from "../draft-resolver.js";
-import type { DraftCloseCause } from "../draft-retirement.js";
 import type { DraftSnapshot, DraftStore } from "../draft-store.js";
 
 export type ApplicationDraftStore = DraftStore &
@@ -42,14 +41,6 @@ export type ApplicationDraftStore = DraftStore &
       branchId: BranchId;
       liveDoc: () => Promise<Y.Doc>;
     }): Promise<{ documentDraft: DraftSnapshot }>;
-    /**
-     * Close the active thread peers of these drafts (a reset or a Discard moved their
-     * upstream), in the caller's transaction, with the caller's `cause`.
-     */
-    closeThreadPeersOf(
-      upstreamDraftIds: readonly string[],
-      cause: Exclude<DraftCloseCause, object>,
-    ): Promise<void>;
     /** The thread's primary Work's active draft on the document, as metadata. */
     resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
   };

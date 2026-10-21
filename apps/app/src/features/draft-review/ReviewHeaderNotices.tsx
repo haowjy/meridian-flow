@@ -1,11 +1,11 @@
 /** Whole-draft failures and inline review completion. End states share the existing review/path row rather than adding a banner. */
 import { Plural, Trans } from "@lingui/react/macro";
-import type { BranchCommandFailure } from "@/client/query/branch-command-record";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
+import type { BranchCommandFailure } from "./review-command-types";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
@@ -70,7 +70,7 @@ export function ReviewStateInline({
   touch = false,
   ...state
 }: ReviewStateProps & { touch?: boolean }) {
-  if (!state.finished && !state.completing && !state.unlisted) return null;
+  if (!state.finished && !state.completing) return null;
   return (
     <span
       role="status"
@@ -80,9 +80,7 @@ export function ReviewStateInline({
       <span
         className={cn(
           "text-muted-foreground",
-          state.unlisted
-            ? "min-w-0 truncate"
-            : "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+          "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
         )}
       >
         <ReviewStatusContent {...state} />

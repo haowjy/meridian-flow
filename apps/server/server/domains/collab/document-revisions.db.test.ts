@@ -325,14 +325,14 @@ describe("document revisions (postgres and collab)", () => {
     await f.provisionDraft();
     await f.read();
     await f.writerDelete();
-    const originalPull = f.draftCoordinator.pullFromDoc.bind(f.draftCoordinator);
+    const originalPull = f.draftCoordinator.loadBase.bind(f.draftCoordinator);
     const originalRead = f.draftCoordinator.readDraft.bind(f.draftCoordinator);
     const draft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
     const workDraftId = draft.draftId;
     const contending = deferred();
     let scheduled = false;
-    f.draftCoordinator.pullFromDoc = async (...args) => {
-      if (scheduled && args[0].draftId === workDraftId) contending.resolve();
+    f.draftCoordinator.loadBase = async (...args) => {
+      if (scheduled && args[0] === workDraftId) contending.resolve();
       return originalPull(...args);
     };
     f.draftCoordinator.readDraft = async (id, callback) => {
@@ -375,15 +375,16 @@ describe("document revisions (postgres and collab)", () => {
     const before = await f.current();
     const captured = deferred();
     const release = deferred();
-    const original = f.draftCoordinator.pullFromDoc.bind(f.draftCoordinator);
+    const original = f.persistence.journal.read.bind(f.persistence.journal);
     let pause = true;
-    f.draftCoordinator.pullFromDoc = async (...args) => {
+    f.persistence.journal.read = async (...args) => {
+      const snapshot = await original(...args);
       if (pause) {
         pause = false;
         captured.resolve();
         await release.promise;
       }
-      return original(...args);
+      return snapshot;
     };
     const older = f.draftPulls.flushLivePull(ALPHA_ID);
     const started = [older];
@@ -453,13 +454,18 @@ describe("document revisions (postgres and collab)", () => {
         },
       ),
     ).rejects.toThrow("response aborted");
-    // The ensure's peer and Work draft committed under their own root, seeded from live.
+    // The ensure commits the peer identity and fresh Work draft under its own root.
     const peer = await readResolvedDraft(
       f.draftStore,
       await f.draftStore.resolveThreadDraft(ALPHA_ID, THREAD_ID),
     );
     expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(1);
-    await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+    const workDraft = await readResolvedDraft(
+      f.draftStore,
+      await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID),
+    );
+    expect(f.model.getBlocks(toDocHandle(workDraft.doc))).toHaveLength(1);
+    workDraft.doc.destroy();
     peer.doc.destroy();
   });
 });

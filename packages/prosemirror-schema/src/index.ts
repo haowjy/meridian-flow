@@ -269,15 +269,6 @@ export function buildDocumentSchema(): Schema {
   return new Schema({ nodes: documentNodes, marks: documentMarks });
 }
 
-export {
-  captureUndoRestorationClaims,
-  isRestorationAlias,
-  RESTORATION_CLAIMS_TYPE,
-  type RestorationAlias,
-  type RestorationRange,
-  restorationAliasesFromMetadata,
-} from "./restoration-claims.js";
-
 /** Allocate independent author identity, excluding every client already held by the document. */
 export function allocateDocumentClient(
   doc: Doc,

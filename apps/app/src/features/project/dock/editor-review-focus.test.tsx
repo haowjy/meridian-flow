@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A review opened on given operations focuses their change once, after the requested review paints. */
+/** A review opened on given group ids focuses their change once, after the requested review paints. */
 
 import { act, useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFrame } from "@/features/draft-review/review-frame";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewAddressOwner } from "../ReviewAddressOwner";
@@ -21,7 +22,7 @@ type Open = { documentId: string; itemKey: string; shown: boolean } | null;
 type Model = {
   inline: Open;
   preview: { status: "active" | "gone" } | null;
-  changes: { classId: string; operationIds: string[]; anchorOperationId: string }[];
+  changes: { id: string; frame: ReviewFrame | null }[];
 };
 
 // The preview read is the one boundary that needs a query client; the claimant
@@ -33,12 +34,12 @@ const target: AiDraftLaunchTarget = {
   documentId: "doc-1",
   itemKey: "draft-1",
   contextLocation: { scheme: "manuscript", path: "chapters/one.md" },
-  focusOperationIds: ["op-2"],
+  focus: { id: "g2", frame: null },
 };
 const other = { documentId: "doc-0", itemKey: "draft-0" };
 const changes = [
-  { classId: "c1", operationIds: ["op-1"], anchorOperationId: "op-1" },
-  { classId: "c2", operationIds: ["op-2", "op-3"], anchorOperationId: "op-2" },
+  { id: "g1", frame: null },
+  { id: "g2", frame: null },
 ];
 
 function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = false) {
@@ -74,8 +75,12 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
     const [mounted, setMounted] = useState(!delayedAdmission);
     const [addressed, setAddressed] = useState(false);
     vi.mocked(useOpenReviewChanges).mockReturnValue({
-      preview: state.preview,
-      active: state.preview?.status === "active" ? state.preview : null,
+      status:
+        state.preview?.status === "active"
+          ? "ready"
+          : state.preview?.status === "gone"
+            ? "gone"
+            : "loading",
       changes: state.changes,
     } as unknown as ReturnType<typeof useOpenReviewChanges>);
     fixture.update = (next) => setState((previous) => ({ ...previous, ...next }));
@@ -154,7 +159,7 @@ async function launch(
 
 const requested = { documentId: target.documentId, itemKey: target.itemKey };
 
-describe("opening a review on given operations", () => {
+describe("opening a review on given group ids", () => {
   it("focuses the change once the requested review has painted and loaded", async () => {
     await launch(target, {}, async ({ enterInlineReview, focusReviewChange, update }) => {
       expect(enterInlineReview).toHaveBeenCalledWith("doc-1", "draft-1");
@@ -182,9 +187,9 @@ describe("opening a review on given operations", () => {
     );
   });
 
-  it("opens at the top when none of the operations is in the review any more", async () => {
+  it("opens at the top when a new projection reuses the requested group id", async () => {
     await launch(
-      { ...target, focusOperationIds: ["op-gone"] },
+      { ...target, focus: { id: "g2", frame: { diff: {} } as ReviewFrame } },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ enterInlineReview, focusReviewChange, update }) => {
         expect(enterInlineReview).toHaveBeenCalledOnce();
@@ -220,9 +225,9 @@ describe("opening a review on given operations", () => {
     });
   });
 
-  it("does not focus a launch that names no operation", async () => {
+  it("does not focus a launch that names no group", async () => {
     await launch(
-      { ...target, focusOperationIds: undefined },
+      { ...target, focus: undefined },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ focusReviewChange }) => expect(focusReviewChange).not.toHaveBeenCalled(),
     );

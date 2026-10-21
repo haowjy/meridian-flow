@@ -1,4 +1,4 @@
-/** Draft pull service conformance for live-to-work and work-to-thread cadence. */
+/** Draft pull service conformance for live-to-Work rebase cadence. */
 
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -11,7 +11,9 @@ const DOCUMENT_ID = "00000000-0000-4000-8000-000000000701" as DocumentId;
 
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
-  doc.getText("content").insert(0, value);
+  const paragraph = new Y.XmlElement("paragraph");
+  paragraph.insert(0, [new Y.XmlText(value)]);
+  doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
   return doc;
 }
 
@@ -25,16 +27,15 @@ describe("DraftPullService", () => {
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(live),
-        draftCoordinator: {
-          pullFromDoc: async ({ upstream }: { upstream: Y.Doc }) => {
-            if (fail) {
-              fail = false;
-              throw new Error("pull failed");
-            }
-            Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
-            return "pulled";
-          },
-        } as unknown as DraftCoordinator,
+        liveJournal: journalFor(live),
+        draftCoordinator: mockCoordinator(async ({ upstream }: { upstream: Y.Doc }) => {
+          if (fail) {
+            fail = false;
+            throw new Error("pull failed");
+          }
+          Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
+          return "pulled";
+        }),
         drafts: {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
@@ -48,7 +49,18 @@ describe("DraftPullService", () => {
       await expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow("pull failed");
       expect(vi.getTimerCount()).toBe(2);
       await vi.advanceTimersByTimeAsync(10);
-      expect(draft.getText("content").toString()).toBe("pending writer edit");
+      expect(
+        draft
+          .getXmlFragment("prosemirror")
+          .toArray()
+          .map((p) =>
+            (p as Y.XmlElement)
+              .toArray()
+              .map((t) => t.toString())
+              .join(""),
+          )
+          .join(""),
+      ).toBe("pending writer edit");
       expect(vi.getTimerCount()).toBe(0);
       draft.destroy();
       live.destroy();
@@ -68,18 +80,17 @@ describe("DraftPullService", () => {
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(live),
-        draftCoordinator: {
-          pullFromDoc: async ({ upstream }: { upstream: Y.Doc }) => {
-            if (++pulls === 2) throw new Error("queued pull failed");
-            Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
-            // The first pull has committed; it returns only once the newer update queued.
-            if (pulls === 1) {
-              captured.resolve();
-              await commit.promise;
-            }
-            return "pulled";
-          },
-        } as unknown as DraftCoordinator,
+        liveJournal: journalFor(live),
+        draftCoordinator: mockCoordinator(async ({ upstream }: { upstream: Y.Doc }) => {
+          if (++pulls === 2) throw new Error("queued pull failed");
+          Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
+          // The first pull has committed; it returns only once the newer update queued.
+          if (pulls === 1) {
+            captured.resolve();
+            await commit.promise;
+          }
+          return "pulled";
+        }),
         drafts: {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
@@ -92,7 +103,10 @@ describe("DraftPullService", () => {
       });
       const older = service.flushLivePull(DOCUMENT_ID);
       await captured.promise;
-      live.getText("content").insert(3, " and newer");
+      ((live.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(
+        3,
+        " and newer",
+      );
       service.scheduleLivePull(DOCUMENT_ID);
       const queued = expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow(
         "queued pull failed",
@@ -100,10 +114,32 @@ describe("DraftPullService", () => {
       commit.resolve();
       await older;
       await queued;
-      expect(draft.getText("content").toString()).toBe("old");
+      expect(
+        draft
+          .getXmlFragment("prosemirror")
+          .toArray()
+          .map((p) =>
+            (p as Y.XmlElement)
+              .toArray()
+              .map((t) => t.toString())
+              .join(""),
+          )
+          .join(""),
+      ).toBe("old");
       expect(vi.getTimerCount()).toBe(2);
       await vi.advanceTimersByTimeAsync(10);
-      expect(draft.getText("content").toString()).toBe("old and newer");
+      expect(
+        draft
+          .getXmlFragment("prosemirror")
+          .toArray()
+          .map((p) =>
+            (p as Y.XmlElement)
+              .toArray()
+              .map((t) => t.toString())
+              .join(""),
+          )
+          .join(""),
+      ).toBe("old and newer");
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       live.destroy();
@@ -120,12 +156,11 @@ describe("DraftPullService", () => {
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(docWithText("writer edit")),
-        draftCoordinator: {
-          pullFromDoc: async () => {
-            if (failures-- > 0) throw new Error("timer pull failed");
-            return "pulled";
-          },
-        } as unknown as DraftCoordinator,
+        liveJournal: journalFor(docWithText("writer edit")),
+        draftCoordinator: mockCoordinator(async () => {
+          if (failures-- > 0) throw new Error("timer pull failed");
+          return "pulled";
+        }),
         drafts: {
           listActiveWorkDraftIds: async () => ["work"],
           ensureThreadPeerDraft: async () => ({
@@ -160,4 +195,40 @@ function deferred() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+function journalFor(doc: Y.Doc) {
+  return { read: async () => ({ checkpoint: Y.encodeStateAsUpdate(doc), updates: [] }) };
+}
+
+function mockCoordinator(pull: (input: { upstream: Y.Doc }) => Promise<unknown>): DraftCoordinator {
+  let committed = new Y.Doc({ gc: false });
+  return {
+    loadBase: async () => ({
+      snapshot: { status: "active" },
+      replica: { doc: new Y.Doc({ gc: false }) },
+    }),
+    prepareAppend: (
+      _base: unknown,
+      _rows: unknown,
+      options: { authorServerRows: (doc: Y.Doc) => Promise<Uint8Array[]> },
+    ) => ({
+      async persist() {
+        const doc = new Y.Doc({ gc: false });
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(committed));
+        doc.clientID = 1;
+        try {
+          await options.authorServerRows(doc);
+          await pull({ upstream: doc });
+          committed.destroy();
+          committed = new Y.Doc({ gc: false });
+          Y.applyUpdate(committed, Y.encodeStateAsUpdate(doc));
+        } finally {
+          doc.destroy();
+        }
+      },
+      transfer() {},
+      dispose() {},
+    }),
+  } as unknown as DraftCoordinator;
 }

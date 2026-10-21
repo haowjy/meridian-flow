@@ -30,7 +30,8 @@ holds them. Reporting is best-effort and never changes what the save keeps.
 ## Rules
 
 - Public reads use `read()` and mutations use `write()` or response lifecycle
-  APIs. The browser-safe `./yjs-mutation` subpath is only the host's pinned
+  APIs. The browser-safe `./diff` subpath owns pure text review, Apply composition,
+  Discard and rebase, not host persistence. The browser-safe `./yjs-mutation` subpath is only the host's pinned
   reconstruction adapter; it does not own persistence, attribution, or undo.
 - Never bypass `ResponseCommitter` or infer durability from what reached a room.
   The host's commit decides; a live room hears of a save only after it.
