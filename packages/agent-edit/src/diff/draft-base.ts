@@ -28,16 +28,10 @@ export type LegacyDraftConversion =
   | { kind: "converted"; state: Uint8Array; stateVector: Uint8Array; hasEffect: boolean }
   | { kind: "unresolved"; reason: "no_live_cut" };
 
-/**
- * Converts one legacy prose draft. With a `liveCut` the base is that cut's text. Without one the base
- * is the draft's own text, but only when `neverWritten`: the train's `ensureDraftBranch` inserts a
- * branch without a cut and sets it on the first write, so a branch with no journal rows is an
- * untouched copy of live. Anything else is `unresolved`, never a guess.
- */
+/** Converts one legacy prose draft from its live cut; a missing cut is unresolved, never a guess. */
 export function convertLegacyDraft(input: {
   state: Uint8Array;
   liveCut: Uint8Array | null;
-  neverWritten: boolean;
 }): LegacyDraftConversion {
   const schema = buildDocumentSchema();
   const doc = createCollabYDoc({ gc: false });
@@ -45,15 +39,9 @@ export function convertLegacyDraft(input: {
   try {
     Y.applyUpdate(doc, input.state);
     const draftFragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    let base: ReturnType<typeof readBlocks>;
-    if (input.liveCut) {
-      Y.applyUpdate(cut, input.liveCut);
-      base = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-    } else if (input.neverWritten) {
-      base = readBlocks(draftFragment, schema);
-    } else {
-      return { kind: "unresolved", reason: "no_live_cut" };
-    }
+    if (!input.liveCut) return { kind: "unresolved", reason: "no_live_cut" };
+    Y.applyUpdate(cut, input.liveCut);
+    const base = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
     doc.clientID = DRAFT_SERVER_CLIENT_ID;
     doc.transact(
       () => writeBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema, base),
