@@ -152,7 +152,7 @@ async function switchPrecheck(
   if (workLifecycleState(work) === "archived") {
     return toolError({
       code: "work_archived",
-      message: `Work ${named} is archived, so this chat can't switch to it until the user unarchives it.`,
+      message: `Work ${named} is archived. Ask the user to unarchive it before switching.`,
     });
   }
   const current = await deps.threadWorks.findPrimary(threadId);
@@ -175,7 +175,7 @@ function workLifecycleMessage(
   }
   if (!workHandle) return "The requested Work is archived and read-only.";
   return mayUnarchive
-    ? `Work ${workHandle} is archived and read-only. Unarchive it with \`work({"command":"unarchive","work":"${workHandle}"})\` before changing it.`
+    ? `Work ${workHandle} is archived. To change it, use \`work({"command":"unarchive","work":"${workHandle}"})\`.`
     : `Work ${workHandle} is archived and read-only. Ask the user to unarchive ${workHandle}.`;
 }
 

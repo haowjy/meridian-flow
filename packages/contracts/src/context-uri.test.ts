@@ -97,7 +97,7 @@ describe("parseContextUri", () => {
     ]) {
       expect(parseContextUri(uri, { barePathDefault: "manuscript" })).toMatchObject({
         ok: false,
-        error: { reason: expect.stringContaining("Branches are not addressable yet") },
+        error: { reason: expect.stringContaining('Names cannot start with "~"') },
       });
     }
   });

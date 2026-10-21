@@ -180,15 +180,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await call("work", { command: "switch", work })).output;
 
       // D65: a refusal reaches the model as its message and code.
-      expect(await switchTo("ghost")).toBe(
-        "Unknown Work ghost. List Works with work list. (work_not_found)",
-      );
+      expect(await switchTo("ghost")).toBe("Unknown Work ghost. Use work list. (work_not_found)");
       expect(await switchTo("w3")).toBe(
-        "Work w3 is archived, so this chat can't switch to it until the user unarchives it. (work_archived)",
+        "Work w3 is archived. Ask the user to unarchive it before switching. (work_archived)",
       );
       expect(await switchTo("@w1")).toBe("This chat is already in w1.");
       expect(await switchTo("w2")).toBe(
-        "Switching this chat's Work needs the user's approval. Ask them to switch it to w2 from the chat. (permission_denied)",
+        "Ask the user to switch this chat to Work w2. (permission_denied)",
       );
     });
 

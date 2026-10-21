@@ -38,9 +38,7 @@ export async function resolveReadableThread(input: {
     return threadReadError(
       "thread_not_connected",
       `Thread is not connected to this conversation${
-        files
-          ? `. Its uploads are at ${files.uploads} and its scratch notes at ${files.scratch}.`
-          : ""
+        files ? `. Files: ${files.uploads} and ${files.scratch}.` : ""
       }`,
     );
   }

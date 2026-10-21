@@ -362,13 +362,10 @@ function parseOwnerToken(
       );
     }
     case "leading-zero":
-      return invalidContextUri(
-        rawUri,
-        `Invalid handle "${token}". Handles are a letter and digits with no leading zero.`,
-      );
+      return invalidContextUri(rawUri, `Invalid handle "${token}": no leading zeros.`);
     case "name":
       return scheme === "scratch"
-        ? invalidContextUri(rawUri, `Unknown Work ${token}. List Works with work list.`, {
+        ? invalidContextUri(rawUri, `Unknown Work ${token}. Use work list.`, {
             kind: "name",
             scheme,
             token,
@@ -400,13 +397,13 @@ function noHandleError(scheme: OwnedContextUriScheme, rawUri: string): ContextUr
 }
 
 function retiredEmptyOwner(scheme: OwnedContextUriScheme): string {
-  return `"@/" is not an address. List owners with ls ${scheme}://@.`;
+  return `"@/" is not an address. Use ls ${scheme}://@.`;
 }
 
 function unknownOwnerHandle(scheme: OwnedContextUriScheme): string {
   return scheme === "scratch"
-    ? "@ takes a handle: scratch://@w3/… for a Work, scratch://@c12/… for a chat's lineage. List them with ls scratch://@."
-    : "@ takes a chat's handle: uploads://@c12/… . List chats with files with ls uploads://@.";
+    ? "List owners with ls scratch://@; copy an address."
+    : "List chats with files with ls uploads://@; copy an address.";
 }
 
 /** Schemes whose address takes an owner authority; the complement of the project-scoped ones. */
@@ -431,7 +428,7 @@ export const OWNER_SIGIL = "@";
 /** Reserved for branch qualifiers (#699); refused until branch routing exists. */
 export const BRANCH_SIGIL = "~";
 const BRANCH_NOT_ADDRESSABLE =
-  'Branches are not addressable yet: names beginning with "~" are reserved. Use the bare address for this chat\'s branch.';
+  'Names cannot start with "~". Use the bare address for this chat\'s branch.';
 
 /** The one serializer for addresses. Spells parsed syntax; it does not resolve or grant authority. */
 export function formatParsedContextUri(
@@ -510,5 +507,5 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
 }
 
 const uploadsBelongToChat =
-  "Uploads belong to a chat, not a Work. Use uploads://x for this chat's files, or ls uploads://@ to list chats with files.";
+  "Uploads belong to chats. Use uploads://x for this chat, or ls uploads://@ for others.";
 const SUBAGENT_NOT_AN_OWNER = "Use the chat's handle, not a subagent's.";

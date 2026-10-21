@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
+
 - RP-20 now expects `eN` edit receipts and `draft (wN)` Work labels; its historical last-run evidence is unchanged.
 
 - Owner-handle migration backfills commit in bounded pages without retaining an exclusive Work-table lock. Concurrent Work creation shares the backfill counter, and interrupted upgrades resume without renumbering handles.

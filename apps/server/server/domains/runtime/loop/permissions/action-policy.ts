@@ -50,5 +50,5 @@ export function workActionRefusal(
     return "This agent can read but can't change Works. Ask the user to make this change.";
   }
   const target = command.command === "switch" && command.work ? command.work : "No Work";
-  return `Switching this chat's Work needs the user's approval. Ask them to switch it to ${target} from the chat.`;
+  return `Ask the user to switch this chat to Work ${target}.`;
 }

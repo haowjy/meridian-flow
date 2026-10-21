@@ -5,14 +5,7 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
-import {
-  type CanonicalContextAuthority,
-  formatParsedContextUri,
-  type OwnedContextUriScheme,
-  type OwnerSlip,
-  type ParsedContextAuthority,
-} from "@meridian/contracts/context-uri";
-import { classifyHandleToken } from "@meridian/contracts/handles";
+import type { CanonicalContextAuthority, OwnerSlip } from "@meridian/contracts/context-uri";
 import {
   type DeleteContextEntryResult,
   filenameForBinary,
@@ -447,8 +440,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           code: "invalid_uri",
           uri,
           reason: files
-            ? `Chat ${authority.rootThreadRef}'s scratch notes are at ${files.scratch}. scratch://x in that chat reaches the same notes.`
-            : `This project has no first chat ${authority.rootThreadRef}. List the owners of notes with ls scratch://@.`,
+            ? `Chat ${authority.rootThreadRef}'s notes: ${files.scratch}.`
+            : `No first chat ${authority.rootThreadRef}. List owners with ls scratch://@.`,
         });
       }
       adapter = lineageSource.adapter;
@@ -492,13 +485,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "Bare uploads:// needs a chat. List the chats with files with ls uploads://@.",
+        reason: "No uploads owner here. Use ls uploads://@.",
       });
     if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
-        reason: "Bare scratch:// requires a chat or a Work. List them with ls scratch://@.",
+        reason: "No scratch owner here. Use ls scratch://@.",
       });
     const canonical = toCanonical(scheme, path, canonicalAuthority);
 

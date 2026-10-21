@@ -186,13 +186,10 @@ describe("context router owner resolution", () => {
 
   it.each([
     ["scratch://@w4/notes.md", "Work w4 was deleted; restorable for 12 days."],
-    [
-      "scratch://@tea-notes/notes.md",
-      'Addresses name a Work by handle. "Tea Notes" is w3: scratch://@w3/…',
-    ],
+    ["scratch://@tea-notes/notes.md", 'Use scratch://@w3/… (Work "Tea Notes").'],
     [
       "scratch://@W2/notes.md",
-      'Handles are lowercase: scratch://@w2/… Work w2 is "Second pass"; the Work named "W2" is w7.',
+      'Handles are lowercase: scratch://@w2/… w2 is "Second pass"; "W2" is w7.',
     ],
   ])("points the wrong spelling %s at the right owner and never writes", async (uri, reason) => {
     const context = port();
@@ -378,7 +375,7 @@ it("reads another chat's uploads by handle and refuses a trashed, unknown or Wor
   });
   await expect(port.list("uploads://@w7/")).resolves.toMatchObject({
     ok: false,
-    error: { code: "invalid_uri", reason: expect.stringContaining("Uploads belong to a chat") },
+    error: { code: "invalid_uri", reason: expect.stringContaining("Uploads belong to chats") },
   });
 });
 

@@ -83,6 +83,6 @@ function workArchivedMessage(denial: FileAccessDenied): string {
       : `${frozen} Ask the user to unarchive ${named} or switch this chat to auto-apply.`;
   }
   return mayUnarchive
-    ? `${work} is archived and read-only. Unarchive it with ${unarchive} before changing its files.`
+    ? `${work} is archived. To change its files, use ${unarchive}.`
     : `${work} is archived and read-only. Ask the user to unarchive ${named}.`;
 }

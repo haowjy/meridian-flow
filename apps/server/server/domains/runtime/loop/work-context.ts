@@ -173,14 +173,14 @@ export function renderWorkContext(input: {
     ...(lineage
       ? [
           workScratch
-            ? `  scratch: bare scratch:// is this Work's notes at ${workScratch}. Earlier No Work notes, if any, remain at ${lineage}.`
-            : `  scratch: bare scratch:// is this chat's notes at ${lineage}, shared with its forks and subagents. A handoff starts fresh notes.`,
-          "  Move notes to kb:// or manuscript:// to keep them for the project. Rebinding never moves notes.",
+            ? `  scratch:// = ${workScratch} (this Work). Earlier No Work notes: ${lineage}.`
+            : `  scratch:// = ${lineage} (shared with forks and subagents). A handoff starts fresh notes.`,
+          "  Rebinding never moves notes.",
         ]
       : []),
     ...(input.chatRef
       ? [
-          `  uploads: bare uploads:// is this chat's files at ${formatParsedContextUri("uploads", "", { kind: "chat", chatRef: input.chatRef })}.`,
+          `  uploads:// = ${formatParsedContextUri("uploads", "", { kind: "chat", chatRef: input.chatRef })} (this chat).`,
         ]
       : []),
     "</work_context>",
