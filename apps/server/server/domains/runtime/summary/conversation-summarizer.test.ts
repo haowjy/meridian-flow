@@ -273,7 +273,7 @@ describe("conversation summarizer", () => {
   });
 
   it("segments only at turns and carries the running summary into each bounded request", async () => {
-    const narrowWindow = 2_600;
+    const narrowWindow = 3_300;
     const rig = setup({
       models: [threadModel, { ...cheapModel, contextWindow: narrowWindow }],
       async *events(_request, call) {

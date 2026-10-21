@@ -63,72 +63,67 @@ model text.
 
 ## Important files
 
-A summary cannot credit the model with having seen a document, so the successor
-re-shows the ones it most needs ([credit scope](document-text.md#observation-frontiers),
-owner rulings C10, C12 and C13). The summarizer ends its output with
-`## Documents to keep open`, one context URI per line, most important first. `compaction/important-files.ts` owns the instruction and parser.
-`prepareCompactionSuccessor` strips that section and any model-emitted
-`## Documents not re-shown` section from the stored summary. Both reserved
-headings accept any Markdown heading level, case differences, a trailing colon
-and closing hashes. An empty narrative after stripping fails with `empty_text`
-through the summary-failure path; documents and the note cannot replace it.
-A listed line names a shown URI only by exact match: list markers are removed,
-then the line is checked against the shown URIs before each layer of decoration
-is peeled (a wrapping backtick, angle bracket or quote; trailing `.,;:`; a
-trailing parenthetical), so a name like `Chapter 1 (revised)` keeps its
-parenthesis and `Chapter 1.bak` never becomes `Chapter 1`. Matching uses
-`documentRevisions` evidence from the **whole pre-compaction history**, not only the retained tail. Unknown URIs are
-dropped with `important_file.unknown_uris` (count). Candidates are all
-matched entries, then the 3 most recently shown documents, deduplicated by
-document id. Missing or malformed lists naturally leave only the 3 recent.
+A summary cannot credit the model with having seen a document. The successor
+re-shows useful reads through the ordinary read path
+([credit scope](document-text.md#observation-frontiers)). The summarizer ends with
+`## Documents to keep open`, one JSON object of ordinary `read` arguments per
+line, most important first. `compaction/important-files.ts` publishes the actual
+read schema and validates with `ReadToolInputSchema`; there is no separate
+selector grammar. All read arguments retain their ordinary meaning, including
+`around`, `format`, `before`, and `version`.
 
-The full text is selected greedily in that order, within
-half the headroom between the measured compacted base and the auto-compaction
-trigger, less estimator slack, of rendered text using the successor model's tokenizer and shared part estimator,
-including the exact projected heading plus read. Before admitting documents,
-the picker reserves the longest list it can write (every candidate named),
-priced with that same estimator and tokenizer. Each admitted document only
-shortens that list. The 1,000-token margin is estimator slack only. When the base
-and the reserved list already exhaust trigger headroom, no document is admitted
-and the list is empty; this base can remain over the trigger. A document whose
-full text exceeds what is left is skipped, never truncated (a truncated copy
-would be a partial read with its own listing). There is no count cap or fixed
-token budget. Without a trigger there is no limit. Reads stop as soon as the
-remaining room is spent; oversized documents are skipped so later smaller
-candidates can still fit.
+Both this heading and model-emitted `Documents not re-shown` sections are removed
+before storing the narrative (any heading level, case, trailing colon/closing
+hashes). An empty remaining narrative fails with `empty_text`. Only admitted
+reads regenerate the keep-open list; no omission inventory is written.
 
-The summary's `## Documents to keep open` section is written from the admitted
-reads, in read order, replacing whatever the summarizer listed. The list and the
-blocks therefore cannot disagree: a candidate that did not fit, could not be
-read, or was never shown is simply absent, and no omission note is written for
-the model or the writer.
+Candidates bind to document identities shown in the whole pre-compaction
+history, not arbitrary paths. Listed reads rank first, then the three recently
+shown identities as default `{path}` reads. Paths use the ordinary filename/URI
+normalization; fragments remain part of the read input. First listed identity
+wins. Even schema-invalid input with an identifiable shown path claims its
+identity, preventing a recent whole read from silently replacing it. Malformed
+JSON without an identifiable path is ignored; recent selection remains
+independent. Failed and oversized reads are omitted, never retried with broader
+arguments or resurrected by recent selection.
 
-Each is read in full through the reference reader (`readDocument`, an
-omitted-version read, so a draft-mode thread gets its Work draft and auto-apply
-gets live) and persisted as a reference-shaped text block with its `read` on the
-compaction turn, `sequence` 1 and up beside the summary at 0, most important
-first. The next compaction ranks earlier blocks on this turn as more recent:
-recorded evidence is inserted backwards for compaction turns because the recent
-picker reverses evidence insertion order. Its evidence is
-recorded like an @-mentioned document's, by `afterEvents` of the completing
-transaction: shown links, and a frontier chained from nothing (a fresh chain). A
-document that cannot be read is skipped with a warning
-(`important_file.read_failed`); it never fails the compaction. Assembly runs
-once without them to size the budget and fail early, then once with them: that
-second pass measures `tokensAfter` with the final summary, even when no
-documents fit.
-A retried successor preparation reads again; only the completing attempt's
-blocks and evidence persist.
+The picker reserves the complete candidate list, then admits whole read results
+greedily within half the trigger headroom after the compacted base, minus
+1,000 tokens of estimator slack. It uses the successor model's tokenizer and
+shared part estimator for the exact JSON-labelled wrapper also used by
+projection. Oversized reads are skipped so later smaller reads can fit; no
+truncation, count cap, or fixed budget. No trigger means no budget limit.
 
-The projector puts these blocks on the synthetic summary turn right after the
-summary, each as a plain text block (the heading "Current text of <uri>,
-re-shown after the summary:" plus the read) that keeps the block's id, and
-credits their ids. The completion commit hands its persisted blocks (summary and
-re-shown) back on the adopted batch (`completedBlocks`), so the run's in-memory
-history holds them for every later request, like any other adopted block. The retained tail's copies of a re-shown document
-are elided as `reshown` (`compaction/elide.ts`), so a request carries each
-re-shown document once. A later compaction sees these blocks as ordinary
-pre-compaction history.
+`referenceReader` and the ordinary read handler share one tracked-document read
+operation. It resolves the same version and grant (including explicit retained
+draft reads), checks the expected document identity, and calls `readDocument`.
+Successful reads with empty observation evidence, such as edits listings, are
+still results. There is no manufactured full-text credit for outlines or edits.
+Exceptions other than cancellation log `important_file.read_failed` and omit
+that read; cancellation escapes immediately.
+
+Each admitted read persists on C after the summary as a reference snapshot with
+its result, revision and actual `read.input`. The input is opaque display JSON
+in shared contracts, never executable on replay, and never accepted in writer
+submissions. The admitted list, projected label and budget wrapper use that same
+JSON. Ordinary attached references may omit input and use their canonical path.
+The projector retains block IDs, so completion records shown links and fresh
+observation frontiers against those exact blocks. Only the winning completion
+transaction records evidence; discarded preparations, failures and omissions do
+not. The completed blocks join in-memory history for all later requests.
+
+Only admitted default-version whole reads (no fragment, `in`, `around`, or
+non-full format) authorize full-copy `reshown` elision. Explicit `format: full`
+counts as whole; explicit versions conservatively do not replace the thread's
+effective-version text. Partial reads leave unchanged full tail copies visible,
+but those pre-compaction copies credit nothing after C. Outside selected blocks
+remain unshown, so ordinary region-change checks still apply to later edits.
+A later compaction treats these blocks as ordinary prior history; recent
+selection does not inherit old read arguments.
+
+Assembly first sizes the compacted base, then measures the final summary and
+admitted reads, even when none fit. A retried successor preparation reads again;
+only its completing attempt's snapshots and evidence persist.
 
 ## Decisions and projection
 
