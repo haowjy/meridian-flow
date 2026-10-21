@@ -128,8 +128,7 @@ export function createFakeThreadPeerCores() {
 /** Draft lookups for a pool whose thread always has the fake Work draft and no other row. */
 export const fakeWorkDrafts = {
   getDraft: async () => null,
-  resolveWorkDraftForThread: async () =>
-    ({ draftId: FAKE_UPSTREAM_ID, generation: 1, status: "active" }) as never,
+  resolveWorkDraftForThread: async () => ({ draftId: FAKE_UPSTREAM_ID, status: "active" }) as never,
 };
 
 /** The Work branch the pool pins a drafted write to. */

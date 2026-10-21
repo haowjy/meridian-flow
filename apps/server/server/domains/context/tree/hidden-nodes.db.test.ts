@@ -419,9 +419,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it.each([
-      "item",
       "whole-branch",
-    ] as const)("preserves a revealed draft-created document after %s Discard", async (scope) => {
+    ] as const)("preserves a revealed draft-created document after %s Discard", async (_scope) => {
       const { runtime, scenario } = await start();
       const drafting = await scenario.work("Drafting", "draft");
       const path = "lore/y";
@@ -451,7 +450,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(documentYjsUpdates.id);
       expect(storageBefore, "the writer's live write is durable").not.toEqual([]);
 
-      await scenario.discard(drafting, scope === "item" ? [y] : "all");
+      await scenario.discard(drafting, "all");
 
       expect.soft(await liveStatus(y), "still visible").toMatchObject({ kind: "visible" });
       expect.soft(await tombstoned(y), "not deleted").toBe(false);

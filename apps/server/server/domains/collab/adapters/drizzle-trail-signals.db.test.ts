@@ -1,11 +1,9 @@
-import { randomUUID } from "node:crypto";
 /** Dirty-signal capture, semantic readiness, and exact-cut acknowledgement on PostgreSQL. */
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALPHA_ID,
   closeDatabase,
-  createHarness,
   createTestDatabase,
   resetDatabase,
   schema,
@@ -48,12 +46,11 @@ describe("change trail dirty signals (postgres)", () => {
       frontier: {},
       targets: target ? [{ editId: target, ordinal: 0, direction: "invert" }] : [],
       origin: { kind: "live", seq: 1 },
-      placement: { kind: "live", seq: 1 },
     });
     return edit.id;
   };
 
-  it("captures receipt/part and recursively targeted ownerless inverse placement", async () => {
+  it("captures receipt and recursively targeted inverse owners, ignoring receipt metadata backfills", async () => {
     await clear();
     const original = await receipt();
     expect(await signals()).toEqual(
@@ -71,36 +68,13 @@ describe("change trail dirty signals (postgres)", () => {
     await clear();
     await db
       .update(schema.documentEditParts)
-      .set({ placement: { kind: "discarded" } })
+      .set({ frontier: { "99": 1 } })
       .where(eq(schema.documentEditParts.editId, rollback));
-    expect(await signals()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ turnId: TURN_ID })]),
-    );
+    expect(await signals()).toEqual([]);
     expect(
       (await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.id, rollback)))[0]
         .turnId,
     ).toBeNull();
-  });
-
-  it("captures journal insertion/disposition, Apply, settlement and lifecycle", async () => {
-    const harness = createHarness(db);
-    try {
-      await clear();
-      const documentDraft = await harness.seedDestructivePush("signals");
-      expect(await signals()).not.toEqual([]);
-      await clear();
-      await db.update(schema.draftWriteJournal).set({ status: "rollback_pending" });
-      expect(await signals()).not.toEqual([]);
-      await db.update(schema.draftWriteJournal).set({ status: "active" });
-      await clear();
-      await harness.push(documentDraft);
-      expect(await signals()).not.toEqual([]);
-      await clear();
-      await db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID));
-      expect(await signals()).not.toEqual([]);
-    } finally {
-      harness.destroyWarmState();
-    }
   });
 
   it("allows receipt signals while lifecycle holds both parent NO KEY UPDATE locks", async () => {
@@ -191,80 +165,5 @@ describe("change trail dirty signals (postgres)", () => {
     await writer().reconcileTerminalOwners();
     await writer().reconcileTerminalOwners();
     expect(await shell()).toMatchObject({ state: "settled" });
-  });
-
-  it("holds the original turn settling for an inverse-only live write and rollback", async () => {
-    const harness = createHarness(db);
-    try {
-      const draftId = await harness.seedDestructivePush("semantic-readiness");
-      const original = await receipt();
-      const inverse = await receipt(original);
-      const [journal] = await db
-        .insert(schema.draftWriteJournal)
-        .values({
-          draftId,
-          generation: 1,
-          source: "writer",
-          updateData: Buffer.from([0, 0]),
-          draftBaseUpdateSeq: 0,
-          updateMeta: { documentEdit: { editId: inverse } },
-          status: "rollback_pending",
-        })
-        .returning();
-      const [push] = await db
-        .insert(schema.pushLineage)
-        .values({
-          documentId: ALPHA_ID,
-          draftGeneration: 1,
-          journalIds: [journal.id],
-          idempotencyKey: "inverse-only",
-        })
-        .returning();
-      const [batch] = await db
-        .insert(schema.branchPushSettlementBatches)
-        .values({
-          id: randomUUID(),
-          state: "pending",
-          claimToken: randomUUID(),
-          claimKind: "warm",
-          claimedAt: new Date(),
-          leaseExpiresAt: new Date(Date.now() + 60_000),
-        })
-        .returning();
-      if (!batch) throw new Error("batch not created");
-      await db.insert(schema.branchPushSettlementOutbox).values({
-        pushId: push.id,
-        batchId: batch.id,
-        documentId: ALPHA_ID,
-        documentTitle: "Alpha",
-        lockCutUpdate: Buffer.from([0, 0]),
-        pushUpdate: Buffer.from([0, 0]),
-        trailSeed: {},
-      });
-      await writer().reconcileTerminalOwners();
-      await writer().reconcileTerminalOwners();
-      expect(await shell()).toMatchObject({ state: "settling" });
-      await db
-        .update(schema.draftWriteJournal)
-        .set({ status: "pushed" })
-        .where(eq(schema.draftWriteJournal.id, journal.id));
-      await writer().reconcileTerminalOwners();
-      expect(await shell()).toMatchObject({ state: "settling" });
-      await db
-        .update(schema.branchPushSettlementBatches)
-        .set({
-          state: "completed",
-          completedAt: new Date(),
-          claimToken: null,
-          claimKind: null,
-          claimedAt: null,
-          leaseExpiresAt: null,
-        })
-        .where(eq(schema.branchPushSettlementBatches.id, batch.id));
-      await writer().reconcileTerminalOwners();
-      expect(await shell()).toMatchObject({ state: "settled" });
-    } finally {
-      harness.destroyWarmState();
-    }
   });
 });

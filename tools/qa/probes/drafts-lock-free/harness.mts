@@ -72,7 +72,10 @@ export async function createScratchDatabase(): Promise<{ url: string; drop(): Pr
 }
 
 /** The production adapters over `url`, with the project-level rows every probe shares. */
-export async function openHarness(url: string) {
+export async function openHarness(
+  url: string,
+  onAppendSequenced?: (detail: AppendCommitted) => void,
+) {
   const name = new URL(url).pathname.slice(1);
   if (!name.startsWith(SCRATCH_PREFIX))
     throw new Error(`Probes write only to a ${SCRATCH_PREFIX}* scratch database, not ${name}`);
@@ -108,7 +111,10 @@ export async function openHarness(url: string) {
     workProjection: projection,
     branches,
     live: persistence,
-    onAppendSequenced: (detail) => appends.push(detail),
+    onAppendSequenced: (detail) => {
+      appends.push(detail);
+      onAppendSequenced?.(detail);
+    },
   });
   const attemptScope = <T,>(operation: () => Promise<T>) => runInDrizzleSavepoint(db, operation);
   const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store, attemptScope });
@@ -178,7 +184,6 @@ export async function openHarness(url: string) {
           lifecycle: read.documentDraft.lifecycle,
           revision: read.documentDraft.revision,
           checkpointRevision: read.documentDraft.checkpointRevision,
-          generation: read.documentDraft.generation,
           tail: read.tail.length,
           text: doc.getXmlFragment("prosemirror").toString(),
         };

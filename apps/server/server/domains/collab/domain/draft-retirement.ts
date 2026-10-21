@@ -2,7 +2,7 @@
  * Retiring what a committed transaction ended: the drafts it closed, each with its cause, and
  * the documents it removed. A removed document's rooms, live and draft, close `4208` (its live
  * room only while the removal still stands, since a Work Restore may have committed after it);
- * any other closed draft's room closes stale. Each retired thread peer's staged writes are refused with
+ * any other closed draft's room closes `4205` (`discarded`). Each retired thread peer's staged writes are refused with
  * the reason its cause names (a removal's carries the record) before the thread state the
  * pooled cores hold for that peer goes. It names the peer it retired, so a delayed retirement
  * never reaches a replacement peer of the same thread, and another Work's peers on a shared
@@ -46,7 +46,7 @@ const REASON_OF_CAUSE = {
 } as const satisfies Record<Exclude<DraftCloseCause, object>, RetiredWriteReason>;
 
 export function createDraftRetirement(deps: {
-  /** A closed draft's rooms on a generation it left. */
+  /** A closed draft's stable room, with the terminal discarded reason. */
   closeDraftRoom(draftId: string): void;
   /**
    * These drafts' rooms and the removed documents' live rooms, `4208`, including rooms still

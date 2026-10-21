@@ -8,12 +8,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { listWorkBranchDrafts } from "@/client/api/branches-api";
-import {
-  readDraftsAfterCommands,
-  shareDraftObservation,
-  useChangeCommandRecords,
-} from "./branch-command-record";
-import { projectDraftList } from "./draft-projection";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
@@ -30,12 +24,8 @@ export type WorkDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
 export function workBranchDraftsQueryOptions(projectId: string, workId: string) {
   return {
     queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
-    queryFn: () =>
-      readDraftsAfterCommands({ projectId, workId }, () =>
-        listWorkBranchDrafts(projectId, workId).then((response) => response.items),
-      ),
+    queryFn: () => listWorkBranchDrafts(projectId, workId).then((response) => response.items),
     staleTime: 15_000,
-    structuralSharing: shareDraftObservation,
   };
 }
 
@@ -65,18 +55,7 @@ export function useWorkBranchDrafts(
     enabled: enabled && Boolean(result.data?.length),
     workId,
   });
-  const records = useChangeCommandRecords();
-  const visible = useMemo(
-    () =>
-      result.data
-        ? projectDraftList(
-            result.data,
-            { projectId: projectId ?? "", workId: workId ?? "" },
-            records,
-          )
-        : null,
-    [result.data, projectId, workId, records],
-  );
+  const visible = result.data;
   const files = useMemo(
     () =>
       enabled && visible

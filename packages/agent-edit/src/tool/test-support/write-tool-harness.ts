@@ -260,7 +260,6 @@ export class MemoryCoordinator implements DocumentCoordinator {
     return {
       doc,
       room: `memory:${docId}`,
-      generation: 0,
       kept: (staged?.entries ?? []).flatMap((entry) =>
         entry.mutation?.writeId ? [entry.mutation.writeId] : [],
       ),

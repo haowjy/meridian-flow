@@ -537,7 +537,7 @@ export function createWriteCommands(deps: {
     const cut =
       staged && editScopeId && responseCommitter.hasScopeCut(editScopeId, docId)
         ? undefined
-        : { generation: room.generation, snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) };
+        : { snapshot: Y.encodeSnapshotV2(Y.snapshot(room.doc)) };
     const preOwnSnapshot = Y.encodeStateAsUpdate(planDoc);
     // The echo compares with what the model planned on, as the settled receipt does: a block
     // the writer changed since the view shows in full beside the write.

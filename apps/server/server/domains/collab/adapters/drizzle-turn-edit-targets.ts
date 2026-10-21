@@ -16,7 +16,6 @@ export async function readTurnEditTargets(
   const rows = await db
     .selectDistinct({
       documentId: documentEdits.documentId,
-      placement: documentEditParts.placement,
       origin: documentEditParts.origin,
     })
     .from(documentEdits)
@@ -39,12 +38,8 @@ export async function readTurnEditTargets(
     .orderBy(documentEdits.documentId);
   const targets = new Map<string, TurnEditedDocumentId>();
   for (const row of rows) {
-    // Terminal parts retain their historical view for the change viewer, never inverse eligibility.
-    const placement =
-      row.placement.kind === "live" || row.placement.kind === "pending"
-        ? row.placement
-        : row.origin;
-    const scope = placement.kind === "pending" ? "draft" : "live";
+    // A receipt's destination never changes when its draft text is applied or discarded.
+    const scope = row.origin.kind === "pending" ? "draft" : "live";
     targets.set(`${row.documentId}:${scope}`, { documentId: row.documentId, scope });
   }
   return [...targets.values()].sort(

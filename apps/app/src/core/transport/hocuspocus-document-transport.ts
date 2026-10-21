@@ -250,8 +250,7 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.DRAFT_GENERATION_STALE.reason]: "superseded",
-  [WS_CLOSE.DRAFT_STALE.reason]: "rebuild",
+  [WS_CLOSE.DRAFT_CLOSED.reason]: "closed",
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
@@ -342,7 +341,7 @@ export function createHocuspocusDocumentTransport({
     terminal = true;
     document.off("update", handleDocumentUpdate);
     stopHints();
-    acknowledgement.endConnection();
+    acknowledgement.terminate();
     publish(state);
     provider.destroy();
     websocket.destroy();
@@ -457,6 +456,7 @@ export function createHocuspocusDocumentTransport({
 
   return {
     unacknowledgedUpdates: () => outbox,
+    whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
       return provider.synced;
     },
@@ -491,7 +491,7 @@ export function createHocuspocusDocumentTransport({
       destroyed = true;
       stopHints();
       document.off("update", handleDocumentUpdate);
-      acknowledgement.endConnection();
+      acknowledgement.terminate();
       provider.destroy();
       websocket.destroy();
       listeners.clear();

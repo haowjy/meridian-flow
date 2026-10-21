@@ -1,7 +1,7 @@
 # collab FUTURE
 
 These are deferred improvements, not current contracts. Preserve the existing
-pending-review authority and settlement fences while pursuing them.
+draft row ordering and live authority fences while pursuing them.
 
 ## Intent-aware manifest command
 
@@ -14,11 +14,18 @@ remains the independent pending-review authority.
 ## Large-history recovery
 
 Measure idle recovery query plans with settled history before adding a partial
-state index. Keep actionable predicates from turning settlement delay into a
-full history scan.
+state index for dirty-signal reconciliation or delivery. Keep each scan
+bounded to actionable rows rather than settled history.
 
 ## Reply-save and room-admission statements
 
 Measure current statement counts for reply save and room admission before
 narrowing confirmation or head/checkpoint reads. Optimize only after identifying
 which persistence or lock boundary dominates.
+
+## Admission fast-path deletion
+
+`domain/provenance.ts` now indexes incoming structs for both admission walks
+(#975). Measure ordinary typing with the memoized general walk alone; if it
+is sufficient, delete `isPlainProseFastPath` and its duplicate root/anchor and
+delete checks. Preserve committed-prefix validation under the draft row hold.

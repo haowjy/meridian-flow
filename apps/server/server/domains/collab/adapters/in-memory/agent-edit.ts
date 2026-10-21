@@ -73,7 +73,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
         stored.destroy();
       }
       const seq = await this.append(docId, update, meta);
-      return { status: "appended", seq, joinedSettlement: false };
+      return { status: "appended", seq };
     });
   }
 

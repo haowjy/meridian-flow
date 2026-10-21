@@ -1,7 +1,6 @@
 /** One draft-only lifecycle across Editor membership and the dock slot. */
 
 import { useMemo } from "react";
-import type { DraftRef } from "@/client/query/branch-command-record";
 import {
   type ContextTab,
   getContextTabs,
@@ -16,6 +15,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import type { ContextUri } from "@/lib/context-uri";
+import type { DraftRef } from "./review-command-types";
 
 export type DraftOnlyPresentation = DraftRef & {
   container: "editor" | "dock";

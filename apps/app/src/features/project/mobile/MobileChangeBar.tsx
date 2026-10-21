@@ -10,9 +10,9 @@ import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 
 export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
-  const item = view.items.find((candidate) => candidate.change.classId === view.focused?.classId);
+  const item = view.items.find((candidate) => candidate.change.id === view.focused?.id);
   if (!item) return null;
-  const { change, failure, draftFailure } = item;
+  const { change, draftFailure } = item;
   return (
     <div
       data-phone-change-bar
@@ -28,7 +28,6 @@ export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
         touch
         change={change}
         disabled={view.locked}
-        failure={failure}
         draftFailure={draftFailure}
         onApply={() => void view.apply(change)}
         onDiscard={() => void view.discard(change)}

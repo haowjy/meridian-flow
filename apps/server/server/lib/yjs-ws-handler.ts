@@ -1,10 +1,5 @@
 /** Hocuspocus-backed Yjs gateway orchestration behind the thin CrossWS route. */
-import {
-  Hocuspocus,
-  isTransactionOrigin,
-  type TransactionOrigin,
-  type WebSocketLike,
-} from "@hocuspocus/server";
+import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
@@ -20,8 +15,8 @@ import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
   DraftPrefixMissingError,
+  DraftStaleUpdateError,
   isDocumentSchemaMajorMismatchError,
-  type UpdateOrigin,
 } from "../domains/collab/index.js";
 import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
@@ -60,7 +55,6 @@ export type YjsGatewayPeer = {
 export type YjsGatewayConnection = {
   hocuspocus: HocuspocusConnection;
   draftSyncState: Map<string, DraftHandshakeState>;
-  offlineSyncUpdates: Set<string>;
   registration: YjsRoomRegistration;
 };
 
@@ -87,7 +81,6 @@ type YjsAdmissionTarget =
       kind: "draft";
       draftId: Extract<ParsedYjsRoom, { kind: "draft" }>["draftId"];
       documentId: DocumentId;
-      generation: number;
     };
 
 /**
@@ -120,7 +113,6 @@ type YjsConnectionContext = {
   traceId: string;
   clientSchemaVersion: CollabSchemaVersion;
   draftSyncState: Map<string, DraftHandshakeState>;
-  offlineSyncUpdates: Set<string>;
   admissionTarget?: YjsAdmissionTarget;
   access?: YjsRoomAccess;
   registration: YjsRoomRegistration;
@@ -261,30 +253,6 @@ function refuseSchemaAdmission(input: {
   }
 }
 
-function deriveOrigin(
-  transactionOrigin: unknown,
-):
-  | { source: "connection"; origin: UpdateOrigin }
-  | { source: "local"; origin: UpdateOrigin | null }
-  | { source: "redis" }
-  | { source: "unknown" } {
-  if (!isTransactionOrigin(transactionOrigin)) return { source: "unknown" };
-  const origin = transactionOrigin as TransactionOrigin;
-  if (origin.source === "connection") {
-    const userId = origin.connection.context.userId as UserId | undefined;
-    return userId
-      ? { source: "connection", origin: { type: "user", userId } }
-      : { source: "unknown" };
-  }
-  if (origin.source === "local") {
-    return {
-      source: "local",
-      origin: (origin.context?.origin as UpdateOrigin | undefined) ?? null,
-    };
-  }
-  return { source: "redis" };
-}
-
 function parseRoomOrDeny(documentName: string) {
   const room = parseYjsRoomName(documentName);
   if (!room) throw permissionDenied("invalid-room");
@@ -342,11 +310,8 @@ async function classifyYjsConnectionAdmission(input: {
     await services.documentSync.repairDocumentAuthority(documentId);
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
-    const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(
-      room.draftId,
-      room.generation,
-    );
-    if (!documentDraft) throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+    const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
+    if (!documentDraft) refuse(WS_CLOSE.DRAFT_CLOSED);
     documentId = documentDraft.documentId;
     headSchemaVersion = documentDraft.schemaVersion;
     fileTarget = { kind: "draft", documentId, workId: documentDraft.workId };
@@ -396,7 +361,6 @@ async function classifyYjsConnectionAdmission(input: {
       kind: "draft",
       draftId: room.draftId,
       documentId,
-      generation: room.generation,
     },
   };
 }
@@ -409,20 +373,18 @@ async function enforceDraftHandshake(input: {
   payload: Uint8Array;
   context?: { draftSyncState?: Map<string, DraftHandshakeState> };
 }): Promise<void> {
-  const key = `${input.room.draftId}:${input.room.generation}`;
+  const key = input.room.draftId;
   if (input.syncType === messageYjsSyncStep1) {
-    const stale = await input.services.documentSync.rejectStaleDraftSyncStep1({
+    const active = await input.services.documentSync.reconcileHocuspocusDraftRoom({
       draftId: input.room.draftId,
-      generation: input.room.generation,
-      clientStateVector: input.payload,
       room: input.document,
     });
     if (input.context?.draftSyncState?.get(key) === "rejected") {
-      throw permissionDenied(WS_CLOSE.DRAFT_STALE.reason, WS_CLOSE.DRAFT_STALE.code);
+      refuse(WS_CLOSE.DRAFT_PREFIX_MISSING);
     }
-    if (stale) {
+    if (!active) {
       input.context?.draftSyncState?.set(key, "rejected");
-      throw permissionDenied(WS_CLOSE.DRAFT_STALE.reason, WS_CLOSE.DRAFT_STALE.code);
+      refuse(WS_CLOSE.DRAFT_CLOSED);
     }
     input.context?.draftSyncState?.set(key, "passed");
     return;
@@ -431,7 +393,7 @@ async function enforceDraftHandshake(input: {
   const state = input.context?.draftSyncState?.get(key) ?? "pending";
   if (state === "passed") return;
   input.context?.draftSyncState?.set(key, "rejected");
-  throw permissionDenied(WS_CLOSE.DRAFT_STALE.reason, WS_CLOSE.DRAFT_STALE.code);
+  refuse(WS_CLOSE.DRAFT_PREFIX_MISSING);
 }
 
 export async function admitWriterSync(input: {
@@ -444,7 +406,6 @@ export async function admitWriterSync(input: {
   expectedGeneration?: bigint;
   context?: {
     draftSyncState?: Map<string, DraftHandshakeState>;
-    offlineSyncUpdates?: Set<string>;
   };
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
@@ -479,7 +440,6 @@ async function admitDraftSync(
   try {
     await input.services.documentSync.admitDraftWriterUpdate({
       draftId: room.draftId,
-      expectedGeneration: room.generation,
       update: input.payload,
       origin: { type: "user", userId: input.userId },
       document: input.document,
@@ -490,6 +450,11 @@ async function admitDraftSync(
     if (cause instanceof FileEditRefusedError) throw cause;
     // Not a refusal (D30): the client reconnects and its handshake carries the missing prefix.
     if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
+    if (cause instanceof DraftStaleUpdateError) {
+      if (!(await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
+        refuse(WS_CLOSE.DRAFT_CLOSED, cause);
+      refuse(WS_CLOSE.ACCESS_CHANGED, cause);
+    }
     refuse({ code: 1008, reason: "draft-update-admission-failed" }, cause);
   }
 }
@@ -510,19 +475,12 @@ async function admitLiveSync(
       origin: { type: "user", userId: input.userId },
       expectedGeneration: input.expectedGeneration,
     });
-    if (admission.admitted && input.syncType === messageYjsSyncStep2) {
-      input.context?.offlineSyncUpdates?.add(updateIdentity(input.payload));
-    }
     return admission;
   } catch (cause) {
     // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
     if (cause instanceof FileEditRefusedError) throw cause;
     refuse({ code: 1013, reason: "writer-journal-admission-failed" }, cause);
   }
-}
-
-function updateIdentity(update: Uint8Array): string {
-  return Buffer.from(update).toString("base64");
 }
 
 function admittedTargetForSync(
@@ -534,10 +492,7 @@ function admittedTargetForSync(
   if (
     !target ||
     (room.kind === "live" && (target.kind !== "live" || target.documentId !== room.documentId)) ||
-    (room.kind === "draft" &&
-      (target.kind !== "draft" ||
-        target.draftId !== room.draftId ||
-        target.generation !== room.generation))
+    (room.kind === "draft" && (target.kind !== "draft" || target.draftId !== room.draftId))
   ) {
     throw permissionDenied("permission-denied");
   }
@@ -656,12 +611,7 @@ export function createHocuspocus(
             state =
               room.kind === "live"
                 ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
-                : (
-                    await services.documentSync.loadHocuspocusDraftState(
-                      room.draftId,
-                      room.generation,
-                    )
-                  )?.state;
+                : (await services.documentSync.loadHocuspocusDraftState(room.draftId))?.state;
           } catch (cause) {
             if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
             refuseSchemaAdmission({
@@ -674,8 +624,7 @@ export function createHocuspocus(
               serverSchemaVersion: cause.expectedVersion,
             });
           }
-          if (!state && room.kind === "draft")
-            throw permissionDenied(WS_CLOSE.DRAFT_GENERATION_STALE.reason);
+          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_CLOSED);
           if (state) Y.applyUpdate(document, state);
           if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
         });
@@ -690,7 +639,6 @@ export function createHocuspocus(
       // Not awaited: Hocuspocus registers the room only after this hook returns.
       services.documentSync.enrollHocuspocusDraftRoom({
         draftId: room.draftId,
-        generation: room.generation,
         document,
       });
     },
@@ -705,12 +653,10 @@ export function createHocuspocus(
       };
       await withRemovalRefusal(services, room, context.userId, closing, async () => {
         if (room.kind === "draft") {
-          // As for a live room: a reset can commit between this connection's admission and
-          // its room's registration, and the old generation's room must not take the tab.
-          if (
-            !(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId, room.generation))
-          )
-            refuse(WS_CLOSE.DRAFT_GENERATION_STALE);
+          // A close can commit between admission and registration; the ended draft
+          // must not take a late connection.
+          if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
+            refuse(WS_CLOSE.DRAFT_CLOSED);
           return;
         }
         try {
@@ -724,26 +670,6 @@ export function createHocuspocus(
           refuse({ code: 1013, reason: "retired-durable-authority-generation" }, cause);
         }
       });
-    },
-    async onChange({ documentName, update, transactionOrigin, document, connection }) {
-      const operation = () => {
-        const origin = deriveOrigin(transactionOrigin);
-        if (origin.source !== "connection") return;
-
-        const room = parseRoomOrDeny(documentName);
-        if (room.kind === "live") {
-          services.documentSync.persistConnectionUpdate({
-            documentId: room.documentId,
-            update,
-            origin: origin.origin,
-            document,
-            reconcileOffline:
-              connection?.context.offlineSyncUpdates?.delete(updateIdentity(update)) ?? false,
-          });
-        }
-      };
-      const traceId = connection?.context.traceId;
-      return traceId ? runWithEventCorrelation({ traceId }, operation) : operation();
     },
     async onStoreDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);
@@ -781,7 +707,6 @@ export function createYjsGateway(services: YjsGatewayServices) {
     // Hocuspocus unloads the room once its last connection is gone.
     connection.hocuspocus.handleClose(event);
     connection.draftSyncState.clear();
-    connection.offlineSyncUpdates.clear();
   }
 
   return {
@@ -795,17 +720,14 @@ export function createYjsGateway(services: YjsGatewayServices) {
 
       const registration: YjsRoomRegistration = { revoke: () => undefined };
       const draftSyncState = new Map<string, DraftHandshakeState>();
-      const offlineSyncUpdates = new Set<string>();
       const connection: YjsGatewayConnection = {
         draftSyncState,
-        offlineSyncUpdates,
         registration,
         hocuspocus: hocuspocus.handleConnection(peer.socket, peer.request, {
           userId: peer.userId,
           traceId: peer.traceId,
           clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
           draftSyncState,
-          offlineSyncUpdates,
           registration,
           closeTransport: ({ code, reason }: { code: number; reason: string }) =>
             peer.close(code, reason),

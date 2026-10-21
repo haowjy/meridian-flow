@@ -244,7 +244,6 @@ export function withStaged(
   for (const entry of staged?.entries ?? []) Y.applyUpdate(copy.doc, entry.update);
   return {
     ...copy,
-    generation: 0,
     kept: (staged?.entries ?? []).flatMap((entry) =>
       entry.mutation?.writeId ? [entry.mutation.writeId] : [],
     ),

@@ -48,7 +48,6 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
               }
             : null;
         },
-        unresolvedSettlements: async () => 0,
         replaceGeneration: async (checkpoint, expectedGeneration) => {
           const result = await replaceGeneration(input.db, {
             documentId,
@@ -61,11 +60,7 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
             return result.generation;
           }
           throw new DocumentMutationPolicyError(
-            result.code === "authority_head_busy"
-              ? "authority_head_busy"
-              : result.code === "checkpoint_incomplete"
-                ? "checkpoint_incomplete"
-                : "invalid_mutation",
+            result.code === "checkpoint_incomplete" ? "checkpoint_incomplete" : "invalid_mutation",
             `Durable authority head generation replacement failed: ${result.code}`,
           );
         },

@@ -134,9 +134,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [
-        schema.branchPushOutboxUpdates,
-        schema.branchPushSettlementOutbox,
-        schema.branchPushSettlementBatches,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailDocumentDetails,
         schema.changeTrailDocumentOccurrences,

@@ -137,7 +137,6 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
       await view.draftCoordinator.commitWriterUpdate({
         draftId: documentDraft.id,
-        expectedGeneration: documentDraft.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,

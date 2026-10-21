@@ -1,0 +1,210 @@
+diff --git a/dist/src/lib.d.ts b/dist/src/lib.d.ts
+index 16a38a6620ec43c242dde1a65667d042885cefff..aabbec9d7f6bd8146e73f691f0467c120adacabd 100644
+--- a/dist/src/lib.d.ts
++++ b/dist/src/lib.d.ts
+@@ -115,3 +115,6 @@ import { Node } from 'prosemirror-model';
+ import * as Y from 'yjs';
+ import { Schema } from 'prosemirror-model';
+ import { Fragment } from 'prosemirror-model';
++
++/** Identity-preserving refresh; call from the fragment deep observer on every change. */
++export function refreshProseMirrorDoc(fragment: Y.XmlFragment, schema: Schema, meta: ReturnType<typeof initProseMirrorDoc>["meta"], transaction: Y.Transaction): { doc: Node; mapping: ProsemirrorMapping };
+diff --git a/dist/src/y-tiptap.d.ts b/dist/src/y-tiptap.d.ts
+index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85f9766c58 100644
+--- a/dist/src/y-tiptap.d.ts
++++ b/dist/src/y-tiptap.d.ts
+@@ -2,4 +2,4 @@ export * from "./plugins/cursor-plugin.js";
+ export * from "./plugins/undo-plugin.js";
+ export * from "./plugins/keys.js";
+ export { ySyncPlugin, isVisible, getRelativeSelection, ProsemirrorBinding, updateYFragment } from "./plugins/sync-plugin.js";
+-export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
++export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
+diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..568381782750eba14ace2093ccf626ad3fcf4583 100644
+--- a/dist/y-tiptap.cjs
++++ b/dist/y-tiptap.cjs
+@@ -753,35 +755,14 @@ class ProsemirrorBinding {
+       return
+     }
+     this.mux(() => {
+-      /**
+-       * @param {any} _
+-       * @param {Y.AbstractType<any>} type
+-       */
+-      const delType = (_, type) => this.mapping.delete(type);
+-      Y__namespace.iterateDeletedStructs(
+-        transaction,
+-        transaction.deleteSet,
+-        (struct) => {
+-          if (struct.constructor === Y__namespace.Item) {
+-            const type = /** @type {Y.ContentType} */ (/** @type {Y.Item} */ (struct).content).type;
+-            type && this.mapping.delete(type);
+-          }
+-        }
++      const { doc } = refreshProseMirrorDoc(
++        this.type, this.prosemirrorView.state.schema, this, transaction
+       );
+-      transaction.changed.forEach(delType);
+-      transaction.changedParentTypes.forEach(delType);
+-      const fragmentContent = this.type.toArray().map((t) =>
+-        createNodeIfNotExists(
+-          /** @type {Y.XmlElement | Y.XmlHook} */ (t),
+-          this.prosemirrorView.state.schema,
+-          this
+-        )
+-      ).filter((n) => n !== null);
+       // @ts-ignore
+       let tr = this._tr.replace(
+         0,
+         this.prosemirrorView.state.doc.content.size,
+-        new PModel__namespace.Slice(PModel__namespace.Fragment.from(fragmentContent), 0, 0)
++        new PModel__namespace.Slice(doc.content, 0, 0)
+       );
+       restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
+       tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y__namespace.UndoManager });
+@@ -1797,6 +1780,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+   return { doc, meta, mapping: meta.mapping }
+ };
+ 
++/**
++ * meridian patch: share the binding's identity-preserving refresh with headless readers.
++ * Call during the fragment's deep observer, after every transaction affecting it.
++ * @param {Y.XmlFragment} fragment
++ * @param {Schema} schema
++ * @param {{ mapping: Map<any, any>, isOMark: Map<any, any> }} meta
++ * @param {Y.Transaction} transaction
++ */
++const refreshProseMirrorDoc = (fragment, schema, meta, transaction) => {
++  /**
++   * @param {any} _
++   * @param {Y.AbstractType<any>} type
++   */
++  const delType = (_, type) => meta.mapping.delete(type);
++  Y__namespace.iterateDeletedStructs(
++    transaction,
++    transaction.deleteSet,
++    (struct) => {
++      if (struct.constructor === Y__namespace.Item) {
++        const type = /** @type {Y.ContentType} */ (/** @type {Y.Item} */ (struct).content).type;
++        type && meta.mapping.delete(type);
++      }
++    }
++  );
++  transaction.changed.forEach(delType);
++  transaction.changedParentTypes.forEach(delType);
++  const fragmentContent = fragment.toArray().map((t) =>
++    createNodeIfNotExists(
++      /** @type {Y.XmlElement | Y.XmlHook} */ (t),
++      schema,
++      meta
++    )
++  ).filter((n) => n !== null);
++  const doc = schema.topNodeType.create(null, PModel.Fragment.fromArray(fragmentContent));
++  return { doc, mapping: meta.mapping }
++};
++
+ /**
+  * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
+  *
+@@ -2388,6 +2408,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+ exports.defaultSelectionBuilder = defaultSelectionBuilder;
+ exports.getRelativeSelection = getRelativeSelection;
+ exports.initProseMirrorDoc = initProseMirrorDoc;
++exports.refreshProseMirrorDoc = refreshProseMirrorDoc;
+ exports.isVisible = isVisible;
+ exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
+ exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
+diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..3ae133b16a2ff5185cb46aa9c9e768adf91ff775 100644
+--- a/dist/y-tiptap.js
++++ b/dist/y-tiptap.js
+@@ -719,35 +721,14 @@ class ProsemirrorBinding {
+       return
+     }
+     this.mux(() => {
+-      /**
+-       * @param {any} _
+-       * @param {Y.AbstractType<any>} type
+-       */
+-      const delType = (_, type) => this.mapping.delete(type);
+-      Y.iterateDeletedStructs(
+-        transaction,
+-        transaction.deleteSet,
+-        (struct) => {
+-          if (struct.constructor === Y.Item) {
+-            const type = /** @type {Y.ContentType} */ (/** @type {Y.Item} */ (struct).content).type;
+-            type && this.mapping.delete(type);
+-          }
+-        }
++      const { doc } = refreshProseMirrorDoc(
++        this.type, this.prosemirrorView.state.schema, this, transaction
+       );
+-      transaction.changed.forEach(delType);
+-      transaction.changedParentTypes.forEach(delType);
+-      const fragmentContent = this.type.toArray().map((t) =>
+-        createNodeIfNotExists(
+-          /** @type {Y.XmlElement | Y.XmlHook} */ (t),
+-          this.prosemirrorView.state.schema,
+-          this
+-        )
+-      ).filter((n) => n !== null);
+       // @ts-ignore
+       let tr = this._tr.replace(
+         0,
+         this.prosemirrorView.state.doc.content.size,
+-        new PModel.Slice(PModel.Fragment.from(fragmentContent), 0, 0)
++        new PModel.Slice(doc.content, 0, 0)
+       );
+       restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
+       tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y.UndoManager });
+@@ -1763,6 +1746,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+   return { doc, meta, mapping: meta.mapping }
+ };
+ 
++/**
++ * meridian patch: share the binding's identity-preserving refresh with headless readers.
++ * Call during the fragment's deep observer, after every transaction affecting it.
++ * @param {Y.XmlFragment} fragment
++ * @param {Schema} schema
++ * @param {{ mapping: Map<any, any>, isOMark: Map<any, any> }} meta
++ * @param {Y.Transaction} transaction
++ */
++const refreshProseMirrorDoc = (fragment, schema, meta, transaction) => {
++  /**
++   * @param {any} _
++   * @param {Y.AbstractType<any>} type
++   */
++  const delType = (_, type) => meta.mapping.delete(type);
++  Y.iterateDeletedStructs(
++    transaction,
++    transaction.deleteSet,
++    (struct) => {
++      if (struct.constructor === Y.Item) {
++        const type = /** @type {Y.ContentType} */ (/** @type {Y.Item} */ (struct).content).type;
++        type && meta.mapping.delete(type);
++      }
++    }
++  );
++  transaction.changed.forEach(delType);
++  transaction.changedParentTypes.forEach(delType);
++  const fragmentContent = fragment.toArray().map((t) =>
++    createNodeIfNotExists(
++      /** @type {Y.XmlElement | Y.XmlHook} */ (t),
++      schema,
++      meta
++    )
++  ).filter((n) => n !== null);
++  const doc = schema.topNodeType.create(null, Fragment.fromArray(fragmentContent));
++  return { doc, mapping: meta.mapping }
++};
++
+ /**
+  * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
+  *
+@@ -2344,5 +2364,5 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+   }
+ });
+ 
+-export { ProsemirrorBinding, absolutePositionToRelativePosition, createDecorations, defaultAwarenessStateFilter, defaultCursorBuilder, defaultDeleteFilter, defaultProtectedNodes, defaultSelectionBuilder, getRelativeSelection, initProseMirrorDoc, isVisible, prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment, prosemirrorToYDoc, prosemirrorToYXmlFragment, redo, relativePositionToAbsolutePosition, setMeta, undo, updateYFragment, yCursorPlugin, yCursorPluginKey, yDocToProsemirror, yDocToProsemirrorJSON, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey, yXmlFragmentToProseMirrorFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirror, yXmlFragmentToProsemirrorJSON };
++export { ProsemirrorBinding, absolutePositionToRelativePosition, createDecorations, defaultAwarenessStateFilter, defaultCursorBuilder, defaultDeleteFilter, defaultProtectedNodes, defaultSelectionBuilder, getRelativeSelection, initProseMirrorDoc, refreshProseMirrorDoc, isVisible, prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment, prosemirrorToYDoc, prosemirrorToYXmlFragment, redo, relativePositionToAbsolutePosition, setMeta, undo, updateYFragment, yCursorPlugin, yCursorPluginKey, yDocToProsemirror, yDocToProsemirrorJSON, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey, yXmlFragmentToProseMirrorFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirror, yXmlFragmentToProsemirrorJSON };
+ //# sourceMappingURL=y-tiptap.js.map

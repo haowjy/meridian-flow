@@ -50,11 +50,10 @@ adapter only.
   context, not a separate creation draft. Pending upload bytes do not persist,
   but successfully uploaded reference atoms do. `CreationComposer` sends through
   the route-owned pane-aware command and never writes a URL.
-- Inline review uses server Apply/Discard commands, not browser mutation history.
+- Inline Apply uses frozen server clicks; text Discard uses caller-owned local history.
   A draft-only tab is the document's one tab and settles in place.
 - The draft dock is this chat's changes (`useDraftDock`), and a chat with none
-  shows no draft dock. Apply and Discard send the union of this chat's complete
-  classes per file; only new documents are one whole-draft item. Each document
+  shows no draft dock. Apply and Discard act on this chat's projected groups per file; only new documents are one whole-draft item. Each document
   name opens its own review and there is no summary-wide Review command. Work-wide
   lists and Apply all stay on the Work page. Coarse-pointer targets stay 44px.
 - **Every chat failure is a `FailureCard` from `chatCards`** (`@meridian/thread-client`), the one

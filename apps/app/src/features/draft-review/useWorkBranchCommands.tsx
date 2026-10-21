@@ -1,235 +1,198 @@
-/** Creation-bound Work commands, independent of an open review. Navigation remains an explicit UI effect. */
-import type { Work } from "@meridian/contracts/works";
-import { isWorkArchived } from "@meridian/contracts/works";
+/** Work-scoped authority over the account command owner; notices belong to the surface that made them. */
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useMemo } from "react";
 import {
-  type BranchCommandOutcome,
-  type CommandStart,
-  type DraftSelection,
-  newestKnownProposal,
-  runDraftBatch,
-  runDraftSelection,
-  runWholeDraftIntent,
-  runWorkWideCommand,
-  startBranchCommand,
-} from "@/client/query/branch-command-executor";
-import type { DraftRef } from "@/client/query/branch-command-record";
-import { getContextTabs, matchesReviewItem } from "@/client/stores";
-import { useOptionalRemovedNotices } from "@/features/project/context/account-feature-context";
-import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
-import {
-  useIsCurrentContextRoute,
-  useOpenContextRoute,
-} from "@/features/project/routing/ProjectNavigationContext";
-import { useDraftOnlyLifecycle } from "./draft-only-lifecycle";
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import type { CommandOutcome, DiscardNotice } from "./draft-command-owner";
 import type { DraftReviewSelection } from "./draft-review-session";
-import type { ChangeTarget } from "./review-changes";
+import type { ChangeTarget } from "./review-model";
 
+export type BranchCommandOutcome = CommandOutcome;
+export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 
 export function useWorkBranchCommands({
   projectId,
   work,
   threadId = null,
+  surface = "dock",
 }: {
   projectId: string;
   work: Work | null;
   threadId?: string | null;
+  surface?: "editor" | "dock";
 }) {
-  const workId = work?.id ?? "";
+  const owner = useDraftCommandOwner();
   const queryClient = useQueryClient();
-  const lifecycle = useDraftOnlyLifecycle(projectId);
-  const notices = useOptionalRemovedNotices();
-  const openContextRoute = useOpenContextRoute();
-  const isCurrentContextRoute = useIsCurrentContextRoute();
-  const frozen = !work || isWorkArchived(work);
-  const changesLocked = frozen;
-  const commands = useMemo(() => {
-    const scope = { projectId, workId };
-    /** An Apply that left no newer proposal promotes the draft-only document; the route follows. */
-    const promoteIfSettled = (
-      target: DraftRef,
-      generation: number | undefined,
-      tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
-    ) => {
-      const newest = newestKnownProposal(queryClient, target);
-      if (newest !== undefined && generation !== undefined && newest > generation) return;
-      void (async () => {
-        try {
-          await lifecycle.promote(target);
-          if (tab?.kind !== "tracked") return;
-          const route = routeTargetForTab(tab, workId);
-          if (openContextRoute && isCurrentContextRoute?.(route))
-            await openContextRoute(route, {
-              replace: true,
-              isCurrent: () => isCurrentContextRoute(route),
-            });
-        } catch {
-          // Applied stays applied; the document host reconciles navigation.
-        }
-      })();
+  const workId = work?.id ?? "";
+  const locked = !work || isWorkArchived(work);
+  const [notice, setNotice] = useState<DiscardNotice | null>(null);
+  const heldNotice = useRef<DiscardNotice | null>(null);
+  const endNotice = () => {
+    heldNotice.current?.end();
+    heldNotice.current = null;
+    setNotice(null);
+  };
+  useEffect(
+    () => () => {
+      heldNotice.current?.end();
+      heldNotice.current = null;
+      setNotice(null);
+    },
+    [owner, projectId, workId, threadId],
+  );
+  return useMemo(() => {
+    const ref = (draft: DraftReviewSelection) => ({ projectId, workId, ...draft });
+    const row = (draft: DraftReviewSelection) =>
+      queryClient
+        .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workBranchDrafts(projectId, workId))
+        ?.find((item) => item.itemKey === draft.itemKey);
+    const refresh = () => {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workBranchDrafts(projectId, workId),
+      });
     };
-    /**
-     * This tab's own Discard of a created document says nothing when the
-     * document goes: marked before the request, settled once by its outcome
-     * (no outcome: it failed). Discarding an existing document's edits removes
-     * nothing, so it marks nothing.
-     */
-    const ownDiscard = (mode: "apply" | "discard", documentId: string) => {
-      const removes = lifecycle
-        .presentations(projectId)
-        .some((draft) => draft.documentId === documentId && draft.draftOnly);
-      if (mode !== "discard" || !notices || !removes) return () => undefined;
-      const settle = notices.markOwnRemoval(projectId, [documentId]);
-      return (outcome?: BranchCommandOutcome) =>
-        settle(
-          outcome?.kind === "discarded" ||
-            (outcome?.kind === "change-settled" && outcome.itemClosed)
-            ? "removed"
-            : "kept",
-        );
-    };
-    const refOf = (draft: DraftReviewSelection): DraftRef => ({
-      ...scope,
-      documentId: draft.documentId,
-      itemKey: draft.itemKey,
+    const blocked = (): CommandStart => ({
+      sent: false,
+      outcome: Promise.resolve({ kind: "blocked" }),
     });
-    const tabOf = (draft: DraftReviewSelection) =>
-      getContextTabs(projectId).tabs.find((candidate) =>
-        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
-      );
-    const sendWhole = (mode: "apply" | "discard", draft: DraftReviewSelection): CommandStart => {
-      if (frozen) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
-      const target = { ...scope, documentId: draft.documentId, itemKey: draft.itemKey };
-      const generation = newestKnownProposal(queryClient, target);
-      const tab = getContextTabs(projectId).tabs.find((candidate) =>
-        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
-      );
-      const settleMark = ownDiscard(mode, draft.documentId);
-      const start = startBranchCommand(
-        queryClient,
-        {
-          target: "all",
-          draft: target,
-          mode,
-          generation,
-          completesDraft: true,
-        },
-        threadId,
-      );
-      if (!start.sent) settleMark();
-      return {
-        ...start,
-        outcome: start.outcome.then(
-          (outcome) => {
-            settleMark(outcome);
-            if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
-            if (outcome.kind === "discarded") {
-              try {
-                lifecycle.remove(target);
-              } catch {
-                /* The committed command must not be resent for route repair. */
-              }
-            }
-            return outcome;
-          },
-          (error: unknown) => {
-            settleMark();
-            throw error;
-          },
-        ),
-      };
+    const show = (value: DiscardNotice) => {
+      heldNotice.current = value;
+      setNotice(value);
     };
-    const selection = (
+    // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
+    // has read the archive, which another tab or device may have made.
+    const start = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
-      changes: DraftSelection["selection"],
-    ) =>
-      frozen
-        ? Promise.resolve<BranchCommandOutcome>({ kind: "blocked" })
-        : (() => {
-            const settleMark = ownDiscard(mode, draft.documentId);
-            const outcome = runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
-            outcome.then(settleMark, () => settleMark());
-            return outcome;
-          })();
-    const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
-      runWholeDraftIntent(
-        { ...scope, documentId: draft.documentId, itemKey: draft.itemKey },
-        mode,
-        () => sendWhole(mode, draft),
-      );
+      target: ChangeTarget,
+    ): CommandStart => {
+      const started = dispatch(mode, draft, target);
+      void started.outcome.then((outcome) => {
+        if (outcome.kind === "change-refused" && outcome.code === "work_archived")
+          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+      });
+      return started;
+    };
+    const dispatch = (
+      mode: "apply" | "discard",
+      draft: DraftReviewSelection,
+      target: ChangeTarget,
+    ): CommandStart => {
+      endNotice();
+      if (locked) return blocked();
+      const item = row(draft);
+      if (mode === "apply") {
+        const started =
+          item?.isNew && !item.hasDraft && target.kind === "draft"
+            ? owner.reveal(ref(draft))
+            : owner.apply(ref(draft), target);
+        void started.outcome.then(() => {
+          if (!owner.state(draft.itemKey).pending) refresh();
+        });
+        return started;
+      }
+      if (item?.isNew && target.kind === "draft") {
+        const removed: DiscardNotice = { kind: "removed", end() {} };
+        const outcome = owner.removeCreated(ref(draft), item).then((answer) => {
+          refresh();
+          if (answer.kind !== "done") {
+            if (heldNotice.current === removed) endNotice();
+            void queryClient.invalidateQueries({
+              queryKey: projectQueryKeys.workDraftMetadata(
+                projectId,
+                workId,
+                draft.documentId,
+                draft.itemKey,
+              ),
+            });
+          }
+          return answer;
+        });
+        show(removed);
+        return { sent: true, outcome };
+      }
+      const discarded = owner.discard(ref(draft), target, surface, endNotice);
+      if (!discarded) return blocked();
+      if (surface === "dock")
+        show({
+          ...discarded.notice,
+          undo: discarded.notice.undo
+            ? () => {
+                const acknowledged = discarded.notice.undo?.() ?? Promise.resolve();
+                if (item)
+                  queryClient.setQueryData<ThreadDraftListItem[]>(
+                    projectQueryKeys.workBranchDrafts(projectId, workId),
+                    (rows) =>
+                      rows?.some((row) => row.itemKey === item.itemKey)
+                        ? rows
+                        : [...(rows ?? []), item],
+                  );
+                return acknowledged.then(refresh, refresh);
+              }
+            : undefined,
+        });
+      void discarded.outcome.then(refresh);
+      return { sent: true, outcome: discarded.outcome };
+    };
     const commandChange = (
       mode: "apply" | "discard",
       draft: DraftReviewSelection,
       target: ChangeTarget,
-    ) =>
-      target.kind === "draft"
-        ? whole(mode, draft).outcome
-        : target.kind === "operations"
-          ? selection(mode, draft, target.selection)
-          : Promise.resolve<BranchCommandOutcome>({ kind: "blocked" });
-    const batch = (
-      mode: "apply" | "discard",
-      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
-    ) => runDraftBatch(items, (item) => commandChange(mode, item.draft, item.target));
+    ) => start(mode, draft, target).outcome;
+    const startDraft = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
+      start(mode, draft, { kind: "draft" });
     return {
-      commandChange,
       projectId,
       workId,
       threadId,
-      startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => whole(mode, draft),
+      owner,
+      notice,
+      dismissNotice: endNotice,
+      undoNotice: () => {
+        heldNotice.current?.undo?.();
+        endNotice();
+      },
+      dispositionLocked: locked,
+      changesLocked: locked,
+      commandChange,
+      startDraft,
       apply: (documentId: string, itemKey: string) =>
-        whole("apply", { documentId, itemKey }).outcome,
+        startDraft("apply", { documentId, itemKey }).outcome,
       discard: (documentId: string, itemKey: string) =>
-        whole("discard", { documentId, itemKey }).outcome,
-      applyChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
-        selection("apply", draft, changes),
-      discardChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
-        selection("discard", draft, changes),
-      applyBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
-        batch("apply", items),
-      discardBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
-        batch("discard", items),
-      /** Work Files' Apply all and Discard all: one server command over the listed items. */
-      disposeDrafts: async (
+        startDraft("discard", { documentId, itemKey }).outcome,
+      batch: (
         mode: "apply" | "discard",
-        drafts: readonly DraftReviewSelection[],
-      ): Promise<BranchCommandOutcome[]> => {
-        if (frozen) return drafts.map(() => ({ kind: "blocked" }));
-        const before = drafts.map((draft) => ({
-          generation: newestKnownProposal(queryClient, refOf(draft)),
-          tab: tabOf(draft),
-        }));
-        const marks = drafts.map((draft) => ownDiscard(mode, draft.documentId));
-        const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId).catch(
-          (error: unknown) => {
-            for (const settleMark of marks) settleMark();
-            throw error;
-          },
-        );
-        outcomes.forEach((outcome, index) => {
-          marks[index]?.(outcome);
-          if (outcome.kind === "discarded") lifecycle.remove(refOf(drafts[index]));
-          if (outcome.kind === "applied")
-            promoteIfSettled(refOf(drafts[index]), before[index].generation, before[index].tab);
+        items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+      ) => {
+        // Capture every item in the event turn, not in a promise continuation.
+        const outcomes = items.map(({ draft, target }) => start(mode, draft, target).outcome);
+        return Promise.all(outcomes);
+      },
+      disposeDrafts: (mode: "apply" | "discard", drafts: readonly DraftReviewSelection[]) => {
+        if (mode === "apply")
+          return Promise.all(drafts.map((draft) => startDraft(mode, draft).outcome));
+        endNotice();
+        const branchId = drafts.map(row).find(Boolean)?.branchId;
+        if (locked || !branchId)
+          return Promise.resolve(drafts.map(() => ({ kind: "blocked" as const })));
+        return owner.discardAll(drafts.map(ref), branchId).then((answer) => {
+          refresh();
+          return drafts.map(() => answer);
         });
-        return outcomes;
       },
     };
-  }, [
-    projectId,
-    workId,
-    threadId,
-    frozen,
-    queryClient,
-    lifecycle,
-    notices,
-    openContextRoute,
-    isCurrentContextRoute,
-  ]);
-  return { ...commands, dispositionLocked: frozen, changesLocked };
+  }, [owner, locked, projectId, workId, threadId, surface, queryClient, notice]);
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

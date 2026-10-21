@@ -8,10 +8,14 @@ import { randomUUID } from "node:crypto";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
-import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentDrafts, draftWriteJournal, threadWorks } from "@meridian/database/schema";
+import {
+  documentDrafts,
+  documentEditParts,
+  draftWriteJournal,
+  threadWorks,
+} from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
   createCollabYDoc,
@@ -41,8 +45,8 @@ import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
 import { replicateFrozenSource } from "../domain/document-mutation-policy.js";
+import { seedDraftState } from "../domain/draft-content.js";
 import { DraftNotFoundError, type ResolvedDraft } from "../domain/draft-resolver.js";
-import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import {
   type AppendDraftJournalInput,
   type AppendReceiptGroup,
@@ -57,7 +61,7 @@ import {
 } from "../domain/draft-store.js";
 import type { ApplicationDraftStore } from "../domain/ports/application-draft-store.js";
 import { findHeadSchemaVersion } from "./drizzle-document-authority-head.js";
-import { recordDocumentEdit, settleDraftGeneration } from "./drizzle-document-edits.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { type DraftClose, lockActiveDrafts } from "./drizzle-draft-close.js";
 import {
   appendRowsWithinTx,
@@ -65,7 +69,6 @@ import {
   DraftWriteRollback,
   mapDraft,
   readDraftAt,
-  readEffectBaselineWithin,
   selectDraft,
 } from "./drizzle-draft-storage.js";
 
@@ -86,6 +89,7 @@ export type AppendCommitted = {
   waitMs: number;
   holdMs: number;
   rows: number;
+  serverRows: number;
   prefixRows: number;
   prefixMoved: boolean;
 };
@@ -161,11 +165,10 @@ export function createDrizzleDraftStore(
   }): Promise<DraftSnapshot> {
     const current = await activeDocumentDraft(input.documentId, input.branchId);
     if (current) return current;
-    const seed = replicatedSnapshotFrom(input.liveDoc);
+    const seed = seedDraftState(input.liveDoc);
     // Creating a draft is a write the Work's lifecycle orders (decision D12): the branch's
     // Work is locked first, so an Archive either fences the new draft or committed before it.
-    // A fresh fork has no effect against its seed, its baseline (`live_cut`), and the judgement
-    // is fresh at revision 0: the baseline is frozen here and replaced only under a bump.
+    // Both fragments start equal at revision 0; live shares content, never Yjs items.
     return workProjection.mutate({ branches: [input.branchId] }, async () => {
       // The insert's own transaction holds D active (§2.1): a closed branch gains no draft.
       if (!(await branches.shareActive(input.branchId))) {
@@ -189,7 +192,6 @@ export function createDrizzleDraftStore(
           threadId: null,
           status: "active",
           ...seed,
-          liveCut: seed.state,
           hasEffect: false,
           hasEffectRevision: 0,
           schemaVersion: packCollabSchemaVersion(
@@ -210,7 +212,7 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * §12.5, O-11: a contribution is any journal row of the draft's current generation that
+   * §12.5, O-11: a contribution is any journal row of the draft that
    * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
   async function retractCreatedDocumentDraft(input: {
@@ -228,7 +230,6 @@ export function createDrizzleDraftStore(
         .where(
           and(
             eq(draftWriteJournal.draftId, documentDraft.id),
-            eq(draftWriteJournal.generation, documentDraft.generation),
             sql`${draftWriteJournal.status} <> 'discarded'`,
           ),
         )
@@ -393,14 +394,6 @@ export function createDrizzleDraftStore(
     return row ? mapDraft(row) : null;
   }
 
-  async function closeThreadPeersOf(
-    upstreamDraftIds: readonly string[],
-    cause: Exclude<DraftCloseCause, object>,
-  ): Promise<void> {
-    if (upstreamDraftIds.length === 0) return;
-    await deps.close.closeDrafts(currentDrizzleDb(db), { upstreamDraftIds }, cause);
-  }
-
   async function getDraftSnapshot(draftId: string): Promise<DraftSnapshot> {
     const [row] = await selectDraft(currentDrizzleDb(db))
       .where(eq(documentDrafts.id, draftId))
@@ -426,7 +419,7 @@ export function createDrizzleDraftStore(
         let prefix = { rows: 0, moved: false };
         const committed = await appendRowsWithinTx(tx, {
           draftId: input.draftId,
-          expectedGeneration: input.expectedGeneration,
+          work: input.work,
           base: input.base,
           async finalize(read) {
             prefix = { rows: read.tail.length, moved: read.checkpoint !== null };
@@ -446,6 +439,7 @@ export function createDrizzleDraftStore(
               waitMs: Math.round(lockedAt - startedAt),
               holdMs: Math.round(performance.now() - lockedAt),
               rows: rowIds.length,
+              serverRows: finalized?.rows.filter((row) => row.source === "server").length ?? 0,
               prefixRows: prefix.rows,
               prefixMoved: prefix.moved,
             }),
@@ -533,9 +527,8 @@ export function createDrizzleDraftStore(
   }
 
   /**
-   * Shape B: one transaction, the draft row locked only for the fold and its write. A
-   * checkpoint (a thread peer's catch-up) carries the Work-is-active predicate; a pull,
-   * reset or compaction carries none, so an archived Work's drafts keep rebasing on live.
+   * Shape B: a content-free compaction, with the draft row locked only for the fold and
+   * its write. Archived Work drafts compact too.
    */
   async function commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     const { operation } = input;
@@ -544,13 +537,8 @@ export function createDrizzleDraftStore(
       const outcome = await commitRewriteWithinTx(tx, {
         draftId: input.draftId,
         policy: input.policy,
-        fence: input.fence,
-        work: operation.kind === "checkpoint" ? "active" : "any",
-        keepUpdatedAt: operation.kind === "compact",
-        // Only a pull moves a work draft's content against its baseline, and its caller
-        // computed the effect on the candidate; a peer has none, a compaction keeps the
-        // content and a reset is effect-free by construction.
-        ...(operation.kind === "pull" && operation.effect ? { effect: operation.effect } : {}),
+        work: "any",
+        keepUpdatedAt: true,
         doc: input.doc,
         ...(onRewriteCommitted
           ? {
@@ -566,38 +554,17 @@ export function createDrizzleDraftStore(
               },
             }
           : {}),
-        ...(operation.kind === "reset"
-          ? {
-              reset: { kind: "discard" as const },
-              schemaVersion: operation.schemaVersion,
-            }
-          : {}),
       });
       if (outcome.status !== "committed") throw new DraftWriteRollback(outcome);
-      if (operation.kind === "reset")
-        await settleDraftGeneration(
-          tx,
-          input.draftId,
-          outcome.generation - 1,
-          operation.editDisposition,
-        );
       await testHook("draft.rewrite.beforeCommit");
       return {
         status: "committed",
         revision: outcome.revision,
         checkpointRevision: outcome.checkpointRevision,
         seq: outcome.seq,
-        generation: outcome.generation,
       };
     };
-    const run =
-      operation.kind === "pull" || operation.kind === "reset"
-        ? () =>
-            runInDrizzleTransaction(db, () =>
-              workProjection.mutate({ drafts: [input.draftId] }, rewrite),
-            )
-        : () => runInDrizzleTransaction(db, rewrite);
-    return run().catch((cause): RewriteOutcome => {
+    return runInDrizzleTransaction(db, rewrite).catch((cause): RewriteOutcome => {
       if (cause instanceof DraftWriteRollback && isRewriteOutcome(cause.outcome))
         return cause.outcome;
       throw cause;
@@ -622,8 +589,41 @@ export function createDrizzleDraftStore(
       return readDraftAt(currentDrizzleDb(db), draftId, since);
     },
 
-    readEffectBaseline(draftId) {
-      return readEffectBaselineWithin(currentDrizzleDb(db), draftId);
+    async serverDeletedBlocks(draftId, ids) {
+      if (!ids.length) return new Set<string>();
+      const rows = await currentDrizzleDb(db)
+        .select({ effect: documentEditParts.effect })
+        .from(documentEditParts)
+        .innerJoin(
+          draftWriteJournal,
+          sql`${draftWriteJournal.id} = (${documentEditParts.origin}->>'rowId')::bigint`,
+        )
+        .where(
+          and(
+            sql`${documentEditParts.origin}->>'kind' = 'pending'`,
+            sql`${documentEditParts.origin}->>'draftId' = ${draftId}`,
+            eq(draftWriteJournal.source, "server"),
+            sql`exists (select 1 from jsonb_array_elements(${documentEditParts.effect}->'deleted') r
+            where ${sql.join(
+              ids.map(
+                (id) =>
+                  sql`((r->>'client')::bigint = ${id.client} and (r->>'clock')::bigint <= ${id.clock} and (r->>'clock')::bigint + (r->>'len')::bigint > ${id.clock})`,
+              ),
+              sql` or `,
+            )})`,
+          ),
+        );
+      return new Set(
+        ids
+          .filter((id) =>
+            rows.some((row) =>
+              row.effect.deleted.some(
+                (r) => r.client === id.client && r.clock <= id.clock && id.clock < r.clock + r.len,
+              ),
+            ),
+          )
+          .map((id) => `${id.client}:${id.clock}`),
+      );
     },
 
     appendRows,
@@ -675,7 +675,6 @@ export function createDrizzleDraftStore(
 
     ensureCreatedDocumentDraft,
     retractCreatedDocumentDraft,
-    closeThreadPeersOf,
 
     ensureThreadPeerDraft(input) {
       return ensureThreadPeerDraft(input);
@@ -683,8 +682,8 @@ export function createDrizzleDraftStore(
   };
 }
 
-function resolved({ draftId, generation, status, lifecycle }: DraftSnapshot): ResolvedDraft {
-  return { draftId, generation, status, lifecycle };
+function resolved({ draftId, status, lifecycle }: DraftSnapshot): ResolvedDraft {
+  return { draftId, status, lifecycle };
 }
 
 class NoPrimaryWorkError extends Error {
@@ -712,7 +711,7 @@ function sqlState(cause: unknown): string | null {
 /** The receipts finalization captured, written with the row ids the append allocated. */
 async function recordAppendReceipts(
   db: Pick<Database, "select" | "insert" | "update">,
-  input: Pick<AppendRowsInput, "draftId" | "documentId" | "expectedGeneration">,
+  input: Pick<AppendRowsInput, "draftId" | "documentId">,
   finalized: { rows: readonly AppendDraftJournalInput[]; receipts: readonly AppendReceiptGroup[] },
   rowIds: readonly number[],
 ): Promise<void> {
@@ -740,7 +739,6 @@ async function recordAppendReceipts(
         origin: {
           kind: "pending" as const,
           draftId: input.draftId,
-          generation: input.expectedGeneration,
           rowId: rowIds[group.rowIndexes[i]],
         },
       })),

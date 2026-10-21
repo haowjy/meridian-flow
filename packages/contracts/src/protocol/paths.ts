@@ -125,11 +125,6 @@ export function apiProjectWorkBranchesPath(projectId: string, workId: string): s
   return `${apiProjectWorksPath(projectId)}/${workId}/branches`;
 }
 
-/** Apply all: one command over the Work's whole branch. */
-export function apiProjectWorkBranchesApplyPath(projectId: string, workId: string): string {
-  return `${apiProjectWorkBranchesPath(projectId, workId)}/apply`;
-}
-
 /** Observes one Apply or Discard command by its client `commandId`. */
 export function apiProjectWorkBranchCommandPath(
   projectId: string,
@@ -158,14 +153,6 @@ export function apiProjectWorkDocumentDraftApplyPath(
   documentId: string,
 ): string {
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
-}
-
-export function apiProjectWorkDocumentDraftApplyChangesPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply-changes`;
 }
 
 export function apiProjectWorkDocumentDraftDiscardPath(

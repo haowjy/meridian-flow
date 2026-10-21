@@ -1,19 +1,19 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. A file's refused command shows once, in its status line. */
 
 import { t } from "@lingui/core/macro";
-import { useLingui } from "@lingui/react";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
-import { DockFailureText } from "./DraftDockMessages";
 import type { DockFile } from "./draft-dock-files";
-import type { DockFileFailure, DraftDockModel } from "./useDraftDock";
+import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
@@ -61,9 +61,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           >
             <Trans>Discard</Trans>
           </QuietButton>
-          <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
-            <Trans>Apply</Trans>
-          </QuietButton>
+          {dock.canApply ? (
+            <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+              <Trans>Apply</Trans>
+            </QuietButton>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -75,7 +77,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
-        onClick={confirming ? undefined : () => setExpanded((value) => !value)}
+        onClick={
+          confirming
+            ? undefined
+            : () => {
+                dock.controller.dismissNotice();
+                setExpanded((value) => !value);
+              }
+        }
         className={cn(
           "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
@@ -98,6 +107,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
                 onClick={(event) => {
                   event.stopPropagation();
+                  dock.controller.dismissNotice();
                   setExpanded((value) => !value);
                 }}
                 className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
@@ -143,6 +153,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
+      <DiscardNotice commands={dock.controller} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );
@@ -172,33 +183,13 @@ function DockFileLine({
       documentId: file.row.documentId,
       itemKey: file.row.draft.itemKey,
     },
-    { controller: dock.controller, enabled: expanded },
+    { controller: dock.controller, enabled: true, item: file.row.draft },
   );
-  const own = new Set(file.changes.map((change) => change.classId));
-  const items = view.items.filter(({ change }) => own.has(change.classId));
+  const own = new Set(file.changes.map((change) => change.id));
+  const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
-  // Ownership comes from the rows that will actually render, not the kind of document.
-  const renderedItems =
-    expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
-      ? items
-      : [];
-  const failures = dock.fileFailures(file).filter(
-    (held) =>
-      !renderedItems.some((item) => {
-        if (held.kind === "draft") return item.draftFailure === held.failure;
-        if (item.draftFailure || !item.failure) return false;
-        return (
-          item.failure.code === held.failure.code &&
-          item.failure.mode === held.failure.mode &&
-          item.failure.serverCode === held.failure.serverCode &&
-          item.failure.serverReason === held.failure.serverReason
-        );
-      }),
-  );
-  const trouble =
-    failures.length > 0 || file.status === "error" ? (
-      <FileTrouble file={file} failures={failures} row={!summary} />
-    ) : null;
+  // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
+  const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
   if (!summary && !expanded) return null;
   return (
     <div
@@ -214,6 +205,7 @@ function DockFileLine({
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
+      <DraftCommandStatus itemKey={file.row.draft.itemKey} />
       {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
@@ -228,69 +220,9 @@ function DockFileLine({
   );
 }
 
-/**
- * What went wrong on a file, in the strip's error voice: a command or launch
- * that did not land, and a preview that did not load. They are independent, so
- * both show when both are held, and Retry stays with the unreadable preview.
- */
-function FileTrouble({
-  file,
-  failures,
-  row = false,
-}: {
-  file: DockFile;
-  failures: readonly DockFileFailure[];
-  row?: boolean;
-}) {
-  const unreadable = file.status === "error";
-  if (failures.length === 0 && !unreadable) return null;
-  return (
-    <>
-      {failures.map((failure) => (
-        <TroubleLine key={failure.kind} row={row} code={failure.failure.code}>
-          <DockFailureText failure={failure} fileName={file.name} />
-        </TroubleLine>
-      ))}
-      {unreadable ? (
-        <TroubleLine
-          row={row}
-          code="unreadable"
-          action={
-            file.retry ? (
-              <button
-                type="button"
-                onClick={file.retry}
-                className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-              >
-                <Trans>Retry</Trans>
-              </button>
-            ) : null
-          }
-        >
-          <Trans>Changes couldn't load.</Trans>
-        </TroubleLine>
-      ) : null}
-    </>
-  );
-}
-
-function TroubleLine({
-  row,
-  code,
-  action,
-  children,
-}: {
-  row: boolean;
-  code: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const { i18n } = useLingui();
-  const text = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
-    // Read the localized rendered copy, including refusal reasons, without duplicating it.
-    if (text.current) text.current.title = text.current.textContent ?? "";
-  }, [children, i18n.locale]);
+/** A preview that did not load, in the strip's error voice, with Retry beside it. */
+function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
+  const message = t`Changes couldn't load.`;
   return (
     <p
       className={cn(
@@ -298,12 +230,20 @@ function TroubleLine({
         row ? "max-w-[50%]" : "flex-1",
       )}
       role="alert"
-      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: code }}
+      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: "unreadable" }}
     >
-      <span ref={text} className="min-w-0 flex-1 truncate">
-        {children}
+      <span className="min-w-0 flex-1 truncate" title={message}>
+        {message}
       </span>
-      {action}
+      {file.retry ? (
+        <button
+          type="button"
+          onClick={file.retry}
+          className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+        >
+          <Trans>Retry</Trans>
+        </button>
+      ) : null}
     </p>
   );
 }
