@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Remove obsolete draft command failure messages and restrict failure codes to the produced vocabulary.
+
 - Keep usable draft reviews mounted after metadata refresh failures; retry metadata and room acquisition at their own failure seams.
 
 - Corrected the removed-paragraph QA expectation to name its remover rather than always the writer.
