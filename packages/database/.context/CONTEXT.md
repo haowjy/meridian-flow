@@ -84,6 +84,16 @@ idempotent. Released content stays released. 0079 builds replacement indexes and
 pages value cleanup; 0080 retires placement, draft generations and settlement tables;
 0081 validates journal status. No server starts partway through this cutover.
 
+Owner handles expand in metadata-only 0082, then backfill in no-transaction
+0083 with 500-row commits and a temporary concurrent seek index. A cutover-only
+trigger allocates missing Work handles from the same atomic project counter as
+application creation, including concurrent inserts and soft-deleted Works; No
+Work stays null. Restart skips assigned handles and never lowers copied thread
+counters. Constraint validation and concurrent index work happen outside DDL
+transactions. The final short transaction removes the trigger and retired
+columns/tables; it does no population-dependent work. This does not change the
+stopped-server policy for the preceding draft-review conversion.
+
 Migration `0068` renames metadata and replaces
 both trail functions atomically. `0069` preserves opaque document-draft IDs and
 rewrites JSON in native-primary-key pages of at most 500 rows, committing each

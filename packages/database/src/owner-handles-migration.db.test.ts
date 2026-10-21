@@ -1,4 +1,4 @@
-/** 0082 gives every existing Work the handle its creation order earns and carries the counters over. */
+/** 0082–0083 backfill existing Work handles online and carry thread counters over. */
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
@@ -15,13 +15,18 @@ if (!enabled || !databaseUrl) {
         new URL("./migrations/0082_owner_handles.sql", import.meta.url),
         "utf8",
       );
+      const online = await readFile(
+        new URL("./migrations/0083_owner_handles_online.sql", import.meta.url),
+        "utf8",
+      );
       const target = postgres(databaseUrl, { max: 1 });
       try {
-        await target.begin(async (tx) => {
+        const tx = await target.reserve();
+        try {
           // A scratch schema holds the pre-0082 tables, so the real ones are never touched.
           await tx.unsafe(`
             CREATE SCHEMA owner_handles_test;
-            SET LOCAL search_path = owner_handles_test;
+            SET search_path = owner_handles_test;
             CREATE TABLE projects (id uuid PRIMARY KEY);
             CREATE TABLE project_thread_counters (project_id uuid PRIMARY KEY, n integer NOT NULL);
             CREATE TABLE works (
@@ -51,9 +56,17 @@ if (!enabled || !databaseUrl) {
               ('20000000-0000-4000-8000-000000000004', '${two}', 'Only', 'only', false, '2026-01-01', NULL);
           `);
 
+          await tx.unsafe("BEGIN");
           for (const statement of migration.split("--> statement-breakpoint")) {
             // The foreign key points at the real public.projects, which the scratch schema lacks.
             if (statement.trim() && !statement.includes('"public"."projects"'))
+              await tx.unsafe(statement);
+          }
+
+          await tx.unsafe("COMMIT");
+          for (const statement of online.split("--> statement-breakpoint")) {
+            // The scratch migration deliberately omitted the public.projects foreign key.
+            if (!statement.includes("project_handle_counters_project_id_projects_id_fk"))
               await tx.unsafe(statement);
           }
 
@@ -71,8 +84,12 @@ if (!enabled || !databaseUrl) {
             { project_id: two, kind: "thread", n: 2 },
             { project_id: two, kind: "work", n: 1 },
           ]);
-          await tx.unsafe("DROP SCHEMA owner_handles_test CASCADE");
-        });
+        } finally {
+          await tx.unsafe("ROLLBACK");
+          await tx.unsafe("DROP SCHEMA IF EXISTS owner_handles_test CASCADE");
+          await tx.unsafe("RESET search_path");
+          tx.release();
+        }
       } finally {
         await target.end();
       }
