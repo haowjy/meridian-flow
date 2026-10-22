@@ -62,6 +62,7 @@ import {
   type ApplyClickStore,
 } from "../domain/apply-click.js";
 import { BranchCommandExistsError } from "../domain/branch-commands.js";
+import type { Branches } from "../domain/branches.js";
 import { describeTrailBlocks, trailBlockChanges } from "../domain/document-difference.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { DraftStaleUpdateError } from "../domain/draft-store.js";
@@ -91,6 +92,7 @@ export function createDrizzleApplyClick(
   db: Database,
   deps: {
     workProjection: WorkProjectionMutation;
+    branches: Pick<Branches, "lockActive">;
     coordinator: Pick<DraftCoordinator, "loadBase" | "prepareAppend">;
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
@@ -290,6 +292,7 @@ export function createDrizzleApplyClick(
                         .where(eq(branchCommands.id, command.envelope.commandId));
                       return result;
                     };
+                    if (!(await deps.branches.lockActive(branchId))) return finish(closed(command));
                     // Only a tree cut, a hidden-create reveal or a deleted document's restore
                     // changes the tree. Ordinary text Apply must not serialize unrelated
                     // documents on their source's namespace lock.

@@ -1,7 +1,8 @@
 /**
  * Live placement (contract §6.3, §7): the one owner of bringing nodes into the live tree.
  * `placeLive` brings one node to a live location with its ancestors under the one
- * name-claim rule; `place` reveals hidden nodes through it, and the removal record's owner
+ * name-claim rule; `placeLiveCycle` installs a cycle before normalizing any member.
+ * `place` reveals hidden nodes through `placeLive`, and the removal record's owner
  * restores a deleted document through it (`restoreDocument`: no write brings a removed
  * document back as a side effect). `ensureLiveFolderPath` makes a live folder chain, revealing a hidden
  * folder at a path instead of making a twin. Both walk folders through `walkFolders`, the
@@ -187,6 +188,57 @@ export async function placeLive(
   target: PlaceTarget,
   land: (parentId: FolderId | null, at: LiveLocation) => Promise<void>,
 ): Promise<Result<{ ancestors: readonly NodeRef[]; at: LiveLocation }, PlaceFault>> {
+  const prepared = await prepareLivePlacement(db, target);
+  if (!prepared.ok) return prepared;
+  const { ancestors, parentId, at, filename } = prepared.value;
+  await land(parentId, at);
+  await normalizeNames(db, [target.node]);
+  await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+  return Ok({ ancestors, at });
+}
+
+/** Place a cycle without normalizing an intermediate overlap between its hidden members. */
+export async function placeLiveCycle(
+  db: Database,
+  targets: readonly PlaceTarget[],
+  land: (target: PlaceTarget, parentId: FolderId | null, at: LiveLocation) => Promise<void>,
+): Promise<Result<readonly LiveLocation[], PlaceFault>> {
+  const placed: {
+    target: PlaceTarget;
+    parentId: FolderId | null;
+    at: LiveLocation;
+    filename: string;
+  }[] = [];
+  for (const target of targets) {
+    const prepared = await prepareLivePlacement(db, target);
+    if (!prepared.ok) return prepared;
+    const { parentId, at, filename } = prepared.value;
+    await land(target, parentId, at);
+    placed.push({ target, parentId, at, filename });
+  }
+  await normalizeNames(
+    db,
+    placed.map(({ target }) => target.node),
+  );
+  for (const { target, parentId, filename } of placed)
+    await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+  return Ok(placed.map(({ at }) => at));
+}
+
+async function prepareLivePlacement(
+  db: Database,
+  target: PlaceTarget,
+): Promise<
+  Result<
+    {
+      ancestors: readonly NodeRef[];
+      parentId: FolderId | null;
+      at: LiveLocation;
+      filename: string;
+    },
+    PlaceFault
+  >
+> {
   const tree = createTreeReader(db);
   const ancestors = await placeAncestors(db, tree, target);
   if (!ancestors.ok) return ancestors;
@@ -219,10 +271,7 @@ export async function placeLive(
     parentFolderId: parentId,
     name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
   };
-  await land(parentId, at);
-  await normalizeNames(db, [target.node]);
-  await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
-  return Ok({ ancestors: ancestors.value.placed, at });
+  return Ok({ ancestors: ancestors.value.placed, parentId, at, filename });
 }
 
 /** A hidden target's row at its final location, visible. */
