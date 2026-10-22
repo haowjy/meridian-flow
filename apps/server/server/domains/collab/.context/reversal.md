@@ -115,10 +115,11 @@ re-reads the captured tree states (a mismatch is an attempt miss). Live moves ba
 through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
 blocks. Turn targets include every document a turn created, moved or deleted, deleted or not;
 the card authorizes them from those targets, and a deleted one at its restore destination
-(file-policy's `restore` target). The turn lineage gives each document the turn moved or
-deleted its net tree line per destination (live, or the Work whose branch a drafted entry names) (`TurnTreeLine`: deleted, or moved from its first `shownAt` to its last
-move's `landedAt`), leaving out entries a rollback reversed; a deleted one keeps its row at the
-address it was deleted from, read through the same `restore` target. A drafted tree entry's
+(file-policy's `restore` target). The turn lineage gives each document the turn created, moved
+or deleted its net tree line per destination (live, or the Work whose branch a drafted entry
+names) (`TurnTreeLine`: created, deleted, or moved from its first `shownAt` to its last move's
+`landedAt`), leaving out entries a rollback reversed. A removed one keeps its receipt row at its
+last or recorded create address, read through the same `restore` target. A drafted tree entry's
 inverse writes back the branch row's facts its entry recorded (an undo its `before`, a redo its
 `after`; `writeBackBranchFacts`) while the row still holds the state the plan started from, its
 branch is active, a moved folder still stands and the branch's view has room; the attempt also
