@@ -1,5 +1,6 @@
 /** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
 
+import { validateContextEntryName } from "./context-entry-validation.js";
 import { classifyHandleToken, decodeWorkHandle, parseHandle, type WorkHandle } from "./handles.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 import type { ResolvedWorkAuthority } from "./works/index.js";
@@ -230,8 +231,12 @@ export function parseContextUri(
   if (segments.some((segment) => segment.startsWith("@"))) {
     return invalidContextUri(raw, 'Path segments beginning with "@" are reserved');
   }
-  if (segments.some((segment) => segment.startsWith(BRANCH_SIGIL))) {
-    return invalidContextUri(raw, BRANCH_NOT_ADDRESSABLE);
+  const branchSegmentIndex = segments.findIndex((segment) => segment.startsWith(BRANCH_SIGIL));
+  if (branchSegmentIndex !== -1) {
+    return invalidContextUri(
+      raw,
+      branchNameRefusal(scheme, authorityResult.value.authority, segments, branchSegmentIndex),
+    );
   }
 
   const path = segments.join("/");
@@ -275,8 +280,6 @@ function parseAuthorityPrefix(
   if (!rawPath) return { ok: true, value: { authority: { kind: "contextual" }, rawPath } };
 
   const segments = rawPath.split("/").filter((segment) => segment !== "" && segment !== ".");
-  if (segments[0]?.startsWith(BRANCH_SIGIL))
-    return invalidContextUri(rawUri, BRANCH_NOT_ADDRESSABLE);
   const qualifiers: string[] = [];
   while (segments[0]?.startsWith(OWNER_SIGIL)) qualifiers.push(segments.shift() ?? "");
   if (qualifiers.length === 0) {
@@ -427,8 +430,30 @@ export function isProjectScopedScheme(
 export const OWNER_SIGIL = "@";
 /** Reserved for branch qualifiers (#699); refused until branch routing exists. */
 export const BRANCH_SIGIL = "~";
-const BRANCH_NOT_ADDRESSABLE =
-  'Names cannot start with "~". Use the bare address for this chat\'s branch.';
+const BRANCH_NAME_RULE = 'Names cannot start with "~".';
+
+function branchNameRefusal(
+  scheme: ContextUriScheme,
+  authority: ParsedContextAuthority,
+  segments: string[],
+  branchSegmentIndex: number,
+): string {
+  const segment = segments[branchSegmentIndex] ?? "";
+  if (branchSegmentIndex < segments.length - 1) {
+    const repairedPath = [
+      ...segments.slice(0, branchSegmentIndex),
+      ...segments.slice(branchSegmentIndex + 1),
+    ].join("/");
+    const repairedUri = formatParsedContextUri(scheme, repairedPath, authority);
+    return `${BRANCH_NAME_RULE} Use ${repairedUri}, or a name without "~".`;
+  }
+
+  const repairedName = validateContextEntryName(segment.slice(BRANCH_SIGIL.length));
+  if (!repairedName.ok) return BRANCH_NAME_RULE;
+  const repairedPath = [...segments.slice(0, branchSegmentIndex), repairedName.value].join("/");
+  const repairedUri = formatParsedContextUri(scheme, repairedPath, { kind: "contextual" });
+  return `${BRANCH_NAME_RULE} Use ${repairedUri}.`;
+}
 
 /** The one serializer for addresses. Spells parsed syntax; it does not resolve or grant authority. */
 export function formatParsedContextUri(
