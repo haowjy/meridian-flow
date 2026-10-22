@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The model's `write` gains `move` (`{ from: { path }, path }`) and `delete` (`{ path }`) on the server, not yet shown to the model: neither is published until both work in draft mode too (D66). In an auto-apply chat each runs at the call, on the document's own undo stack, so `undo`, `redo` and `revert` walk it with text edits, by its old or new path; a failed reply's rollback moves it back or restores it, reporting any one it can't; the turn card's Undo reverses a move. A model's delete names the chat it ran in ("The AI in ‹chat› deleted ‹title›.") and keeps other Works' drafts. Migrations 0084–0086 add `document_edits.tree_change` and `documents.deleted_by_thread_id`.
+
 - Deleting a document from the manuscript no longer throws away a Work's pending changes to it (D79). Its drafts stay ordinary drafts: the Work's chat still finds it at its path and keeps writing, undoing and reviewing against its last text, while the manuscript and Works with nothing pending see it gone. Apply brings it back, with its folders, then merges the change, and the result says `restored`. A new document at the freed path, or a move over the drafted one, shows as a clash in the Work. Server side; the app's notices and Apply all confirmation follow separately.
 
 - Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.

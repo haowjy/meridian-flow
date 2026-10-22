@@ -54,7 +54,14 @@ add detail only for explicit `verbose` requests. A Work has no write mode of its
 own: the chat's mode is in its work context (D62).
 
 Document inverse commands use `write undo/redo` and `write revert`; model-only
-handles select edits, and the command is all-or-nothing. Skills retain Mars
+handles select edits, and the command is all-or-nothing. `write move` and
+`write delete` (PR 3) are host commands (`lib/model-tools/namespace-commands.ts`):
+they run at the call through the live port, record a tree entry on the
+document's stack inside the mutation's own transaction, and mark the reply's
+scope as having writes (`treeWrite`), so a later save boundary rotates it. Until
+drafted placement lands, the published schema omits both (D66). A path no
+visible document holds names, for undo/redo/revert only, the document this
+chat's latest move or delete took away from it (`inverse-address.ts`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
 
 Tool policy does not gate model-call cost. `turn-accounting.ts` uses

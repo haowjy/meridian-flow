@@ -109,6 +109,7 @@ type LocationChangePolicy =
       overwrite: false;
       graduateProvisionalName: true;
       expected?: ContextLocationOptions["expected"];
+      inTransaction?: ContextLocationOptions["inTransaction"];
       destinationParent?: ContextDestinationParent;
       resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
       authorizeDestination?: (uri: string) => Promise<boolean>;
@@ -151,8 +152,14 @@ export class ContextTreeMover {
       resolveDestination?: () => Promise<Result<ContextTreeDispatch, ContextError>>;
     } = {},
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    const { expected, operationId, destinationParent, resolveDestination, authorizeDestination } =
-      options;
+    const {
+      expected,
+      operationId,
+      destinationParent,
+      resolveDestination,
+      authorizeDestination,
+      inTransaction,
+    } = options;
     if (operationId) {
       if (!this.receipts || !expected)
         return Err({ code: "invalid_operation", uri: source.canonical });
@@ -177,6 +184,7 @@ export class ContextTreeMover {
       destinationParent,
       resolveDestination,
       authorizeDestination,
+      inTransaction,
     });
   }
 
@@ -259,7 +267,7 @@ export class ContextTreeMover {
           if (!result.ok) return result;
           const parsedDestination = parseContextUri(destination.canonical);
           if (!parsedDestination.ok) throw new Error("Invalid resolved destination URI");
-          return Ok({
+          const moved: ContextMoveResult = {
             movedNodeId: result.value.movedNodeId,
             ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
             destinationPath: prepared.value.destinationPath,
@@ -272,7 +280,9 @@ export class ContextTreeMover {
                   ),
                 }
               : {}),
-          });
+          };
+          if (policy.target === "exact") await policy.inTransaction?.(moved);
+          return Ok(moved);
         },
         destinationResolver
           ? async () => {
@@ -359,6 +369,7 @@ export class ContextTreeMover {
           root: token.value as ContextLocationToken,
           mode: "recursive",
           actorUserId: options.origin?.type === "human" ? options.origin.userId : undefined,
+          actorThreadId: options.origin?.type === "agent" ? options.origin.threadId : undefined,
           removal: options.removal,
         }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
@@ -367,11 +378,13 @@ export class ContextTreeMover {
         ? Err({ code: "stale_target", uri: target.canonical })
         : result;
     }
-    return Ok({
+    const deleted: DeleteContextEntryResult = {
       status: "deleted",
       deletedDocumentIds: result.value.deletedDocumentIds,
       availabilityGeneration: result.value.availabilityGeneration,
-    });
+    };
+    await options.inTransaction?.(deleted);
+    return Ok(deleted);
   }
 
   private async prepareMove(

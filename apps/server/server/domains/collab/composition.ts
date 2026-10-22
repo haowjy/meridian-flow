@@ -73,6 +73,7 @@ import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-dis
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
@@ -398,6 +399,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         diagnostics: noticeDiagnostics,
       })
     : SILENT_POST_DURABILITY_NOTICES;
+  const treeHistory = createDrizzleTreeHistory(deps.db, persistence.journal);
   const turnInverse = createDrizzleTurnInverseService({
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db: deps.db,
@@ -593,6 +595,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     agentEdit: {
       agentEdit: () => agentEdit,
+      treeHistory: () => treeHistory,
     },
     reversal: turnReversal,
     documents: {

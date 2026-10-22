@@ -4166,6 +4166,54 @@ msgstr ""
 msgid "The AI asked you a question"
 msgstr ""
 
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {count} documents ({names})."
+msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in {chat} deleted {name} before this reply saved its change."
+msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了 {name}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted {title}."
+msgstr "{chat} 中的 AI 删除了{title}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in {chat} deleted this document before this reply saved its change."
+msgstr "{chat} 中的 AI 在此回复保存其更改之前删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted this document, so this draft can't be applied."
+msgstr "{chat} 中的 AI 删除了这份文档，因此无法应用这份草稿。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in {chat} deleted this document."
+msgstr "{chat} 中的 AI 删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {count} documents ({names})."
+msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in a chat deleted {name} before this reply saved its change."
+msgstr "某个对话中的 AI 在此回复保存其更改之前删除了 {name}。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted {title}."
+msgstr "某个对话中的 AI 删除了{title}。"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The AI in a chat deleted this document before this reply saved its change."
+msgstr "某个对话中的 AI 在此回复保存其更改之前删除了这份文档。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted this document, so this draft can't be applied."
+msgstr "某个对话中的 AI 删除了这份文档，因此无法应用这份草稿。"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "The AI in a chat deleted this document."
+msgstr "某个对话中的 AI 删除了这份文档。"
+
 #: src/features/chat/chat-card-copy.ts
 msgid "The AI provider turned this request down."
 msgstr ""

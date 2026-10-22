@@ -184,6 +184,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     agentEdit: {
       agentEdit: () => agentEdit,
+      treeHistory: () => {
+        throw new Error("Tree history requires the receipt-backed Postgres adapter");
+      },
     },
     reversal: {
       reverseTurn: async () => {
