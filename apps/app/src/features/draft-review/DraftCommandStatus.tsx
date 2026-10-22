@@ -46,7 +46,7 @@ export function DraftCommandStatus({
           <ReviewMessageText failure={state.failure} />
         </span>
       ) : isPathTaken(item) ? (
-        <Trans>Another document now has this name. Rename it to apply this draft.</Trans>
+        <Trans>Another document now has this name. Rename that document to apply this draft.</Trans>
       ) : isDeletedFromManuscript(item) ? (
         <Trans>Deleted from the manuscript</Trans>
       ) : null}
