@@ -42,7 +42,6 @@ export class ApplyClickQueue {
   readonly clicks: Click[] = [];
   private recorded = new Set<string>();
   private closed = false;
-  private destroyed = false;
   private request: Click | null = null;
   /** Released by the record, not yet completed: awaiting the in-flight answer or reading the stored result. */
   private readonly resolving = new Set<Click>();
@@ -136,7 +135,6 @@ export class ApplyClickQueue {
   }
 
   destroy(): void {
-    this.destroyed = true;
     clearTimeout(this.retryTimer);
     clearTimeout(this.feedbackTimer);
     for (const click of this.clicks.splice(0)) click.finish({ status: "cancelled" });
