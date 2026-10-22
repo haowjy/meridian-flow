@@ -34,6 +34,8 @@ export type IdentityDestination = {
 export type DesiredIdentity = {
   destination: IdentityDestination;
   name: string;
+  /** Original input when optimistic collision allocation changes the displayed name. */
+  typedName?: string;
 };
 
 /** Resolve a surface's folder choice into the complete final destination. */

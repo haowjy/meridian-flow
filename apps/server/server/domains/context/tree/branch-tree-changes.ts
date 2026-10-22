@@ -47,8 +47,8 @@ export type BranchTreeFault =
   | { code: "not_found" }
   /** The move names the place the branch already has it. */
   | { code: "already_there" }
-  /** Another node holds the destination, or a document a folder on its way. */
-  | { code: "conflict"; occupantKind: "file" | "folder" }
+  /** A document occupies a folder on the way. */
+  | { code: "conflict"; occupantKind: "file" }
   /** Two nodes share a path on the way. */
   | { code: "ambiguous" };
 
@@ -209,12 +209,12 @@ export async function discardBranchTreeFacts(
 }
 
 /** Why a branch inverse can't write its facts back, under the caller's locks. */
-export type BranchFactsFault = "superseded" | "folder_missing" | "location_taken";
+export type BranchFactsFault = "superseded" | "folder_missing";
 
 /**
  * Writes back the facts a drafted tree entry recorded (an undo writes its `before`, a redo its
- * `after`): only while the row still holds `expected`, into a moved folder that still stands,
- * and only where the branch's view has room for the document it shows again.
+ * `after`): only while the row still holds `expected` and into a moved folder that still stands.
+ * The committed facts include any free name chosen for the returning document.
  */
 export async function writeBackBranchFacts(
   db: Database,
@@ -225,10 +225,10 @@ export async function writeBackBranchFacts(
     facts: BranchTreeFacts;
     changedBy: ChangedBy;
   },
-): Promise<BranchFactsFault | null> {
+): Promise<Result<BranchTreeFacts, BranchFactsFault>> {
   await lockDocuments(db, [input.documentId]);
   const current = await factsOf(db, input.branchId, input.documentId);
-  if (!sameBranchFacts(current, input.expected)) return "superseded";
+  if (!sameBranchFacts(current, input.expected)) return Err("superseded");
   let facts = input.facts;
   const moved = facts.moved;
   if (moved?.folderId) {
@@ -237,7 +237,7 @@ export async function writeBackBranchFacts(
     const [folder] = await loadFolderIdentityRows(currentDrizzleDb(db), [
       moved.folderId as FolderId,
     ]);
-    if (!folder || (folder.hidden && folder.deleted)) return "folder_missing";
+    if (!folder || (folder.hidden && folder.deleted)) return Err("folder_missing");
   }
   if (!facts.deleted) facts = await freeFactsInBranch(db, { ...input, facts });
   await writeBranchTreeFacts(db, {
@@ -247,10 +247,10 @@ export async function writeBackBranchFacts(
     locationVersion: await locationVersion(db, input.documentId),
     changedBy: input.changedBy,
   });
-  return null;
+  return Ok(facts);
 }
 
-/** Another node the branch shows holds the place `facts` give the document. */
+/** Give returning facts the first free place the branch shows. */
 async function freeFactsInBranch(
   db: Database,
   input: { branchId: BranchId; documentId: DocumentId; facts: BranchTreeFacts },
@@ -287,6 +287,7 @@ async function freeFactsInBranch(
   if (name === at.name) return input.facts;
   return {
     ...input.facts,
+    row: true,
     moved: { ...at, name },
   };
 }

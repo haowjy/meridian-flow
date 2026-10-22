@@ -574,8 +574,8 @@ msgstr "A chat you had open was deleted."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "A file named {0} already exists in this location."
-msgstr "A file named {0} already exists in this location."
+#~ msgid "A file named {0} already exists in this location."
+#~ msgstr "A file named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {name} already exists in this location."
@@ -583,8 +583,8 @@ msgstr "A file named {name} already exists in this location."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "A folder named {0} already exists in this location."
-msgstr "A folder named {0} already exists in this location."
+#~ msgid "A folder named {0} already exists in this location."
+#~ msgstr "A folder named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
@@ -3454,8 +3454,8 @@ msgid "Open conversation"
 msgstr "Open conversation"
 
 #: src/features/project/context/IdentityPlacementField.tsx
-msgid "Open existing"
-msgstr "Open existing"
+#~ msgid "Open existing"
+#~ msgstr "Open existing"
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Open full screen"

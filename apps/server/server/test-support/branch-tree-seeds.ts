@@ -42,6 +42,7 @@ import { type Branches, createBranches } from "../domains/collab/domain/branches
 import type { Branch } from "../domains/collab/domain/ports/branch-store.js";
 import { lockContextSources } from "../domains/context/adapters/context-fs/document-locations.js";
 import { recordCreated } from "../domains/context/tree/branch-tree-store.js";
+import { normalizeNames } from "../domains/context/tree/name-normalization.js";
 import { insertDocumentRow, insertFolder } from "../domains/context/tree/node-rows.js";
 import { ensureLiveFolderPath, walkFolders } from "../domains/context/tree/placement.js";
 import { runInDrizzleTransaction } from "../shared/drizzle-transaction.js";
@@ -233,9 +234,16 @@ export function branchTreeWorldOver(
     hidden: boolean,
   ): Promise<DocumentId> {
     const slot = { contextSourceId: sourceId, folderId, ...splitFilename(filename) };
-    const id = await runInDrizzleTransaction(db, () =>
-      insertDocumentRow(db, slot, { kind: "tracked", filetype: "markdown" }, { hidden }),
-    );
+    const id = await runInDrizzleTransaction(db, async () => {
+      const inserted = await insertDocumentRow(
+        db,
+        slot,
+        { kind: "tracked", filetype: "markdown" },
+        { hidden },
+      );
+      if (inserted && !hidden) await normalizeNames(db, [{ kind: "document", id: inserted }]);
+      return inserted;
+    });
     if (!id) throw new Error(`Document ${filename} was not inserted`);
     return id;
   }

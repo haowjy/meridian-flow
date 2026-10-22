@@ -499,6 +499,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await placement(CH2))?.deletedAt).toBeNull();
     });
 
+    it("records allocated drafted inverse facts so undo and redo stay reversible", async () => {
+      const script = await start();
+      const drafting = runtimes.script(script.runtime, OTHER);
+      const { call } = await drafting.begin();
+      expect(
+        (await call("write", { command: "move", from: { path: "ch1" }, path: "B" })).isError,
+      ).toBeFalsy();
+      expect(
+        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch1" })).isError,
+      ).toBeFalsy();
+
+      expect((await call("write", { command: "undo", path: "B" })).isError).toBeFalsy();
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "ch1 (2)" });
+      expect((await call("write", { command: "redo", path: "ch1 (2)" })).isError).toBeFalsy();
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B" });
+
+      expect(
+        (await call("write", { command: "move", from: { path: "B" }, path: "Y" })).isError,
+      ).toBeFalsy();
+      expect(
+        (await call("write", { command: "move", from: { path: "ch1" }, path: "B" })).isError,
+      ).toBeFalsy();
+      expect((await call("write", { command: "undo", path: "Y" })).isError).toBeFalsy();
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "B (2)" });
+      expect((await call("write", { command: "redo", path: "B (2)" })).isError).toBeFalsy();
+      expect(await branchRow(CH1)).toMatchObject({ moved: true, movedName: "Y" });
+    });
+
     it("a drafted delete of the branch's own creation undoes; a live delete keeps a Work's drafted move", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);

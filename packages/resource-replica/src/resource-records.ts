@@ -219,7 +219,12 @@ export type NamespaceIntent = ResourceKey & {
         typedName: string;
         destination: ResourceDestination;
       }
-    | { kind: "set-folder-location"; destination: ResourceDestination }
+    | {
+        kind: "set-folder-location";
+        /** Original input; canonical destination is only for display and comparison. */
+        typedName: string;
+        destination: ResourceDestination;
+      }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
   /** Local receipt application time; immutable evidence is retained after the UI note expires. */

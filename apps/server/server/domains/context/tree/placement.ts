@@ -12,7 +12,7 @@
  * source involved and the document locks of every target document.
  */
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
-import { allocateFilename } from "@meridian/contracts/protocol";
+import { allocateFilename, folderDocumentName } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -109,7 +109,7 @@ export async function ensureLiveFolderPath(
       // Another branch's hidden folder at the same path folds into the revealed one.
       await absorbAt(db, hidden);
     }
-    await normalizeNames(db, [{ contextSourceId, parentId: gap.parentId }]);
+    await normalizeNames(db, [{ kind: "folder", id: folderId }]);
     created.push(folderId);
     return folderId;
   });
@@ -216,10 +216,11 @@ export async function placeLive(
   const extension = target.node.kind === "document" ? (target.at.extension ?? "") : undefined;
   const at: LiveLocation = {
     ...target.at,
+    parentFolderId: parentId,
     name: extension ? filename.slice(0, -(extension.length + 1)) : filename,
   };
   await land(parentId, at);
-  await normalizeNames(db, [{ contextSourceId: target.at.contextSourceId, parentId }]);
+  await normalizeNames(db, [target.node]);
   await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
   return Ok({ ancestors: ancestors.value.placed, at });
 }
@@ -344,6 +345,7 @@ async function placeAncestors(
     await claimDocumentLocation(db, contextSourceId, parentId, row.name);
     // A split may have left a hidden twin at a restored folder's path (§8.3).
     if (row.deleted) await absorbAt(db, row.id);
+    await normalizeNames(db, [{ kind: "folder", id: row.id }]);
     placed.push({ kind: "folder", id: row.id });
     parentId = row.id;
   }
@@ -365,7 +367,7 @@ async function updatePlacedFolder(
     .set({
       parentId: change.parentId,
       ...(change.contextSourceId ? { contextSourceId: change.contextSourceId } : {}),
-      ...(change.name ? { name: change.name } : {}),
+      ...(change.name ? { name: change.name, documentAlias: folderDocumentName(change.name) } : {}),
       ...(change.clear === "hidden" ? { hidden: false } : {}),
       ...(change.clear === "deleted" ? { deletedAt: null } : {}),
       updatedAt: new Date(),

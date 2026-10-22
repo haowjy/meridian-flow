@@ -183,9 +183,7 @@ and never touches a draft.
 
 Every arrival returns its actual free placement. Live moves, drafted moves and
 their inverses, restores, and Apply placements therefore count up rather than
-refusing a leaf-name collision. After a live write, `normalizeNames` makes
-hidden nodes yield in the same transaction; visible wins, then a hidden folder,
-then the earlier `(created_at, id)`.
+refusing a leaf-name collision. After a live write, `normalizeNames` looks up only hidden nodes whose indexed claim meets the installed claim and makes those nodes yield in the same transaction; visible wins, then a hidden folder, then the earlier `(created_at, id)`. Folders persist the contracts codec’s document alias so opposite-kind lookup stays indexed.
 
 ## Lock and identity contracts
 
