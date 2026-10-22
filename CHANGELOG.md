@@ -1,5 +1,8 @@
 # Changelog
 
+Entries through this change are preserved below. Later entries come from merged
+PR bodies via `pnpm changelog`; PRs no longer edit this file.
+
 ## [Unreleased]
 
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
