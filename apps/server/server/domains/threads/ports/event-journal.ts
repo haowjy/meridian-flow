@@ -57,6 +57,12 @@ export interface ListJournalEventsOptions {
 
 export interface EventJournalReader {
   readAfter(threadId: ThreadId, afterSeq: bigint, limit?: number): Promise<JournalEntry[]>;
+  /** Latest matching row strictly before the journal-row cursor, or zero when none exists. */
+  lastSeqBefore(
+    threadId: ThreadId,
+    beforeSeq: bigint,
+    eventTypes: readonly JournalEventEnvelope["type"][],
+  ): Promise<bigint>;
   headSeq(threadId: ThreadId): Promise<bigint>;
   /**
    * Highest journal seq whose event passed through the durable/projecting path.

@@ -312,3 +312,40 @@ on a mock stack as above, look at the screenshots, and judge the screen against 
     (`window.__unB()`).
 - **Not a defect:** the handler errors a handler receives while offline (`WebSocket error`, `WebSocket closed`) are
   connection errors; the replay request itself did not fail.
+
+
+### SR-02: reconnect behind the warm event cache
+
+- **Protects:** replay starts from a safe projector boundary without changing
+  frame contents or sequence numbers, including a cursor inside a multi-frame
+  journal row. Applies to `thread-event-hub.ts` and its journal reader adapters.
+- **Setup:** owned mock stack and a new chat, as above. Send a completed reply
+  first, so the journal contains a reset boundary. Keep a journal tail open
+  (`./mf thread tail "$T" --timeout 5m`) while probing to prevent hub eviction.
+- **Steps:**
+  1. Open the chat in the browser. Send a scripted reply with a short first
+     response and a tool call, then a delayed response of at least 750 words.
+     The mock streams a word per chunk, exceeding the 500-frame hot cache.
+  2. Once the first response shows, put the browser offline. Allow the delayed
+     response to finish, then reconnect. Capture the screen before disconnect
+     and after reconnect, and inspect the thread wire trace for the cursor and
+     ordered replay. Confirm the cursor predates the cache, not just the head.
+  3. Compare the complete reply with `./mf thread view "$T" --full --json`.
+     There must be no duplicated or missing text or tool items. Send another
+     message and confirm its reply appears normally.
+  4. For exact frame checks, collect full replay and replay after selected
+     cursors through the shared socket. Compare complete envelopes with the
+     full replay filtered strictly after each cursor. Include text/reasoning
+     and tool transitions, completed/cancelled/error endings, a cursor inside
+     an ending row, sequence holes, zero and beyond-head cursors.
+- **Read-cost check:** on the same persisted chat, instrument the production
+  journal reader's returned-row count around a warm out-of-cache replay. It
+  should read only rows after the last terminal row strictly before the
+  cursor's containing row; without an earlier terminal it still reads from
+  zero. Inspect the boundary query with `EXPLAIN (ANALYZE, BUFFERS)` too: the
+  backward thread/sequence index scan can examine the preceding unfinished
+  reply even though those older payloads are not returned to the projector.
+- **Expected:** identical replay frames and browser transcript. Less completed
+  history reconstructed on the warm path. Cold hub initialization is unchanged
+  and still reads the full journal; this recipe makes no cold-start claim.
+- **Cleanup:** stop the tail and close the owned browser session.
