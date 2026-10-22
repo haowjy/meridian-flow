@@ -320,7 +320,9 @@ export class ChatSubmissionDriver {
     )
       return;
     this.options.status(entry, "pending");
-    if (!derived) {
+    // Derivation is tab-local. A shared `posted` mark means another tab may have
+    // reached the server, so this owner must reconcile instead of rejecting.
+    if (!derived && !entry.posted) {
       this.settle(entry, "rejected");
       return;
     }
@@ -380,7 +382,8 @@ export class ChatSubmissionDriver {
         return;
       }
       if (outcome.kind === "rejected" && retry) {
-        entry = { ...entry, submissionId: crypto.randomUUID(), state: undefined };
+        const { posted: _posted, ...unposted } = entry;
+        entry = { ...unposted, submissionId: crypto.randomUUID(), state: undefined };
         if (!this.current() || !this.write(entry)) return;
       } else if (outcome.kind !== "not-seen") {
         this.settle(entry, outcome.kind === "rejected" ? "rejected" : "ambiguous");
@@ -388,6 +391,10 @@ export class ChatSubmissionDriver {
       }
     }
     if (!this.current()) return;
+    if (!entry.posted) {
+      entry = { ...entry, posted: true };
+      if (!this.write(entry)) return;
+    }
     const dispatching = entry;
     const outcome = await this.admissionRequest((signal) =>
       this.options.controller.recoverSubmission(
@@ -544,7 +551,7 @@ export class ChatSubmissionDriver {
       (this.localFailures.has(original.recordId) && !this.options.transferReceived(original))
     )
       return Promise.resolve();
-    return this.locked(original.threadId, (derived) =>
+    return this.locked(original.threadId, () =>
       this.guard(original, async () => {
         const entry = this.read(original.recordId);
         if (
@@ -556,9 +563,9 @@ export class ChatSubmissionDriver {
           return;
         const received = this.options.transferReceived(entry);
         if (this.localFailures.has(entry.recordId) && !received) return;
-        // A failed, unacknowledged derivation never passed the admission gate.
-        // Keep its destination and creation intent; only this send returns to authoring.
-        if (derived && !entry.creation && !received) {
+        // Only the missing durable mark proves across tabs that the server cannot hold
+        // this send. Keep its destination and derivation intent when returning it.
+        if (entry.posted && !entry.creation && !received) {
           const outcome = await this.admissionRequest((signal) =>
             this.options.controller.retireSubmission(
               entry.threadId,
