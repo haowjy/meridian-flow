@@ -36,8 +36,8 @@ commands, and a model Undo of a draft edit after the chat's Work moved refuses
 `cant_undo_elsewhere`. A card Undo names and skips a part whose draft was
 discarded (`expired`) or that a later writer edit depends on
 (`cant_undo_dependent`), and inverts the rest.
-A turn's edit targets exclude tombstoned documents (`livingOrOutlivedSql`), so
-a discarded draft-created document is never an inverse target. A draft-scoped
+A turn's edit targets include its create transition even when the document is empty. A create
+that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped
 edit of a document deleted live stays one (D79): each draft-scoped target names
 the Work its draft row's branch belongs to, and the card's lineage and Undo
 authorize it at that Work's draft destination (`turnEditDestination`), where
@@ -71,9 +71,10 @@ in their active origin draft, leaving live untouched and making a pending change
 Closed drafts are never writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.
 
-## Tree entries (moves and deletes)
+## Tree entries (creates, moves and deletes)
 
-A model's `move` or `delete` is a `document_edits` row with a `tree_change` and no parts
+A model's `create`, `copy`, `move` or `delete` is represented by a `document_edits` row with a
+`tree_change` and no parts
 (`domain/tree-inverse.ts`, PR 3). It keys as `editId:tree` in the same action index and takes
 its `seq` from the parts' id sequence, so one chronology orders text and tree across turns and
 writers. Its handle is on the same per-document, per-chat counter. It records the exact state
@@ -112,7 +113,7 @@ checkpoint rewrite, at its plan's first text step. Every tree inverse commits un
 re-reads the captured tree states (a mismatch is an attempt miss). Live moves back go through
 `moveToPlacement`, deletes back through `restoreDocument` naming the removal, redone deletes
 through `DocumentRemoval.remove`. A tree-only inverse has no text cuts, so the engine echoes no
-blocks. Turn targets include every document a turn moved or deleted, deleted or not;
+blocks. Turn targets include every document a turn created, moved or deleted, deleted or not;
 the card authorizes them from those targets, and a deleted one at its restore destination
 (file-policy's `restore` target). The turn lineage gives each document the turn moved or
 deleted its net tree line per destination (live, or the Work whose branch a drafted entry names) (`TurnTreeLine`: deleted, or moved from its first `shownAt` to its last
@@ -123,6 +124,15 @@ inverse writes back the branch row's facts its entry recorded (an undo its `befo
 branch is active, a moved folder still stands and the branch's view has room; the attempt also
 locks that branch's Work and where the branch has the document. A document the branch deleted is
 authorized where its row is (file facts' branch-deleted fallback).
+
+A create transition precedes its initial text edit in the same per-document stream. Model Undo
+groups those adjacent entries as one edit: it removes the initial text, then the placement;
+Redo restores the placement, then the text. A live Undo removes the document with the ordinary
+removal record, and Redo restores its identity through `restoreDocument`, taking the next free
+name when necessary. A drafted Undo ends the created draft, removes the branch's `created` fact
+and tombstones the unused identity. Redo restores that identity and writes the original content
+into a fresh draft. Empty creates have only the tree entry and follow the same path. An undone
+draft create no longer contributes a pending review item.
 
 ## Effects and failures
 

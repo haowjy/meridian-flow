@@ -32,7 +32,7 @@ export type TurnEditedDocument = TurnEditedDocumentId & { uri: string; tree?: Tu
 export type TurnTreeEntry = {
   documentId: DocumentId;
   workId: WorkId | null;
-  op: "move" | "delete" | "restore";
+  op: "create" | "move" | "delete" | "restore";
   shownAt: string | null;
   landedAt: string | null;
 };

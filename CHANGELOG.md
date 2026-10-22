@@ -5,6 +5,7 @@ PR bodies via `pnpm changelog`; PRs no longer edit this file.
 
 ## [Unreleased]
 
+- Undoing a document creation now removes the document instead of leaving an empty file. Redo restores it, using a free name when needed, and draft creations leave and return to review with their content.
 - Start cursorless chat subscriptions at the head; reconcile trails and Work binding without replaying history.
 - Reject thread socket request IDs longer than 64 characters.
 

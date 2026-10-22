@@ -388,7 +388,7 @@
     "apps/server/server/lib/account-settings-route.test.ts": 3,
     "apps/server/server/lib/auth.test.ts": 7,
     "apps/server/server/lib/compose-agent-binding.test.ts": 2,
-    "apps/server/server/lib/compose.draft-mode-tools.db.test.ts": 10,
+    "apps/server/server/lib/compose.draft-mode-tools.db.test.ts": 11,
     "apps/server/server/lib/compose.file-access-tools.db.test.ts": 3,
     "apps/server/server/lib/compose.namespace-tools.db.test.ts": 11,
     "apps/server/server/lib/compose.runtime-settlement.db.test.ts": 2,
