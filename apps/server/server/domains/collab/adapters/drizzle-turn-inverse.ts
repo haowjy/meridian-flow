@@ -36,7 +36,7 @@ import {
   type EditOrigin,
   works,
 } from "@meridian/database";
-import { branches, folders } from "@meridian/database/schema";
+import { branches } from "@meridian/database/schema";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -63,6 +63,7 @@ import {
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { readRemovalRecords, restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader } from "../../context/tree/tree-view.js";
+import { loadFolderIdentityRows } from "../../context/tree/tree-view-sql.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -869,13 +870,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const requested = at.folderId as FolderId;
     const folderId =
       (await resolveAbsorbedFolders(input.db, [requested])).get(requested) ?? requested;
-    const [folder] = await db()
-      .select({ sourceId: folders.contextSourceId, deletedAt: folders.deletedAt })
-      .from(folders)
-      .where(eq(folders.id, folderId));
-    return folder && !folder.deletedAt
+    const [folder] = await loadFolderIdentityRows(db(), [folderId]);
+    return folder && !folder.deleted
       ? {
-          contextSourceId: folder.sourceId,
+          contextSourceId: folder.contextSourceId,
           parentFolderId: folderId,
           name: at.name,
           extension: at.extension,
