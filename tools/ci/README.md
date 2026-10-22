@@ -25,6 +25,16 @@ forces the DB suite. Migration checks and the two app boot jobs are unchanged.
 Do not cache `.nx` outputs across Actions runs: Nx inputs are project-scoped
 and can miss root config changes. The pnpm dependency cache is independent.
 
+## PR body and changelog
+
+`check-pr-body.mjs` requires every template section and validates the structured
+`## Changelog` section through `pr-changelog.mjs`. `pnpm changelog` runs
+`build-changelog.mjs`, which uses that same parser to build Markdown or JSON from
+PRs merged into `main`; pass `--input <file>` to build from saved `gh` JSON. A
+malformed section fails the whole build and names its PR rather than silently
+omitting an entry, so consumers must check the exit status. Interactive Markdown
+uses `$PAGER` or `less -FRX`; pipes, redirects, JSON, and `--no-pager` print directly.
+
 ## Test budget ratchet
 
 There is no target case count. `tools/ci/test-budget-reporter.ts` runs inside
