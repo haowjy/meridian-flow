@@ -11,9 +11,10 @@ deleted and hidden rows. A branch view includes its live rows plus the hidden
 documents and folders it created or needs as ancestors, at their row-owned
 location, plus the deleted documents it has pending changes to (D79: an active
 Work draft with `has_effect`, the pending count's predicate) with the deleted
-folders above them. One used-folder walk seeds both the hidden and the deleted
-folder arms; each is its own `UNION ALL` branch so live lookups keep their
-partial indexes. `deletedDocument` is the one definition of a deletion a draft
+folders above them. The live folder arm is its own `UNION ALL` branch so live
+lookups keep their partial indexes; the hidden and deleted folders share one
+non-live arm, so the branch's used-folder walk runs once per statement half, and
+its predicate is `folders_nonlive_location`'s, so a path slot reaches that index. `deletedDocument` is the one definition of a deletion a draft
 outlives (own or folder delete, reason `deleted`, no Work cascade); listing adds
 the pending effect, admission (`survivingDraftDocuments`) only an active draft.
 The identity relations' diagnostic arms exclude a view's surviving rows, so each
@@ -114,7 +115,8 @@ that outlived the delete (D79), and from PR 3 a reply's rollback and the turn
 card's Undo. The caller holds the document's namespace, then its lock
 (`acquireTreeScope`). A reversing caller names the removal it reverses (its
 time and the `location_version` it wrote), so a later, different removal
-answers `superseded`; Apply names none. A living document answers
+answers `superseded`; Apply names none, and calls it only for a click that
+carries the writer's `restore` (D79). A living document answers
 `already_living`. Discards, Work cascades and deleted sources or projects
 answer `refused`: a Work's own Restore owns its cascade. It places the document
 through `placeLive` (placement's ancestry and one name-claim rule: a living

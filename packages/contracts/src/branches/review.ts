@@ -30,6 +30,12 @@ export type ApplyClick = {
   snapshot?: string;
   baseViewDelta: ApplySpanPatch[];
   groupIds: string[];
+  /**
+   * The writer knew this document was deleted from the manuscript and chose to bring it back:
+   * a per-document Apply on an item showing it deleted, or an Apply all for a document its
+   * confirmation named (D79). Without it, a deleted document answers `needs_restore`.
+   */
+  restore?: true;
 };
 
 export type ApplyClickRefusalReason =
@@ -46,13 +52,19 @@ export type ApplyClickResult =
       commandId: BranchCommandId;
       overrode?: number;
       /**
-       * The document had been deleted from the manuscript, and this Apply brought it back
-       * before merging (D79). Every Apply restores whichever delete is current, so an Apply
-       * all whose confirmation list was read before a later delete restores that document
-       * too; the client words the notice from this flag, per document.
+       * The document had been deleted from the manuscript, and this Apply, sent with
+       * `restore`, brought it back before merging (D79). The client words the notice from
+       * this flag, per document.
        */
       restored?: true;
     }
+  /**
+   * The document is deleted from the manuscript and the click did not carry `restore`: the
+   * writer's view did not know (a delete landed after it read the item, or after an Apply
+   * all's confirmation named its documents). Nothing changed and the draft stays pending;
+   * the client asks the writer, then sends a new click with `restore`.
+   */
+  | { status: "needs_restore"; commandId: BranchCommandId }
   | { status: "closed"; commandId: BranchCommandId; removal?: DocumentRemovalRecord }
   | { status: "refused"; commandId: BranchCommandId; reason: ApplyClickRefusalReason };
 

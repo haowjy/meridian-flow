@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Deleting a document from the manuscript no longer throws away a Work's pending changes to it (D79). Its drafts stay ordinary drafts: the Work's chat still finds it at its path and keeps writing, undoing and reviewing against its last text, while the manuscript and Works with nothing pending see it gone. Apply brings it back, with its folders, then merges the change, and the result says `restored`. A new document at the freed path, or a move over the drafted one, shows as a clash in the Work. Server side; the app's notices and Apply all confirmation follow separately.
+- Deleting a document from the manuscript no longer throws away a Work's pending changes to it (D79). Its drafts stay ordinary drafts: the Work's chat still finds it at its path and keeps writing, undoing and reviewing against its last text, while the manuscript and Works with nothing pending see it gone. Apply brings it back, with its folders, then merges the change, and the result says `restored`, but only when the writer knew it was deleted: the click carries `restore`, and a click that didn't answers `needs_restore` and changes nothing. A new document at the freed path, or a move over the drafted one, shows as a clash in the Work. Server side; the app's notices and Apply all confirmation follow separately.
 
 - Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
 
