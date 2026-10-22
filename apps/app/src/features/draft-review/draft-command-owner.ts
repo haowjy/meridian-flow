@@ -423,7 +423,7 @@ export class DraftCommandOwner {
       })
       .then((answer): CommandOutcome => {
         this.reveals.delete(ref.itemKey);
-        return answer.status === "applied"
+        return answer.status === "applied" || answer.status === "landed"
           ? { kind: "done" }
           : { kind: "change-refused", code: answer.status === "refused" ? answer.reason : "gone" };
       });
@@ -502,7 +502,7 @@ export class DraftCommandOwner {
           this.publish();
           return { kind: "done", restored: true };
         }
-        if (answer.status === "applied") return { kind: "done" };
+        if (answer.status === "applied" || answer.status === "landed") return { kind: "done" };
         if (answer.status === "cancelled") return { kind: "blocked" };
         if (answer.status === "needs_restore") return { kind: "needs-restore" };
         return {

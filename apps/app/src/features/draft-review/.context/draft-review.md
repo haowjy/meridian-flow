@@ -123,11 +123,16 @@ its reserved notice slot (`CommandNotice`).
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
 with an item failure; sent heads keep their same-id settlement across session
 replacement. Transient disconnects keep acknowledgement barriers pending.
-A record alone proves landing; an applied answer without
-the record keeps its contribution. A record that arrives before the answer
-releases the head (the next click may send), but the click's outcome waits for
-that answer, which alone carries `restored`; a lost answer reads the stored
-result back under the same command id (never a resend). Closed/refused answers remove only their
+Each click has two independent duties. *Release* (the head leaves the FIFO
+and its optimistic contribution ends) happens exactly once: on the room's record,
+or on a terminal answer; an applied answer without the record keeps its
+contribution. *Completion* (the caller's outcome) comes from the full answer,
+which alone carries `restored`. When the record released a click whose answer is
+still in flight, the answer completes it when it arrives; when the answer is
+missing or lost, in either order relative to the record, the queue reads the
+stored result back under the same command id (never a resend), at 0/1/2/4
+seconds. Exhausted reads complete as `landed` (it landed; `restored` is
+unknown), and destroying the queue completes still-reading clicks the same way. Closed/refused answers remove only their
 own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
 the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
 so no surface shows a refusal line. Other refusals still move prose in two cases,
