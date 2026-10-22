@@ -2,7 +2,8 @@
  * A surface's command footer, reserved below its rows so nothing it says inserts a line
  * above surviving content. It shows the latest command feedback (a Discard offers Undo; an
  * Apply that brought deleted documents back names them), or, while one is open, the
- * question a command asks first (Discard all, an Apply all that brings documents back).
+ * question a command asks first (Discard all, an Apply all that deletes or brings back
+ * documents).
  */
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
@@ -14,7 +15,7 @@ import type { WorkBranchCommands } from "./useWorkBranchCommands";
 
 /** A command's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
-  kind: "discard" | "restore";
+  kind: "discard" | "apply-all";
   sentence: ReactNode;
   keep: ReactNode;
   confirm: ReactNode;
@@ -91,16 +92,32 @@ export function CommandNotice({
   );
 }
 
-/** The question an Apply all asks before it brings deleted documents back (D79), naming each. */
-export function RestoreQuestion({ titles }: { titles: readonly string[] }) {
+/**
+ * The question an Apply all asks first, naming every document it will delete from the
+ * manuscript and every one it brings back (D79).
+ */
+export function ApplyAllQuestion({
+  deleting,
+  restoring,
+}: {
+  deleting: readonly string[];
+  restoring: readonly string[];
+}) {
   useLingui();
-  const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
-    titles,
-  );
-  return titles.length === 1 ? (
-    <Trans>Applying brings back {names}, which was deleted from the manuscript.</Trans>
-  ) : (
-    <Trans>Applying brings back {names}, which were deleted from the manuscript.</Trans>
+  const list = (titles: readonly string[]) =>
+    new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(titles);
+  const deletes = list(deleting);
+  const names = list(restoring);
+  return (
+    <>
+      {deleting.length > 0 ? <Trans>Applying deletes {deletes}.</Trans> : null}
+      {deleting.length > 0 && restoring.length > 0 ? " " : null}
+      {restoring.length === 0 ? null : restoring.length === 1 ? (
+        <Trans>Applying brings back {names}, which was deleted from the manuscript.</Trans>
+      ) : (
+        <Trans>Applying brings back {names}, which were deleted from the manuscript.</Trans>
+      )}
+    </>
   );
 }
 

@@ -2,6 +2,7 @@
 import type { Author, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { groupAnchor, type ReviewFrame } from "./review-frame";
+import { type TreeLine, treeChange, treeLineOf } from "./tree-line";
 
 export type ReviewFocus = { id: string; frame: ReviewFrame | null };
 export type ChatRef = {
@@ -27,6 +28,8 @@ export interface ReviewChange extends ChangeAttribution {
   frame: ReviewFrame | null;
   /** Unknown membership must not be read as a known-empty chat. B3c supplies the overlay. */
   attributed: boolean;
+  /** The branch's move or delete of the document: a row of its own, with no text frame. */
+  tree?: TreeLine;
 }
 
 export function reviewChanges(
@@ -65,6 +68,22 @@ export function itemChange(
   };
 }
 
+/**
+ * An item's rows: a whole item (a creation, a picture) is one row; otherwise its move or
+ * delete, if any, comes first, then its text changes.
+ */
+export function listedItemChanges(
+  item: Pick<
+    ThreadDraftListItem,
+    "itemKey" | "documentName" | "wholeItem" | "isNew" | "tree" | "contextLocation"
+  >,
+  text: readonly ReviewChange[],
+): readonly ReviewChange[] {
+  const line = item.isNew ? null : treeLineOf(item);
+  if (line) return item.wholeItem ? [treeChange(item, line)] : [treeChange(item, line), ...text];
+  return item.wholeItem ? [itemChange(item)] : text;
+}
+
 export function changeExcerpt(change: Pick<ReviewChange, "excerpt">) {
   return [
     ...(change.excerpt.removed ? [{ kind: "removed" as const, text: change.excerpt.removed }] : []),
@@ -78,13 +97,24 @@ export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: Re
   changes.find((change) => change.id === focus?.id && change.frame?.diff === focus.frame?.diff) ??
   null;
 
-/** A frozen frame is the command seam, never operation IDs or a later runtime read. */
-export type ChangeTarget =
-  | { kind: "groups"; frame: ReviewFrame; groupIds: string[] }
+/**
+ * A frozen frame is the command seam, never operation IDs or a later runtime read. A tree
+ * line is the item's move or delete: alone (`tree`), or with text groups (`groups.tree`).
+ */
+export type TextTarget =
+  | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }
   | { kind: "draft" };
+export type ChangeTarget = TextTarget | { kind: "tree" };
 export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
-  const frame = changes[0]?.frame;
-  return frame
-    ? { kind: "groups", frame, groupIds: changes.map((change) => change.id) }
-    : { kind: "draft" };
+  const text = changes.filter((change) => !change.tree);
+  const tree = text.length < changes.length;
+  const frame = text[0]?.frame;
+  if (frame)
+    return {
+      kind: "groups",
+      frame,
+      groupIds: text.map((change) => change.id),
+      ...(tree ? { tree: true as const } : {}),
+    };
+  return tree && text.length === 0 ? { kind: "tree" } : { kind: "draft" };
 }

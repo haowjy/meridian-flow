@@ -5,14 +5,15 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import {
+  ApplyAllQuestion,
   CommandNotice,
   type CommandQuestion,
-  RestoreQuestion,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { treeLineSentence } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
@@ -22,8 +23,11 @@ import type { DraftDockModel } from "./useDraftDock";
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  /** Deleted documents an Apply of several files would bring back, asked about first (D79). */
-  const [restoring, setRestoring] = useState<readonly DockFile[] | null>(null);
+  /** What an Apply of several files deletes or brings back (D79), asked about first. */
+  const [asking, setAsking] = useState<{
+    deleting: readonly DockFile[];
+    restoring: readonly DockFile[];
+  } | null>(null);
   const troubledFileCount = dock.files.filter(
     (file) => file.status === "error" || dock.fileFailures(file).length > 0,
   ).length;
@@ -37,29 +41,34 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const confirming = confirmingDiscard && dock.showCommands;
-  const askingRestore = restoring !== null && restoring.length > 0 && dock.showCommands;
+  const askingApply = asking !== null && dock.showCommands;
   const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
   // A delete the strip hadn't shown yet holds those files back; several ask again by name.
   const apply = (restore: ReadonlySet<string>) =>
     void dock.apply(restore).then((held) => {
-      if (held.length > 0 && multi) setRestoring(held);
+      if (held.length > 0 && multi) setAsking({ deleting: [], restoring: held });
     });
-  // One file's row shows its delete, so its Apply already says to bring it back.
+  // One file's row shows its delete, so its Apply already says to delete or bring it back.
   const startApply = () =>
-    multi && dock.deletedToApply.length > 0
-      ? setRestoring(dock.deletedToApply)
+    multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
+      ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
       : apply(ids(dock.deletedToApply));
   // One question at a time, in the footer below the files: opening it never moves a row.
-  const question: CommandQuestion | null = askingRestore
+  const question: CommandQuestion | null = askingApply
     ? {
-        kind: "restore",
-        sentence: <RestoreQuestion titles={restoring.map((file) => file.name)} />,
+        kind: "apply-all",
+        sentence: (
+          <ApplyAllQuestion
+            deleting={asking.deleting.map((file) => file.name)}
+            restoring={asking.restoring.map((file) => file.name)}
+          />
+        ),
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply</Trans>,
-        onKeep: () => setRestoring(null),
+        onKeep: () => setAsking(null),
         onConfirm: () => {
-          setRestoring(null);
-          apply(ids(restoring));
+          setAsking(null);
+          apply(ids(asking.restoring));
         },
         disabled: !dock.canCommand,
       }
@@ -84,7 +93,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
       onClick={(event) => event.stopPropagation()}
     >
-      {confirming || askingRestore ? null : dock.showCommands ? (
+      {confirming || askingApply ? null : dock.showCommands ? (
         <>
           <QuietButton
             onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
@@ -109,7 +118,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={
-          confirming || askingRestore
+          confirming || askingApply
             ? undefined
             : () => {
                 dock.controller.dismissNotice();
@@ -211,6 +220,7 @@ function DockFileLine({
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
+  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} item={file.row.draft} />;
   if (!summary && !expanded) return null;
   return (
     <div
@@ -226,7 +236,8 @@ function DockFileLine({
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
-      <DraftCommandStatus itemKey={file.row.draft.itemKey} item={file.row.draft} />
+      {/* A file with no header row keeps its status line under its one row, which it describes. */}
+      {wholeDocument && !summary ? null : status}
       {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
@@ -237,6 +248,7 @@ function DockFileLine({
           />
         </div>
       ) : null}
+      {wholeDocument && !summary ? status : null}
     </div>
   );
 }
@@ -269,9 +281,14 @@ function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
   );
 }
 
-/** One document's review door, independent of the strip's expansion toggle. */
+/**
+ * One document's review door, independent of the strip's expansion toggle. A file whose only
+ * change is a move or delete says so ("ch13: deleting"), since its row folds into this one.
+ */
 function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
   const touch = useCoarsePointer();
+  const [only] = file.changes;
+  const label = file.changes.length === 1 && only?.tree ? treeLineSentence(only.tree) : file.name;
   return (
     <button
       type="button"
@@ -281,7 +298,7 @@ function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void
         onReview();
       }}
     >
-      {file.name}
+      {label}
     </button>
   );
 }

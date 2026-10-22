@@ -185,6 +185,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     agentEdit: {
       agentEdit: () => agentEdit,
+      treeHistory: () => {
+        throw new Error("Tree history requires the receipt-backed Postgres adapter");
+      },
     },
     reversal: {
       reverseTurn: async () => {
@@ -350,6 +353,10 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
         documentId: documentId as DocumentId,
         scope: "live" as const,
       }));
+    },
+    // The in-memory host has no tree history.
+    async listTreeEntriesForTurn() {
+      return [];
     },
   };
 }

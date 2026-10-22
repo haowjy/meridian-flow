@@ -30,11 +30,14 @@ export type WorkBranchPendingStore = {
   ): Promise<WorkBranchDraftMetadata[]>;
   /** Receipt members for list/report enrichment only, latest first and distinct. */
   pendingThreadIds(draftId: string): Promise<string[]>;
-  /** The chat that created each document the branch created (§3.3); a writer's create is absent. */
-  listCreators(
+  /**
+   * The chats behind each document's branch row: the one that last moved or deleted it, then
+   * the one that created it (§3.3). A writer's create, move or delete names no chat.
+   */
+  listTreeActors(
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
-  ): Promise<ReadonlyMap<DocumentId, string>>;
+  ): Promise<ReadonlyMap<DocumentId, readonly string[]>>;
   /**
    * Distinct pending documents per Work, by the canonical draft → branch → Work mapping:
    * its active branch's active drafts with `hasEffect`, plus

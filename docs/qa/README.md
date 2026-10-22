@@ -19,6 +19,7 @@ probe the integration worktree's: a checkout that moves under a watching dev
 server, or a reused database, produces regressions that vanish on a clean
 stack.
 
+- [The model's move and delete](model-move-delete.md): tool rows, the turn card's lines and Undo, a taken location, and a stopped reply's rollback, in the browser on the mock model.
 - [Atomic frozen Apply](atomic-apply.md): production API-core command, merge, rollback, lifecycle and trail probes over a scratch database.
 - [Document removal records](document-removal-records.md): populated upgrade, actor readback, closure/admission races, storage release and after-commit room retirement.
 - [Document existence admission](document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.

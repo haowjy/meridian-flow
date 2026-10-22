@@ -127,7 +127,7 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
     }
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "view_change",
-      skips: [{ before: "Beta", reason: "Stayed as you edited it" }],
+      skips: [{ before: "Beta", cause: "edited_since" }],
     });
     expect(
       await view.collab.reverseTurn({

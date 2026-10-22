@@ -13,10 +13,11 @@ import {
 import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
-  itemChange,
+  listedItemChanges,
   type ReviewChange,
   targetOfChanges,
 } from "@/features/draft-review/review-model";
+import { hasTreeLine } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -82,11 +83,9 @@ export function useDraftDock({
         reviewFileTargetName(row, untitled),
         {
           status: withoutText ? "ready" : (read?.status ?? "loading"),
-          items: (row.draft.wholeItem ? [itemChange(row.draft)] : (read?.listedChanges ?? [])).map(
-            (change) => ({
-              change,
-            }),
-          ),
+          items: listedItemChanges(row.draft, read?.listedChanges ?? []).map((change) => ({
+            change,
+          })),
 
           retry: read?.retry,
         },
@@ -124,7 +123,9 @@ export function useDraftDock({
   const applyWithdrawn = isGroupApplyWithdrawn(files.map((file) => file.row.draft));
   const applicable = applyWithdrawn
     ? []
-    : actionableFiles.filter((file) => file.row.draft.hasDraft || file.row.draft.isNew);
+    : actionableFiles.filter(
+        (file) => file.row.draft.hasDraft || file.row.draft.isNew || hasTreeLine(file.row.draft),
+      );
 
   /**
    * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
@@ -164,6 +165,7 @@ export function useDraftDock({
     canApply: applicable.some(
       (file) =>
         (!file.row.draft.hasDraft && file.row.draft.isNew) ||
+        hasTreeLine(file.row.draft) ||
         (reads[targets.findIndex((target) => target.itemKey === file.row.draft.itemKey)]?.frame
           ?.groups.length ?? 0) > 0,
     ),
@@ -176,6 +178,8 @@ export function useDraftDock({
     closeImagePreview: () => setImagePreview(null),
     /** The files Apply would bring back from a delete; more than one file asks first. */
     deletedToApply: applicable.filter((file) => isDeletedFromManuscript(file.row.draft)),
+    /** The files Apply would delete from the manuscript; more than one file asks first. */
+    deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
     apply: (restore: ReadonlySet<string>) => send("apply", restore),
     discard: () => void send("discard"),
   };

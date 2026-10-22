@@ -194,17 +194,18 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
               {
                 uri: "manuscript://chapter.md",
                 status: "reversed",
-                destination: { kind: "draft", draftId: "draft" },
+                destination: { kind: "draft", branchId: "branch" },
               },
             ],
             acceptedParts: 1,
             skips: [
               {
+                kind: "text",
                 documentId: "doc",
                 uri: "manuscript://chapter.md",
                 before: "Mara",
                 after: "I",
-                reason: "discarded",
+                cause: "discarded",
               },
             ],
           });
@@ -212,10 +213,10 @@ it("keeps the card's named partial result, pending Redo and failure beside its a
         });
         await settleReact(() => {
           expect(document.querySelector("[data-turn-skips]")?.textContent).toContain(
-            "1 part stayed",
+            "Undo left 1 part as it was",
           );
           expect(document.body.textContent).toContain("“Mara” → “I”");
-          expect(document.body.textContent).toContain("discarded");
+          expect(document.body.textContent).toContain("Discarded");
           expect(document.querySelector("[data-turn-draft-outcome]")?.textContent).toBe(
             "Undone in your drafts. Apply them to change your manuscript.",
           );

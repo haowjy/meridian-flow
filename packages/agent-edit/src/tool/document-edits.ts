@@ -47,6 +47,14 @@ export function createDocumentEditCommands(deps: {
         phase: "committed",
         model: { message: result.message, read: { format: "edits" } },
       };
+    // An inverse that changed no text (a move's or a delete's) has no cut to echo.
+    if (!result.before && !result.after)
+      return {
+        status: "success",
+        phase: "committed",
+        ...(result.writeId ? { writeId: result.writeId } : {}),
+        model: { message: result.message },
+      };
 
     // `after` is the cut the inverse committed on top of, in the room it ran in: the echo
     // records there, crediting nothing when it degraded.

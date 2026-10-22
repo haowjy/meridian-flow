@@ -29,6 +29,10 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`That change is no longer in the draft.`;
     case "needs_restore":
       return msg`This document was deleted from the manuscript. Apply again to bring it back.`;
+    case "held":
+      return msg`Another document this Work moves or deletes still has that name. Apply that one first, or apply all changes.`;
+    case "changed":
+      return msg`This move or delete changed since you looked. Check it, then apply again.`;
     default:
       return undefined;
   }
@@ -36,7 +40,13 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** Holds and stale answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "path_taken" || serverCode === "stale" || serverCode === "needs_restore";
+  return (
+    serverCode === "path_taken" ||
+    serverCode === "stale" ||
+    serverCode === "needs_restore" ||
+    serverCode === "held" ||
+    serverCode === "changed"
+  );
 }
 
 /**

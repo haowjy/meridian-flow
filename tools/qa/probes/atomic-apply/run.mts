@@ -132,6 +132,9 @@ async function fixture(
     trail: createDrizzleChangeTrailAggregateWriter(h.db),
     catalog: { refreshSources: async () => "0" },
     arrivals: { settle: async () => 0 },
+    removal: createTestDocumentRemoval(h.db),
+    close: createDraftClose(),
+    releaseObjects: async () => {},
     onCommitted: async () => {},
     measured: (m) => measure.push(m),
   });
@@ -142,7 +145,7 @@ async function fixture(
       tree: createTreeReader(h.db),
       drafts: pending.listBranchDraftMetadata,
       pendingThreadIds: pending.pendingThreadIds,
-      creators: pending.listCreators,
+      treeActors: pending.listTreeActors,
     }),
   });
   const service = createApplyClickService({

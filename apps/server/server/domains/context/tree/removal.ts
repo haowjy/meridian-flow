@@ -11,6 +11,7 @@ import {
   contextSources,
   documents,
   projects,
+  threads,
   users,
   works,
 } from "@meridian/database/schema";
@@ -31,7 +32,7 @@ import type {
 } from "../ports/document-removal.js";
 import { bumpLocationVersions } from "./node-locations.js";
 import { releaseDocumentStorage } from "./node-rows.js";
-import { placeLive } from "./placement.js";
+import { type PlaceTarget, placeLive } from "./placement.js";
 import type { NodeRef } from "./tree-view.js";
 import { loadActiveBranchUses, loadDocumentIdentityRows } from "./tree-view-sql.js";
 
@@ -58,34 +59,52 @@ export function createDocumentRemoval(
       if (!removed.length) return [];
       const affected = await usingWorks(tx, removed);
       const now = input.at ?? new Date();
+      // A model's delete keeps its chat's owner too, who stands in once the chat is gone.
+      const [chat] = input.threadId
+        ? await tx
+            .select({ ownerId: threads.createdByUserId })
+            .from(threads)
+            .where(eq(threads.id, input.threadId))
+        : [];
       await tx
         .update(documents)
         .set({
           deletedAt: now,
           updatedAt: now,
           deletionReason: input.reason,
-          deletedByUserId: input.userId ?? null,
+          deletedByUserId: input.userId ?? chat?.ownerId ?? null,
           deletedByWorkId: input.workId ?? null,
+          deletedByThreadId: input.threadId ?? null,
           deletionCause: input.cause ?? null,
         })
         .where(inArray(documents.id, removed));
       await bumpLocationVersions(db, { documentIds: removed });
       // A Work cascade keeps hidden creations' tree uses: `restoreWorkDocuments` brings their
-      // membership back with the tombstone, while a revealed document needs none. Rows only
-      // say `created` today; PR 3's move and delete facts are a branch's pending intent, which
-      // a delete must keep as it keeps the drafts (D79).
+      // membership back with the tombstone, while a revealed document needs none. Any other
+      // removal ends each branch's creation of the document but keeps its moves and deletes,
+      // a branch's pending intent, as it keeps the drafts (D79, D80): Apply brings it back.
       const retired = input.workId
         ? living.filter((row) => !row.hidden).map((row) => row.id)
         : removed;
-      if (retired.length)
+      if (retired.length) {
+        const ofRetired = and(
+          eq(branchTreeChanges.nodeKind, "document"),
+          inArray(branchTreeChanges.nodeId, retired),
+        );
+        await tx
+          .update(branchTreeChanges)
+          .set({ created: false, updatedAt: now })
+          .where(and(ofRetired, eq(branchTreeChanges.created, true)));
         await tx
           .delete(branchTreeChanges)
           .where(
             and(
-              eq(branchTreeChanges.nodeKind, "document"),
-              inArray(branchTreeChanges.nodeId, retired),
+              ofRetired,
+              eq(branchTreeChanges.moved, false),
+              eq(branchTreeChanges.deleted, false),
             ),
           );
+      }
       const [record] = (await readRemovalRecords(tx, removed.slice(0, 1))).values();
       if (!record) throw new Error(`Removal of ${removed[0]} wrote no record`);
       deps.collab.registerRemoved(removed, record);
@@ -113,6 +132,7 @@ export async function restoreWorkDocuments(db: Database, workId: WorkId): Promis
       deletedByUserId: null,
       deletionCause: null,
       deletedByWorkId: null,
+      deletedByThreadId: null,
       locationVersion: sql`${documents.locationVersion} + 1`,
     })
     .where(eq(documents.deletedByWorkId, workId))
@@ -141,13 +161,15 @@ export type RestoreOutcome =
 
 /** A placement fault, carried out of the savepoint it rolls back. */
 class RestoreFault extends Error {
-  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" }>) {
-    super(`Restore found ${outcome.at} taken`);
+  constructor(readonly outcome: Extract<RestoreOutcome, { kind: "location_taken" | "refused" }>) {
+    super(`Restore faulted: ${outcome.kind}`);
   }
 }
 
 /**
- * Brings one deleted document back at the location it held, with every folder on that path
+ * Brings one deleted document back at the location it held, or at `at` (Apply of a drafted
+ * move restores where the branch put it, so an old-path clash never blocks it), with every
+ * folder on that path
  * (a living folder there is reused, a deleted one restored), through placement's one
  * name-claim rule. Apply restores whichever removal is current; a reversing caller (a
  * reply's rollback, the turn card's Undo) names the removal it reverses. Clears the record,
@@ -158,7 +180,7 @@ class RestoreFault extends Error {
  */
 export async function restoreDocument(
   db: Database,
-  input: { documentId: DocumentId; removal?: RemovalIdentity },
+  input: { documentId: DocumentId; removal?: RemovalIdentity; at?: PlaceTarget["at"] },
   deps: {
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: Pick<ContextCatalogMutationPort, "refreshSources">;
@@ -210,7 +232,7 @@ export async function restoreDocument(
         db,
         {
           node,
-          at: {
+          at: input.at ?? {
             contextSourceId: row.sourceId as ContextSourceId,
             parentFolderId: row.folderId as FolderId | null,
             name: row.name,
@@ -222,9 +244,17 @@ export async function restoreDocument(
             .update(documents)
             .set({
               folderId: parentId,
+              ...(input.at
+                ? {
+                    contextSourceId: input.at.contextSourceId,
+                    name: input.at.name,
+                    extension: input.at.extension ?? row.extension,
+                  }
+                : {}),
               deletedAt: null,
               deletionReason: null,
               deletedByUserId: null,
+              deletedByThreadId: null,
               deletionCause: null,
               updatedAt: new Date(),
             })
@@ -233,9 +263,13 @@ export async function restoreDocument(
         },
       );
       if (!landed.ok) {
-        // A non-hidden document's chain holds no hidden folder, so only a taken path faults.
-        if (landed.error.code !== "path_taken")
+        // A non-hidden document's chain holds no hidden folder, so only a taken path faults; a
+        // drafted move's folders are the branch's, which placement reveals.
+        if (landed.error.code !== "path_taken") {
+          // A drafted move's hidden folder can be gone since; the document's own chain can't.
+          if (input.at) throw new RestoreFault({ kind: "refused" });
           throw new Error(`Restore of ${input.documentId} met a broken folder chain`);
+        }
         throw new RestoreFault({
           kind: "location_taken",
           at: landed.error.at,
@@ -246,7 +280,12 @@ export async function restoreDocument(
     });
     await deps.arrivals?.settle([input.documentId]);
     await deps.catalog.refreshSources(
-      [row.sourceId as ContextSourceId],
+      [
+        ...new Set([
+          row.sourceId as ContextSourceId,
+          ...(input.at ? [input.at.contextSourceId] : []),
+        ]),
+      ],
       placed.map((ref) => ref.id),
     );
     return { kind: "restored", placed };
@@ -280,11 +319,14 @@ export async function readRemovalRecords(
       userId: documents.deletedByUserId,
       displayName: users.name,
       workName: works.name,
+      chatId: threads.id,
+      chatTitle: threads.title,
       cause: documents.deletionCause,
     })
     .from(documents)
     .leftJoin(users, eq(users.id, documents.deletedByUserId))
     .leftJoin(works, eq(works.id, documents.deletedByWorkId))
+    .leftJoin(threads, eq(threads.id, documents.deletedByThreadId))
     .where(and(inArray(documents.id, [...documentIds]), isNotNull(documents.deletedAt)));
   for (const row of rows) {
     records.set(row.id as DocumentId, {
@@ -293,11 +335,13 @@ export async function readRemovalRecords(
       actor:
         row.workName !== null
           ? { kind: "work", name: row.workName }
-          : row.userId
-            ? { kind: "user", userId: row.userId, displayName: row.displayName }
-            : row.cause
-              ? { kind: "system", cause: row.cause }
-              : null,
+          : row.chatId !== null
+            ? { kind: "agent", chatTitle: row.chatTitle?.trim() || null }
+            : row.userId
+              ? { kind: "user", userId: row.userId, displayName: row.displayName }
+              : row.cause
+                ? { kind: "system", cause: row.cause }
+                : null,
     });
   }
   return records;

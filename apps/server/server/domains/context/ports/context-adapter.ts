@@ -6,9 +6,15 @@
  */
 
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
-import type { ParsedDocumentFilename, RetractionCause } from "@meridian/contracts/protocol";
+import type {
+  Filetype,
+  InvalidOperationReason,
+  ParsedDocumentFilename,
+  RetractionCause,
+} from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
+import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
 import type {
   AdapterCreateUntitledOptions,
   ContextBinaryWriteResult,
@@ -66,7 +72,7 @@ export type AdapterFault =
   | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "invalid_operation"; message?: string; reason?: "ambiguous_path" }
+  | { code: "invalid_operation"; message?: string; reason?: InvalidOperationReason }
   | {
       code: "context_unavailable";
       reason: "work_archived" | "work_deleted" | "work_missing";
@@ -127,6 +133,37 @@ export interface ContextTreeAdapter {
 }
 
 /**
+ * A draft placement's moves and deletes in its Work's branch (D26): facts on the branch's
+ * row, never live. `record` runs in the same transaction, after the row is written.
+ */
+export interface ContextBranchTreeAdapter {
+  /** This adapter's source, provisioned. */
+  sourceId(): Promise<string>;
+  /**
+   * `moved: false` when the branch already has it at `path`: nothing is written. `path` is
+   * the destination as stored (an extensionless name keeps the document's extension).
+   */
+  move(
+    path: string,
+    input: {
+      documentId: string;
+      /** Where the branch has it now: its path and filetype there, and that source. */
+      from: { path: string; filetype: Filetype | null; sourceId: string };
+      changedBy: BranchChangeAuthor;
+      record(change: RecordedBranchTreeChange): Promise<void>;
+    },
+  ): Promise<Result<{ moved: boolean; path: string }, AdapterFault>>;
+  delete(
+    path: string,
+    input: {
+      documentId: string;
+      changedBy: BranchChangeAuthor;
+      record(change: RecordedBranchTreeChange): Promise<void>;
+    },
+  ): Promise<Result<void, AdapterFault>>;
+}
+
+/**
  * The reduced surface each scheme is backed by. The adapter never parses URIs
  * or validates schemes — it receives pre-parsed, normalized paths from the
  * router. It returns scheme-relative paths; the router re-attaches the scheme.
@@ -135,6 +172,8 @@ export interface ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
   readonly tree?: ContextTreeAdapter;
+  /** Only a draft placement has one. */
+  readonly branchTree?: ContextBranchTreeAdapter;
 
   stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>>;
   read(path: string): Promise<Result<AdapterContextReadResult | null, AdapterFault>>;

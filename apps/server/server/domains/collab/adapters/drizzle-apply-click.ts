@@ -1,6 +1,9 @@
 /**
  * Atomic Apply: Work lock, command claim, committed live effect, prefix-authored base and trail.
- * A document deleted live comes back first when the click carries the writer's `restore`
+ * A click's tree cut runs first, keyed on the branch's logical state for the document and its
+ * live state (design-v2 §4): a delete removes it live, a move moves it (or restores it there,
+ * or reveals it there), a creation reveals it; then the branch's row goes with settlement rows.
+ * A document deleted live comes back only when the click carries the writer's `restore`
  * (`restoreDocument`, D79), then the text merges.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -18,7 +21,7 @@ import type {
   AgentEditModel,
   UpdateJournal,
 } from "@meridian/agent-edit/integration";
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type { ApplyClickAnswer, ApplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
@@ -35,11 +38,18 @@ import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizz
 import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
+import type { DocumentRemoval } from "../../context/ports/document-removal.js";
+import {
+  dropDocumentRows,
+  endCreatedFact,
+  readBranchTreeFacts,
+} from "../../context/tree/branch-tree-store.js";
+import { tombstoneUnused } from "../../context/tree/end-use.js";
+import { moveToPlacement } from "../../context/tree/live-tree-state.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { place } from "../../context/tree/placement.js";
 import { restoreDocument } from "../../context/tree/removal.js";
-import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
+import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import {
   WorkLifecycleUnavailableError,
@@ -63,6 +73,7 @@ import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js"
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { storedDocument } from "./document-loader.js";
 import { claimCommandWithinTx, lookupCommand } from "./drizzle-branch-commands.js";
+import type { DraftClose } from "./drizzle-draft-close.js";
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -88,6 +99,10 @@ export function createDrizzleApplyClick(
     trail: ChangeTrailPersistence;
     arrivals?: Pick<DocumentArrivals, "settle">;
     catalog: ContextCatalogMutationPort;
+    removal: DocumentRemoval;
+    close: Pick<DraftClose, "closeDrafts">;
+    /** After commit: delete a tombstoned creation's stored object, best effort. */
+    releaseObjects(storageUrls: readonly string[]): Promise<void>;
     onCommitted(documentId: ApplyClickCommand["documentId"]): Promise<void>;
     measured(input: {
       commandId: string;
@@ -102,26 +117,55 @@ export function createDrizzleApplyClick(
     status: "closed",
     commandId: command.envelope.commandId,
   });
-  async function reveal(node: TreeStateNode) {
+  /** Places a hidden creation at `at`; false when another node holds that path. */
+  async function reveal(
+    node: TreeStateNode,
+    at: Pick<TreeStateNode["target"], "contextSourceId" | "parentFolderId" | "name" | "extension">,
+  ): Promise<boolean> {
     const placed = await place(db, {
       targets: [
         {
           node: { kind: "document", id: node.nodeId },
           at: {
-            contextSourceId: node.target.contextSourceId,
-            parentFolderId: node.target.parentFolderId,
-            name: node.target.name,
-            extension: node.target.extension,
+            contextSourceId: at.contextSourceId,
+            parentFolderId: at.parentFolderId,
+            name: at.name,
+            extension: at.extension,
           },
         },
       ],
     });
-    if (!placed.ok) throw new ApplyClickRefused("forbidden");
+    if (!placed.ok) {
+      if (placed.error.code === "path_taken") return false;
+      throw new ApplyClickRefused("forbidden");
+    }
     await deps.arrivals?.settle([node.nodeId]);
     await deps.catalog.refreshSources(
       placed.value.sourceIds,
       placed.value.placed.map((ref) => ref.id),
     );
+    return true;
+  }
+  /**
+   * Who holds a move's destination live: another item of this branch that moves or deletes the
+   * document there is a hold naming it (Apply all applies that one first); anyone else is the
+   * existing taken-path refusal.
+   */
+  async function heldBy(branchId: BranchId, node: TreeStateNode) {
+    const found = await tree.resolvePath(LIVE_TREE, {
+      contextSourceId: node.target.contextSourceId,
+      path: node.target.path,
+      as: "document",
+    });
+    if (found.kind !== "found" || found.node.kind !== "document") return null;
+    const occupant = found.node.document.id;
+    if (occupant === node.nodeId) return null;
+    const facts = (await readBranchTreeFacts(currentDrizzleDb(db), [branchId], [occupant]))
+      .get(branchId)
+      ?.get(occupant);
+    return facts?.moved || facts?.deleted
+      ? { itemKey: draftItemKey(branchId, occupant), path: node.target.uri ?? node.target.path }
+      : null;
   }
   /** The addressed document's node in the branch, never another created document's. */
   async function itemNode(branchId: BranchId, documentId: DocumentId) {
@@ -163,8 +207,10 @@ export function createDrizzleApplyClick(
     async execute(command, prepared) {
       const base = prepared.kind === "text" ? prepared.base : null;
       const click = prepared.kind === "text" ? prepared.click : null;
+      const cut = prepared.tree ?? null;
       const branchId =
         prepared.kind === "text" ? prepared.base.snapshot.branchId : prepared.branchId;
+      const userId = command.envelope.accountId as UserId;
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
@@ -178,7 +224,8 @@ export function createDrizzleApplyClick(
               { commandId: command.envelope.commandId, measured: deps.measured },
               () =>
                 deps.workProjection.mutate(
-                  { works: [command.workId] },
+                  // A tree cut writes the branch's row: its branch too, as Discard holds it.
+                  { works: [command.workId], ...(cut ? { branches: [branchId] } : {}) },
                   async (): Promise<ApplyClickAnswer> => {
                     // mutate awaits post-commit delivery too; stop the boundary clock at
                     // root commit, before room recovery and document projections run.
@@ -207,19 +254,23 @@ export function createDrizzleApplyClick(
                         .where(eq(branchCommands.id, command.envelope.commandId));
                       return result;
                     };
-                    // Only a hidden-create reveal or a deleted document's restore changes the
-                    // tree. Ordinary text Apply must not serialize unrelated documents on their
-                    // source's namespace lock. This read is unlocked, so it only guesses.
+                    // Only a tree cut, a hidden-create reveal or a deleted document's restore
+                    // changes the tree. Ordinary text Apply must not serialize unrelated
+                    // documents on their source's namespace lock. This read is unlocked, so it
+                    // only guesses.
                     const lifecycle = async () => {
                       const [row] = await loadDocumentIdentityRows(tx, [command.documentId]);
                       if (!row) throw new ApplyClickRefused("not_found");
                       return row;
                     };
                     const guess = await lifecycle();
-                    treeScope ||= guess.hidden || guess.deleted;
+                    treeScope ||= guess.hidden || guess.deleted || cut !== null;
                     await testHook("apply.afterScopeGuess");
                     if (treeScope)
-                      await acquireTreeScope(db, { documentIds: [command.documentId] });
+                      await acquireTreeScope(db, {
+                        branches: [{ branchId, documentIds: [command.documentId] }],
+                        documentIds: [command.documentId],
+                      });
                     else await lockDocumentMutation(tx, command.documentId);
                     const locked = await lifecycle();
                     if (locked.deleted && !treeScope) {
@@ -227,6 +278,60 @@ export function createDrizzleApplyClick(
                       // namespace-first, never taking a namespace under a document lock.
                       treeScope = true;
                       throw new TreeScopeChangedError();
+                    }
+                    const node = await itemNode(branchId, command.documentId);
+                    // The click applies exactly the row revision the writer saw.
+                    if (
+                      cut &&
+                      (!node?.branch || (node.branch.revision?.toString() ?? null) !== cut.revision)
+                    )
+                      return finish({ status: "changed", commandId: command.envelope.commandId });
+                    const state = cut ? (node?.branch?.state ?? null) : null;
+                    const held = async () => {
+                      const by = node ? await heldBy(branchId, node) : null;
+                      if (!by) throw new ApplyClickRefused("forbidden");
+                      return finish({ status: "held", commandId: command.envelope.commandId, by });
+                    };
+                    if (state === "deleting") {
+                      // The branch deletes it: live loses it (a creation ends its use), and
+                      // this branch's draft of it ends; a document live deleted already only
+                      // settles. A masked move under the delete is never applied.
+                      if (!locked.deleted && !locked.hidden) {
+                        await deps.removal.remove({
+                          documentIds: [command.documentId],
+                          reason: "deleted",
+                          userId,
+                        });
+                        await deps.catalog.refreshSources(
+                          [locked.contextSourceId],
+                          [command.documentId],
+                        );
+                      }
+                      await deps.close.closeDrafts(
+                        tx,
+                        { documentIds: [command.documentId], branchId },
+                        "document_discarded",
+                      );
+                      await dropDocumentRows(db, {
+                        branchId,
+                        documentIds: [command.documentId],
+                        settle: { as: "applied", userId },
+                      });
+                      if (locked.hidden && !locked.deleted) {
+                        const ended = await tombstoneUnused(db, [command.documentId], {
+                          actor: { userId },
+                          removal: deps.removal,
+                        });
+                        if (ended.tombstoned.length)
+                          await deps.catalog.refreshSources(
+                            [locked.contextSourceId],
+                            ended.tombstoned.map((ref) => ref.id),
+                          );
+                        if (ended.releasedObjects.length)
+                          deferUntilDrizzleCommit(() => deps.releaseObjects(ended.releasedObjects));
+                      }
+                      deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
+                      return finish({ status: "applied", commandId: command.envelope.commandId });
                     }
                     // Only the writer's knowledge brings a document back: a delete their view
                     // did not show leaves the click undone and the draft pending (D79). A
@@ -237,39 +342,77 @@ export function createDrizzleApplyClick(
                         commandId: command.envelope.commandId,
                       });
                     let restored = false;
+                    let replaced: string | undefined;
                     if (locked.deleted) {
+                      // A drafted move of a document live deleted restores where the branch
+                      // put it, so a clash at its old path never blocks it.
                       const outcome = await restoreDocument(
                         db,
-                        { documentId: command.documentId },
+                        {
+                          documentId: command.documentId,
+                          ...(state === "moving" && node ? { at: liveLocation(node) } : {}),
+                        },
                         { arrivals: deps.arrivals, catalog: deps.catalog },
                       );
-                      if (outcome.kind === "location_taken")
-                        throw new ApplyClickRefused("forbidden");
+                      if (outcome.kind === "location_taken") return held();
                       if (outcome.kind === "refused") return finish(closed(command));
                       restored = outcome.kind === "restored";
+                    } else if (state === "moving" && node && !locked.hidden) {
+                      const moved = await moveToPlacement(
+                        db,
+                        {
+                          documentId: command.documentId,
+                          from: {
+                            folderId: locked.folderId,
+                            rootSourceId: locked.folderId ? null : locked.contextSourceId,
+                            name: locked.name,
+                            extension: locked.extension,
+                          },
+                          to: {
+                            folderId: node.target.parentFolderId,
+                            rootSourceId: node.target.parentFolderId
+                              ? null
+                              : node.target.contextSourceId,
+                            name: node.target.name,
+                            extension: node.target.extension,
+                          },
+                        },
+                        { arrivals: deps.arrivals, catalog: deps.catalog },
+                      );
+                      if (moved.kind === "location_taken") return held();
+                      if (moved.kind !== "moved") throw new ApplyClickRefused("forbidden");
+                      replaced = node.from?.uri ?? node.from?.path;
                     }
+                    // A creation is revealed: by a tree cut where the branch has it (moved or
+                    // not); by a text-only click at its own row, since text can't land in a
+                    // document live lacks, and a pending move or delete stays pending (§4).
+                    if (node?.hidden && node.origin === "created" && (cut || base)) {
+                      const at = cut
+                        ? node.target
+                        : {
+                            contextSourceId: locked.contextSourceId,
+                            parentFolderId: locked.folderId,
+                            name: locked.name,
+                            extension: locked.extension,
+                          };
+                      if (!(await reveal(node, at))) return held();
+                    }
+                    if (cut)
+                      await dropDocumentRows(db, {
+                        branchId,
+                        documentIds: [command.documentId],
+                        settle: { as: "applied", userId },
+                      });
+                    else if (node?.origin === "created")
+                      await endCreatedFact(db, { branchId, documentId: command.documentId });
                     if (!base || !click) {
-                      const node = await itemNode(branchId, command.documentId);
-                      const [draft] = await tx
-                        .select({ id: documentDrafts.id })
-                        .from(documentDrafts)
-                        .where(
-                          and(
-                            eq(documentDrafts.branchId, branchId),
-                            eq(documentDrafts.documentId, command.documentId),
-                            eq(documentDrafts.status, "active"),
-                          ),
-                        );
-                      if (!node?.hidden || node.origin !== "created" || draft)
-                        return finish({
-                          status: "refused",
-                          commandId: command.envelope.commandId,
-                          reason: "malformed",
-                        });
-                      await reveal(node);
-                      await dropDocumentRows(db, { branchId, documentIds: [command.documentId] });
                       deferUntilDrizzleCommit(() => deps.onCommitted(command.documentId));
-                      return finish({ status: "applied", commandId: command.envelope.commandId });
+                      return finish({
+                        status: "applied",
+                        commandId: command.envelope.commandId,
+                        ...(restored ? { restored } : {}),
+                        ...(replaced ? { replaced } : {}),
+                      });
                     }
                     const { schema } = click;
                     const snapshot = await deps.live.read(command.documentId);
@@ -325,15 +468,6 @@ export function createDrizzleApplyClick(
                           )
                         : null;
                       await testHook("apply.afterLive");
-                      const node = await itemNode(branchId, command.documentId);
-                      if (node?.hidden && node.origin === "created") {
-                        await reveal(node);
-                      }
-                      if (node?.origin === "created")
-                        await dropDocumentRows(db, {
-                          branchId: branchId,
-                          documentIds: [command.documentId],
-                        });
                       const write = deps.coordinator.prepareAppend(base, [], {
                         authorServerRows(prefix) {
                           let row: Uint8Array | undefined;
@@ -465,6 +599,7 @@ export function createDrizzleApplyClick(
                         commandId: command.envelope.commandId,
                         ...(overrode ? { overrode } : {}),
                         ...(restored ? { restored } : {}),
+                        ...(replaced ? { replaced } : {}),
                       };
                       await finish(answer);
                       deferUntilDrizzleCommit(async () => {
@@ -505,5 +640,15 @@ export function createDrizzleApplyClick(
         });
       }
     },
+  };
+}
+
+/** Where the branch has a document, as a live location to restore it at. */
+function liveLocation(node: TreeStateNode) {
+  return {
+    contextSourceId: node.target.contextSourceId,
+    parentFolderId: node.target.parentFolderId,
+    name: node.target.name,
+    extension: node.target.extension,
   };
 }

@@ -1,8 +1,14 @@
 // Effective immutable action history shared by card and model selectors.
+import { type StoredTreeEntry, treeKey } from "./tree-inverse.js";
 import type { StoredInversePart } from "./turn-inverse-service.js";
 
-export const partKey = (part: { editId: string; ordinal: number }) =>
-  `${part.editId}:${part.ordinal}`;
+/** A text part keys by its ordinal; a tree entry, or a target naming one, by `:tree`. */
+export const partKey = (part: { editId: string; ordinal?: number }) =>
+  part.ordinal === undefined ? treeKey(part.editId) : `${part.editId}:${part.ordinal}`;
+
+/** One row of the action index: a text part or a tree entry, ordered by `id` on one axis. */
+type HistoryRow = StoredInversePart | StoredTreeEntry;
+const rowKey = (row: HistoryRow) => ("tree" in row ? treeKey(row.editId) : partKey(row));
 
 export function isRolledBack(history: readonly StoredInversePart[], part: StoredInversePart) {
   return history.some(
@@ -13,15 +19,15 @@ export function isRolledBack(history: readonly StoredInversePart[], part: Stored
 }
 
 /** Consumption is per accepted part, and a rolled-back action has no stack effect. */
-export function effectiveActionIndex(
-  history: readonly StoredInversePart[],
+export function effectiveActionIndex<Row extends HistoryRow>(
+  history: readonly Row[],
   keys: ReadonlySet<string>,
 ) {
   const rolledBack = new Set(
     history.filter((part) => part.kind === "rollback").flatMap((part) => part.targets.map(partKey)),
   );
-  const effective = history.filter((part) => !rolledBack.has(partKey(part)));
-  const grouped = new Map<string, StoredInversePart[]>();
+  const effective = history.filter((part) => !rolledBack.has(rowKey(part)));
+  const grouped = new Map<string, Row[]>();
   for (const part of effective) {
     if (
       part.kind !== "undo" ||

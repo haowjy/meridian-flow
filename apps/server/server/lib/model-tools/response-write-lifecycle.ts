@@ -14,6 +14,7 @@ import type {
   DocumentRemovalRecord,
   PermissionDeniedReason,
   RetractionCause,
+  TurnInverseSkip,
 } from "@meridian/contracts/protocol";
 import type { RefusedResponseDocument } from "../../domains/collab/index.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
@@ -38,7 +39,7 @@ export interface AgentEditResponseWriteLifecycle {
   rollbackResponse(
     responseIdentity: ModelResponseIdentity,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-  ): Promise<void>;
+  ): Promise<{ skipped: TurnInverseSkip[] }>;
 }
 
 /** A save records each document's frontier, chained from the model's latest one (this lookup). */
@@ -166,7 +167,7 @@ export function createAgentEditResponseWriteLifecycle(
     async rollbackResponse(
       responseIdentity: ModelResponseIdentity,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
-    ): Promise<void> {
+    ): Promise<{ skipped: TurnInverseSkip[] }> {
       const responseId = responseIdentity.editScopeId;
       const result = await deps.documentSync.finalizeResponseRollback(responseIdentity, ctx);
       try {
@@ -174,6 +175,7 @@ export function createAgentEditResponseWriteLifecycle(
       } finally {
         stagedCreates.delete(responseId);
       }
+      return { skipped: result.skipped };
     },
   };
 }
