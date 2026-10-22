@@ -103,7 +103,10 @@ With more than one file, the dock's Apply asks the same question in its footer
    document; Redo restores the prose. After Undo, put another document at that path and press
    Redo: the created document returns at the next free name, which the expanded card reports.
    Then script a whole-document `copy` and, in a later model step, `undo` the copy's path. One
-   Undo removes the copy rather than leaving an empty document; Redo restores its content.
+   Undo removes the copy rather than leaving an empty document; Redo restores its content. Repeat
+   after the writer replaces one of the copy's paragraphs. Undo reports that skipped text part and
+   removes the document as the same edit. Redo restores the document with the writer's paragraph
+   intact and reapplies the text parts Undo removed.
 13. **Draft create is one pending item.** In a draft-mode chat, script a nonempty `create`, then
    an empty `create`. Each turn card counts its created document, and the dock and Work Files list
    both. Undo each card: its draft closes and its row disappears from both lists. Redo creates a

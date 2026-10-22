@@ -300,7 +300,7 @@ describe("model document stack", () => {
 it.each([
   "undo",
   "redo",
-] as const)("model %s refuses changed and elsewhere without touching content", async (direction) => {
+] as const)("model %s follows its edit to the draft and refuses only after none remains", async (direction) => {
   const { harness, view, context, responseId } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -319,8 +319,18 @@ it.each([
     };
     await core.read({ ...command, format: "edits" }, liveContext);
     expect(await core.write({ ...command, command: direction }, liveContext)).toMatchObject({
-      status: `cant_${direction}_elsewhere`,
+      status: "success",
+      result: { destination: "draft", draftWork: "w1" },
     });
+    expect(await view.draftMarkdown(draftId)).toBe(
+      direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
+    );
+    expect(
+      await core.write(
+        { ...command, command: direction === "undo" ? "redo" : "undo" },
+        liveContext,
+      ),
+    ).toMatchObject({ status: "success" });
     await core.read({ ...command, format: "edits" }, context);
     const [documentDraft] = await db
       .select()

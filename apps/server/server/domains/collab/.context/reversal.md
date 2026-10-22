@@ -12,10 +12,13 @@ precedes inverse planning. One action may cover several documents, but each
 inverse edit transitions one target edit and carries restoration aliases.
 Each text step lands where its original did, live or its draft: one turn may
 reverse a document's live and draft text together, each on its own view, inside
-the one ordered stream. The card admits only the (document, branch)
+the one ordered stream. A model Undo or Redo follows its text edit between live
+and the chat's draft instead of using the chat's current write mode; the result
+names the version it followed. It does not cross from one Work's draft into
+another. The card admits only the (document, branch)
 destinations the writer's grants cover (`InverseDestination`); a refused draft
-beside an allowed live edit is left out, not the whole document. The model
-inverts only in the version it writes to.
+beside an allowed live edit is left out, not the whole document. Model Revert
+still writes only in the chat's current version.
 
 Redo is preferred when the latest unconsumed Undo has a reapplicable part;
 otherwise an invertible active part offers Undo. Effective action state is
@@ -25,16 +28,18 @@ impact, and repeated rollback does not append another inverse.
 
 The model owns one strict stack per thread/document. `write undo` and `write
 redo` accept a count; `write revert` creates a new edit at the current
-(destination) view, by Yjs identity only: a part edited since is skipped and
-listed by its 1-based immutable part ordinal and reason, without quoting old or
-current text. The model uses ordinary `read` for the passage; `read(format: "edits")` reads immutable parts through the
-host port. Model actions cannot use a reconstruction endpoint, reversal table,
-or reserved client. A multi-edit Undo is all-or-nothing and Redo restores the
+(destination) view. All three use Yjs identity: a part edited since is skipped
+and listed by its 1-based immutable part ordinal and reason, without quoting old
+or current text. Undo and Redo refuse `cant_*_changed` only when none of a text-only
+edit remains to reverse. The model uses ordinary `read` for the passage;
+`read(format: "edits")` reads immutable parts through the host port. Model actions
+cannot use a reconstruction endpoint, reversal table, or reserved client. A
+multi-edit Undo is all-or-nothing on stack availability, and Redo restores the
 last undone edit first; a count beyond what is available refuses with the
 available count and changes nothing. User-actuated entries refuse model stack
-commands, and a model Undo of a draft edit after the chat's Work moved refuses
-`cant_undo_elsewhere`. A card Undo names and skips a part whose draft was
-discarded (`expired`) or that a later writer edit depends on
+commands, and a model Undo of a draft edit after the chat moved to a different
+Work refuses `cant_undo_elsewhere`. A card Undo names and skips a part whose draft
+was discarded (`expired`) or that a later writer edit depends on
 (`cant_undo_dependent`), and inverts the rest.
 A turn's edit targets include its create transition even when the document is empty. A create
 that Undo removed stays addressable through that immutable target, so Redo can restore it. A draft-scoped

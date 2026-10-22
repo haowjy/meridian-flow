@@ -125,6 +125,19 @@ it.each([
     }
     const text = () => (draft ? view.draftMarkdown(draft.draftId) : harness.liveMarkdown(ALPHA_ID));
     expect(await text()).toBe("gold\n\npink\n\nwhite\n");
+    expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
+      status: "success",
+      result: {
+        message: expect.stringMatching(
+          /undone: e2 \(1 of 2 parts\)\nnot undone: e2 part 1: edited since/,
+        ),
+      },
+    });
+    expect(await text()).toBe("gold\n\npink\n\nblack\n");
+    expect(await core.write({ ...address, command: "redo" }, current)).toMatchObject({
+      status: "success",
+    });
+    expect(await text()).toBe("gold\n\npink\n\nwhite\n");
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
@@ -138,7 +151,7 @@ it.each([
     expect(edits.result.message).toMatch(/e2 {2}this turn {2}changed.*undo: no \(changed\)/);
     expect(edits.result.message).not.toContain("undone by the user");
     expect(await core.write({ ...address, command: "undo" }, current)).toMatchObject({
-      status: "cant_undo_changed",
+      status: destination === "draft" ? "cant_undo_discarded" : "cant_undo_changed",
       result: { message: expect.stringContaining("e2") },
     });
     expect(await text()).toBe("gold\n\npink\n\nblack\n");
