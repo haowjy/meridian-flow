@@ -39,6 +39,7 @@ import type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
 } from "../ports/project-context-availability.js";
+import { survivingDraftDocuments } from "../tree/living-document.js";
 import { readRemovalRecords } from "../tree/removal.js";
 import {
   identityDocumentFields,
@@ -500,6 +501,14 @@ export function createDrizzleProjectContextAvailability(
                 : [],
             ]);
             for (const { id } of shown.flat()) listedInView.add(id);
+            const unlisted = tombstoned.filter((id) => !listedInView.has(id));
+            if (input.admitDrafts && unlisted.length)
+              for (const id of await survivingDraftDocuments(
+                tx,
+                { branchId: view.branchId },
+                unlisted,
+              ))
+                listedInView.add(id);
           }
           const resolutions: ProjectContextIdentityResolution[] = ids.map((documentId) => {
             const row = byId.get(documentId);

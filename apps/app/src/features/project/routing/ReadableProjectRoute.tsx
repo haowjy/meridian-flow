@@ -25,6 +25,7 @@ import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
+import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import {
   type ContextTab,
   getContextTabs,
@@ -455,7 +456,25 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
+  const listedDrafts = useWorkBranchDrafts(projectId, documentDestination ? workId : null);
+  // The list omits an active draft with no effect; the addressed item's own metadata still
+  // says whether live holds its document, so a held no-effect draft keeps its draft-only host.
+  const addressedItem = closeMetadata?.data?.status === "active" ? closeMetadata.data.item : null;
+  const editorDrafts = useMemo(
+    () =>
+      !addressedItem ||
+      (listedDrafts.status !== "ready" && listedDrafts.status !== "empty") ||
+      listedDrafts.files?.some((file) => file.draft.itemKey === addressedItem.itemKey)
+        ? listedDrafts
+        : {
+            ...listedDrafts,
+            files: [
+              ...(listedDrafts.files ?? []),
+              ...projectWorkBranchFiles([addressedItem], null),
+            ],
+          },
+    [listedDrafts, addressedItem],
+  );
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     reviewBoundAddressResult(addressBinding, documentLookup.data),
