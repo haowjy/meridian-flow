@@ -230,9 +230,9 @@ function ActiveSessionEditorView({
       null,
     [linkableDocuments, documentId],
   );
-  // A draft-only document is intentionally absent from the live link index. Its review row is
-  // the authority for its address, while live surfaces continue to follow catalog renames.
-  const holderUri = inReview ? (reviewHolderUri ?? null) : indexedHolderUri;
+  // A draft-only holder takes its address from the review row. An ordinary review can outlive
+  // that row, so its live catalog address remains the fallback and continues to follow renames.
+  const holderUri = reviewHolderUri ?? indexedHolderUri;
   const sharedReferenceCatalog = useReferenceBrowserCatalog(
     active ? projectId : null,
     active ? scope.workId : null,

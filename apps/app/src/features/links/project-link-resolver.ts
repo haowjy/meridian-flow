@@ -57,10 +57,9 @@ export type LinkResolutionScope = {
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
   /**
-   * The document holding the links, when the scope is one document's text.
-   * Its server questions are asked from its address, so until that address
-   * arrives (a new registration) they are not asked at all: a question with
-   * no holder address is chat's, which may fall back to previous locations.
+   * The document holding the links, when the scope is one document's text. The
+   * server pins this identity and its current address; only a relative target
+   * without a base URI remains unasked on the client.
    */
   holderDocumentId?: string | null;
 };

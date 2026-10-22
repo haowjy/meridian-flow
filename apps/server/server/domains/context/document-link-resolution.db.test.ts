@@ -326,6 +326,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         uri: "manuscript://new",
       });
       expect(await r.resolve(input)).toBeNull();
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: r,
+        fileAccess,
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess,
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        branches: { viewForWork: async () => ({ kind: "live" }) },
+      };
+      const routeResolve = (holderDocumentId?: string) =>
+        handleDocumentLinkResolveRequest(deps, {
+          projectId: p,
+          userId: u as never,
+          request: {
+            baseUri: null,
+            ...(holderDocumentId ? { holderDocumentId } : {}),
+            links: [{ ref: null, href: "manuscript://old" }],
+          },
+        });
+      expect((await routeResolve()).answers).toMatchObject([
+        { state: "document", document: { id: targetId } },
+      ]);
+      expect((await routeResolve(crypto.randomUUID())).answers).toEqual([
+        { state: "missing", uri: "manuscript://old" },
+      ]);
+
       const occupant = crypto.randomUUID();
       await db.insert(documents).values({
         id: occupant,

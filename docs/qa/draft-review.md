@@ -54,11 +54,14 @@ than simulating it and calling it integrated. Stop the owned browser and stack.
    and eventually reaches server readback. An unopened, never-synced row offers
    no Discard. A previously synced held room can Discard while offline.
 7. Have a draft-mode reply create a still-hidden document containing an absolute
-   link and a relative link to a live document, plus a link to an unavailable
-   target. Open the document from the reply. Both live links open; the unavailable
-   target reports that it does not exist yet (and offers Create where applicable),
-   never “That link could not be checked.” Confirm each remote check sends the
-   draft holder's document id and its review-row address.
+   link to a live document and a link to an unavailable target. Open the document
+   from the reply. Insert another link to the live document with `@`; confirm its
+   stored destination matches the same `@` insert in that document's live editor,
+   and that it opens. The absolute link also opens; the unavailable target reports
+   that it does not exist yet (and offers Create where applicable), never “That
+   link could not be checked.” Confirm each remote check sends the draft holder's
+   document id and its review-row address. Model-authored relative links arrive
+   absolute, so they do not exercise the holder-relative insertion path.
 
 ## Local Discard and its history
 
