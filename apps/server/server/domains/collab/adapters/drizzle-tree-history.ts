@@ -65,7 +65,7 @@ export function createDrizzleTreeHistory(
 
     async survivingDraftWorks(documentId) {
       const rows = await tx()
-        .selectDistinct({ handle: works.handle })
+        .selectDistinct({ name: works.name })
         .from(documentDrafts)
         .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
         .innerJoin(works, eq(works.id, branches.originWorkId))
@@ -76,10 +76,12 @@ export function createDrizzleTreeHistory(
             eq(documentDrafts.status, "active"),
             eq(documentDrafts.hasEffect, true),
             eq(branches.status, "active"),
+            // No Work's drafts are a chat's own, not a Work's.
             isNotNull(works.handle),
           ),
         );
-      return rows.flatMap((row) => (row.handle ? [row.handle] : [])).sort();
+      // By name, as the model repeats it to the writer, who never sees handles (#914).
+      return rows.map((row) => `Work "${row.name}"`).sort();
     },
 
     async movedAwayFrom(threadId, path) {

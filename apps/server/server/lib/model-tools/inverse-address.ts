@@ -58,7 +58,8 @@ export async function resolveInverseTarget(
   return { address: { documentId: away, uri: canonical, filePath: canonical }, grant };
 }
 
-async function currentUri(call: ToolCall, documentId: DocumentId): Promise<string | null> {
+/** Where a document is now in the call's view, or null when it is nowhere. */
+export async function currentUri(call: ToolCall, documentId: DocumentId): Promise<string | null> {
   const located = await call.context.port.locate(documentId);
   return located.ok ? (located.value?.uri ?? null) : null;
 }
@@ -84,7 +85,7 @@ export async function displacedRefusal(
     command,
     displaced.uri
       ? `A different document is at ${path} now. The one you moved away is at ${displaced.uri}; ${command} it there.`
-      : `A different document is at ${path} now. Ask the user to undo the deletion from your reply's card.`,
+      : `${path} is taken by a different document. Use \`ls\` to check what is there; move or rename it, then \`${command}\` again. If you should not move it, tell the user the location is blocked.`,
     "invalid_write",
     { path },
   );

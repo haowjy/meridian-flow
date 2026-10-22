@@ -45,7 +45,8 @@ executor calls do not silently reapply it; callers must choose the policy seam.
 
 ## Document and cost boundaries
 
-`read` is non-mutating; all `write` commands mutate through agent-edit. Source
+`read` is non-mutating; `write`'s text commands mutate through agent-edit (`move` and
+`delete` are host commands, below), and every result renders through it. Source
 text for copy/insert/replace is read as nodes and never passes through model
 text. File destinations and grants come from file-policy, and all document
 results use the typed agent-edit contract. `ls`, `search`, and `work` return

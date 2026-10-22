@@ -198,7 +198,7 @@ export type AgentTreeHistory = {
   }): Promise<{ handle: string }>;
   /** The document's live state now, as a tree entry records it; null while it is hidden. */
   liveState(documentId: DocumentId): Promise<import("@meridian/contracts").LiveTreeState | null>;
-  /** The Works (by handle) whose active drafts of a document still change it (D79). */
+  /** The Works (`Work "‹name›"`) whose active drafts of a document still change it (D79). */
   survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
   /** The document this chat's latest move or delete took away from `path`, if any. */
   movedAwayFrom(threadId: ThreadId, path: string): Promise<DocumentId | null>;

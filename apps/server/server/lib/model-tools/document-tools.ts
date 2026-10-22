@@ -57,7 +57,7 @@ import {
   keptDraftReader,
   removalBehind,
 } from "./file-access.js";
-import { displacedRefusal, resolveInverseTarget } from "./inverse-address.js";
+import { currentUri, displacedRefusal, resolveInverseTarget } from "./inverse-address.js";
 import { runNamespaceCommand } from "./namespace-commands.js";
 import { readDocument } from "./read-document.js";
 import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
@@ -439,7 +439,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         );
     if (isToolError(address)) return address;
 
-    const outcome = await writeUnderGrant(
+    let outcome = await writeUnderGrant(
       deps,
       principal,
       parsed,
@@ -459,6 +459,12 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     ) {
       const displaced = await displacedRefusal(deps, call, parsed.command, address, ctx.threadId);
       if (displaced) return displaced;
+    }
+    // A reversed move left the document somewhere else: the result names where it is now.
+    if (inverse && !outcome.isError && outcome.result.status === "success") {
+      const now = await currentUri(call, address.documentId);
+      if (now && now !== outcome.result.path)
+        outcome = { ...outcome, result: { ...outcome.result, path: now } };
     }
     const stagedCreate =
       creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
