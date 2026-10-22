@@ -244,8 +244,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const ch1 = await scenario.seedLive("book/ch1");
       const ch2 = await scenario.seedLive("book/ch2");
       const ch3 = await scenario.seedLive("ch3");
-      // A taken name in the branch's view refuses; once vacated, it takes it.
-      expect(await move(ch1, "book/ch2")).toMatchObject({ ok: false, error: { code: "conflict" } });
+      // A taken name in the branch's view lands beside it; once vacated, the exact name is free.
+      expect(await move(ch1, "book/ch2")).toMatchObject({
+        ok: true,
+        value: { after: { moved: { name: "ch2 (2)" } } },
+      });
       expect((await move(ch2, "book/ch2b")).ok).toBe(true);
       expect((await move(ch1, "book/ch2")).ok).toBe(true);
       expect(await shownAt("book/ch1")).toBe("not_found");
@@ -450,10 +453,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toMatchObject({ kind: "hidden", branch: { branchId: first.id } });
 
       // Tree state: every item at its row's location.
-      const liveIntro = await scenario.seedLive("intro");
+      await scenario.seedLive("intro");
       const intro = await scenario.seedHidden(ascension, "intro");
       const coast = await scenario.seedHidden(ascension, "maps/coast");
-      const maps = await scenario.seedLive("maps");
+      await scenario.seedLive("maps");
       const chapter = await scenario.seedHidden(ascension, "chapters/one");
       await reveal(chapter, ["chapters"]);
       await db.update(documents).set({ name: "chapter-one" }).where(eq(documents.id, chapter));
@@ -487,17 +490,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         target: { path: "world/harbor" },
         conflict: { kind: "none" },
       });
-      expect(state.get(intro)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: liveIntro },
-        at: "intro",
-        uri: "manuscript://intro",
+      expect(state.get(intro)).toMatchObject({
+        target: { path: "intro (2)", uri: "manuscript://intro (2)" },
+        conflict: { kind: "none" },
       });
-      expect(state.get(coast)?.conflict).toEqual({
-        kind: "clash",
-        withNode: { kind: "document", id: maps },
-        at: "maps",
-        uri: "manuscript://maps",
+      expect(state.get(coast)).toMatchObject({
+        target: { path: "maps (2)/coast", uri: "manuscript://maps (2)/coast" },
+        conflict: { kind: "none" },
       });
       expect(state.get(chapter)).toMatchObject({
         hidden: false,
