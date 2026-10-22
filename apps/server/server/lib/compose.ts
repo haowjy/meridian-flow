@@ -400,6 +400,11 @@ export type ProductionAppPorts = {
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
+  /**
+   * The write tool also parses commands the model isn't shown yet (D66): only for scripted mock
+   * replies and probes, never a real model. Phase F of PR 3 deletes it.
+   */
+  internalWriteSurface: boolean;
   mockModelScript: MockScriptQueue | null;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
@@ -428,6 +433,8 @@ export async function createProductionAppPorts(input: {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
+  /** Defaults to whether the scripted mock model is configured. */
+  internalWriteSurface?: boolean;
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
@@ -721,6 +728,7 @@ export async function createProductionAppPorts(input: {
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
     mockModelScript: debugPaths ? (mockScript ?? null) : null,
+    internalWriteSurface: input.internalWriteSurface ?? (debugPaths && mockScript != null),
     objectStore,
     localObjectStore,
     uploadIntake,
@@ -846,7 +854,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     shownLinks: ports.shownLinks,
     documentRemovals: ports.documentRemovals,
   };
-  for (const registration of createModelToolRegistrations(coreToolDeps)) {
+  for (const registration of createModelToolRegistrations(coreToolDeps, {
+    internalWriteSurface: ports.internalWriteSurface,
+  })) {
     toolRegistry.register(registration);
   }
   for (const registration of createInspectionToolRegistrations({

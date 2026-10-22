@@ -283,16 +283,15 @@ function branch<Target extends z.ZodRawShape, Fields extends z.ZodRawShape, Comm
     .describe(spec.description);
 }
 
-function mutationBranches<Target extends z.ZodRawShape>(target: Target) {
+function mutationBranches<Target extends z.ZodRawShape>(
+  target: Target,
+  descriptions: Partial<Record<keyof typeof MUTATION_BRANCHES, string>> = {},
+) {
   const of = <Command extends keyof typeof MUTATION_BRANCHES>(command: Command) =>
-    branch(
-      command,
-      target,
-      MUTATION_BRANCHES[command] as {
-        description: string;
-        fields: (typeof MUTATION_BRANCHES)[Command]["fields"];
-      },
-    );
+    branch(command, target, {
+      description: descriptions[command] ?? MUTATION_BRANCHES[command].description,
+      fields: MUTATION_BRANCHES[command].fields as (typeof MUTATION_BRANCHES)[Command]["fields"],
+    });
   return [
     of("create"),
     of("copy"),
@@ -376,12 +375,31 @@ export const WriteToolInputSchema = z
   ])
   .superRefine((value, ctx) => refineMutation(value, ctx, "path"));
 /**
- * What the model is shown of `write` until drafted `move` and `delete` land: neither reaches
- * the model before both work in draft mode too (D66). PR 3's phase F deletes this, and the
- * tool publishes `WriteToolInputSchema`.
+ * The model's `write` until drafted `move` and `delete` land: neither command, nor any
+ * description naming one, reaches the model before both work in draft mode too (D66). The tool
+ * publishes this and validates the model's calls against it; only an internal surface (scripted
+ * mock replies, probes) parses `WriteToolInputSchema`. PR 3's phase F deletes this and its
+ * descriptions, and the tool publishes `WriteToolInputSchema`.
  */
 export const PublishedWriteToolInputSchema = z
-  .discriminatedUnion("command", mutationBranches(WRITE_TARGET))
+  .discriminatedUnion(
+    "command",
+    mutationBranches(
+      {
+        path: z
+          .string()
+          .min(1)
+          .describe(
+            "The document this command creates or changes: a path or context URI, optionally with `#heading-slug` for one section. " +
+              DOCUMENT_NAMES_DESCRIPTION,
+          ),
+      },
+      {
+        remove:
+          "Remove the blocks selected by `in` or a `#heading-slug` in `path`. No command deletes a whole document: if asked to, tell the user you can't, and don't empty it.",
+      },
+    ),
+  )
   .superRefine((value, ctx) => refineMutation(value, ctx, "path"));
 
 export type ReadCommand = z.infer<typeof ReadCommandSchema>;

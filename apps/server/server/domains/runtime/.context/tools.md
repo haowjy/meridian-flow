@@ -59,7 +59,9 @@ handles select edits, and the command is all-or-nothing. `write move` and
 they run at the call through the live port, record a tree entry on the
 document's stack inside the mutation's own transaction, and mark the reply's
 scope as having writes (`treeWrite`), so a later save boundary rotates it. Until
-drafted placement lands, the published schema omits both (D66). A path no
+drafted placement lands, the published schema omits both and a real model's calls
+validate against it (D66); `internalWriteSurface` (the scripted mock model's
+composition and the composed-runtime tests) parses the full input. A path no
 visible document holds names, for undo/redo/revert only, the document this
 chat's latest move or delete took away from it (`inverse-address.ts`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.

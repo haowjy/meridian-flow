@@ -55,8 +55,10 @@ by a Discard throws `DocumentAccessLostError(reason)`, refused the same way.
 (`WriteToolInputSchema`) but not the engine's `WriteCommandSchema`: they change where a
 document lives, so the host runs them and reports them through the same envelope, with a
 `namespace` fact (`moved from …`, `deleted`) and a typed `refusal` when refused. Neither path
-takes a `#fragment`. Until both work in draft mode too (D66), the tool publishes
-`PublishedWriteToolInputSchema`, which omits them; PR 3's drafted phase deletes it.
+takes a `#fragment`. Until both work in draft mode too (D66), the tool publishes and validates
+`PublishedWriteToolInputSchema`, which omits them and every description naming them (`remove`
+keeps its pre-PR copy); only the host's internal surface for scripted mock replies and probes
+parses `WriteToolInputSchema`. PR 3's phase F deletes both.
 
 ## Mutation and selector contracts
 

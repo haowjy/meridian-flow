@@ -216,7 +216,14 @@ function documentExecutionError(command: (error: ToolExecutionError) => AgentEdi
     });
 }
 
-export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolRegistration[] {
+/**
+ * `internalWriteSurface` makes `write` parse the commands the model isn't shown yet (D66): for
+ * scripted mock replies and probes only. A real model's calls validate against what it is shown.
+ */
+export function createCoreToolRegistrations(
+  handlers: CoreToolHandlers,
+  options: { internalWriteSurface?: boolean } = {},
+): ToolRegistration[] {
   return [
     {
       source: "core",
@@ -251,7 +258,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
           "Change documents. In draft mode your changes to a document go to its draft, except `scratch://`, which is always edited directly.",
         inputSchema: modelToolSchema(PublishedWriteToolInputSchema),
       },
-      input: WriteToolInputSchema,
+      input: options.internalWriteSurface ? WriteToolInputSchema : PublishedWriteToolInputSchema,
       execution: { type: "server", handler: handlers.write },
       documentText: writeDocumentText,
       historySummary: documentHistorySummary,
