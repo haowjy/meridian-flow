@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Applying one draft change no longer closes the desktop change list or phone Changes sheet while other changes remain.
+- Applying one draft change no longer closes the desktop change list or phone Changes sheet while other changes remain, and its progress line no longer replaces those rows.
 
 - Model-facing owner-handle guidance is shorter: Work context now carries the concrete Scratch policy, repair errors give one copyable address, and repeated owner details are removed from receipts and listings.
 

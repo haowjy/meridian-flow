@@ -1,4 +1,4 @@
-/** The document's change rows, shared by the popover and phone sheet. Completion lives in the review header; the list closes after the last change. */
+/** The document's change rows and trailing command status, shared by the popover and phone sheet. The list closes after the last change. */
 import { t } from "@lingui/core/macro";
 import { DocumentChangeRows } from "./DocumentChangeRows";
 import { ReviewStatusContent } from "./ReviewCompletion";
@@ -37,14 +37,16 @@ export function DocumentChanges({
   };
 
   return (
-    <DocumentChangeRows
-      view={view}
-      touch={touch}
-      standIn={view.status === "loading" ? null : stateLine()}
-      onSelect={(change) => {
-        onFocused?.();
-        view.focus(change, { scroll: true });
-      }}
-    />
+    <>
+      <DocumentChangeRows
+        view={view}
+        touch={touch}
+        onSelect={(change) => {
+          onFocused?.();
+          view.focus(change, { scroll: true });
+        }}
+      />
+      {view.status === "loading" ? null : stateLine()}
+    </>
   );
 }
