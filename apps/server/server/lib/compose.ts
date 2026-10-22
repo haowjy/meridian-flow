@@ -1376,6 +1376,9 @@ export function createInMemoryAppServices(): AppServices {
     threadRepos,
     repos: threadRepos,
     journalReader: {
+      async lastSeqBefore() {
+        return 0n;
+      },
       async readAfter() {
         return [];
       },
