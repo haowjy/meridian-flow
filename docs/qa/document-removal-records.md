@@ -237,7 +237,12 @@ otherwise, A's tabs are live tabs.
   document now has this name, and Apply all is not offered. Opening that
   draft from the row still opens it draft-only, and the editor line names both
   the delete and the taken name (the list item's `deletedLive` is independent
-  of `conflict`).
+  of `conflict`). The editor's change bar offers only Discard there.
+  A draft left with no changes (apply its only change from the editor, so the
+  list is empty) whose document is then deleted from another device keeps its
+  tab on the draft, across a reload too, and typing in it lists the document
+  again as deleted: the review address resolves through the draft
+  (`admitDrafts`), while a path still finds the document gone.
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
   ms and typing saves. A second stale 4208 on the same tab reconnects too.
