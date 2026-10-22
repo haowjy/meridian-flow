@@ -15,7 +15,6 @@ import type {
   JsonValue,
   PriceSource,
   ThreadActivity,
-  ThreadPendingInbox,
   ThreadStatus,
   Turn,
 } from "./index.js";
@@ -23,6 +22,7 @@ import type {
   PrefixCachePredictionReason,
   PrefixCachePredictionState,
 } from "./prefix-cache-prediction.js";
+import type { RunState } from "./run-state.js";
 
 export interface ModelResponseReceivedRow {
   id: string;
@@ -183,11 +183,28 @@ export type OrchestratorEvent =
       activity: ThreadActivity;
     }
   | {
-      type: "inbox.changed";
-      /** Thread whose pending inbox changed. */
+      /** Waiting writer messages left the chat; their turns stay in the database but no conversation read returns them. */
+      type: "messages.handed_back";
+      userTurnIds: string[];
+      /** The hand-back request that took them out. */
+      requestId: string;
+    }
+  | {
+      /**
+       * Failed turns left the conversation, stamped with the turn that retried them or moved the chat
+       * past them. Their rows, blocks and journal entries stay for diagnostics.
+       */
+      type: "turns.forgotten";
+      turnIds: string[];
+      /** The first closing row appended in the commit that forgot them. */
+      byTurnId: string;
+      reason: "retried" | "forgotten";
+    }
+  | {
+      type: "run_state.changed";
       threadId: string;
-      /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
-      pending: ThreadPendingInbox;
+      /** The record without its version: the journal row's own seq is the version. */
+      runState: Omit<RunState, "version">;
     }
   | {
       /** Ephemeral full status refresh when non-lease background work starts or settles. */

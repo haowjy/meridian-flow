@@ -29,6 +29,10 @@ scarce seal, not routine selection. The app library and creation form use the
 same roles as the project workspace. Shell separation is tonal, not a stack of
 structural borders or shadows.
 
+On shelf rows, the row hover uses `shelf-hover`; the quiet action button's
+full accent uses `shelf-active`. Keep these distinct so an ellipsis remains a
+visible target when its enclosing row is hovered.
+
 Dark mode is a shipped alternate palette selected by `data-ui-theme="dark"`.
 The default light palette has no theme attribute. The device-local preference
 is set before paint by `src/lib/ui-theme.ts` and changed from Settings →

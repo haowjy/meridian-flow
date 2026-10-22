@@ -2,9 +2,10 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
+import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { writeMarkdown } from "../collab/test-support/bound-writes.js";
 import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
+import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -40,7 +41,9 @@ else
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       domain.bindHocuspocus(
         new Hocuspocus({
@@ -56,7 +59,9 @@ else
         ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
+        ...createTestRemovalDeps(db),
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -66,7 +71,7 @@ else
       domain.bindHocuspocus(hocuspocus);
       return { domain, hocuspocus };
     }
-    it("converges project, manuscript, locked No Work, and No Work uploads without a thread", async () => {
+    it("converges project, manuscript and locked No Work, with no uploads source and no thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
@@ -99,7 +104,7 @@ else
       expect(workRows).toEqual([
         expect.objectContaining({
           isNoWork: true,
-          slug: null,
+          handle: null,
           name: "No Work",
           status: null,
         }),
@@ -115,12 +120,7 @@ else
         .from(schema.contextSources)
         .where(eq(schema.contextSources.workId, noWorkId));
       expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
-      expect(workSources).toEqual(
-        expect.arrayContaining([
-          { slug: "uploads", workId: noWorkId, scope: "work", projectId: null },
-        ]),
-      );
-      expect(workSources).toHaveLength(1);
+      expect(workSources).toEqual([]);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
       expect(docs[0]).toMatchObject({ name: "Chapter 1", extension: "", fileType: "markdown" });
@@ -139,7 +139,7 @@ else
       await expect(
         runInDrizzleTransaction(db, () =>
           store.transaction(async () => {
-            await store.createFolder(null, "rolled-back");
+            await store.ensureFolderPath(["rolled-back"]);
             throw new Error("rollback");
           }),
         ),
@@ -150,7 +150,7 @@ else
           .from(schema.contextSources)
           .where(eq(schema.contextSources.projectId, projectId)),
       ).resolves.toEqual([]);
-      await expect(store.createFolder(null, "retry")).resolves.toBeDefined();
+      await expect(store.ensureFolderPath(["retry"])).resolves.toBeDefined();
     });
 
     it("rolls back interrupted materialization and provisions cleanly on retry", async () => {
@@ -161,11 +161,15 @@ else
         documents: {
           ...domain,
           createDocumentAtomically(input) {
-            interruptedDocumentId = input.documentId;
             return domain.createDocumentAtomically({
               ...input,
-              async initializeContent() {
-                await input.initializeContent();
+              async persistIdentity() {
+                const documentId = await input.persistIdentity();
+                interruptedDocumentId = documentId ?? undefined;
+                return documentId;
+              },
+              async initializeContent(documentId) {
+                await input.initializeContent(documentId);
                 throw new Error("simulated interruption");
               },
             });
@@ -191,28 +195,6 @@ else
       await expect(domain.readAsMarkdown(repaired.documentId)).resolves.toEqual({
         ok: true,
         value: "# Chapter 1\n",
-      });
-    });
-
-    it("repairs manifest membership without replacing writer content", async () => {
-      const documents = collab();
-      const repository = createDrizzleProjectBootstrapRepository({ db, documents });
-      const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      await writeMarkdown(documents, {
-        documentId: first.documentId,
-        markdown: "Durable writer draft\n",
-        origin: { type: "user", actorUserId: USER_ID as never },
-      });
-      await documents.recordManifestDocumentDeleted(first.documentId, {
-        projectId: first.projectId,
-      });
-      await repository.ensureDefaultBootstrap(USER_ID as never);
-      await expect(
-        documents.resolveManifestMembership({ projectId: first.projectId }),
-      ).resolves.toMatchObject({ members: [first.documentId] });
-      await expect(documents.readAsMarkdown(first.documentId)).resolves.toEqual({
-        ok: true,
-        value: "Durable writer draft\n",
       });
     });
 

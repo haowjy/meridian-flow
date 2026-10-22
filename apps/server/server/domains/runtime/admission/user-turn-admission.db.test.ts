@@ -74,7 +74,7 @@ if (!RUN) {
         projectId: PROJECT,
         createdByUserId: USER,
         name: "Admission Work",
-        slug: "admission-work",
+        handle: "w1",
       });
       await firstDb.insert(schema.threadWorks).values({
         threadId: THREAD,
@@ -89,7 +89,7 @@ if (!RUN) {
     });
 
     async function seedUpload(documentId: string, suffix: string) {
-      const uri = `uploads://@/map-${suffix}.png`;
+      const uri = `uploads://@c1/map-${suffix}.png`;
       await firstDb.insert(schema.documents).values({
         id: documentId as never,
         contextSourceId: SOURCE,
@@ -102,6 +102,7 @@ if (!RUN) {
         projectId: PROJECT,
         intakeId: `intake-${suffix}`,
         actorUserId: USER,
+        ownerThreadId: THREAD,
         contextSourceId: SOURCE,
         documentId: documentId as never,
         fingerprint: `upload-${suffix}`,
@@ -111,7 +112,6 @@ if (!RUN) {
         finalPath: `map-${suffix}.png`,
         objectKey: `uploads/${PROJECT}/${documentId}`,
         fileType: "png",
-        canonicalUri: uri,
         locationRevision: crypto.randomUUID(),
         state: "finalized",
       });
@@ -151,7 +151,7 @@ if (!RUN) {
                     kind: "work",
                     projectId: PROJECT,
                     workId: "00000000-0000-4000-8000-000000000f70",
-                    workSlug: null,
+                    workHandle: null,
                   },
                   entry: {
                     observationVersion: "1",
@@ -195,7 +195,9 @@ if (!RUN) {
           turns: repos.turns,
           delivery,
           records,
-          consumeUploads: (documentIds) => uploadIntake.consume(documentIds),
+          async consumeUploads(documentIds) {
+            await uploadIntake.consume(documentIds, THREAD);
+          },
           async attachDocument(threadId, documentId, relationship) {
             const attached = await repos.threadDocuments.attach(
               threadId as never,
@@ -249,7 +251,8 @@ if (!RUN) {
         projectId: PROJECT,
         name: "Uploads",
         slug: "uploads",
-        scope: "project",
+        scope: "chat",
+        chatThreadId: THREAD,
       });
       const uri = await seedUpload(DOCUMENT, "commit");
       const rollbackUri = await seedUpload(ROLLBACK_DOCUMENT, "rollback");
@@ -283,8 +286,8 @@ if (!RUN) {
           {
             documentId,
             uri: referenceUri,
-            purpose: "draft-upload" as const,
-            intakeId: `intake-${documentId === DOCUMENT ? "commit" : "rollback"}`,
+            // A picked file, not the attach door: consumption follows the admitted reference.
+            purpose: "reference" as const,
           },
         ],
       });
@@ -351,7 +354,7 @@ if (!RUN) {
         expect.objectContaining({
           threadId: THREAD,
           documentId: DOCUMENT,
-          relationship: "created",
+          relationship: "reading",
         }),
       ]);
       await expect(firstDb.select().from(schema.uploadIntakes)).resolves.toEqual(
@@ -421,7 +424,7 @@ if (!RUN) {
         threadId: THREAD,
         submissionId: "submission",
         userTurnId: "00000000-0000-4000-8000-000000000f54" as never,
-        assistantTurnId: "00000000-0000-4000-8000-000000000f55" as never,
+        runStateVersion: null,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "4",
       };
@@ -466,7 +469,7 @@ if (!RUN) {
             threadId: THREAD,
             submissionId: "late",
             userTurnId: "00000000-0000-4000-8000-000000000f56" as never,
-            assistantTurnId: "00000000-0000-4000-8000-000000000f57" as never,
+            runStateVersion: null,
             resumeAfterSeq: "0",
             snapshotFloorNextSeq: "4",
           },
@@ -512,7 +515,11 @@ if (!RUN) {
         },
       });
       const remoteOwnership = createDrizzleRunClaim(secondDb);
-      const liveClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
+      const liveClaim = await remoteOwnership.startExecution(
+        THREAD,
+        crypto.randomUUID(),
+        async () => {},
+      );
       expect(liveClaim).not.toBeNull();
       try {
         await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
@@ -528,7 +535,11 @@ if (!RUN) {
       ).rejects.toMatchObject({ code: "idempotency_conflict" });
       expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
       expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-      const releasedClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
+      const releasedClaim = await remoteOwnership.startExecution(
+        THREAD,
+        crypto.randomUUID(),
+        async () => {},
+      );
       expect(releasedClaim).not.toBeNull();
       if (releasedClaim) await remoteOwnership.release(releasedClaim);
     });

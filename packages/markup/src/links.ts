@@ -10,6 +10,7 @@ export {
   type FreshAssignment,
   type HolderCatalog,
   type HolderLinkScope,
+  qualifyWrittenHref,
   UNSPELLED_UPLOAD,
   type WrittenGrammar,
   writtenAddresses,
@@ -24,3 +25,4 @@ export {
   spelledLinks,
   walkLinkOccurrences,
 } from "./link-occurrences.js";
+export { formatMarkdownLink, markdownLinkDestination } from "./markdown/marks/link.js";

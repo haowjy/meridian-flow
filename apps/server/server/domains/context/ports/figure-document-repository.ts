@@ -1,5 +1,7 @@
 import type { BinaryDocumentFileType } from "@meridian/contracts/protocol";
 
+import type { TreeView } from "../tree/tree-view.js";
+
 export interface DocumentFileRecord {
   assetDocumentId: string;
   storageUrl: string;
@@ -17,5 +19,6 @@ export interface FigureDocumentRepository {
   findDocumentFileForProject(
     projectId: string,
     assetDocumentId: string,
+    view?: TreeView,
   ): Promise<DocumentFileRecord | null>;
 }

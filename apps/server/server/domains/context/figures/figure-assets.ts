@@ -46,7 +46,10 @@ export interface UploadFigureAssetInput {
   caption?: string | null;
 }
 
+import type { TreeView } from "../tree/tree-view.js";
+
 export interface GetFigureSignedUrlInput {
+  view?: TreeView;
   projectId: string;
   assetDocumentId: string;
 }
@@ -315,6 +318,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
         record = await options.documents.findDocumentFileForProject(
           input.projectId,
           input.assetDocumentId,
+          input.view,
         );
       } catch (error) {
         return err("repository_error", errorMessage(error, "Failed to read document file"));

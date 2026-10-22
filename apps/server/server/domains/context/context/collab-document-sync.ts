@@ -16,6 +16,8 @@ import type {
   BoundWrite,
   DocumentSeedOrigin,
   DocumentWriteOrigin,
+  HeldLiveDocument,
+  HeldWriteExpectation,
   MarkdownDocumentStore,
   SyncError,
 } from "../../collab/index.js";
@@ -120,4 +122,34 @@ export async function writeCollabMarkdown(input: {
   const readBack = await documentSync.readAsMarkdown(documentId);
   if (!readBack.ok) return { ok: false, error: syncFault(readBack.error) };
   return { ok: true, markdown: readBack.value, updateSeq: write.value?.updateSeq };
+}
+
+/**
+ * A revealed document's first content (contract §6.3 B3), inside the reveal's command
+ * transaction and under the live lease the caller took before it: journaled durably with
+ * the reveal, applied to the warm room only after commit.
+ */
+export async function writeCollabMarkdownHeld(input: {
+  documentSync: Pick<MarkdownDocumentStore, "writeDocumentHeld">;
+  held: HeldLiveDocument;
+  content: BoundWrite;
+  expected: HeldWriteExpectation;
+  provenance?: WriteProvenance;
+}): Promise<CollabMarkdownResult> {
+  const { provenance } = input;
+  const origin =
+    (provenance && provenanceToWriteOrigin(provenance)) ?? provenanceToSeedOrigin(provenance);
+  try {
+    const written = await input.documentSync.writeDocumentHeld({
+      held: input.held,
+      content: input.content,
+      expected: input.expected,
+      origin,
+      threadId: threadIdFromProvenance(provenance),
+    });
+    if (!written.ok) return { ok: false, error: syncFault(written.error) };
+    return { ok: true, markdown: written.value.markdown, updateSeq: written.value.updateSeq };
+  } catch (error) {
+    return { ok: false, error: thrownFault(error) };
+  }
 }

@@ -73,6 +73,7 @@ function fixture() {
       threadId: "chat",
       projectId: "project",
       createdAt: "2026-10-11",
+      seq: 1,
       draft: snapshot("Make the elder colder"),
     },
   ];
@@ -80,12 +81,16 @@ function fixture() {
   target.prependSnapshots([snapshot("Existing writing")]);
   let visible = true;
   let left: boolean | undefined;
+  let forgotten = 0;
   const ports: DeletedChatPorts = {
     current: () => true,
     records: () => records,
     retire: (id) => {
       records = records.filter((row) => row.recordId !== id);
       return true;
+    },
+    forgetOrder: () => {
+      forgotten += 1;
     },
     draft: (_account, scope) => (scope.kind === "chat" ? source : target),
     surfaces: () => [
@@ -106,6 +111,7 @@ function fixture() {
     target,
     records: () => records,
     left: () => left,
+    forgotten: () => forgotten,
     hide: () => {
       visible = false;
     },
@@ -117,12 +123,13 @@ it("moves the shown failed row and box ahead of New chat with a reload-safe note
   const f = fixture();
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "Make the elder colder\nAnd quieter\nExisting writing",
+    "Make the elder colder\n\nAnd quieter\n\nExisting writing",
   );
   expect(f.target.notices).toEqual([{ threadId: "chat", title: "Arc 2 notes", count: 2 }]);
   expect(f.records()).toEqual([]);
   expect(f.source.initialDraft).toBeNull();
   expect(f.left()).toBe(true);
+  expect(f.forgotten()).toBe(1);
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(f.target.notices).toHaveLength(1);
   const reloaded = f.reload();
@@ -211,7 +218,7 @@ it("the accepted two-tab rough edge still moves the other tab's own box", async 
   for (const row of f.records()) f.ports.retire(row.recordId);
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
-    "And quieter\nExisting writing",
+    "And quieter\n\nExisting writing",
   );
   expect(f.target.notices[0]?.count).toBe(1);
 });

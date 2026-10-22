@@ -1,244 +1,114 @@
-# lib — composition root & route-adjacent infrastructure
+# lib — composition root and route-adjacent infrastructure
 
-**The wiring/glue layer.** Not a domain. `lib/` assembles domain adapters into a
-running Nitro service, provides the auth seam that gates every route and WS
-upgrade, and houses WS handlers that bridge peers to the ThreadEventHub and Yjs
-collaboration. Concrete adapters are chosen in `compose.ts`; nothing in
-`domains/` depends back on `lib/`.
+`lib/` wires domain ports into Nitro, owns auth and route/WS adapters, and
+provides no domain implementation. Concrete adapters are chosen in `compose.ts`;
+`domains/` must not import back into `lib/`.
 
-## Composition / app assembly
+## Composition
 
-| File | Role |
-|---|---|
-| `env.ts` | Typed env schema via `@t3-oss/env-core` + zod. Single source of truth for server env vars. |
-| `db.ts` | Singleton Drizzle `PostgresJsDatabase` client, lazily created from `DATABASE_URL`. |
-| `event-sink-factory.ts` | Env-driven observability adapter factory (`local` stdout + optional JSONL, or no-op); composition also exposes the recent-event query port when the debug gate (`APP_DEBUG`) is open. |
-| `observability.ts` | Process-scoped deferred EventSink; startup binds the concrete sink before validation/logging. |
-| `object-store-factory.ts` | Env-driven object-store adapter factory. |
-| `compose.ts` | `AppServices` type, production adapter-port construction, pure runtime service wiring, and in-memory stub factory for tests/dev. |
-| `app.ts` | App singleton. `getApp()` caches `AppServices` on `Symbol.for("meridian.app.v1")`, gets the DB/process sink, builds production ports, and calls `composeAppServices()`. |
+`app.ts` owns the process singleton and binds the deferred EventSink and DB.
+`compose.ts` constructs production adapters and the typed `AppServices` graph;
+`composeAppServices()` is pure service wiring. In-memory composition supplies
+explicit test adapters and the same hub aliases as production. Adapter choice,
+provider configuration, and disabled behavior stay at this boundary.
 
-### Wiring location
+The live hub is process-local even though journal rows are durable. The app
+singleton keeps one `AppServices` instance across hot reload, and `hub` and
+`threadEventHub` are the same alias in production and test composition.
 
-Production wiring is split by side-effect boundary:
+The service graph includes runtime Gateway/orchestrator/runner/claim/tools,
+thread repositories/journal/hub/runtime, collab document sync, context ports,
+projects/works, billing ledger, immutable Agent revisions and skill installs,
+preferences/account settings, observability sink/query, object storage,
+interrupts, and model-request debug. Every slot is explicit; no domain falls
+back to a process global.
 
-1. `app.ts` owns the process singleton edge: DB lookup, process EventSink binding/reuse,
-   and global hot-reload-safe caching.
-2. `createProductionAppPorts()` in `compose.ts` constructs concrete adapters and
-   env-driven provider ports: Drizzle repositories, event journal, object store,
-   document sync, context port factory, Agent revision store/package fetcher/seeder,
-   preferences, projects/works/users, billing, model gateway, model-request debug,
-   upload/figure/result services, and file access (the file policy).
-3. `composeAppServices()` in `compose.ts` is pure service graph wiring: it builds
-   the ThreadEventHub, interrupt registry, tool registry/executor, late-bound
-   turn runner, child-run coordinator, orchestrator, `threadRuntime`, and explicit
-   `repos`/`hub` aliases.
-4. `createInMemoryAppServices()` is test/dev composition with explicit stubs and
-   no-op observability. `hub` and `threadEventHub` are the same object so copied
-   route/lib code sees the same alias shape as production.
+Run preparation uses one composed session registry for writer and child runs.
+Child invocation closes over the composed runtime; no second event driver or
+bindable proxy exists. Detached work uses the shared tracker.
 
-### Shared run preparation
+## Auth, ownership, and tools
 
-`createOrchestrator` composes the model loop with one run-session registry.
-The writer wake/cancel facade is that same object. Child invocation supplies a
-`prepare` callback that closes over the composed runtime; there is no bindable
-proxy or second event driver. Activity refresh callbacks cover both writer and
-child sessions at admission and after release.
+`auth-gate.ts` composes WorkOS session validation, user provisioning, and app
+services. Route code authenticates first, then uses domain-owned
+`requireProjectOwner`/`requireThreadOwner`; document routes and Yjs rooms ask
+file-policy for the per-resource grant. `lib` adapts these contracts but does
+not own authorization.
 
-### `AppServices` slots
+Runtime tool definitions and policy live in `domains/runtime`; `lib/model-tools`
+binds context, collab, file-policy, and thread services. Document writes pass
+through file grants and `@meridian/agent-edit`; URI parsing and document-row
+creation remain server-side. `write move` and `write delete` change where a whole
+document lives, so the host runs them through the live context port
+(`namespace-commands.ts`) and records their tree entry in collab's edit history
+inside the mutation's own transaction. Tool handlers return the typed agent-edit result,
+and model renderers never replace the persisted typed result. Context-backed
+handlers resolve one unified `ContextPort` per call.
 
-`compose.ts` defines the canonical `AppServices` type. Every domain port is
-represented as a fully-typed slot:
+## HTTP and WebSocket seams
 
-| Slot | Domain | Production adapter |
-|---|---|---|
-| `gateway` | runtime | Env-driven Anthropic/OpenAI gateway |
-| `threadRepos` | threads | Drizzle (turns, blocks, model responses, threads) |
-| `journalReader` | threads | Drizzle event journal read |
-| `journalWriter` | threads | Drizzle event journal append |
-| `threadEventHub` | threads | In-memory pub/sub over journal |
-| `threadRuntime` | threads | Thread ownership + message dispatch |
-| `documentSync` | collab | Drizzle Yjs document persistence |
-| `contextPorts` | context | Drizzle-backed context reader/writer |
-| `projects` | projects | Drizzle project repository |
-| `works` | projects | Drizzle work repository |
-| `creditLedger` | billing | Drizzle credit lot/transaction ledger |
-| `agentRevisions` | packages | Immutable Agent source/definition revisions, catalog membership, and thread bindings |
-| `accountSkillInstalls` | packages | Account-owned skill installs (unique per owner and slug) |
-| `interruptRegistry` | runtime | In-memory interrupt registry |
-| `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
-| `eventQuery` | observability | Optional recent-event query port, present only when the debug gate is open |
-| `preferences` | preferences | Drizzle project runtime preferences repository |
-| `accountSettings` | preferences | Atomic account settings repository over user preferences and working-set sync |
-| `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
-| `runner` | runtime | `TurnRunner` with child-run registry |
-| `stopThreadRun` | runtime | One composed running-turn lookup and runner-cancel policy used by Work lifecycle routes and tools |
-| `toolRegistry` | runtime | Name-keyed tool registration map |
-| `toolExecutor` | runtime | Dispatches tool calls to registered handlers |
-| `modelRequestDebug` | runtime | In-memory capture when the debug gate is open, noop otherwise |
-| `mockModelScript` | runtime | Scripted replies for the in-process mock model; null with real providers or when the debug gate (`APP_DEBUG`, never production) is closed |
-| `runClaim` | runtime | The thread run claim (`RunClaim` port; Drizzle or in-memory): one live run per thread across replicas, with its lease and status |
+Routes are thin entry points. Reusable route behavior belongs in testable
+`lib/` helpers, and Nitro route tests stay under `lib/routes/` rather than the
+production route tree. A normal request is:
 
-## Tool wiring
-
-`composeAppServices()` wires model-visible tool registrations into the orchestrator stack. The concrete tool catalogue lives in `domains/runtime/tools/`; `lib/model-tools/` binds the handlers to context, collab, file-policy and thread services (one file per tool, plus `tool-context.ts` for the shared per-call resolution and `file-access.ts` for the model's file-policy adapter) but does not own tool algorithms. Skill files and the `skill` tool live in runtime.
-
-Context-backed handlers resolve the active thread to the unified
-`ContextPort` with `resolveThreadContext(...)` + `contextPortForThread(...)`.
-Document edits then cross into the collab domain's `@meridian/agent-edit` core;
-URI parsing and document-row creation stay server-side so the package remains
-free of Meridian URI schemes and database concerns.
-
-| Tool | Backend |
-|---|---|
-| `write` | Command grammar per [runtime tools](../../domains/runtime/.context/tools.md#policy-and-cost). Each call asks the [file policy](../../domains/file-policy/.context/CONTEXT.md) for a grant on its target (a container grant for a create) and passes it to the thread-peer pool; refusals render through `file-access-denial-copy.ts`. Handler resolves context paths to tracked document IDs and returns the package's typed `meridian.agent-edit.v1` result for successes and failures; `renderAgentEditResult` turns it into the model's text (D43). With a model response ID, mutations stage in `@meridian/agent-edit`; the response lifecycle replaces their staged result with the committed receipt and refreshes each affected markdown projection. Immediate writes and reversals refresh after commit. Context failures keep this typed envelope while canonical Work-ID URIs are translated to model-facing `@slug` form. |
-| `read` | `document-tools.ts` resolves the path, asks the file policy for read, and calls `readDocument` (`read-document.ts`), the one server read path shared with copy sources and references. Same typed result and text rendering as `write`. `skills://` paths go to the skill files. |
-| `skill` | Registered by runtime (`createSkillToolRegistrations`) and offered only when the thread can see a skill; returns what `read` returns for the skill's `SKILL.md`. |
-| `work` | Eight-branch strict union (list/show/create/update/archive/unarchive/delete/switch), the same schema for every agent. `actionPolicy` over the agent chain decides each command before the handler runs: Work changes are refused for a `read` chain, and the model's `switch` never rebinds ([rule](../../domains/runtime/.context/tools.md#permissions)). `list` takes `archived` (not a status filter) and `update` takes AI-owned `status` text validated by `normalizeWorkStatus`. Handler resolves slugs to Work IDs, delegates to locked domain transitions, and returns typed `ModelWork` results without UUIDs; `renderWorkResult` gives the model text. Human PATCH and model `update` converge on `updateWorkTransition`; archive and unarchive go through `setWorkArchived` and record an `update` receipt whose state carries `archived`. Receipts remain command concerns. The reversal planner covers create/update/delete. |
-| `ls` | Lists the resolved unified `ContextPort` path/URI; `listAccess` drops unreadable rows and sets each row's `readonly`. Returns `{ uri, entries }` without IDs; the model reads it as plain text (D61). Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
-| `search` | Searches the resolved unified `ContextPort` scope; hits go through `listAccess` like `ls`. Model-facing results translate Work-ID URIs to `@slug` or unqualified form. |
-| `ask_user` | Registered but never advertised until its rework ([#601](https://github.com/haowjy/meridian-flow/issues/601)); the handler creates an interrupt component block and keeps the assistant turn interruptible/resumable. |
-
-## Auth and ownership
-
-| File | Role |
-|---|---|
-| `auth.ts` | WorkOS AuthKit seam. `resolveUser(request)` validates the session cookie; `provisionAuthenticatedUser(authUser, deps)` provisions or loads the Meridian Flow user row. |
-| `auth-gate.ts` | Single seam composing authentication, provisioning, and app services. `requireAppUser(event)` returns `{ app, user }`; `resolveAppUserFromRequest` is nullable for WS upgrade paths. |
-| `ws-upgrade-auth.ts` | Shared WS upgrade auth returning authenticated or deferred-close contexts. |
-
-Ownership gates live in domains, not in `lib/`: `requireProjectOwner` from
-`domains/projects` for project-scoped routes and `requireThreadOwner` from
-`domains/threads` for thread routes / thread WS subscriptions. File access,
-over HTTP and for Yjs rooms, is the [file policy](../../domains/file-policy/.context/CONTEXT.md);
-`file-access-http.ts` is its HTTP adapter (`requireFileGrant`,
-`withEditGrants`, status mapping) and `file-targets.ts` builds targets.
-
-## WS handlers
-
-| File | Role |
-|---|---|
-| `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, ordered catchup/live handoff, unsubscribe/cleanup. |
-| `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Admission asks the file policy for `edit`, then `read`; a `read` room is read-only. Each edit-room frame runs under its grant, and a refused frame or a Work access change closes with 4409. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
-| `yjs-room-access.ts` | Admitted rooms indexed by the Works their access depends on, so a Work's `FileAccessChanges` event closes exactly its scratch and draft rooms. |
-
-For typed Yjs admission refusals, `YjsConnectionContext.closeTransport` is the
-physical-close seam. `refuseSchemaAdmission()` emits the correlated
-`collab.schema` / `admission.refused` record, then invokes `refuseConnection()`;
-event-delivery failure cannot replace the typed close. Its payload is always
-complete: code, reason, room key, and non-null client, head, and server schema
-triples, including the load-path race backstop. The resulting throw only aborts
-the active Hocuspocus hook and must not be treated as close delivery. Schema-head comparison semantics remain in the
-[collab domain](../../domains/collab/.context/document-authority-and-schema.md).
-
-The Yjs gateway resolves the client schema from `Sec-WebSocket-Protocol`.
-Exactly one grammar match supplies the triple; absent, zero, or multiple
-matches become the `0.0.0` sentinel. The route explicitly echoes the sole
-matching token, otherwise the first offered token, so the 101 completes and a
-typed schema refusal can reach ambiguous or malformed clients. No offered token
-means no echo, and query parameters never participate in resolution.
-
-## Route helpers / services
-
-Route tests that import Nitro handlers live under `lib/routes/`, never beside
-the handlers: Nitro treats test modules under `routes/` as production routes.
-
-| File | One-liner |
-|---|---|
-| `thread-creation.ts` | Ownership-gated primary thread creation shared by global and project workspace-scoped routes; resolves work attachment and touches the work. |
-| `work-attachment.ts` | Determines a new thread's Work: root omission/null binds No Work; children inherit the parent's primary. |
-| `project-preferences-route.ts` | Unit-testable handlers for project preferences GET/PUT. |
-| `thread-ref-route.ts` | Owner-gated `cN`/`pN` handle lookup for `GET /api/projects/:projectId/threads/by-ref/:ref`; malformed or unknown refs are 404. |
-| `mock-model-script-route.ts` | `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
-| `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
-| `backend-policy.ts` | Small policy helpers for backend selection/guarding. |
-| `../shared/interrupt-boundary.ts` / `interrupt-error-handler.ts` | HTTP-facing interrupt/error mapping. The shared boundary is available to domain owner gates without importing composition-layer code. |
-| `startup-guards.ts` / `process-crash-policy.ts` | Boot-time guardrails and process-level crash policy. |
-
-Context ports and runtime tool algorithms live in their owning domains
-(`domains/context/*` and `domains/runtime/*`), not in `lib/`. `lib` composes
-those pieces into `AppServices` and route/WebSocket entry points.
-
-Writer-origin thread Work rebinds record a durable `work_switched` Notice inside
-the binding transaction. It is appended after the next writer message for one
-model request while the independent hidden `<system_update>` keeps the new Work
-context authoritative on later requests. Selecting the previous Work is an
-ordinary reverse rebind.
-
-## Request flow (HTTP)
-
-```
-Nitro route handler
-  │
-  ▼
-requireAppUser(event)  → getApp() + WorkOS/AuthKit user provisioning
-  │
-  ▼
-Route destructures needed AppServices
-  │
-  ▼
-requireProjectOwner / requireThreadOwner
-  │
-  ▼
-requireFileGrant per document (file policy)
-  │
-  ▼
-Domain API call → contract wire shape
-  (a write runs inside withEditGrants; each seam confirms the grants under lock)
+```text
+Nitro route → requireAppUser → domain ownership gate → file grant → domain port
 ```
 
-## Invariants & gotchas
+WS upgrades use accept-then-close for rejected connections because the local
+Nitro/httpxy path cannot safely return a non-101 upgrade response. Every
+classifier-referenced Meridian close pair is registered in `WS_CLOSE`;
+transport-local lifecycle closes remain with their transport.
 
-- **One composition root.** Adapter choice belongs in `compose.ts` / small env
-  factories called from it. Domains must not import from `lib/`.
-- **Explicit required deps.** EventSink, CreditLedger,
-  InterruptRegistry, and RunTurnPort wiring are explicit; disabled behavior uses
-  explicit adapters. Tool names are gated per turn from the tool policy.
-- **One-process hub.** `app.ts` guards `AppServices` on `globalThis`; live hub
-  fan-out is process-local even though journal rows are durable.
-- **Ownership gate on every route and WS subscribe.** Project workspace/thread gates run
-  after auth; document routes and Yjs rooms then ask the file policy.
-- **WS upgrade is accept-then-close.** Nitro dev/httpxy crashes on non-101
-  upgrade responses, so rejected upgrades are accepted and then closed with an
-  error frame/close code.
-- **String(seq) at the HTTP/WS boundary.** Internal journal sequence values are
-  bigint; protocol frames stringify them.
-- **Thread WS subscription authority.** One per-thread slot admits the newest
-  subscribe request by arrival order. Its active lease remains live until the
-  replacement passes ownership authorization; failed authorization leaves it
-  intact. Pending hub callbacks buffer until the `subscribed` catchup envelope
-  succeeds, then flush in sequence order above the delivered watermark.
-  Unsubscribe, replacement, close, and send failure invalidate pending work;
-  stale async results release their hub listener without publishing.
-- **Object store env-driven.** Local uses filesystem + HMAC signed token URLs;
-  S3 uses presigned URLs. `localObjectStore` is `null` in S3 mode.
+The thread-events WS owns authenticated subscribe, ordered catchup/live
+handoff, and cleanup. Every client message but `pong` carries a `requestId`, and
+`subscribed`, `gap` and `error` echo it (`subscribed` also states `after`, the
+cursor the lease starts above); a message that fails to parse has none to echo.
+Messages for different threads proceed concurrently (there is no `resume`). One
+per-thread slot admits the newest subscribe by arrival order; a failed replacement
+leaves the active lease intact. A failed read after the lease is acquired disposes
+it and answers `internal` with `retryable: true`; `not_found`, `bad_request` and
+auth stay non-retryable. Pending callbacks
+wait until catchup succeeds and are flushed above the delivered watermark;
+unsubscribe, replacement, close, and send failure invalidate stale work.
+Catalog subscriptions also claim a request slot before reading project ownership.
+Close, unsubscribe and a newer request invalidate pending acquisition; only the
+current slot can install a listener after that read.
+Journal sequence values become strings at the HTTP/WS boundary.
+
+The Yjs handler asks file-policy for `edit`, then `read` for room admission.
+Edit frames run under the admitted grant; refusal or Work access change closes
+with the typed transport code. Schema admission closes the physical transport
+through `closeTransport` after emitting its correlated diagnostic; the hook
+throw only aborts processing and is not close delivery. Schema comparison and
+head semantics belong to [collab](../../domains/collab/.context/document-authority-and-schema.md).
+
+The client schema comes from `Sec-WebSocket-Protocol`: exactly one grammar
+match supplies the triple; absent, zero, or multiple matches use the `0.0.0`
+sentinel. The route echoes the sole matching token, otherwise the first offered
+token, so the 101 completes and typed refusal can reach malformed clients. No
+offered token means no echo, and query parameters do not participate.
+
+## Route-specific contracts
+
+Writer Work rebinds append a durable `work_switched` Notice in the binding
+transaction. The hidden system update is appended after the next writer message
+and makes the new Work context authoritative on later requests; choosing the
+previous Work is an ordinary reverse rebind.
+
+Move requests carry `destinationParent` when they use destination identity.
+The route passes that identity into the domain command and receipt, maps typed
+`destination_missing` to non-retryable repair, and rechecks edit authority on
+the resolved destination under the move transaction. URI-only callers retain
+path semantics. Identity conflicts may name a renamed or relocated destination;
+URI-only conflicts must still match the requested home. If immutable destination
+Work/lineage authority retired before intake, the identity move remains
+`destination_missing` even if a folder later relocates. Model tools and `./mf`
+currently do not issue moves.
 
 ## Dependency direction
 
+```text
+lib/* → domains/*, contracts, database, provider/auth/Nitro libraries
+      domains/* → (never lib/*)
 ```
-lib/*
-  │
-  ├── depends on: domains/*, @meridian/contracts, @meridian/database
-  ├── depends on: WorkOS AuthKit/Nitro/env/provider libraries
-  │
-  ▼
-domains/*  ←  MUST NOT import from lib/
-```
-
-
-## Writer move destination identity
-
-`context-move-route.ts` parses the optional `destinationParent` wire contract.
-It passes that identity into the domain command and receipt, maps typed
-`destination_missing` to non-retryable repair, and uses the committed destination
-for successful location responses. Identity conflicts may name a renamed or
-relocated destination; URI-only conflicts still must match the requested home.
-Edit authority is rechecked on the resolved destination in the move transaction.
-If the immutable destination Work or lineage authority retired before intake,
-identity moves refuse as `destination_missing` (move repair), even when the
-folder has since relocated. Source authority errors retain their own meaning.
-
-Every app writer move sends `destinationParent`. A caller that addresses a
-location by URI omits it and keeps path semantics, including folder creation
-along the path. No model tool or `./mf` command moves files today; when one
-does, it is path-addressed.

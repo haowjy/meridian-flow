@@ -11,8 +11,9 @@
  * its background tab.
  */
 import { createContext, useCallback, useContext } from "react";
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { useDockDocumentStore } from "../dock/dock-document-store";
+import type { ReviewAddress } from "../presented-document";
 import {
   type OpenProjectDocument,
   type OpenProjectDocumentRequest,
@@ -20,7 +21,13 @@ import {
 } from "./open-project-document";
 
 /** Shows the tab beside the chat under a claim; `cancelled` if a newer intent won. */
-export type OpenBesideChat = (tab: ServerContextTab, claim: number) => "opened" | "cancelled";
+export type OpenBesideChat = (
+  tab: ContextTab,
+  claim: number,
+  focus?: true,
+  /** A draft-only review's address: the dock shows it by item identity, not by path. */
+  review?: ReviewAddress,
+) => "opened" | "cancelled";
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);
 
@@ -28,6 +35,27 @@ export type ChatDocumentRequest = OpenProjectDocumentRequest & {
   /** A claim the caller took when its intent began (a URI door claims before its lookup). */
   claim?: number;
 };
+
+/**
+ * Opens a chat's own resource (an upload) where this host has a viewer for it, null where it
+ * has none. An upload has no Editor route, so the one viewer is the dock beside a centered chat.
+ * A host without it (the docked chat on Work and Editor pages, the phone) must not offer Open.
+ */
+export function useOpenChatResource(
+  projectId: string | undefined,
+): ReturnType<typeof useOpenChatDocument> | null {
+  const open = useOpenChatDocument(projectId);
+  return useContext(BesideChatContext) ? open : null;
+}
+
+/** Whether a reference to `uri` can be opened here: an upload only where its viewer is. */
+export function useCanOpenChatReference(): (uri: string) => boolean {
+  const hasResourceViewer = useContext(BesideChatContext) !== null;
+  return useCallback(
+    (uri) => hasResourceViewer || !uri.startsWith("uploads://"),
+    [hasResourceViewer],
+  );
+}
 
 export function useOpenChatDocument(
   projectId: string | undefined,
@@ -38,7 +66,7 @@ export function useOpenChatDocument(
     ({ claim, ...request }) => {
       if (request.disposition === "background" || !beside) return open(request);
       const attempt = claim ?? useDockDocumentStore.getState().claim();
-      return open({ ...request, beside: (tab) => beside(tab, attempt) });
+      return open({ ...request, beside: (tab, focus) => beside(tab, attempt, focus) });
     },
     [beside, open],
   );

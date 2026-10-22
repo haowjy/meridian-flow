@@ -53,6 +53,11 @@ export function renderLsResult(value: JsonValue): string {
       ? "(empty)"
       : value.entries.map((entry) => entryLine(entry)).join("\n");
   }
+  if (value.uri.endsWith("@")) {
+    // An owner listing: each row is the full address to copy, then the owner's label.
+    const rows = value.entries.map((entry) => `  ${entry.uri}  ${entry.title ?? ""}`.trimEnd());
+    return [value.uri, ...(rows.length > 0 ? rows : ["  (empty)"])].join("\n");
+  }
   const folder = asFolder(value.uri);
   const lines = value.entries.map((entry) => `  ${entryLine(entry, folder)}`);
   return [folder, ...(lines.length > 0 ? lines : ["  (empty)"])].join("\n");

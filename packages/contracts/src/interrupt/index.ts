@@ -51,6 +51,28 @@ export const artifactRefSchema = z.discriminatedUnion("type", [
 
 export type ArtifactRef = z.infer<typeof artifactRefSchema>;
 
+/** Admits an untrusted artifact value. Looser than the schema: unknown extra keys pass. */
+export function isArtifactRef(value: unknown): value is ArtifactRef {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (record.type === "image" && typeof record.url === "string") {
+    return (
+      (record.mimeType === undefined || typeof record.mimeType === "string") &&
+      (record.label === undefined || typeof record.label === "string")
+    );
+  }
+  if (record.type === "object" && typeof record.uri === "string") {
+    return (
+      (record.label === undefined || typeof record.label === "string") &&
+      (record.mimeType === undefined || typeof record.mimeType === "string")
+    );
+  }
+  if (record.type === "liveView" && typeof record.url === "string") {
+    return record.expiresAt === undefined || typeof record.expiresAt === "string";
+  }
+  return false;
+}
+
 export interface AskRequest {
   interruptId: string;
   prompt: string;

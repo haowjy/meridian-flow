@@ -2,29 +2,172 @@
 import type {
   createAgentEditCore,
   LinkSpliceFallbackDetail,
+  ObservationFailedDetail,
   ResponseLifecycleClaimDiscardedDetail,
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
-import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
-import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
+import {
+  type EventSink,
+  emitEvent,
+  errorMessageOf,
+  unknownToEventPayload,
+} from "../../observability/index.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
+import type { DraftAgentEditDiagnostics } from "../domain/draft-agent-edit.js";
+import type { DraftAheadDiagnostics } from "../domain/draft-ahead-registration.js";
+import type { DraftProjectionDiagnostics } from "../domain/draft-projection.js";
+import type { DraftPullDiagnostics } from "../domain/draft-pulls.js";
+import type { WriterFrameDiagnostics } from "../domain/draft-writer-frames.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
-import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
+import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
+import type { RoomDeliveryDiagnostics } from "./hocuspocus-coordinator.js";
 
-export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
+/** The effect projection job's failures and blocked legacy baselines. */
+export function createDraftProjectionDiagnostics(
+  eventSink?: EventSink,
+): DraftProjectionDiagnostics {
+  return {
+    projectionFailed({ draftId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.draft",
+        name: "projection.failed",
+        correlation: { draftId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiagnostics {
   return {
     backgroundFailed({ documentId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
-        source: "collab.branch_pull",
+        source: "collab.draft_pull",
         name: "background.failed",
         correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/**
+ * A delivery outage of committed rows to an open live room: a warning when it begins, and
+ * notice of how it ended (the room caught up, or unloaded so a load reads the journal).
+ */
+export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDeliveryDiagnostics {
+  return {
+    failed({ documentId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.room_delivery",
+        name: "delivery.failing",
+        correlation: { documentId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+    recovered({ documentId, attempts, outcome }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "info",
+        source: "collab.room_delivery",
+        name: "delivery.recovered",
+        correlation: { documentId },
+        payload: { attempts, outcome },
+      });
+    },
+  };
+}
+
+/**
+ * The draft coordinator's events: a background fold that failed, a room found behind its
+ * draft and reconciled, and an update that arrived before its prefix.
+ */
+export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
+  return {
+    appendPrefixMissing({ draftId, clocks }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft",
+        name: "append_prefix_missing",
+        correlation: { draftId },
+        payload: { clocks: clocks.slice(0, 16) },
+      });
+    },
+    roomReconciled({ draftId, trigger, ...payload }) {
+      if (!eventSink) return;
+      // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
+      // registering behind a commit that landed during its load is the expected race.
+      emitEvent(eventSink, {
+        level: trigger === "frame" ? "warn" : "info",
+        source: "collab.draft",
+        name: "room_reconciled",
+        correlation: { draftId },
+        payload: { trigger, ...payload },
+      });
+    },
+    compactionFailed({ draftId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.draft",
+        name: "compaction.failed",
+        correlation: { draftId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
+/**
+ * An append's sequence point: how long its `UPDATE` waited for the draft row and how long it
+ * held the row to `COMMIT`, per keystroke, so at debug level.
+ */
+export function createAppendCommittedEvent(
+  eventSink: EventSink,
+): (detail: AppendCommitted) => void {
+  return ({ draftId, ...payload }) =>
+    emitEvent(eventSink, {
+      level: "debug",
+      source: "collab.draft",
+      name: "append_committed",
+      correlation: { draftId },
+      payload,
+    });
+}
+
+/** P2's commit bound: how long a committed rewrite held its draft row, and the tail it read. */
+export function createRewriteCommittedEvent(
+  eventSink: EventSink,
+): (detail: RewriteCommitted) => void {
+  return ({ draftId, ...payload }) =>
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.draft",
+      name: "rewrite_committed",
+      correlation: { draftId },
+      payload,
+    });
+}
+
+export function createDraftAheadDiagnostics(eventSink?: EventSink): DraftAheadDiagnostics {
+  return {
+    registrationFailed({ draftId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_links",
+        name: "registration.failed",
+        correlation: { draftId },
         payload: unknownToEventPayload(cause),
       });
     },
@@ -43,6 +186,7 @@ export function createResponseTransactionDiagnostics(
       payload: {
         responseTransactionId: input.responseTransactionId,
         ...unknownToEventPayload(input.cause),
+        ...errorMessageOf(input.cause),
       },
     });
   };
@@ -53,26 +197,21 @@ export function createResponseTransactionDiagnostics(
   };
 }
 
-export function createBranchAgentEditDiagnostics(
-  eventSink?: EventSink,
-): BranchAgentEditDiagnostics {
+export function createDraftAgentEditDiagnostics(eventSink?: EventSink): DraftAgentEditDiagnostics {
   return {
-    stagedWriteNoop(payload) {
+    replyPinMismatch(payload) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
-        source: "collab.branch_agent_edit",
-        name: "staged_write.no_durable_journal_row",
-        payload,
-      });
-    },
-    mutationLessPendingEntry(payload) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.branch_pending_journal",
-        name: "mutation_less_entry_dropped",
-        payload,
+        source: "collab.reply_save_fences",
+        name: "reply_pin.identity_mismatch",
+        correlation: {
+          documentId: payload.documentId,
+          branchId: payload.pin.branchId,
+          peerDraftId: payload.pin.peerDraftId,
+          upstreamDraftId: payload.pin.upstreamDraftId,
+        },
+        payload: { threadId: payload.threadId ?? null, refusal: "integration" },
       });
     },
   };
@@ -89,22 +228,6 @@ export function createAgentEditInvariantDiagnostic(
       name: "invariant_violation",
       payload,
     });
-  };
-}
-
-export function createSweepProjectionDiagnostics(
-  eventSink?: EventSink,
-): SweepProjectionDiagnostics {
-  return {
-    unavailable({ pushId, documentId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.change_event",
-        name: "sweep_projection.unavailable",
-        payload: { pushId, documentId, ...unknownToEventPayload(cause) },
-      });
-    },
   };
 }
 
@@ -233,6 +356,7 @@ export function createAgentEditObservabilityOptions(input: {
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onLinkSpliceFallback"
+  | "onObservationFailed"
 > {
   return {
     onResponseLifecycleError: responseLifecycleObserver(input.eventSink),
@@ -241,6 +365,26 @@ export function createAgentEditObservabilityOptions(input: {
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
     onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
+    onObservationFailed: observationFailedObserver(input.eventSink),
+  };
+}
+
+/**
+ * A result's observation frontier could not be computed: it goes out without
+ * one, and the model's next frontier for the room chains from an older row.
+ */
+function observationFailedObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onObservationFailed"]> {
+  return (event: ObservationFailedDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "warn",
+      source: "collab.agent_edit",
+      name: "observation_frontier.compute_failed",
+      correlation: { documentId: event.documentId },
+      payload: unknownToEventPayload(event.cause),
+    });
   };
 }
 
@@ -351,30 +495,5 @@ function idempotencyHitObserver(
       name: "write.idempotency_hit",
       payload: { ...event },
     });
-  };
-}
-
-export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
-  return {
-    dispositionMaintenanceFailed({ documentId, draftId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.draft_review",
-        name: "disposition.maintenance_failed",
-        correlation: { documentId },
-        payload: { draftId, error: String(cause) },
-      });
-    },
-    unattributedHunks({ documentId, hunkIds }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.draft_review",
-        name: "attribution.incomplete",
-        correlation: { documentId },
-        payload: { hunkCount: hunkIds.length },
-      });
-    },
   };
 }

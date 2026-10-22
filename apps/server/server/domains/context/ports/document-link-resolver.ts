@@ -15,6 +15,8 @@ export interface ResolveDocumentLinkInput {
   userId: string;
   workId?: string | null;
   rootThreadId?: string | null;
+  /** The chat holding the link, when it is a chat's own; a document holder has none. */
+  chatId?: string | null;
   target: DocumentLinkTarget;
   /** Chat only: a link with no holder may follow a vacated path to the document that left it. */
   previousLocations?: boolean;

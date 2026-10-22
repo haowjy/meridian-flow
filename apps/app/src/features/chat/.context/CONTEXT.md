@@ -18,25 +18,24 @@ draft-control changes can be understood independently.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
   Auto-apply control, neutral shared presentation, New-chat and chat-detail adapters, and
   composer sizing.
-- [Draft review](../../draft-review/.context/draft-review.md) — inline review session, pending projection,
-  freshness, and draft-only tabs (owned by `features/draft-review`).
-- [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
-  never render, `endsTranscript` with a divider, and optimistic writer
+- [Draft review](../../draft-review/.context/draft-review.md) — room-derived text review, frozen Apply
+  queues, local Discard history and draft-only tabs. `useDraftDock` scopes the
+  chat's changes; projection and commands belong to `features/draft-review`.
+- [Compaction surfaces](compaction-surfaces.md) — divider rows, non-rendered compaction bookkeeping turns, a divider as a closing row, and optimistic writer
   controls (`/compact`, withdrawal).
 - [Fork and handoff](fork-and-handoff.md) — the turn actions, navigate-first
   creation and its failure, the brief card, a fork's inherited view, and
   `from` sources.
 - [Failed-reply Retry](failed-reply-retry.md) — Retry on the latest failed
   reply, the optimistic new reply below it, and the refused and lost cases.
-- [Thread live updates](thread-live-updates.md) — snapshot revalidation on
-  activation and on a new run, and the per-run resume that renders a
-  server-initiated continuation live.
+- [Thread live updates](thread-live-updates.md) — the one mounted subscriber:
+  snapshot revalidation, the run-state feed, and joining a live run from the
+  first snapshot's cursor.
 - Durable acknowledged submissions — `client/chat-submissions` owns one
   account-stamped record for every unadmitted writer message. Its tab owner owns
   one shared account/thread row identity, live session/id-fenced attempts,
   failed/busy knowledge, Edit transfers and observable presentation snapshot. `useChatSubmissions` binds cancellation, external wakes and keyed alerts;
-  `useThreadRunResume` resumes only
-  server snapshot runs. First-send creation is a field on the same record, not a
+  the mounted `useThreadSnapshotSync` joins runs the snapshot shows. First-send creation is a field on the same record, not a
   separate stream handoff. The driver holds a per-thread Web Lock, bounds requests
   and fences every result by the account epoch and mounted recovery session.
   Accepted messages bridge and retire. Rejections remain on writer rows and never
@@ -53,7 +52,7 @@ draft-control changes can be understood independently.
 
 - Transcript links follow through `useChatLinkFollowing.ts` over the shared
   [`features/links`](../../links/AGENTS.md) follower; its header holds chat's
-  scope, destination, and visibility rules, including the known deleted-Work gap.
+  scope, destination and visibility rules.
 
 - Every `ChatView` is owned by a project workspace and receives its required
   project ID from `ChatScreen`. Child-thread doors use the project shell's

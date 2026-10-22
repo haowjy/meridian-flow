@@ -93,9 +93,15 @@ function holds(container: Extract<FileTarget, { kind: "container" }>, facts: Fil
       facts.projectId === container.owner.projectId &&
       facts.ownerRootThreadId === container.owner.rootThreadId
     );
+  if (container.owner.scope === "chat")
+    return (
+      facts.projectId === container.owner.projectId &&
+      facts.ownerChatThreadId === container.owner.threadId
+    );
   return container.owner.scope === "project"
     ? facts.ownerWork === null &&
         !facts.ownerRootThreadId &&
+        !facts.ownerChatThreadId &&
         facts.projectId === container.owner.projectId
     : facts.ownerWork?.id === container.owner.workId;
 }

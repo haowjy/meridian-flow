@@ -4,6 +4,7 @@
  */
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { SpawnStatus, Thread } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { toIsoString } from "./contract-serialization.js";
 
 export interface CreateSubagentThreadInput {
@@ -11,6 +12,8 @@ export interface CreateSubagentThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId?: WorkId | null;
+  /** The parent chat's mode, which is also the spawning reply's. */
+  aiWriteMode: AiWriteMode;
   parentThreadId: ThreadId;
   rootThreadId: ThreadId;
   originTurnId: TurnId;
@@ -27,6 +30,8 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     id,
     projectId: input.projectId,
     workId: input.workId ?? null,
+    aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: "subagent",
     status: "idle",

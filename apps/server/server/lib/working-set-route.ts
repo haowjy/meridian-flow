@@ -1,11 +1,6 @@
 /** Project working-set route core: validates snapshot references after enforcing project ownership. */
-import {
-  isWorkScopedProjectContextScheme,
-  parseWorkingSetRouteList,
-  type WorkAuthorityScheme,
-  type WorkingSetRoute,
-} from "@meridian/contracts/protocol";
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import { parseWorkingSetRouteList, type WorkingSetRoute } from "@meridian/contracts/protocol";
+import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { ProjectContextAvailabilityPort } from "../domains/context/index.js";
 import {
@@ -25,10 +20,11 @@ export interface WorkingSetRouteDeps {
   projectContextAvailability: ProjectContextAvailabilityPort;
 }
 
-function isWorkScopedRoute(
+/** A Scratch route held by a Work (a lineage's Scratch names a chat, an upload names its chat). */
+function isWorkRoute(
   route: WorkingSetRoute,
-): route is Extract<WorkingSetRoute, { scheme: WorkAuthorityScheme }> {
-  return isWorkScopedProjectContextScheme(route.scheme);
+): route is Extract<WorkingSetRoute, { scheme: "scratch"; workId: WorkId | null }> {
+  return route.scheme === "scratch" && route.rootThreadId === undefined;
 }
 
 export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
@@ -46,7 +42,7 @@ export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
     .map((route) => ({
       ...route,
       documentId: requireRequestId(route.documentId, "recentRoutes[].documentId"),
-      ...(isWorkScopedRoute(route) && typeof route.workId === "string"
+      ...(isWorkRoute(route) && typeof route.workId === "string"
         ? { workId: requireRequestId(route.workId, "recentRoutes[].workId") }
         : {}),
     }))
@@ -73,7 +69,7 @@ export async function handlePutWorkingSetRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
 
   for (const route of input.body.recentRoutes) {
-    if (!isWorkScopedRoute(route)) continue;
+    if (!isWorkRoute(route)) continue;
     if (typeof route.workId !== "string") continue;
     const work = await deps.works.findById(route.workId);
     if (!work || work.projectId !== input.projectId) {

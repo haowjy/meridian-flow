@@ -146,7 +146,10 @@ describe("interrupt cancel", () => {
 
     type SubscribedFrame = {
       type?: string;
-      state?: { runningTurnId?: string | null; status?: { kind?: string } };
+      state?: {
+        runState?: { execution?: { currentTurnId?: string | null } | null };
+        status?: { kind?: string };
+      };
     };
     const frames: SubscribedFrame[] = [];
     const peer: WsPeer = {
@@ -158,11 +161,11 @@ describe("interrupt cancel", () => {
     const session = createThreadWebSocketSession(peer);
     session.open();
     await session.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: rig.thread.id, lastSeq: "0" }),
+      JSON.stringify({ type: "subscribe", requestId: "r1", threadId: rig.thread.id, lastSeq: "0" }),
     );
 
     const subscribed = frames.find((frame) => frame.type === "subscribed");
-    expect(subscribed?.state?.runningTurnId).toBe(turnId);
+    expect(subscribed?.state?.runState?.execution?.currentTurnId).toBe(turnId);
     expect(subscribed?.state?.status).toMatchObject({ kind: "awake" });
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);

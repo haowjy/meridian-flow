@@ -1,4 +1,5 @@
 /** Send a new project chat in the current pane before background persistence. */
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { useCallback, useState } from "react";
 import { useThreadActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
@@ -23,7 +24,15 @@ export function useCreationComposer(projectId: string) {
     choices,
     updateChoices,
     draft,
-    submit(submission: ComposerSubmitEnvelope, context: { workId: string; agent: CreationAgent }) {
+    submit(
+      submission: ComposerSubmitEnvelope,
+      context: {
+        workId: string;
+        workAiWriteMode: AiWriteMode;
+        aiWriteMode?: AiWriteMode;
+        agent: CreationAgent;
+      },
+    ) {
       return (
         sendProjectChat({
           accountId,
@@ -36,9 +45,14 @@ export function useCreationComposer(projectId: string) {
           activatedSkillSlugs: submission.activatedSkillSlugs,
           agent: context.agent,
           workId: context.workId,
+          workAiWriteMode: context.workAiWriteMode,
+          ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),
+          threadId: draft.chatId,
           threadActions,
           selectChat: (threadId) => {
-            draft.handoff();
+            // Recording the Send already handed off an unchanged draft; one that moved on since
+            // still names the chat just created, and must not reuse its id.
+            draft.handoffCreated(threadId);
             acceptCreatedChat(threadId);
           },
         }) !== null

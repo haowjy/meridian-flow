@@ -30,6 +30,7 @@
 
 import type { ModelRequestDebugListResponse } from "@meridian/contracts/protocol";
 import type { Block, Turn, TurnContextPreview } from "@meridian/contracts/threads";
+import type { SyncedThread } from "@meridian/thread-client/sync";
 import { useEffect, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
 import {
@@ -71,8 +72,8 @@ const PANEL_W = 384; // w-96
 const PANEL_MAX_H = 320;
 const MARGIN = 12;
 
-function findTurn(turnsByThread: Record<string, Turn[]>, turnId: string): Turn | null {
-  for (const turns of Object.values(turnsByThread)) {
+function findTurn(synced: Record<string, SyncedThread>, turnId: string): Turn | null {
+  for (const { turns } of Object.values(synced)) {
     const hit = turns.find((t) => t.id === turnId);
     if (hit) return hit;
   }
@@ -80,10 +81,10 @@ function findTurn(turnsByThread: Record<string, Turn[]>, turnId: string): Turn |
 }
 
 function findBlock(
-  turnsByThread: Record<string, Turn[]>,
+  synced: Record<string, SyncedThread>,
   blockId: string,
 ): { block: Block; turn: Turn } | null {
-  for (const turns of Object.values(turnsByThread)) {
+  for (const { turns } of Object.values(synced)) {
     for (const turn of turns) {
       const block = turn.blocks?.find((b) => b.id === blockId);
       if (block) return { block, turn };
@@ -93,9 +94,9 @@ function findBlock(
 }
 
 export function InlineInspector() {
-  const turnsByThread = useThreadStore((s) => s.turnsByThread);
-  const turnsRef = useRef(turnsByThread);
-  turnsRef.current = turnsByThread;
+  const syncedByThread = useThreadStore((s) => s.syncedByThread);
+  const turnsRef = useRef(syncedByThread);
+  turnsRef.current = syncedByThread;
 
   const [hit, setHit] = useState<Hit | null>(null);
   const hitRef = useRef(hit);

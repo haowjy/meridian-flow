@@ -1,183 +1,130 @@
 # Port contracts
 
-## Port interfaces
+These ports keep agent-edit reusable: the kernel owns editing semantics while
+the host owns persistence, authority, destinations, and application policy.
+Never add server, route, auth, or Work concepts to these interfaces.
 
-### UpdateJournal (`src/ports/update-journal.ts`)
+## Durable and coordination ports
 
-The journal owns ordinary append, batch append, read and compaction,
-plus durable per-document/thread write-ordinal reservation. Storage adapters expand
-one logical edit's ordered parts into journal rows. `read` returns a checkpoint
-and matching ordered updates; a bounded `since` read does not hide its retained
-rows behind a newer checkpoint. `persistenceWatermark` includes the checkpoint's
-cut even when no update rows remain above it.
+### `UpdateJournal` (`src/ports/update-journal.ts`)
 
-Checkpoint production belongs to the host, whose captured-cut port binds bytes
-to guaranteed durable coverage.
+The journal appends, batches, reads, compacts, and reserves per-document/thread
+write ordinals. Agent-edit itself only reads it (`AgentEditJournal`: ordinals,
+`read`, attribution and destructive provenance); rows append through the host's
+save (`StagedWriteCommit.persist`). One logical edit may expand to ordered rows. `read` returns a
+checkpoint and retained updates in order; `since` does not hide retained rows
+behind a newer checkpoint. A persistence watermark includes the checkpoint cut
+even when no rows remain above it. The host, not this package, mints captured
+checkpoint cuts. Compaction never expires immutable receipts or lineage.
 
-Undo/redo state does not live in transport rows. `DocumentEdits` reads immutable
-edit parts and delegates model stack operations to the host's inverse policy.
-Compaction folds journal updates without expiring immutable receipts or lineage.
+Undo/redo state is not transport state. `DocumentEdits` reads immutable parts
+and delegates stack policy to the host's inverse policy, after the reply's
+save boundary and never through the draft journal facade or staged-write
+queue. There is no reconstruction-based reversal endpoint or reserved undo
+client.
 
-### DocumentCoordinator (`src/ports/document-coordinator.ts`)
-Access to the coordinator-owned canonical Y.Doc, which may be a host branch
-rather than live. `withDocument(docId, fn)` serializes callers through
-this port for the same docId. It does not by itself exclude mutations arriving
-through another transport; the host owns that concurrency fence.
-`recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
-`DocumentNotFoundError` when the doc is missing.
+### `DocumentCoordinator` (`src/ports/document-coordinator.ts`)
 
-Movable-generation hosts implement `withStagedWrites`: checked whole-write replay
-and publication under their existing authority lock. It accepts an explicit helper
-base cut (generation and state), independent of historical write generations,
-and returns typed kept entries, new helper bytes/cut and the before cut only
-after admission and CAS accept. The buffer applies kept writes, failed-receipt
-owners and helper replacement together after that acceptance. The response helper is replaced from that cut plus
-surviving staged writes before the next command. A discarded write and its later
-dependents receive failed per-write receipts; independent writes still commit.
-The prepared response view owns a private Y.Doc, replay capability and required cut.
-It is never a RuntimeDocumentState and is never registered in the runtime store.
-Every content exposure goes through prepare: scoped reads borrow disposable
-replicas; commands stage through committer-owned call leases. Effective reads
-prepare before taking a branch-read lock. No raw helper or staged-byte reader is
-public. Ordinary live replicas are dispatched at the same gate. Each response lease
-captures response/document/epoch, bound to its peer; Whole Discard's retirement revokes
-that peer's document epoch (never a replacement peer's), including
-leases issued before its first staged write. Replay acceptance and stage publication
-validate it. Equivalent replay results retain view identity, so concurrent unchanged
-reads do not cause triangular retries; real content/cut changes still retry.
-Concurrent staging and terminal reports use separate disposable snapshots;
-historical pre-own snapshots remain receipt evidence, not the current base cut.
-Staging requires the document label and edit description used by failed notices.
-Rollback marks the response pending settlement without changing its view. Commit
-closes/disposes it (and evicts live replicas); abort restores buffered ownership
-unchanged. The helper cut survives a receipt-only buffer. Notices wait in a
-committer outbox that only tool results drain, including cached results without
-caching their notice. Notices group by document and handle, distinguish partial from whole rejection and name the rejected writes.
-Terminal concurrency reporting uses the frozen pre-publication cut, so the
-response's own newly journaled rows are not mistaken for concurrent writer text.
-The ordinary live-document path and durable recovery remain unchanged.
+`readRoom(docId, staged, access)` is every model call's read: a disposable
+copy of the room the host holds (`doc` and the stable `room` label it read), with the edit scope's staged entries reconciled against the
+scope's first-stage snapshot cut. The host answers which entries it `kept`
+(applied to the copy) and which it `rejected`, with reasons; a rejected entry
+leaves the scope and never reappears. A live host reads without taking the
+document's mutex; a draft host rebases live into the Work draft first, then
+copies the Work draft replica. A bound call whose draft a Discard took throws
+`DocumentAccessLostError(reason)`.
 
-### DocumentLifecycle (`src/ports/document-lifecycle.ts`)
-Deployment-owned document creation seam. `ensureDocument(docId)` idempotently
-brings a live document into existence so `DocumentCoordinator.withDocument(docId)`
-can subsequently grant exclusive access. It must create only when missing and
-must not clobber existing content. The package keeps the contract generic:
-plain `docId: string`, no auth, URI schemes, storage, or collaboration-server
-types. `write(command="create")` requires this optional port; deployments that
-do not support creation get `invalid_write` instead of a thrown not-found.
+`prepareSave` is the one way any write lands, a reply's save and an immediate
+save (`saveNow`, a write outside a reply) alike, for both hosts: the same
+reconcile as `readRoom` against the scope's cut (a live host keeps every
+entry), the `room` it saves into (null records no frontier when the host cannot
+name it), and a required `write`: either a `StagedWriteCommit` the
+caller owns (`persist` inside the commit scope, `transfer` once that scope
+completed, `dispose` on any unwind; the host installs the write at root commit,
+never at `transfer`, or at once outside a transaction), or an explicit
+`{ kind: "no-effect" }`, which the committer refuses when it kept entries.
+Preparing reads no cut. `persist` resolves the save's only cut (`SaveCut`),
+captured inside the append where the host serializes it, before its
+transaction commits, for every outcome (appended, contained, or nothing new):
+someone else's rows that landed after preparing are in its before state.
+Nothing fallible runs between the rows becoming durable and `persist`
+resolving, so a stored write is never reported as a failed one. Receipts,
+commit-time detection, revision and frontier read that cut, for both hosts; the
+rows are Yjs updates and land the same either way, so a moved base refreshes
+the report rather than the write.
 
-### AgentEditCodec (`src/codec-adapter.ts` — hash-prefixed adapter)
-Agent-edit consumes an `AgentEditCodec`: a thin wrapper around
-`@meridian/markup`'s `MarkupCodec`. `parse` and full-document `serialize`
-delegate directly to the pure markup codec. `serializeBlockBodies` delegates to
-`markup.serializeBlocks` for hashless resolver/find normalization; callers should
-not reimplement trailing-newline or empty-paragraph normalization. The adapter
-adds the agent-edit-only display forms `serializeBlock(block, hash)` and
-`serializeBlocks(blocks, hashes)`, formatting single-line blocks as `hash|body`
-and multiline blocks as `hash|\nbody`.
+A save that must refuse on the document's state passes a `SavePrecondition`
+(a create without overwrite lands only in a document with no blocks). The host
+judges it inside the append, under the document's lock, on the state the rows
+would follow, before anything is written; a failure rejects `persist` with
+`SavePreconditionRefused` and nothing is appended, even inside an ambient
+transaction. Nothing judges it earlier: a check before the lock lets two
+concurrent creates, or a create and a writer's frame, both land. A live host's
+`persist` appends the kept entries as one journal batch, and `appendBatch`
+judges the precondition on, and returns, each document's state as it found it
+under the lock (`beforeState`); its install is delivery to open editors,
+whenever entries were kept. A draft host's append is finalized under the draft
+row lock against the committed prefix, which is its cut and what
+`finalizeAppend` judges the precondition on; a fully contained append's before
+and after are both that prefix. Neither host fences a WebSocket transport from
+this port: nothing applies to a live room inside a transaction. See the
+[WebSocket concurrency contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md). An ordinary CRDT write commits as an unfenced
+append. Whole Discard
+retires only the addressed peer/draft identity; it never transfers a staged
+write to a replacement draft. A host's response-attempt
+surface (`ResponseCommitAttempt`, `ResponseAttemptStaleError`) is exported
+once, from `integration.ts`.
 
-Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
-component registry types live in `@meridian/markup`. Codec factories require the
-host's ProseMirror `Schema`. `createAgentEditCodecFactory(markup)` parses
-purely; every command takes its codec once at entry (`tool/command-links.ts`
-`openCommandLinks`: `links.prepare` then `links.scopeFor`, then
-`codec.forScope(scope)`) and passes that scoped `AgentEditCodec` everywhere it
-serializes. agent-edit has
-no default Meridian schema and no project tree of its own.
+## Content and identity ports
 
-### DocumentLinksPort (`src/ports/document-links.ts`)
-The host's link scope: `prepare` (one batched load per synchronous block),
-`scopeFor(documentId, context)` (holder and view from the arguments),
-`registerAhead` (durable, outside any transaction) and `revision`. A host that
-routes between versions names the view on every command it routes
-(`WriteContext.linkView`). A reply's save prepares each document's before sides (`preOwnSnapshot`) with its
-disposable current-view replica, since receipts spell links the reply removed.
-Save-time replicas are disposed in finally, including failed link preparation.
-Markup's `createHolderLinkScope(holder, catalog)` applies the contracts'
-resolution and spelling rules over any `HolderCatalog` (the client resolves
-through the same rules over its own catalog), so hosts cannot disagree;
-`createStaticDocumentLinks(catalog)` is the in-memory adapter over a fixed
-catalog. It loads keys on `prepare` the way the server's batched loader does
-and answers an unprepared id, settlement or address as a snapshot miss
-(recorded in `misses`), so tests catch a door that forgot to prepare; the
-server's in-memory composition passes `{ preloaded: true }`.
-Markup's `storedLinkKeys` (beside the Yjs walk `extractStoredLinks`) is what
-both adapters
-load for stored occurrences (docs and `stored` nodes such as copies) and for
-shown identities (an `asset:<id>` one loads its upload by id).
-After parse, `links/assign-refs.ts` applies the shipped image rule (a known
-manuscript path becomes `asset:<id>`) in pass 3 of ref assignment, to written
-sources nothing old or shown continued; copies are never assigned.
-`@meridian/prosemirror-schema` is a runtime dependency for shared rich-content
-semantics. Host composition still passes the schema explicitly; the package
-imports no server or infrastructure code.
+### `AgentEditCodec` (`src/codec-adapter.ts`)
 
-### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
-Structural model port for what "block" means to the editing core. The kernel
-sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
-objects. The seam carries block lookup/identity, visible-content CRDT lineage,
-text inspection, plain-text `applyTextEdit` and structural
-mutation verbs, adapter-owned `applyInlineReplacements` and
-same-type `applyBlockReplacement`, and batch projection/serialization
-(`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is
-y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
-composition root supplies Meridian's fiction schema. Hosts depend on the
-structural `AgentEditModel` port, not the concrete y-prosemirror model type.
+The codec delegates parse/full serialize and block-body normalization to
+`@meridian/markup`, then adds hash-prefixed display forms. Hashes are rendered
+from the current sibling set and are not durable identity. A command receives
+one scoped codec at entry and passes it to every serialization door; the package
+has no default Meridian schema.
 
-### Batch paths — preferred for multi-block operations
+### `DocumentLinksPort` (`src/ports/document-links.ts`)
 
-The per-block helpers each re-scan the **whole document block list** to produce
-one block's result, so a per-block loop is **O(B²)**, not O(B):
+The host prepares one batched link scope for each synchronous operation,
+resolves a holder/view, registers ahead refs outside transactions, and provides
+the revision token. Every command names its routed view. Save-time replicas are
+disposable and must be released even when link preparation fails. An unprepared
+ref, settlement, or address is a snapshot miss, never an invented location.
+Markup's `createHolderLinkScope` applies the contracts' resolution and spelling
+rules over any host catalog (the client resolves through the same rules), so
+hosts cannot disagree; the package imports no server or infrastructure code.
 
-- `getBlockId(block)` resolves a unique hash against *all sibling blocks* (re-sorts and re-hashes every sibling per call).
-- Single-block codec projection rebuilds the *entire ProseMirror tree* (O(D)) to project one block.
-- `AgentEditCodec.serializeBlock` does per-block serialization work.
+### `AgentEditModel` (`src/ports/model.ts`)
 
-Multi-block reads and writes touch these paths. **Use the batch path for any multi-block op:**
+The model port makes document and block handles opaque to the kernel. It owns
+identity lookup, visible text, structural mutation, inline replacement,
+projection, and block serialization. v1's implementation is y-prosemirror;
+host composition supplies its schema explicitly.
 
-| Batch | Replaces (do not loop) | Does once |
-|---|---|---|
-| `getDocumentBlockIds(doc)` | per-block `getBlockId` for document order | sort + unique-hash all blocks |
-| `model.projectBlocks(doc)` | single-block codec projection loops | project the codec block tree once |
-| `model.serializeBlockLines(doc, codec, blocks?)` | per-block `serializeBlock` | allocate one unified runtime for hash-prefixed read/echo lines |
-| `model.serializeBlockBodies(doc, codec, blocks)` | ad hoc `serialize([block])` + newline/sentinel cleanup | hashless block-body normalization |
-| `blockHashesForDoc(doc)` / `uniqueHashesForBlocks` | per-block `getBlockHash` | the sorted unique-hash pass |
+## Session and facade ports
 
-Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
-`renderBlockLines` / `renderRead` (`tool/document-renderer.ts`),
-`serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
-(`model/block-hash.ts`), and echo after-snapshots in
-`tool/mutation-commit.ts`. Response settlement recomputes each staged write's
-receipt against the settled runtime projection before the host publishes it.
-Each logical model edit reserves its own ordinal before staging; tool results,
-journal parts and immutable receipts use that same write handle. Receipts also
-carry a host-only settlement id for response settlement bookkeeping.
-The Drizzle journal adapter commits a buffered response in one multi-row INSERT
-via `appendBatch` (per-update
-`appendMutation` was deleted). The in-memory test journal implements the same
-batch API.
+### `ActorSessionStore` (`src/ports/actor-session-store.ts`)
 
-### ActorSessionStore (`src/ports/actor-session-store.ts`)
-Stable identity for external callers. Maps transport-level IDs to persistent
-sessions that survive reconnects. The core library operates on `ActorSession`
-only. Each session tracks initialized document membership as a set, not retained
-state vectors; live sync and stale-document recovery remain runtime-store duties.
-Optional — falls back to a local in-memory map when omitted.
+It maps transport identities to persistent `ActorSession` values: a stable
+session id and the thread it acts for, no document state. It is optional and
+may fall back to an in-memory map.
 
-### AgentEditCore (`src/index.ts`)
+### `AgentEditCore` (`src/index.ts`)
 
-The default facade exposes `read`, `write`, `recover`, response commit/rollback,
-prepared read leases, response-document discovery and thread invalidation.
-`WriteContext.responseIdentity` separates provider authorship from helper scope;
-the host settles that scope exactly once. `invalidateThread` drops buffered
-writes and evicts the runtime so the next access starts from its canonical view.
+The facade exposes read/write, `readRoom` (the effective reader's door),
+response commit/rollback, response-document discovery, peer
+retirement and `dropStaged`. The host chooses
+destination, stack policy, immutable receipt persistence, notices, and
+install-after-commit. `responseIdentity` separates provider authorship from
+rotated edit scope. No public method reconstructs an UndoManager from journal
+history.
 
-Model `undo`, `redo`, `revert` and `read(format: "edits")` use `DocumentEdits` after
-the prepared-lease gate. The host owns destination choice, stack policy, immutable
-receipt persistence, notices and publish-after-commit. No public core method
-reconstructs an UndoManager from historical journal rows.
+## Performance boundary
 
-Normal live projection still classifies visible content before and after the
-synchronous Yjs apply. Journal submission precedes projection; response recovery
-follows explicit acceptance, never a failed receipt renderer. The echo is best
-effort reporting, not mutation authority.
+Multi-block callers use batch model operations for IDs, projections, hashline
+serialization, and block bodies; per-block helpers rescan the document and can
+be quadratic. A logical write reserves one ordinal before staging, and the
+journal's batch append owns row expansion. Tests should exercise the batch seam,
+not rebuild the same walk in each caller.

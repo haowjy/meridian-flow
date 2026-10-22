@@ -137,6 +137,23 @@ export async function listWorktreeDatabasesForUrl(
   }
 }
 
+/** Names of the databases that start with `prefix` (a prefix match, not a LIKE pattern: `_` is literal). */
+export async function listDatabasesWithPrefixForUrl(
+  databaseUrl: string,
+  prefix: string,
+): Promise<string[]> {
+  assertLocalDevPostgresEndpoint(databaseUrl, "list databases");
+  const { adminConnString } = parseTargetDatabase(databaseUrl);
+  const adminSql = postgres(adminConnString, { max: 1 });
+  try {
+    const rows = await adminSql<{ datname: string }[]>`
+      SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname`;
+    return rows.map((row) => row.datname).filter((name) => name.startsWith(prefix));
+  } finally {
+    await adminSql.end();
+  }
+}
+
 /** Connect to target DB when present; auto-create only on the local dev endpoint. */
 export async function ensureDatabaseForUrl(
   databaseUrl: string,

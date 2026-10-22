@@ -6,7 +6,7 @@
 import { splitDocumentFile } from "@meridian/agent-edit/integration";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { ThreadContextResolution } from "../domains/context/context-port-resolution.js";
 import type { FileTarget } from "../domains/file-policy/index.js";
@@ -22,8 +22,25 @@ export function documentTarget(documentId: string): FileTarget {
  */
 export async function containerTarget(
   works: Pick<WorkRepository, "findNoWork">,
-  input: { projectId: string; scheme: ContextUriScheme; workId: string | null },
+  input: {
+    projectId: string;
+    scheme: ContextUriScheme;
+    workId: string | null;
+    /** The chat that owns uploads; its row may not exist yet. */
+    chatId?: string | null;
+  },
 ): Promise<FileTarget> {
+  if (input.scheme === "uploads" && input.chatId) {
+    return {
+      kind: "container",
+      scheme: input.scheme,
+      owner: {
+        scope: "chat",
+        projectId: input.projectId as ProjectId,
+        threadId: input.chatId as ThreadId,
+      },
+    };
+  }
   if (isProjectScopedScheme(input.scheme)) {
     return {
       kind: "container",
@@ -49,7 +66,13 @@ export async function threadContainerTarget(
   works: Pick<WorkRepository, "findNoWork">,
   resolution: Pick<
     ThreadContextResolution,
-    "thread" | "primaryWorkId" | "workAuthorities" | "scratchOwner" | "scratchLineages"
+    | "thread"
+    | "primaryWorkId"
+    | "workAuthorities"
+    | "scratchOwner"
+    | "scratchLineages"
+    | "uploadsOwner"
+    | "uploadChats"
   >,
   path: string,
 ): Promise<FileTarget | null> {
@@ -63,6 +86,26 @@ export async function threadContainerTarget(
       scheme,
       owner: { scope: "project", projectId: thread.projectId as ProjectId },
     };
+  }
+  if (scheme === "uploads") {
+    // Uploads belong to a chat: its own for a bare path, another's by handle. A Work owns none.
+    const chat =
+      authority.kind === "chat"
+        ? await resolution.uploadChats?.byRef(thread.projectId, authority.chatRef)
+        : authority.kind === "contextual"
+          ? resolution.uploadsOwner
+          : null;
+    return chat
+      ? {
+          kind: "container",
+          scheme,
+          owner: {
+            scope: "chat",
+            projectId: thread.projectId as ProjectId,
+            threadId: chat.chatId as ThreadId,
+          },
+        }
+      : null;
   }
   if (scheme === "scratch" && authority.kind === "lineage") {
     const lineage = await resolution.scratchLineages?.byRef(
@@ -90,10 +133,8 @@ export async function threadContainerTarget(
   }
   const workId =
     authority.kind === "work"
-      ? workAuthorities.get(authority.workSlug as never)?.workId
-      : authority.kind === "none"
-        ? (await works.findNoWork(thread.projectId))?.id
-        : primaryWorkId;
+      ? workAuthorities.get(authority.workHandle as never)?.workId
+      : primaryWorkId;
   return workId
     ? { kind: "container", scheme, owner: { scope: "work", workId: workId as WorkId } }
     : null;

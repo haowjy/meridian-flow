@@ -16,8 +16,12 @@ import type {
   CreateBlockInput,
   UpsertBlockInput,
 } from "../../ports/repositories.js";
+import { notHandedBackSql } from "./handed-back.js";
 import { mapBlock } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
+
+/** Every block read returns the conversation: the blocks of a handed-back writer message are not read. */
+const inConversation = notHandedBackSql("turn_blocks.turn_id");
 
 function blockValues(input: CreateBlockInput) {
   const textContent = input.textContent ?? null;
@@ -48,6 +52,7 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .where(
           and(
             inArray(schema.turnBlocks.blockType, ["tool_use", "tool_result"]),
+            inConversation,
             sql`(${schema.turnBlocks.turnId}, ${schema.turnBlocks.content}->>'toolCallId') IN (${sql.join(tuples, sql`, `)})`,
           ),
         );
@@ -108,15 +113,24 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
       const [row] = await currentDrizzleDb(db)
         .select()
         .from(schema.turnBlocks)
-        .where(eq(schema.turnBlocks.id, id));
+        .where(and(eq(schema.turnBlocks.id, id), inConversation));
       return row ? mapBlock(row) : null;
     },
     async listByTurn(turnId) {
       const rows = await currentDrizzleDb(db)
         .select()
         .from(schema.turnBlocks)
-        .where(eq(schema.turnBlocks.turnId, turnId))
+        .where(and(eq(schema.turnBlocks.turnId, turnId), inConversation))
         .orderBy(asc(schema.turnBlocks.sequence));
+      return rows.map(mapBlock);
+    },
+    async listByTurnIds(turnIds) {
+      if (turnIds.length === 0) return [];
+      const rows = await currentDrizzleDb(db)
+        .select()
+        .from(schema.turnBlocks)
+        .where(and(inArray(schema.turnBlocks.turnId, [...turnIds]), inConversation))
+        .orderBy(asc(schema.turnBlocks.turnId), asc(schema.turnBlocks.sequence));
       return rows.map(mapBlock);
     },
     async listByThread(threadId) {
@@ -124,7 +138,7 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .select({ block: schema.turnBlocks })
         .from(schema.turnBlocks)
         .innerJoin(schema.turns, eq(schema.turnBlocks.turnId, schema.turns.id))
-        .where(eq(schema.turns.threadId, threadId))
+        .where(and(eq(schema.turns.threadId, threadId), inConversation))
         .orderBy(asc(schema.turns.position), asc(schema.turnBlocks.sequence));
       return rows.map((row) => mapBlock(row.block));
     },

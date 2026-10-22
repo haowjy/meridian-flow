@@ -1,6 +1,9 @@
 /** Connected history authority is shared by every inspection tool. */
+
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { emptyOwnerLookup } from "../../context/owner-lookup.js";
+import { TURN_GRAPH } from "../../threads/ports/turn-graph.js";
 import { resolveReadableThread } from "./resolve-readable-thread.js";
 
 const rows = [
@@ -39,9 +42,11 @@ const threads = {
   },
 };
 const turns = {
-  async findById(id: string) {
-    return id === "source-turn" ? ({ threadId: "root" } as Turn) : null;
-  },
+  [TURN_GRAPH]: {
+    async findById(id: string) {
+      return id === "source-turn" ? ({ threadId: "root" } as Turn) : null;
+    },
+  } as never,
 };
 describe("resolveReadableThread", () => {
   it.each([
@@ -61,6 +66,25 @@ describe("resolveReadableThread", () => {
     expect(
       await resolveReadableThread({ caller: rows[2] as Thread, ref: "c2", threads, turns }),
     ).toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
+    const chatFiles = {
+      ...emptyOwnerLookup,
+      chat: async (_project: string, ref: string) =>
+        ref === "c2" ? { uploads: "uploads://@c2/", scratch: "scratch://@c2/" } : null,
+    };
+    expect(
+      await resolveReadableThread({
+        caller: rows[2] as Thread,
+        ref: "c2",
+        threads,
+        turns,
+        chatFiles,
+      }),
+    ).toMatchObject({
+      error: {
+        message:
+          "Thread is not connected to this conversation. Files: uploads://@c2/ and scratch://@c2/.",
+      },
+    });
   });
   it.each([
     ["c4", "thread_not_connected"],

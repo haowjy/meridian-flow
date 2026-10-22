@@ -1,22 +1,20 @@
-/** GET /api/projects/:projectId/works/:workId/documents/:documentId/draft: live-vs-draft preview. */
+/** GET addressed draft metadata without opening its collaborative room. */
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
-import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
+import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../../../../lib/auth-gate.js";
 import {
-  handleWorkDraftPreviewRequest,
-  selectDraftRouteServices,
-} from "../../../../../../../../../lib/draft-review-route.js";
+  handleDraftMetadataRequest,
+  selectBranchRouteServices,
+} from "../../../../../../../../../lib/branch-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const query = getQuery(event);
-  const draftId = typeof query.draftId === "string" ? query.draftId : undefined;
-  if (!draftId) throw createError({ statusCode: 400, message: "draftId is required" });
-  return handleWorkDraftPreviewRequest(selectDraftRouteServices(app), {
+  const itemKey = getQuery(event).itemKey;
+  return handleDraftMetadataRequest(selectBranchRouteServices(app), {
+    userId: user.userId,
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
-    draftId,
-    userId: user.userId,
+    itemKey: typeof itemKey === "string" ? itemKey : "",
   });
 });

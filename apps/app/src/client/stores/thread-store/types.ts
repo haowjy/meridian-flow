@@ -1,58 +1,22 @@
 /** Shared types for the per-thread store. */
-import type {
-  Block,
-  Thread,
-  ThreadListItem,
-  Turn,
-  TurnStatus,
-  UserMessageBlock,
-} from "@meridian/contracts/protocol";
+import type { Thread, Turn, TurnStatus, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { RunStateAction, RunStateView, TurnStatusPatch } from "@meridian/thread-client";
+import type { SyncedThread, ThreadSyncPorts } from "@meridian/thread-client/sync";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
   InterruptResponseState,
 } from "@/core/session/interrupt-response";
 
-export type LiveTurnMeta = {
-  eventsApplied: number;
-  /**
-   * Contract `Turn.id` for the assistant turn currently streaming on this
-   * thread. `null` means no assistant turn is active.
-   */
-  runningTurnId: string | null;
-};
-
-export type EnsureAssistantTurnOptions = {
-  createdAt?: string;
-  prevTurnId?: string | null;
-  writeMode?: Turn["writeMode"];
-};
-
-export type TurnStatusPatch = Partial<
-  Pick<
-    Turn,
-    | "completedAt"
-    | "usage"
-    | "error"
-    | "finishReason"
-    | "inputTokens"
-    | "outputTokens"
-    | "reasoningTokens"
-    | "cacheReadTokens"
-    | "cacheWriteTokens"
-    | "totalCostUsd"
-    | "totalMillicredits"
-    | "responseCount"
-  >
->;
+export type { TurnStatusPatch };
 
 /** Read surface — subscribe with `useThreadStore((s) => …)`. */
 export type ThreadStoreState = {
   /** Stable reference time (epoch ms) for relative-time labels in chat. */
   now: number;
-  /** Transient live-turn bookkeeping keyed by thread id. */
-  liveMeta: Record<string, LiveTurnMeta>;
+  /** One value per chat: turns, fences, positions and run state (see `SyncedThread`). */
+  syncedByThread: Record<string, SyncedThread>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;
   /**
@@ -65,6 +29,13 @@ export type ThreadStoreState = {
 /** Mutations — use `useThreadActions()` only. */
 export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
+  /** The chat's run-state view (the initial one before any fact). */
+  runState(id: string): RunStateView;
+  /**
+   * The ports a `ThreadSync` for this chat needs from the store: its value, and the app's effects
+   * for what the sync observes.
+   */
+  syncPorts(threadId: string): Pick<ThreadSyncPorts, "state" | "observe">;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
   appendUserTurn(threadId: string, blocks: readonly UserMessageBlock[]): Turn;
@@ -75,8 +46,6 @@ export type ThreadStoreActions = {
     snapshotFloorNextSeq: string,
   ): void;
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
-  ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
-  upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
@@ -85,19 +54,10 @@ export type ThreadStoreActions = {
     patch?: TurnStatusPatch,
   ): void;
   pruneStaleAssistantTurns(threadId: string): void;
-  bumpEventsApplied(threadId: string): number;
-  /** Admit a durable block wire sequence, independent of run cursor rewinds. */
-  acceptDurableBlockSeq(threadId: string, seq: string): boolean;
-  /** Whether an acquired snapshot may affect cache, lifecycle, store, or handoff. */
-  acceptsThreadSnapshot(threadId: string, nextSeq: string): boolean;
-  applyThreadSnapshot(
-    thread: Thread,
-    turns: Turn[],
-    options: {
-      lifecycle: Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
-      nextSeq: string;
-    },
-  ): boolean;
+  /** Remove turns that left the conversation, keeping a tombstone at `seq` (see `removeTurnsIn`). */
+  removeTurns(threadId: string, ids: readonly string[], seq: string): void;
+  /** Take a fact about the chat's run state into its slice (`@meridian/thread-client` `run-state-slice.ts`). */
+  dispatchRunState(threadId: string, action: RunStateAction): void;
   markPendingCreation(args: { threadId: string }): void;
   clearPendingCreation(args: { threadId: string }): void;
 

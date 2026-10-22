@@ -2,8 +2,11 @@
 
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
-import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
-import { testWorkSlug } from "../../../../test-support/work-slug.js";
+import {
+  InMemoryTransactionOwner,
+  noTransactionOwner,
+} from "../../../../shared/in-memory-transaction.js";
+import { testWorkHandle } from "../../../../test-support/work-handle.js";
 import {
   type CreditLedger,
   createBillingUsagePolicy,
@@ -21,6 +24,7 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
   createThreadEventHub,
+  type InMemoryRepositories,
   type SequencedEventInternal,
   type ThreadRepositories,
 } from "../../../threads/index.js";
@@ -30,6 +34,7 @@ import {
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
+import { createInMemoryObservationFrontiers } from "../../adapters/in-memory/observation-frontiers.js";
 import { createInMemoryShownLinkStore } from "../../adapters/in-memory/shown-links.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
@@ -41,10 +46,10 @@ import { createNoopInterruptArtifactFlushPort } from "../interrupt-session.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
 import { createOrchestrator } from "../orchestrator.js";
-import { readPendingInbox } from "../pending-inbox.js";
 import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
 import { createWakeIfRunnable } from "../wake-if-runnable.js";
+import { writeModeSwitchNotice } from "../write-mode-switch.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
@@ -60,10 +65,9 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
 export function createRuntimeHarness(
   overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
     backgroundTasks?: DetachedWorkTracker;
-    repos?: ThreadRepositories;
-    /** The owner supplied `repos` commit through; the in-memory shown-link store joins it. */
-    transactionOwner?: InMemoryTransactionOwner;
-    inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
+    /** In-memory repositories carry their transaction owner; the harness's journal and shown-link store join it. */
+    repos?: ThreadRepositories | InMemoryRepositories;
+    inbox?: import("../../adapters/delivery-ports.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];
@@ -82,14 +86,15 @@ export function createRuntimeHarness(
     backgroundTasks: suppliedBackgroundTasks,
     creditLedger: suppliedLedger,
     notices: suppliedNotices,
-    transactionOwner: suppliedOwner,
     ...dependencies
   } = overrides;
   const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
   // Shown-link evidence commits through the repositories' transactions.
-  const transactionOwner = suppliedOwner ?? new InMemoryTransactionOwner();
-  const repos = overrides.repos ?? createInMemoryRepositories({ projects, transactionOwner });
+  const repos = overrides.repos ?? createInMemoryRepositories({ projects });
+  // Repositories that are not in-memory (Drizzle) commit through the database transaction, not an owner.
+  const transactionOwner =
+    "transactionOwner" in repos ? repos.transactionOwner : noTransactionOwner;
   const activeDocuments = createActiveDocumentResolver(repos);
   const preferences = createInMemoryProjectPreferencesRepository();
   const projectPreferences = {
@@ -101,7 +106,7 @@ export function createRuntimeHarness(
   const creditLedger = suppliedLedger ?? createInMemoryCreditLedger();
   const gateway = overrides.gateway ?? createInertGateway();
 
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const eventWriter = overrides.eventWriter ?? journal;
   const toolRegistry = overrides.toolRegistry ?? createToolRegistry();
   const notices = suppliedNotices ?? createTestNoticePort();
@@ -118,10 +123,10 @@ export function createRuntimeHarness(
           execution: {
             scope: {
               workId: "00000000-0000-0000-0000-000000000002",
-              workSlug: testWorkSlug("test-work"),
+              workHandle: testWorkHandle("w1"),
             },
             aiWriteMode: "direct" as const,
-            draftOwner: null,
+            branchOwner: null,
           },
         },
       };
@@ -162,11 +167,6 @@ export function createRuntimeHarness(
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     toolRegistry,
     projectPreferences,
-    workWriteMode: {
-      async read() {
-        return "direct";
-      },
-    },
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     interruptArtifacts: createNoopInterruptArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
@@ -188,12 +188,19 @@ export function createRuntimeHarness(
         workContext,
         repos,
         eventWriter,
+        headSeq: (id) => journal.headSeq(id),
         notices,
         runClaim: runClaim as ReturnType<typeof createInMemoryRunClaim>,
         inbox,
         threadLock,
         runStarter: runStarter ?? { async start() {} },
         async publishFinalizedReports() {},
+        writeModeSwitch: {
+          async renderNotice(_threadId, mode) {
+            return writeModeSwitchNotice({ archivedAt: null, isNoWork: false }, mode, false);
+          },
+          async setWorkDefault() {},
+        },
         schedulePostCommit:
           schedulePostCommit ??
           ((task) => {
@@ -213,9 +220,14 @@ export function createRuntimeHarness(
       async rollbackResponse() {},
     },
     shownLinks: createInMemoryShownLinkStore({
-      transactionOwner,
+      transactionOwner:
+        transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
       threads: repos.threads,
       turns: repos.turns,
+    }),
+    observationFrontiers: createInMemoryObservationFrontiers({
+      transactionOwner:
+        transactionOwner === noTransactionOwner ? new InMemoryTransactionOwner() : transactionOwner,
     }),
     ...dependencies,
     backgroundTasks,
@@ -331,10 +343,19 @@ export async function runtimeScenario(
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects, transactionOwner });
   const project = await projects.create({ userId, title: projectTitle });
-  const thread = await repos.threads.create({ userId, projectId: project.id });
-  const journal = createInMemoryEventJournalWriter();
+  const thread = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId,
+    projectId: project.id,
+  });
+  const journal = createInMemoryEventJournalWriter(transactionOwner);
   const eventSink = options.eventSink ?? createInMemoryEventSink();
-  const hub = createThreadEventHub({ journalWriter: journal, journalReader: journal, eventSink });
+  const hub = createThreadEventHub({
+    journalWriter: journal,
+    journalReader: journal,
+    eventSink,
+    inMemoryTransactionOwner: transactionOwner,
+  });
   const gatewaySignal = runtimeGate();
   const gateway: Gateway = {
     ...options.gateway,
@@ -361,7 +382,6 @@ export async function runtimeScenario(
     ...ports,
     gateway,
     repos,
-    transactionOwner,
     eventWriter: hub,
     headSeq: (id) => hub.headSeq(id),
     boundThreads: () => [thread.id],
@@ -438,7 +458,6 @@ export async function runtimeScenario(
             return {
               threadId: id,
               status: await harness.runClaim.read(id),
-              runningTurnId: await harness.runClaim.readRunningTurnId(id),
               activity: await readThreadActivity(
                 {
                   threads: repos.threads,
@@ -447,7 +466,7 @@ export async function runtimeScenario(
                 },
                 id,
               ),
-              pending: await readPendingInbox(harness.delivery, id),
+              runState: await harness.delivery.answerRunState(id),
               resumeAfterSeq: (await hub.headSeq(id)).toString(),
             };
           },

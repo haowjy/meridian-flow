@@ -1,11 +1,15 @@
 /** Exact project-scoped resolution that mints stable Work authority capabilities. */
 
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { ResolvedWorkAuthority, WorkAuthorityDto, WorkSlug } from "@meridian/contracts/works";
+import type {
+  ResolvedWorkAuthority,
+  WorkAuthorityDto,
+  WorkHandle,
+} from "@meridian/contracts/works";
 
 export interface ProjectWorkAuthorityResolver {
   byId(projectId: ProjectId, workId: WorkId): Promise<ResolvedWorkAuthority | null>;
-  bySlug(projectId: ProjectId, workSlug: WorkSlug): Promise<ResolvedWorkAuthority | null>;
+  byHandle(projectId: ProjectId, workHandle: WorkHandle): Promise<ResolvedWorkAuthority | null>;
   noWork(projectId: ProjectId): Promise<ResolvedWorkAuthority | null>;
   lockById(projectId: ProjectId, workId: WorkId): Promise<ResolvedWorkAuthority | null>;
 }

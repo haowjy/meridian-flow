@@ -49,17 +49,17 @@ export type LinkResolutionScope = {
   workId: string;
   /**
    * The lineage a bare `scratch://` means, in a No Work chat or in a note of a
-   * lineage. The server takes it in place of the Work; bare `uploads://` stays
-   * the No Work row's.
+   * lineage. The server takes it in place of the Work.
    */
   rootThreadId?: string | null;
+  /** The chat a bare `uploads://` means: the chat itself, or a subagent's top chat. */
+  chatId?: string | null;
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
   /**
-   * The document holding the links, when the scope is one document's text.
-   * Its server questions are asked from its address, so until that address
-   * arrives (a new registration) they are not asked at all: a question with
-   * no holder address is chat's, which may fall back to previous locations.
+   * The document holding the links, when the scope is one document's text. The
+   * server pins this identity and its current address; only a relative target
+   * without a base URI remains unasked on the client.
    */
   holderDocumentId?: string | null;
 };
@@ -75,7 +75,7 @@ export function createProjectLinkResolver(
   index: LinkableDocumentIndex,
   settlements: LinkSettlements,
 ): InternalLinkResolver {
-  const { projectId, workId, rootThreadId, baseUri, holderDocumentId } = scope;
+  const { projectId, workId, rootThreadId, chatId, baseUri, holderDocumentId } = scope;
   const memo = settlements.forProject(projectId);
   const catalog = createProjectLinkCatalog(projectId, index, memo);
   const indexedAnswer = (documentId: string) => {
@@ -105,17 +105,15 @@ export function createProjectLinkResolver(
         if (answer && confirmed) return answered(answer);
         provisional = answer;
       }
-      // A holder whose own address has not arrived asks the server nothing: a
-      // question with no holder address is chat's, which may fall back to
-      // previous locations.
-      if (holderDocumentId && !baseUri) return provisional ? answered(provisional) : UNASKED;
       return { kind: "ask", provisional };
     },
 
     async remote(questions) {
       const response = await resolveDocumentLinks(projectId, {
         ...(rootThreadId ? { rootThreadId } : { workId }),
+        ...(chatId ? { chatId } : {}),
         baseUri,
+        ...(holderDocumentId ? { holderDocumentId } : {}),
         links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
       });
       if (response.answers.length !== questions.length)
@@ -141,13 +139,17 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
-      return documentAnswer({
+      const found = documentAnswer({
         documentId: document.id,
         title: document.title,
         uri: document.uri,
         workId: document.workId,
         rootThreadId: document.rootThreadId ?? undefined,
       });
+      // A hidden document is "in a draft": keep the destination the server named.
+      return found && answer.inBranch && answer.branch
+        ? { ...found, branch: answer.branch }
+        : found;
     }
     case "gone":
       return GONE;

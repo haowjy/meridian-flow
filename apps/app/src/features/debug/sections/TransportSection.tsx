@@ -8,10 +8,10 @@
  * - Read-only: never calls `connect`/`disconnect`/`reconnect`.
  * - i18n exception: DEV-only debug surface; bypasses Lingui.
  */
-import { useEffect, useState } from "react";
 
+import type { ConnectionState } from "@meridian/thread-client";
+import { useEffect, useState } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
-import type { ConnectionState } from "@/core/transport";
 
 import { JsonTree } from "../JsonTree";
 

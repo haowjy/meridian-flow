@@ -7,7 +7,8 @@
  * rows need no project label: path and time are what is left to disambiguate.
  *
  * Device-local history paints first. The network adds other devices and never
- * gates this writer's own openings.
+ * gates this writer's own openings. The top margin holds the notice for
+ * documents that closed under the writer, so the list never moves for it.
  */
 import { Trans } from "@lingui/react/macro";
 import { useRouter } from "@tanstack/react-router";
@@ -30,14 +31,18 @@ import { projectAddressHref } from "../routing/project-address";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { fileKindIcon } from "./context-file-icon";
 import { useOpenProjectDocument } from "./open-project-document";
+import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
 
 export function RecentDocumentsLanding({
   projectId,
   editorWorkId = null,
   onNewDocument,
+  holdsRemovedNotice = false,
 }: {
   projectId: string;
   editorWorkId?: string | null;
+  /** No tab is left to hold the removed-documents notice in the strip. */
+  holdsRemovedNotice?: boolean;
   /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
 }) {
@@ -58,7 +63,13 @@ export function RecentDocumentsLanding({
   // first-run state stands alone rather than sitting under it.
   if (recent.status === "empty" && !settling) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
+      <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
+        {holdsRemovedNotice ? (
+          <RemovedDocumentLandingNotice
+            projectId={projectId}
+            className="absolute inset-x-6 top-4 justify-center"
+          />
+        ) : null}
         <LandingEmpty onNewDocument={onNewDocument} />
       </div>
     );
@@ -66,7 +77,12 @@ export function RecentDocumentsLanding({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className={cn(editorColumnChrome, "pt-16 pb-24")}>
+      <div className={cn(editorColumnChrome, "pb-24")}>
+        <div className="flex h-16 items-center">
+          {holdsRemovedNotice ? (
+            <RemovedDocumentLandingNotice projectId={projectId} className="min-w-0" />
+          ) : null}
+        </div>
         <div className="flex items-end justify-between gap-4">
           <div>
             <h2 className="text-headline-section text-foreground">

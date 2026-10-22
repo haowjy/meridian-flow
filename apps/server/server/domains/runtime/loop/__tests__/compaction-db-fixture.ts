@@ -1,6 +1,8 @@
 /** Shared PostgreSQL composition for compaction and control boundary contracts. */
+
 import type { Database } from "@meridian/database";
 import { executionScenario } from "../../../../test-support/execution-scenario.js";
+import { createQuietDrizzleJournalWriter } from "../../../../test-support/journal-writer.js";
 import { createDrizzleNoticePort } from "../../../notices/adapters/drizzle-notice-port.js";
 import type { NoticePort } from "../../../notices/index.js";
 import { createDrizzleEventJournalWriter } from "../../../threads/index.js";
@@ -22,12 +24,15 @@ export function createCompactionFixture(db: Database) {
       summarizer?: ReturnType<typeof scriptedSummarizer>;
       gateway?: ReturnType<typeof scriptedGateway>;
       workContext?: WorkContextReader;
+      /** Nothing starts the next run after a release: the test starts each one itself. */
+      holdWakes?: boolean;
     } = {},
   ) {
     const { repos, ids } = await executionScenario(db);
     const threadId = options.empty
       ? (
           await repos.threads.create({
+            aiWriteMode: "direct",
             id: crypto.randomUUID(),
             userId: ids.user,
             projectId: ids.project,
@@ -37,7 +42,7 @@ export function createCompactionFixture(db: Database) {
         ? ids.child
         : ids.caller;
     const claim = createDrizzleRunClaim(db, { holderId: "fixture-owner" });
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
     let threshold: number | undefined = 2500;
     // A child reads its spawner's binding for the chain's permission.
     const boundThreadIds = new Set([threadId, ...(options.child ? [ids.caller] : [])]);
@@ -56,6 +61,7 @@ export function createCompactionFixture(db: Database) {
     const summarizer = options.summarizer ?? scriptedSummarizer();
     const { createDrizzleCreditLedger } = await import("../../../billing/index.js");
     const rig = createRuntimeHarness({
+      ...(options.holdWakes ? { wakeIfRunnable: async () => {} } : {}),
       backgroundTasks: processDetachedWork,
       creditLedger: createDrizzleCreditLedger(db),
       repos,

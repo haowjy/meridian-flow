@@ -27,6 +27,9 @@ export async function resolveCatalogRoute(event: H3Event) {
     if (!(await app.contextPorts.lineages.byId(projectId, rootThreadId)))
       throw createError({ statusCode: 404, message: "Chat not found" });
     scope = { kind, projectId, rootThreadId };
+  } else if (kind === "chat") {
+    // The chat row may not exist yet: a New chat's composer uploads under the id it minted.
+    scope = { kind, projectId, chatId: requireRequestId(query.chatId, "chatId") };
   } else {
     throw createError({ statusCode: 400, message: `Unsupported catalog scope: ${kind}` });
   }

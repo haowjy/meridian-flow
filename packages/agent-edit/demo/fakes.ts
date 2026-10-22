@@ -1,7 +1,6 @@
 // In-memory fake server ports for the throwaway agent-edit demo harness.
 import {
   type DocumentCoordinator,
-  type DocumentLifecycle,
   DocumentNotFoundError,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
@@ -11,7 +10,7 @@ import { effectiveYjsUpdate, yjsUpdateFromState } from "../src/yjs-update.js";
 
 export class InMemoryJournal extends InMemoryAgentEditJournal {}
 
-export class InMemoryCoordinator implements DocumentCoordinator, DocumentLifecycle {
+export class InMemoryCoordinator implements DocumentCoordinator {
   private readonly docs = new Map<string, Y.Doc>();
   private readonly locks = new Map<string, Promise<void>>();
   private nextClientId = 1000;
@@ -20,18 +19,6 @@ export class InMemoryCoordinator implements DocumentCoordinator, DocumentLifecyc
 
   async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
     return this.lock(docId, async () => fn(this.getOrCreate(docId)));
-  }
-
-  async recover(docId: string): Promise<void> {
-    await this.withDocument(docId, async (doc) => {
-      const snapshot = await this.journal.read(docId);
-      if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-      for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
-    });
-  }
-
-  async ensureDocument(docId: string): Promise<void> {
-    this.getOrCreate(docId);
   }
 
   requireDocument(docId: string): Y.Doc {

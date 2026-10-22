@@ -20,7 +20,7 @@ debugging concern and belong behind a dev-only setting, never in chat.
 Tier 2 is keyed by **tool name**. The two document tools share one renderer:
 `read` carries reading and skimming, and `write` carries creating, copying,
 editing, removing and reverting. Which of those a row is comes from
-`tool-command.ts`, and what to do about it comes from
+`tool-command.ts` (in `@meridian/thread-client`), and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
 
@@ -30,7 +30,7 @@ result): operation, Work name, before and after. `work-receipt-copy.ts`
 localizes them into the sentence, in Work names. Reads keep one minimal
 generic row; failures title with the failure verb and open onto the
 structured message. A mutation receipt's
-`inverse` (`workReceipt` in `tool-command.ts`) makes create/update/delete
+`inverse` (`workReceipt` in `@meridian/thread-client`) makes create/update/delete
 reversible, and that action lives on the turn edits receipt, not on this row:
 the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
 lineage owns Undo authority. This row stays a record.
@@ -73,6 +73,8 @@ the UI says neither "intent" nor "outcome".
 | `read` with `format: outline` | The headings it saw, indented by depth | The listing cap, with a count | None; the row title's door serves |
 | `create` / `insert` / `replace` with `content` | The submitted content, on the recessed surface | Height, with a fade | The document, at the fade |
 | `copy`, or `insert` / `replace` with `from` | Nothing; the verb names the source ("Copied a.md to", "Copied from a.md into") | — | — |
+| `move` | Nothing; the verb names the source and the parameter where it went ("Moved ch4 to ch4-old"), folder or section kept only when it tells the destination apart | — | — |
+| `delete` | Nothing; the title has no door, since the old address may hold another document | — | — |
 | `remove` / `undo` / `redo` | Nothing | — | — |
 | `search` | A result card: totals, then a section per document | The document cap, with a count | Each matched passage |
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
@@ -80,9 +82,13 @@ the UI says neither "intent" nor "outcome".
 
 A **failed document tool** shows why it failed, in place of whatever the
 command would otherwise have opened onto, with one exception: a `write`
-refused with `read_required` is titled "Paused to reread" and opens onto
-nothing, since the next rows (the read, then the retried write) say what
-happened. A failed `work` call opens onto its structured message. A failed
+refused with `region_changed` (the passage changed since the AI last saw it, or
+the AI hadn't seen all of it) is titled "Got the latest text of" the document,
+true of both, and opens onto nothing, since
+the next row (the retried write, or a read of a passage too long to show)
+says what happened. A refused `move` or `delete` is worded from its typed
+`refusal` (`namespace-refusal-copy.ts`) and names the move's source, not its
+destination. A failed `work` call opens onto its structured message. A failed
 `search` or `ls` opens onto nothing at all. Whether every
 failure deserves an expand is an open design question; do not invent an answer
 in a renderer.

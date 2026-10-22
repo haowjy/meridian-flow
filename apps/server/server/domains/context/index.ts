@@ -1,3 +1,4 @@
+export { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { guardWorkContextRestore } from "./adapters/context-fs/document-locations.js";
@@ -7,10 +8,7 @@ export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-st
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
-export {
-  createDrizzleDocumentLinkScopes,
-  type LinkScopeMembership,
-} from "./adapters/document-link-scope.js";
+export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -47,6 +45,11 @@ export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
+export {
+  type ChatFileAddresses,
+  createOwnerLookup,
+  type OwnerLookup,
+} from "./owner-lookup.js";
 export type {
   AdapterFault,
   AdapterFileEntry,
@@ -61,7 +64,6 @@ export type {
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
-  ProjectDocumentCatalogRefreshPort,
 } from "./ports/context-catalog.js";
 export type {
   ContextDocumentStore,
@@ -105,6 +107,10 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type {
+  DocumentRemoval,
+  DocumentRemovals,
+} from "./ports/document-removal.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
 export {
   type AheadRegistration,
@@ -143,6 +149,13 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
+export {
+  createDocumentRemoval,
+  createRemovalRecords,
+  readRemovalRecords,
+} from "./tree/removal.js";
+export * from "./tree/tree-view.js";
 export {
   createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,

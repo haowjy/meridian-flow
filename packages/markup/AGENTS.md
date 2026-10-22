@@ -38,3 +38,4 @@ outside it.
   because a wrong guess writes a reference that can never render.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API contract.
+The image-specific wire contract is [`.context/image-wire-format.md`](.context/image-wire-format.md).

@@ -182,6 +182,7 @@ async function setup(
           status: "complete",
         });
         return rig.repos.threads.createSubagent({
+          aiWriteMode: "direct",
           userId: USER_ID,
           projectId: rig.project.id,
           parentThreadId: rig.thread.id,
@@ -218,7 +219,7 @@ describe("inbox drain", () => {
       origin: "system",
       status: "pending",
     });
-    const lease = await runClaim.startExecution(threadId, "failed-summary");
+    const lease = await runClaim.startExecution(threadId, "failed-summary", async () => {});
     if (!lease) throw new Error("Expected compaction lease");
     await runClaim.bindTurn(lease, placeholder.id, [adopted.id], "compaction");
 
@@ -383,7 +384,7 @@ describe("inbox drain", () => {
     const image = {
       type: "image" as const,
       documentId: "44444444-4444-4444-8444-000000000004",
-      uri: "uploads://@/temporary-failure.png",
+      uri: "uploads://@c1/temporary-failure.png",
     };
     let resolutions = 0;
     const { thread, requests, orchestrator, repos, send, inbox, journal } = await setup({
@@ -474,7 +475,7 @@ describe("inbox drain", () => {
           await rig.send(rig.thread.id, "first steer", {
             blocks: [
               { type: "text", text: "first steer" },
-              imageReference("uploads://@/first.png"),
+              imageReference("uploads://@c1/first.png"),
             ],
           });
         }
@@ -486,7 +487,7 @@ describe("inbox drain", () => {
       await rig.send(rig.thread.id, "first writer message", {
         blocks: [
           { type: "text", text: "first writer message" },
-          imageReference("uploads://@/first.png"),
+          imageReference("uploads://@c1/first.png"),
         ],
       });
       const preparing = rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
@@ -539,7 +540,7 @@ describe("inbox drain", () => {
         const sent = await rig.send(rig.thread.id, "steer with image", {
           blocks: [
             { type: "text", text: "steer with image" },
-            imageReference("uploads://@/steer-failure.png"),
+            imageReference("uploads://@c1/steer-failure.png"),
           ],
         });
         steerTurnId = sent.userTurnId;
@@ -551,7 +552,7 @@ describe("inbox drain", () => {
       await rig.send(rig.thread.id, "writer message with image", {
         blocks: [
           { type: "text", text: "writer message with image" },
-          imageReference("uploads://@/start-failure.png"),
+          imageReference("uploads://@c1/start-failure.png"),
         ],
       });
       const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
@@ -608,7 +609,7 @@ describe("inbox drain", () => {
         await rig.send(rig.thread.id, "steer survives cancellation", {
           blocks: [
             { type: "text", text: "steer survives cancellation" },
-            imageReference("uploads://@/cancel.png"),
+            imageReference("uploads://@c1/cancel.png"),
           ],
         });
       },
@@ -619,7 +620,7 @@ describe("inbox drain", () => {
       await rig.send(rig.thread.id, "writer message survives cancellation", {
         blocks: [
           { type: "text", text: "writer message survives cancellation" },
-          imageReference("uploads://@/cancel-start.png"),
+          imageReference("uploads://@c1/cancel-start.png"),
         ],
       });
       const preparing = rig.orchestrator.prepare({
@@ -686,6 +687,7 @@ describe("drain-only start", () => {
       prevTurnId: null,
     });
     const child = await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: thread.userId,
       projectId: thread.projectId,
       parentThreadId: thread.id,

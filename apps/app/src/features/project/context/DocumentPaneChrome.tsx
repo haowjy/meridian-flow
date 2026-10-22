@@ -1,13 +1,17 @@
 /**
  * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the archived-Work notice, and the review-capable identity bar.
+ * notice, the archived-Work notice and the review-capable identity bar (whose free end
+ * says what live did to the document this draft holds).
  * The Editor's page and the dock's document stack the same chrome, so an open
  * document looks and behaves alike wherever it is shown; the dock shows the
- * identity bar in its header instead (`identity: null`).
+ * identity bar in its header instead (`identity: null`). The draft hint is the
+ * same in both, live or reviewing.
  */
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
+import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
@@ -60,11 +64,13 @@ export function DocumentPaneChrome({
           editorWorkId={identity.editorWorkId}
           tab={tab}
           readOnly={identity.readOnly}
-          onCloseDraftOnly={tab.kind !== "new" && tab.draftOnly ? () => onCloseTab(tab) : undefined}
+          onCloseDraftOnly={isDraftOnly(tab) ? () => onCloseTab(tab) : undefined}
           onCommitted={identity.onCommitted}
           onOpenExisting={identity.onOpenExisting}
         />
       ) : null}
+      {/* Other Works' drafts of this document are discoverable wherever it is shown, live or in review. */}
+      <DocumentDraftHint projectId={projectId} tab={tab} />
     </>
   );
 }

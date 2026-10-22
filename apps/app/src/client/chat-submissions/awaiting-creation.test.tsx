@@ -3,12 +3,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { ThreadStoreProvider, useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
+import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
+import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
 import {
   bindChatSubmissions,
+  CHAT_SUBMISSIONS_SCHEMA_VERSION,
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
-  type ChatSubmission,
+  type NewChatSubmission,
   recordChatSubmission,
   retireChatSubmission,
 } from "./index";
@@ -17,15 +22,89 @@ import {
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-it("reads creation synchronously on reload and updates on local writes, storage events and pending flags", async () => {
+// bindChatSubmissions starts an unawaited deleted-chat sweep behind a dynamic import; let it
+// settle inside its own test so it never rejects into the next one.
+afterEach(async () => {
+  await vi.dynamicImportSettled();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+it("holds only the lineage catalog read while its chat is pending creation", async () => {
   window.localStorage.clear();
-  bindChatSubmissions("awaiting-account");
-  const entry: ChatSubmission = {
+  bindChatSubmissions("catalog-account");
+  recordChatSubmission("catalog-account", {
     recordId: "record",
     submissionId: "submission",
     threadId: "thread",
     projectId: "project",
     createdAt: "2026-10-11T12:00:00Z",
+    text: "Words",
+    blocks: [{ type: "text", text: "Words" }],
+    references: [],
+    activatedSkillSlugs: [],
+    creation: {
+      title: "Words",
+      workId: null,
+      workAiWriteMode: "direct",
+      agentSelection: { catalogEntryId: "agent", definitionRevisionId: "revision" },
+      agentName: "Agent",
+      agentSlug: "agent",
+    },
+  });
+  const acquired: string[] = [];
+  const spy = vi
+    .spyOn(AccountResourceReplica.prototype, "acquireCatalog")
+    .mockImplementation((_projectId, scope) => {
+      acquired.push(scope.kind);
+      return new Promise(() => undefined);
+    });
+  const client = new QueryClient();
+  const root = createRoot(document.createElement("div"));
+  const warmed: string[][] = [];
+  function Reader() {
+    useContextCatalogViews("project", ["manuscript", "user", "scratch"], {
+      rootThreadId: "thread",
+    });
+    // The reference browser prefetches and warms its own scope list; it takes the same gate.
+    const references = useReferenceBrowserCatalog("project", null, "Reference", "thread");
+    warmed.push((references?.openContext?.()?.warmScopes ?? []).map((scope) => scope.kind).sort());
+    return null;
+  }
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <AccountFeatureTestProvider accountId="catalog-account">
+            <ThreadStoreProvider now={0}>
+              <Reader />
+            </ThreadStoreProvider>
+          </AccountFeatureTestProvider>
+        </QueryClientProvider>,
+      ),
+    );
+    expect([...acquired].sort()).toEqual(["project", "user"]);
+    expect(warmed.at(-1)).toEqual(["project", "user"]);
+    await act(async () => retireChatSubmission("catalog-account", "record"));
+    expect([...acquired].sort()).toEqual(["lineage", "project", "user"]);
+    expect(warmed.at(-1)).toEqual(["lineage", "project", "user"]);
+  } finally {
+    await act(async () => root.unmount());
+    spy.mockRestore();
+    client.clear();
+    window.localStorage.clear();
+  }
+});
+
+it("reads creation synchronously on reload and updates on local writes, storage events and pending flags", async () => {
+  window.localStorage.clear();
+  bindChatSubmissions("awaiting-account");
+  const entry: NewChatSubmission = {
+    recordId: "record",
+    submissionId: "submission",
+    threadId: "thread",
+    projectId: "project",
+    createdAt: "2026-10-11T12:00:00Z",
+    seq: 1,
     text: "Unsent words",
     blocks: [{ type: "text", text: "Unsent words" }],
     references: [],
@@ -33,6 +112,7 @@ it("reads creation synchronously on reload and updates on local writes, storage 
     creation: {
       title: "Unsent words",
       workId: null,
+      workAiWriteMode: "direct",
       agentSelection: { catalogEntryId: "agent", definitionRevisionId: "revision" },
       agentName: "Agent",
       agentSlug: "agent",
@@ -76,7 +156,11 @@ it("reads creation synchronously on reload and updates on local writes, storage 
     await act(async () => {
       window.localStorage.setItem(
         key,
-        JSON.stringify({ version: 2, accountId: "awaiting-account", payload: entry }),
+        JSON.stringify({
+          version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
+          accountId: "awaiting-account",
+          payload: entry,
+        }),
       );
       window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
     });

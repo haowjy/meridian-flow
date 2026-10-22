@@ -29,6 +29,9 @@ export type ToolbarButtonProps = Omit<
   children: ReactNode;
 };
 
+/** Under a finger the dense icon row grows to the phone shell's 44px target. */
+export const TOUCH_TARGET = "[@media(pointer:coarse)]:size-11";
+
 export function toolbarControlClass({
   active = false,
   blocked = false,
@@ -82,7 +85,7 @@ export function ToolbarButton({
         aria-label={label}
         aria-pressed={active || undefined}
         aria-disabled={blocked || undefined}
-        className={cn(toolbarControlClass({ active, blocked }), className)}
+        className={cn(toolbarControlClass({ active, blocked }), TOUCH_TARGET, className)}
         onClick={(event) => {
           if (blocked) {
             event.preventDefault();

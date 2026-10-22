@@ -1,393 +1,263 @@
-# Draft review lifecycle reference
+# Draft review runtime
 
-[The ownership map](../AGENTS.md) identifies modules. This reference defines
-cross-surface state, command ordering and lifecycle contracts, not surface layout.
-Paths below are relative to `apps/app/src` unless otherwise noted.
+Review is a projection of the tab's own text, never a server-vended operation
+list. The shared [kernel model](../../../../../../packages/agent-edit/.context/diff-review.md)
+owns diffing, grouping, move pairing and formatting context.
 
-## Scope and review evidence
+## One room, one runtime
 
-The project shell composes one persistent review value through
-`DraftReviewProvider`, for the presented document (`features/project/presented-document.ts`):
-the Editor on Context, the dock document on desktop Chat/Work. Its Work is the
-presented review's Work, falling back to the Editor route Work. Chat and Work
-lists compose `useWorkDrafts` and `useWorkDraftCommands`; they own no review
-reducer, room or focus observer, and there is no per-list review scope.
-A scope change hides the departed selection in render before layout clears it,
-so an old draft cannot attach to a new Work or account-query scope.
+`useRoomBindings` retains rooms through `readDraftRoom` and publishes lifecycle
+changes, not text frames. `useRoomReviews` subscribes to those runtimes through
+`useSyncExternalStore`; frames stay in the runtime rather than queued React state.
+Open reviews and headless dock/Work readers share the runtime by session object; a replacement account/session cannot inherit another
+room's frame. Metadata effect keys contain only the `projectId`, `workId`, `documentId` and `itemKey` address strings and metadata
+revision/status/error, never the caller's object: presentation focus carries a
+whole projection, and structural typing does not strip those extra fields.
+The final holder destroys its runtime. The pool keeps room
+sessions through its normal release grace and drains unacknowledged edits;
+IndexedDB keeps the local text across reloads.
 
-`projectWorkDraftFiles` in `client/query/work-draft-files.ts` projects the
-server's reviewable list into catalog-labelled files after `projectDraftList` applies whole-Apply intents. `useWorkDrafts` exposes
-`files` and `fileForDocument`; raw `drafts` remain generation/command evidence.
-Live names and paths include optimistic renames; draft-only files keep their
-listed labels. `sortDraftFiles` orders by name, then path basename for unnamed
-files, then document ID, with ID as tie-breaker. Update time never reorders files.
-`nextReviewFile` retains a removed file's place using its last name.
+`review-frame.ts` reads the projection and its snapshot. Headless reads retain unchanged
+ProseMirror nodes using the same Yjs mapping invalidation as the binding, exported by
+the scoped y-tiptap patch. Attaching an editor adopts its schema and retained
+nodes off the typing path. Editor projection uses the editor's own mapping;
+another attached editor receives positions only if its full content agrees.
+Base reads also retain ProseMirror nodes and their block array. Each base fragment has one
+current-schema reader; a schema replacement disposes the old observer while frozen
+frames keep their immutable nodes. Removal widgets never enter either Yjs fragment.
 
-Branch lifecycle status is not review evidence. The server's
-`work-draft-pending` classifier supplies review membership, content-branch count
-and the mode-switch apply plan. The client projection does not authorize
-Draft-to-Auto-apply transitions or count bookkeeping-only branches as changes.
+`review-runtime.ts` caches base blocks per schema until `review_base` changes
+or the provider is invalidated. Keystrokes project against that cache after a
+120 ms trailing debounce. Peer writes and base changes coalesce into an immediate
+microtask projection, after Yjs/editor bindings have settled. The painter maps
+existing marks while the next frame waits. A binding's whole-root PM replacement
+uses the actual content-diff map, not its whole-document step map; fully erased
+ranges retire instead of expanding inclusive marks across the replacement.
+`projectNow()` cancels the wait and reuses a clean frame. Any Yjs update invalidates
+the captured cut, including root-only changes; attribution-only publication does
+not repaint an already installed text frame. Ready requires first room sync; cached changes alone are not authority to
+Discard. Once synced, temporary offline status does not forget that history.
 
-`draftView` owns the discriminated action target (operations, draft or display) and
-`reviewChangesOfPreview` exposes its shared `reviewChanges` grouping by server
-`closureClassId`, ordered by earliest hunk with class ID breaking ties. Send all
-operations in the class, never a representative. Only new documents become one whole-draft item, with all
-mark keys and attribution retained. Its Apply/Discard use existing whole-draft
-commands, never synthetic IDs in a selective request. Formatting-only edits have
-server classes and whole-block decorations. Rich hunks carry semantic formatting
-facts; the client localizes their one-line row description through messages.po
-(provisional wording). Unchanged text is never shown struck through beside itself.
-Whole claims hide the addressed
-generation's preview optimistically; failures restore it.
-Existing documents retain each class. Unclassified hunks and classes flagged
-`canApplyOrDiscard: false` show no selective controls; other classes remain
-actionable. The chat strip skips incomplete classes; whole header commands
-cover them. Rows are DOM display artifacts, not editable TipTap content.
+## Commands and attribution
 
-## Command admission and ordering
+- `setBaseProvider(baseOf)` and `invalidateBase()` let the command owner fold
+  queued Apply clicks into the base. The provider receives the room and schema;
+  it is not called per keystroke. No applied-id hiding or selection translation
+  exists beside this projection.
+- Every displayed group carries its immutable `frame`. `targetOfChanges`
+  supplies that frame and group ids to command callbacks, not a later read of
+  the runtime. The owner validates the frame before interpreting projection-local ids.
+- `setAttributionProvider()` joins a per-group byline/membership map without
+  changing boxes. An absent map entry is explicitly unknown, so candidate chat
+  rows remain visible without a byline. `room-attribution.ts` owns one
+  reference-counted evidence reader per session. It fetches on unresolved
+  clock-range changes, Apply/restoration root revisions and reconnect, not
+  text-frame identity. Local deletion witnesses cover unacknowledged typing.
+  Replaced/aborted reads never publish. `review-attribution.ts` joins the
+  classifier's byline/membership to owner conversations; a subagent link asks
+  the existing conversation reveal controller for its spawn card.
+- The controller retains explicit focus intent as a group id and immutable frame.
+  A new projection invalidates that address; each subscribed leaf derives the first
+  remaining group without writing a fresh frame back through the project scope.
+  Header Apply eligibility comes from that same leaf projection, not a controller
+  snapshot. A click reads the painter's current frame synchronously. Launch requests
+  carry id and frame together. Persisted bare ids never restore selection into a
+  newer projection. `useInlineReviewFocus` registers the mounted editor for
+  controller-owned jumps and releases only its own claim on unmount. Same-entry
+  URL replacements disable router scroll restoration so the editor owns the jump.
+  An empty frame shows “No changes left” once the item has no tree line either:
+  the open review lists the item's pending move or delete first (focus and the
+  stepper walk only the text changes), so a text-only Discard leaves Discard
+  draft and Apply draft beside the Work notice. Only the close contract can end
+  the draft room or send the editor to live.
 
-`client/query/draft-command-executor.ts` owns admission, selection preparation,
-typed requests, addressed answers, refresh, confirmation/failure and release.
-`useWorkDraftCommands` binds project, Work and thread invalidation authority at
-creation. A command never routes to the Editor merely to make its answer visible.
-An expanded Work row may share the presented review's list model while still using its own
-Work capability. Archived Works lock dispositions; Review remains available.
+`useReviewRefresh` discovers list/metadata changes from the runtime's semantic
+membership: any differences, pending owner-thread ids, and unknown attribution.
+A new frame or another key with the same membership never refetches the whole
+Work. A semantic change schedules only after its captured room cut is acknowledged,
+so a slow append cannot leave a first change absent from the server list. This
+wait gates only background discovery, never input or commands. An independent live-room update still schedules discovery; a mounted review
+session is not also a live source. Its pending timer belongs to the review
+identity, so rebinding an editor cannot drop discovery already scheduled by a pull.
 
-`startDraftCommand` checks the one claim and both `navigator.onLine` and
-`onlineManager.isOnline()` before optimistic effects. The caller navigates from
-`CommandStart.sent`, not its own connectivity prediction. Requests use TanStack
-`networkMode: "always"`; offline clicks never queue for reconnect. Admission
-refusal sends nothing, refreshes nothing and removes no draft-only tab.
+## Other lifecycle boundaries
 
-Whole commands send the draft ID without preview tokens or operation sets.
-Selections send every selected operation plus the cached active preview's live
-and draft revision tokens. Discard also sends the exact server-vended closure
-class IDs and admission tokens; the server admits unchanged closed-row/rich-effect
-evidence despite unrelated draft typing,
-while Apply remains fenced by the full draft observation. The executor reads the generation and predicts
-`completesDraft` from all remaining changes; no active preview refuses `stale`
-without sending. The claim keeps generation, not a retained preview basis.
+The room owner supplies the selected address's room name and read error directly.
+Presentation state retains selection, focus, marks and `shown`, not room readiness.
+Cached active metadata keeps its room mounted after a metadata refetch failure.
+Initial metadata failure retries metadata; room acquisition failure retries the room read.
+Editor model readiness stays local to its mount.
 
-Settlement order is explicit:
+`useAiDraftLauncher.openReviewFile` is the shared listed-file launch adapter.
+A draft-only editor is the document's single workspace tab in its review Work,
+not a second tab. Closing its review is not Discard. Catalog removal and
+promotion remain `DraftOnlySettlement`/the context lifecycle's responsibility;
+list omission alone must not infer local Discard or successful Apply. The list
+omits an active draft with no effect (a delete's held tab, a fully applied draft,
+one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
+the catalog shows its document and closes only when its draft metadata answers
+`gone`; an active or unanswered draft keeps its tab.
 
-1. An `applied`/`discarded` answer publishes closing evidence on the claim
-   before cache refresh. Selections also publish their addressed answer.
-2. Whole Apply confirms and projects the addressed pending list membership away
-   immediately, preserving a newer generation. Catalog/list/preview refresh
-   continues in the background; navigation and promotion do not decide success.
-3. Whole Discard awaits refresh. Confirmed or `gone` selections retain their
-   claim through awaited list/preview refresh, confirm settled keys as intents without editing raw previews. Other selection answers refresh before failure.
-4. Failure is recorded on the addressed draft or selection, and the executor
-   releases the claim in `finally`. No command answer survives as a claim after
-   release; the open review can retain a closed completion independently.
+Closure belongs to a draft generation, not to its item key. The key (branch +
+document) outlives its drafts: discarding one item leaves the branch active, and
+a later write to the same document mints a new draft under the same key. The
+command owner keeps each draft's record (its unsent text, its room) under its
+draft id, and an item follows its newest known generation: `bind` and
+`reconcileClosed` advance it, never a close. A close (room reset or metadata
+`gone`) retires the generation it was issued for, so a late answer about the old
+draft cannot close a newer one. While the item's known draft is closed, the
+review address port (`ProjectView`) and the route's address clearing both ask
+the server first (`reconcileClosed`, a fresh metadata read): `gone`, the same
+closed draft, or a failed read refuse admission and clear a non-draft-only
+address, since the room owner just ended that review and admitting it again
+would loop; a different active draft is the replacement, and admission goes
+ahead. `ReviewAddressOwner` remembers a refusal only for the port that gave it;
+the port changes when the item's generation does, so a replacement that becomes
+known later (another surface bound it) is retried once. The server answers `gone`
+from the Work's ownership and the item key alone, before any content grant:
+the active draft is what grants reading a document deleted live or a hidden
+creation, so after a Discard on another device a content check would answer
+404 forever. Inaccessible active content and network errors stay nonterminal.
 
-**Per-change clicks queue.** `runDraftSelection` accepts every distinct Apply or
-Discard click at once: it hides the change (the queue entry in the record store,
-which also holds the caller's execution context, promise and account epoch),
-and `drainClicks` sends the draft's clicks one at a time. Each is found again in
-the draft as it is when its turn comes (a fresh preview read for every click after
-the first, new tokens) by the immutable stable member set accepted at the click.
-Current complete raw classes must have exactly those members and remain
-actionable; a joined, missing or incomplete member refuses rather than changing
-the command. Only the row names and cut tokens may change. An explicit `stale`
-answer refreshes the cut and retries once, under the same drain and live claim,
-only for identical actionable members and unchanged server admission tokens.
-A second stale answer, changed membership or effect,
-permission failure or transport ambiguity restores/refuses without another retry.
-The drain supplies no caller authority: each intent carries its own query client
-and thread invalidation context. An account change answers every unsent click
-`blocked`, and the loop checks its click is still queued right after the read, so
-nothing is sent or published for a dead account. Rows disable only for a
-whole-draft command on that same draft or an archived Work (`changesLocked`), never for
-another change's command.
+## Account command lifetime
 
-**Identity across re-forks.** A selective Discard re-forks the draft, so every
-survivor gets a new journal row, hence a new `operationId`. The server carries the
-recorded edit part (`updateMeta.documentEdit`, `<editId>:<ordinal>`) through
-the re-fork and vends it as `ReviewOperation.partKey`; class ids hash the members'
-part keys, so an unchanged class keeps its id. Anything on the client that must
-outlive a generation (queued clicks, held failures, hidden sets, the focus, the
-"arrived" pulse, the navigation a writer made under a cover) carries
-`operationKey` (in `@meridian/contracts/drafts`: the part key; `row:<id>` for a row that records no edit part, which
-therefore only matches itself). Text excerpts are display, never identity.
+`AccountFeatureLifetime.draftCommands` is shared by editor, chat and Work
+surfaces. The review item owns command scheduling: one `ApplyClickQueue` per item key
+for its text, tree and text+tree clicks, so a tree cut waits behind the text clicks
+before it and one path publishes `pending`, `applying` and `stalled` on the item's
+current generation. Draft rooms are resources the item attaches. `bind(ref, session)`
+joins the item and installs a replaceable session binding on that draft's room
+(runtime, base-fold provider and Apply-record observer). A text click names its draft
+(`body.draftId`); only that draft's room records it, folds it into its base, holds a
+room reader for it (following replacement sessions even without a surface), and
+cancels it on close, so a newer draft under the same key never inherits an old click.
+A tree-only click has no room and its applied answer settles it. A refusal lands on
+the generation the click was made for. Retiring a session detaches that binding and
+refuses only its draft's unsent clicks. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
+snapshot, the reviewed base blocks (O), selected ids, the result of applying those
+groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
+the server to acknowledge every local update in that captured cut before dispatch. The queue
+retains a `readDraftRoom` lease independently of React until terminal.
 
-**Presentation data and interactions.** `useOpenReviewChanges.ts` owns the
-retained projected open-review data (changes, failures, status and completion).
-`useReviewChanges` adds focus, stepping and commands; `useDraftView` borrows only
-that presentation data for the same painted draft, paired with its own caller
-capability. Listed views never construct the interactive open-review model.
+A deleted document (the list item's `deletedLive`, D79) is draft-only on every
+surface. Existence is its own fact, never read from `conflict`: a deleted
+document's path may also be taken (`path_taken`, which only withdraws Apply); Apply restores it, then merges. `apply(ref, target, restore)` sends
+`restore` only when the writer knew: a single document's Apply whose row showed
+the delete, or an Apply all for the documents its confirmation named. Without it
+the server answers `needs_restore` (nothing changed); the outcome is
+`needs-restore`, the list refreshes so the row shows the delete, and an Apply all
+asks again by name. An applied answer with `restored` makes the outcome
+`{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
+editor's "back in the manuscript" state; the surface that clicked says the same in
+its reserved notice slot (`CommandNotice`).
 
-**One projection.** `draft-projection.ts` is the only place intents are applied to
-an observation: `projectDraft(observed, intentKeys)` gives the list/count preview,
-the manuscript's inline preview (Discards in flight still drawn) and the
-operations being restored. The held list re-projects the draft's last observation
-under the current intents; the paint cover is its capture plus the same
-projection.
+`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
+then an item Retry. A terminal acknowledgement failure refuses unsent cuts
+with an item failure; sent heads keep their same-id settlement across session
+replacement. Transient disconnects keep acknowledgement barriers pending.
+Each click has two independent duties. *Release* (the head leaves the FIFO
+and its optimistic contribution ends) happens exactly once: on the room's record,
+or on a terminal answer; an applied answer without the record keeps its
+contribution. *Completion* (the caller's outcome) comes from the full answer,
+which alone carries `restored`. When the record released a click whose answer is
+still in flight, the answer completes it when it arrives; when the answer is
+missing or lost, in either order relative to the record, the queue reads the
+stored result back under the same command id (never a resend), at 0/1/2/4
+seconds. Exhausted reads complete as `landed` (it landed; `restored` is
+unknown), and destroying the queue completes still-reading clicks the same way. Closed/refused answers remove only their
+own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
+the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
+so no surface shows a refusal line. Other refusals still move prose in two cases,
+Show changes off (header fallback line) and a long message wrapping in the
+between-paragraph bar; both are open in [#992](https://github.com/haowjy/meridian-flow/issues/992),
+which needs one feedback surface outside the manuscript flow rather than another
+per-width fix. A terminal close cancels unsent clicks and observes a sent
+head's durable outcome; applied then needs no room record. Feedback starts at
+500 ms in reserved footer space. No queue or optimistic base persists. Queue changes invalidate its optimistic
+contribution independently of account UI notifications; the account publishes only
+changed command state or a changed item-to-draft binding. Rendering leaves subscribe
+to those records; command callbacks and the project controller do not. The room
+owner observes only hidden/closed lifecycle transitions. Listed-room snapshots
+combine stable text and per-item command records, including deferred Discard.
+Apply callbacks refresh discovery when the item's FIFO drains, not after every head.
 
-**Claims are capabilities.** `beginDraftCommand` returns a `DraftClaim` bound to
-the account epoch (`resetDraftCommandRecords` advances it). Answers, failures,
-confirmations, cache edits and release after an await go through the claim and
-land only while it is the draft's live pending claim. Batch submission pins its
-creation-bound Work and account epoch, synchronously admits all targets into
-their draft-local queues, then aggregates their promises. No Work lease, reservation or hide-only batch queue
-exists. Refusals do not stop independent targets; account revocation stops the
-next actual send (already-sent requests cannot be rolled back). Offline clicks
-refuse without replaying on reconnect.
+The base provider folds `applyBase` over unrecorded clicks in order; only the
+runtime caches that fold per schema and observes `review_base`. Base,
+record and queue changes invalidate it; typing only reprojects. Group targets
+must still describe equal base and prose at capture; a changed pre-click
+projection is refreshed and reported locally, never reinterpreted by its
+old occurrence suffix. No post-click edit changes a frozen command.
 
-## Records, failures and freshness fences
+`discard(ref, target, surface)` composes against that optimistic base and
+calls `writeDiscardBlocks` (including `recordWriteBack`) in one transaction.
+Editor Discard executes synchronously. Dock/Work Discard first publishes its
+notice and a projection-scoped `discarding` target. Listed surfaces omit those
+groups for one paint opportunity; room frames and editor paint still come only
+from text. One animation frame allows React to commit the returned notice, a second gives
+it a paint opportunity, and the next performs the whole write-back,
+then clears the list overlay. Hidden pages drain on visibility change rather than
+waiting for animation frames. Changed base or prose refuses the stale write and
+restores the row, preserving intervening edits. Only the same item's further
+Apply/Discard waits for it. Editor history tracks a dedicated Discard origin
+with stop-capture boundaries. The draft-only editor plugin installs restoration
+recording when its view mounts, before any writer Undo/Redo. Installation is
+idempotent per manager, including the later editor Discard path. Live editors
+never install it; a replacement session mounts and records its own history.
+Direct writes never impersonate the binding origin: its delete-only transactions
+without a writer ProseMirror transaction are schema-repair evidence. A dock
+or Work notice owns a separate manager and pool lease, retains the runtime,
+and installs `recordRestorations` so Undo writes links in its own transaction.
+Undo captures its own session acknowledgement barrier before releasing notice ownership,
+then restores a cached list item before server discovery catches up. A later item lookup
+cannot prove that retired session's edits landed. At most
+the surface's latest Discard history is offered; another action ends it.
+The notice belongs to that exact session binding. Retiring the binding or
+closing the draft ends its notice and destroys its history; replacement
+documents never inherit the manager. The surface's end callback removes
+the notice when the owner retires it.
 
-`client/query/draft-command-record.ts` is the one cross-surface authority per
-(project, Work, document, draft). It owns claims, queues, overlap-matched
-selection outcomes, failures and list/preview read fences. Account changes clear
-it through `bindDraftCommandAccount`. No local lock or optimistic hide supplements it.
+Created-document removal and Work Discard all use the server through the
+same account owner. Their optimistic visibility is lifecycle state, never
+text-group hiding. Discard all includes bound empty drafts as well as listed
+items. Removed rooms ask the existing availability owner for the record;
+there is no second removal cache. `4205` maps to terminal `closed` (including
+in-band code-1000 delivery), `4208` to `removed`; session teardown clears
+the exact IndexedDB cache. The command owner handles a terminal room frame and
+an authoritative metadata `gone` as two arrivals of the same fact. For `gone`,
+it resolves the exact document through the availability owner: available goes
+to that document's current live URI; deleted uses the existing removal flow.
+Failed/unknown reads never prove closure. The owner deduplicates the disposition,
+retains an open room during that lookup for unsent-text recovery, and asks the
+pool to retire it and drop its exact cache. One-document text Discard clears neither.
 
-Queued, pending and confirmed selections are hidden by the shared preview
-projection; failures restore them with their reason. Matching uses shared class
-or operation keys, newest overlap wins. Discards among them are `restoring`:
-`useDraftPreview` hands the editor those changes still in its model (`inline`),
-so the manuscript draws their original text from the click. Preview reads stay
-raw. Confirmed selection keys remain account-scoped intents, since older
-observations can still be cached or held by the painted review.
-Work list reads stay raw too. Whole Apply retains an account-scoped generation
-horizon beside the claim, rather than filtering the cache or a late read. The
-same whole-command disposition projects list membership and previews; proposals
-above that horizon reappear. Read-start clocks stay beside immutable observations.
-A read started after confirmation can present a same-generation next proposal;
-a read begun earlier stays masked, even after fresh reads land. Structural
-sharing never merges equal observations across a command clock. Retaining the
-intent replaces read-drain retirement, so held pre-command evidence stays masked.
-List/preview failure retirement still fences at request start. The room owner
-reads raw generations and projected proposal membership; local hiding never
-becomes server omission.
-`previewWithoutKeys` never hides an unowned hunk.
+Addressed room lookup is `useDraftMetadata`, never a server text preview.
+The route retains this read above editor address admission, so catalog
+invalidation cannot strand a review after unmounting its room readers. A gone
+room is a lifecycle transition, not a room-opening error. The metadata GET returns the stable draft id and room name, or authoritative
+`gone`; list item keys cannot supply room identity. An item with a branch row
+(`tree`: a creation, move or delete) applies it with a tree cut: the whole item's
+Apply carries `tree.revision`, and with no text to send (no room, or no changes)
+it is the tree cut alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
+`draftId`, in the same item FIFO. A tree cut already queued is not sent again. A
+changed row answers `changed`; a move whose destination another of
+the branch's items still holds answers `held`, and Apply all re-sends those after
+the others. `discardItem` is the item's one Discard when it has a tree line: the
+server drops the move or delete, and the chosen text is discarded here as always.
+Its text offers no Undo, because Undo would bring back the text without the move
+or delete the server already settled (#763): the owner ends the text notice at
+once (the accepted write keeps its paint opportunity, then releases its room), and
+the surface shows "Discarded" without Undo.
 
-Failure classification uses error type/status, never message text:
-
-| Evidence | Selection failure | Whole failure |
-|---|---|---|
-| Either connectivity signal offline at admission | `offline` | `apply-offline` / `discard-offline` |
-| Typed server envelope | `refused` | `apply-refused` / `discard-refused` |
-| HTTP error without typed envelope | `server-error` | `apply-server-error` / `discard-server-error` |
-| Sent request with no HTTP answer | `unknown` | `apply-unknown`; unfenced whole Discard uses `discard-offline` |
-
-Only offline wording asks the writer to check their connection. Typed refusals
-retain `serverCode` and `serverReason`; `RefusalReason` in `ReviewMessageText`
-localizes known codes when shown and preserves unknown server reasons.
-Bare HTTP errors say to try again, not that the connection failed.
-Unknown means the answer was lost, not that the command was rejected. Neither
-list presence nor absence proves Apply/Discard; unknown never reports success
-or promotes a draft-only tab. A later preview that omits a failed selection
-retires it; a later list omitting a failed draft retires that failure.
-
-Selection `incomplete_class` becomes `stale` and refetches; focus follows shared
-operations if regrouping changed the class ID. `draft_only` refreshes as `stale` (a racing selective request cannot target a
-whole-draft item). `gone` is not held: the change leaves with failure feedback.
-Applied/discarded selections produce no success toast.
-Only `applied`/`discarded` answers can supply closure, never refusal or stale.
-Whole failures clear on the next disposition; opening Review clears only
-`review-failed` (a failed launch), not a refused command. Work rows can dismiss.
-
-`useReviewRefresh` is the open review's freshness owner. It watches the retained
-branch and live sessions and invalidates preview/list after a 500 ms settled
-burst, at least every 2 s during continuous writes. It does not interpret Yjs
-updates or construct another model. Unopened mounted previews refresh through
-`useDraftPreviews` when their list row changes; they join no room.
-`useInlineReviewSync` only projects the current generation's preview into the
-plugin, including refetches with unchanged tokens; it has no refresh timer.
-
-## Retained completion and generation policy
-
-`draftClaim` supplies the same review-facing projection on entry and on record
-changes. `useReviewCommandCompletion` emits one addressed `completionObserved`
-with generation and `completion | null`. A non-covering claim sends no generation
-adoption; withdrawal addresses the prior covering claim's generation.
-Synchronous subscription dispatch preserves entry/answer ordering in one flush,
-without consulting the last rendered review identity.
-
-`inlineReview.completion` is the reducer's retained state, not a second command
-store. A covering claim predicts `pending`; `draftClosed: true` supplies `closed`.
-A non-closing answer or failed/released claim withdraws pending. Closed stays
-sticky while that review remains open, including after claim release. Opening
-later adopts only current cache/claim evidence, not an old closing answer.
-An empty list never means finished: `useReviewChanges` derives `finished` only
-from closed completion, `completing` from pending, and `unlisted` for an active preview with no listed changes or command hiding them.
-
-Pending last Discard shows warm live text inert; refusal/non-closure restores
-review. Pending last Apply keeps the review editor with marks gone until the
-answer. Closed completion holds “No changes left” in the existing review/path row until
-explicit Next draft or Back to live. Lists close on the last disposition and
-finished Work files leave Changes to review. The chat strip has no notes or
-Work-page footer; one summary row holds count and commands. Expanded changes sit
-directly under it for a single document; multiple documents get file headers. A file
-failure belongs to its rendered change row, otherwise to the single-file summary
-or multi-file header. This ownership is derived from the rendered row model.
-Strip/header failures never wrap: the single line ellipsizes with full localized
-copy retained in its title and accessible text. Discard confirmation replaces the
-summary instead of competing with it. Change excerpts
-truncate to keep attribution and actions on the same line. Whole-draft header navigation is an explicit admitted-click effect,
-not an automatic consequence of a selection's closure.
-
-Whole Apply stays in generation G. Whole Discard and last-selection disposition
-reset the branch to G+1; the reset and next proposal share that room/generation.
-Proposal content, not the number alone, distinguishes them. Revision tokens
-change with writes and are observation/Apply stale fences, never room identity.
-Discard fences current live authority and admission evidence for selected closed
-rows and rich class effect instead.
-The reducer owns shown generation R and completion K:
-
-| Row | Input | Result |
-|---|---|---|
-| E | Enter the draft | R is the newest proposal the caches know (a cached preview that lists changes, the list row, a claim); K is the claim's if it acted on R; none known leaves R unresolved |
-| C1, C2 | Claim at R begins covering the last changes, or is answered `draftClosed` | K is pending, or closed (a closed K never goes back) |
-| C3 | Claim at R ends without a close | A pending K is withdrawn; a closed one stays |
-| C4, C5 | Claim below R, or above it (or R unresolved) | Ignored, or re-enter the claim's generation (a claim that does not cover the last changes sends no action: it acted on a cached preview, which O3 has already taken up) |
-| O1, O2 | Preview or list read below R, or at R | Ignored, or content refresh only |
-| O3 | Read above R that lists changes (a list row always does) | Re-enter it, over any K (the writer's "Applying" included) |
-| O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
-| P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
-| X | The Work's list omits the draft, or a preview says `gone` / 404 | An absence addressed below R is ignored. With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
-| S | The editor's room is reset as `superseded` (`branch-generation-stale`, named server close or denial) | The room is cleared and read afresh; the review stays |
-| L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
-| B | Whole-draft batch | Each target carries R from its own draft-local admission |
-
-Re-entering G' sets R to G', adopts only that generation's claim completion,
-clears focus and room, and shows marks. The room owner acquires again. R never
-moves backwards; preview caching uses `keepNewerGeneration`. Completion, model
-and room observations are addressed to the draft and generation they describe.
-
-Absence is a typed `reviewAbsent` observation, never an independent UI exit.
-List omission waits for the fresh entry preview. HTTP 404 and JSON `gone` share
-a stamped cache answer with the generation horizon at request start, not answer
-arrival. It is re-observed when writer evidence clears without another HTTP
-read. Old absence cannot cancel a newer proposal; fresh gone at R is not vetoed
-by a stale list row at R. A draft-only gone/404 keeps its error destination.
-Terminal session failure uses terminal absence; other fetch failures are room
-errors. `ReviewAddressOwner` exits only when the presented address leaves the
-document, not when a list behind the current proposal omits it.
-
-## Review adapter, room owner and delivery
-
-`useReviewRoomOwner` weighs list, preview and generation-tagged writer evidence,
-acquires/retains the selected session with `reviewRoomRef`, and follows pool
-replacement. Superseded generation resets clear/read the room; same-room rebuilds
-retain review intent. Attempts are fenced by selection and account; cancellation
-retries only while the attempt is still owned. The owner supplies session and
-input eligibility, with no paint state or receipt.
-
-`EditorView` resolves live/review identities against the canonical scope, keeps
-the warm live editor, and owns error, settlement, marks and paint presentation.
-`SessionEditor` accepts `identity`, `session`, `surfaceOptions` and `onConstructed`;
-it constructs the common editor without review subscriptions. The review-only
-runtime registers/releases the editor and runs model sync and focus. One
-construction receipt is addressed by mount identity plus session GUID; retired
-construction/withdrawal cannot affect a successor. Marks readiness acknowledges
-the current editor's projected model, not a previous editor's cache. The adapter
-waits for construction and marks (or the 1.5-second deadline), then synchronizes
-body/chrome through `setInlineReviewShown`. Schema notices stay explicit.
-
-Pane continuity belongs to [shared PaintHold][paint], outside navigation and
-room acquisition. Only finished paint replaces its snapshot. Desktop draft-only
-errors offer Retry/Close; phone server-document errors offer return to live.
-Phone draft-only hosts delegate to the desktop host's Close policy.
-
-`useActiveReviewBinding` owns owner-token projection registration/cleanup and
-the live presence lease. Desktop policy uses resolved review room; phone uses
-requested review. Hosts retain their own acquisition/route/LRU responsibilities.
-`MobileDocumentReview` supplies one `ReviewHeaderModel` to top and bottom chrome;
-idle header models disable preview reading.
-
-Focus belongs to the reducer. `useReconcileReviewFocus` reconciles once per
-scope and restores the stable selected class from the presenting review address
-once its current preview is ready. Missing classes silently select the first
-remaining change. `ReviewAddressOwner` replaces (never pushes) that address as
-focus changes; the Editor serializes `change` beside `draft`, and the dock stores
-it on its existing review address. `resolveFocusedChange` is a pure reader. Addressed `focusReviewChange`
-cannot focus another review. `useInlineReviewFocus` connects model focus, marks
-visibility, mark clicks and arrival pulse to the review editor.
-
-Writer delivery is account/session lifetime, not review lifetime. The pool and
-`BranchWriterHandoff` drain released outboxes and filter replay against surviving
-anchors in the synchronized successor. Outbox/pending carry is generation-tagged
-changes evidence, not permission to adopt an empty reset. Leaving review cannot
-gate delivery. See [editable branch authority][editable] and the separate
-[handoff issue][handoff], [admission issue][admission] and [tab-close loss issue][loss].
-
-## Launch and draft-only lifecycle
-
-`useAiDraftLauncher.openReviewFile(file, workId, focusOperationIds?)` is the one
-listed-file adapter for Work rows, chat Review and live Draft chip. Missing
-addresses no-op; absent/empty focus normalizes there. The route-level handoff is
-latest-wins and above shell selection. Claiming requires successful route command
-and matching Work/path/document/membership; it owns no paint state.
-
-New-document drafts have server document/Yjs state but no live catalog
-membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` and
-`reviewDraftId` in the review overlay, never durable workspace identity.
-Overlay identity includes document, Work and draft; navigation consumes the
-row’s own `contextLocation`, without restricting its document scheme. Hosts acquire only its
-branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.
-Close review closes only the container used, without discarding the draft; it can be reopened.
-Readable-address admission enriches/absorbs the overlay rather than hiding a
-durable tab beneath it. Another Work cannot resolve that overlay.
-
-`draft-only-lifecycle.ts` defines promotion/removal once over Editor-tab and dock
-adapters. Both containers settle; Close is container-local. The Editor adapter
-delegates exact-instance removal, promotion and route repair to
-`ContextRemovalCoordinator`; the dock adapter settles its stored occupant without
-claiming a revision. Both adapters are bound to the account epoch; closed epochs
-cannot enumerate or settle presentations. Hidden restore candidates are not lifecycle presentations:
-
-- Confirmed Apply promotes through `promoteAppliedDraft`, drops the marker and
-  opens ordinary live hosting. Only a resolved live presentation matching the
-  review’s document, Work and draft ends branch-only absence retention; a pending
-  or nonmatching address is not promotion proof. Promotion/route
-  failures never undo server success.
-- Admitted whole Discard removes through `discardDraft` before dispatch. Later
-  refusal stays on the draft row and never restores its tab or navigates back.
-  Not-sent admission refusal does not remove it.
-- `DraftOnlySettlement` is one project owner with one observer per represented
-  Work, even if neither Editor nor chat currently selects it. After list omission,
-  `acquireCatalogAfter` starts a fresh live catalog observation (never joins an
-  older pre-Apply read): membership promotes; absence means remote Discard and
-  closes. Failed catalog reads leave presentations intact. Active local commands suppress
-  remote classification; disposal aborts settlement. Settlement creates no tab.
-- List omission and empty active/reset previews leave a draft-only review selected
-  while lifecycle classifies it. The room owner cannot release that intrinsic
-  address before promotion/removal. A preview `gone`/404 is not this catalog evidence: it keeps the draft-only error
-  destination with Retry/Close. Remote confirmed-Discard omission plus fresh
-  catalog absence closes it.
-- Editor overlay tabs are never persisted and are skipped by durable route
-  continuity. The dock persists its review address and rebuilds the overlay from
-  the Work’s draft list. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
-  changes so another page can classify remote Apply/Discard without reload.
-
-Server Discard of a new document also removes its Work-manifest entry; subsequent
-Apply publishes that manifest as well as content.
-
-## Durable decisions and verification
-
-- [Inline review product decision][inline]
-- [Editable branch authority][editable]
-- [Server command authority][authority]
-- [Apply is done at server confirmation][confirmation] (admission, the one
-  executor and its rejected layouts)
-- [Review follows its document into the dock][follows]
-- [Runtime verification recipes](../../../../../../docs/qa/draft-review.md)
-
-[paint]: ../../../components/app/PaintHold.md
-[inline]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-inline-track-changes.md
-[editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md
-[authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-command-authority.md
-[confirmation]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-apply-done-at-server-confirmation.md
-[follows]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/interaction/documents/review-follows-presented-document.md
-[handoff]: https://github.com/haowjy/meridian-flow/issues/731
-[admission]: https://github.com/haowjy/meridian-flow/issues/738
-[loss]: https://github.com/haowjy/meridian-flow/issues/739
-
-Raw preview observations remain immutable. Confirmed selection keys stay in the
-account-scoped intent journal so cached and held observations cannot resurrect a
-settled change. They leave with the account epoch, not with a cache rewrite.
-Inline input emits an addressed focus intent through the domain change index;
-programmatic plugin emphasis is output only. The scope focus reconciler remains
-necessary for chained regrouping (a later class can share only an intermediate
-member with the originally focused class).
+The move or delete is a row of its own, the item's tree line (`tree-line.ts`):
+a `ReviewChange` with no frame and `tree` set, listed before the text changes
+(`listedItemChanges`). A selection's target says whether the line is in it
+(`{ kind: "tree" }` alone, `groups.tree` beside text groups), so the line's
+Apply sends only the tree cut and its Discard drops only the move or delete,
+keeping the text. A tree-only item needs no room, so Work Files shows its line
+without expanding. A tree line's Discard and Apply remove it from the cached
+list at once (the refetch restores a refusal); `hidden` covers only a tree
+click in flight, since a later move of the same document reuses the item key.
+The click body's `tree` is `{ revision }` only: the server's schema is strict.
+A live document a Work moves or deletes says so in the identity row's notice
+slot (`ManuscriptStateNotice`), from the document's branch hints
+(`DocumentDraftHint.tree`), naming the Work, never its handle (#914).

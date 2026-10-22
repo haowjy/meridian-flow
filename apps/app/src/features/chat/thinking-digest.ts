@@ -1,101 +1,35 @@
 /**
- * Deterministic, presentation-only summary of tool operations hidden by one
- * process fold. The digest never describes visible text or artifacts.
- *
- * `countFoldTools` holds the counting rule as a pure, macro-free core so it can
- * be unit-tested; `thinkingDigest` only formats its result.
+ * The writer-facing words for a process fold's digest. The counting rule and
+ * its numbers come from the view model (`FoldDigest`); this file only formats
+ * them with Lingui and `Intl`.
  */
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
-import { splitDocumentFile } from "@meridian/agent-edit";
-import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { ToolView } from "./group-delivery-segments";
-import {
-  documentToolFailed,
-  humanizeSkillSlug,
-  skillFile,
-  stringInput,
-  type ToolCommand,
-  toolCommand,
-  toolInputObject,
-} from "./tool-command";
+import { type FoldDigest, humanizeSkillSlug } from "@meridian/thread-client";
 
-export type FoldToolCounts = {
-  /** Skill slugs the fold loaded, in call order. */
-  invokedSkills: Set<string>;
-  readDocuments: Set<string>;
-  steps: number;
-};
-
-export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
-  const invokedSkills = new Set<string>();
-  const readDocuments = new Set<string>();
-  let steps = 0;
-
-  for (const tool of tools) {
-    const path = stringInput(toolInputObject(tool), "path");
-    // Successful writes belong to the turn receipt, not the process digest.
-    const command = toolCommand(tool);
-    const skill = stringInput(toolInputObject(tool), "name");
-
-    if (!documentToolFailed(tool) && command === "skill" && skill) {
-      invokedSkills.add(skill);
-      continue;
-    }
-    // A skill's own files are not the writer's documents; reading one is a step.
-    if (!documentToolFailed(tool) && path && isReadCommand(command) && !skillFile(path)) {
-      readDocuments.add(documentIdentity(path));
-      continue;
-    }
-    if (!documentToolFailed(tool) && path && isEditCommand(command)) {
-      continue;
-    }
-    // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and
-    // pathless operations are uncountable: they contribute a step instead.
-    steps += 1;
-  }
-
-  return { invokedSkills, readDocuments, steps };
-}
-
-/** A command that only looked at a document. */
-function isReadCommand(command: ToolCommand): boolean {
-  return command === "read" || command === "skim";
-}
-
-/** A command that changed a document, including putting a change back. */
-function isEditCommand(command: ToolCommand): boolean {
-  return (
-    command === "create" ||
-    command === "copy" ||
-    command === "edit" ||
-    command === "undo" ||
-    command === "redo"
-  );
-}
-
-export function thinkingDigest(tools: readonly ToolView[]): string | null {
-  const { invokedSkills, readDocuments, steps } = countFoldTools(tools);
+export function thinkingDigest(digest: FoldDigest): string | null {
+  // Member expressions keep the catalog's positional `{0}` ids for these messages.
   const clauses: string[] = [];
 
-  if (invokedSkills.size > 0) {
+  if (digest.invokedSkills.length > 0) {
     // The quotes ride inside the value: an apostrophe in an ICU message
     // escapes the placeholder next to it.
     const skills = new Intl.ListFormat(i18n.locale || undefined, {
       style: "long",
       type: "conjunction",
-    }).format([...invokedSkills].map((slug) => `'${humanizeSkillSlug(slug)}'`));
+    }).format(digest.invokedSkills.map((slug) => `'${humanizeSkillSlug(slug)}'`));
     clauses.push(t`Invoked ${skills}`);
   }
 
-  if (readDocuments.size > 0) {
+  if (digest.readDocuments > 0) {
     clauses.push(
-      plural(readDocuments.size, {
+      plural(digest.readDocuments, {
         one: "read # document",
         other: "read # documents",
       }),
     );
   }
+  const { steps } = digest;
   if (steps > 0) {
     clauses.push(
       plural(steps, {
@@ -105,14 +39,8 @@ export function thinkingDigest(tools: readonly ToolView[]): string | null {
     );
   }
 
-  const digest = clauses.join(", ");
-  return digest ? capitalizeFirst(digest) : null;
-}
-
-function documentIdentity(uriOrPath: string): string {
-  const { filePath } = splitDocumentFile(uriOrPath);
-  const parsed = parseContextUri(filePath);
-  return parsed.ok ? parsed.value.normalized : filePath;
+  const text = clauses.join(", ");
+  return text ? capitalizeFirst(text) : null;
 }
 
 function capitalizeFirst(value: string): string {

@@ -1,14 +1,17 @@
-/** A change's excerpt, attribution and commands on one line. The excerpt truncates first; touch controls retain 44px targets. Failures stay inline. */
+/**
+ * A change's excerpt, attribution and commands on one line; touch controls retain 44px targets. Failures are the
+ * file's, shown once in its reserved status line (`DraftCommandStatus`), never under a row.
+ * The red and green text claims its width first: when the line is full the byline truncates before it, but only down
+ * to its floor ("You", a few letters of the first chat, "+N"), and then the excerpt truncates.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
-
-import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
-import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
-import { ReviewMessageText } from "./ReviewMessageText";
-import { changeExcerpt, type ReviewChange } from "./review-changes";
+import { ChangeAuthor, ChangeDot, discardLabel } from "./ReviewChangeParts";
+import { changeExcerpt, type ReviewChange } from "./review-model";
+import { treeLineSentence } from "./tree-line";
 
 export type ReviewChangeRowProps = {
   change: ReviewChange;
@@ -17,10 +20,7 @@ export type ReviewChangeRowProps = {
   arrived?: boolean;
   /** Disposition is locked (a command is in flight, or the Work is archived). */
   disabled: boolean;
-
-  /** Why the last command on this change did not land. */
-  failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
-  draftFailure?: DraftCommandFailure | null;
+  canApply?: boolean;
   onFocus: () => void;
   onApply: () => void;
   onDiscard: () => void;
@@ -35,9 +35,7 @@ export function ReviewChangeRow({
   focused,
   arrived = false,
   disabled,
-
-  failure,
-  draftFailure,
+  canApply = true,
   onFocus,
   onApply,
   onDiscard,
@@ -46,22 +44,24 @@ export function ReviewChangeRow({
   wholeDocument = false,
   documentName,
 }: ReviewChangeRowProps) {
-  const runs = documentName ? [{ kind: "added", text: documentName }] : changeExcerpt(change);
+  // A move or delete says what it does to the file, in the row's ink rather than diff colours.
+  const sentence = change.tree ? treeLineSentence(change.tree) : documentName;
+  const runs = sentence ? [{ kind: "added" as const, text: sentence }] : changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
-  const firstLine = touch ? "min-h-11" : change.target.kind !== "display" ? "min-h-6" : undefined;
+  const firstLine = touch ? "min-h-11" : "min-h-6";
   const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
     // the excerpt button, which is the row's one tab stop for focusing it.
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above.
     <li
-      data-review-change-row={change.classId}
+      data-review-change-row={change.id}
       data-focused={focused ? "true" : undefined}
       data-arrived={arrived ? "true" : undefined}
       onClick={onFocus}
       className={cn(
-        "group flex cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-1 transition-colors",
+        "group flex cursor-pointer items-center rounded-md border border-transparent px-2 py-1 transition-colors",
         focused ? "border-border-subtle bg-card" : "hover:bg-sidebar-accent/50",
         arrived && "meridian-review-row-arrived",
       )}
@@ -74,7 +74,9 @@ export function ReviewChangeRow({
             <ChangeDot change={change} />
           </span>
         )}
-        <div className="flex min-w-0 flex-1 items-center gap-x-2">
+        {/* Two tracks: the excerpt grows to its full width before the byline takes the rest, and the
+            byline's track never drops below its floor (the byline's own min-width). */}
+        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,max-content)_minmax(auto,1fr)] items-center gap-x-2">
           <button
             type="button"
             aria-current={focused ? "true" : undefined}
@@ -83,7 +85,7 @@ export function ReviewChangeRow({
               onFocus();
             }}
             className={cn(
-              "focus-ring flex min-w-0 flex-1 items-center rounded-sm text-left text-caption",
+              "focus-ring flex min-w-0 items-center rounded-sm text-left text-caption",
               firstLine,
               touch && "text-sm",
             )}
@@ -96,7 +98,10 @@ export function ReviewChangeRow({
                     key={index}
                     className={cn(
                       index < runs.length - 1 && "mr-1",
-                      run.kind === "removed" && "text-muted-foreground line-through",
+                      !sentence &&
+                        (run.kind === "removed"
+                          ? "text-diff-removed line-through"
+                          : "text-diff-added"),
                     )}
                   >
                     {run.text}
@@ -108,18 +113,14 @@ export function ReviewChangeRow({
             </span>
           </button>
           {showAttribution ? (
-            <ChangeAuthor
-              overflow="hide"
-              attribution={change.attribution}
-              className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
-            />
+            <ChangeAuthor fit="first" change={change} touch={touch} className="justify-end" />
           ) : null}
         </div>
-        {change.target.kind !== "display" ? (
+        {!disabled ? (
           <span className="flex shrink-0 items-center">
             <IconButton
               size="xs"
-              tooltip={discardLabel(change)}
+              tooltip={discardLabel()}
               disabled={disabled}
               className={iconButton}
               onClick={(event) => {
@@ -129,30 +130,23 @@ export function ReviewChangeRow({
             >
               <X aria-hidden />
             </IconButton>
-            <IconButton
-              size="xs"
-              tooltip={t`Apply`}
-              disabled={disabled}
-              onClick={(event) => {
-                event.stopPropagation();
-                onApply();
-              }}
-              className={cn("text-primary hover:text-primary", iconButton)}
-            >
-              <Check aria-hidden />
-            </IconButton>
+            {canApply ? (
+              <IconButton
+                size="xs"
+                tooltip={t`Apply`}
+                disabled={disabled}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onApply();
+                }}
+                className={cn("text-primary hover:text-primary", iconButton)}
+              >
+                <Check aria-hidden />
+              </IconButton>
+            ) : null}
           </span>
         ) : null}
       </div>
-      {failure || draftFailure ? (
-        <p role="status" className="min-w-0 max-w-[50%] text-caption text-destructive">
-          {draftFailure ? (
-            <ReviewMessageText failure={draftFailure} />
-          ) : failure ? (
-            <ChangeFailureText failure={failure} />
-          ) : null}
-        </p>
-      ) : null}
     </li>
   );
 }

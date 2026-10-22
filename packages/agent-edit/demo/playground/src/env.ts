@@ -41,7 +41,6 @@ export function createPlaygroundEnv(): PlaygroundEnv {
   const core = createAgentEditCore({
     journal,
     coordinator,
-    lifecycle: coordinator,
     codec,
     model,
     defaultSessionId: defaultContext.sessionId,

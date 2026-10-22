@@ -20,7 +20,7 @@ export {
   enterEventCorrelation,
   runWithEventCorrelation,
 } from "./causal-context.js";
-export { emitEvent, unknownToEventPayload } from "./emit-event.js";
+export { emitEvent, errorMessageOf, joinIds, unknownToEventPayload } from "./emit-event.js";
 export {
   type EventQuery,
   type EventQueryFilter,
@@ -35,9 +35,9 @@ export type {
   EventSink,
   TraceStreamRef,
 } from "./ports/event-sink.js";
+export { recordFailure } from "./record-failure.js";
 export {
   MAX_EVENT_RECORD_BYTES,
-  safeSnippet,
   sanitizeEventRecord,
   serializedEventBytes,
 } from "./safe-event.js";

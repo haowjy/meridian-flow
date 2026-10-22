@@ -1,28 +1,34 @@
-/** PostgreSQL proof for the document-link scope: batched prepare, views, and snapshot lifetime. */
+/**
+ * PostgreSQL proof for the document-link scope: batched prepare, views, snapshot lifetime,
+ * and how a link reads per view (contract §10: "in a draft", precedence, the pinned holder).
+ */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branches,
+  branchTreeChanges,
   contextSources,
   documents,
   folders,
   linkAheadRefs,
   projects,
+  threads,
   users,
+  works,
 } from "@meridian/database/schema";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
+import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
-import {
-  createDrizzleDocumentLinkScopes,
-  type LinkScopeMembership,
-} from "./document-link-scope.js";
+import { createDrizzleDocumentLinkScopes } from "./document-link-scope.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -53,9 +59,11 @@ const CREST = id(21);
 const THREAD = id(22);
 const UNKNOWN_THREAD = id(23);
 const MISSING_ASSET = id(24);
-const RESPONSE = "response-f2";
+const WRECK = id(26);
+const RETIRED_SOURCE = id(27);
+const RETIRED_IMAGE = id(28);
+const RETIRED_CHAT = id(29);
 const LIVE = { kind: "live" } as const;
-const DRAFT = { kind: "draft", workId: WORK, responseId: RESPONSE } as const;
 
 const schema = buildDocumentSchema();
 
@@ -94,21 +102,9 @@ if (!RUN) {
 } else {
   describe("document-link scope (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
-    // Manifest membership the way ContextFS reads it: live, and a Work draft that
-    // removed NOTES and holds a document it created, plus one this response staged
-    // in its thread (the real resolver counts staged creates only with both).
-    const membership: LinkScopeMembership = async (view) => {
-      const live = [HOLDER, TARGET, SECRET, NOTES, MAP, CREST];
-      if (!view.workId) return { members: live };
-      const staged = view.responseId === RESPONSE && view.threadId === THREAD ? [STAGED] : [];
-      return {
-        members: [...live.filter((each) => each !== NOTES), DRAFTED, ...staged],
-      };
-    };
     const scopes = createDrizzleDocumentLinkScopes({
       db,
       fileAccess,
-      membership,
       observer: createLinkScopeObserver(),
     });
 
@@ -123,6 +119,24 @@ if (!RUN) {
         { id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript", isPrimary: true },
         { id: OTHER_SOURCE, projectId: OTHER_PROJECT, name: "Manuscript", slug: "manuscript" },
       ]);
+      // A retired lineage Scratch source keeps its documents.
+      await db.insert(threads).values({
+        id: RETIRED_CHAT,
+        projectId: PROJECT,
+        rootThreadId: RETIRED_CHAT,
+        createdByUserId: USER,
+        ref: "c1",
+        deletedAt: new Date(),
+      } as never);
+      await db.insert(contextSources).values({
+        id: RETIRED_SOURCE,
+        projectId: PROJECT,
+        rootThreadId: RETIRED_CHAT,
+        scope: "lineage",
+        name: "Scratch",
+        slug: "scratch",
+        deletedAt: new Date(),
+      });
       await db.insert(folders).values({ id: PART, contextSourceId: SOURCE, name: "part1" });
       const row = (docId: string, name: string, extra: Record<string, unknown> = {}) => ({
         id: docId,
@@ -134,18 +148,61 @@ if (!RUN) {
       await db.insert(documents).values([
         row(HOLDER, "holder", { folderId: PART }),
         row(TARGET, "target", { folderId: PART }),
-        row(DELETED, "gone", { deletedAt: new Date() }),
+        row(DELETED, "gone", { deletionReason: "deleted", deletedAt: new Date() }),
         row(SECRET, "secret"),
         row(NOTES, "notes"),
-        row(DRAFTED, "drafted"),
-        row(STAGED, "staged"),
+        row(DRAFTED, "drafted", { hidden: true }),
+        row(STAGED, "staged", { hidden: true }),
         row(MAP, "map", { folderId: PART, extension: "png", fileType: "image" }),
         // A deleted picture alone at its path, and one whose path a live picture took.
-        row(SEAL, "seal", { extension: "png", fileType: "image", deletedAt: new Date() }),
-        row(OLD_CREST, "crest", { extension: "png", fileType: "image", deletedAt: new Date() }),
+        row(SEAL, "seal", {
+          extension: "png",
+          fileType: "image",
+          deletionReason: "deleted",
+          deletedAt: new Date(),
+        }),
+        row(OLD_CREST, "crest", {
+          extension: "png",
+          fileType: "image",
+          deletionReason: "deleted",
+          deletedAt: new Date(),
+        }),
         row(CREST, "crest", { extension: "png", fileType: "image" }),
+        // A discarded branch's picture: a hidden tombstone, never a live or deleted image.
+        row(WRECK, "wreck", {
+          extension: "png",
+          fileType: "image",
+          hidden: true,
+          deletionReason: "discarded",
+          deletedAt: new Date(),
+        }),
         { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "" },
+        {
+          id: RETIRED_IMAGE,
+          contextSourceId: RETIRED_SOURCE,
+          name: "sketch",
+          extension: "png",
+          fileType: "image",
+        },
       ]);
+      await db.insert(works).values({
+        id: WORK,
+        projectId: PROJECT,
+        createdByUserId: USER,
+        name: "Branch",
+        handle: "w1",
+      });
+      await db
+        .insert(branches)
+        .values({ id: id(25), projectId: PROJECT, originWorkId: WORK, createdBy: USER });
+      await db.insert(branchTreeChanges).values(
+        [DRAFTED, STAGED].map((nodeId) => ({
+          branchId: id(25),
+          nodeId,
+          nodeKind: "document" as const,
+          created: true,
+        })),
+      );
       await db.insert(linkAheadRefs).values([
         {
           aheadId: SETTLED_AHEAD,
@@ -198,6 +255,8 @@ if (!RUN) {
         });
       });
     });
+    // The resolve route's answers run over the composed app, as the route handler wires it.
+    const runtimes = useComposedRuntimes(() => db);
     beforeEach(seed);
     afterAll(async () => {
       await deleteDrizzleRows(db, [users]);
@@ -223,6 +282,8 @@ if (!RUN) {
               `asset:${OLD_CREST}`,
               `asset:${MISSING_ASSET}`,
               `asset:${FOREIGN}`,
+              `asset:${WRECK}`,
+              `asset:${RETIRED_IMAGE}`,
             ]),
           ],
           addresses: [
@@ -269,13 +330,65 @@ if (!RUN) {
         for (const [asset, what] of [
           [MISSING_ASSET, "missing asset"],
           [FOREIGN, "another project's id"],
+          [WRECK, "a hidden tombstone"],
         ] as const)
           expect
             .soft(scope.spellSource({ src: `asset:${asset}`, ref: null }), what)
             .toEqual({ href: "", address: null });
+        // Retiring a source keeps its documents and their addresses: an image there still
+        // spells where it was, so rewriting its holder never drops the `asset:` id (S-L1).
+        expect
+          .soft(scope.spellSource({ src: `asset:${RETIRED_IMAGE}`, ref: null }), "retired source")
+          .toEqual({ href: "scratch://@c1/sketch.png", address: "scratch://@c1/sketch.png" });
         // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
+        expect.soft(scope.assetFor("wreck.png"), "a hidden tombstone holds no path").toBeNull();
+      });
+    });
+
+    it("reports an image lookup in a view it never loaded as a miss, never as an answer (S-L2)", async () => {
+      const misses: string[] = [];
+      const recorded = createDrizzleDocumentLinkScopes({
+        db,
+        fileAccess,
+        observer: {
+          unscoped: (documentId) => misses.push(`unscoped:${documentId}`),
+          snapshotMiss: ({ key }) => misses.push(key),
+        },
+      });
+      await recorded.within({ documentId: HOLDER }, async () => {
+        await recorded.prepare({
+          holders: [{ documentId: HOLDER, view: LIVE }],
+          docs: [holderDoc([], [`asset:${MAP}`, `asset:${SEAL}`])],
+          addresses: ["manuscript://part1/map.png"],
+        });
+        const unloaded = recorded.holder({
+          documentId: HOLDER,
+          view: { kind: "branch", branchId: id(25) },
+        });
+        expect.soft(unloaded.spellSource({ src: `asset:${MAP}`, ref: null })).toEqual({
+          href: "",
+          address: null,
+        });
+        expect.soft(unloaded.assetFor("part1/map.png")).toBeNull();
+        expect
+          .soft(misses)
+          .toEqual(
+            expect.arrayContaining([
+              `identity:${MAP}`,
+              `asset:${MAP}`,
+              "manuscript://part1/map.png",
+            ]),
+          );
+        // The live view it did load still answers.
+        misses.length = 0;
+        const live = recorded.holder({ documentId: HOLDER, view: LIVE });
+        expect
+          .soft(live.spellSource({ src: `asset:${MAP}`, ref: null }).href)
+          .toBe("part1/map.png");
+        expect.soft(live.assetFor("seal.png")).toBe(SEAL);
+        expect.soft(misses).toEqual([]);
       });
       // A key that names no project (a non-UUID grant) still mints under the holder
       // row's own project, and registration keeps the project the mint recorded.
@@ -296,61 +409,131 @@ if (!RUN) {
             ref: `ahead:${id(90)}`,
             address: "manuscript://part1/new",
             holderProjectId: port.scopeFor(HOLDER, undefined).holder.projectId,
+            view: LIVE,
           },
         ]);
       });
       expect.soft(registered).toEqual([PROJECT]);
     });
 
-    it("sees a Work draft's created and same-response staged documents in the draft view only", async () => {
-      await scopes.within({ documentId: HOLDER, viewer: { threadId: THREAD } }, async () => {
-        await scopes.prepare({
-          holders: [
-            { documentId: HOLDER, view: DRAFT },
-            { documentId: HOLDER, view: LIVE },
-          ],
-          refs: [`doc:${DRAFTED}`, `doc:${STAGED}`, `doc:${NOTES}`],
+    it("names the reader's own branch else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
+      const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
+      const [atlas, beacon, cove] = [
+        await s.work("Atlas", "draft"),
+        await s.work("Beacon", "draft"),
+        await s.work("Cove", "draft"),
+      ];
+      const chapter = await s.seedLive("chapter");
+      await s.seedLive("notes");
+      // Atlas's branch made Kael first; Beacon's branch joined it (one row, one place).
+      const kael = await s.seedHidden(atlas, "lore/kael");
+      await s.seedHidden(beacon, "lore/kael", { join: kael });
+      const [atlasBranch, beaconBranch] = [await s.branchOf(atlas), await s.branchOf(beacon)];
+      await s.branchOf(cove);
+
+      const named = async (view: typeof atlas | "live") => {
+        const { answer } = await s.linkAnswer({
+          view,
+          ref: `doc:${kael}`,
+          href: "manuscript://stale",
+          baseUri: "manuscript://chapter",
         });
-        const draft = scopes.holder({ documentId: HOLDER, view: DRAFT });
-        const live = scopes.holder({ documentId: HOLDER, view: LIVE });
-        for (const [ref, path] of [
-          [`doc:${DRAFTED}`, "../drafted"],
-          [`doc:${STAGED}`, "../staged"],
-        ] as const) {
-          expect.soft(draft.resolve({ ref, href: "x" })).toMatchObject({
-            kind: "document",
-            inDraft: true,
-          });
-          expect.soft(draft.spellLink({ ref, href: "x" }).href).toBe(path);
-          expect.soft(live.resolve({ ref, href: "x" })).toEqual({ kind: "gone" });
-          expect.soft(live.spellLink({ ref, href: "x" }).href).toBe("x");
-        }
-        // The draft's own manifest wins: a live document it removed is gone there.
-        const notes = { ref: `doc:${NOTES}`, href: "x" };
-        expect.soft(draft.resolve(notes), "removed in the draft").toEqual({ kind: "gone" });
-        expect.soft(live.resolve(notes), "still live").toMatchObject({ kind: "document" });
-        // A view whose membership was never loaded is a miss: it keeps the stored href.
-        const other = scopes.holder({
-          documentId: HOLDER,
-          view: { kind: "draft", workId: WORK, responseId: "other-response" },
+        return answer.state === "document"
+          ? [answer.inBranch, answer.branch?.branchId, answer.document.uri]
+          : answer.state;
+      };
+      const atAtlas = [true, atlasBranch.id, "manuscript://lore/kael"];
+      expect.soft(await named("live"), "live: the oldest branch, its path").toEqual(atAtlas);
+      expect.soft(await named(cove), "a branch not using it: the oldest").toEqual(atAtlas);
+      expect.soft(await named(atlas), "its own oldest branch").toEqual(atAtlas);
+      expect
+        .soft(await named(beacon), "the reader's own branch, where it has it")
+        .toEqual([true, beaconBranch.id, "manuscript://lore/kael"]);
+
+      // An ahead ref reads by address in the reader's view until a live document binds it:
+      // a branch's hidden document there reads "in a draft" from every view.
+      const draftShip = await s.seedHidden(atlas, "ship");
+      const unbound = await s.seedAhead("ship");
+      const liveAnchor = await s.seedLive("anchor");
+      const bound = await s.seedAhead("anchor", { settledTo: liveAnchor });
+      const read = async (
+        view: typeof atlas | "live",
+        ahead: string,
+        href: string,
+        baseUri: string | null,
+        holderDocumentId?: typeof chapter,
+      ) => {
+        const { answer, holderUri } = await s.linkAnswer({
+          view,
+          ref: `ahead:${ahead}`,
+          href,
+          baseUri,
+          ...(holderDocumentId ? { holderDocumentId } : {}),
         });
-        expect.soft(other.resolve(notes), "unloaded view").toEqual({ kind: "unknown" });
-        expect.soft(other.spellLink(notes).href).toBe("x");
-      });
-      // Read outside the reply's thread, the staged create is not this reader's.
-      await scopes.within({ documentId: HOLDER }, async () => {
-        await scopes.prepare({
-          holders: [{ documentId: HOLDER, view: DRAFT }],
-          refs: [`doc:${STAGED}`],
-        });
+        return {
+          id: answer.state === "document" ? answer.document.id : answer.state,
+          ...(answer.state === "document" && answer.inBranch ? { inBranch: true } : {}),
+          ...(holderUri ? { holderUri } : {}),
+        };
+      };
+      const SHIP = "manuscript://ship";
+      const ANCHOR = "manuscript://anchor";
+      const CHAPTER = "manuscript://chapter";
+      const inShip = { id: draftShip, inBranch: true };
+      for (const view of [atlas, beacon, "live"] as const) {
         expect
-          .soft(
-            scopes
-              .holder({ documentId: HOLDER, view: DRAFT })
-              .resolve({ ref: `doc:${STAGED}`, href: "x" }),
-          )
-          .toEqual({ kind: "gone" });
-      });
+          .soft(await read(view, unbound, SHIP, CHAPTER), "unbound: in a draft, from any view")
+          .toEqual(inShip);
+        expect
+          .soft(await read(view, bound, ANCHOR, CHAPTER), "bound: the live document")
+          .toEqual({ id: liveAnchor });
+      }
+      expect.soft(await read("live", unbound, SHIP, null), "chat: the same").toEqual(inShip);
+      await s.seedHidden(beacon, "ship", { join: draftShip });
+      expect
+        .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another branch")
+        .toEqual(inShip);
+
+      // A stale base: the id still pins the holder, and the answer names where it is now.
+      expect
+        .soft(
+          await read("live", bound, ANCHOR, "manuscript://old-chapter", chapter),
+          "moved holder",
+        )
+        .toEqual({ id: liveAnchor, holderUri: CHAPTER });
+
+      // Another account's document is no holder here: knowing its id names nothing, so its
+      // location never reaches this reader.
+      const stranger = await branchTreeScenario(db);
+      const foreign = await stranger.seedLive("unannounced-private-book-title");
+      expect
+        .soft(await read("live", bound, ANCHOR, null, foreign), "another account's holder, by id")
+        .toEqual({ id: liveAnchor });
+      expect
+        .soft(
+          await read(atlas, bound, ANCHOR, "manuscript://unannounced-private-book-title", foreign),
+          "by id and by its own address",
+        )
+        .toEqual({ id: liveAnchor });
+    });
+
+    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a branch view", async () => {
+      const s = await branchTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
+      const atlas = await s.work("Atlas", "draft");
+      const ship = await s.model(atlas).create("ship2", "A ship.");
+      for (const view of ["live", atlas] as const) {
+        const { answer } = await s.linkAnswer({
+          view,
+          ref: `ahead:${crypto.randomUUID()}`,
+          href: "manuscript://ship2",
+          baseUri: null,
+        });
+        expect.soft(answer).toMatchObject({
+          state: "document",
+          inBranch: true,
+          document: { id: ship },
+        });
+      }
     });
 
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {

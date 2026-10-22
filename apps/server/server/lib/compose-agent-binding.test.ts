@@ -19,7 +19,11 @@ describe("in-memory app Agent binding transaction", () => {
       deferred = (async () => {
         await gate;
         return app.repos.transaction(async () => {
-          const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
+          const thread = await app.repos.threads.create({
+            aiWriteMode: "direct",
+            projectId: "project",
+            userId: "owner",
+          });
           id = thread.id;
           await app.agentRevisions.bindThread(
             id,
@@ -50,7 +54,13 @@ describe("in-memory app Agent binding transaction", () => {
     let pendingId = "";
     const pending = app.repos
       .transaction(async () => {
-        pendingId = (await app.repos.threads.create({ projectId: "project", userId: "owner" })).id;
+        pendingId = (
+          await app.repos.threads.create({
+            aiWriteMode: "direct",
+            projectId: "project",
+            userId: "owner",
+          })
+        ).id;
         arrived();
         await gate;
         throw new Error("rollback");
@@ -58,7 +68,11 @@ describe("in-memory app Agent binding transaction", () => {
       .catch((error) => error.message);
     await ready;
     const hidden = await app.repos.threads.findById(pendingId);
-    const ordinary = await app.repos.threads.create({ projectId: "project", userId: "owner" });
+    const ordinary = await app.repos.threads.create({
+      aiWriteMode: "direct",
+      projectId: "project",
+      userId: "owner",
+    });
     release();
     expect(await pending).toBe("rollback");
     expect(hidden).toBeNull();

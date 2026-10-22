@@ -7,9 +7,9 @@
  */
 
 import { Trans } from "@lingui/react/macro";
+import type { ThreadReference } from "@meridian/contracts/threads";
 import { MessagesSquare } from "lucide-react";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
-import type { ThreadReference } from "./thread-reference";
 
 export function ThreadReferenceChip({ reference }: { reference: ThreadReference }) {
   const source = useSourceThread(reference.threadId, reference.title);
