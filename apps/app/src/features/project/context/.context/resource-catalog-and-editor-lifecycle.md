@@ -120,7 +120,8 @@ advances. The phone document host (`MobileDocumentHost`) uses the same binding
 but neither offers Retry nor retries on a revision change, so a failed phone
 open has no in-place recovery yet.
 
-A draft-only tab (a new document proposed in a branch) opens no live binding at
+A draft-only tab (a new document proposed in a branch, or one live deleted
+while a Work's draft still has it, D79) opens no live binding at
 all: it is absent from the live SQL tree and the server refuses a room for it,
 so review hosts the draft room alone (`liveRoom={!draftOnly}`) and a
 failed draft room offers Retry or closing the tab, never a fallback to an empty
@@ -305,8 +306,14 @@ is reserved for document-wide availability facts, not representation removal.
 The removal coordinator remains the sole close/Discard owner.
 
 The workspace holds one tab per document. A draft-only tab (a hidden draft-created
-document) is that tab with review metadata; persistence skips it and selection names
-the document. `editorTabsForWork` projects one Work's strip. Applying the draft
+document, or a deleted one a Work's draft still has) is that tab with review metadata;
+persistence skips it and selection names the document. When live deletes a document,
+the removal coordinator first asks the draft command owner which drafts of it some
+surface holds open (`boundDrafts`, never the review list, which lags about a second)
+and turns each such tab into a draft-only tab for those Works (`keep-for-drafts`);
+the removal plan then closes only the rest. Promotion back to an ordinary tab needs
+the document placed in the live tree: the replica keeps a deleted document's record,
+and knowing the id alone is not "live again". `editorTabsForWork` projects one Work's strip. Applying the draft
 settles the same tab in place; a join re-identifies the resource's tab to the draft's
 document and absorbs the draft-only tab into it. Dock restoration already queries the saved review Work and matches
 both draft and document within that list.
