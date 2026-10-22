@@ -101,7 +101,7 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
-#. placeholder {0}: (actionSkips ?? receipt?.skips ?? []).length
+#. placeholder {0}: skips.length
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# part stayed} other {# parts stayed}}"
 msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
