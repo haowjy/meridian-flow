@@ -113,6 +113,6 @@ deletes answers `held` naming that item (the review item lists the same as
 re-sends held clicks after the others until a pass frees none, so a renumber
 applies and a swap stays held. Then the row goes through `dropDocumentRows`,
 which writes the settlement rows (`as: applied`) every terminal path writes, and
-prunes hidden folders only its moves used. The route authorizes a drafted
+prunes every hidden folder its moves held that nothing else uses. The route authorizes a drafted
 delete of a document live deleted too through `restoreGrant` alone: the branch
 view has no draft of it to grant.

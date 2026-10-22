@@ -6,6 +6,7 @@
 import type {
   BranchId,
   ContextSourceId,
+  DocumentId,
   FolderId,
   ProjectId,
   ThreadId,
@@ -163,5 +164,30 @@ export const branchTreeChanges = pgTable(
       "branch_tree_changes_revision_present",
       sql`NOT (${table.moved} OR ${table.deleted}) OR ${table.revision} IS NOT NULL`,
     ),
+  ],
+);
+
+/**
+ * The folders a branch's drafted moves have placed a document in, held until the branch's
+ * entries on it settle: an undo or redo may return it to any of them, so each stays in use
+ * (never pruned) until then, and terminal cleanup prunes all of them, not only where the row
+ * has it now. Written with every moved fact, released by settlement only.
+ */
+export const branchTreeFolders = pgTable(
+  "branch_tree_folders",
+  {
+    branchId: uuid("branch_id")
+      .$type<BranchId>()
+      .notNull()
+      .references(() => branches.id, { onDelete: "cascade" }),
+    /** No FK, as `branch_tree_changes.node_id`: project deletion cascades through branches. */
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    /** No FK: folders are tombstoned. */
+    folderId: uuid("folder_id").$type<FolderId>().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.branchId, table.documentId, table.folderId] }),
+    // A held folder is in use: hidden-folder pruning asks by folder.
+    index("branch_tree_folders_folder").on(table.folderId),
   ],
 );

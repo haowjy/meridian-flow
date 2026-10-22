@@ -7,6 +7,7 @@
 import type {
   BranchId,
   BranchTreeFacts,
+  ContextSourceId,
   DocumentId,
   FolderId,
   ThreadId,
@@ -15,7 +16,12 @@ import type {
   UserId,
 } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { branchTreeChanges, documentEdits } from "@meridian/database/schema";
+import {
+  branchTreeChanges,
+  branchTreeFolders,
+  documentEdits,
+  folders,
+} from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
@@ -49,17 +55,16 @@ export async function recordCreated(
 export type BranchSettlement = { as: "applied" | "discarded"; userId?: UserId | null };
 
 /**
- * The branch stops saying anything about these documents: its rows go, and the drafted moves
- * and deletes they held are settled (`settleBranchEntries`), so a later undo of one refuses
- * as applied or discarded. Every terminal path ends a branch's facts here.
+ * The branch stops saying anything about these documents: its drafted moves and deletes are
+ * settled (`settleBranchEntries`, which prunes the folders they held), then its rows go. Every
+ * terminal path that drops a branch's rows ends them here.
  */
 export async function dropDocumentRows(
   db: Database,
   input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
 ): Promise<readonly NodeRef[]> {
   if (input.documentIds.length === 0) return [];
-  await settleBranchEntries(db, input);
-  const movedInto = await movedFolders(db, input.branchId, input.documentIds);
+  const pruned = await settleBranchEntries(db, input);
   await currentDrizzleDb(db)
     .delete(branchTreeChanges)
     .where(
@@ -69,19 +74,23 @@ export async function dropDocumentRows(
         inArray(branchTreeChanges.nodeId, [...input.documentIds]),
       ),
     );
-  // The hidden folders only its moves used go with them.
-  return pruneHiddenFolders(db, movedInto);
+  return pruned;
 }
 
 /**
- * One settlement row per document naming every drafted entry (a move, delete or their
- * inverses) the branch recorded on it that no settlement ended yet (design-v2 §4). It mutates
- * nothing; the stack rules read it (`settlementOf`).
+ * The one settlement of a branch's drafted entries (design-v2 §4): one row per document naming
+ * every drafted entry (a move, delete or their inverses) the branch recorded on it that no
+ * settlement ended yet, which the stack rules read (`settlementOf`); then the folders those
+ * entries held (`branch_tree_folders`) are released and the hidden ones nothing else uses are
+ * pruned. The row itself is the caller's: it drops it or keeps only a creation. The caller
+ * holds the tree scope of the branch's documents (`acquireTreeScope`), which covers every
+ * held folder's namespace.
  */
 export async function settleBranchEntries(
   db: Database,
   input: { branchId: BranchId; documentIds: readonly DocumentId[]; settle: BranchSettlement },
-): Promise<void> {
+): Promise<NodeRef[]> {
+  if (input.documentIds.length === 0) return [];
   const tx = currentDrizzleDb(db);
   const rows = await tx
     .select({
@@ -118,30 +127,21 @@ export async function settleBranchEntries(
         settles: { editIds, as: input.settle.as },
       },
     });
-}
-
-/** The folders a branch's moves put these documents in. */
-async function movedFolders(
-  db: Database,
-  branchId: BranchId,
-  documentIds: readonly DocumentId[],
-): Promise<FolderId[]> {
-  const rows = await currentDrizzleDb(db)
-    .select({ folderId: branchTreeChanges.movedFolderId })
-    .from(branchTreeChanges)
+  const released = await tx
+    .delete(branchTreeFolders)
     .where(
       and(
-        eq(branchTreeChanges.branchId, branchId),
-        eq(branchTreeChanges.nodeKind, "document"),
-        inArray(branchTreeChanges.nodeId, [...documentIds]),
+        eq(branchTreeFolders.branchId, input.branchId),
+        inArray(branchTreeFolders.documentId, [...input.documentIds]),
       ),
-    );
-  return rows.flatMap((row) => (row.folderId ? [row.folderId as FolderId] : []));
+    )
+    .returning({ folderId: branchTreeFolders.folderId });
+  return pruneHiddenFolders(db, [...new Set(released.map((row) => row.folderId))]);
 }
 
 /**
  * Tombstones the hidden folders in these folders' chains that nothing uses any more (no
- * living document or folder in them, no branch's move into them), bottom-up: a folder is
+ * living document or folder in them, no branch holding them for a drafted move), bottom-up: a folder is
  * judged only after all of the batch's folders beneath it, so a sibling still alive at first
  * glance never leaves its parent behind. Visible folders are never touched.
  */
@@ -169,6 +169,31 @@ export async function pruneHiddenFolders(
     pruned.push({ kind: "folder", id: folderId });
   }
   return pruned;
+}
+
+/**
+ * The folders a branch holds for its drafted moves (all its documents', or these), each with
+ * the source it sits in now: what its settlement may prune, so what its cleanup must lock.
+ */
+export async function readHeldFolders(
+  db: Pick<DrizzleDb, "select">,
+  branchId: BranchId,
+  documentIds?: readonly DocumentId[],
+): Promise<{ documentId: DocumentId; contextSourceId: ContextSourceId }[]> {
+  if (documentIds?.length === 0) return [];
+  return db
+    .select({
+      documentId: branchTreeFolders.documentId,
+      contextSourceId: folders.contextSourceId,
+    })
+    .from(branchTreeFolders)
+    .innerJoin(folders, eq(folders.id, branchTreeFolders.folderId))
+    .where(
+      and(
+        eq(branchTreeFolders.branchId, branchId),
+        documentIds ? inArray(branchTreeFolders.documentId, [...documentIds]) : undefined,
+      ),
+    );
 }
 
 const NO_FACTS: BranchTreeFacts = { row: false, created: false, moved: null, deleted: false };
@@ -233,7 +258,8 @@ export async function readBranchTreeFacts(
  * takes a new revision from the sequence (a value never recurs, so a frozen Apply click can
  * tell); the first `base_version` stays while a move or delete does. Facts that say nothing
  * remove the row: a document that follows live again. Created attribution is kept; the latest
- * move or delete's is `changedBy`. The caller holds the Work, the branch and the document lock.
+ * move or delete's is `changedBy`. A moved fact's folder is held (`branch_tree_folders`) until
+ * settlement, so an undo back into it finds it and cleanup prunes it. The caller holds the Work, the branch and the document lock.
  */
 export async function writeBranchTreeFacts(
   db: Database,
@@ -290,4 +316,14 @@ export async function writeBranchTreeFacts(
         updatedAt: new Date(),
       },
     });
+  // Held until the branch's entries on the document settle, wherever its row goes since.
+  if (moved?.folderId)
+    await tx
+      .insert(branchTreeFolders)
+      .values({
+        branchId: input.branchId,
+        documentId: input.documentId,
+        folderId: moved.folderId as FolderId,
+      })
+      .onConflictDoNothing();
 }

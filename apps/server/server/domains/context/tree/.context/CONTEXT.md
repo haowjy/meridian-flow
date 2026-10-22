@@ -30,8 +30,13 @@ the per-document branch hints all read it; write admission does not.
 `branch-tree-changes.ts` writes drafted moves and deletes (`moveInBranch`,
 `deleteInBranch`) and their inverses (`writeBackBranchFacts`) through the one
 facts writer (`writeBranchTreeFacts`: a new `revision` from its sequence per
-write, the first `base_version` kept). A drafted move's folder is a use for
-hidden-folder liveness and absorption rewrites it; a create joins a hidden
+write, the first `base_version` kept). Every folder a moved fact names is
+held in `branch_tree_folders` per (branch, document) until settlement, even
+after a later move or an undo leaves it: a held folder is in use for
+hidden-folder liveness, so an undo or redo back into it finds it, and
+`settleBranchEntries` (every terminal path: Apply, Discard, end of use, branch
+close, purge) releases and prunes all of them, not only the row's current folder.
+Absorption rewrites the row's folder; a create joins a hidden
 candidate only while no branch using it moved it away. A live removal clears
 each branch's `created` fact and keeps `moved` and `deleted` (D79, D80).
 
@@ -84,8 +89,11 @@ tree mutation whose namespaces are discovered, not known: end of use, Discard,
 hidden-node repair, Apply's reveal and restore, and the inverses of moves and
 deletes. Its `placements` lock the sources of placements no row names yet (a
 move's undo returns to its old folder), each where that folder is now; its
-`branches` lock where each branch has its documents (physical and effective),
-and `sourceIds` a drafted move's destination.
+`branches` lock where each branch has its documents (physical and effective)
+and where every folder it holds sits now, including documents with only a held
+folder (a move undone to no row): the effective placement is the read model,
+not the cleanup footprint, which a masked move's folder is part of. `sourceIds`
+lock a drafted move's destination.
 `live-tree-state.ts` reads a document's live state as an edit history's tree
 entry records it, and moves a document back to a recorded placement; a deleted
 folder there is `folder_missing`, never recreated. It locks the namespaces it
