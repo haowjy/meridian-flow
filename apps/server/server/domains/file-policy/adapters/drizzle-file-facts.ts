@@ -25,7 +25,10 @@ import {
 import { createBranches } from "../../collab/domain/branches.js";
 import { lineageHasLiveMember } from "../../context/index.js";
 import { branchMayHold, type SourceOwner } from "../../context/tree/branch-ownership.js";
+import { survivingDraftDocuments } from "../../context/tree/living-document.js";
+import { loadFolderChains } from "../../context/tree/tree-addresses.js";
 import {
+  branchDeletedDocuments,
   createTreeReader,
   identityDocuments,
   type TreeView,
@@ -66,14 +69,24 @@ export function createDrizzleFileFacts(
     const base =
       target.kind === "container"
         ? await loadContainer(db, target.scheme, target.owner)
-        : await loadDocument(db, target.documentId, view);
+        : ((await loadDocument(db, target.documentId, view, {
+            ownDelete: target.kind !== "restore",
+          })) ?? (await loadBranchDeleted(db, target.documentId, view)));
     if (!base) return null;
     const facts: FileFacts = { ...base, target };
     if (branchWorkId === undefined) return facts;
     const branchWork = await readWork(db, branchWorkId);
     // A Work's draft of a document it may not hold doesn't exist.
     if (branchWork && !branchMayHold(branchWork, ownerOf(facts))) return null;
-    return { ...facts, branchWork: branchWork ? workFacts(branchWork) : missingWork(branchWorkId) };
+    const surviving =
+      branchWork && facts.deleted && target.kind !== "container"
+        ? await survivingDraftDocuments(db, { workId: branchWork.id }, [target.documentId])
+        : null;
+    return {
+      ...facts,
+      branchWork: branchWork ? workFacts(branchWork) : missingWork(branchWorkId),
+      ...(surviving?.size ? { survivingDraft: true } : {}),
+    };
   }
 
   return {
@@ -93,6 +106,7 @@ export function createDrizzleFileFacts(
       }
       const branchWorkRow =
         branchWorkId === undefined ? undefined : await readWork(db, branchWorkId);
+      const surviving = new Set<DocumentId>();
       const tree = createTreeReader(db);
       for (const { view, ids } of groups.values()) {
         const documents = identityDocuments(view);
@@ -117,12 +131,20 @@ export function createDrizzleFileFacts(
             continue;
           }
           if (branchWorkRow && !branchMayHold(branchWorkRow, ownerOf(base))) continue;
+          if (branchWorkRow && base.deleted) surviving.add(documentId);
           out.set(documentId, {
             ...base,
             branchWork: branchWorkRow ? workFacts(branchWorkRow) : missingWork(branchWorkId),
           });
         }
       }
+      if (branchWorkRow && surviving.size)
+        for (const id of await survivingDraftDocuments(db, { workId: branchWorkRow.id }, [
+          ...surviving,
+        ])) {
+          const facts = out.get(id);
+          if (facts) out.set(id, { ...facts, survivingDraft: true });
+        }
       return out;
     },
   };
@@ -134,8 +156,11 @@ function ownerOf(facts: BaseFacts): SourceOwner {
   return { projectId: facts.projectId, accountId: facts.ownerAccountId, scheme: facts.scheme };
 }
 
-function documentRows(db: Database, view: TreeView) {
-  const documents = identityDocuments(view);
+function documentRows(
+  db: Database,
+  view: TreeView,
+  documents: ReturnType<typeof identityDocuments> = identityDocuments(view),
+) {
   return currentDrizzleDb(db)
     .select({
       documentId: documents.id,
@@ -170,6 +195,7 @@ function documentBase(
   row: DocumentRow,
   documentId: DocumentId,
   folders: readonly FolderRow[],
+  ownDelete = true,
 ): Omit<BaseFacts, "scheme"> {
   return {
     projectId: row.projectId,
@@ -179,7 +205,7 @@ function documentBase(
     ownerChatThreadId: row.chatThreadId,
     ownerWork: row.work ? workFacts(row.work as WorkRow) : null,
     deleted:
-      row.documentDeletedAt !== null ||
+      (ownDelete && row.documentDeletedAt !== null) ||
       row.sourceDeletedAt !== null ||
       folders.some((folder) => folder.deleted),
     self: { kind: "document", id: documentId },
@@ -190,10 +216,12 @@ function documentBase(
   };
 }
 
+/** `ownDelete: false` reads a deleted document as where a restore would bring it back. */
 async function loadDocument(
   db: Database,
   documentId: DocumentId,
   view: TreeView,
+  options: { ownDelete: boolean },
 ): Promise<BaseFacts | null> {
   const documents = identityDocuments(view);
   if (!isUuid(documentId)) return null;
@@ -202,7 +230,37 @@ async function loadDocument(
   const lineage = await createTreeReader(db).lineage(view, documentId);
   if (!lineage) return null;
   const folders = lineage.folders;
-  return { ...documentBase(row, documentId, folders), scheme: row.scheme };
+  return {
+    ...documentBase(row, documentId, folders, options.ownDelete),
+    scheme: row.scheme,
+  };
+}
+
+/**
+ * A living document the branch deleted is in no branch reader, yet its undo must reach it: it
+ * is authorized where its row is (a branch's own creation included), which is where the undo
+ * brings it back unless the delete masks a move.
+ */
+async function loadBranchDeleted(
+  db: Database,
+  documentId: DocumentId,
+  view: TreeView,
+): Promise<BaseFacts | null> {
+  if (view.kind !== "branch" || !isUuid(documentId)) return null;
+  const deleted = branchDeletedDocuments(view);
+  const [row] = await documentRows(db, view, deleted).where(eq(deleted.id, documentId)).limit(1);
+  if (!row || !isContextUriScheme(row.scheme)) return null;
+  const chain = row.folderId
+    ? ((await loadFolderChains(currentDrizzleDb(db), [row.folderId])).get(row.folderId) ?? [])
+    : [];
+  return {
+    ...documentBase(
+      row,
+      documentId,
+      chain.map((folder) => ({ id: folder.id, deleted: folder.deleted })),
+    ),
+    scheme: row.scheme,
+  };
 }
 
 async function loadContainer(

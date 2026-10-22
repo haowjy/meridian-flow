@@ -83,6 +83,7 @@ export class AccountFeatureLifetime {
     this.removal = new ContextRemovalCoordinator(accountId, {
       sessions: this.registry,
       notices: this.notices,
+      drafts: this.draftCommands,
     });
     this.registry.observeRemovedRooms((session, room) => this.followRemovedRoom(session, room));
     this.resources =

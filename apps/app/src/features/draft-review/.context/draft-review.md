@@ -65,8 +65,11 @@ Discard. Once synced, temporary offline status does not forget that history.
   newer projection. `useInlineReviewFocus` registers the mounted editor for
   controller-owned jumps and releases only its own claim on unmount. Same-entry
   URL replacements disable router scroll restoration so the editor owns the jump.
-  An empty frame shows “No changes left”; only the close contract can end the
-  draft room or send the editor to live.
+  An empty frame shows “No changes left” once the item has no tree line either:
+  the open review lists the item's pending move or delete first (focus and the
+  stepper walk only the text changes), so a text-only Discard leaves Discard
+  draft and Apply draft beside the Work notice. Only the close contract can end
+  the draft room or send the editor to live.
 
 `useReviewRefresh` discovers list/metadata changes from the runtime's semantic
 membership: any differences, pending owner-thread ids, and unknown attribution.
@@ -89,26 +92,79 @@ Editor model readiness stays local to its mount.
 A draft-only editor is the document's single workspace tab in its review Work,
 not a second tab. Closing its review is not Discard. Catalog removal and
 promotion remain `DraftOnlySettlement`/the context lifecycle's responsibility;
-list omission alone must not infer local Discard or successful Apply.
+list omission alone must not infer local Discard or successful Apply. The list
+omits an active draft with no effect (a delete's held tab, a fully applied draft,
+one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
+the catalog shows its document and closes only when its draft metadata answers
+`gone`; an active or unanswered draft keeps its tab.
+
+Closure belongs to a draft generation, not to its item key. The key (branch +
+document) outlives its drafts: discarding one item leaves the branch active, and
+a later write to the same document mints a new draft under the same key. The
+command owner keeps each draft's record (its unsent text, its room) under its
+draft id, and an item follows its newest known generation: `bind` and
+`reconcileClosed` advance it, never a close. A close (room reset or metadata
+`gone`) retires the generation it was issued for, so a late answer about the old
+draft cannot close a newer one. While the item's known draft is closed, the
+review address port (`ProjectView`) and the route's address clearing both ask
+the server first (`reconcileClosed`, a fresh metadata read): `gone`, the same
+closed draft, or a failed read refuse admission and clear a non-draft-only
+address, since the room owner just ended that review and admitting it again
+would loop; a different active draft is the replacement, and admission goes
+ahead. `ReviewAddressOwner` remembers a refusal only for the port that gave it;
+the port changes when the item's generation does, so a replacement that becomes
+known later (another surface bound it) is retried once. The server answers `gone`
+from the Work's ownership and the item key alone, before any content grant:
+the active draft is what grants reading a document deleted live or a hidden
+creation, so after a Discard on another device a content check would answer
+404 forever. Inaccessible active content and network errors stay nonterminal.
 
 ## Account command lifetime
 
 `AccountFeatureLifetime.draftCommands` is shared by editor, chat and Work
-surfaces. `bind(ref, session)` joins one stable draft-row queue and installs a replaceable
-session binding (runtime, base-fold provider and Apply-record observer). A pending
-queue owns a room reader that follows replacement sessions even without a surface.
-Retiring a session detaches that binding, not the draft queue. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
+surfaces. The review item owns command scheduling: one `ApplyClickQueue` per item key
+for its text, tree and text+tree clicks, so a tree cut waits behind the text clicks
+before it and one path publishes `pending`, `applying` and `stalled` on the item's
+current generation. Draft rooms are resources the item attaches. `bind(ref, session)`
+joins the item and installs a replaceable session binding on that draft's room
+(runtime, base-fold provider and Apply-record observer). A text click names its draft
+(`body.draftId`); only that draft's room records it, folds it into its base, holds a
+room reader for it (following replacement sessions even without a surface), and
+cancels it on close, so a newer draft under the same key never inherits an old click.
+A tree-only click has no room and its applied answer settles it. A refusal lands on
+the generation the click was made for. Retiring a session detaches that binding and
+refuses only its draft's unsent clicks. `apply(ref, target)` synchronously freezes the stable `draftId`, Yjs
 snapshot, the reviewed base blocks (O), selected ids, the result of applying those
 groups (P) and one room-base-to-O delta. Its acknowledgement barrier waits for
 the server to acknowledge every local update in that captured cut before dispatch. The queue
 retains a `readDraftRoom` lease independently of React until terminal.
 
+A deleted document (the list item's `deletedLive`, D79) is draft-only on every
+surface. Existence is its own fact, never read from `conflict`: a deleted
+document's path may also be taken (`path_taken`, which only withdraws Apply); Apply restores it, then merges. `apply(ref, target, restore)` sends
+`restore` only when the writer knew: a single document's Apply whose row showed
+the delete, or an Apply all for the documents its confirmation named. Without it
+the server answers `needs_restore` (nothing changed); the outcome is
+`needs-restore`, the list refreshes so the row shows the delete, and an Apply all
+asks again by name. An applied answer with `restored` makes the outcome
+`{ kind: "done", restored: true }` and marks the document (`wasRestored`) for the
+editor's "back in the manuscript" state; the surface that clicked says the same in
+its reserved notice slot (`CommandNotice`).
+
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds,
 then an item Retry. A terminal acknowledgement failure refuses unsent cuts
 with an item failure; sent heads keep their same-id settlement across session
 replacement. Transient disconnects keep acknowledgement barriers pending.
-A record alone proves landing; an applied answer without
-the record keeps its contribution. Closed/refused answers remove only their
+Each click has two independent duties. *Release* (the head leaves the FIFO
+and its optimistic contribution ends) happens exactly once: on the room's record,
+or on a terminal answer; an applied answer without the record keeps its
+contribution. *Completion* (the caller's outcome) comes from the full answer,
+which alone carries `restored`. When the record released a click whose answer is
+still in flight, the answer completes it when it arrives; when the answer is
+missing or lost, in either order relative to the record, the queue reads the
+stored result back under the same command id (never a resend), at 0/1/2/4
+seconds. Exhausted reads complete as `landed` (it landed; `restored` is
+unknown), and destroying the queue completes still-reading clicks the same way. Closed/refused answers remove only their
 own contribution. A `work_archived` refusal stores no failure (`shownRefusal`):
 the Works query refetches and `ArchivedWorkNotice` explains the reverted change,
 so no surface shows a refusal line. Other refusals still move prose in two cases,
@@ -178,7 +234,30 @@ Addressed room lookup is `useDraftMetadata`, never a server text preview.
 The route retains this read above editor address admission, so catalog
 invalidation cannot strand a review after unmounting its room readers. A gone
 room is a lifecycle transition, not a room-opening error. The metadata GET returns the stable draft id and room name, or authoritative
-`gone`; list item keys cannot supply room identity. A still-hidden creation with
-no text room uses a reveal-only Apply: empty `groupIds` and `baseViewDelta`, no
-`snapshot` or `draftId`. The server rechecks that exact no-room creation before
-revealing it; every other empty-group click is malformed.
+`gone`; list item keys cannot supply room identity. An item with a branch row
+(`tree`: a creation, move or delete) applies it with a tree cut: the whole item's
+Apply carries `tree.revision`, and with no text to send (no room, or no changes)
+it is the tree cut alone: empty `groupIds` and `baseViewDelta`, no `snapshot` or
+`draftId`, in the same item FIFO. A tree cut already queued is not sent again. A
+changed row answers `changed`; a move whose destination another of
+the branch's items still holds answers `held`, and Apply all re-sends those after
+the others. `discardItem` is the item's one Discard when it has a tree line: the
+server drops the move or delete, and the chosen text is discarded here as always.
+Its text offers no Undo, because Undo would bring back the text without the move
+or delete the server already settled (#763): the owner ends the text notice at
+once (the accepted write keeps its paint opportunity, then releases its room), and
+the surface shows "Discarded" without Undo.
+
+The move or delete is a row of its own, the item's tree line (`tree-line.ts`):
+a `ReviewChange` with no frame and `tree` set, listed before the text changes
+(`listedItemChanges`). A selection's target says whether the line is in it
+(`{ kind: "tree" }` alone, `groups.tree` beside text groups), so the line's
+Apply sends only the tree cut and its Discard drops only the move or delete,
+keeping the text. A tree-only item needs no room, so Work Files shows its line
+without expanding. A tree line's Discard and Apply remove it from the cached
+list at once (the refetch restores a refusal); `hidden` covers only a tree
+click in flight, since a later move of the same document reuses the item key.
+The click body's `tree` is `{ revision }` only: the server's schema is strict.
+A live document a Work moves or deletes says so in the identity row's notice
+slot (`ManuscriptStateNotice`), from the document's branch hints
+(`DocumentDraftHint.tree`), naming the Work, never its handle (#914).

@@ -101,6 +101,15 @@ next chat in that project fails on `threads_project_ref`. Retry a failed 0083 wi
 writers still stopped; never restart the old release on a partly converted schema.
 The old release also still reads `works.slug`, which 0083 drops.
 
+`0092` rebuilds what an active branch's drafted tree entries own
+(`branch_tree_folders`, `branch_tree_unsettled`, which 0090 and 0091 started
+from current rows only) from `document_edits.tree_change`: the branch's rows on a
+document after its latest settlement there, holding every folder they moved it
+into and marking it unsettled unless each was rolled back. It is one read of the
+history and inserts only into the two tables, so a rerun adds nothing. A release
+before 0090 writes tree entries without that ownership, so stop every writer from
+before 0090 until 0092 completes.
+
 Migration `0068` renames metadata and replaces
 both trail functions atomically. `0069` preserves opaque document-draft IDs and
 rewrites JSON in native-primary-key pages of at most 500 rows, committing each

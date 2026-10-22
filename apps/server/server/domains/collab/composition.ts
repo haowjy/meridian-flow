@@ -73,6 +73,7 @@ import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-dis
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
@@ -235,6 +236,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
+  const documentLastAddress = createDocumentLastAddress(deps.db);
   const lookups = createDrizzleCollabLookups(deps.db);
   const projectionEffects = createDrizzleDocumentProjectionEffects(
     deps.db,
@@ -244,7 +246,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
   const derivationStore = createDrizzleDocumentDerivationStore(
     deps.db,
-    createDocumentLastAddress(deps.db),
+    documentLastAddress,
     deps.aheadRegistrations
       ? {
           registry: deps.aheadRegistrations,
@@ -398,6 +400,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         diagnostics: noticeDiagnostics,
       })
     : SILENT_POST_DURABILITY_NOTICES;
+  const treeHistory = createDrizzleTreeHistory(deps.db, persistence.journal);
   const turnInverse = createDrizzleTurnInverseService({
     onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db: deps.db,
@@ -416,6 +419,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         })
       : SILENT_TURN_INVERSE_NOTICES,
     workProjection: deps.workProjectionMutation,
+    removal: deps.documentRemoval,
+    arrivals: deps.arrivals,
+    catalog: deps.catalogMutations,
   });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
@@ -431,7 +437,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts: (branchId, documentIds) =>
       workBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
     pendingThreadIds: workBranchPendingStore.pendingThreadIds,
-    creators: (branchId, documentIds) => workBranchPendingStore.listCreators(branchId, documentIds),
+    treeActors: (branchId, documentIds) =>
+      workBranchPendingStore.listTreeActors(branchId, documentIds),
   });
   // Exactly what each committed transaction ended: its closed drafts' rooms and thread peers.
   deps.draftClose.bindRetirement(
@@ -487,6 +494,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       trail: createDrizzleChangeTrailAggregateWriter(deps.db),
       arrivals: deps.arrivals,
       catalog: deps.catalogMutations,
+      removal: deps.documentRemoval,
+      close: deps.draftClose,
+      releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
       onCommitted: (documentId) => runDocumentWriteHook({ documentId }, "collab.apply"),
       measured: (measurement) => {
         if (deps.eventSink)
@@ -538,15 +548,18 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     markdownDocuments: runtime.markdownDocuments,
     replaceAuthorityGeneration,
   });
+  const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const lineage = createTurnLiveLineageReadModel({
-    store: createDrizzleTurnLiveLineageStore(deps.db),
+    store: lineageStore,
     receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
+    resolveLastDocumentUri: async (documentId) =>
+      (await documentLastAddress(documentId))?.uri ?? null,
   });
   const turnReversal = createTurnReversalService({
     turnInverse,
     resolveDocumentUri: documentUriResolver,
-    listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
+    listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
     fileAccess: deps.fileAccess,
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
@@ -590,6 +603,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     agentEdit: {
       agentEdit: () => agentEdit,
+      treeHistory: () => treeHistory,
     },
     reversal: turnReversal,
     documents: {

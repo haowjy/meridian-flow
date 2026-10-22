@@ -16,7 +16,12 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import type { ContextTab, ServerContextTab, TabOwner } from "@/client/stores";
+import {
+  type ContextTab,
+  isDraftOnly,
+  type ServerContextTab,
+  type TabOwner,
+} from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceOwner): string | undefined {
@@ -175,13 +180,19 @@ export type ResourceTabProjection =
       tab: ContextTab;
     };
 
-/** Reconcile any open tab by stable handle when known, otherwise by server document identity. */
+/**
+ * Reconcile any open tab by stable handle when known, otherwise by server document identity.
+ * A draft-only tab is one live doesn't hold, so the live replica says nothing about it: the
+ * record of a document live deleted while a Work's draft survives is terminal (D79), and
+ * hiding or closing the tab on it would strand the draft. Its draft lifecycle owns it.
+ */
 export function projectResourceTab(
   projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
   placement: ResourcePlacement,
 ): ResourceTabProjection {
+  if (isDraftOnly(tab)) return { kind: "none" };
   const record =
     (tab.resourceHandle
       ? records.find(({ resource }) => resource.handle === tab.resourceHandle)

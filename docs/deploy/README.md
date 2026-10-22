@@ -44,7 +44,8 @@ why. For those releases: stop all app servers and workers, let open transactions
 drain, run both commands above, then start the new release. If a migration fails,
 fix the cause and rerun it with writers still stopped; never restart the old
 release on a partly migrated schema. Current stop-the-writers ranges: 0075–0081
-(draft review conversion) and 0082–0083 (owner handles).
+(draft review conversion), 0082–0083 (owner handles) and 0090–0092 (branch
+tree ownership).
 
 ## Environment variables
 

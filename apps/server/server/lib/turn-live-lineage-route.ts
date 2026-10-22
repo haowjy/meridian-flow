@@ -3,9 +3,14 @@ import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
 } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import {
+  type TurnEditedDocument,
+  turnEditDestination,
+} from "../domains/collab/domain/turn-live-lineage.js";
 import { parseContextUri } from "../domains/context/context/uri.js";
+import { isFileAccessDenied } from "../domains/file-policy/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
@@ -13,7 +18,7 @@ import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
-  fileAccess: Pick<AppServices["fileAccess"], "listAccess">;
+  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "authorizeAt">;
   documentSync: AppServices["documentSync"];
   blocks: AppServices["threadRepos"]["blocks"];
   turns: AppServices["threadRepos"]["turns"];
@@ -64,22 +69,38 @@ export async function handleTurnLiveLineageRequest(
   };
 }
 
-/** The lineage's documents the writer can still read (file-access §6). */
-async function filterAccessibleLiveLineageDocuments<
-  T extends { documentId: string; uri: string; scope: "live" | "draft" },
->(deps: TurnLiveLineageRouteServices, input: { documents: T[]; userId: UserId }): Promise<T[]> {
-  const access = await deps.fileAccess.listAccess(
-    { accountId: input.userId },
-    input.documents.map((document) => document.documentId as DocumentId),
+/**
+ * The lineage's documents the writer can still read where each edit landed (file-access §6). A
+ * document the turn deleted is read where its restore would bring it back, as the card's Undo
+ * authorizes it.
+ */
+async function filterAccessibleLiveLineageDocuments(
+  deps: TurnLiveLineageRouteServices,
+  input: { documents: TurnEditedDocument[]; userId: UserId },
+): Promise<TurnEditedDocument[]> {
+  const principal = { accountId: input.userId };
+  const readable = await Promise.all(
+    input.documents.map(async (document) => {
+      const grant =
+        document.tree?.op === "delete"
+          ? await deps.fileAccess.authorize(
+              principal,
+              { kind: "restore", documentId: document.documentId },
+              "read",
+            )
+          : await deps.fileAccess.authorizeAt(
+              principal,
+              { kind: "document", documentId: document.documentId },
+              turnEditDestination(document),
+              "read",
+            );
+      return !isFileAccessDenied(grant);
+    }),
   );
-  return input.documents.filter((document) => access.has(document.documentId as DocumentId));
+  return input.documents.filter((_, index) => readable[index]);
 }
 
-function serializeLiveLineageDocument(document: {
-  documentId: string;
-  uri: string;
-  scope: "live" | "draft";
-}): TurnLiveLineageDocumentItem {
+function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLineageDocumentItem {
   const parsed = parseContextUri(document.uri);
   if (!parsed.ok) {
     throw createError({ statusCode: 500, message: "Live-lineage document URI is invalid" });
@@ -89,5 +110,6 @@ function serializeLiveLineageDocument(document: {
     uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
     scope: document.scope,
+    ...(document.tree ? { tree: document.tree } : {}),
   };
 }

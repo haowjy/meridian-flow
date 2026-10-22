@@ -1,8 +1,9 @@
 /**
  * Retiring what a committed transaction ended: the drafts it closed, each with its cause, and
- * the documents it removed. A removed document's rooms, live and draft, close `4208` (its live
- * room only while the removal still stands, since a Work Restore may have committed after it);
- * any other closed draft's room closes `4205` (`discarded`). Each retired thread peer's staged writes are refused with
+ * the documents it removed. A removed document's live room closes `4208` while the removal still
+ * stands (a Work Restore may have committed after it), and so does each draft room the same
+ * transaction closed on it; its drafts that stayed open keep their rooms (a delete closes no
+ * draft). Any other closed draft's room closes `4205` (`discarded`). Each retired thread peer's staged writes are refused with
  * the reason its cause names (a removal's carries the record) before the thread state the
  * pooled cores hold for that peer goes. It names the peer it retired, so a delayed retirement
  * never reaches a replacement peer of the same thread, and another Work's peers on a shared

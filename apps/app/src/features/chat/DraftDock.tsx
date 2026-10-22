@@ -1,14 +1,19 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. A file's refused command shows once, in its status line. */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
 
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { DiscardNotice } from "@/features/draft-review/DiscardNotice";
+import {
+  ApplyAllQuestion,
+  CommandNotice,
+  type CommandQuestion,
+} from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { treeLineSentence } from "@/features/draft-review/tree-line";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
@@ -18,6 +23,11 @@ import type { DraftDockModel } from "./useDraftDock";
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  /** What an Apply of several files deletes or brings back (D79), asked about first. */
+  const [asking, setAsking] = useState<{
+    deleting: readonly DockFile[];
+    restoring: readonly DockFile[];
+  } | null>(null);
   const troubledFileCount = dock.files.filter(
     (file) => file.status === "error" || dock.fileFailures(file).length > 0,
   ).length;
@@ -31,6 +41,51 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const confirming = confirmingDiscard && dock.showCommands;
+  const askingApply = asking !== null && dock.showCommands;
+  const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
+  // A delete the strip hadn't shown yet holds those files back; several ask again by name.
+  const apply = (restore: ReadonlySet<string>) =>
+    void dock.apply(restore).then((held) => {
+      if (held.length > 0 && multi) setAsking({ deleting: [], restoring: held });
+    });
+  // One file's row shows its delete, so its Apply already says to delete or bring it back.
+  const startApply = () =>
+    multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
+      ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
+      : apply(ids(dock.deletedToApply));
+  // One question at a time, in the footer below the files: opening it never moves a row.
+  const question: CommandQuestion | null = askingApply
+    ? {
+        kind: "apply-all",
+        sentence: (
+          <ApplyAllQuestion
+            deleting={asking.deleting.map((file) => file.name)}
+            restoring={asking.restoring.map((file) => file.name)}
+          />
+        ),
+        keep: <Trans>Cancel</Trans>,
+        confirm: <Trans>Apply</Trans>,
+        onKeep: () => setAsking(null),
+        onConfirm: () => {
+          setAsking(null);
+          apply(ids(asking.restoring));
+        },
+        disabled: !dock.canCommand,
+      }
+    : confirming
+      ? {
+          kind: "discard",
+          sentence: <Trans>Discard this chat's changes?</Trans>,
+          keep: <Trans>Keep</Trans>,
+          confirm: <Trans>Discard</Trans>,
+          onKeep: () => setConfirmingDiscard(false),
+          onConfirm: () => {
+            setConfirmingDiscard(false);
+            dock.discard();
+          },
+          disabled: !dock.canCommand,
+        }
+      : null;
   const commands = (
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
@@ -38,22 +93,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
       onClick={(event) => event.stopPropagation()}
     >
-      {confirming ? (
-        <>
-          <QuietButton onClick={() => setConfirmingDiscard(false)}>
-            <Trans>Keep</Trans>
-          </QuietButton>
-          <QuietButton
-            onClick={() => {
-              setConfirmingDiscard(false);
-              dock.discard();
-            }}
-            disabled={!dock.canCommand}
-          >
-            <Trans>Discard</Trans>
-          </QuietButton>
-        </>
-      ) : dock.showCommands ? (
+      {confirming || askingApply ? null : dock.showCommands ? (
         <>
           <QuietButton
             onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
@@ -62,7 +102,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <Trans>Discard</Trans>
           </QuietButton>
           {dock.canApply ? (
-            <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+            <QuietButton onClick={startApply} disabled={!dock.canCommand}>
               <Trans>Apply</Trans>
             </QuietButton>
           ) : null}
@@ -78,7 +118,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={
-          confirming
+          confirming || askingApply
             ? undefined
             : () => {
                 dock.controller.dismissNotice();
@@ -90,50 +130,40 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
-        {confirming ? (
-          <span
-            data-draft-dock-confirmation
-            className="min-w-0 flex-1 truncate text-ink-muted"
-            title={t`Discard this chat's changes?`}
-          >
-            <Trans>Discard this chat's changes?</Trans>
-          </span>
-        ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
-            {
-              <button
-                type="button"
-                aria-expanded={expanded}
-                aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  dock.controller.dismissNotice();
-                  setExpanded((value) => !value);
-                }}
-                className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-              >
-                <ChevronRight
-                  className={cn("size-3 transition-transform", expanded && "rotate-90")}
-                  aria-hidden
-                />
-              </button>
-            }
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-            {multi ? (
-              <span className="min-w-[10ch] shrink truncate">
-                <Trans>{dock.files.length} documents</Trans>
+        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
+          {
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
+              onClick={(event) => {
+                event.stopPropagation();
+                dock.controller.dismissNotice();
+                setExpanded((value) => !value);
+              }}
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+            >
+              <ChevronRight
+                className={cn("size-3 transition-transform", expanded && "rotate-90")}
+                aria-hidden
+              />
+            </button>
+          }
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          {multi ? (
+            <span className="min-w-[10ch] shrink truncate">
+              <Trans>{dock.files.length} documents</Trans>
+            </span>
+          ) : only ? (
+            <DockFileName file={only} onReview={() => dock.review(only)} />
+          ) : null}
+          {trouble ||
+            (dock.changeCount !== null ? (
+              <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
+                <ChangeCount count={dock.changeCount} />
               </span>
-            ) : only ? (
-              <DockFileName file={only} onReview={() => dock.review(only)} />
-            ) : null}
-            {trouble ||
-              (dock.changeCount !== null ? (
-                <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
-                  <ChangeCount count={dock.changeCount} />
-                </span>
-              ) : null)}
-          </div>
-        )}
+            ) : null)}
+        </div>
         {commands}
       </div>
     </>
@@ -153,7 +183,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
-      <DiscardNotice commands={dock.controller} />
+      <CommandNotice commands={dock.controller} question={question} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );
@@ -190,6 +220,7 @@ function DockFileLine({
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
+  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} item={file.row.draft} />;
   if (!summary && !expanded) return null;
   return (
     <div
@@ -205,7 +236,8 @@ function DockFileLine({
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
-      <DraftCommandStatus itemKey={file.row.draft.itemKey} />
+      {/* A file with no header row keeps its status line under its one row, which it describes. */}
+      {wholeDocument && !summary ? null : status}
       {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
@@ -216,6 +248,7 @@ function DockFileLine({
           />
         </div>
       ) : null}
+      {wholeDocument && !summary ? status : null}
     </div>
   );
 }
@@ -248,9 +281,14 @@ function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
   );
 }
 
-/** One document's review door, independent of the strip's expansion toggle. */
+/**
+ * One document's review door, independent of the strip's expansion toggle. A file whose only
+ * change is a move or delete says so ("ch13: deleting"), since its row folds into this one.
+ */
 function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
   const touch = useCoarsePointer();
+  const [only] = file.changes;
+  const label = file.changes.length === 1 && only?.tree ? treeLineSentence(only.tree) : file.name;
   return (
     <button
       type="button"
@@ -260,7 +298,7 @@ function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void
         onReview();
       }}
     >
-      {file.name}
+      {label}
     </button>
   );
 }

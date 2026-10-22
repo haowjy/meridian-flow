@@ -13,6 +13,7 @@ import {
   isEditorContextTab,
   matchesTabInstance,
   type ProjectTabsSlice,
+  type ReviewEntries,
   reviewEntriesOf,
   reviewEntryOf,
   withoutReviewEntry,
@@ -68,6 +69,13 @@ export type EditorWorkspaceCommand =
       projectId: string;
       workId: string;
       tabInstanceId: string;
+    }
+  | {
+      /** Live deleted the document; the Works whose drafts still have it keep the tab as draft-only (D79). */
+      kind: "keep-for-drafts";
+      projectId: string;
+      documentId: string;
+      reviews: ReviewEntries;
     };
 
 export type EditorWorkspaceCommandResult =
@@ -401,6 +409,22 @@ export function reduceEditorWorkspace(
       ...workspace,
       tabs: workspace.tabs.map((tab, candidateIndex) =>
         candidateIndex === index ? durableContextTab(prior) : tab,
+      ),
+    });
+  }
+  if (command.kind === "keep-for-drafts") {
+    const workspace = current.projects[command.projectId];
+    const index =
+      workspace?.tabs.findIndex(
+        (tab) => tab.kind === "tracked" && tab.documentId === command.documentId,
+      ) ?? -1;
+    const tab = workspace?.tabs[index];
+    if (!workspace || !tab || tab.kind !== "tracked") return outcome("not-referenced", current);
+    if (isDraftOnly(tab)) return outcome("already-committed", current);
+    return replaceProject(current, command.projectId, {
+      ...workspace,
+      tabs: workspace.tabs.map((candidate, candidateIndex) =>
+        candidateIndex === index ? { ...tab, reviews: command.reviews } : candidate,
       ),
     });
   }

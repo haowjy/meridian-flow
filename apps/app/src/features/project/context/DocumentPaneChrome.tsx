@@ -1,6 +1,7 @@
 /**
  * DocumentPaneChrome — the strip above an open document's editor: the passage
- * notice, the archived-Work notice, and the review-capable identity bar.
+ * notice, the archived-Work notice and the review-capable identity bar (whose free end
+ * says what live did to the document this draft holds).
  * The Editor's page and the dock's document stack the same chrome, so an open
  * document looks and behaves alike wherever it is shown; the dock shows the
  * identity bar in its header instead (`identity: null`). The draft hint is the

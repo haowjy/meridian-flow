@@ -34,6 +34,7 @@ import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
+import { ProjectOwnerNamesProvider } from "./ProjectOwnerNamesProvider";
 import { SubagentPathRow } from "./SubagentPathRow";
 
 export type ChatScreenProps = {
@@ -191,24 +192,26 @@ function ChatScreenLoaded({
           chat={topChatOf(thread, projectThreads)}
           onOpenContextTarget={onOpenContextTarget}
         >
-          <ChatView
-            threadId={threadId}
-            projectId={projectId}
-            activeThread={thread}
-            snapshotWriteMode={snapshotThread?.aiWriteMode}
-            activeWork={activeWork}
-            snapshotLiveState={snapshotLiveState}
-            snapshotNextSeq={snapshotNextSeq}
-            snapshotThreadUsage={snapshot?.threadUsage}
-            historySettled={historySettled}
-            active={visible}
-            composerStrip={
-              activeWork && isWorkArchived(activeWork) ? (
-                <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
-              ) : undefined
-            }
-            key={`${projectId}:${threadId}`}
-          />
+          <ProjectOwnerNamesProvider projectId={projectId}>
+            <ChatView
+              threadId={threadId}
+              projectId={projectId}
+              activeThread={thread}
+              snapshotWriteMode={snapshotThread?.aiWriteMode}
+              activeWork={activeWork}
+              snapshotLiveState={snapshotLiveState}
+              snapshotNextSeq={snapshotNextSeq}
+              snapshotThreadUsage={snapshot?.threadUsage}
+              historySettled={historySettled}
+              active={visible}
+              composerStrip={
+                activeWork && isWorkArchived(activeWork) ? (
+                  <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
+                ) : undefined
+              }
+              key={`${projectId}:${threadId}`}
+            />
+          </ProjectOwnerNamesProvider>
         </ProjectChatContextNavigationProvider>
       </div>
     </div>

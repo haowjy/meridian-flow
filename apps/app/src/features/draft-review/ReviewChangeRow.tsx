@@ -11,6 +11,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, discardLabel } from "./ReviewChangeParts";
 import { changeExcerpt, type ReviewChange } from "./review-model";
+import { treeLineSentence } from "./tree-line";
 
 export type ReviewChangeRowProps = {
   change: ReviewChange;
@@ -43,9 +44,9 @@ export function ReviewChangeRow({
   wholeDocument = false,
   documentName,
 }: ReviewChangeRowProps) {
-  const runs = documentName
-    ? [{ kind: "added" as const, text: documentName }]
-    : changeExcerpt(change);
+  // A move or delete says what it does to the file, in the row's ink rather than diff colours.
+  const sentence = change.tree ? treeLineSentence(change.tree) : documentName;
+  const runs = sentence ? [{ kind: "added" as const, text: sentence }] : changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
   const firstLine = touch ? "min-h-11" : "min-h-6";
@@ -97,7 +98,7 @@ export function ReviewChangeRow({
                     key={index}
                     className={cn(
                       index < runs.length - 1 && "mr-1",
-                      !documentName &&
+                      !sentence &&
                         (run.kind === "removed"
                           ? "text-diff-removed line-through"
                           : "text-diff-added"),

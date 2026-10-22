@@ -5,13 +5,9 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import {
-  type DocumentFileType,
-  type Filetype,
-  folderDocumentName,
-} from "@meridian/contracts/protocol";
+import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections, documents } from "@meridian/database/schema";
+import { documentMarkdownProjections } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -45,7 +41,7 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
-import { loadHiddenFilenames } from "../../tree/tree-view-sql.js";
+import { loadDocumentIdentityRows, loadHiddenFilenames } from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
 
@@ -121,6 +117,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       contextSourceId: this.sourceId,
       path,
     });
+    if (found.kind === "ambiguous") {
+      const documents = found.nodes.flatMap((node) => (node.kind === "document" ? [node.id] : []));
+      const rows = await loadDocumentIdentityRows(currentDrizzleDb(this.deps.db), documents);
+      return rows.some((row) => row.deleted) ? { ...found, outlived: true } : found;
+    }
     if (found.kind !== "found") return found;
     return found.node.kind === "document"
       ? { kind: "found", node: mapDocument(found.node.document) }

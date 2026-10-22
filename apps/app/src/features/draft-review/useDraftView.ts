@@ -2,10 +2,12 @@
 
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { isPathTaken } from "./deleted-drafts";
 import type { DraftChangesView } from "./draft-changes";
 import { useChangeItems } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
-import { itemChange, targetOfChanges } from "./review-model";
+import { listedItemChanges, targetOfChanges } from "./review-model";
+import { hasTreeLine } from "./tree-line";
 import { useRoomReview } from "./useRoomReview";
 import type { WorkBranchCommands } from "./useWorkBranchCommands";
 export function useDraftView(
@@ -25,7 +27,9 @@ export function useDraftView(
   const withoutText = item?.hasDraft === false;
   const read = useRoomReview(enabled && !withoutText ? draft : null);
   const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
-  const changes = item?.wholeItem && enabled ? [itemChange(item)] : read.listedChanges;
+  const changes =
+    item && enabled ? listedItemChanges(item, read.listedChanges) : read.listedChanges;
+  const treeLine = !!item && hasTreeLine(item);
   const { items } = useChangeItems(draft, changes);
   return {
     documentId: draft.documentId,
@@ -35,7 +39,9 @@ export function useDraftView(
 
     retry: read.retry,
     focused: null,
-    canApply: withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0,
+    canApply:
+      !isPathTaken(item) &&
+      (treeLine || (withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0)),
     locked: controller.changesLocked || discarding || status !== "ready",
     apply: async (change) => {
       await controller.commandChange("apply", draft, targetOfChanges([change]));

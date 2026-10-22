@@ -26,7 +26,8 @@ export type AiDraftLaunchTarget = {
   itemKey: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
   documentName?: string;
-  isNew?: boolean;
+  /** Live doesn't hold the document (created by the draft, or deleted live): the tab is draft-only. */
+  draftOnly?: boolean;
   /** A projection-local change to focus, only if that projection still paints. */
   focus?: ReviewFocus;
 };

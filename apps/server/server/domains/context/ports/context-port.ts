@@ -26,6 +26,7 @@ import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
+import type { BranchChangeAuthor, RecordedBranchTreeChange } from "./branch-tree.js";
 
 /**
  * Registered context URI schemes.
@@ -297,16 +298,32 @@ export interface ContextLocationOptions extends ContextWriteOptions {
   authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
+  /**
+   * Runs inside the move's own transaction once its rows are written, so a caller's record of
+   * the move (the model's edit history) commits or rolls back with it.
+   */
+  inTransaction?: (moved: ContextMoveResult) => Promise<void>;
 }
 
 export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
 }
 
+/** What `changeInBranch` does: the document it names must be at the source address. */
+export type ContextBranchTreeCommand = {
+  documentId: string;
+  changedBy: BranchChangeAuthor;
+  record(change: RecordedBranchTreeChange): Promise<void>;
+} & ({ op: "move"; sourceUri: string; destinationUri: string } | { op: "delete"; uri: string });
+
+export type ContextBranchTreeResult = { uri: string; moved: boolean };
+
 export interface ContextDeleteOptions extends ContextWriteOptions {
   removal?: { reason: "discarded"; cause: RetractionCause };
   operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
+  /** Runs inside the delete's own transaction once the removal is written (see the move's). */
+  inTransaction?: (deleted: DeleteContextEntryResult) => Promise<void>;
 }
 
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
@@ -409,6 +426,16 @@ export interface ContextPort {
     destinationUri: string,
     options?: ContextMoveOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
+
+  /**
+   * A draft-mode chat's move or delete of a drafted document (D26): facts in its Work's
+   * branch, never the shared tree and never the mover. Both ends must be draft-placed
+   * sources; `record` runs in the same transaction. A move to where the branch already has
+   * the document answers `moved: false` and records nothing.
+   */
+  changeInBranch(
+    command: ContextBranchTreeCommand,
+  ): Promise<Result<ContextBranchTreeResult, ContextError>>;
 
   /** Commit a file's exact writer-facing identity and end provisional naming. */
   commitWriterLocation(
