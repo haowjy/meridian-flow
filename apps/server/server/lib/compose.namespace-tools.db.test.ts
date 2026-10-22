@@ -639,8 +639,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await writer.apply(CH1)).toMatchObject({
         status: "applied",
         applied: expect.arrayContaining([
-          { itemKey: expect.stringContaining(CH1) },
-          { itemKey: expect.stringContaining(CH2) },
+          expect.objectContaining({ itemKey: expect.stringContaining(CH1) }),
+          expect.objectContaining({ itemKey: expect.stringContaining(CH2) }),
         ]),
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch3" });

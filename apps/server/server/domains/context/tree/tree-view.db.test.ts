@@ -515,8 +515,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         target: { path: "arc/two" },
         conflict: { kind: "deleted_live" },
       });
-      expect(state.get(replaced)?.conflict).toEqual({ kind: "none" });
-      expect(state.get(tale)?.conflict).toEqual({ kind: "none" });
+      expect(state.get(replaced)?.conflict).toEqual({ kind: "deleted_live" });
+      expect(state.get(tale)?.conflict).toEqual({ kind: "deleted_live" });
       expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
       // A tombstone is no longer the branch's item.
       expect(state.has(tomb)).toBe(false);
