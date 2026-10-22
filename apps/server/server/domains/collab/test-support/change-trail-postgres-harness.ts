@@ -507,6 +507,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       diagnostics: createReversalNoticeDiagnostics(eventSink),
     }),
     workProjection: createTestWorkProjectionMutation(db),
+    removal: documentRemoval,
+    ...(options.arrivals ? { arrivals: options.arrivals } : {}),
+    catalog: { refreshSources: async () => "" },
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
