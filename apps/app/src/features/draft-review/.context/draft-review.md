@@ -89,7 +89,11 @@ Editor model readiness stays local to its mount.
 A draft-only editor is the document's single workspace tab in its review Work,
 not a second tab. Closing its review is not Discard. Catalog removal and
 promotion remain `DraftOnlySettlement`/the context lifecycle's responsibility;
-list omission alone must not infer local Discard or successful Apply.
+list omission alone must not infer local Discard or successful Apply. The list
+omits an active draft with no effect (a delete's held tab, a fully applied draft,
+one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
+the catalog shows its document and closes only when its draft metadata answers
+`gone`; an active or unanswered draft keeps its tab.
 
 ## Account command lifetime
 
