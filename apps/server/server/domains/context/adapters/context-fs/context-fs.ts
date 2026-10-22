@@ -11,6 +11,7 @@ import {
   type Filetype,
   filetypeForKnownPath,
   filetypeForPath,
+  type NamespaceNameClaim,
   type ParsedDocumentFilename,
   parseDocumentFilename,
   type RetractionCause,
@@ -499,6 +500,17 @@ export class ContextFS implements ContextSchemeAdapter {
       bound = binding.value;
     }
     return this.liveCreate.create(path, bound, options);
+  }
+
+  async createTrackedDocumentAtFreeName(
+    path: string,
+    markdown: string,
+    reserved: readonly NamespaceNameClaim[],
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
+    const refused = this.placement.refuse("create a file with text");
+    if (refused) return Err(refused);
+    return this.liveCreate.createAtFreeName(path, markdown, reserved, options);
   }
 
   async createBoundDocument(

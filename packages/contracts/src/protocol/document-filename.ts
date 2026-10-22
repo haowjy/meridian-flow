@@ -106,6 +106,14 @@ export function namespaceName(claim: NamespaceNameClaim): string {
   return claim.kind === "folder" ? folderDocumentName(claim.filename) : claim.filename;
 }
 
+/** The document row that could hold this namespace claim's document-facing alias. */
+export function documentPartsForNamespaceClaim(
+  claim: NamespaceNameClaim,
+): Pick<ParsedDocumentFilename, "name" | "extension"> | null {
+  const parsed = parseDocumentFilename(namespaceName(claim));
+  return parsed.ok ? { name: parsed.value.name, extension: parsed.value.extension } : null;
+}
+
 /** Documents and folders share aliases, while nodes of the same kind compare literally. */
 export function sameNamespaceName(left: NamespaceNameClaim, right: NamespaceNameClaim): boolean {
   return left.kind === right.kind

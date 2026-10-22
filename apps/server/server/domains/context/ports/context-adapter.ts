@@ -9,6 +9,7 @@ import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri"
 import type {
   Filetype,
   InvalidOperationReason,
+  NamespaceNameClaim,
   ParsedDocumentFilename,
   RetractionCause,
 } from "@meridian/contracts/protocol";
@@ -189,6 +190,12 @@ export interface ContextSchemeAdapter {
     markdown: string,
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
+  createTrackedDocumentAtFreeName(
+    path: string,
+    markdown: string,
+    reserved: readonly NamespaceNameClaim[],
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>>;
   createBoundDocument(
     path: string,
     bound: BoundWrite | null,

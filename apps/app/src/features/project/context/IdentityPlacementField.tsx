@@ -222,7 +222,9 @@ export function IdentityPlacementField({
           allEntries,
           destination?.scheme ?? location.scheme,
           destination?.folderPath ?? location.parentPath,
-        ).map((entry) => ({ entryId: entry.entryId, name: entry.name, kind: entry.kind })),
+        )
+          .filter((entry) => entry.entryId !== tab.documentId)
+          .map((entry) => ({ entryId: entry.entryId, name: entry.name, kind: entry.kind })),
         "file",
         location.leaf,
       ),

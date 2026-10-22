@@ -2,8 +2,8 @@
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import {
   allocateFilename,
+  documentPartsForNamespaceClaim,
   folderDocumentName,
-  parseDocumentFilename,
   renderFilename,
 } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -46,10 +46,7 @@ export async function normalizeNames(db: Database, arrivals: readonly NodeRef[])
       installed.kind === "document"
         ? renderFilename(installed.name, installed.extension)
         : installed.name;
-    const alias = installed.kind === "folder" ? folderDocumentName(filename) : filename;
-    const parsedAlias = parseDocumentFilename(alias);
-    const aliasName = parsedAlias.ok ? parsedAlias.value.name : alias;
-    const aliasExtension = parsedAlias.ok ? parsedAlias.value.extension : "";
+    const documentParts = documentPartsForNamespaceClaim({ kind: installed.kind, filename });
     const losers = await tx.execute<Claim>(sql`
       SELECT * FROM (
         SELECT d.id::text, 'document'::text AS kind, d.context_source_id::text AS "contextSourceId",
@@ -57,8 +54,11 @@ export async function normalizeNames(db: Database, arrivals: readonly NodeRef[])
         FROM documents d WHERE d.deleted_at IS NULL
           AND d.context_source_id = ${installed.contextSourceId}::uuid
           AND d.folder_id IS NOT DISTINCT FROM ${installed.parentId}::uuid
-          AND d.name = ${aliasName}
-          AND d.extension = ${aliasExtension}
+          AND ${
+            documentParts
+              ? sql`d.name = ${documentParts.name} AND d.extension = ${documentParts.extension}`
+              : sql`false`
+          }
         UNION ALL
         SELECT f.id::text, 'folder'::text, f.context_source_id::text, f.parent_id::text,
           f.name, ''::text, f.hidden, f.created_at
@@ -78,15 +78,16 @@ async function renameHiddenClaim(db: Database, claim: Claim): Promise<void> {
       ? ({ kind: "document", name: claim.name, extension: claim.extension } as const)
       : ({ kind: "folder", name: claim.name } as const);
   const filename = await allocateFilename(desired, async (candidate) => {
-    const parsed = candidate.kind === "document" ? parseDocumentFilename(candidate.filename) : null;
-    const alias =
-      candidate.kind === "folder" ? folderDocumentName(candidate.filename) : candidate.filename;
+    const documentParts = documentPartsForNamespaceClaim(candidate);
     const [row] = await tx.execute<{ taken: boolean }>(sql`SELECT EXISTS (
       SELECT 1 FROM documents d WHERE d.deleted_at IS NULL
         AND d.context_source_id = ${claim.contextSourceId}::uuid
         AND d.folder_id IS NOT DISTINCT FROM ${claim.parentId}::uuid
-        AND d.name = ${parsed?.ok ? parsed.value.name : alias}
-        AND d.extension = ${parsed?.ok ? parsed.value.extension : ""}
+        AND ${
+          documentParts
+            ? sql`d.name = ${documentParts.name} AND d.extension = ${documentParts.extension}`
+            : sql`false`
+        }
         AND d.id <> ${claim.id}::uuid
       UNION ALL
       SELECT 1 FROM folders f WHERE f.deleted_at IS NULL
