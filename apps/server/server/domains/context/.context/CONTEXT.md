@@ -95,7 +95,11 @@ check.
 
 ## Creation and hidden-node lifecycle
 
-Placement is chosen once per command. Live create can reveal a hidden node at
+Content placement and branch tree visibility are separate. Scratch content writes stay live in
+draft mode, but its adapter reads through the Work's branch and can record branch tree changes.
+This lets one drafted move cross between Scratch and a drafted source: the branch view shows the
+document at its proposed destination while both live sources remain unchanged until Apply. Uploads
+remain read-only. Placement is chosen once per command. Live create can reveal a hidden node at
 its path instead of inserting a twin and admits text on a clone before warm
 room publication after commit. Draft placement creates or joins a hidden row
 and records its branch use; whole-file seed, `mkdir`, and other live-seeding

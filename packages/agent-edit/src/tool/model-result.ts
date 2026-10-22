@@ -98,7 +98,6 @@ export type NamespaceRefusal =
   | "already_at_destination"
   | "file_type_conversion"
   | "document_type_conversion"
-  | "mixed_modes"
   | "unsupported";
 
 export interface AgentEditModelPayload {

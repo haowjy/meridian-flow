@@ -10,6 +10,7 @@ import {
   prepareEditRoots,
   removedFile,
 } from "@meridian/agent-edit/integration";
+import type { BranchId } from "@meridian/contracts";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
@@ -38,7 +39,7 @@ import type {
   TurnInverseStore,
 } from "./turn-inverse-service.js";
 
-type Query = TurnInverseQuery & { model: true; draftId: string | null };
+type Query = TurnInverseQuery & { model: true; draftId: string | null; branchId: BranchId | null };
 /** One model-visible edit on the stack. A creation owns its initial text and tree placement. */
 type Entry = { id: string; handle: string; parts: StoredInversePart[]; tree?: TransitionEntry };
 const entryKeys = (entry: Entry) => [
@@ -232,8 +233,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ? "already removed"
           : "edited since";
     }
+    const reaches = (draftId: string | null) =>
+      draftId === null ||
+      query.branchId === null ||
+      document.drafts.get(draftId)?.documentDraft.branchId === query.branchId;
     /** The branch a draft-mode write lands in, for comparing a drafted tree entry's. */
-    const branchId = draft?.documentDraft.branchId ?? null;
+    const branchId = query.branchId;
     /**
      * Whether `entry` can be reversed in `direction` from the states `states` hold, judged by
      * state (D76): the planned transition, or the refusal.
@@ -326,6 +331,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       inspect,
       refusal,
       changedReason,
+      reaches,
       treePlan,
       revertSelection,
       version,
@@ -343,7 +349,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         status: "document_not_found",
         message: "File not found. Read the project to find the right path.",
       };
-    const calledDraftId = query.draftId;
     const policy = preparedPolicy ?? planner(document, query);
     const own = policy.own,
       actionId = randomUUID();
@@ -403,8 +408,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (destinations.size !== 1) throw new Error("One model edit spans multiple versions");
       return [...destinations][0] ?? null;
     };
-    const reaches = (draftId: string | null) =>
-      draftId === calledDraftId || draftId === null || calledDraftId === null;
     // A draft that outlived the document's live delete still takes its own inverse (D79); live
     // text meets the removal unless an earlier step of this command restores the document.
     const removedText = (draftId: string | null) =>
@@ -575,7 +578,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               continue;
             }
             const draftId = destinationOf(entry.parts);
-            if (!reaches(draftId)) {
+            if (!policy.reaches(draftId)) {
               const refused = policy.refusal(
                 entry.parts[0],
                 entry.handle,
@@ -663,7 +666,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                   ),
               );
               const draftId = destinationOf(inverseParts);
-              if (!reaches(draftId)) {
+              if (!policy.reaches(draftId)) {
                 const refused = policy.refusal(
                   { ...entry.parts[0], origin: inverseParts[0].origin },
                   entry.handle,
@@ -720,20 +723,35 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const textDraftIds = new Set(
         steps.flatMap((step) => (step.kind === "text" ? [step.draftId] : [])),
       );
-      const destinationDraftIds = new Set(
-        steps.map((step) => {
-          if (step.kind === "text") return step.draftId;
-          const destination = step.planned.destination;
-          if (destination.kind === "live") return null;
-          return (
-            [...document.drafts.entries()].find(
-              ([, candidate]) => candidate.documentDraft.branchId === destination.branchId,
-            )?.[0] ?? calledDraftId
-          );
-        }),
-      );
+      const destinations = new Map<
+        BranchId | "live",
+        { branchId: BranchId | null; draftId: string | null }
+      >();
+      for (const step of steps) {
+        let draftId: string | null;
+        let branchId: BranchId | null;
+        if (step.kind === "text") {
+          draftId = step.draftId;
+          branchId = draftId
+            ? (document.drafts.get(draftId)?.documentDraft.branchId ?? null)
+            : null;
+        } else {
+          branchId =
+            step.planned.destination.kind === "draft" ? step.planned.destination.branchId : null;
+          draftId = branchId
+            ? ([...document.drafts.entries()].find(
+                ([, candidate]) => candidate.documentDraft.branchId === branchId,
+              )?.[0] ?? null)
+            : null;
+        }
+        const destination = destinations.get(branchId ?? "live");
+        destinations.set(branchId ?? "live", {
+          branchId,
+          draftId: draftId ?? destination?.draftId ?? null,
+        });
+      }
       const [textDraftId] = textDraftIds;
-      const [destinationDraftId] = destinationDraftIds;
+      const [destination] = destinations.values();
       const textView = textDraftIds.size === 1 ? plannedView(textDraftId ?? null) : undefined;
       const cuts = textView
         ? { before: textView.before, after: Y.encodeStateAsUpdate(textView.scratch) }
@@ -762,11 +780,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             : null,
         ...cuts,
         updates: committed.updates,
-        ...(destinationDraftIds.size === 1
-          ? destinationDraftId
+        ...(destinations.size === 1
+          ? destination?.branchId
             ? {
                 destination: "draft" as const,
-                draftWork: document.drafts.get(destinationDraftId)?.name ?? "/",
+                ...(destination.draftId
+                  ? { draftWork: document.drafts.get(destination.draftId)?.name ?? "/" }
+                  : {}),
               }
             : { destination: "live" as const }
           : {}),
@@ -778,10 +798,16 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           ...partial.map(
             (reason) => `not ${command.command === "undo" ? "undone" : "redone"}: ${reason}`,
           ),
-          ...(destinationDraftIds.size > 1
+          ...(destinations.size > 1
             ? [
-                `versions: ${[...destinationDraftIds]
-                  .map((draftId) => policy.version(draftId))
+                `versions: ${[...destinations.values()]
+                  .map((destination) =>
+                    destination.draftId
+                      ? policy.version(destination.draftId)
+                      : destination.branchId
+                        ? "draft"
+                        : "live",
+                  )
                   .join(", ")}`,
               ]
             : []),
@@ -859,7 +885,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         inspection.states(page.flatMap((entry) => entry.parts));
         const undoRefusal = (part: StoredInversePart, handle: string) => {
           const draftId = part.origin.kind === "pending" ? part.origin.draftId : null;
-          const reachable = draftId === query.draftId || draftId === null || query.draftId === null;
+          const reachable = policy.reaches(draftId);
           return policy.refusal(
             part,
             handle,
