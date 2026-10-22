@@ -292,7 +292,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
     drafts,
-    coordinator: liveCoordinator,
   });
   const responseTransactionDiagnostics = createResponseTransactionDiagnostics(deps.eventSink);
   const runtime = createAgentEditRuntime({

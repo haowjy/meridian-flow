@@ -417,7 +417,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const modelDocumentEdits = createModelDocumentEdits({
     service: () => turnInverse,
     drafts: draftStore,
-    coordinator: liveCoordinator,
   });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,

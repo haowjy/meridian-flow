@@ -62,6 +62,8 @@ export type TurnInverseQuery = {
   responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
   model?: boolean;
   draftId?: string | null;
+  /** The target branch even when this document has only a move or delete, with no text draft. */
+  branchId?: BranchId | null;
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
   path?: string;

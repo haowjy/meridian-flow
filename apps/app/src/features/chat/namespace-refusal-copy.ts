@@ -50,8 +50,6 @@ export function namespaceRefusalCopy(
       return t`Can't move ${source}: renaming it can't change its file type.`;
     case "document_type_conversion":
       return t`Can't move ${source}: that extension needs a different kind of document.`;
-    case "mixed_modes":
-      return t`Can't move ${source}: this chat is in draft mode, so the move would be half drafted and half live.`;
     case "unsupported":
       return command === "move"
         ? t`Can't move ${source} to that location.`

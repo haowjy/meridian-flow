@@ -28,6 +28,7 @@ import {
   type FileDestination,
   FileEditRefusedError,
   type FileGrant,
+  isFileAccessDenied,
   type Principal,
 } from "../../domains/file-policy/index.js";
 import {
@@ -480,6 +481,38 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       context.resolution.uploadsOwner?.chatRef,
       inverse?.grant,
     );
+    // A drafted tree move can currently leave the document at live-only Scratch. Its path
+    // grants live content, but Undo/Redo still belongs to the Work branch that owns the move.
+    if (
+      inverse &&
+      outcome.isError &&
+      (outcome.output.status === "cant_undo_elsewhere" ||
+        outcome.output.status === "cant_redo_elsewhere") &&
+      address.uri.startsWith("scratch://") &&
+      principal.agent?.branchWork
+    ) {
+      const draftGrant = await deps.fileAccess.authorize(
+        principal,
+        {
+          kind: "draft",
+          documentId: address.documentId,
+          workId: principal.agent.branchWork.id,
+        },
+        "edit",
+      );
+      if (!isFileAccessDenied(draftGrant)) {
+        outcome = await writeUnderGrant(
+          deps,
+          principal,
+          parsed,
+          address,
+          copied,
+          ctx,
+          context.resolution.uploadsOwner?.chatRef,
+          draftGrant,
+        );
+      }
+    }
     // Nothing of this chat's to reverse here, where it moved or deleted another document away.
     if (
       inverse &&

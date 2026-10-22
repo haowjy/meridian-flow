@@ -34,16 +34,17 @@ import type { LiveCreate } from "./live-create.js";
  * a draft placement: reads see the Work's active branch (live while it has none), and
  * creates make hidden rows in that branch, which the command transaction ensures.
  */
+export interface BranchPlacement {
+  workId: WorkId;
+  threadId: ThreadId;
+  userId: UserId;
+  branches: Pick<Branches, "viewForWork">;
+  tree: BranchTreePort;
+}
+
 export type ContextPlacement =
-  | { kind: "live" }
-  | {
-      kind: "draft";
-      workId: WorkId;
-      threadId: ThreadId;
-      userId: UserId;
-      branches: Pick<Branches, "viewForWork">;
-      tree: BranchTreePort;
-    };
+  | { kind: "live"; branch?: BranchPlacement }
+  | ({ kind: "draft" } & BranchPlacement);
 
 /** Commands only a live placement runs. */
 export type LiveOnlyCommand =
@@ -106,14 +107,22 @@ export function createPlacement(
   placement: ContextPlacement,
   deps: CreatePlacementDeps,
 ): CreatePlacement {
-  return placement.kind === "live" ? livePlacement(deps) : draftPlacement(placement, deps);
+  return placement.kind === "live"
+    ? livePlacement(placement, deps)
+    : draftPlacement(placement, deps);
 }
 
-function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
+function livePlacement(
+  placement: Extract<ContextPlacement, { kind: "live" }>,
+  deps: CreatePlacementDeps,
+): CreatePlacement {
   const { store, executor } = deps;
   return {
     kind: "live",
-    readView: async () => LIVE_TREE,
+    readView: (version) =>
+      version !== "live" && placement.branch
+        ? placement.branch.branches.viewForWork(placement.branch.workId)
+        : Promise.resolve(LIVE_TREE),
     refuse: () => null,
     ensureTracked(path, options) {
       return executor.run(async () => {
@@ -165,7 +174,7 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
       });
     },
     retract: async () => Ok({ placement: "live" as const }),
-    branchTree: null,
+    branchTree: placement.branch ? branchTreeCommands(placement.branch, executor) : null,
   };
 }
 
@@ -174,7 +183,7 @@ function draftPlacement(
   deps: CreatePlacementDeps,
 ): CreatePlacement {
   const { executor } = deps;
-  const work = { workId: placement.workId, threadId: placement.threadId, userId: placement.userId };
+  const work = branchWork(placement);
   /** A command in the drafting Work's branch, which the transaction ensures and locks. */
   const inBranch = <T>(operation: (branch: EnsuredBranch) => Promise<Result<T, AdapterFault>>) =>
     executor.runInBranch({ ...work, mode: "ensure" }, (branch) =>
@@ -251,49 +260,7 @@ function draftPlacement(
         return Ok({ documentId: created.value.documentId, placement: "draft" as const });
       });
     },
-    branchTree: {
-      move(target, command) {
-        return executor.runInBranch(
-          { ...work, mode: "ensure" },
-          async (
-            active,
-          ): Promise<
-            Result<{ moved: boolean; name?: string; extension?: string }, AdapterFault>
-          > => {
-            const branch = { id: active.id, workId: placement.workId };
-            const moved = await placement.tree.moveInBranch({
-              branch,
-              documentId: command.documentId,
-              ...target,
-              changedBy: command.changedBy,
-            });
-            if (!moved.ok)
-              return moved.error.code === "already_there"
-                ? Ok({ moved: false })
-                : Err(branchTreeFault(moved.error));
-            await command.record(recorded(branch, moved.value));
-            return Ok({
-              moved: true,
-              name: moved.value.after.moved?.name,
-              extension: moved.value.after.moved?.extension,
-            });
-          },
-          [command.fromSourceId],
-        );
-      },
-      delete(command) {
-        return inBranch(async (branch) => {
-          const deleted = await placement.tree.deleteInBranch({
-            branch,
-            documentId: command.documentId,
-            changedBy: command.changedBy,
-          });
-          if (!deleted.ok) return Err(branchTreeFault(deleted.error));
-          await command.record(recorded(branch, deleted.value));
-          return Ok(undefined);
-        });
-      },
-    },
+    branchTree: branchTreeCommands(placement, executor),
     retract(documentId, cause) {
       return executor.run(
         async ({ branch }) => {
@@ -310,6 +277,64 @@ function draftPlacement(
         undefined,
         { branch: { ...work, mode: "existing" } },
       );
+    },
+  };
+}
+
+function branchWork(placement: BranchPlacement) {
+  return {
+    workId: placement.workId,
+    threadId: placement.threadId,
+    userId: placement.userId,
+  };
+}
+
+/** Branch tree changes are independent of whether this source's content writes are live. */
+function branchTreeCommands(
+  placement: BranchPlacement,
+  executor: ResultAwareCommandExecutor<AdapterFault>,
+): BranchTreeCommands {
+  const work = branchWork(placement);
+  return {
+    move(target, command) {
+      return executor.runInBranch(
+        { ...work, mode: "ensure" },
+        async (
+          active,
+        ): Promise<Result<{ moved: boolean; name?: string; extension?: string }, AdapterFault>> => {
+          const branch = { id: active.id, workId: placement.workId };
+          const moved = await placement.tree.moveInBranch({
+            branch,
+            documentId: command.documentId,
+            ...target,
+            changedBy: command.changedBy,
+          });
+          if (!moved.ok)
+            return moved.error.code === "already_there"
+              ? Ok({ moved: false })
+              : Err(branchTreeFault(moved.error));
+          await command.record(recorded(branch, moved.value));
+          return Ok({
+            moved: true,
+            name: moved.value.after.moved?.name,
+            extension: moved.value.after.moved?.extension,
+          });
+        },
+        [command.fromSourceId],
+      );
+    },
+    delete(command) {
+      return executor.runInBranch({ ...work, mode: "ensure" }, async (active) => {
+        const branch = { id: active.id, workId: placement.workId };
+        const deleted = await placement.tree.deleteInBranch({
+          branch,
+          documentId: command.documentId,
+          changedBy: command.changedBy,
+        });
+        if (!deleted.ok) return Err(branchTreeFault(deleted.error));
+        await command.record(recorded(branch, deleted.value));
+        return Ok(undefined);
+      });
     },
   };
 }

@@ -390,7 +390,7 @@
     "apps/server/server/lib/compose-agent-binding.test.ts": 2,
     "apps/server/server/lib/compose.draft-mode-tools.db.test.ts": 11,
     "apps/server/server/lib/compose.file-access-tools.db.test.ts": 3,
-    "apps/server/server/lib/compose.namespace-tools.db.test.ts": 11,
+    "apps/server/server/lib/compose.namespace-tools.db.test.ts": 12,
     "apps/server/server/lib/compose.runtime-settlement.db.test.ts": 2,
     "apps/server/server/lib/context-entry-authority-guard.test.ts": 4,
     "apps/server/server/lib/context-work-refusal.test.ts": 2,
