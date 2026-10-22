@@ -316,36 +316,99 @@ on a mock stack as above, look at the screenshots, and judge the screen against 
 
 ### SR-02: reconnect behind the warm event cache
 
-- **Protects:** replay starts from a safe projector boundary without changing
-  frame contents or sequence numbers, including a cursor inside a multi-frame
-  journal row. Applies to `thread-event-hub.ts` and its journal reader adapters.
-- **Setup:** owned mock stack and a new chat, as above. Send a completed reply
-  first, so the journal contains a reset boundary. Keep a journal tail open
-  (`./mf thread tail "$T" --timeout 5m`) while probing to prevent hub eviction.
-- **Steps:**
-  1. Open the chat in the browser. Send a scripted reply with a short first
-     response and a tool call, then a delayed response of at least 750 words.
-     The mock streams a word per chunk, exceeding the 500-frame hot cache.
-  2. Once the first response shows, put the browser offline. Allow the delayed
-     response to finish, then reconnect. Capture the screen before disconnect
-     and after reconnect, and inspect the thread wire trace for the cursor and
-     ordered replay. Confirm the cursor predates the cache, not just the head.
-  3. Compare the complete reply with `./mf thread view "$T" --full --json`.
-     There must be no duplicated or missing text or tool items. Send another
-     message and confirm its reply appears normally.
-  4. For exact frame checks, collect full replay and replay after selected
-     cursors through the shared socket. Compare complete envelopes with the
-     full replay filtered strictly after each cursor. Include text/reasoning
-     and tool transitions, completed/cancelled/error endings, a cursor inside
-     an ending row, sequence holes, zero and beyond-head cursors.
-- **Read-cost check:** on the same persisted chat, instrument the production
-  journal reader's returned-row count around a warm out-of-cache replay. It
-  should read only rows after the last terminal row strictly before the
-  cursor's containing row; without an earlier terminal it still reads from
-  zero. Inspect the boundary query with `EXPLAIN (ANALYZE, BUFFERS)` too: the
-  backward thread/sequence index scan can examine the preceding unfinished
-  reply even though those older payloads are not returned to the projector.
-- **Expected:** identical replay frames and browser transcript. Less completed
-  history reconstructed on the warm path. Cold hub initialization is unchanged
-  and still reads the full journal; this recipe makes no cold-start claim.
-- **Cleanup:** stop the tail and close the owned browser session.
+This checks the browser after missing more than the hub's 500 cached client
+events. A **journal row** is a stored server event; the stateful **projector**
+converts one row into one or more client events. Each client event's sequence
+number is `journal seq * 1000 + frame index`. The client's **cursor** is the
+last such number it received. A **warm hub** still has the chat loaded in the
+server process. The tail subscriber below keeps it loaded while the browser
+is offline; cold initialization is a separate, unchanged full-history read.
+
+Run from an owned mock worktree. Set `MF_APP_URL` and `MF_SERVER_URL` to its
+routes from `pnpm portless:list`; do not use another checkout's stack.
+The commands use `jq`, Node and `agent-browser`.
+
+```bash
+CHECK_ID="replay-seek-$(date +%s)"
+PROBE_DIR="$(mktemp -d "/tmp/$CHECK_ID.XXXXXX")"
+./mf thread create --title "$CHECK_ID" --json > "$PROBE_DIR/chat.json"
+T="$(jq -r .threadId "$PROBE_DIR/chat.json")"
+P="$(jq -r .projectId "$PROBE_DIR/chat.json")"
+./mf thread send "$T" seed --mock '[{"text":"Earlier completed reply."}]' --json
+./mf thread tail "$T" --timeout 5m --json > "$PROBE_DIR/tail.jsonl" &
+TAIL_PID=$!
+agent-browser --session "$CHECK_ID" open "$MF_APP_URL/api/auth/dev-login"
+agent-browser --session "$CHECK_ID" open "$MF_APP_URL/p/$P/chats/$T"
+agent-browser --session "$CHECK_ID" wait --text "Earlier completed reply."
+agent-browser --session "$CHECK_ID" screenshot "$PROBE_DIR/before.png"
+agent-browser --session "$CHECK_ID" set offline on
+
+node -e 'console.log(JSON.stringify([
+  {text:"After disconnect, part one.",toolCalls:[{name:"thread_ls",args:{depth:1}}]},
+  {text:"SEEK_START "+Array.from({length:750},(_,i)=>"seek"+i).join(" ")+" SEEK_END"}
+]))' > "$PROBE_DIR/mock.json"
+./mf thread send "$T" "Send while browser is offline"   --mock "@$PROBE_DIR/mock.json" --json > "$PROBE_DIR/send.jsonl"
+agent-browser --session "$CHECK_ID" set offline off
+agent-browser --session "$CHECK_ID" wait --text "SEEK_END"
+agent-browser --session "$CHECK_ID" screenshot "$PROBE_DIR/after.png"
+agent-browser --session "$CHECK_ID" eval '(() => {
+  const text = document.querySelector("[role=log]").innerText;
+  const words = text.match(/\bseek\d+\b/g) ?? [];
+  return {count:words.length, unique:new Set(words).size,
+    ordered:words.every((word,i)=>word==="seek"+i),
+    starts:(text.match(/SEEK_START/g)??[]).length,
+    ends:(text.match(/SEEK_END/g)??[]).length};
+})()'
+./mf thread view "$T" --full --json > "$PROBE_DIR/view.json"
+```
+
+Expect count and unique both 750, ordered true, starts and ends both 1.
+The completed send's `finalText` must contain the same ordered words. Expand
+the new reply's “1 step” fold and confirm one Thread ls tool item, matching
+the durable view. Send another message through the composer and confirm its
+reply appears. Inspect both screenshots and `agent-browser errors`.
+
+The mock emits each word as a separate chunk, so the entire offline reply
+exceeds the 500-event cache. Sending only after the browser is offline avoids
+racing the mock's unpaced burst. For the additional mid-reply variant, use
+SR-01's delayed tool continuation, disconnect after its first response, then
+send another 750-word reply while offline if necessary to exceed the cache.
+
+**Read-cost check.** Browser appearance proves delivery, not reduced reads.
+Temporarily count `rows.length` and record `afterSeq` in
+`adapters/drizzle/event-reader.ts`'s `readAfter`, immediately before its
+`return rows.map(mapJournalEntry)`. Keep counts scoped to the probe's thread.
+Warm the hub with a full `./mf thread events "$T" --since 0`, then replay
+after an older event number with `--since <cursor>`. Keep the tail alive.
+Exclude the initial full reconstruction from the second command's count.
+On the seeking path, its first payload read starts at the preceding terminal
+row, not zero. Without a prior terminal row it still starts at zero.
+
+Inspect lookup work separately using the owned database's normal connection
+setup. Replace the two placeholders in this query; `beforeJournalSeq` is the
+integer quotient of the client cursor divided by 1000:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT seq FROM event_journal
+WHERE thread_id = '<thread UUID>'
+  AND seq < <beforeJournalSeq>
+  AND event_type IN ('turn.completed', 'turn.cancelled', 'turn.error')
+ORDER BY seq DESC LIMIT 1;
+```
+
+The backward index scan may inspect the preceding unfinished reply; those
+rows are separate from payload rows returned to the projector. Do not report
+a constant-cost or latency improvement from payload counts alone.
+
+**Exact-event checks.** In a disposable hub or shared-socket probe, compare
+complete sequenced envelopes with full replay filtered strictly after the
+same cursor. Include text/reasoning/tool transitions, all three terminal
+types, a cursor inside a terminal row, sequence holes, zero and beyond-head.
+Project each whole row before filtering, so the event's frame index stays
+unchanged. These are lower-level checks, not a substitute for the browser run.
+
+**Cleanup.** Remove temporary instrumentation, stop the tail
+(`kill "$TAIL_PID"; wait "$TAIL_PID"`), close the named browser session,
+and remove `PROBE_DIR` after copying the relevant screenshots and findings
+into the work item's evidence.
