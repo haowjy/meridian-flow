@@ -245,7 +245,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await call("write", { command: "move", from: { path: "ch1" }, path: "ch9" })).isError,
       ).toBeFalsy();
       const deleted = await call("write", { command: "delete", path: "ch2" });
-      expect(text(deleted)).toContain("w2 still has changes to it; applying them brings it back.");
+      expect(text(deleted)).toContain(
+        `Work "Polish" still has changes to it; applying them brings it back.`,
+      );
       // The writer makes a new ch2 before the reply fails: ch2's restore finds it taken.
       await db.insert(schema.documents).values({
         contextSourceId: SOURCE_ID,
@@ -300,7 +302,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const displaced = await call("write", { command: "undo", path: "ch2" });
       expect(text(displaced)).toContain(
-        "A different document is at manuscript://ch2 now. Ask the user to undo the deletion from your reply's card.",
+        "manuscript://ch2 is taken by a different document. Use `ls` to check what is there; move or rename it, then `undo` again.",
       );
     });
 
@@ -394,7 +396,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(moved.isError, text(moved)).toBeFalsy();
       expect(text(moved)).toContain(
-        "moved from manuscript://ch1 in this chat's draft; applying it moves it in the manuscript",
+        "not applied yet: moved only in this chat's draft; live still has it at manuscript://ch1 until the user applies it.",
       );
       expect(text(moved)).toContain("version: draft (w2)");
       // Live is untouched; the branch has it at the new path, in a folder only it sees.
@@ -419,7 +421,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const deleted = await call("write", { command: "delete", path: "ch2" });
       expect(deleted.isError, text(deleted)).toBeFalsy();
       expect(text(deleted)).toContain(
-        "deleted in this chat's draft; applying it deletes it from the manuscript",
+        "not applied yet: deleted only in this chat's draft; it stays live until the user applies it.",
       );
       expect((await placement(CH2))?.deletedAt).toBeNull();
       expect((await call("read", { path: "ch2" })).isError).toBe(true);
@@ -455,6 +457,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       const undone = await card("undo");
       expect(undone.status, JSON.stringify(undone)).toBe("reversed");
+      // Reported where it landed: the Work's proposal, though the move has no text draft.
+      expect(undone.documents.map((row) => row.destination)).toEqual([
+        { kind: "draft", branchId },
+        { kind: "draft", branchId },
+      ]);
       expect(await branchRow(CH1)).toBeUndefined();
       expect(await branchRow(CH2)).toBeUndefined();
       expect(text(await call("read", { path: "ch2" }))).toContain("Chapter two.");
@@ -638,24 +645,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "discarded",
       );
       expect(await settlements(CH1)).toEqual(["applied", "discarded"]);
-    });
 
-    it("refuses a draft-mode move between a drafted document and a live one (D45)", async () => {
-      await db
-        .update(schema.threads)
-        .set({ aiWriteMode: "draft" })
-        .where(eq(schema.threads.id, THREAD.threadId));
-      const script = await start();
-      const { call } = await script.begin();
-      const mixed = await call("write", {
-        command: "move",
-        from: { path: "ch1" },
-        path: "scratch://ch1",
+      // Apply names the move in effect applied, and one undone before it discarded.
+      await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-b" });
+      await drafting.reply(async (edit) => {
+        await edit("write", { command: "undo", path: "ch1-b" });
       });
-      expect(text(mixed)).toContain(
-        "This chat is in draft mode, so this move would be half drafted and half live.",
-      );
-      expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
+      await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-c" });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
+      expect(await settlements(CH1)).toEqual(["applied", "discarded", "applied", "discarded"]);
     });
   });
 }
