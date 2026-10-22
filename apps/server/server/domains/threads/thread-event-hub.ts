@@ -370,7 +370,5 @@ export function createThreadEventHub(
         await deps.journalReader.readModelProjectionWatermark(threadId),
       );
     },
-
-    journalSeqForEventSeq,
   };
 }
