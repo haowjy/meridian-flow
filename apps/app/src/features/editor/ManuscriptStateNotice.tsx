@@ -34,29 +34,34 @@ export function ManuscriptStateNotice({ projectId, tab }: { projectId: string; t
   const deleted = isDeletedFromManuscript(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
   const title = tab.name;
-  let line: ReactNode = null;
-  if (isPathTaken(item))
-    line = (
-      <Trans>Another document now has this name. Rename that document to apply this draft.</Trans>
-    );
-  else if (deleted)
-    line = deletedFromManuscriptSentence(
-      title,
-      removal?.kind === "removed" ? removal.record : null,
-    );
-  else if (restored) line = <RestoredSentence titles={[title]} />;
+  const taken = isPathTaken(item);
+  // Both can hold: a deleted document whose path another document then took.
+  const deletedLine = deleted
+    ? deletedFromManuscriptSentence(title, removal?.kind === "removed" ? removal.record : null)
+    : null;
+  const takenLine = taken ? (
+    <Trans>Another document now has this name. Rename that document to apply this draft.</Trans>
+  ) : null;
+  const line: ReactNode =
+    deleted || taken ? (
+      <>
+        {deletedLine}
+        {deleted && taken ? " " : null}
+        {takenLine}
+      </>
+    ) : restored ? (
+      <RestoredSentence titles={[title]} />
+    ) : null;
   if (!line) return null;
   return (
     <div
       role="status"
-      data-manuscript-state-notice={
-        restored && !deleted ? "restored" : deleted ? "deleted" : "taken"
-      }
+      data-manuscript-state-notice={taken ? "taken" : deleted ? "deleted" : "restored"}
       className="flex min-h-8 min-w-0 items-center gap-x-2 px-4 font-sans text-ink-muted text-sm [@media(pointer:coarse)]:min-h-11"
     >
       <Info aria-hidden className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1">{line}</span>
-      {restored && !deleted ? (
+      {!deleted && !taken ? (
         <IconButton
           aria-label={t`Dismiss`}
           className="size-6 shrink-0 [@media(pointer:coarse)]:size-11"

@@ -10,6 +10,7 @@
  */
 import type { BranchId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
+import type { DraftItemConflict } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkBranchDraftMetadata } from "./ports/work-branch-pending-store.js";
@@ -31,7 +32,8 @@ export type DraftReviewItem = {
   documentName: string | null;
   /** Canonical URI in the branch's view (the last address for one deleted live). */
   path: string | null;
-  conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
+  /** Eligibility only; existence is `deletedLive`, which a taken path doesn't hide. */
+  conflict: DraftItemConflict | null;
   /**
    * Deleted live (an edited document, or a revealed create): live no longer shows it, the
    * branch's view does while it has pending changes (D79). It authorizes through the
@@ -153,7 +155,6 @@ function conflictOf(node: TreeStateNode): DraftReviewItem["conflict"] {
     case "clash":
       return { code: "path_taken", path: node.conflict.uri ?? node.conflict.at };
     case "deleted_live":
-      return { code: "deleted_live" };
     case "none":
       return null;
   }

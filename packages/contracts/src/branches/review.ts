@@ -79,10 +79,10 @@ export type ApplyClickObservation =
 export type StoredBranchCommandResult = BranchCommandResult | ApplyClickResult;
 
 /**
- * What a live change did to an item: another node took its path (Apply holds it), or live
- * deleted it (`deleted_live`: Apply brings it back, then merges; D79).
+ * What blocks the item's Apply: another node took its path (Apply holds it until that one
+ * moves). Whether live still has the document is `deletedLive`, a separate fact.
  */
-export type DraftItemConflict = { code: "path_taken"; path: string } | { code: "deleted_live" };
+export type DraftItemConflict = { code: "path_taken"; path: string };
 
 /**
  * One review item of the Work's active branch: a created or edited document, text or binary.
@@ -106,6 +106,12 @@ export interface ThreadDraftListItem {
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   conflict: DraftItemConflict | null;
+  /**
+   * Deleted from the manuscript while this draft has it: live doesn't hold the document, and
+   * Apply brings it back before merging (D79). Independent of `conflict`: another document
+   * may also have taken its path.
+   */
+  deletedLive: boolean;
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;

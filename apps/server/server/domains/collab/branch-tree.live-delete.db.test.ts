@@ -36,7 +36,10 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect.soft(await s.view(ascension).idAt("ch3"), "still the branch's").toBe(ch3);
     expect.soft(await s.view(ascension).text("ch3")).toContain("crossed the river");
     expect.soft(await draftStatuses(ch3), "no draft closed").not.toContain("work_draft:closed");
-    expect.soft(itemFor(await s.items(ascension), ch3).conflict).toEqual({ code: "deleted_live" });
+    expect.soft(itemFor(await s.items(ascension), ch3)).toMatchObject({
+      conflict: null,
+      deletedLive: true,
+    });
 
     // A second chat of the Work has no peer yet: its first write makes one.
     const second = await s.thread(ascension);
@@ -106,8 +109,10 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     expect
       .soft(await s.view(ascension).stat("ch3"), "two documents at one path in the branch")
       .toMatchObject({ ok: false, error: { reason: "ambiguous_path" } });
-    expect.soft(itemFor(await s.items(ascension), ch3).conflict).toMatchObject({
-      code: "path_taken",
+    // The taken path withdraws Apply; it must not hide that live deleted the document.
+    expect.soft(itemFor(await s.items(ascension), ch3)).toMatchObject({
+      conflict: { code: "path_taken" },
+      deletedLive: true,
     });
 
     const live = runtime.ports.contextPorts.forProject(s.project.id, s.project.userId, new Map());
