@@ -14,7 +14,8 @@ import type {
 
 export type ReviewAddressPort = {
   write(review: ReviewAddress | null): void;
-  admit(target: AiDraftLaunchTarget): void | Promise<void>;
+  /** `false`: refused, because the item's known draft is closed and no newer one replaced it. */
+  admit(target: AiDraftLaunchTarget): Promise<boolean>;
 };
 
 type ReviewLocator = { scheme: ProjectContextTreeScheme; path: string };
@@ -80,12 +81,34 @@ export function ReviewAddressOwner({
 }) {
   const pendingItemKey = usePendingEditorReviewItemKey();
   const restoring = useRef<string | null>(null);
+  /**
+   * The port that refused the request. Admitting the same item through it again would be
+   * refused again; a new port (a newer draft generation, another container) gets one try.
+   */
+  const refused = useRef<{ itemKey: string; port: ReviewAddressPort } | null>(null);
   const ownedReview = useRef<OwnedReview | null>(null);
   const requestedItemKey = presented?.review?.itemKey;
   const write = (address: ReviewAddress | null) => {
     if (!address && presented?.draftOnly) return;
     port.write(address);
   };
+  const restore = (target: AiDraftLaunchTarget) => {
+    restoring.current = target.itemKey;
+    void port.admit(target).then(
+      (admitted) => {
+        if (admitted || restoring.current !== target.itemKey) return;
+        restoring.current = null;
+        refused.current = { itemKey: target.itemKey, port };
+      },
+      (error) => {
+        if (restoring.current === target.itemKey) restoring.current = null;
+        console.error("[review] address restore failed", error);
+      },
+    );
+  };
+  const attempted = (itemKey: string) =>
+    restoring.current === itemKey ||
+    (refused.current?.itemKey === itemKey && refused.current.port === port);
   // Missing metadata (a list still loading) is "pending", never a mismatch.
   const addressNames = (
     documentId: string,
@@ -169,6 +192,7 @@ export function ReviewAddressOwner({
     }
     if (!presented?.review || !requestedItemKey) {
       restoring.current = null;
+      refused.current = null;
       return;
     }
     if (admission !== "admitted") return;
@@ -178,11 +202,10 @@ export function ReviewAddressOwner({
         !presented.path ||
         !presented.scheme ||
         review.controller.workId !== presented.review.workId ||
-        restoring.current === requestedItemKey
+        attempted(requestedItemKey)
       )
         return;
-      restoring.current = requestedItemKey;
-      void port.admit({
+      restore({
         workId: presented.review.workId,
         documentId: presented.documentId,
         itemKey: requestedItemKey,
@@ -194,7 +217,7 @@ export function ReviewAddressOwner({
     // Only the route's server answer admits an Editor selector. Pending, failed and
     // unavailable leave it as written: the pane says why, the live occupant never stands in.
     if (admission !== "admitted") return;
-    if (pendingItemKey === requestedItemKey || restoring.current === requestedItemKey) return;
+    if (pendingItemKey === requestedItemKey || attempted(requestedItemKey)) return;
     if (
       !presented.documentId ||
       !presented.scheme ||
@@ -204,19 +227,13 @@ export function ReviewAddressOwner({
       return;
     // The list, when loaded, supplies labels and whole-item state; it is never an authority.
     const file = review.files.find((candidate) => candidate.draft.itemKey === requestedItemKey);
-    restoring.current = requestedItemKey;
-    void Promise.resolve(
-      port.admit({
-        workId: presented.review.workId,
-        documentId: presented.documentId,
-        itemKey: requestedItemKey,
-        contextLocation: { scheme: presented.scheme, path: presented.path },
-        documentName: file?.documentName ?? undefined,
-        draftOnly: file?.draftOnly ?? presented.draftOnly,
-      }),
-    ).catch((error) => {
-      restoring.current = null;
-      console.error("[review] address restore failed", error);
+    restore({
+      workId: presented.review.workId,
+      documentId: presented.documentId,
+      itemKey: requestedItemKey,
+      contextLocation: { scheme: presented.scheme, path: presented.path },
+      documentName: file?.documentName ?? undefined,
+      draftOnly: file?.draftOnly ?? presented.draftOnly,
     });
   }, [presented, port, pendingItemKey, requestedItemKey, review, admission]);
 

@@ -58,7 +58,7 @@ wins; otherwise classification membership in an active draft is pending and the
 rest discarded. Inverse capture reads each origin draft once, including closed
 drafts, and matches receipts by edit id and ordinal. Active draft write admission
 is separate; a revision mismatch between the evidence and planning captures
-retries the bounded attempt. A removed document's record takes precedence.
+retries the bounded attempt. For a removed document, an active draft of it is planned on like any draft; the removal record decides only when no active draft exists.
 
 Model Undo/Redo keep `cant_*_applied`. Review disposition is not inverse
 eligibility: an effective Undo that restores the review base has no shown change
