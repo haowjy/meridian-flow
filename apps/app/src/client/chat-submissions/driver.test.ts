@@ -560,6 +560,28 @@ it("Retry and Edit finish incomplete deletion before handling a received first s
   }
 });
 
+it("Edit returns an unacknowledged derivation send locally without retiring it on the server", async () => {
+  const r = rig();
+  const entry = { ...record(), creation: undefined, state: "rejected" as const };
+  r.records.set(entry.recordId, entry);
+  const transferForEdit = vi.fn(() => true);
+  const edited = vi.fn();
+  const { owner } = r.mount({
+    whenDerived: async () => false,
+    transferForEdit,
+    edited,
+  });
+  try {
+    await owner.edit(entry.submissionId);
+    expect(r.scenario.retireRequests).toHaveLength(0);
+    expect(transferForEdit).toHaveBeenCalledWith(entry, [entry]);
+    expect(edited).toHaveBeenCalledWith(entry);
+    expect(r.records.size).toBe(0);
+  } finally {
+    r.dispose();
+  }
+});
+
 const SWITCH_AT = "2026-10-11T10:01:00Z";
 describe("write-mode switches in the journal", () => {
   const switchRecord = (seq: number): ChatSubmission => ({
