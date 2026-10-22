@@ -227,6 +227,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: { kind: "agent", chatTitle: "Renumbering" },
       });
 
+      // The writer takes the path; the model moves that document aside as the refusal says and
+      // undoes by the path again: the deletion is undone, not the newer move of the blocker.
+      await db.insert(schema.documents).values({
+        contextSourceId: SOURCE_ID,
+        name: "ch2",
+        extension: "",
+        fileType: "markdown",
+      });
+      expect(text(await call("write", { command: "undo", path: "ch2" }))).toContain(
+        "is taken by a different document",
+      );
+      expect(
+        (await call("write", { command: "move", from: { path: "ch2" }, path: "ch2-new" })).isError,
+      ).toBeFalsy();
       const undone = await call("write", { command: "undo", path: "ch2" });
       expect(undone.isError, text(undone)).toBeFalsy();
       expect((await placement(CH2))?.deletedAt).toBeNull();
