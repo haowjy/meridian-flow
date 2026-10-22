@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build a changelog from structured sections in merged pull request bodies.
+ * Build a changelog from paged GitHub results or saved pull request bodies.
  * A malformed section fails the whole build and names its PR; consumers must
  * check the exit status rather than accept a silently incomplete changelog.
  * Interactive Markdown uses $PAGER or less -FRX; JSON and redirected output do not.
@@ -10,14 +10,40 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { parsePrChangelog } from "./pr-changelog.mjs";
 
-const LIMIT = 1000;
+const PAGE_SIZE = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const GH_FIELDS = "number,title,mergedAt,baseRefName,body,url";
+const PULL_REQUESTS_QUERY = `
+query ChangelogPullRequests($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      first: ${PAGE_SIZE}
+      after: $cursor
+      states: MERGED
+      baseRefName: "main"
+      orderBy: { field: UPDATED_AT, direction: DESC }
+    ) {
+      nodes {
+        number
+        title
+        mergedAt
+        updatedAt
+        baseRefName
+        body
+        url
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}`;
 
 function usage() {
   return `usage: pnpm changelog [-- --since <YYYY-MM-DD | N.days> | --all] [--json] [--no-pager] [--input <file>]
 
-Build the changelog from pull requests merged into main. The default range is 30 days.
+Build the changelog from pull requests merged into main. GitHub results are fetched 50 at a time.
+The default range is 30 days; --all follows every GitHub results page.
 Markdown is sent through $PAGER (or less -FRX) when stdout is a terminal; use --no-pager to print directly.
 Malformed Changelog sections stop the build and name the PR; always check the exit status.`;
 }
@@ -113,23 +139,39 @@ function parseCutoff(value, now) {
   throw new Error(`invalid --since value: ${value}; use YYYY-MM-DD or N.days`);
 }
 
-function parsePullRequests(json, source) {
+function parseJson(json, source) {
   let value;
   try {
     value = JSON.parse(json);
   } catch (error) {
     throw new Error(`${source} is not valid JSON: ${error.message}`);
   }
+  return value;
+}
+
+function parsePullRequests(json, source) {
+  const value = parseJson(json, source);
   if (!Array.isArray(value)) throw new Error(`${source} must contain a JSON array`);
   return value;
 }
 
-function readPullRequestsFromGitHub() {
-  const result = spawnSync(
-    "gh",
-    ["pr", "list", "--state", "merged", "--limit", String(LIMIT), "--json", GH_FIELDS],
-    { encoding: "utf8", maxBuffer: 100 * 1024 * 1024 },
-  );
+function readGitHubPage(cursor) {
+  const args = [
+    "api",
+    "graphql",
+    "-f",
+    `query=${PULL_REQUESTS_QUERY}`,
+    "-F",
+    "owner={owner}",
+    "-F",
+    "name={repo}",
+  ];
+  if (cursor !== undefined) args.push("-F", `cursor=${cursor}`);
+
+  const result = spawnSync("gh", args, {
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
   if (result.error?.code === "ENOENT") {
     throw new Error("GitHub CLI (gh) is not installed; install it, then run gh auth login");
   }
@@ -141,14 +183,27 @@ function readPullRequestsFromGitHub() {
     );
   }
 
-  const prs = parsePullRequests(result.stdout, "gh output");
-  if (prs.length === LIMIT) {
-    console.error(`warning: gh returned the ${LIMIT}-PR limit; older matching entries are omitted`);
+  const response = parseJson(result.stdout, "gh output");
+  if (Array.isArray(response?.errors) && response.errors.length > 0) {
+    const details = response.errors
+      .map((error) => (typeof error?.message === "string" ? error.message : JSON.stringify(error)))
+      .join("; ");
+    throw new Error(`GitHub GraphQL returned errors: ${details}`);
   }
-  return prs;
+  const connection = response?.data?.repository?.pullRequests;
+  if (!Array.isArray(connection?.nodes)) {
+    throw new Error("GitHub GraphQL response is missing pull request nodes");
+  }
+  if (typeof connection.pageInfo?.hasNextPage !== "boolean") {
+    throw new Error("GitHub GraphQL response has invalid page information");
+  }
+  if (connection.pageInfo.hasNextPage && typeof connection.pageInfo.endCursor !== "string") {
+    throw new Error("GitHub GraphQL response is missing the next page cursor");
+  }
+  return connection;
 }
 
-function changelogEntries(prs, cutoff) {
+export function entriesFromPullRequests(prs, cutoff) {
   const included = prs
     .filter((pr) => pr?.baseRefName === "main")
     .filter((pr) => {
@@ -156,11 +211,7 @@ function changelogEntries(prs, cutoff) {
         throw new Error(`PR #${pr?.number ?? "?"} has an invalid mergedAt value`);
       }
       return cutoff === null || Date.parse(pr.mergedAt) >= cutoff.valueOf();
-    })
-    .sort(
-      (left, right) =>
-        Date.parse(right.mergedAt) - Date.parse(left.mergedAt) || right.number - left.number,
-    );
+    });
 
   return included.flatMap((pr) => {
     const parsed = parsePrChangelog(typeof pr.body === "string" ? pr.body : "");
@@ -192,15 +243,43 @@ function changelogEntries(prs, cutoff) {
   });
 }
 
-/** Pure transformation used by both live GitHub and offline fixture paths. */
-export function buildChangelog(prs, { cutoff, format }) {
-  const entries = changelogEntries(prs, cutoff);
-  if (format === "json") return `${JSON.stringify(entries, null, 2)}\n`;
+function readChangelogEntriesFromGitHub(cutoff) {
+  const entries = [];
+  let cursor;
+
+  while (true) {
+    const page = readGitHubPage(cursor);
+    const pageEntries = entriesFromPullRequests(page.nodes, cutoff);
+    for (const entry of pageEntries) entries.push(entry);
+
+    const updatedTimes = page.nodes.map((pr) => {
+      if (typeof pr?.updatedAt !== "string" || Number.isNaN(Date.parse(pr.updatedAt))) {
+        throw new Error(`PR #${pr?.number ?? "?"} has an invalid updatedAt value`);
+      }
+      return Date.parse(pr.updatedAt);
+    });
+    const oldestUpdatedAt = Math.min(...updatedTimes);
+    // GitHub orders pages by updatedAt descending, and updatedAt is never earlier than
+    // mergedAt. Once a page crosses the cutoff, no later page can contain an in-range merge.
+    if (cutoff !== null && oldestUpdatedAt < cutoff.valueOf()) break;
+    if (!page.pageInfo.hasNextPage) break;
+    cursor = page.pageInfo.endCursor;
+  }
+
+  return entries;
+}
+
+export function formatChangelog(entries, format) {
+  const sortedEntries = entries.toSorted(
+    (left, right) =>
+      Date.parse(right.mergedAt) - Date.parse(left.mergedAt) || right.number - left.number,
+  );
+  if (format === "json") return `${JSON.stringify(sortedEntries, null, 2)}\n`;
   if (format !== "markdown") throw new Error(`unknown output format: ${format}`);
 
   const lines = [];
   let currentDate;
-  for (const entry of entries) {
+  for (const entry of sortedEntries) {
     if (entry.date !== currentDate) {
       if (lines.length > 0) lines.push("");
       lines.push(`## ${entry.date}`, "");
@@ -217,10 +296,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (options.help) {
       console.log(usage());
     } else {
-      const prs = options.input
-        ? parsePullRequests(readFileSync(options.input, "utf8"), options.input)
-        : readPullRequestsFromGitHub();
-      const output = buildChangelog(prs, options);
+      const entries = options.input
+        ? entriesFromPullRequests(
+            parsePullRequests(readFileSync(options.input, "utf8"), options.input),
+            options.cutoff,
+          )
+        : readChangelogEntriesFromGitHub(options.cutoff);
+      const output = formatChangelog(entries, options.format);
       writeOutput(output, options);
     }
   } catch (error) {
