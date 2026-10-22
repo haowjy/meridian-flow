@@ -13,16 +13,22 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import {
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-  type Work,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
+import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useRenameProject } from "@/client/query/useRenameProject";
@@ -33,7 +39,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { useContextTabs, useContextTabsStore } from "@/client/stores";
+import { reviewEntryOf, useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -55,10 +61,10 @@ import {
   useDraftReviewStateOwner,
 } from "@/features/draft-review/useDraftReviewController";
 import {
-  useWorkDraftCommands,
-  type WorkDraftCommands,
-  WorkDraftCommandsBoundary,
-} from "@/features/draft-review/useWorkDraftCommands";
+  useWorkBranchCommands,
+  type WorkBranchCommands,
+  WorkBranchCommandsBoundary,
+} from "@/features/draft-review/useWorkBranchCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";
@@ -67,11 +73,14 @@ import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
   useAccountId,
   useContextRemovalCoordinator,
+  useDraftCommandOwner,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
+import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import {
@@ -81,6 +90,7 @@ import {
 import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import { useDockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import {
+  type AiDraftLaunchTarget,
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
   useOpenEditorReview,
@@ -102,7 +112,11 @@ import {
   type MobileDocumentRoute,
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
-import { PresentedDocumentContext, resolvePresentedDocument } from "./presented-document";
+import {
+  PresentedDocumentContext,
+  type ReviewAddressAdmission,
+  resolvePresentedDocument,
+} from "./presented-document";
 import { ReviewAddressOwner, type ReviewAddressPort } from "./ReviewAddressOwner";
 import {
   type ChatDisplay,
@@ -112,7 +126,11 @@ import {
   useDockReveal,
 } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
-import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
+import {
+  ProjectRouteBoundary,
+  type ProjectRouteIssue,
+  type ProjectRouteMask,
+} from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { routeWorkId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
@@ -136,9 +154,7 @@ function availabilityWatchRecord(
 ): AvailabilityWatchRecord {
   return {
     documentId: value.documentId,
-    ...(isWorkScopedProjectContextScheme(value.scheme) && value.workId
-      ? { sourceWorkId: value.workId }
-      : {}),
+    ...(isWorkScopedScheme(value.scheme) && value.workId ? { sourceWorkId: value.workId } : {}),
   };
 }
 
@@ -157,9 +173,13 @@ export type ProjectViewProps = {
   editorRouteWork: Exclude<RouteWorkResolution, { status: "new" | "absent" }>;
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
-  addressOwnsDocumentAdmission?: boolean;
   routeLocationKey?: string;
-  routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
+  routeIssues?: {
+    main?: ProjectRouteIssue;
+    editor?: ProjectRouteIssue;
+    /** Why an unavailable Editor destination is gone, when its document was removed. */
+    removed?: ProjectRouteMask["removed"];
+  };
   /** Re-read what a failed Editor address was waiting on. */
   onRetryEditorRoute?: () => void;
   onDisplayedSelection?: (selection: { editorWorkId: ParsedRequestId | null }) => void;
@@ -176,10 +196,12 @@ export type ProjectViewProps = {
   /** The lineage a chat's Scratch route names, in place of a Work. */
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
-  reviewDraftId?: string;
+  reviewItemKey?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
+  /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
+  reviewAddressAdmission?: ReviewAddressAdmission;
   onSelectScreen: (screen: ScreenKey) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
@@ -188,7 +210,7 @@ export type ProjectViewProps = {
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewDraftId: (draftId: string | null, changeId?: string) => void;
+  onSetEditorReviewItemKey: (itemKey: string | null, changeId?: string) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -211,6 +233,18 @@ export function ProjectView(props: ProjectViewProps) {
     [availability, props.projectId],
   );
   useContextCatalogWake(props.projectId, repairColdWork);
+  // Both shells place the Editor's notice only on the Editor (Files) screen.
+  useRemovedNoticeLifetime(props.projectId, "editor", {
+    key: JSON.stringify([
+      props.activeScreen,
+      props.activeContextScheme,
+      props.activeContextFolder,
+      props.activeContextPath,
+      props.activeLocalDocumentId,
+    ]),
+    onScreen: props.activeScreen === "context",
+    showing: { scheme: props.activeContextScheme, path: props.activeContextPath },
+  });
   useEffect(() => {
     const lease = availability.attachProject(props.projectId);
     const reportWatches = () => {
@@ -397,7 +431,7 @@ type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit 
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
-    chatCommands: WorkDraftCommands;
+    chatCommands: WorkBranchCommands;
     presentedReview: DraftReviewContextValue;
     mobileDocumentRoute: MobileDocumentRoute;
     retainEditorWhileLoading?: boolean;
@@ -507,7 +541,7 @@ function HydratedReviewControllers({
   mobileDocumentRoute: MobileDocumentRoute;
   retainEditorWhileLoading?: boolean;
 }) {
-  const chatCommands = useWorkDraftCommands({
+  const chatCommands = useWorkBranchCommands({
     projectId: props.projectId,
     work: props.chatWork,
     threadId: props.chatThreadId,
@@ -523,14 +557,12 @@ function HydratedReviewControllers({
       scheme: props.activeContextScheme,
       path: props.activeContextPath,
       documentId: props.reviewAddressDocumentId,
-      draftId: props.reviewDraftId,
+      itemKey: props.reviewItemKey,
       changeId: props.reviewChangeId,
       draftOnly: workspace.tabs.some(
         (tab) =>
-          tab.kind === "tracked" &&
-          tab.draftOnly &&
           tab.documentId === props.reviewAddressDocumentId &&
-          tab.reviewWorkId === props.editorWorkId,
+          Boolean(props.editorWorkId && reviewEntryOf(tab, props.editorWorkId)),
       ),
     },
   });
@@ -545,37 +577,76 @@ function HydratedReviewControllers({
   const presentedReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
-    presented,
     stateOwner: presentedReviewState,
     threadId: null,
   });
   const openEditorReview = useOpenEditorReview();
-  const port = useMemo<ReviewAddressPort>(
-    () =>
-      props.activeScreen !== "context"
-        ? {
-            write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
-            admit: (target) =>
-              presentedReview.controller.enterInlineReview(target.documentId, target.draftId),
-          }
-        : {
-            write: (review) =>
-              props.onSetEditorReviewDraftId(review?.draftId ?? null, review?.changeId),
-            admit: openEditorReview,
-          },
-    [
-      props.activeScreen,
-      presentedReview.controller.enterInlineReview,
-      props.onSetEditorReviewDraftId,
-      openEditorReview,
-    ],
-  );
+  const draftCommands = useDraftCommandOwner();
+  const queryClient = useQueryClient();
+  const addressedItemKey = presented?.review?.itemKey ?? "";
+  const generation = () => draftCommands.generation(addressedItemKey);
+  // A new generation of the addressed item is a new port: the owner retries what it refused.
+  const addressedGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
+  const port = useMemo<ReviewAddressPort>(() => {
+    // A closed draft (Discard, here or on another device) has already ended its review; a
+    // draft-only address keeps naming it until settlement closes the tab, and admitting it
+    // again would re-open what the room owner just closed, every render. The address names
+    // an item, not a draft: the server decides whether a newer draft replaced the closed one.
+    const open =
+      (admit: (target: AiDraftLaunchTarget) => unknown): ReviewAddressPort["admit"] =>
+      async (target) => {
+        if (draftCommands.state(target.itemKey).closed) {
+          const ref = {
+            projectId: props.projectId,
+            workId: target.workId,
+            documentId: target.documentId,
+            itemKey: target.itemKey,
+          };
+          const current = await draftCommands.reconcileClosed(ref, () =>
+            fetchCurrentDraftMetadata(queryClient, ref),
+          );
+          if (!current) return false;
+        }
+        await admit(target);
+        return true;
+      };
+    return props.activeScreen !== "context"
+      ? {
+          write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
+          admit: open((target) =>
+            presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
+          ),
+        }
+      : {
+          write: (review) =>
+            props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
+          admit: open(openEditorReview),
+        };
+  }, [
+    props.activeScreen,
+    props.projectId,
+    presentedReview.controller.enterInlineReview,
+    props.onSetEditorReviewItemKey,
+    openEditorReview,
+    draftCommands,
+    queryClient,
+    addressedGeneration,
+  ]);
   const scopedProps = { ...props, chatCommands, presentedReview, mobileDocumentRoute };
   return (
     <PresentedDocumentContext.Provider value={presented}>
       <PresentedReviewScope value={presentedReview}>
-        <DraftOnlySettlement projectId={props.projectId} />
-        <ReviewAddressOwner review={presentedReview} presented={presented} port={port} />
+        <DraftOnlySettlement projectId={props.projectId} editorWorkId={props.editorWorkId} />
+        <ReviewAddressOwner
+          review={presentedReview}
+          presented={presented}
+          admission={
+            presented?.container === "dock"
+              ? (dock?.reviewAdmission ?? "admitted")
+              : (props.reviewAddressAdmission ?? "pending")
+          }
+          port={port}
+        />
         {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
       </PresentedReviewScope>
     </PresentedDocumentContext.Provider>
@@ -615,15 +686,38 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   });
   const { editorPresentation } = screenSwitch;
   const { active: editorActive, mounted: mountedEditor } = editorPresentation;
-  const mountedEditorRoute = mountedEditor
-    ? {
-        editorWorkId: mountedEditor.editorWorkId,
-        activeContextScheme: mountedEditor.activeContextScheme,
-        activeContextPath: mountedEditor.activeContextPath,
-        activeContextChat: mountedEditor.activeContextChat,
-        localDocumentId: mountedEditor.activeLocalDocumentId,
-      }
-    : null;
+  // The Editor's navigation frame names where the writer is going; only the document body
+  // keeps the previous destination beneath the mask (see `resolveEditorFrame`).
+  const frameEditorRoute = resolveEditorFrame({
+    screen: props.activeScreen,
+    requested: {
+      editorWorkId: props.editorWorkId,
+      activeContextScheme: props.activeContextScheme,
+      activeContextPath: props.activeContextPath,
+      activeContextChat: props.activeContextChat,
+      localDocumentId: props.activeLocalDocumentId,
+    },
+    mounted: mountedEditor
+      ? {
+          editorWorkId: mountedEditor.editorWorkId,
+          activeContextScheme: mountedEditor.activeContextScheme,
+          activeContextPath: mountedEditor.activeContextPath,
+          activeContextChat: mountedEditor.activeContextChat,
+          localDocumentId: mountedEditor.activeLocalDocumentId,
+        }
+      : null,
+  });
+  const editorMask: ProjectRouteMask = {
+    destinationKey: props.routeLocationKey,
+    issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
+    removed: props.routeIssues?.removed,
+    onRetry: props.onRetryEditorRoute,
+    retainWhileLoading: editorPresentation.retainWhileLoading,
+    recovery:
+      props.editorScope.status !== "ready" ? (
+        <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
+      ) : undefined,
+  };
 
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
@@ -645,6 +739,12 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
+  // The dock's notice sits beside "Recent", on screen only while Chat's rail shows.
+  useRemovedNoticeLifetime(props.projectId, "dock", {
+    key: JSON.stringify([props.activeScreen, screenSwitch.dockDocument?.tab.documentId ?? null]),
+    onScreen: props.activeScreen === "chat" && isOpen("context-rail") && !screenSwitch.dockDocument,
+    showing: screenSwitch.dockDocument?.tab.documentId ?? null,
+  });
   // The single writer-driven collapse entry. Calls targeting a surface that is
   // currently the dock occupant drive the shared dock pref instead of the
   // surface's own pref — the dock reads as one persistent sidebar across
@@ -697,59 +797,47 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "context-rail",
       children: (
-        <WorkDraftCommandsBoundary value={props.chatCommands}>
+        <WorkBranchCommandsBoundary value={props.chatCommands}>
           <ContextSidebar
             threadId={displayedChatThreadId(props.chatDisplay)}
             projectId={props.projectId}
             visible={isOpen("context-rail")}
             onClose={close("context-rail")}
           />
-        </WorkDraftCommandsBoundary>
+        </WorkBranchCommandsBoundary>
       ),
     },
     {
       id: "context-viewer",
-      children: (
-        <ProjectRouteBoundary
-          destinationKey={props.routeLocationKey}
-          issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
-          onRetry={props.onRetryEditorRoute}
-          retainWhileLoading={editorPresentation.retainWhileLoading}
-          recovery={
-            props.editorScope.status !== "ready" ? (
-              <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
-            ) : undefined
-          }
-        >
-          {mountedEditor && mountedEditorRoute ? (
-            <DraftReviewBoundary value={props.presentedReview}>
-              {editorActive ? (
-                <EditorReviewIntentClaimant
-                  editorWorkId={mountedEditor.editorWorkId}
-                  activeScheme={props.activeContextScheme}
-                />
-              ) : null}
-              <PaintScope active={props.activeScreen === "context"}>
-                <ContextViewerSurfaceController
-                  projectId={props.projectId}
-                  {...mountedEditorRoute}
-                  resolvedEditor={editorPresentation.resolved}
-                  editorWork={mountedEditor.editorWork}
-                  addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
-                  active={editorActive}
-                  sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                  dockToggle={surfaceToggle("chat", t`Expand chat`)}
-                  onSelectContextPath={props.onSelectContextPath}
-                  onOpenContextTarget={props.onOpenContextTarget}
-                  onShowEditorRecents={(options) =>
-                    void props.routeCommands.showEditorRecents(options)
-                  }
-                />
-              </PaintScope>
-            </DraftReviewBoundary>
+      children: frameEditorRoute ? (
+        <DraftReviewBoundary value={props.presentedReview}>
+          {editorActive && mountedEditor ? (
+            <EditorReviewIntentClaimant
+              editorWorkId={mountedEditor.editorWorkId}
+              activeScheme={props.activeContextScheme}
+            />
           ) : null}
-        </ProjectRouteBoundary>
-      ),
+          <PaintScope active={props.activeScreen === "context"}>
+            <ContextViewerSurfaceController
+              projectId={props.projectId}
+              {...frameEditorRoute}
+              mask={editorMask}
+              resolvedEditor={editorPresentation.resolved}
+              editorWork={
+                props.activeScreen === "context"
+                  ? props.editorWork
+                  : (mountedEditor?.editorWork ?? null)
+              }
+              active={editorActive}
+              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+              dockToggle={surfaceToggle("chat", t`Expand chat`)}
+              onSelectContextPath={props.onSelectContextPath}
+              onOpenContextTarget={props.onOpenContextTarget}
+              onShowEditorRecents={(options) => void props.routeCommands.showEditorRecents(options)}
+            />
+          </PaintScope>
+        </DraftReviewBoundary>
+      ) : null,
     },
     {
       id: "chat",
@@ -785,7 +873,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 inert={chatIndexShowing}
                 aria-hidden={chatIndexShowing}
               >
-                <WorkDraftCommandsBoundary value={props.chatCommands}>
+                <WorkBranchCommandsBoundary value={props.chatCommands}>
                   <ChatSurface
                     key="chat-surface"
                     projectId={props.projectId}
@@ -800,7 +888,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     onCloseDock={close("chat")}
                     onOpenContextTarget={props.onOpenContextTarget}
                   />
-                </WorkDraftCommandsBoundary>
+                </WorkBranchCommandsBoundary>
               </div>
             )}
             {chatIndexShowing ? (

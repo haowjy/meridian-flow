@@ -4,7 +4,7 @@ import type { CatalogEntry } from "@meridian/contracts/protocol";
 import { catalogEntryParent } from "./catalog-installation";
 import { projectFolderNeedsRepair } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
-import { owningLocationIntent } from "./resource-intent-policy";
+import { owningLocationIntent, placementDestination } from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
   FolderNamespaceRecord,
@@ -17,7 +17,7 @@ import {
   catalogEntryOwner,
   ownerListedInScope,
   resourceContextAuthority,
-  resourceUriQualifier,
+  resourceContextUri,
 } from "./resource-work-authority";
 
 /** Supply all destination sources/parents, including other Work catalogs for cross-Work moves. */
@@ -97,18 +97,13 @@ export function createResourcePlacement(
       resourceLocations.set(record, null);
       return null;
     }
-    const desired = owningLocationIntent(
-      projectId,
-      record.intents,
-      Boolean(record.resource.obligations.canonicalRefresh),
-    )?.desired;
     const placed = graph.place(
       (record.resource.canonicalParent
         ? record.resource.canonical
         : locations.get(record.resource.identity.documentId)) ??
         record.resource.canonical ??
         own,
-      desired?.kind === "set-location" ? desired.destination : undefined,
+      placementDestination(projectId, record),
       record.resource.canonicalParent ?? parents.get(record.resource.identity.documentId),
     );
     const result = placed.hidden ? null : { ...placed.location, provisional: own.provisional };
@@ -172,11 +167,13 @@ export function createResourcePlacement(
         const scope =
           location.scheme === "user"
             ? { kind: "user" as const, userId: "self" }
-            : location.rootThreadId !== undefined
-              ? { kind: "lineage" as const, projectId, rootThreadId: location.rootThreadId }
-              : location.workId
-                ? { kind: "work" as const, projectId, workId: location.workId }
-                : { kind: "project" as const, projectId };
+            : location.chatId !== undefined
+              ? { kind: "chat" as const, projectId, chatId: location.chatId }
+              : location.rootThreadId !== undefined
+                ? { kind: "lineage" as const, projectId, rootThreadId: location.rootThreadId }
+                : location.workId
+                  ? { kind: "work" as const, projectId, workId: location.workId }
+                  : { kind: "project" as const, projectId };
         source = {
           kind: "source",
           entryId: `repair-source:${location.scheme}:${JSON.stringify(scope)}`,
@@ -262,18 +259,14 @@ export function createResourcePlacement(
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
       const record = byDocument.get(entry.entryId);
       const folder = foldersById.get(entry.entryId);
-      const desired = record
-        ? owningLocationIntent(
-            projectId,
-            record.intents,
-            Boolean(record.resource.obligations.canonicalRefresh),
-          )?.desired
-        : folder &&
-          owningLocationIntent(folder.projectId, folder.intents, Boolean(folder.canonicalRefresh))
-            ?.desired;
+      const desired = folder
+        ? owningLocationIntent(folder.projectId, folder.intents, Boolean(folder.canonicalRefresh))
+            ?.desired
+        : undefined;
       const canonicalParent = record?.resource.canonicalParent ?? parents.get(entry.entryId);
-      const destination =
-        desired?.kind === "set-location" || desired?.kind === "set-folder-location"
+      const destination = record
+        ? placementDestination(projectId, record)
+        : desired?.kind === "set-folder-location"
           ? desired.destination
           : undefined;
       const identityParent =
@@ -320,13 +313,9 @@ export function createResourcePlacement(
     folderLocation: (id: string) => graph.locations.get(id) ?? null,
     parentForFolder: graph.parentForFolder,
     parentForResource: (record: ResourceRecord) => {
-      const desired = owningLocationIntent(
-        projectId,
-        record.intents,
-        Boolean(record.resource.obligations.canonicalRefresh),
-      )?.desired;
-      return desired?.kind === "set-location"
-        ? desired.destination.parent
+      const destination = placementDestination(projectId, record);
+      return destination
+        ? destination.parent
         : record.resource.canonical
           ? (record.resource.canonicalParent ??
             parents.get(record.resource.identity.documentId) ??
@@ -349,11 +338,13 @@ export function projectFolderCatalog(
 }
 
 function namespaceUri(location: ResourceLocation): string | null {
-  const qualifier = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
-  const parsed = parseContextUri(
-    `${location.scheme}://${qualifier}${location.path.replace(/^\/+/, "")}`,
+  const uri = resourceContextUri(
+    location.scheme,
+    location.path,
+    resourceContextAuthority(location.scheme, location),
   );
-  if (!parsed.ok) return null;
+  const parsed = uri ? parseContextUri(uri) : null;
+  if (!parsed?.ok) return null;
   return parsed.value.normalized;
 }
 

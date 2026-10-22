@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Notice } from "../../notices/index.js";
 import { planMessageTurns } from "./inbox-context.js";
 
-function reversal(id: number, direction: "undo" | "redo", handle = "w1"): Notice {
+function reversal(id: number, direction: "undo" | "redo", handle = "e1"): Notice {
   return {
     id,
     kind: "undo",
@@ -63,7 +63,7 @@ describe("notice materialization", () => {
 
   it("reports only the edits still undone", () => {
     expect(
-      plan([reversal(1, "undo"), reversal(2, "redo"), reversal(3, "undo", "w2")]).blocks[0]
+      plan([reversal(1, "undo"), reversal(2, "redo"), reversal(3, "undo", "e2")]).blocks[0]
         ?.content,
     ).toContain("- Scene");
   });

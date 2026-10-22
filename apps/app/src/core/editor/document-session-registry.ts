@@ -1,12 +1,11 @@
 /** Structural, lease-qualified session-registry surfaces. */
 import type {
   AccountId,
+  AvailabilityGeneration,
   LiveDocumentSessionAuthority,
   LiveDocumentSessionLease,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-
-import type { BranchRoomRef } from "./branch-room-pool";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 
 export type RetainedLiveDocumentReference = Readonly<{
@@ -35,16 +34,41 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   observeRetainedLiveDocuments(
     observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
   ): () => void;
-  getBranchRoom(roomKey: string): DocumentSession;
-  /** Follows whichever session backs a branch room, across rebuilds; never creates one. */
-  observeBranchRoom(
+  /**
+   * Each live room the server closed because its document was removed (4208),
+   * once per close, whether or not an editor holds it. Draft rooms name no document here;
+   * their review owner reports them.
+   */
+  observeRemovedRooms(
+    observer: (session: DocumentSession, room: RetainedLiveDocumentReference) => void,
+  ): () => void;
+  /**
+   * Reconnects a live room closed as removed once an exact lookup proved its
+   * document present (a restore won the race); false when it is no longer the
+   * room's current session or no longer removed.
+   */
+  restartRemovedRoom(session: DocumentSession): Promise<boolean>;
+  closeDraftRoom(roomKey: string): Promise<void>;
+  getDraftRoom(roomKey: string): DocumentSession;
+  /** Follows whichever session backs a draft room, across rebuilds; never creates one. */
+  observeDraftRoom(
     roomKey: string,
     observer: (snapshot: DocumentSessionSnapshot) => void,
   ): () => void;
-  /** A fresh session for a branch room whose last one reset, synced from the server alone. */
-  rebuildBranchRoom(roomKey: string): Promise<DocumentSession>;
-  retainBranchRooms(ownerId: string, rooms: readonly BranchRoomRef[]): void;
-  releaseBranchRooms(ownerId: string): void;
+  /** A fresh session for a draft room whose last one reset, synced from the server alone. */
+  rebuildDraftRoom(roomKey: string): Promise<DocumentSession>;
+  retainDraftRooms(ownerId: string, rooms: readonly string[]): void;
+  releaseDraftRooms(ownerId: string): void;
+}
+
+/**
+ * Private to resource acquisition: the exact persistence incarnation behind a
+ * live registry session. A lease carries only the admission, which can be newer
+ * than the room the cache lives in.
+ */
+export interface LiveSessionIncarnationPort {
+  /** `null` when `session` is not the registry's current live room. */
+  incarnationOf(session: DocumentSession): AvailabilityGeneration | null;
 }
 
 export interface LocalDocumentSessionFactory {

@@ -1,7 +1,12 @@
 /** PostgreSQL terminal A: turn, report, journal, and publication share one commit. */
+
+import type { FailureRecord } from "@meridian/contracts/failures";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { recordFailureAfterCommit } from "../../../shared/failure-records.js";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
+import { createQuietDrizzleJournalWriter } from "../../../test-support/journal-writer.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import { processDetachedWork } from "../detached-work.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
@@ -37,7 +42,7 @@ else
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
-    const eventWriter = createDrizzleEventJournalWriter(db);
+    const eventWriter = createQuietDrizzleJournalWriter(db);
 
     beforeEach(async () => {
       await deleteDrizzleRows(db, [schema.users]);
@@ -50,10 +55,10 @@ else
     });
 
     it("cancels only the adopted inbox batch atomically, leaving later messages for a new turn", async () => {
-      const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+      const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
       const enqueue = (text: string) =>
         inbox.enqueue({
@@ -89,10 +94,12 @@ else
         expect((await repos.turns.findById(handle.executionTurnId))?.status).toBe("cancelled");
         expect((await inbox.selectPending(ids.caller)).map((row) => row.id)).toEqual([later.id]);
         expect(await authority.holder(ids.caller)).toBeNull();
-        const next = await orchestrator.prepare({ threadId: ids.caller, drain: true });
-        expect(next.userTurnId).toBe(later.id);
-        expect(next.executionTurnId).not.toBe(handle.executionTurnId);
-        await next.execute();
+        // The release's wake starts the later request in a new turn.
+        await processDetachedWork.drain();
+        expect(await inbox.selectPending(ids.caller)).toEqual([]);
+        const tail = (await repos.turns.listByThread(ids.caller)).at(-1);
+        expect(tail?.id).not.toBe(handle.executionTurnId);
+        expect(tail?.role).toBe("assistant");
       }
     });
 
@@ -100,14 +107,14 @@ else
       "tool",
       "rollback",
     ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
-      const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+      const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { persistWriterEnqueue } = await import("./writer-enqueue.js");
       const { createRuntimeHarness } = await import("./__tests__/runtime-harness.js");
       const { readThreadReport } = await import("../spawn/read-thread-report.js");
-      const { readPendingInbox } = await import("./pending-inbox.js");
+      const { readRunStateAtHead } = await import("../adapters/drizzle-run-state.js");
       const { createInertGateway } = await import("./__tests__/test-gateway.js");
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const authority = createDrizzleRunClaim(db);
       const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
       const controller = new AbortController();
@@ -119,6 +126,7 @@ else
       const cleanupWakes: ThreadId[] = [];
       let failSplit = boundary === "rollback";
       const splitWriter: typeof eventWriter = {
+        ...noFailureRecorder,
         async appendEvent(threadId, event) {
           if (
             failSplit &&
@@ -179,7 +187,6 @@ else
                     return 0n;
                   },
                 },
-                inbox,
                 delivery: producer,
                 threadId: ids.child,
                 userTurnId: writerId,
@@ -214,7 +221,7 @@ else
 
                   repos,
                 }),
-                pending: await readPendingInbox(inbox, ids.child),
+                pending: (await readRunStateAtHead(db, ids.child)).items,
               };
             }
             yield {
@@ -282,8 +289,8 @@ else
             runStarter: {
               async start(threadId) {
                 const successor = await harness.orchestrator.prepare({ threadId, drain: true });
-                expect(successor.runId).not.toBe(run.runId);
-                expect(await authority.holder(threadId)).toBe(successor.runId);
+                expect(successor.executionId).not.toBe(run.executionId);
+                expect(await authority.holder(threadId)).toBe(successor.executionId);
                 expect((await successor.execute()).status).toBe("complete");
               },
             },
@@ -323,12 +330,10 @@ else
         expect(events.filter((event) => event.type === "turn.completed").length).toBe(2);
         {
           expect(splitState).toMatchObject({
-            run: run.runId,
+            run: run.executionId,
             report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
-            pending: {
-              items: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
-            },
+            pending: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
           });
           const text = JSON.stringify(requests[1]?.messages);
           expect(text.indexOf("before steer")).toBeLessThan(text.indexOf("child notification"));
@@ -338,13 +343,21 @@ else
     });
 
     it("rolls terminal turn and report obligation back together, then retries idempotently", async () => {
+      // Risk: a failure logged for a settlement that never committed, or logged twice for one that retried.
+      const emitted: FailureRecord[] = [];
+      const logged = {
+        appendEvent: (...args: Parameters<typeof eventWriter.appendEvent>) =>
+          eventWriter.appendEvent(...args),
+        recordFailure: (record: FailureRecord) =>
+          recordFailureAfterCommit(record, (out) => emitted.push(out)),
+      };
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
         summary: "candidate",
       });
       await expect(
         repos.transaction(async () => {
           await finalizeExecution(
-            { repos, eventWriter },
+            { repos, eventWriter: logged },
             {
               threadId: ids.child,
               turnId: ids.execution,
@@ -359,6 +372,7 @@ else
         }),
       ).rejects.toThrow("outer rollback");
       expect((await repos.turns.findById(ids.execution))?.status).toBe("streaming");
+      expect(emitted).toEqual([]);
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
         capture: { summary: "candidate" },
         outcome: null,
@@ -366,7 +380,7 @@ else
       });
 
       const first = await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter: logged },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -389,7 +403,7 @@ else
         publication: "pending",
       });
       const replay = await finalizeExecution(
-        { repos, eventWriter },
+        { repos, eventWriter: logged },
         {
           threadId: ids.child,
           turnId: ids.execution,
@@ -401,6 +415,13 @@ else
         },
       );
       expect(replay.events).toEqual([]);
+      expect(emitted).toEqual([
+        expect.objectContaining({
+          occurrenceId: ids.execution,
+          phase: "recorded",
+          failure: expect.objectContaining({ category: "reply", source: "bug" }),
+        }),
+      ]);
       expect(replay.report).toMatchObject({ outcome: "failed", publication: "pending" });
     });
 

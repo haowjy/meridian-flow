@@ -1,21 +1,19 @@
 /** Publish an authorized address into the workspace; the document host owns live-session binding. */
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import {
-  contextOwner,
-  type DocumentAddressResult,
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
-import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
+import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
-import { useContextTabsActions } from "@/client/stores";
+import {
+  type ContextTab,
+  matchesReviewItem,
+  useContextTabs,
+  useContextTabsActions,
+} from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
-import { workSelectionFor } from "./project-address-resolution";
 import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
@@ -32,7 +30,7 @@ export function ProjectAddressDocument({
   address,
   result,
   localFile,
-  draftOnlyId,
+  reviewItemKey,
   workId,
   noWorkId,
   navigation,
@@ -44,29 +42,62 @@ export function ProjectAddressDocument({
   address: ProjectAddress;
   result: DocumentAddressResult | undefined;
   localFile?: CatalogFile;
-  /** Pending draft that alone proposes this document: it has no live view, only review. */
-  draftOnlyId?: string;
+  /** An explicit selector (or hidden create) never publishes a live representation. */
+  reviewItemKey?: string;
   workId: string | null;
   noWorkId: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
   const { openTab } = useContextTabsActions();
-  const admissionInput = useRef({ address, result, localFile, draftOnlyId });
-  admissionInput.current = { address, result, localFile, draftOnlyId };
+  const { tabs } = useContextTabs(projectId);
+  const reviewTab = tabs.find(
+    (tab): tab is Extract<ContextTab, { kind: "tracked" }> =>
+      tab.kind === "tracked" &&
+      !!reviewItemKey &&
+      !!result &&
+      result.kind !== "unavailable" &&
+      tab.documentId === result.document.documentId &&
+      matchesReviewItem(tab, { reviewWorkId: workId ?? "", reviewItemKey: reviewItemKey }),
+  );
+  const reviewLocatorFingerprint = JSON.stringify(
+    reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,
+  );
+  const admissionInput = useRef({ address, result, localFile, reviewItemKey });
+  admissionInput.current = { address, result, localFile, reviewItemKey };
   // Address/catalog projections are rebuilt from JSON snapshots. Their object
   // identity is not an admission event; only their serialized meaning is.
-  const admissionFingerprint = JSON.stringify({ result, localFile, draftOnlyId });
+  const admissionFingerprint = JSON.stringify({ result, localFile, reviewItemKey });
   useEffect(() => {
-    const { address, result, localFile, draftOnlyId } = admissionInput.current;
+    const { address, result, localFile, reviewItemKey } = admissionInput.current;
     if (!workId || !navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
-    if (draftOnlyId) {
-      // No tab and no live room: the address carries the draft and
-      // ReviewAddressOwner opens its review.
-      if (address.draftId !== draftOnlyId)
-        void navigation.replaceIfCurrent(ticket, { ...address, draftId: draftOnlyId });
+    const canonical = canonicalDocumentAddress(address, result.document.entry, workId, noWorkId);
+    if (!canonical) {
+      onAdmission({
+        key: entryKey,
+        href,
+        documentId: result.document.documentId,
+        issue: "unavailable",
+      });
+      return;
+    }
+    if (reviewItemKey) {
+      // No tab and no live room: the address carries the item and
+      // ReviewAddressOwner opens its review. A hidden review has no live catalog to
+      // refresh its labels, so the server's canonical locator repairs its tab here.
+      if (reviewTab) {
+        const patch = canonicalReviewTabPatch(
+          reviewTab,
+          canonical.destination,
+          result.document.entry.name,
+        );
+        if (patch)
+          openTab(projectId, { ...reviewTab, ...patch }, () => navigation.isCurrent(ticket));
+      }
+      const next = { ...canonical, itemKey: reviewItemKey };
+      if (projectAddressHref(next) !== href) void navigation.replaceIfCurrent(ticket, next);
       return;
     }
     const identity = { href, key: entryKey, documentId: result.document.documentId };
@@ -75,11 +106,6 @@ export function ProjectAddressDocument({
     const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
     publish("loading");
     const document = result.document.entry;
-    const uri = parseUnifiedContextUri(document.uri);
-    if (!uri.ok || !isProjectContextTreeScheme(uri.value.scheme)) {
-      publish("unavailable");
-      return;
-    }
     const scope = document.scope;
     const tabWorkId = scope.kind === "work" ? scope.workId : undefined;
     const lineageId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
@@ -87,7 +113,7 @@ export function ProjectAddressDocument({
       const installed = openTab(
         projectId,
         contextTabFromFile(
-          uri.value.scheme,
+          canonical.destination.scheme,
           mergeLocalResourceState(projectCatalogFile(document), localFile),
           contextOwner(tabWorkId, lineageId),
         ),
@@ -98,33 +124,7 @@ export function ProjectAddressDocument({
         publish("unavailable");
         return;
       }
-      const destination: ProjectAddress["destination"] = {
-        kind: "document",
-        scheme: uri.value.scheme,
-        path: document.path.join("/"),
-      };
-      // A chat's Scratch is addressed by its lineage; the Editor's own Work stays implicit.
-      const { lineage: _previousLineage, ...previous } = address;
-      const next: ProjectAddress = lineageId
-        ? {
-            ...previous,
-            destination,
-            work: { kind: "absent" },
-            ...(parseRequestId(lineageId)
-              ? { lineage: parseRequestId(lineageId) as ParsedRequestId }
-              : {}),
-          }
-        : {
-            ...previous,
-            destination,
-            work: workSelectionFor(
-              destination,
-              scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-                ? scope.workId
-                : workId,
-              noWorkId,
-            ),
-          };
+      const next = canonical;
       if (projectAddressHref(next) !== href) {
         const replacement = await navigation.replaceIfCurrent(ticket, next);
         if (
@@ -145,6 +145,7 @@ export function ProjectAddressDocument({
     href,
     entryKey,
     admissionFingerprint,
+    reviewLocatorFingerprint,
     workId,
     noWorkId,
     navigation,

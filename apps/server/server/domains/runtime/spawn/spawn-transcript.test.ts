@@ -1,4 +1,5 @@
 /** Return-result capture and tool settlement share one repository transaction. */
+
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
@@ -6,6 +7,7 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
+import { noFailureRecorder } from "../../threads/ports/event-journal.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { persistReturnResult, type SpawnTranscript } from "./spawn-transcript.js";
 
@@ -13,7 +15,11 @@ async function setup() {
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects });
   const project = await projects.create({ userId: "writer", title: "Return" });
-  const parent = await repos.threads.create({ userId: "writer", projectId: project.id });
+  const parent = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId: "writer",
+    projectId: project.id,
+  });
   const originTurn = await repos.turns.create({
     threadId: parent.id,
     role: "assistant",
@@ -21,6 +27,7 @@ async function setup() {
     status: "complete",
   });
   const child = await repos.threads.createSubagent({
+    aiWriteMode: "direct",
     userId: "writer",
     projectId: project.id,
     parentThreadId: parent.id,
@@ -47,7 +54,7 @@ async function setup() {
     cardBlockId: null,
   });
   const transcript: SpawnTranscript = {
-    persistence: { repos, eventWriter: createInMemoryEventJournalWriter() },
+    persistence: { repos, eventWriter: createInMemoryEventJournalWriter(repos.transactionOwner) },
     threadId: child.id as ThreadId,
     turnId: turn.id,
     blockSeqRef: { value: 0 },
@@ -82,6 +89,7 @@ describe("persistReturnResult", () => {
   it("rolls the candidate back when tool-result publication fails", async () => {
     const { repos, child, turn, transcript } = await setup();
     transcript.persistence.eventWriter = {
+      ...noFailureRecorder,
       async appendEvent() {
         throw new Error("journal failed");
       },

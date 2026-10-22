@@ -1,13 +1,16 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
+
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   CompactionMetadataCodec,
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
@@ -46,7 +49,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
   describe.skip("compaction protocol", () => {});
 else
   describe("compaction protocol", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -57,9 +59,16 @@ else
     );
     const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     assertThrowawayDatabaseForRunDbTests(url);
-    const db = createDb(url, { max: 8 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(url, { max: 8 });
+    const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
-    afterAll(() => db.close());
+    afterAll(() => audited.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
 
@@ -393,7 +402,9 @@ else
         userText: "Continue again.",
       });
       expect((await secondRun.execute()).status).toBe("complete");
-      const secondC = (await rig.repos.turns.findById(secondRun.executionTurnId))!;
+      const secondC = (await rig.repos.turns.listByThread(rig.threadId))
+        .reverse()
+        .find((turn) => turn.role === "compaction" && turn.status === "complete")!;
       expect(secondC.role).toBe("compaction");
       expect(rig.summarizer.calls[1].changedDocuments).not.toContain("kb://old-chapter");
       expect(rig.summarizer.calls[1].changedDocuments).not.toContain("chapter");
@@ -403,7 +414,7 @@ else
       const secondElisions = (secondC.metadata as JsonObject).elisions as JsonObject[];
       expect(secondElisions.some((elision) => elision.blockId === results[1].id)).toBe(true);
       expect(secondElisions.some((elision) => elision.blockId === results[0].id)).toBe(false);
-      expect(promptBytes(rig.gateway.requests[2])).not.toContain("FRESH-READ TEXT");
+      expect(promptBytes(rig.gateway.requests.at(-1)!)).not.toContain("FRESH-READ TEXT");
       expect((await rig.repos.blocks.findById(results[1].id))!.content).toMatchObject({
         output: "FRESH-READ TEXT",
       });
@@ -458,6 +469,7 @@ else
       const { answer, results } = await documentTail(rig);
       const source = (await rig.repos.threads.findById(rig.threadId))!;
       const { thread: forkBefore } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,
@@ -486,6 +498,7 @@ else
       await run.execute();
       const c = (await rig.repos.turns.findById(run.executionTurnId))!;
       const { thread: forkAfter } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,
@@ -499,6 +512,49 @@ else
       expect(
         (await projected(forkAfter)).blocks.find((b) => b.id === results[0].id)?.content,
       ).toMatchObject({ output: expect.stringContaining("Cleared at compaction") });
+    });
+
+    it("sends no image block of a forgotten message and reads no asset for it (C11)", async () => {
+      // Risk: an orphan image block, kept in the request's block array after its turn left the conversation,
+      // reaching an asset read (which can fail the reply) or producing a break notice the model never earned.
+      const rig = await imageFixture();
+      const { userTurn, resolutionCounts } = await addImagePrompt(rig, [
+        { key: "forgotten", sizeBytes: 1024, included: true },
+      ]);
+      const failed = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: userTurn.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "error",
+      });
+      const movedOn = await rig.repos.turns.create({
+        threadId: rig.threadId,
+        prevTurnId: failed.id,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      await rig.repos.blocks.create({
+        turnId: movedOn.id,
+        blockType: "text",
+        sequence: 0,
+        content: "Never mind that.",
+        textContent: "Never mind that.",
+        status: "complete",
+      });
+      await rig.repos.turns.forgetTurns([userTurn.id, failed.id], movedOn.id);
+
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("complete");
+      expect([...resolutionCounts.keys()]).toEqual([]);
+      const request = JSON.stringify(rig.gateway.requests);
+      expect(requestImageData(rig.gateway.requests[0])).toEqual([]);
+      expect(request).not.toContain("Removed scratch://");
     });
 
     it("re-admits a retained eviction on C and makes B match its stored rebuild", async () => {
@@ -1121,6 +1177,15 @@ else
             },
       );
       const rig = await fixture({ summarizer });
+      // Two messages wait together: the planner pins the newest on its own, so only an explicit pin keeps
+      // the other out of the summary.
+      await rig.delivery.enqueue({
+        threadId: rig.threadId,
+        intent: "message",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "text", text: "An earlier question." },
+        idempotencyKey: "earlier-question",
+      });
       const original = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -1128,7 +1193,7 @@ else
       });
       expect((await original.execute()).status).toBe("error");
       await processDetachedWork.drain();
-      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failedReply = await turnGraph(rig.repos.turns).latest(rig.threadId);
       expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
       if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
 
@@ -1146,7 +1211,20 @@ else
       const retriedReply = await rig.repos.turns.findById(replyTurnId as never);
       expect(compactions).toHaveLength(2);
       expect(compactions[1]).toMatchObject({ status: "complete" });
+      // Risk (C5): a Retry-led compaction summarizing the messages its Retry still answers. It pins them, so
+      // forgetting the failed attempt later can never leave their words only in a summary.
+      expect(failedReply.reservedForUserTurnIds).toHaveLength(2);
+      expect(CompactionMetadataCodec.parse(compactions[1]?.metadata).pinnedRequestTurnIds).toEqual(
+        expect.arrayContaining(failedReply.reservedForUserTurnIds),
+      );
       expect(compactions[1]?.id).not.toBe(replyTurnId);
+      // The failed compaction's `turn.error` copy is the writer's: no summary input carries it.
+      const failedCompaction = compactions[0];
+      expect(failedCompaction?.error).toEqual(expect.any(String));
+      expect(summarizer.calls.length).toBeGreaterThan(1);
+      for (const input of summarizer.calls)
+        for (const copy of [failedCompaction?.error, failedReply.error])
+          if (copy) expect(JSON.stringify(input)).not.toContain(copy);
       expect(retriedReply).toMatchObject({
         id: replyTurnId,
         role: "assistant",
@@ -1274,14 +1352,70 @@ else
         userText: "Continue.",
       });
       expect((await run.execute()).status).toBe("complete");
-      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-6);
       expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
         ["assistant", "complete"],
         ["user", "complete"],
+        ["system", "complete"],
+        ["assistant", "complete"],
         ["compaction", "complete"],
         ["assistant", "complete"],
       ]);
       expect(rig.summarizer.calls).toHaveLength(1);
+      // The notes assistant delivers the late writer message before C. B has
+      // no outstanding receipt; the whole continuation is still one execution.
+      const rows = await db
+        .select({
+          id: schema.turns.id,
+          executionId: schema.turns.executionId,
+          reservedFor: schema.turns.reservedForUserTurnIds,
+        })
+        .from(schema.turns)
+        .where(inArray(schema.turns.id, [tail[0]?.id, tail[4]?.id, tail[5]?.id] as never[]));
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(
+        [tail[0], tail[4], tail[5]].map((turn) => byId.get(turn?.id as never)?.executionId),
+      ).toEqual([run.executionId, run.executionId, run.executionId]);
+      expect(byId.get(tail[5]?.id as never)?.reservedFor).toEqual([]);
+      const [delivered] = await db
+        .select({ byTurnId: schema.threadInboxMessages.deliveredByTurnId })
+        .from(schema.threadInboxMessages)
+        .where(eq(schema.threadInboxMessages.id, tail[1]?.id as never));
+      expect(delivered?.byTurnId).toBe(tail[3]?.id);
+    });
+
+    it("ends the execution in the commit that lands a failed compaction successor", async () => {
+      const rig = await fixture();
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const split = rig.delivery.splitAndContinue;
+      let landed: { open: string | null; successor: string | undefined } | null = null;
+      rig.delivery.splitAndContinue = async (input) => {
+        if (input.current.kind !== "placeholder") return split(input);
+        const result = await split({
+          ...input,
+          prepareNextContext: async () => {
+            throw new Error("successor context read unavailable");
+          },
+        });
+        // Read as soon as the landing commit returns, before the run's cleanup.
+        landed = {
+          open: await rig.runClaim.readOpenExecutionId(rig.threadId),
+          successor: (await rig.repos.turns.findById(result.next.id as never))?.status,
+        };
+        return result;
+      };
+      expect(await run.execute()).toMatchObject({ status: "error" });
+      expect(landed).toEqual({ open: null, successor: "error" });
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-2);
+      expect(tail.map((turn) => [turn.role, turn.status, turn.executionId])).toEqual([
+        ["compaction", "complete", run.executionId],
+        ["assistant", "error", run.executionId],
+      ]);
+      await expect(processDetachedWork.drain(1_000)).resolves.toBe(true);
     });
 
     it("retries successor preparation under the lock on the third attempt without resummarizing", async () => {
@@ -1328,7 +1462,6 @@ else
           kind: "compaction",
         });
         const admission = await rig.send(rig.threadId, "Run after cancellation.");
-        expect(admission.assistantTurnId).toBeNull();
         lateId = admission.userTurnId;
         rig.setThreshold(undefined);
         await rig.orchestrator.cancel(rig.threadId, turnId);
@@ -1418,7 +1551,7 @@ else
         });
         return {
           kind: "complete",
-          text: "The earlier scene is complete.",
+          text: 'The earlier scene is complete.\n\n## Documents to keep open\n- {"path":"kb://notes"}\n- {"path":"manuscript://never-shown"}',
           model: "summary-model",
           modelResponses: [],
         };
@@ -1428,14 +1561,23 @@ else
           result("first-tool", "Earlier scene. ".repeat(1000)),
           result("last-tool", "Latest group."),
           {
+            content: [{ type: "text", text: "Notes done." }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 10000, outputTokens: 10 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+          {
             ...result("successor-tool", "Next group."),
             usage: { inputTokens: 100, outputTokens: 10 },
           },
         ],
         onStream: async (call) => {
           if (call === 1) rig.setThreshold(undefined);
-          if (call === 2) rig.setThreshold(2500);
-          if (call === 3) {
+          // Leave room for the re-show after reserving half-headroom and estimator slack.
+          if (call === 2) rig.setThreshold(5000);
+          if (call === 4) {
             const latest = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
             expect(latest?.role).toBe("assistant");
             expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(latest?.id);
@@ -1444,6 +1586,26 @@ else
         },
       });
       rig = await fixture({ history: "brief history", gateway, summarizer });
+      // A document the history showed: the compaction re-shows it after the summary.
+      const [historyTurn] = await rig.repos.turns.listByThread(rig.threadId);
+      await rig.repos.blocks.create({
+        turnId: historyTurn.id,
+        blockType: "text",
+        sequence: 5,
+        status: "complete",
+        content: {
+          type: "reference",
+          text: "Notes",
+          documentId: "00000000-0000-4000-8000-000000000099",
+          uri: "kb://notes",
+          read: { result: "OLD NOTES TEXT", revision: "old" },
+        },
+      });
+      rig.deps.referenceReader.read = async () => ({
+        result: "RESHOWN NOTES TEXT",
+        revision: "new",
+        evidence: { shown: [] },
+      });
       const run = await rig.orchestrator.prepare({
         threadId: rig.threadId,
         tools: [],
@@ -1454,13 +1616,19 @@ else
       const tail = turns.slice(-3);
       expect(tail.map((turn) => turn.role)).toEqual(["assistant", "compaction", "assistant"]);
       expect(tail[1].metadata).toMatchObject({
-        compactedThrough: { turnId: tail[0].id, blockSequence: 2 },
+        compactedThrough: { turnId: turns.at(-5)!.id, blockSequence: 2 },
       });
       expect((await rig.repos.blocks.listByTurn(tail[1].id))[0].content).toMatchObject({
-        props: { excludedTurnCount: 3 },
+        props: {
+          excludedTurnCount: 3,
+          summary:
+            'The earlier scene is complete.\n\n## Documents to keep open\n- {"path":"kb://notes"}',
+        },
       });
       expect(rig.summarizer.calls).toHaveLength(1);
-      expect(rig.summarizer.calls[0].retainedMessages).toEqual([
+      const retainedMessages = rig.summarizer.calls[0].retainedMessages;
+      if (!retainedMessages) throw new Error("Missing retained suffix");
+      expect(retainedMessages.slice(0, 3)).toEqual([
         { role: "user", content: [{ type: "text", text: "Continue." }] },
         {
           role: "assistant",
@@ -1493,13 +1661,21 @@ else
       const coldSource = JSON.stringify(rig.summarizer.calls[0].projection);
       expect(coldSource).not.toContain("Latest group.");
       expect(coldSource).not.toContain("Continue.");
-      const request = rig.gateway.requests[2];
-      expect(rig.gateway.requests).toHaveLength(4);
-      const later = rig.gateway.requests[3];
+      expect(JSON.stringify(retainedMessages.slice(3))).toContain("Before the compaction summary");
+      expect(retainedMessages.at(-1)).toEqual({
+        role: "assistant",
+        content: [{ type: "text", text: "Notes done." }],
+      });
+      const request = rig.gateway.requests[3];
+      expect(rig.gateway.requests).toHaveLength(5);
+      const later = rig.gateway.requests[4];
       expect(later.tools).toEqual(request.tools);
       expect(JSON.stringify(later.messages.slice(0, request.messages.length))).toBe(
         JSON.stringify(request.messages),
       );
+      // The re-shown document survives the successor's tool call: both requests carry it.
+      expect(promptBytes(request)).toContain("RESHOWN NOTES TEXT");
+      expect(promptBytes(later)).toContain("RESHOWN NOTES TEXT");
       expect(promptBytes({ ...request, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
         "compacted request bytes",
       );

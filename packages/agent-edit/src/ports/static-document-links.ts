@@ -102,7 +102,11 @@ export function createStaticDocumentLinks(
         if (entry?.image && entry.presence === "deleted") loaded.addresses.add(entry.uri);
       }
       const holderUri = byId(request.documentId)?.uri ?? null;
-      for (const uri of writtenAddresses(request.written ?? [], holderUri)) {
+      for (const uri of writtenAddresses(
+        request.written ?? [],
+        holderUri,
+        request.context?.uploadsChat,
+      )) {
         loaded.addresses.add(uri);
       }
       // A row an address load found is known by id too, as the server remembers it.

@@ -1,119 +1,78 @@
 # client/chat-submissions
 
-Durable, account-stamped journal of unresolved chat-submission intents (P3).
-It is the local witness that lets a reload reconcile or replay a displayed send.
-It is not a thread replica: no assistant turns. One observable account/thread model owns writer rows, live session/id-fenced
-attempts and the shared recovery eligibility/status snapshot for every mounted pane; views never enumerate persistence.
+Account-stamped durable journal of unresolved chat-submission intents. It is the
+local witness that lets a reload reconcile or replay a displayed send, not a
+thread replica and never a store for assistant turns. `owner.ts` is the sole
+owner of writer rows, attempts, recovery status, and draft transfer.
 
-- One record per `(accountId, recordId)`, keyed
-  `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
-  `prefix + accountId + ":"`, so an account id that is a string prefix of
-  another never leaks the longer account's records.
-- One key per submission is deliberate: a write touches one record, not a
-  whole-journal read-modify-write. New records need no Web Lock; transitions
-  of existing records run under the per-account/thread driver lock, including
-  takeover by another tab. Account
-  switch never deletes another account's keys, so A→B→A preserves A's intents.
-- `setUser(accountId)` is the only bind; `epoch` bumps on every rebind. Every
-  record/retire takes an explicit `accountId` and is refused when it is not the
-  current bind. Reads for a non-current account return nothing.
-- Store the exact dispatch fingerprint fields (text, blocks, references,
-  activatedSkillSlugs) for every record, a new chat's first send included: a
-  replay rebuilt from text alone would drop its `@` references. A replay with
-  the same `submissionId` but different payload trips the server's
-  `idempotency_conflict`. All composer sends also retain their
-  validated structured authoring snapshot until settlement. The
-  displayed writer row is built from the same blocks (`appendUserTurn`), so a
-  live or recovered row keeps each reference's document like the snapshot does.
-- The journal owns every displayed unadmitted writer message. `creation` carries
-  create-or-get inputs on every record until the server confirms the chat.
-  `ChatSubmissionDriver` serializes requests in `createdAt` order under
-  `meridian:chat-submissions:<accountId>:<threadId>`. Derivation waits stay outside
-  that lock. Account/lifetime cancellation abandons work without presenting failure;
-  each request has a timeout so a departed owner cannot block takeover.
-- Acceptance bridges the optimistic row, then retires its record. A refusal is
-  stored as `state: "rejected"` and never re-driven automatically. Ambiguity is
-  tab-local: the unresolved journal record is re-driven on mount, online,
-  snapshot refresh and socket reconnect. Failure appears only on the writer row.
-- Retry looks up the same submission id first. Acceptance bridges without a POST;
-  not-seen posts the same id; only a durable rejection re-mints the id in the same
-  record key. Edit fences an existing chat's submission before transferring its
-  structured draft ahead of newer writing. Never-created chat Edit transfers all
-  its journal drafts and this tab's unsent writing to New chat before retirement.
-- Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
-- Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
-  records and unavailable enumeration retain the last complete snapshot and never sweep rows.
+## Contracts
 
-`creation` carries first-send inputs; `draft` retains the composer snapshot.
-Account bind rewrites v1 under the driver thread lock. A v2 copy is not
-drivable or retirable until its v1 key is gone; failed deletion leaves words in v1. The
-bounded rewrite removal trigger is in `.context/TODO`.
+- Bind with `setUser(accountId)` only. Every epoch, record, and retirement is
+  account-fenced; reads for another account are empty, and switching A→B→A
+  preserves A's records. Enumeration must keep account IDs segment-safe.
+- Keep one independently keyed record per submission (`meridian:chat-submissions:v3:<accountId>:<recordId>`).
+  Existing-record transitions use the account/thread driver lock; new records
+  need no journal read-modify-write. Requests are bounded so a departed tab
+  cannot block takeover.
+- Every record carries a monotonic per-chat `seq` (allocated from
+  `meridian:chat-submission-seq:v1:<account>:<thread>` in `localStorage`) that
+  orders drain, refusal barriers, and the switch fold across retirement.
+  `forgetOrder` clears the counter with deleted-chat cleanup.
+- Persist the exact validated authoring snapshot, including blocks, references,
+  activated skills, and first-send creation inputs. Replaying from text alone
+  loses references; a reused submission ID with a different payload is an
+  idempotency conflict.
+- Acceptance bridges the optimistic row and retires the record. A durable
+  rejection stays rejected and is not auto-driven; ambiguity keeps the witness
+  and retries on mount, reconnect, online, or snapshot refresh. Failure belongs
+  on the writer row.
+- Retry reuses the same ID unless the server durably rejected it. Edit fences
+  the record, transfers its structured draft ahead of newer writing, and stores
+  a tab-local receipt so reload cannot prepend twice. A never-created chat
+  transfers its records and unsent writing to New chat and retires the cohort,
+  queued switches included, in one step.
+- A write-mode switch is also a journal record (`control: { kind: "write_mode", mode }`,
+  `recordId` = control id), posted to the controls route in `seq` order with
+  surrounding messages. Marked `posted` before its first request; transient
+  failure keeps the id, refusal holds later records until Stop or admitted
+  Retry, and `withdrawControl` drops only never-posted or refused records. On
+  server response the driver stamps `answer: { seq, mode, pending, at }` rather
+  than deleting immediately (pruned after 60 s), so every tab reads the answer
+  through `switches[].answer` while `useSwitchView` decides presentation.
+- A journal record carries its failure occurrence (`requestId`, `attempt`). The
+  driver saves a new occurrence before replay or Retry; the idempotent submission
+  id is separate and can stay unchanged. A fresh request identity prevents a
+  failed local save from colliding with a later attempt after reload. Restored
+  failures read the saved occurrence, never allocate one while projecting.
+  Storage events that change only occurrence metadata rebuild the view but never
+  wake another replay; command additions, removals or state changes can wake it.
+  Another tab starting an attempt is not evidence that the attempt failed.
+  Unsaved switches retain their mode, order and occurrence in the owner until
+  retried or withdrawn; these facts cannot survive refused browser storage.
+- Pane disposal fences only that pane's recovery session. Account disposal
+  invalidates admissions. Deletion cleanup requires an authenticated,
+  account-matching `thread_deleted` attestation; inconclusive checks preserve
+  source words and records.
+- Only a durable server rejection proves rejection. A refused lookup or
+  retirement is ambiguity, and a local write failure exposes Retry but never
+  authorizes Edit or a re-mint. An empty journal does not dissolve a
+  never-created chat: the server must say 404 (or an attested deletion).
+- Words move only for an owner-attested `thread_deleted` without
+  `projectDeleted`. The writer's own Delete (published before its request,
+  fenced to account and bind epoch) and project deletion only clear. On account
+  bind, one pass probes off-screen journal destinations; only attested deletion
+  clears them, any other answer preserves them.
+- On attested chat deletion only the visible surface (center, uncovered dock,
+  phone) moves its unadmitted rows and tab-local box into the project's New chat
+  ahead of existing writing, with a notice. Hidden, collapsed, and covered
+  surfaces move nothing. Refused storage may duplicate words, never lose them.
+- Accepted limits (tech-lead scope ruling, 2026-10-11): Edit and deletion
+  receipts are per tab, not a cross-tab transaction. If journal removal is
+  refused after Edit, another tab can still Retry that record; two tabs on one
+  deleted chat may clear each other's failed rows before learning of deletion.
 
-Record/retire notify in-tab subscribers; cross-tab localStorage events forward
-to the same listeners. `useIsThreadPendingCreation` synchronously combines
-journal `creation` with the provider-scoped pending flag through
-`useSyncExternalStore`, so uncreated journal destinations never query snapshots.
+The shared browser-record envelope and the v1→v2 codec/rewrite, owner facade,
+projection errors, and deleted-chat probing live in the local context notes and
+source headers. Do not turn those mechanics into a second presentation owner.
 
-`owner.ts` owns tab row identity, local failure/busy knowledge, durable Send handoff,
-and draft transfer. Pane bindings subscribe to that model, not separate status caches. Each binding exposes
-a command facade whose driver, lifetime, focus and navigation belong to the invoking pane;
-the shared presentation contains no pane-bound callbacks.
-Both first and existing Send use `recordAndProjectSubmission`;
-the caller supplies the actual authoring scope, independently of creation metadata.
-After commit, exact draft handoff precedes fallible projection. Subscriber/projection errors are reported through `reportError`, never
-turned into a resubmittable composer failure. The driver chooses Edit's cohort under
-its lock. Local write failure exposes Retry but never authorizes Edit or re-mint.
-
-An empty journal is not a dissolve signal. An observer that last saw creation
-confirms the server destination: 200 loads it, 404 permits dissolution unless
-server-confirmed `thread_deleted` or `project_deleted` sends it to deleted-chat
-cleanup instead, and an inconclusive response preserves the destination and last-known rows. Only this
-tab's explicit Edit bypasses that check. Pane disposal fences only its recovery
-session; account disposal, not unrelated pane teardown, invalidates admissions.
-
-Edit saves stable record-id receipts atomically with the destination draft in
-sessionStorage. A received record is moving, never retryable or editable; mount
-and external wakes finish its journal retirement without another prepend/admission.
-Receipts survive draft Send/clear and reload in the same tab. They are not shared
-with other tabs: the receipt guarantee is tab-local, not a cross-tab transaction.
-Lookup/retirement request refusal is ambiguity, never rejection proof, except
-owner-attested deletion, which is the separate cleanup signal below.
-
-Known limit (tech-lead scope ruling, 2026-10-11): Edit receipts are per tab; if removing
-the journal record fails after Edit moves the words into that tab's message box,
-another tab can still Retry the record. Draft write and removal run in one synchronous
-step, so the only trigger is localStorage removal being refused when storage access
-is denied altogether.
-
-## Deleted chats
-
-Only an owner-attested `thread_deleted` (without `projectDeleted`) moves words.
-The attestation's `authenticatedUserId` must equal the bound account. The visible
-Chat center, uncovered expanded dock, or phone chat transfers its shown unadmitted
-rows and its tab-local box into the project's New chat ahead of existing writing.
-The same tab-local draft stores the title/count notice and unique record-id
-receipts atomically. Box text needs no receipt: transfer and source clear are
-synchronous under the lock. Refused source storage can duplicate words, never lose them. Dismiss removes the notice;
-Send clears it. Then every journal record and this tab's old box are cleared, and
-the surface leaves the deleted chat. Hidden, collapsed, covered and index-warm
-surfaces move nothing. Own Delete intent is published before its request, fenced
-to account and bind epoch, and released when its confirmed cleanup returns
-(finished or not), or cancelled on DELETE failure. While pending, all cleanup
-for that chat only clears, like confirmed own Delete and project deletion.
-`thread_not_found` and the never-created-chat (O4) lifecycle are unchanged.
-
-Deletion runs under the existing submission lock, or inside that lock when the
-driver reports it. No new lock or cross-tab transfer protocol exists. On account
-bind, after journal rewrite readiness, a single pass probes off-screen journal and
-session-draft destinations (four concurrent requests, each bounded to 15 seconds).
-The URL chat and current project's remembered chat are excluded before panes mount;
-off-screen eligibility is rechecked inside the lock. Those addressed panes report
-their own deletion with the project id, even when hidden.
-Only attested chat/project deletion clears them; other answers preserve them.
-An unreadable journal or refused destination write is incomplete: retain source
-words and stay. The driver shows Couldn't send and retries cleanup on Retry,
-Edit or wake without admitting messages to a known-deleted chat.
-
-Accepted rough edge: in two tabs on the same deleted chat, the first tab's journal
-cleanup can remove the second tab's failed rows before it learns of deletion. Its
-own per-tab box still moves when it learns. Receipts are per tab, not cross-tab.
+→ [.context/TODO](.context/TODO)

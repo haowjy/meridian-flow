@@ -1,15 +1,16 @@
 /** Indexed keyset reads for effective transcript spans. */
 
 import type { Turn } from "@meridian/contracts/threads";
+import { SYSTEM_TURN_KINDS } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { asc, eq, inArray, sql } from "drizzle-orm";
-import { SYSTEM_TURN_KINDS } from "../../domain/turn-metadata.js";
 import type {
   ReadTranscriptItemsInput,
   TranscriptItemRow,
   TranscriptSpan,
   TurnRepository,
 } from "../../ports/repositories.js";
+import { inConversationSql } from "./handed-back.js";
 import { mapBlock, mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
@@ -22,6 +23,10 @@ export function transcriptItemKeysSql(input: ReadTranscriptItemsInput) {
     const positionConditions = [
       sql`t.thread_id = ${span.threadId}::uuid`,
       sql`t.position > ${span.afterPosition}`,
+      // Both page units, their counts and the bounds below read the conversation, not the graph.
+      // A stamp counts only when its forgetting turn is inside this span, so a fork keeps what its source
+      // forgot after the cutoff.
+      inConversationSql("t", span.throughPosition),
     ];
     if (span.throughPosition !== null)
       positionConditions.push(sql`t.position <= ${span.throughPosition}`);
@@ -120,6 +125,7 @@ function conversationTurnBranches(spans: readonly TranscriptSpan[], beforePositi
         ${span.throughPosition === null ? sql`` : sql`AND t.position <= ${span.throughPosition}`}
         ${beforePosition === undefined ? sql`` : sql`AND t.position < ${beforePosition}`}
         AND ${conversationTurnSql}
+        AND ${inConversationSql("t", span.throughPosition)}
     )`,
   );
 }

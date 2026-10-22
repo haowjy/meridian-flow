@@ -16,13 +16,19 @@
  */
 
 import { type ReactNode, useEffect, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
-
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import {
+  type ManuscriptState,
+  ManuscriptStateSlot,
+  useManuscriptState,
+} from "@/features/editor/ManuscriptStateNotice";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
@@ -30,40 +36,49 @@ import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileReviewHeader } from "./MobileReviewHeader";
 
 export function MobileDocumentReview({
-  documentId,
+  projectId,
+  tab,
   onCloseDraftOnly,
   children,
 }: {
-  documentId: string;
+  projectId: string;
+  tab: ContextTab;
   /** Set for a draft-only document: its review closes the document instead of returning to live. */
   onCloseDraftOnly?: () => void;
   children: ReactNode;
 }) {
+  const { documentId } = tab;
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
-  const draftId = review?.documentId === documentId && review.shown ? review.draftId : null;
+  const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
   const { openReviewFile } = useAiDraftLauncher();
   const header = useReviewHeader({
     documentId,
-    draftId: draftId ?? "",
+    itemKey: itemKey ?? "",
     onCloseDraftOnly,
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
   const [listOpen, setListOpen] = useState(false);
+  const manuscriptState = useManuscriptState(projectId, tab);
   useEffect(() => {
-    if (!draftId) setListOpen(false);
-  }, [draftId]);
+    if (!itemKey) setListOpen(false);
+  }, [itemKey]);
 
   return (
     <MobileKeyboardAware>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {draftId ? (
-          <ReviewTop header={header} onOpenList={() => setListOpen(true)} />
+        {itemKey ? (
+          <ReviewTop
+            header={header}
+            manuscriptState={manuscriptState}
+            onOpenList={() => setListOpen(true)}
+          />
         ) : (
-          <LiveDraftEntry documentId={documentId} />
+          <LiveDraftEntry documentId={documentId} manuscriptState={manuscriptState} />
         )}
+        <DocumentDraftHint projectId={projectId} tab={tab} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-        {draftId ? (
+        {itemKey ? (
           <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />
         ) : null}
       </div>
@@ -74,12 +89,20 @@ export function MobileDocumentReview({
 /**
  * The live document's way into its pending draft: the Draft chip in a row of
  * the review header's own height and inset, so the chip stays where the
- * reviewing one will be. Nothing is drawn for a document with no pending draft.
+ * reviewing one will be. The row also holds what an Apply brought back, so that
+ * line takes the review header's place instead of pushing the page. Nothing is
+ * drawn for a document with neither.
  */
-function LiveDraftEntry({ documentId }: { documentId: string }) {
+function LiveDraftEntry({
+  documentId,
+  manuscriptState,
+}: {
+  documentId: string;
+  manuscriptState: ManuscriptState | null;
+}) {
   const { fileForDocument } = useDraftReview();
   const group = fileForDocument(documentId);
-  if (!group) return null;
+  if (!group && !manuscriptState) return null;
   return (
     <div
       data-phone-draft-entry
@@ -89,17 +112,30 @@ function LiveDraftEntry({ documentId }: { documentId: string }) {
         paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
       }}
     >
-      <DraftReviewChip documentId={documentId} touch />
+      {group ? <DraftReviewChip documentId={documentId} touch /> : null}
+      <ManuscriptStateSlot state={manuscriptState} touch />
     </div>
   );
 }
 
-function ReviewTop({ header, onOpenList }: { header: ReviewHeaderModel; onOpenList: () => void }) {
+function ReviewTop({
+  header,
+  manuscriptState,
+  onOpenList,
+}: {
+  header: ReviewHeaderModel;
+  manuscriptState: ManuscriptState | null;
+  onOpenList: () => void;
+}) {
   const { status } = header.view;
   return (
     <>
       <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
-      <MobileReviewHeader header={header} onOpenList={onOpenList} />
+      <MobileReviewHeader
+        header={header}
+        manuscriptState={manuscriptState}
+        onOpenList={onOpenList}
+      />
     </>
   );
 }
@@ -116,7 +152,7 @@ function ReviewBottom({
   const { controller, view } = header;
   return (
     <>
-      <MobileChangeBar view={view} />
+      <MobileChangeBar view={view} canApply={header.canApply} />
       <MobileChangeSheet
         open={listOpen}
         onOpenChange={onListOpenChange}

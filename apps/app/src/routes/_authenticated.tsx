@@ -13,7 +13,6 @@ import { readCurrentChat } from "@/client/current-chat";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
-import { bindDraftCommandAccount } from "@/client/query/draft-command-record";
 import { bindAccountRecents } from "@/client/recents";
 import {
   loadProjectList,
@@ -138,7 +137,6 @@ function AuthenticatedLayout() {
       readCurrentChat(user.userId, projectId) === id
     );
   });
-  bindDraftCommandAccount(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same

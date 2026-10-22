@@ -5,10 +5,7 @@ import { TurnStartConflictError } from "../../threads/index.js";
 import type { RunClaim, RunStarter } from "./ports.js";
 
 export async function sweepWakes(input: {
-  delivery: Pick<
-    import("./runtime-delivery.js").RuntimeDelivery,
-    "pendingMessageThreads" | "refreshPending"
-  >;
+  delivery: Pick<import("./runtime-delivery.js").RuntimeDelivery, "pendingMessageThreads">;
   authority: Pick<RunClaim, "readMany">;
   runStarter: RunStarter;
   eventSink: EventSink;
@@ -28,11 +25,6 @@ export async function sweepWakes(input: {
           await input.runStarter.start(threadId);
         } catch (error) {
           if (!(error instanceof TurnStartConflictError)) reportFailure(threadId, error);
-        }
-        try {
-          await input.delivery.refreshPending(threadId);
-        } catch (error) {
-          reportFailure(threadId, error);
         }
       }),
     );

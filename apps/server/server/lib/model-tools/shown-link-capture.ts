@@ -1,13 +1,29 @@
 /**
- * Shown-link candidates (contract §7.2): what a tool result actually showed
- * the model, returned beside the result as host-only `shown`. Dispatch records
- * them only when it persists the result, so a cancelled or timed-out call
- * leaves no evidence. Facts come from the handlers that return rendered text,
- * never from `readDocument`, so a copy's private source read shows nothing.
- * Also hands the thread's evidence to agent-edit writes (§7.4).
+ * Result evidence (contract §7.2): what a tool result actually showed the
+ * model, returned beside the result as host-only `evidence` (shown-link
+ * candidates and the observation frontier). Dispatch records it only when it
+ * persists the result, so a cancelled or timed-out call leaves none. Facts come
+ * from the handlers that return rendered text, never from `readDocument`, so a
+ * copy's private source read shows nothing. Also hands the thread's evidence
+ * to agent-edit writes (§7.4).
  */
-import type { LinkShowing } from "@meridian/agent-edit/integration";
-import type { ShownLinkShowing, ShownLinkStore } from "../../domains/runtime/index.js";
+import type { LinkShowing, ObservationFrontier } from "@meridian/agent-edit/integration";
+import type {
+  ResultEvidence,
+  ShownLinkShowing,
+  ShownLinkStore,
+} from "../../domains/runtime/index.js";
+
+/** What a rendered agent-edit outcome showed: its links and its frontier. */
+export function evidenceOf(
+  documentId: string,
+  outcome: { showing?: LinkShowing; frontier?: ObservationFrontier },
+): ResultEvidence {
+  return {
+    shown: showingOf(documentId, outcome),
+    ...(outcome.frontier ? { frontier: outcome.frontier } : {}),
+  };
+}
 
 /**
  * The candidate for one holder, exactly as its render spelled it: facts,

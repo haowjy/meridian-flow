@@ -33,6 +33,11 @@
  * be: `destroy()` drops listeners, and a StrictMode remount keeps the
  * instance.
  *
+ * Doors: a URI door (a written-document name, a passage row) follows through this same
+ * follower, carrying its shell's placement policy. One chat, one latest click: a door
+ * and a transcript link cancel each other, and a hidden chat or a switched thread
+ * cancels both.
+ *
  * Exact `@` references in writer messages ask by identity rather than through
  * the resolver, from the chat's `ReferenceAvailability` store. The catalog
  * revision that re-registers the resolver also refreshes that store, so a
@@ -43,6 +48,7 @@ import type { Thread, Work } from "@meridian/contracts/protocol";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
 import {
@@ -54,8 +60,10 @@ import {
   useLinkFollower,
 } from "@/features/links";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 
+import { type ChatDoors, type ContextPassageAnchor, useChatDoors } from "./ChatContextNavigation";
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
 
 /** What a chat link is resolved against, or pending while that is still loading. */
@@ -64,6 +72,7 @@ function chatLinkScope({
   activeWork,
   thread,
   rootThreadId,
+  chatId,
   noWorkId,
   worksSettled,
 }: {
@@ -73,17 +82,20 @@ function chatLinkScope({
   thread: Pick<Thread, "workId"> | null;
   /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
   rootThreadId: string | null;
+  /** The chat that owns the uploads a bare `uploads://` names. */
+  chatId: string | null;
   noWorkId: string | null;
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
-  if (activeWork) return { projectId, workId: activeWork.id, rootThreadId, baseUri: null };
+  if (activeWork) return { projectId, workId: activeWork.id, rootThreadId, chatId, baseUri: null };
   if (!worksSettled || !thread?.workId) return "pending";
   // A thread whose Work the snapshot lacks asks with its own binding; No Work is still its lineage.
   return {
     projectId,
     workId: thread.workId,
     rootThreadId: thread.workId === noWorkId ? rootThreadId : null,
+    chatId,
     baseUri: null,
   };
 }
@@ -103,6 +115,11 @@ export function useChatLinkFollowing({
   navigation: TranscriptLinkNavigation;
   references: ReferenceAvailability;
   dialog: ComponentProps<typeof LinkFollowDialog>;
+  /** The shell's URI doors, following through this same follower; null without a shell. */
+  doors: {
+    open: (uri: string, passage?: ContextPassageAnchor) => void;
+    canOpen: ChatDoors["canOpen"];
+  } | null;
 } {
   const { status: worksStatus, noWork } = useWorks(projectId);
   const threadKnown = activeThread !== null;
@@ -110,6 +127,9 @@ export function useChatLinkFollowing({
   const noWorkId = noWork?.id ?? null;
   // The first chat's id: a No Work chat's Scratch is its lineage's.
   const lineageId = activeThread?.rootThreadId ?? null;
+  const chatId =
+    useTopChat(projectId, activeThread)?.chatId ??
+    (activeThread?.kind === "subagent" ? null : (activeThread?.id ?? null));
   const scope = useMemo(
     () =>
       chatLinkScope({
@@ -117,24 +137,27 @@ export function useChatLinkFollowing({
         activeWork,
         thread: threadKnown ? { workId: threadWorkId } : null,
         rootThreadId: activeWork?.isNoWork || threadWorkId === noWorkId ? lineageId : null,
+        chatId,
         noWorkId,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
       }),
-    [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, worksStatus],
+    [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, chatId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,
   );
 
   const openReferenceDocument = useOpenChatDocument(projectId);
-  const open = useCallback<LinkDestination>(
+  const openLive = useCallback<LinkDestination>(
     (document, gesture) =>
       openReferenceDocument({
         documentId: document.documentId,
+        ...(document.focus ? { focus: true as const } : {}),
         disposition: gesture === "new-tab" ? "background" : "current",
       }),
     [openReferenceDocument],
   );
+  const open = useReviewingLinkDestination(openLive);
 
   const { outcome, reporter } = useFollowOutcomeState();
   const [resolution] = useState(createLinkAnswerCache);
@@ -165,19 +188,44 @@ export function useChatLinkFollowing({
     references.refresh();
   }, [index.complete, index.revision, references]);
 
+  const held = useMemo(
+    () => new Map(index.documents.map((document) => [document.documentId, document.uri])),
+    [index.documents],
+  );
+  useEffect(() => references.reconcile(held), [references, held]);
+
+  const shellDoors = useChatDoors();
+  const doors = useMemo(
+    () =>
+      shellDoors
+        ? {
+            canOpen: shellDoors.canOpen,
+            open: (uri: string, passage?: ContextPassageAnchor) => {
+              const door = shellDoors.prepare(uri, passage);
+              if (door) follower.follow(door.link, "current", null, door.policy);
+            },
+          }
+        : null,
+    [follower, shellDoors],
+  );
+
   const navigation = useMemo<TranscriptLinkNavigation>(
     () => ({
-      follow: (target) => follower.follow(target),
+      follow: (target) => {
+        shellDoors?.retire();
+        follower.follow(target);
+      },
       canFollow: follower.canFollow,
       resolution,
       watch: requester.watch,
     }),
-    [follower, requester, resolution],
+    [follower, requester, resolution, shellDoors],
   );
 
   return {
     navigation,
     references,
+    doors,
     dialog: {
       outcome,
       projectId,

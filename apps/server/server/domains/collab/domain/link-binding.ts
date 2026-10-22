@@ -19,9 +19,9 @@
  * it is never applied to another; bound fresh, it lands only in an empty
  * document.
  */
+
 import {
   assignLinkRefs,
-  type DocumentCoordinator,
   isDocumentNotFoundError,
   toDocHandle,
   type YProsemirrorDocumentModel,
@@ -41,6 +41,7 @@ import {
   type HolderLinkScope,
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 
 declare const boundBrand: unique symbol;
 
@@ -119,27 +120,44 @@ export interface LinkBinderDeps {
   codec: MarkupCodec;
   schema: Schema;
   model: YProsemirrorDocumentModel;
-  coordinator: Pick<DocumentCoordinator, "withDocument">;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   links: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
   inTransaction(): boolean;
 }
 
-export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
-  function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
-    const classification = classifyFiletype(filetype);
-    if (classification.kind === "tracked") return classification.schemaType;
-    if (classification.kind === "unknown") return "document";
-    throw new Error(`Cannot bind ${classification.kind} content as a tracked document`);
-  }
+/**
+ * Content parsed with every link unbound (`ref` null, href as written), in the shape its
+ * filetype stores: one code block for a code file. Static seeds take it when nothing in it
+ * is a link; repair takes it as a stored projection's best reading, since binding mints
+ * ahead refs in a root transaction that a repair's caller may already be inside.
+ */
+export function createUnboundParser(deps: { codec: MarkupCodec; schema: Schema }) {
+  return (markdown: string, filetype: string | null) => {
+    const schemaType = schemaTypeOf(filetype);
+    const blocks: PMNode[] =
+      schemaType === "code"
+        ? [
+            deps.schema.nodes.code_block.create(
+              { language: filetype },
+              markdown.length > 0 ? deps.schema.text(markdown) : undefined,
+            ),
+          ]
+        : deps.codec.parse(markdown).blocks;
+    return { schemaType, blocks };
+  };
+}
 
-  function codeBlock(text: string, filetype: string | null): PMNode {
-    return deps.schema.nodes.code_block.create(
-      { language: filetype },
-      text.length > 0 ? deps.schema.text(text) : undefined,
-    );
-  }
+function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
+  const classification = classifyFiletype(filetype);
+  if (classification.kind === "tracked") return classification.schemaType;
+  if (classification.kind === "unknown") return "document";
+  throw new Error(`Cannot bind ${classification.kind} content as a tracked document`);
+}
+
+export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
+  const parseUnbound = createUnboundParser(deps);
 
   function boundWrite(input: Omit<BoundWrite, typeof boundBrand>): BoundWrite {
     return input as BoundWrite;
@@ -182,9 +200,10 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       boundWrite({ holder: boundHolder, fresh: previous === null, blocks, markdown, schemaType });
 
     const { markdown } = input;
-    if (schemaType === "code") return finish([codeBlock(markdown, filetype)], markdown);
+    const parsed = parseUnbound(markdown, filetype);
+    if (schemaType === "code") return finish(parsed.blocks, markdown);
 
-    const written = deps.codec.parse(markdown).blocks;
+    const written = parsed.blocks;
     await deps.links.prepare({
       holders: documentId ? [{ documentId, view }] : [],
       stored: previous ?? [],
@@ -217,22 +236,11 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     },
 
     bindStatic(markdown, filetype = null) {
-      const schemaType = schemaTypeOf(filetype);
-      const holder: BoundHolder = { kind: "static" };
-      if (schemaType === "code") {
-        return boundWrite({
-          holder,
-          fresh: true,
-          blocks: [codeBlock(markdown, filetype)],
-          markdown,
-          schemaType,
-        });
-      }
-      const blocks = deps.codec.parse(markdown).blocks;
-      if (walkLinkOccurrences(blocks).length > 0) {
+      const { schemaType, blocks } = parseUnbound(markdown, filetype);
+      if (schemaType !== "code" && walkLinkOccurrences(blocks).length > 0) {
         throw new Error("Static content names a link or source; bind it with bindMarkdown");
       }
-      return boundWrite({ holder, fresh: true, blocks, markdown, schemaType });
+      return boundWrite({ holder: { kind: "static" }, fresh: true, blocks, markdown, schemaType });
     },
   };
 }

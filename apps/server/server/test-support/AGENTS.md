@@ -7,7 +7,8 @@ helpers accept those connections explicitly. Do not mock modules or process glob
 
 Use `drizzle-reset.ts` for database isolation. Single-connection suites use
 `useRollbackTestDatabase`: read `current` inside hooks/tests and build adapters
-from that transaction. Its optional `prepareSuite` establishes the committed
+from that transaction. The harness drains detached work before rolling back,
+while transaction-backed adapters are still usable. Its optional `prepareSuite` establishes the committed
 baseline once. Never use the root connection inside a rollback-isolated case.
 
 Suites testing commits, locks, LISTEN/NOTIFY, or multiple connections use
@@ -17,7 +18,10 @@ follows the live FK graph and deletes dependents first in one transaction.
 Include owner tables for insert-only data (prompt bakes are deleted through
 their thread). Do not add TRUNCATE or bespoke reset helpers. Runtime harnesses
 and manually composed DB-test runtimes use that same tracker; don't create an
-isolated tracker that the reset helper cannot drain. Rollback cannot isolate
+isolated tracker that the reset helper cannot drain. Production composition accepts
+`backgroundTasks`; DB-test compositions inject `processDetachedWork`. Hocuspocus
+room stores enqueue checkpoints: unloading a room does not await that checkpoint,
+so checkpoints join the same tracker as repairs and runtime work. Rollback cannot isolate
 other connections.
 
 Composed runtimes must unload rooms, shut down background app work, and drain
@@ -38,3 +42,16 @@ The Scratch archival upgrade contract owns an isolated historical schema and
 fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
 committed migration chain through the real runner, then exercises typed server
 consumers. Do not regenerate historical fixture bytes with current writers.
+
+Branch-tree suites build one world per case: `branch-tree-seeds.ts` writes rows the
+way the product leaves them (no runtime); `branch-tree-commands.ts` drives the
+composed runtime (model replies, the writer's route cores, readers' ports,
+review commands: `review` calls the list route core; the old settlement Apply verbs are deleted; lane A restores atomic Apply coverage.
+`discard` calls the per-document Discard or Discard
+all, `purge` deletes the Work, ages it past the cutoff and runs the purge sweep;
+readers such as `view(...).text`, `liveMeaning` );
+`branch-tree-scenario.ts` joins the two, and `branch-tree-suite.ts` is the committing
+describe block those suites share.
+Assert through these verbs (what the writer or a reader sees), not raw tables. Seed only states the
+product can't reach yet. Lock races go through `lock-interleave.ts`: `race`
+names each run, so an order table reads the same outcome whichever ran first.

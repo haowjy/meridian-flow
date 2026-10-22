@@ -7,7 +7,7 @@
  * view. The scope is markup's `createHolderLinkScope` over the host's catalog,
  * so every host applies the same rules.
  */
-import type { AheadRef } from "@meridian/contracts";
+import type { AheadRef, LinkView } from "@meridian/contracts";
 import type { PMNode } from "@meridian/markup";
 import type { HolderLinkScope } from "@meridian/markup/links";
 import type * as Y from "yjs";
@@ -39,6 +39,8 @@ export interface AheadMint {
   address: string;
   /** The holder scope's project at mint time: the registry's namespace. */
   holderProjectId: string;
+  /** The holder scope's view at mint time: a branch view registers the ref's meaning there too. */
+  view: LinkView;
 }
 
 export interface DocumentLinksPort {

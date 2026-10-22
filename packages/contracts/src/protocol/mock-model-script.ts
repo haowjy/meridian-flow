@@ -66,10 +66,21 @@ export function parseMockModelScript(
   };
 }
 
-export type MockModelScriptState = {
-  /** `remaining` counts steps left; `sticky` means the head step never runs out. */
-  scripts: { id: string; match: string | null; remaining: number; sticky: boolean }[];
-};
+/** `remaining` counts steps left; `sticky` means the head step never runs out. */
+export const mockModelScriptStateSchema = z.object({
+  scripts: z.array(
+    z.object({
+      id: z.string().min(1),
+      match: z.string().nullable(),
+      remaining: z.number().int().nonnegative(),
+      sticky: z.boolean(),
+    }),
+  ),
+});
+export type MockModelScriptState = z.infer<typeof mockModelScriptStateSchema>;
 
 /** POST response: the queued script's id (for targeted removal) plus the queue. */
-export type MockModelScriptEnqueued = MockModelScriptState & { id: string };
+export const mockModelScriptEnqueuedSchema = mockModelScriptStateSchema.extend({
+  id: z.string().min(1),
+});
+export type MockModelScriptEnqueued = z.infer<typeof mockModelScriptEnqueuedSchema>;

@@ -3,9 +3,10 @@
  * turn at enqueue (so the client's optimistic ack and the send's durability hold
  * before any run exists), appends a writer-provenance `message` to the durable
  * inbox under the same id, settles admission plus attachments, and wakes the
- * thread — all in one turn-start transaction. A live run's assistant turn id is
- * returned for a mid-run merge; a fresh run returns null and the client learns
- * the assistant turn from `RUN_STARTED`.
+ * thread — all in one turn-start transaction. A message that joins the live
+ * reply (a steer) returns that reply's assistant turn id; one answered by a new
+ * reply (idle, or behind a queued write-mode switch) returns null and the
+ * client learns the assistant turn from `RUN_STARTED`.
  *
  * No run is started here: the wake is best-effort latency, the sweep is the
  * durable guarantee, and the drain owns the assistant container.
@@ -25,6 +26,7 @@ import {
   writerSendMetadata,
 } from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
+import { queuedWriteModeSwitch } from "../loop/next-inbox-work.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { InboxReader } from "../loop/ports.js";
 import type { RunningTurnView } from "../loop/run-session.js";
@@ -67,7 +69,8 @@ export function createWriterTurnProducer(deps: {
   records: AdmissionPersistencePort;
   /** Runs inside the turn-start transaction before any writer content is persisted. */
   requireWritableThread(threadId: ThreadId): Promise<void>;
-  consumeUploads(documentIds: readonly string[]): Promise<void>;
+  /** Every admitted reference: the sending chat's own uploads among them become used. */
+  consumeUploads(documentIds: readonly string[], threadId: string): Promise<void>;
   attachDocument(
     threadId: string,
     documentId: string,
@@ -89,14 +92,14 @@ export function createWriterTurnProducer(deps: {
       // `waiting_interrupt` is. Only once the runner owns the thread do we look
       // at durable rows, and only for the setup window where the runner has not
       // published the assistant id yet. `createdAfter` keeps an older orphan out.
-      const live = deps.runner.getRunningTurn(threadId);
-      const assistantTurnId =
-        live && live.kind !== "compaction"
-          ? (live.turnId ??
-            (await deps.turns.findRunningAssistantId(threadId, {
-              createdAfter: live.startedAt,
-            })))
-          : null;
+      const liveReplyId = async () => {
+        const live = deps.runner.getRunningTurn(threadId);
+        if (!live || live.kind === "compaction") return null;
+        return (
+          live.turnId ??
+          (await deps.turns.findRunningAssistantId(threadId, { createdAfter: live.startedAt }))
+        );
+      };
       const turnMetadata =
         activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
         input.userTurnMetadata ??
@@ -109,9 +112,18 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata: writerSendMetadata(turnMetadata, assistantTurnId ? "steer" : "send"),
+          // A message sent behind a queued switch ends the live reply instead of
+          // joining it, so it is answered by the next reply in the new mode.
+          // Both reads happen under the lock on every attempt: a reply that
+          // ended, or a switch committed, before it is visible here.
+          joinedReply: async () => {
+            const replyId = await liveReplyId();
+            if (!replyId) return null;
+            return queuedWriteModeSwitch(await deps.inbox.selectPending(threadId)) ? null : replyId;
+          },
+          userTurnMetadata: (joinedReplyId) =>
+            writerSendMetadata(turnMetadata, joinedReplyId ? "steer" : "send"),
           delivery: deps.delivery,
-          inbox: deps.inbox,
           beforePersist: () => deps.requireWritableThread(threadId),
           draft: {
             id: userTurnId,
@@ -123,6 +135,7 @@ export function createWriterTurnProducer(deps: {
           },
           settle: async ({
             userTurnId: settledUserTurnId,
+            runStateVersion,
             resumeAfterSeq,
             snapshotFloorNextSeq,
           }) => {
@@ -131,7 +144,7 @@ export function createWriterTurnProducer(deps: {
               threadId,
               submissionId: input.admission.submissionId,
               userTurnId: settledUserTurnId,
-              assistantTurnId,
+              runStateVersion,
               resumeAfterSeq,
               snapshotFloorNextSeq,
             };
@@ -148,9 +161,8 @@ export function createWriterTurnProducer(deps: {
               );
             }
             await deps.consumeUploads(
-              input.references
-                .filter((reference) => reference.purpose === "draft-upload")
-                .map((reference) => reference.documentId),
+              input.references.map((reference) => reference.documentId),
+              threadId,
             );
             for (const reference of input.references) {
               await deps.attachDocument(threadId, reference.documentId, reference.relationship);

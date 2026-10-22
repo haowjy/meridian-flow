@@ -1,64 +1,76 @@
 /**
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
- * work-scoped (scratch/uploads) ContextFS adapters into one router per scope.
+ * Work-scoped (scratch) ContextFS adapters, and chat-scoped (uploads) ones into one router per scope.
  *
  * Contracts owns the scheme taxonomy; adapter assembly lives here as one deep
  * module. Source provisioning is delegated to context-source-provisioning.ts;
  * thread resolution to context-port-resolution.ts.
  */
 
-import type { CanonicalContextAuthority } from "@meridian/contracts";
+import type { BranchId, CanonicalContextAuthority } from "@meridian/contracts";
 import {
   canonicalContextUri,
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
-  WORK_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { approveBranchWriteJoin } from "../../shared/branch-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import type { Branches } from "../collab/domain/branches.js";
 import type { DocumentDerivationService } from "../collab/domain/ports/document-derivations.js";
-import type { DocumentCreationAggregate } from "../collab/index.js";
+import type { DocumentCreationAggregate, DraftPeerShadowAccess } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
+import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
+import type { TopPrimaryChatResolver } from "../threads/index.js";
+import { createDrizzleChatUploadsOwners } from "./adapters/chat-uploads-owners.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
+import type { ContextPlacement } from "./adapters/context-fs/create-placement.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
-import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
+import { createDrizzleBranchTree } from "./adapters/context-fs/drizzle-branch-tree.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
-import { listsThroughLiveManifest } from "./adapters/document-address.js";
+import { createDrizzleOwnerLookup } from "./adapters/owner-lookup.js";
 import {
   createDrizzleProjectContextAvailability,
   resolveActiveFolderUri,
 } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
+import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
+  createChatContextDocumentStore,
   createLineageContextDocumentStore,
-  createNoWorkContextDocumentStore,
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
   findNoWorkId,
 } from "./context-source-provisioning.js";
+import { bindOwners, emptyOwnerLookup, type OwnerLookup } from "./owner-lookup.js";
+import type { BranchTreePort } from "./ports/branch-tree.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
-import type { ContextCommandTransaction } from "./ports/context-command-transaction.js";
+import type {
+  ContextCommandContext,
+  ContextCommandTransaction,
+} from "./ports/context-command-transaction.js";
 import type { ContextDocumentStore } from "./ports/context-document-store.js";
 import type {
   ContextPort,
   ContextScheme,
   ProjectContextFsScheme,
   ThreadContextView,
+  UploadsOwner,
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import type { LiveMembership } from "./ports/live-membership.js";
+import type { DocumentRemoval } from "./ports/document-removal.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -67,74 +79,54 @@ import {
   getInMemoryWorkContextStore,
   type InMemoryUnifiedContextStoreRegistry,
 } from "./support/in-memory-unified-context-stores.js";
+import { findForward } from "./tree/forwards.js";
+import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
-const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
-  WORK_SCOPED_CONTEXT_URI_SCHEMES;
+/** Uploads belong to a chat, so a Work provisions Scratch only. */
+const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] = ["scratch"];
 
 export interface UnifiedContextPortFactory {
   lineages: ScratchLineages;
+  topPrimaryChats: TopPrimaryChatResolver;
+  /** Chats by handle, for `uploads://@c12/` addresses. */
+  chats: ChatUploadsOwners;
+  /** Where a chat's uploads and Scratch live, for errors and pointers. */
+  chatFiles: OwnerLookup;
   forProject(
     projectId: string,
     userId: string,
-    workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+    workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
     lineage?: ScratchLineage,
+    /** Whose uploads bare `uploads://` names, when the caller scopes to one chat. */
+    chat?: UploadsOwner,
   ): ContextPort;
   forWork(
     authority: ResolvedWorkAuthority,
     projectId: string,
     userId: string,
-    workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+    workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
     thread?: ThreadContextView,
   ): ContextPort;
 }
 
-type ManifestView = {
-  projectId: string;
-  workId?: string | null;
-  threadId?: string | null;
-  responseId?: string | null;
-};
-
 interface ContextStoreResolvers {
   lineages: ScratchLineages;
+  chats: ChatUploadsOwners;
+  /** Absent in the in-memory factory, which has no threads to ask. */
+  chatFiles?: OwnerLookup;
   resolveLineageStore(projectId: string, rootThreadId: string): ContextDocumentStore;
+  /** The chat's uploads; `chatId` is a top primary thread id (`resolveTopPrimaryChat`). */
+  resolveChatStore(projectId: string, chatId: string, scheme: "uploads"): ContextDocumentStore;
   resolveProjectStore(
     projectId: string,
     userId: string,
     scheme: ProjectContextFsScheme,
-    manifestView?: ManifestView,
   ): ContextDocumentStore;
-  resolveWorkStore(
-    workId: string,
-    scheme: WorkScopedContextFsScheme,
-    projectId?: string,
-  ): ContextDocumentStore;
-  resolveNoWorkStore(projectId: string, scheme: "uploads", userId?: string): ContextDocumentStore;
+  resolveWorkStore(workId: string, scheme: WorkScopedContextFsScheme): ContextDocumentStore;
   resolveNoWorkId(projectId: string): Promise<string>;
-  resolveMutationStore(
-    manifestView?: ManifestView,
-  ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
-}
-
-/** Required production seam between project context storage and the live manifest. */
-export interface ManifestMembershipPort {
-  recordManifestDocumentCreated(
-    documentId: string,
-    view: { projectId: string; workId?: string | null; threadId?: string | null },
-  ): Promise<void>;
-  recordManifestDocumentDeleted(
-    documentId: string,
-    view: { projectId: string; workId?: string | null; threadId?: string | null },
-  ): Promise<void>;
-  /** The live manifest: a move's note counts only its members (contract §10). */
-  resolveManifestMembership(input: { projectId: ProjectId }): Promise<{ members: string[] }>;
-  /** A cross-project move carries live membership to its destination project (§9.3). */
-  transferLiveManifestMembership(
-    documentIds: readonly DocumentId[],
-    projects: { from: ProjectId; to: ProjectId },
-  ): Promise<void>;
+  resolveMutationStore(): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
 
 /** What every adapter of one port shares: storage, collab, and the reading thread. */
@@ -145,17 +137,50 @@ interface AdapterAssembly {
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   thread?: ThreadContextView;
+  /**
+   * Where draft-mode threads' creates may land: Postgres resolves branches and makes draft
+   * creates per source; the in-memory port is explicitly live-only.
+   */
+  placements: "live-only" | BranchPlacements;
+  owner: { projectId: string; userId: string };
+}
+
+type BranchPlacements = {
+  branches: Pick<Branches, "viewForWork">;
+  tree(store: ContextDocumentStore): BranchTreePort;
+};
+
+/**
+ * Where an adapter's creates land (contract §2.3): a draft-mode thread's drafted source
+ * is a draft placement, exactly as `sourceDestination` decides; people and auto-apply
+ * Works are live (D20).
+ */
+function placementFor(
+  assembly: AdapterAssembly,
+  scheme: ContextScheme,
+  store: ContextDocumentStore,
+): ContextPlacement {
+  const { thread, placements } = assembly;
+  if (!thread || placements === "live-only") return { kind: "live" };
+  const destination = sourceDestination(scheme, thread.branchWork);
+  if (destination.kind !== "draft") return { kind: "live" };
+  return {
+    kind: "draft",
+    workId: destination.workId as WorkId,
+    threadId: thread.threadId as ThreadId,
+    userId: assembly.owner.userId as UserId,
+    branches: placements.branches,
+    tree: placements.tree(store),
+  };
 }
 
 function contextFsAdapter(
   assembly: AdapterAssembly,
-  deps: Pick<
-    ContextFSDeps,
-    "store" | "mutationStore" | "commandTransaction" | "scheme" | "manifestView" | "holder"
-  >,
+  deps: Pick<ContextFSDeps, "store" | "mutationStore" | "commandTransaction" | "scheme" | "holder">,
 ): ContextSchemeAdapter {
   return new ContextFS({
     ...deps,
+    placement: placementFor(assembly, deps.scheme, deps.store),
     documentSync: assembly.documentSync,
     links: assembly.links,
     documentCreation: assembly.documentCreation,
@@ -167,29 +192,21 @@ function buildProjectContextFsAdapters(
   assembly: AdapterAssembly,
   projectId: string,
   userId: string,
-  manifestView: ManifestView,
 ): Map<ContextScheme, ContextSchemeAdapter> {
-  const { storeResolvers, commandTransaction, thread } = assembly;
+  const { storeResolvers, commandTransaction } = assembly;
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
-    // Only an AI thread whose writes to this source are drafted has a draft
-    // of the manifest. A port with no thread is a person's, and people always
-    // write live (D20). Either way the membership is live and never branches.
-    const schemeView =
-      !thread || sourceDestination(scheme, thread.draftWork).kind === "live"
-        ? { projectId }
-        : manifestView;
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {
-        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, schemeView),
-        mutationStore: storeResolvers.resolveMutationStore(schemeView),
+        store: storeResolvers.resolveProjectStore(projectId, userId, scheme),
+        mutationStore: storeResolvers.resolveMutationStore(),
         commandTransaction: commandTransaction && {
-          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
+          run: (operation, _scopes, options) =>
+            commandTransaction.run(operation, [{ scheme, workId: null }], options),
         },
         scheme,
         holder: { projectId },
-        ...(listsThroughLiveManifest(scheme) ? { manifestView: schemeView } : {}),
       }),
     );
   }
@@ -204,49 +221,21 @@ function buildWorkScopedContextFsAdapters(
   authority: CanonicalContextAuthority,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
-  // Scratch/uploads are canonical live documents even though their storage is
-  // Work-scoped. The live-room gate reads the project manifest, so membership
-  // must be registered in that view rather than a work-draft view.
-  const mutationStore = storeResolvers.resolveMutationStore({ projectId });
+  // Scratch is a canonical live document even though its storage is Work-scoped.
+  const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {
-        store: storeResolvers.resolveWorkStore(workId, scheme, projectId),
+        store: storeResolvers.resolveWorkStore(workId, scheme),
         mutationStore,
         commandTransaction: commandTransaction && {
-          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: workId }]),
+          run: (operation, _scopes, options) =>
+            commandTransaction.run(operation, [{ scheme, workId: workId }], options),
         },
         scheme,
         holder: { projectId, authority },
-      }),
-    );
-  }
-  return adapters;
-}
-
-function buildNoWorkContextFsAdapters(
-  assembly: AdapterAssembly,
-  projectId: string,
-): Map<ContextScheme, ContextSchemeAdapter> {
-  const { storeResolvers, commandTransaction } = assembly;
-  const mutationStore = storeResolvers.resolveMutationStore({ projectId });
-  const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
-  for (const scheme of ["uploads"] as const) {
-    adapters.set(
-      scheme,
-      contextFsAdapter(assembly, {
-        store: storeResolvers.resolveNoWorkStore(projectId, scheme),
-        mutationStore,
-        commandTransaction: commandTransaction && {
-          run: async (operation) => {
-            const workId = await storeResolvers.resolveNoWorkId(projectId);
-            return commandTransaction.run(operation, [{ scheme, workId }]);
-          },
-        },
-        scheme,
-        holder: { projectId, authority: { kind: "none" } },
       }),
     );
   }
@@ -257,16 +246,17 @@ type ContextPortBuildScope =
   | {
       kind: "project";
       lineage?: ScratchLineage;
+      chat?: UploadsOwner;
       projectId: string;
       userId: string;
-      workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
+      workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
     }
   | {
       kind: "work";
       authority: ResolvedWorkAuthority;
       projectId: string;
       userId: string;
-      workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
+      workAuthorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>;
       thread?: ThreadContextView;
     };
 
@@ -277,51 +267,42 @@ function buildUnifiedContextPort(input: {
   documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
+  placements: AdapterAssembly["placements"];
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
+  resolveForward?: (documentId: string) => Promise<string | null>;
   operationReceipts?: ContextOperationReceipts;
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
   >[2];
 }): ContextPort {
-  const { scope, storeResolvers } = input;
+  const { scope, storeResolvers, commandTransaction } = input;
   const assembly: AdapterAssembly = {
     storeResolvers,
     documentSync: input.documentSync,
     links: input.links,
     documentCreation: input.documentCreation,
     commandTransaction: input.commandTransaction,
+    placements: input.placements,
+    owner: { projectId: scope.projectId, userId: scope.userId },
     ...(scope.kind === "work" && scope.thread ? { thread: scope.thread } : {}),
   };
-  const adapters = buildProjectContextFsAdapters(
-    assembly,
-    scope.projectId,
-    scope.userId,
-    scope.kind === "work"
-      ? {
-          projectId: scope.projectId,
-          workId: scope.authority.workId,
-          threadId: scope.thread?.threadId,
-          responseId: scope.thread?.responseId,
-        }
-      : { projectId: scope.projectId },
-  );
+  const adapters = buildProjectContextFsAdapters(assembly, scope.projectId, scope.userId);
 
   const workAuthorities = scope.workAuthorities;
-  const primaryAdapters =
-    scope.kind === "work" && scope.authority.workSlug !== null
-      ? buildWorkScopedContextFsAdapters(
-          assembly,
-          scope.authority.workId,
-          scope.projectId,
-          scope.authority,
-        )
-      : buildNoWorkContextFsAdapters(assembly, scope.projectId);
-  for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
+  if (scope.kind === "work" && scope.authority.workHandle !== null) {
+    const primaryAdapters = buildWorkScopedContextFsAdapters(
+      assembly,
+      scope.authority.workId,
+      scope.projectId,
+      scope.authority,
+    );
+    for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
+  }
 
   const lineageSource = (lineage: ScratchLineage): ContextSourceBinding => ({
     adapter: contextFsAdapter(assembly, {
       store: storeResolvers.resolveLineageStore(scope.projectId, lineage.rootThreadId),
-      mutationStore: storeResolvers.resolveMutationStore({ projectId: scope.projectId }),
+      mutationStore: storeResolvers.resolveMutationStore(),
       commandTransaction: input.commandTransaction,
       scheme: "scratch",
       holder: {
@@ -331,6 +312,24 @@ function buildUnifiedContextPort(input: {
     }),
     authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef },
   });
+  const chatSource = (owner: UploadsOwner): ContextSourceBinding => {
+    const authority: CanonicalContextAuthority = owner.chatRef
+      ? { kind: "chat", chatRef: owner.chatRef }
+      : { kind: "contextual" };
+    return {
+      adapter: contextFsAdapter(assembly, {
+        store: storeResolvers.resolveChatStore(scope.projectId, owner.chatId, "uploads"),
+        mutationStore: storeResolvers.resolveMutationStore(),
+        commandTransaction: commandTransaction && {
+          run: (operation, _scopes, options) =>
+            commandTransaction.run(operation, [{ scheme: "uploads", workId: null }], options),
+        },
+        scheme: "uploads",
+        holder: { projectId: scope.projectId, authority },
+      }),
+      authority,
+    };
+  };
   const sources = new Map<
     ContextScheme,
     ContextSourceBinding | (() => Promise<ContextSourceBinding | null>)
@@ -339,11 +338,11 @@ function buildUnifiedContextPort(input: {
       scheme,
       {
         adapter,
-        authority: (WORK_SCOPED_CONTEXTFS_SCHEMES as readonly string[]).includes(scheme)
-          ? scope.kind === "work"
+        authority:
+          (WORK_SCOPED_CONTEXTFS_SCHEMES as readonly string[]).includes(scheme) &&
+          scope.kind === "work"
             ? scope.authority
-            : { kind: "none" }
-          : { kind: "contextual" },
+            : { kind: "contextual" },
       },
     ]),
   );
@@ -358,14 +357,22 @@ function buildUnifiedContextPort(input: {
       const lineage = await storeResolvers.lineages.byId(scope.projectId, ownLineageId);
       return lineage ? lineageSource(lineage) : null;
     });
+  const uploadsOwner = scope.kind === "work" ? scope.thread?.uploadsOwner : scope.chat;
+  if (uploadsOwner) sources.set("uploads", chatSource(uploadsOwner));
   return createContextPortRouter({
     sources,
+    resolveChatSource: async (ref) => {
+      const chat = await storeResolvers.chats.byRef(scope.projectId, ref);
+      if (!chat) return { kind: "missing" };
+      return chat.live
+        ? { kind: "found", binding: chatSource({ chatId: chat.chatId, chatRef: chat.chatRef }) }
+        : { kind: "unavailable" };
+    },
+    owners: storeResolvers.chatFiles && bindOwners(storeResolvers.chatFiles, scope.projectId),
     resolveLineageSource: async (ref) => {
       const lineage = await storeResolvers.lineages.byRef(scope.projectId, ref);
       return lineage ? lineageSource(lineage) : null;
     },
-    rootForThreadRef: (ref) => storeResolvers.lineages.rootForThreadRef(scope.projectId, ref),
-    listLineages: () => storeResolvers.lineages.list(scope.projectId),
     workAuthorities,
     primaryWorkAuthority: scope.kind === "work" ? scope.authority : undefined,
     resolveWorkAdapters: (targetAuthority) =>
@@ -375,19 +382,14 @@ function buildUnifiedContextPort(input: {
         scope.projectId,
         targetAuthority,
       ),
-    resolveNoWork: async () => {
-      const workId =
-        scope.kind === "work" && scope.authority.workSlug === null
-          ? scope.authority.workId
-          : await storeResolvers.resolveNoWorkId(scope.projectId);
-      return {
-        adapters: buildNoWorkContextFsAdapters(assembly, scope.projectId),
-        workId,
-      };
-    },
+    resolveNoWorkId: async () =>
+      scope.kind === "work" && scope.authority.workHandle === null
+        ? scope.authority.workId
+        : await storeResolvers.resolveNoWorkId(scope.projectId),
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     resolveDestinationFolder: input.resolveDestinationFolder,
+    ...(input.resolveForward ? { resolveForward: input.resolveForward } : {}),
     operationReceipts: input.operationReceipts,
     moveLinks: input.moveLinks,
   });
@@ -400,25 +402,27 @@ function inMemoryNoWorkId(projectId: string): string {
 function createInMemoryStoreResolvers(
   registry: InMemoryUnifiedContextStoreRegistry,
   lineages: ScratchLineages,
+  chats: ChatUploadsOwners,
 ): ContextStoreResolvers {
   return {
     lineages,
+    chats,
     resolveLineageStore(_projectId, rootThreadId) {
       return getInMemoryWorkContextStore(registry, rootThreadId, "scratch");
     },
-    resolveProjectStore(projectId, userId, scheme, _manifestView) {
+    resolveChatStore(_projectId, chatId, scheme) {
+      return getInMemoryWorkContextStore(registry, `chat:${chatId}`, scheme);
+    },
+    resolveProjectStore(projectId, userId, scheme) {
       return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
-    resolveWorkStore(workId, scheme, _projectId) {
+    resolveWorkStore(workId, scheme) {
       return getInMemoryWorkContextStore(registry, workId, scheme);
-    },
-    resolveNoWorkStore(projectId, scheme) {
-      return getInMemoryWorkContextStore(registry, inMemoryNoWorkId(projectId), scheme);
     },
     async resolveNoWorkId(projectId) {
       return inMemoryNoWorkId(projectId);
     },
-    resolveMutationStore(_manifestView) {
+    resolveMutationStore() {
       return getInMemoryContextTreeMutationStore(registry);
     },
   };
@@ -426,88 +430,61 @@ function createInMemoryStoreResolvers(
 
 function createProductionStoreResolvers(
   db: Database,
-  manifestMembership: ManifestMembershipPort,
   catalogMutations: ContextCatalogMutationPort,
-  eventSink?: EventSink,
+  removal: DocumentRemoval,
   arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
 ): ContextStoreResolvers {
-  const membershipObserverFor = (
-    manifestView: ManifestView,
-  ): ContextDocumentMembershipObserver => ({
-    documentCreated: (documentId) =>
-      manifestMembership.recordManifestDocumentCreated(documentId, manifestView),
-    documentDeleted: (documentId) =>
-      manifestMembership.recordManifestDocumentDeleted(documentId, manifestView),
-  });
-  const liveMembership: LiveMembership = {
-    members: async (projectId) =>
-      new Set((await manifestMembership.resolveManifestMembership({ projectId })).members),
-    transfer: (documentIds, projects) =>
-      manifestMembership.transferLiveManifestMembership(documentIds, projects),
-  };
-
   return {
     lineages: createDrizzleScratchLineages(db),
+    chats: createDrizzleChatUploadsOwners(db),
     resolveLineageStore(projectId, rootThreadId) {
       return createLineageContextDocumentStore(
         db,
         projectId,
         rootThreadId,
-        membershipObserverFor({ projectId }),
         catalogMutations,
         arrivals,
+        repair,
       );
     },
-    resolveProjectStore(projectId, userId, scheme, manifestView) {
-      // Every scheme registers creations in the project manifest. The ws
-      // onConnect gate requires live-room membership for ALL documents, and
-      // manifest seeding is scheme-agnostic — withholding the observer here
-      // stranded kb/user documents outside the manifest, so their editors
-      // connected to nothing (denied) and rendered permanently empty.
+    resolveChatStore(projectId, chatId, scheme) {
+      return createChatContextDocumentStore(
+        db,
+        projectId,
+        chatId,
+        scheme,
+        catalogMutations,
+        arrivals,
+        repair,
+      );
+    },
+    resolveProjectStore(projectId, userId, scheme) {
       return createProjectContextDocumentStore(
         db,
         projectId,
         scheme,
         userId,
-        membershipObserverFor(manifestView ?? { projectId }),
         catalogMutations,
         arrivals,
+        repair,
       );
     },
-    resolveWorkStore(workId, scheme, projectId) {
-      return createWorkContextDocumentStore(
-        db,
-        workId,
-        scheme,
-        projectId ? membershipObserverFor({ projectId }) : undefined,
-        catalogMutations,
-        arrivals,
-      );
-    },
-    resolveNoWorkStore(projectId, scheme) {
-      return createNoWorkContextDocumentStore(
-        db,
-        projectId,
-        scheme,
-        membershipObserverFor({ projectId }),
-        catalogMutations,
-        arrivals,
-      );
+    resolveWorkStore(workId, scheme) {
+      return createWorkContextDocumentStore(db, workId, scheme, catalogMutations, arrivals, repair);
     },
     async resolveNoWorkId(projectId) {
       const workId = await findNoWorkId(db, projectId);
       if (!workId) throw new Error(`No Work missing for project ${projectId}`);
       return workId;
     },
-    resolveMutationStore(manifestView) {
-      return new DrizzleContextTreeMutationStore(
-        db,
-        manifestView ? membershipObserverFor(manifestView) : undefined,
+    resolveMutationStore() {
+      return new DrizzleContextTreeMutationStore(db, {
+        removal,
         catalogMutations,
-        eventSink,
-        arrivals,
-        liveMembership,
-      );
+        ...(arrivals ? { arrivals } : {}),
+        ...(repair ? { repair } : {}),
+      });
     },
   };
 }
@@ -517,6 +494,9 @@ export function createInMemoryUnifiedContextPortFactory(
     documentSync?: ContextFSDeps["documentSync"];
     storeRegistry?: InMemoryUnifiedContextStoreRegistry;
     lineages?: ScratchLineages;
+    chats?: ChatUploadsOwners;
+    topPrimaryChats?: TopPrimaryChatResolver;
+    chatFiles?: OwnerLookup;
   } = {},
 ): UnifiedContextPortFactory {
   const registry = options.storeRegistry ?? createInMemoryUnifiedContextStoreRegistry();
@@ -537,13 +517,20 @@ export function createInMemoryUnifiedContextPortFactory(
         return [];
       },
     },
+    options.chats ?? {
+      async byRef() {
+        return null;
+      },
+    },
   );
+
+  if (options.chatFiles) storeResolvers.chatFiles = options.chatFiles;
 
   const resolveFolder =
     (
       projectId: string,
       userId: string,
-      authorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+      authorities: ReadonlyMap<WorkHandle, ResolvedWorkAuthority>,
       primary?: ResolvedWorkAuthority,
     ) =>
     async (folderId: string): Promise<string | null> => {
@@ -560,10 +547,6 @@ export function createInMemoryUnifiedContextPortFactory(
             `work:${authority.workId}:${scheme}`,
             canonicalContextUri(scheme, "", authority),
           );
-      sourceUris.set(
-        `work:${inMemoryNoWorkId(projectId)}:uploads`,
-        canonicalContextUri("uploads", "", { kind: "none" }),
-      );
       const folder = registry.backing.folders.get(folderId);
       if (!folder || folder.deletedAt) return null;
       const root = sourceUris.get(folder.contextSourceId);
@@ -590,13 +573,17 @@ export function createInMemoryUnifiedContextPortFactory(
 
   return {
     lineages: storeResolvers.lineages,
-    forProject(projectId, userId, workAuthorities, lineage) {
+    chats: storeResolvers.chats,
+    topPrimaryChats: options.topPrimaryChats ?? { resolveTopPrimaryChat: async () => null },
+    chatFiles: options.chatFiles ?? emptyOwnerLookup,
+    forProject(projectId, userId, workAuthorities, lineage, chat) {
       return buildUnifiedContextPort({
-        scope: { kind: "project", projectId, userId, workAuthorities, lineage },
+        scope: { kind: "project", projectId, userId, workAuthorities, lineage, chat },
         storeResolvers,
         resolveDestinationFolder: resolveFolder(projectId, userId, workAuthorities),
         documentSync,
         links: { within: (_key, operation) => operation() },
+        placements: "live-only",
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -606,34 +593,71 @@ export function createInMemoryUnifiedContextPortFactory(
         resolveDestinationFolder: resolveFolder(projectId, userId, workAuthorities, authority),
         documentSync,
         links: { within: (_key, operation) => operation() },
+        placements: "live-only",
       });
     },
   };
 }
 
 export function createProductionUnifiedContextPortFactory(options: {
+  topPrimaryChats?: TopPrimaryChatResolver;
   links: ContextFSDeps["links"];
   db: Database;
-  documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
-  manifestMembership: ManifestMembershipPort;
+  documentSync: ContextFSDeps["documentSync"] &
+    DocumentCreationAggregate &
+    Pick<DraftPeerShadowAccess, "ensureCreatedDocumentDraft" | "retractCreatedDocumentDraft">;
+  /** The tree's removal kernel: every delete, overwrite and end of use tombstones through it. */
+  removal: DocumentRemoval;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
+  /** Repair on touch (§12.4): creates report what they repaired; the mover's link count reads repair. */
+  hiddenNodeRepair?: HiddenNodeRepair;
+  /** The one branches resolver: draft placements read and write through it (§2.3). */
+  branches: Branches;
+  /**
+   * The Work mutation boundary (decision D17): a branch command locks its branch's Work first
+   * and touches the Work's projection after it (§13.2, S3).
+   */
+  pendingBranch: {
+    mutate<T>(set: { branches: readonly BranchId[] }, operation: () => Promise<T>): Promise<T>;
+  };
 }): UnifiedContextPortFactory {
   const catalogMutations =
     options.catalogMutations ??
     createDrizzleContextCatalog(options.db, undefined, {
       availabilityMutations: createDrizzleProjectContextAvailability(options.db, options.eventSink),
     });
+  const topPrimaryChats =
+    options.topPrimaryChats ?? createDrizzleTopPrimaryChatResolver(options.db);
   const storeResolvers = createProductionStoreResolvers(
     options.db,
-    options.manifestMembership,
     catalogMutations,
-    options.eventSink,
+    options.removal,
     options.arrivals,
+    options.hiddenNodeRepair,
   );
+  const chatFiles = createDrizzleOwnerLookup(options.db, {
+    chats: storeResolvers.chats,
+    lineages: storeResolvers.lineages,
+    topChats: topPrimaryChats,
+  });
+  storeResolvers.chatFiles = chatFiles;
+
+  const placements: BranchPlacements = {
+    branches: options.branches,
+    tree: (store) =>
+      createDrizzleBranchTree({
+        db: options.db,
+        removal: options.removal,
+        sourceId: () => store.contextSourceId(),
+        documents: options.documentSync,
+        drafts: options.documentSync,
+        ...(options.hiddenNodeRepair ? { repair: options.hiddenNodeRepair } : {}),
+      }),
+  };
 
   function moveLinks(projectId: string, userId: string) {
     return {
@@ -652,31 +676,64 @@ export function createProductionUnifiedContextPortFactory(options: {
     };
   }
 
+  /**
+   * One command transaction (§2.3, §14): Works (a branch write's Work among them), then the
+   * branch row, then every namespace key in order; nothing above it holds a Work row.
+   */
+  function commandTransaction(projectId: string, userId: string): ContextCommandTransaction {
+    return {
+      run: (operation, scopes = [], commandOptions = {}) =>
+        runInDrizzleTransaction(options.db, async () => {
+          const branchWrite = commandOptions.branch;
+          const command: ContextCommandContext = { branch: null };
+          const lockedScopes = typeof scopes === "function" ? await scopes() : scopes;
+          await lockContextNamespaces(options.db, { projectId, userId }, lockedScopes, {
+            workIds: branchWrite ? [branchWrite.workId] : [],
+            sourceIds: commandOptions.sourceIds ?? [],
+            afterWorkLocks: async () => {
+              if (!branchWrite) return;
+              approveBranchWriteJoin();
+              if (branchWrite.mode === "ensure") {
+                command.branch = await options.branches.ensureActiveForWrite({
+                  workId: branchWrite.workId,
+                  projectId: projectId as ProjectId,
+                  threadId: branchWrite.threadId,
+                  userId: branchWrite.userId,
+                });
+              } else {
+                const active = await options.branches.activeForWork(branchWrite.workId);
+                command.branch = active ? await options.branches.lockActive(active.id) : null;
+              }
+            },
+          });
+          const branch = command.branch;
+          return branch
+            ? options.pendingBranch.mutate({ branches: [branch.id] }, () => operation(command))
+            : operation(command);
+        }),
+    };
+  }
+
   return {
     lineages: storeResolvers.lineages,
-    forProject(projectId, userId, workAuthorities, lineage) {
+    chats: storeResolvers.chats,
+    topPrimaryChats,
+    chatFiles,
+    forProject(projectId, userId, workAuthorities, lineage, chat) {
       return buildUnifiedContextPort({
-        scope: { kind: "project", projectId, userId, workAuthorities, lineage },
+        scope: { kind: "project", projectId, userId, workAuthorities, lineage, chat },
         storeResolvers,
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
-        commandTransaction: {
-          run: (operation, scopes = []) =>
-            runInDrizzleTransaction(options.db, async () => {
-              await lockContextNamespaces(
-                options.db,
-                { projectId, userId },
-                typeof scopes === "function" ? await scopes() : scopes,
-              );
-              return operation();
-            }),
-        },
+        commandTransaction: commandTransaction(projectId, userId),
+        placements,
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -688,20 +745,12 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveForward: (id) => findForward(options.db, id, projectId as ProjectId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
-        commandTransaction: {
-          run: (operation, scopes = []) =>
-            runInDrizzleTransaction(options.db, async () => {
-              await lockContextNamespaces(
-                options.db,
-                { projectId, userId },
-                typeof scopes === "function" ? await scopes() : scopes,
-              );
-              return operation();
-            }),
-        },
+        commandTransaction: commandTransaction(projectId, userId),
+        placements,
       });
     },
   };

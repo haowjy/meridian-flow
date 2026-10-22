@@ -22,6 +22,18 @@ const APP_ENV_PASSTHROUGH_KEYS = [
   "FLOW_OPENROUTER_BASE_URL",
 ] as const;
 
+/** The hook controller's keys (the server's `shared/test-hook-controller.ts`), never passed to production. */
+const DEV_ONLY_PASSTHROUGH_KEYS = [
+  "HOOK_CRASH_AT",
+  "HOOK_CRASH_ARM",
+  "HOOK_PAUSE_AT",
+  "HOOK_PAUSE_FILE",
+] as const;
+
 export function resolveAppEnvPassthroughKeys(env: NodeJS.ProcessEnv): string[] {
-  return APP_ENV_PASSTHROUGH_KEYS.filter((key) => env[key] !== undefined);
+  const keys: readonly string[] =
+    env.NODE_ENV === "production"
+      ? APP_ENV_PASSTHROUGH_KEYS
+      : [...APP_ENV_PASSTHROUGH_KEYS, ...DEV_ONLY_PASSTHROUGH_KEYS];
+  return keys.filter((key) => env[key] !== undefined);
 }

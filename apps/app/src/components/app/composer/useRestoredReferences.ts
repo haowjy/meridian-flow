@@ -27,7 +27,9 @@ export function useRestoredReferences(
                   projectId: authority.projectId,
                   rootThreadId: authority.rootThreadId,
                 }
-              : authority;
+              : authority.kind === "chat"
+                ? { kind: "chat", projectId: authority.projectId, chatId: authority.chatId }
+                : authority;
         const key = JSON.stringify(scope);
         const group = scopes.get(key) ?? { scope, references: new Set<string>() };
         group.references.add(JSON.stringify(reference));

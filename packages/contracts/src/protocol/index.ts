@@ -48,6 +48,11 @@ export * from "./context-operation.js";
 export * from "./context-owner.js";
 export * from "./document-filename.js";
 export * from "./document-links.js";
+export type {
+  DocumentRemovalCause,
+  DocumentRemovalRecord,
+  RetractionCause,
+} from "./document-removal.js";
 export * from "./document-revision.js";
 export * from "./event-seq.js";
 export * from "./file-access.js";
@@ -56,7 +61,9 @@ export * from "./http-types.js";
 export * from "./mock-model-script.js";
 export * from "./paths.js";
 export * from "./recent-documents.js";
+export * from "./run-boundary.js";
 export * from "./thread-documents.js";
+export * from "./thread-snapshot.js";
 export * from "./transport-serializer.js";
 export * from "./upload-intake.js";
 export * from "./user-turn-admission.js";

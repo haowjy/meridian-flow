@@ -86,16 +86,14 @@ export function useCreateEntryForm({
           workId: null,
         });
         if (!destinationParent) throw new Error(t`Couldn't create this file.`);
-        const reservation = await resources.reserveDocument(projectId, parent);
+        // The destination goes out with the create, so a branch's new document waiting at
+        // this name is joined instead of a twin being made.
+        const reservation = await resources.reserveDocument(projectId, parent, {
+          parent: destinationParent,
+          name,
+        });
         if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
-        try {
-          await resources.setLocation(projectId, reservation.key, {
-            parent: destinationParent,
-            name,
-          });
-        } finally {
-          reservation.content.handle.release();
-        }
+        reservation.content.handle.release();
         // This path bypasses the create mutation's own invalidation, so the new
         // entry stays out of the cached catalog until we drop it here; without
         // this, the tree and any catalog-driven open lag behind the create.

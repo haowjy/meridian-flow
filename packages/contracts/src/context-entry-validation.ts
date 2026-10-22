@@ -26,7 +26,7 @@ const INVALID_NAME_CHARACTER = /[/\\:*?"<>|]/;
 export function validateContextEntryName(raw: string): ContextEntryValidationResult {
   const value = raw.trim();
   if (!value) return { ok: false, reason: "name/empty" };
-  if (value.startsWith("@")) {
+  if (value.startsWith("@") || value.startsWith("~")) {
     return {
       ok: false,
       reason: "name/reserved-authority-qualifier",

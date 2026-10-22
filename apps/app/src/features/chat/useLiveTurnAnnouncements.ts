@@ -4,16 +4,18 @@
  * Watches the canonical assistant `Turn` from ThreadStore (not a separate live
  * view model), announces thinking/tool/completion states, and restores composer
  * focus after terminal transitions.
+ *
+ * A failure is not announced here: a failed reply is a card (`chatCards`) and the chat's one card
+ * announcer (`useChatCardAnnouncer`) speaks it, once, for a failure the writer watched happen.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { groupDeliverySegments, isToolViewVisible, type ToolView } from "@meridian/thread-client";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
-import { announce, announceError } from "@/client/stores";
+import { announce } from "@/client/stores";
 import type { ComposerHandle } from "@/components/app/composer";
 import { toolActivityAnnouncement, toolActivityPhrase } from "./command-descriptor";
-import { reportChatError } from "./error-telemetry";
-import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
-import { isToolViewVisible } from "./tool-view-visibility";
+import { useOwnerNames } from "./owner-names";
 
 function runningTool(turn: Turn | null): ToolView | null {
   const block = [...(turn?.blocks ?? [])]
@@ -28,7 +30,6 @@ function runningTool(turn: Turn | null): ToolView | null {
 }
 
 export function useLiveTurnAnnouncements(
-  threadId: string,
   liveTurn: Turn | null,
   composerRef: RefObject<ComposerHandle | null>,
   chatSurfaceRef: RefObject<HTMLDivElement | null>,
@@ -37,7 +38,8 @@ export function useLiveTurnAnnouncements(
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
   const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
-  const toolAnnouncement = tool ? toolActivityAnnouncement(toolActivityPhrase(tool)) : null;
+  const names = useOwnerNames();
+  const toolAnnouncement = tool ? toolActivityAnnouncement(toolActivityPhrase(tool, names)) : null;
   const hasPartialText = Boolean(
     liveTurn?.blocks.some((block) => block.blockType === "text" && block.status === "partial"),
   );
@@ -65,19 +67,9 @@ export function useLiveTurnAnnouncements(
         }
       } else if (status === "cancelled") {
         announce(t`Stopped`);
-      } else if (status === "error") {
-        if (liveTurn?.error) announceError(liveTurn.error);
-        reportChatError({
-          turnId: liveTurn?.id ?? "unknown",
-          threadId,
-          category: "agent_run",
-          userMessage: t`Something went wrong generating a response.`,
-          raw: liveTurn?.error ?? "",
-          occurredAt: new Date(),
-        });
       }
     }
 
     prevStatusRef.current = status;
-  }, [chatSurfaceRef, composerRef, hasPartialText, liveTurn, status, threadId, toolAnnouncement]);
+  }, [chatSurfaceRef, composerRef, hasPartialText, status, toolAnnouncement]);
 }

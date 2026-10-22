@@ -42,6 +42,6 @@ export function workHistorySummary(input: JsonObject, result: JsonValue): string
   if (input.command === "list" && Array.isArray(result))
     return `${result.length} ${result.length === 1 ? "Work" : "Works"}`;
   if (input.command !== "create") return undefined;
-  const slug = object(result)?.slug;
-  return typeof slug === "string" ? `@${slug}` : slug === null ? "@/" : undefined;
+  const handle = object(result)?.handle;
+  return typeof handle === "string" ? handle : undefined;
 }

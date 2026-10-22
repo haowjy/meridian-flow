@@ -2,8 +2,8 @@
 import type {
   DocumentId,
   EditOrigin,
-  EditPlacement,
   ThreadId,
+  TreeChange,
   TurnId,
   UserId,
 } from "@meridian/contracts";
@@ -31,7 +31,7 @@ type Alias = {
   len: number;
 };
 
-export type { EditOrigin, EditPlacement } from "@meridian/contracts";
+export type { EditOrigin } from "@meridian/contracts";
 export const documentEdits = pgTable(
   "document_edits",
   {
@@ -56,6 +56,8 @@ export const documentEdits = pgTable(
     kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    /** A move, delete, restore or settlement: a tree entry, which has no parts. */
+    treeChange: jsonb("tree_change").$type<TreeChange>(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -66,6 +68,16 @@ export const documentEdits = pgTable(
     check(
       "document_edits_kind_valid",
       sql`${t.kind} IN ('write','undo','redo','revert','rollback')`,
+    ),
+    check(
+      "document_edits_tree_change_valid",
+      sql`${t.treeChange} IS NULL OR (
+        ${t.treeChange}->>'op' IN ('move','delete','restore','settle')
+        AND ${t.treeChange}->'destination'->>'kind' IN ('live','draft')
+        AND jsonb_typeof(${t.treeChange}->'seq') = 'number'
+        AND jsonb_typeof(${t.treeChange}->'targets') = 'array'
+        AND (${t.treeChange}->>'op' <> 'settle' OR ${t.treeChange} ? 'settles')
+      )`,
     ),
   ],
 );
@@ -86,18 +98,13 @@ export const documentEditParts = pgTable(
     frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),
     aliases: jsonb("aliases").$type<Alias[]>().notNull().default(sql`'[]'::jsonb`),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
-    placement: jsonb("placement").$type<EditPlacement>().notNull(),
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
-    index("document_edit_parts_pending_idx")
-      .on(sql`(${t.placement}->>'branchId')`, sql`(${t.placement}->>'generation')`)
-      .where(sql`${t.placement}->>'kind' = 'pending'`),
+    index("document_edit_parts_pending_origin_idx")
+      .on(sql`(${t.origin}->>'draftId')`)
+      .where(sql`${t.origin}->>'kind' = 'pending'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
-    check(
-      "document_edit_parts_placement_valid",
-      sql`${t.placement}->>'kind' IN ('pending','live','discarded','retired')`,
-    ),
   ],
 );

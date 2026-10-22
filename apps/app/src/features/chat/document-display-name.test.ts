@@ -1,8 +1,7 @@
+import type { ToolView } from "@meridian/thread-client";
 import { describe, expect, it } from "vitest";
-
 import { descriptorFor } from "./command-descriptor";
 import { documentDisplayName } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
 
 function tool(toolName: string, input: Record<string, unknown>): ToolView {
   return {
@@ -22,7 +21,7 @@ describe("documentDisplayName", () => {
   it("shows the stored name as it is", () => {
     expect(documentDisplayName("manuscript://Chapter 13")).toBe("Chapter 13");
     expect(documentDisplayName("manuscript://Book/Vol. 2")).toBe("Vol. 2");
-    expect(documentDisplayName("scratch://@/c12/outline.json")).toBe("outline.json");
+    expect(documentDisplayName("scratch://@c12/outline.json")).toBe("outline.json");
     expect(documentDisplayName("kb://maps/map.png")).toBe("map.png");
   });
 

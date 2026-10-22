@@ -9,13 +9,19 @@ import * as schema from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { InboxMessage, MessageBody } from "../loop/ports.js";
-import type { DeliveryStore } from "./runtime-delivery.js";
+import type { DeliveryStore } from "./delivery-ports.js";
+import {
+  answerRunState,
+  markRunStateChanged,
+  publishRunState,
+  recordUsageTransition,
+} from "./drizzle-run-state.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): InboxMessage {
+export function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): InboxMessage {
   return {
     id: row.id,
     threadId: row.threadId as ThreadId,
@@ -27,6 +33,11 @@ function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): In
     enqueuedAt: toIso(row.enqueuedAt),
     deliveredAt: row.deliveredAt ? toIso(row.deliveredAt) : null,
   };
+}
+
+/** Work-context notices are not in the run-state record, so writing one marks nothing. */
+function isWorkContextNotice(body: unknown): boolean {
+  return (body as { kind?: string } | null)?.kind === "work_context_refresh";
 }
 
 export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
@@ -47,11 +58,31 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
   }
 
   return {
+    markRunStateChanged,
+    async publishRunState(threadId) {
+      return (await publishRunState(threadId)).version;
+    },
+    answerRunState,
     async setBlockedReason(threadId, reason) {
-      await db_()
+      const [before] = await db_()
+        .select({ reason: schema.threads.inboxBlockedReason })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, threadId))
+        .limit(1);
+      const changed = await db_()
         .update(schema.threads)
         .set({ inboxBlockedReason: reason })
-        .where(eq(schema.threads.id, threadId));
+        .where(
+          and(
+            eq(schema.threads.id, threadId),
+            sql`${schema.threads.inboxBlockedReason} IS DISTINCT FROM ${reason}`,
+          ),
+        )
+        .returning({ id: schema.threads.id });
+      if (changed.length > 0) {
+        markRunStateChanged(threadId);
+        await recordUsageTransition(threadId, before?.reason ?? null, reason);
+      }
     },
     async workNoticeTargets(workId) {
       const rows = await db_()
@@ -122,7 +153,10 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
           target: [schema.threadInboxMessages.threadId, schema.threadInboxMessages.idempotencyKey],
         })
         .returning();
-      if (inserted) return toInboxMessage(inserted);
+      if (inserted) {
+        if (!isWorkContextNotice(inserted.body)) markRunStateChanged(draft.threadId);
+        return toInboxMessage(inserted);
+      }
 
       const [existing] = await db_()
         .select()
@@ -181,18 +215,39 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       };
     },
 
-    async ack(threadId, ids) {
-      if (ids.length === 0) return;
-      await db_()
+    async ack(threadId, ids, byTurnId = null, options) {
+      if (ids.length === 0) return [];
+      const handedBackBy = options?.handedBackBy;
+      // Only a message row records its deliverer; controls and notices keep null. A hand-back has no
+      // deliverer at all, and only a message row can be handed back.
+      const rows = await db_()
         .update(schema.threadInboxMessages)
-        .set({ deliveredAt: new Date() })
+        .set({
+          deliveredAt: new Date(),
+          deliveredByTurnId: handedBackBy
+            ? null
+            : sql`CASE WHEN ${schema.threadInboxMessages.intent} = 'message' THEN ${byTurnId}::uuid ELSE NULL END`,
+          ...(handedBackBy ? { handedBackBy } : {}),
+        })
         .where(
           and(
             eq(schema.threadInboxMessages.threadId, threadId),
             inArray(schema.threadInboxMessages.id, ids),
             isNull(schema.threadInboxMessages.deliveredAt),
+            handedBackBy ? eq(schema.threadInboxMessages.intent, "message") : undefined,
           ),
-        );
+        )
+        .returning({
+          id: schema.threadInboxMessages.id,
+          intent: schema.threadInboxMessages.intent,
+          seq: schema.threadInboxMessages.seq,
+          body: schema.threadInboxMessages.body,
+        });
+      if (rows.some((row) => !isWorkContextNotice(row.body))) markRunStateChanged(threadId);
+      return rows
+        .filter((row) => row.intent === "message")
+        .sort((left, right) => left.seq - right.seq)
+        .map((row) => row.id);
     },
 
     async pendingMessageThreads(limit, afterThreadId) {
@@ -202,6 +257,8 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .where(
           and(
             inArray(schema.threadInboxMessages.intent, ["message", "control"]),
+            // A lone pending switch waits for a run, so it never wakes the chat.
+            sql`${schema.threadInboxMessages.body}->>'kind' is distinct from 'write_mode'`,
             afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,
             isNull(schema.threadInboxMessages.deliveredAt),
           ),

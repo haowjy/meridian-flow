@@ -9,12 +9,26 @@
  * contracts.
  */
 import type { InterruptAnswerProvenance } from "@meridian/contracts/components";
-import { type AGUIEvent, EventSchemas, EventType } from "@meridian/contracts/protocol";
+import {
+  type AGUIEvent,
+  EventSchemas,
+  EventType,
+  MESSAGES_HANDED_BACK_EVENT,
+  type MessagesHandedBackValue,
+  RUN_STATE_EVENT,
+  type RunStartedMeta,
+  TURNS_FORGOTTEN_EVENT,
+  type TurnsForgottenValue,
+  WRITE_MODE_SWITCHED_EVENT,
+  type WriteModeSwitchedValue,
+} from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
+
+import { WriteModeSwitchMetadataCodec } from "./turn-metadata.js";
 
 const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
@@ -89,7 +103,7 @@ export function createOrchestratorEventProjector() {
     state.nextBlockSequence = Math.max(state.nextBlockSequence, block.sequence + 1);
   }
 
-  function finalizeRun(errorMessage?: string): AGUIEvent[] {
+  function finalizeRun(errorMessage?: string, cancelled = false): AGUIEvent[] {
     const events = [...closeOpenTextMessage(), ...closeOpenReasoningMessage()];
     if (errorMessage) {
       events.push(
@@ -104,6 +118,9 @@ export function createOrchestratorEventProjector() {
           type: EventType.RUN_FINISHED,
           threadId: state.activeThreadId,
           runId: state.activeRunId,
+          // Every cancellation is stored as status "cancelled"; clients read this
+          // marker instead of guessing from a bare finish.
+          ...(cancelled ? { result: { stopReason: "user_cancelled" } } : {}),
         }),
       );
     }
@@ -117,7 +134,24 @@ export function createOrchestratorEventProjector() {
   function project(event: OrchestratorEvent): AGUIEvent[] {
     switch (event.type) {
       case "turn.created": {
-        if (event.turn.role !== "assistant") return [];
+        if (event.turn.role !== "assistant") {
+          const switched = WriteModeSwitchMetadataCodec.safeParse(event.turn.metadata);
+          if (event.turn.role !== "system" || !switched.success) return [];
+          return [
+            parseAguiEvent({
+              type: EventType.CUSTOM,
+              name: WRITE_MODE_SWITCHED_EVENT,
+              value: {
+                threadId: event.turn.threadId,
+                mode: switched.data.mode,
+                controlId: switched.data.controlMessageId,
+                turnId: event.turn.id,
+                prevTurnId: event.turn.prevTurnId ?? null,
+                position: event.turn.position,
+              } satisfies WriteModeSwitchedValue,
+            }),
+          ];
+        }
         state.activeRunId = event.turn.id;
         state.activeThreadId = event.turn.threadId;
         state.nextBlockSequence = event.turn.blocks.length;
@@ -126,7 +160,9 @@ export function createOrchestratorEventProjector() {
             type: EventType.RUN_STARTED,
             threadId: event.turn.threadId,
             runId: event.turn.id,
-            rawEvent: { writeMode: event.turn.writeMode },
+            rawEvent: {
+              writeMode: event.turn.writeMode,
+            } satisfies RunStartedMeta,
           }),
         ];
       }
@@ -233,6 +269,11 @@ export function createOrchestratorEventProjector() {
             value: { block: event.block },
           }),
         ];
+
+      case "model.response_received":
+        // A no-tools notes response can continue without closing the assistant.
+        // End its stream before persisted blocks advance the next response's position.
+        return event.response.turnId === state.activeRunId ? closeOpenMessages() : [];
 
       case "block.upserted": {
         advancePastProjectedBlock(event.block);
@@ -454,14 +495,13 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // Same full-replace contract as activity: the producer read the current
-      // pending rows, so the tray state is replaced wholesale.
-      case "inbox.changed":
+      // The record without its version: the hub stamps the frame's own seq on it.
+      case "run_state.changed":
         return [
           parseAguiEvent({
             type: EventType.CUSTOM,
-            name: "meridian.inbox.changed",
-            value: event.pending,
+            name: RUN_STATE_EVENT,
+            value: event.runState,
           }),
         ];
 
@@ -478,11 +518,35 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      // Waiting writer messages left the chat: clients remove those turns at this seq.
+      case "messages.handed_back":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: MESSAGES_HANDED_BACK_EVENT,
+            value: { userTurnIds: event.userTurnIds } satisfies MessagesHandedBackValue,
+          }),
+        ];
+
+      // Failed turns left the conversation: clients stamp them at this seq.
+      case "turns.forgotten":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: TURNS_FORGOTTEN_EVENT,
+            value: {
+              turnIds: event.turnIds,
+              byTurnId: event.byTurnId,
+              reason: event.reason,
+            } satisfies TurnsForgottenValue,
+          }),
+        ];
+
       case "turn.completed":
         return finalizeRun();
 
       case "turn.cancelled":
-        return finalizeRun();
+        return finalizeRun(undefined, true);
 
       case "turn.error":
         return finalizeRun(event.error.message);

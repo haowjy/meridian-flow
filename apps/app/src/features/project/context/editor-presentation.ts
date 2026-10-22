@@ -27,3 +27,20 @@ export function resolveEditorPresentation<T extends { editorWorkId: string }>({
     (!issue || (issue === "loading" && retainWhileLoading));
   return { active, mounted, retainWhileLoading, visible };
 }
+
+/**
+ * The address and Work the one mounted Editor frame (path, tab strip, commands) names.
+ * On the Editor screen it is where the writer is going; the retained previous document
+ * stays only beneath the body mask. Off the screen the warm editor keeps its own route.
+ */
+export function resolveEditorFrame<T>({
+  screen,
+  requested,
+  mounted,
+}: {
+  screen: ScreenKey;
+  requested: T;
+  mounted: T | null;
+}): T | null {
+  return screen === "context" ? requested : mounted;
+}

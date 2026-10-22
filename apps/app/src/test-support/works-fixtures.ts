@@ -6,12 +6,12 @@ export const WORK = {
   projectId: "project-1",
   createdByUserId: "user-1",
   name: "Arc",
-  slug: "arc",
+  handle: "w1" as Work["handle"],
   isNoWork: false,
   goal: null,
   status: null,
   archivedAt: null,
-  aiWriteMode: "direct",
+  defaultAiWriteMode: "direct",
   entityRevision: "1",
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",
@@ -26,7 +26,7 @@ export const snapshot = (works: Work[], authorityRevision = "1") =>
     authorityRevision,
     requestId: `request-${authorityRevision}`,
     works,
-    noWork: { ...WORK, id: "no-work", name: "No Work", isNoWork: true, slug: null },
+    noWork: { ...WORK, id: "no-work", name: "No Work", isNoWork: true, handle: null },
   }) as unknown as WorksSnapshot;
 
 export const archived = (work: Work): Work => ({

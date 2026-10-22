@@ -7,21 +7,14 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, projects, works } from "@meridian/database";
+import { projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import type {
-  BranchPeerShadowAccess,
-  DocumentCreationAggregate,
-  MarkdownDocumentStore,
-} from "../collab/index.js";
-import { ensureWorkContextSource } from "../context/context-source-provisioning.js";
+import type { DocumentCreationAggregate, MarkdownDocumentStore } from "../collab/index.js";
 import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
-import {
-  ensureProjectManifestSource,
-  nextProjectSlug,
-} from "./adapters/project-repository/shared.js";
+import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
+import { ensureManuscriptSource, nextProjectSlug } from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
 import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
@@ -74,8 +67,7 @@ export type ProjectBootstrapRepository = {
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
-    Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
-    Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
+    Pick<DocumentCreationAggregate, "createDocumentAtomically">;
   catalogLifecycle: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
   const { db } = deps;
@@ -161,9 +153,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         projectId,
         createdByUserId: userId,
         name: NO_WORK_NAME,
-        slug: null,
+        handle: null,
         isNoWork: true,
-        aiWriteMode: "direct",
+        defaultAiWriteMode: "direct",
       })
       .returning({ id: works.id });
     if (!row) throw new Error("Failed to create No Work");
@@ -172,7 +164,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
 
   async function ensureDocument(
     tx: BootstrapDb,
-    projectId: ProjectId,
     contextSourceId: ContextSourceId,
   ): Promise<DocumentId> {
     async function seedDocument(documentId: DocumentId): Promise<void> {
@@ -192,32 +183,23 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     }
 
     const [existing] = await tx
-      .select({ id: documents.id })
-      .from(documents)
+      .select({ id: liveDocuments.id })
+      .from(liveDocuments)
       .where(
         and(
-          eq(documents.contextSourceId, contextSourceId),
-          eq(documents.name, "Chapter 1"),
-          eq(documents.extension, ""),
-          isNull(documents.deletedAt),
+          eq(liveDocuments.contextSourceId, contextSourceId),
+          eq(liveDocuments.name, "Chapter 1"),
+          eq(liveDocuments.extension, ""),
         ),
       )
       .limit(1);
-    if (existing) {
-      await deps.documents.repairDocumentAtomically({
-        documentId: existing.id,
-        initializeContent: () => seedDocument(existing.id),
-        persistMembership: () =>
-          deps.documents.recordManifestDocumentCreated(existing.id, { projectId }),
-      });
-      return existing.id;
-    }
+    // Identity and content commit together, so an existing row is whole.
+    if (existing) return existing.id;
 
     const documentId = randomUUID() as DocumentId;
     const created = await deps.documents.createDocumentAtomically({
-      documentId,
       persistIdentity: async () => {
-        const document = await new DrizzleContextDocumentStore({
+        const claimed = await new DrizzleContextDocumentStore({
           db,
           contextSourceId,
         }).createDocumentRecordIfAbsent({
@@ -228,13 +210,9 @@ export function createDrizzleProjectBootstrapRepository(deps: {
           filetype: "markdown",
           markdown: "",
         });
-        return Boolean(document);
+        return (claimed?.document.id ?? null) as DocumentId | null;
       },
-      persistMembership: () =>
-        deps.documents.recordManifestDocumentCreated(documentId, { projectId }),
-      initializeContent: async () => {
-        await seedDocument(documentId);
-      },
+      initializeContent: (claimedId) => seedDocument(claimedId),
     });
     if (!created.created) {
       throw new Error("Failed to claim default chapter document path");
@@ -259,9 +237,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
       const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
-      const manuscriptSourceId = await ensureProjectManifestSource(db, projectId);
-      await ensureWorkContextSource(db, noWorkId, "uploads");
-      const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
+      const manuscriptSourceId = await ensureManuscriptSource(db, projectId);
+      const documentId = await ensureDocument(tx, manuscriptSourceId);
 
       const result = {
         projectId,
@@ -299,7 +276,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   };
 }
 
-export type { WorkCatalogEntry } from "@meridian/contracts/works";
 // ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";
@@ -308,7 +284,10 @@ export { createDrizzleUserRepository } from "./adapters/user-repository/drizzle.
 export { createInMemoryUserRepository } from "./adapters/user-repository/in-memory.js";
 export {
   createWorkProjectionMutation,
+  type LockedWorkWriteSet,
   type WorkProjectionMutation,
+  type WorkWriteOptions,
+  type WorkWriteSet,
 } from "./adapters/work-projection-mutation.js";
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
@@ -327,7 +306,8 @@ export {
   type EnsureUserInput,
   type UserRepository,
 } from "./ports/user-repository.js";
-export type { WorkDraftPendingCounts } from "./ports/work-draft-pending-counts.js";
+export type { WorkBranchDisposal } from "./ports/work-branch-disposal.js";
+export type { WorkBranchPendingCounts } from "./ports/work-branch-pending-counts.js";
 export {
   type CreateWorkInput,
   type ListWorksOptions,
@@ -354,3 +334,5 @@ export {
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
 export type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";
+
+const liveDocuments = visibleDocuments(LIVE_TREE);

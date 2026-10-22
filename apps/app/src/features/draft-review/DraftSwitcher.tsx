@@ -44,7 +44,7 @@ export type DraftSwitcherProps = {
   failed?: boolean;
   /** A phone's header: the trigger is a 44px target and its menu fits the screen. */
   touch?: boolean;
-  /** Whole-draft commands for this document, offered in the menu (phone). Absent once nothing is left to publish. */
+  /** Whole-draft commands for this document, offered in the menu (phone). Absent once nothing is left to apply. */
   draftCommands?: {
     canApply: boolean;
     applying: boolean;

@@ -5,6 +5,8 @@
  * turn row carries exactly the lifecycle its own events recorded: a later turn
  * never rewrites an earlier turn's terminal status.
  */
+
+import type { TurnId } from "@meridian/contracts/runtime";
 import {
   type BlockUpsertedRow,
   blockPlainText,
@@ -82,6 +84,9 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     origin: turn.origin,
     writeMode: turn.writeMode,
     status: turn.status,
+    executionId: turn.executionId,
+    // Only a reserved turn records the list; every other turn keeps null.
+    reservedForUserTurnIds: turn.executionId ? turn.reservedForUserTurnIds : null,
     requestParams: turn.requestParams ?? null,
     metadata: turn.metadata ?? null,
   };
@@ -144,6 +149,9 @@ export async function projectReadModelEvent(
         throw new Error(`Cannot replace missing block ${event.block.id}`);
       return null;
 
+    case "turns.forgotten":
+      await repos.turns.forgetTurns(event.turnIds as TurnId[], event.byTurnId as TurnId);
+      return null;
     case "image.inclusion_decided":
       await projectImageInclusionDecision(repos, event);
       return null;

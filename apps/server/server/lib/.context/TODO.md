@@ -1,5 +1,8 @@
 # TODO
 
+This file tracks unresolved schema-repair and draft-write performance work;
+each entry names its owner, evidence, and safe follow-up.
+
 - `yjs-ws-handler.ts` (`classifyYjsConnectionAdmission`, `refuseConnection`,
   and the `onLoadDocument` backstop): these are the only places the server
   refuses a document connection. The
@@ -17,9 +20,11 @@
   `resolveDocumentAddress`: profile before changing. Span runs on 2026-10-08
   (500-document seed) measured 112–176 ms for a first draft write and
   117–159 ms for later writes. The span is aggregate: it covers grant checks and
-  `ContextFS.ensureTrackedDocument`, which calls `documentSync.ensureDocument`
-  even for an existing visible document. Split authorization from ensure before
-  claiming a fix. Likely direction: an existing staged overwrite skips
-  unnecessary live-document ensure or repair, and grants are still confirmed in
-  the right transaction. Evidence: `experiments/draft-write-perf.md` in the
+  `ContextFS.ensureTrackedDocument`, which calls
+  `documentSync.repairDocumentAuthority` even for an existing visible document
+  (the repair is a no-op when the head exists, but still reads it). The span
+  predates E2, when this was an implicit ensure; re-measure before acting.
+  Split authorization from ensure before claiming a fix. Likely direction: an
+  existing staged overwrite skips the unnecessary repair read, and grants are
+  still confirmed in the right transaction. Evidence: `experiments/draft-write-perf.md` in the
   docs repo's `model-tool-surface` work item.

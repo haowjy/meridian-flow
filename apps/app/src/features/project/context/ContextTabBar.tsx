@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "./context-file-icon";
 import type { OptimisticContextTab } from "./context-pane-state";
+import { RemovedNoticeSlot } from "./RemovedDocumentNotice";
 
 export type ContextTabBarProps = {
   tabs: ContextTab[];
@@ -37,6 +38,8 @@ export type ContextTabBarProps = {
    * expand toggle when the dock is collapsed). Same render rule as `leading`.
    */
   trailing?: ReactNode;
+  /** Feedback in the strip's free end, where a closed tab's width went. */
+  notice?: ReactNode;
 };
 
 export function ContextTabBar({
@@ -52,6 +55,7 @@ export function ContextTabBar({
   recentsActive = false,
   leading,
   trailing,
+  notice,
 }: ContextTabBarProps) {
   return (
     <div
@@ -92,7 +96,7 @@ export function ContextTabBar({
           the row, not a control docked beside it. */}
       <div
         className={cn(
-          "flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden",
+          "flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
           onShowRecents ? "pl-0" : "pl-2",
         )}
       >
@@ -147,6 +151,9 @@ export function ContextTabBar({
           </TooltipContent>
         </Tooltip>
       </div>
+      {/* The strip's free end: tabs keep their width until a notice needs its
+          short sentence, then they scroll. */}
+      <RemovedNoticeSlot>{notice}</RemovedNoticeSlot>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
   );
