@@ -279,7 +279,11 @@ export class ContextRemovalCoordinator {
     if (!this.drafts) return held;
     for (const tab of this.workspace.read(projectId).tabs) {
       if (tab.kind !== "tracked" || !documentIds.includes(tab.documentId)) continue;
-      if (isDraftOnly(tab)) continue;
+      // Already held (an earlier pass over the same delete), or a draft-created document.
+      if (isDraftOnly(tab)) {
+        held.add(tab.documentId);
+        continue;
+      }
       const reviews: ReviewEntries = {};
       for (const draft of this.drafts.boundDrafts(projectId, tab.documentId))
         reviews[draft.workId] = { itemKey: draft.itemKey, tabInstanceToken: crypto.randomUUID() };
