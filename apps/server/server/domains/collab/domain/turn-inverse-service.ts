@@ -18,6 +18,7 @@ import type {
   DocumentReversalResult,
   ReversalOutcome,
   TreeReversalFault,
+  TreeReversalLanding,
   TurnInverseSkip,
   TurnInverseSkipCause,
   TurnReceiptChip,
@@ -95,6 +96,7 @@ export type PreparedDocumentInverse = {
   consumes: string[];
   skips: TurnInverseSkip[];
 };
+export type CommittedTreeLanding = TreeReversalLanding & { handle: string };
 export interface TurnInverseStore {
   /**
    * The inverse's attempts: `run` plans on a lock-free capture and commits through `commit`;
@@ -116,10 +118,12 @@ export interface TurnInverseStore {
     handles: string[];
     updates: Uint8Array[];
     /**
-     * Steps that couldn't run (a taken location, a missing folder, text in a document whose
+     * Steps that couldn't run (a blocked or missing folder, text in a document whose
      * restore couldn't run); the rest ran. A model inverse refuses whole instead.
      */
     skips: TurnInverseSkip[];
+    /** Tree steps whose committed address differs from the recorded destination. */
+    landings: CommittedTreeLanding[];
     /**
      * Text parts and tree steps committed, by document and then by where they landed: the
      * branch whose text draft or tree facts took them, null for live.
@@ -393,12 +397,12 @@ const countAccepted = (plans: PreparedDocumentInverse[]) =>
 
 /**
  * Why a reversal that reversed nothing failed, when a move or delete met its destination
- * unable to take it: a taken location first (the writer can clear it), then a missing folder,
- * then a document moved or deleted again since. Not a dependency on later edits.
+ * unable to take it: a blocked folder path first, then a missing folder, then a document moved
+ * or deleted again since. Not a dependency on later edits.
  */
 function treeFault(skips: readonly TurnInverseSkip[]): TreeReversalFault | null {
   const causes = new Set(skips.flatMap((skip) => (skip.kind === "tree" ? [skip.cause] : [])));
-  if (causes.has("location_taken")) return "location_taken";
+  if (causes.has("folder_blocked")) return "folder_blocked";
   if (causes.has("folder_missing")) return "folder_missing";
   return ["superseded", "deleted_since", "moved_since"].some((cause) =>
     causes.has(cause as TurnInverseSkipCause),
@@ -451,7 +455,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
               query,
               userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
             })
-          : { skips: [], reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>() };
+          : {
+              skips: [],
+              landings: [],
+              reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>(),
+            };
         const reversedAt = (plan: PreparedDocumentInverse) =>
           [...(committed.reversed.get(plan.document.documentId) ?? [])].flatMap(([branchId, n]) =>
             n > 0 ? [branchId] : [],
@@ -498,6 +506,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
             ];
           }),
           skips,
+          ...(committed.landings.length
+            ? {
+                landings: committed.landings.map(({ handle: _handle, ...landing }) => landing),
+              }
+            : {}),
           acceptedParts: accepted,
         };
       });
