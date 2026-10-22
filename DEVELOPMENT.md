@@ -2,7 +2,7 @@
 
 Setup and day-to-day workflow for the TypeScript monorepo on branch `h/v3`.
 
-See also [AGENTS.md](AGENTS.md), [CHANGELOG.md](CHANGELOG.md), and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
+See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
 
 ## Environment
 
@@ -166,7 +166,7 @@ Branch history should replay verified work: **one plan phase or logical step →
 1. Finish one phase or logical step.
 2. Stage **only** files for that step.
 3. `git commit` with a message that states what and why.
-4. Add a matching bullet under [CHANGELOG.md](CHANGELOG.md) → `## [Unreleased]`.
+4. Add the matching `Added:`, `Changed:`, `Fixed:` or `Removed:` line to the PR body's `## Changelog` section.
 5. Start the next phase.
 
 Prefer separate commits per package or layer when it helps review (e.g. `packages/database`, then `tools/dev`). Fold small review fixes into that phase's commit or an immediate follow-up.

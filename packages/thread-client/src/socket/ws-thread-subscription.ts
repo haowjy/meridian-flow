@@ -247,7 +247,7 @@ export class WsThreadSubscriptionRegistry {
     if (inFlight) {
       subscription.waiting.add(handler);
       const supersedes =
-        after !== undefined && requested !== undefined && compareSeq(after, requested) < 0;
+        after !== undefined && (requested === undefined || compareSeq(after, requested) < 0);
       if (supersedes) this.sendRequest(threadId, subscription);
       return;
     }
