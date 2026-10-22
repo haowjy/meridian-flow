@@ -33,8 +33,9 @@ export type DraftReviewItem = {
   path: string | null;
   conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
   /**
-   * Deleted live (an edited document, or a revealed create): no view shows it, so it
-   * authorizes through the branch's draft on it and its final location (F9, §13.3).
+   * Deleted live (an edited document, or a revealed create): live no longer shows it, the
+   * branch's view does while it has pending changes (D79). It authorizes through the
+   * branch's draft on it and its final location (F9, §13.3), and Apply restores it.
    */
   deletedLive: boolean;
   /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
