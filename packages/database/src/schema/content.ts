@@ -244,10 +244,14 @@ export const folders = pgTable(
     uniqueIndex("folders_context_root_name_live")
       .on(table.contextSourceId, table.name)
       .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
-    // Joining a hidden folder by path, and absorb.
-    index("folders_hidden_location")
+    // Every folder a branch's view may show besides live ones, by path: a hidden one (and
+    // absorb), or a deleted one above a document a draft outlived (D79). One predicate, so
+    // the tree view's one non-live arm and a hidden-only lookup both imply it.
+    index("folders_nonlive_location")
       .on(table.contextSourceId, table.parentId, table.name)
-      .where(sql`${table.hidden} AND ${table.deletedAt} IS NULL`),
+      .where(
+        sql`(${table.hidden} AND ${table.deletedAt} IS NULL) OR (NOT ${table.hidden} AND ${table.deletedAt} IS NOT NULL)`,
+      ),
     // Image path lookups walk deleted folders too, so the active-only indexes miss them.
     index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
     index("folders_parent").on(table.parentId),
