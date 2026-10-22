@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
-import { draftMetadataQueryOptions } from "@/client/query/useDraftMetadata";
+import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useWorkBranchDrafts } from "@/client/query/useWorkBranchDrafts";
 import {
   useObservedResourceProjection,
@@ -113,8 +113,7 @@ function WorkSettlement({
               void lifecycle.promote(draft);
               continue;
             }
-            void queryClient
-              .fetchQuery({ ...draftMetadataQueryOptions(draft), staleTime: 0 })
+            void fetchCurrentDraftMetadata(queryClient, draft)
               .then((metadata) => {
                 if (attempt.signal.aborted || metadata.status !== "gone") return;
                 const still = lifecycle
