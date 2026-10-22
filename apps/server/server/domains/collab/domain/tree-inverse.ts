@@ -11,6 +11,8 @@ import {
   type DocumentId,
   isLiveTransition,
   type LiveTreeState,
+  sameBranchFacts,
+  samePlacement,
   type ThreadId,
   type TreeChange,
   type TreeChangeDestination,
@@ -21,6 +23,8 @@ import {
   type TreeTransitionChange,
   type TurnId,
 } from "@meridian/contracts";
+
+export { sameBranchFacts, samePlacement };
 
 export type StoredTreeEntry = {
   /** The entry's `seq`: its place on the same axis as text parts' ids. */
@@ -101,15 +105,6 @@ export class TreeInverseRefused extends Error {
 /** A tree entry's key in the effective action index; text parts key by ordinal. */
 export const treeKey = (editId: string) => `${editId}:tree`;
 
-export function samePlacement(a: TreePlacement, b: TreePlacement): boolean {
-  return (
-    a.folderId === b.folderId &&
-    a.rootSourceId === b.rootSourceId &&
-    a.name === b.name &&
-    a.extension === b.extension
-  );
-}
-
 export function sameLiveState(
   a: LiveTreeState | null | undefined,
   b: LiveTreeState | null | undefined,
@@ -121,19 +116,6 @@ export function sameLiveState(
       a.removal.time === b.removal.time && a.removal.locationVersion === b.removal.locationVersion
     );
   return false;
-}
-
-export function sameBranchFacts(
-  a: BranchTreeFacts | null | undefined,
-  b: BranchTreeFacts | null | undefined,
-): boolean {
-  if (!a || !b) return false;
-  return (
-    a.row === b.row &&
-    a.created === b.created &&
-    a.deleted === b.deleted &&
-    (a.moved === null ? b.moved === null : b.moved !== null && samePlacement(a.moved, b.moved))
-  );
 }
 
 const NO_BRANCH_FACTS: BranchTreeFacts = {
