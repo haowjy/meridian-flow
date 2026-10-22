@@ -3,6 +3,7 @@
  * Build a changelog from structured sections in merged pull request bodies.
  * A malformed section fails the whole build and names its PR; consumers must
  * check the exit status rather than accept a silently incomplete changelog.
+ * Interactive Markdown uses $PAGER or less -FRX; JSON and redirected output do not.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -14,9 +15,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const GH_FIELDS = "number,title,mergedAt,baseRefName,body,url";
 
 function usage() {
-  return `usage: pnpm changelog [-- --since <YYYY-MM-DD | N.days> | --all] [--json] [--input <file>]
+  return `usage: pnpm changelog [-- --since <YYYY-MM-DD | N.days> | --all] [--json] [--no-pager] [--input <file>]
 
 Build the changelog from pull requests merged into main. The default range is 30 days.
+Markdown is sent through $PAGER (or less -FRX) when stdout is a terminal; use --no-pager to print directly.
 Malformed Changelog sections stop the build and name the PR; always check the exit status.`;
 }
 
@@ -24,6 +26,7 @@ function parseArguments(argv, now) {
   const args = argv[0] === "--" ? argv.slice(1) : argv;
   let input;
   let json = false;
+  let noPager = false;
   let all = false;
   let since;
 
@@ -33,6 +36,9 @@ function parseArguments(argv, now) {
     if (argument === "--json") {
       if (json) throw new Error("--json may be given only once");
       json = true;
+    } else if (argument === "--no-pager") {
+      if (noPager) throw new Error("--no-pager may be given only once");
+      noPager = true;
     } else if (argument === "--all") {
       if (all) throw new Error("--all may be given only once");
       all = true;
@@ -57,8 +63,32 @@ function parseArguments(argv, now) {
     help: false,
     input,
     format: json ? "json" : "markdown",
+    noPager,
     cutoff: all ? null : parseCutoff(since ?? "30.days", now),
   };
+}
+
+function writeOutput(output, { format, noPager }) {
+  if (!output || format === "json" || noPager || !process.stdout.isTTY) {
+    process.stdout.write(output);
+    return;
+  }
+
+  const customPager = process.env.PAGER?.trim();
+  const result = customPager
+    ? spawnSync(process.env.SHELL || "/bin/sh", ["-c", customPager], {
+        input: output,
+        stdio: ["pipe", "inherit", "ignore"],
+      })
+    : spawnSync("less", ["-FRX"], {
+        input: output,
+        stdio: ["pipe", "inherit", "ignore"],
+      });
+
+  // A missing or unstartable pager must not make changelog output unavailable.
+  if (result.error || result.status === 126 || result.status === 127) {
+    process.stdout.write(output);
+  }
 }
 
 function parseCutoff(value, now) {
@@ -190,7 +220,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const prs = options.input
         ? parsePullRequests(readFileSync(options.input, "utf8"), options.input)
         : readPullRequestsFromGitHub();
-      process.stdout.write(buildChangelog(prs, options));
+      const output = buildChangelog(prs, options);
+      writeOutput(output, options);
     }
   } catch (error) {
     console.error(`changelog: ${error.message}`);
