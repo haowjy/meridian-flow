@@ -19,14 +19,15 @@ resolution.registerResolver(
 //   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
-//   relative with no base, or a holder before its own address -> not asked
+//   relative with no base                    -> not asked
 //   ahead ref the memo knows settled on D  -> exactly a doc ref to D
 //   ahead ref settled, identity unknown    -> ask, never the address
 //   other ahead ref, complete index holds exactly its stored address
 //                                          -> that document now (design rule 4), and ask
 //   everything else                        -> ask
 // remote, per batch of asked questions (at most 200):
-//   one POST of { workId, baseUri, links: [{ ref, href }] }; answers in request order:
+//   one POST of { workId, baseUri, holderDocumentId, links: [{ ref, href }] };
+//     answers in request order:
 //   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
 //   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
 //   a provisional local answer stands unless the server says gone or another document
@@ -60,9 +61,9 @@ flash on catalog changes.
 `baseUri` is the URI of the document holding the link. Only a `relative` target
 needs it, and without one the question is not asked (a null answer, cached as
 a failure) rather than answered: an unasked question must not render as a
-missing document. A holder scope (`holderDocumentId`) asks the server nothing
-until its own address arrives, because a request with a null `baseUri` is
-chat's, which alone may fall back to a document's previous locations.
+missing document. A document holder also sends `holderDocumentId`, so the
+server pins that identity and its current address rather than treating a null
+or stale `baseUri` like a chat's location.
 
 `workId` is the Work row id, including No Work. In the Editor it is the
 holder's projected resource location `workId` for Scratch/Uploads, and the
@@ -88,11 +89,11 @@ Scratch.
 
 ## Resolution scope: what an answer is true of
 
-`{ projectId, workId, rootThreadId, baseUri }` plus the index's `revision` is the complete
-semantic input to every question the resolver asks. The registration effect is
-keyed on exactly those, and reads none of them through a ref. The index object
-keeps its identity while its revision and completeness hold, so the index
-stands in for the revision.
+`{ projectId, workId, rootThreadId, baseUri, holderDocumentId }` plus the index's
+`revision` is the complete semantic input to every question the resolver asks.
+The registration effect is keyed on exactly those, and reads none of them through
+a ref. The index object keeps its identity while its revision and completeness
+hold, so the index stands in for the revision.
 
 The effect's cleanup unregisters in a microtask. React runs the cleanup and the
 next registration in one commit, and an immediate unregister would leave no live
@@ -134,6 +135,9 @@ fragment and query dropped), or null when it names none. The dialog never shows
 it as text. Every state draws one location line: the area's icon and the
 folder, worded by `documentLocation` as the `@` menu words a row's location
 (nothing for a manuscript document at the root), with the address as a tooltip.
+A creatable missing target has no description sentence, so this location line is
+the dialog's accessible description; when a manuscript document sits at the root
+and the line draws nothing, the description uses the area's label instead.
 A link that names no area shows its plain label instead. `{name}` is
 `addressDocumentName(address)` (the filename without `.md`), falling back to
 the link's label; Create uses the address.

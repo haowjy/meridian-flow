@@ -136,7 +136,7 @@ export async function handleDocumentLinkResolveRequest(
         chatId: request.chatId,
         target: target.target,
         // Chat alone may follow a vacated path to the document that left it.
-        previousLocations: baseUri === null,
+        previousLocations: baseUri === null && request.holderDocumentId === undefined,
       });
       byHref.set(link.href, resolving);
     }
