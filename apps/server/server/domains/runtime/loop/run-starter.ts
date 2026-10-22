@@ -1,4 +1,7 @@
-/** Best-effort wake owner: benign contention is quiet; failed starts are correlated once. */
+/**
+ * Best-effort wake owner: benign contention is quiet; failed starts are
+ * correlated once.
+ */
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
 import type { RunStarter } from "./ports.js";

@@ -1,4 +1,5 @@
 /** Provider-request contract: dynamic context and same-Agent derivation preserve prompt bytes. */
+
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +21,7 @@ import {
   SubagentDerivationError,
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
+import { turnGraph } from "../../../threads/ports/turn-graph.js";
 import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
@@ -62,6 +64,7 @@ async function fixture(
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const noWork = await works.ensureNoWork(project.id);
   const thread = await repos.threads.create({
+    aiWriteMode: "direct",
     id: threadId,
     userId: "user-1",
     projectId: project.id,
@@ -76,6 +79,18 @@ async function fixture(
   const workContext = createWorkContextReader({
     ...repos,
     works,
+    topPrimaryChats: {
+      // Mirrors the Drizzle resolver: walk up to the primary row, so a fork is its own chat.
+      resolveTopPrimaryChat: async (id) => {
+        let current = await repos.threads.findById(id);
+        while (current && current.kind !== "primary" && current.parentThreadId) {
+          current = await repos.threads.findById(current.parentThreadId);
+        }
+        return current?.kind === "primary" && current.ref
+          ? { chatId: current.id, chatRef: current.ref }
+          : null;
+      },
+    },
     readChainPermission: async () => "edit" as const,
   });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
@@ -103,6 +118,7 @@ async function fixture(
     agentCatalog,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
+    effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
     handoffBriefs: {
       async hold() {
         return {
@@ -234,7 +250,7 @@ describe("frozen prompt provider requests", () => {
     const image = {
       type: "image" as const,
       documentId: "44444444-4444-4444-8444-000000000101",
-      uri: "uploads://@/asset-lost-before-fork.png",
+      uri: "uploads://@c1/asset-lost-before-fork.png",
     };
 
     await rig.send(rig.thread.id, "remember this image", {
@@ -318,7 +334,7 @@ describe("frozen prompt provider requests", () => {
       await run.execute();
       return run;
     }
-    const originalImage = image("uploads://@/original.png");
+    const originalImage = image("uploads://@c1/original.png");
     const original = await sendAndRun(rig.thread.id, "original", [originalImage]);
     const originalImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find(
       (block) => block.blockType === "image",
@@ -343,8 +359,8 @@ describe("frozen prompt provider requests", () => {
     });
 
     await sendAndRun(rig.thread.id, "source eviction", [
-      image("uploads://@/source-large-1.png"),
-      image("uploads://@/source-large-2.png"),
+      image("uploads://@c1/source-large-1.png"),
+      image("uploads://@c1/source-large-2.png"),
     ]);
     const sourceImages = (await rig.repos.blocks.listByThread(rig.thread.id)).filter(
       (block) => block.blockType === "image",
@@ -398,8 +414,8 @@ describe("frozen prompt provider requests", () => {
     ).not.toContain("Image context changed.");
 
     await sendAndRun(firstFork.id, "first fork eviction", [
-      image("uploads://@/fork-large-1.png"),
-      image("uploads://@/fork-large-2.png"),
+      image("uploads://@c1/fork-large-1.png"),
+      image("uploads://@c1/fork-large-2.png"),
     ]);
     const firstForkDecisions = await rig.repos.imageInclusions.findByThread(firstFork.id);
     expect(
@@ -427,7 +443,7 @@ describe("frozen prompt provider requests", () => {
       )?.included,
     ).toBe(false);
 
-    const reverseImage = image("uploads://@/reverse-source.png");
+    const reverseImage = image("uploads://@c1/reverse-source.png");
     const reverseSourceRun = await sendAndRun(rig.thread.id, "fresh source image", [reverseImage]);
     const reverseImageBlock = (await rig.repos.blocks.listByThread(rig.thread.id)).find((block) => {
       const content = block.content as { uri?: string } | null;
@@ -441,8 +457,8 @@ describe("frozen prompt provider requests", () => {
       originTurnId: reverseSourceRun.executionTurnId,
     });
     await sendAndRun(reverseFork.thread.id, "fork evicts image", [
-      image("uploads://@/reverse-fork-large-1.png"),
-      image("uploads://@/reverse-fork-large-2.png"),
+      image("uploads://@c1/reverse-fork-large-1.png"),
+      image("uploads://@c1/reverse-fork-large-2.png"),
     ]);
     expect(
       (await rig.repos.imageInclusions.findByThread(reverseFork.thread.id)).find(
@@ -479,6 +495,7 @@ describe("frozen prompt provider requests", () => {
     const first = await rig.run();
     expect(rig.requests).toHaveLength(2);
     const child = await rig.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: rig.thread.userId,
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,
@@ -550,7 +567,7 @@ describe("frozen prompt provider requests", () => {
       content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
       expectedRevisionId: rig.original.selection.definitionRevisionId,
     });
-    const sourceCutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     for (let index = 0; index < 2; index += 1) {
       const { thread: fork } = await forkThreadAgent(rig.derive, {
@@ -569,8 +586,7 @@ describe("frozen prompt provider requests", () => {
           (message) =>
             message.role === "user" &&
             message.content.some(
-              (part) =>
-                part.type === "text" && part.text.includes('current: later-work: "Later Work"'),
+              (part) => part.type === "text" && part.text.includes('current: w1 "Later Work"'),
             ),
         ),
       ).toBe(true);
@@ -605,7 +621,7 @@ describe("frozen prompt provider requests", () => {
       slug: "new-writer",
       content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     });
-    const sourceCutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
       id: crypto.randomUUID(),
@@ -631,6 +647,7 @@ describe("frozen prompt provider requests", () => {
       status: "complete",
     });
     const child = await rig.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: rig.thread.userId,
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,

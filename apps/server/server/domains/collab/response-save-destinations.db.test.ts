@@ -11,7 +11,9 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestRemovalDeps } from "../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -26,6 +28,7 @@ import { createInMemoryEventSink } from "../observability/index.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes, testLinkDeps } from "./test-support/document-link-scopes.js";
+import { draftContent } from "./test-support/draft-store-seam.js";
 
 const documentSchema = buildDocumentSchema();
 
@@ -76,7 +79,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     // Threads here carry no Agent binding; each acts as an `edit` agent in its Work.
     const chains = new Map<string, AgentChain>();
     const fileAccess = createFileAccess({
-      facts: createDrizzleFileFacts(db),
+      facts: createDrizzleFileFacts(db, createTestWorkProjectionMutation(db)),
       grants: createOwnerFileGrants(),
       readAgentChain: async (threadId) => {
         const chain = chains.get(threadId);
@@ -84,7 +87,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return chain;
       },
     });
-    /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's draft. */
+    /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's drafts. */
     function agent(threadId: string, workId: string, draftMode: boolean): Principal {
       const chain: AgentChain = [
         {
@@ -99,11 +102,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         accountId: USER_ID as never,
         agent: {
           chain,
-          draftWork: draftMode ? { id: workId as WorkId, slug: slugs.get(workId) ?? null } : null,
+          branchWork: draftMode
+            ? { id: workId as WorkId, handle: handles.get(workId) ?? null }
+            : null,
         },
       };
     }
-    const slugs = new Map<string, string>([[WORK_ID, "rewrite"]]);
+    const handles = new Map<string, string>([[WORK_ID, "w1"]]);
     const drafting = () => agent(THREAD_ID, WORK_ID, true);
     const direct = () => agent(THREAD_ID, WORK_ID, false);
     async function grant(principal: Principal, documentId: string): Promise<FileGrant<"edit">> {
@@ -133,8 +138,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         ...(links ? { links } : {}),
         db,
+        ...createTestRemovalDeps(db),
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
         },
@@ -163,8 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           name: "Rewrite",
-          slug: "rewrite",
-          aiWriteMode: "draft",
+          handle: "w1",
         },
       ]);
       await db.insert(schema.contextSources).values([
@@ -195,6 +201,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: TURN_ID as never,
@@ -361,9 +368,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("leaves out a document whose Work is archived while the reply saves, and saves the rest", async () => {
       const collab = createTestCollab();
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD_ID));
       await seed(collab);
       const agentEdit = collab.agentEdit();
       for (const [file, documentId, content] of [
@@ -425,7 +432,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         refused: [
           {
             documentId: SCRATCH_ID,
-            denial: { reason: "work_archived", archivedWork: { slug: "rewrite" } },
+            denial: { reason: "work_archived", archivedWork: { handle: "w1" } },
           },
         ],
       });
@@ -441,9 +448,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db, { eventSink: sink }),
       });
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD_ID));
       const MANUSCRIPT_ID = "00000000-0000-4000-8000-000000000a20";
       const ASSETS_ID = "00000000-0000-4000-8000-000000000a21";
       const ART_ID = "00000000-0000-4000-8000-000000000a22";
@@ -605,7 +612,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_B_ID as never,
       });
       const agentEdit = collab.agentEdit();
-      // Each reply drafts lore.md into its own Work and writes the other Work's scratch.
+      // Each reply branches lore.md into its own Work and writes the other Work's scratch.
       const replies = [
         { threadId: THREAD_ID, workId: WORK_ID, responseId: RESPONSE_ID, other: SCRATCH_B_ID },
         { threadId: THREAD_B_ID, workId: WORK_B_ID, responseId: RESPONSE_B_ID, other: SCRATCH_ID },
@@ -695,9 +702,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function journalStatuses() {
       const rows = await db
-        .select({ status: schema.branchWriteJournal.status })
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.turnId, TURN_ID as never));
+        .select({ status: schema.draftWriteJournal.status })
+        .from(schema.draftWriteJournal)
+        .where(eq(schema.draftWriteJournal.turnId, TURN_ID as never));
       return rows.map((row) => row.status);
     }
 
@@ -712,16 +719,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, workId));
     }
 
-    /** Work B in draft mode with its own scratch file, and a thread in it with a reply. */
+    /** Work B with its own scratch file, and a draft-mode thread in it with a reply. */
     async function addSecondWorkAndThread() {
-      slugs.set(WORK_B_ID, "second");
+      handles.set(WORK_B_ID, "w2");
       await db.insert(schema.works).values({
         id: WORK_B_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
         name: "Second",
-        slug: "second",
-        aiWriteMode: "draft",
+        handle: "w2",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_B_SOURCE_ID,
@@ -744,6 +750,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread B",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: TURN_B_ID as never,
@@ -800,21 +807,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const [workDraft] = await db
         .select()
-        .from(schema.documentBranches)
+        .from(schema.documentDrafts)
         .where(
           and(
-            eq(schema.documentBranches.documentId, KB_ID as never),
-            eq(schema.documentBranches.kind, "work_draft"),
-            isNull(schema.documentBranches.threadId),
+            eq(schema.documentDrafts.documentId, KB_ID as never),
+            eq(schema.documentDrafts.kind, "work_draft"),
+            isNull(schema.documentDrafts.threadId),
           ),
         );
       if (!workDraft) throw new Error("expected a kept Work draft for lore.md");
       return async () => {
-        const [row] = await db
-          .select({ state: schema.documentBranches.state })
-          .from(schema.documentBranches)
-          .where(eq(schema.documentBranches.id, workDraft.id));
-        return markdownOf(row?.state);
+        return markdownOf(await draftContent(db, workDraft.id));
       };
     }
 

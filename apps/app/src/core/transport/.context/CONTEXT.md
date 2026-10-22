@@ -1,5 +1,9 @@
 # Client transport seams
 
+This page records the transport contracts consumed by document sessions and
+debug observers. Transport owns wire evidence and lifecycle, not editor policy
+or debug-event interpretation.
+
 ## Document status
 
 Every `DocumentSessionTransportProvider.subscribeStatus` implementation emits
@@ -14,7 +18,7 @@ deliver one room's 4406/4407 to every attached provider and reset healthy
 rooms. The session registry remains the per-room deduplication owner; the cost
 is one physical socket per attached room. The soft-cap warning runs when a live
 session is added but compares the registry's total session count, including
-branch sessions; it does not evict sessions or block attachments.
+draft sessions; it does not evict sessions or block attachments.
 
 The client declares its schema as the sole WebSocket subprotocol on each Yjs
 socket. `CollabSchemaWebSocket` formats the current version through
@@ -25,9 +29,7 @@ production so observation does not create a second transport path.
 ## Outbox and acknowledgement edges
 
 The outbox is the session layer's evidence that the writer has typing the
-server has not acknowledged. Draft review counts it as changes at the shown
-generation, and `BranchWriterHandoff` carries it into the next generation, so
-it must be visible to every observer before anything can act on its absence.
+server has not acknowledged. It must be visible to every observer before a command can act on its absence.
 
 - **Store, then send.** `handleDocumentUpdate` registers on the `Y.Doc` before
   `HocuspocusProvider` is constructed. Yjs (lib0 `ObservableV2`) runs update
@@ -43,15 +45,59 @@ it must be visible to every observer before anything can act on its absence.
   yields one pending snapshot and one clearing snapshot. A per-update emission
   re-rendered every subscribed editor on each keystroke.
 
-The order used to be reversed: the provider sent and the tracker published
-`false` before the outbox listener stored anything, and the outbox write
-published nothing. In a live two-tab whole Discard, the empty successor read
-then arrived while the writer's words were held, saw no pending writing, and
-ended the review. The test fake stored bytes before publishing, so two fixes
-passed their witness and failed live. A witness for this ordering must run the
-real transport over `test-support/DocumentSocketHarness`, as
-`hocuspocus-document-transport.acknowledgement.test.ts` and the remote whole
-Discard case in `features/editor/EditorView.writer-handoff.test.tsx` do.
+The ordering is a live transport contract, not a test-double detail. A witness
+for it must exercise `test-support/DocumentSocketHarness`, as the transport
+acknowledgement and remote whole-discard probes do.
+
+`whenCurrentChangesAcknowledged()` captures the socket's current FIFO prefix.
+An Apply waits for that prefix, including update delete sets, not later keys.
+A reconnect moves unresolved barriers to the next handshake upload, which
+contains every pre-click local change. The transport exposes this prefix barrier directly; it must not fall back to
+waiting for every later keystroke. Terminal transport teardown rejects current
+and future barriers; ordinary disconnects leave them pending for reconnect.
+Barrier settlement does not publish a per-key session snapshot. `4205` is terminal `closed`, not rebuild; in-band
+closes carry code 1000, so consumers use disposition rather than numeric code.
+
+## Draft rooms: the handshake upload goes first
+
+A draft room's server appends each Update on top of the bytes it
+already holds and closes `4207 draft-prefix-missing` when an Update depends
+on bytes it lacks. Hocuspocus's own order would produce exactly that on every
+reconnect: the offline queue flushes on the socket's first inbound frame, and
+keys typed during the handshake go out at once, both before the client's
+SyncStep2 (its reply to the server's SyncStep1).
+
+So on `draft:` rooms only, `RoomScopedHocuspocusWebsocket.send` holds every
+Sync Update offered on an open socket until that socket's SyncStep2 has been
+written, then releases the held frames in order through the same `send`. Wire
+order on every draft connection is `step1, step2, [released updates],
+[new updates]`.
+
+- **The SyncStep2 is the causal prefix.** It is the whole Y.Doc diffed against
+  the server's state vector, so it carries everything the server lacks,
+  including bytes replayed into the Y.Doc before the transport existed. The
+  released frames are echoes the server contains.
+- **Counted when written, once.** A held frame reaches `noteFrameSent` only on
+  release; the tracker's handshake flag is set by the real SyncStep2.
+- **A socket that closes first writes nothing it held.** `onOpen` and
+  `onClose` drop the held frames; the next socket's SyncStep2 carries their
+  bytes. Frames offered while the socket is not open keep the base class
+  queue.
+- **No timeout.** A server that never sends SyncStep1 leaves the frames held
+  and the room unacknowledged; nothing releases them unsafely.
+- **Typing never waits.** The Y.Doc, the editor and the outbox have the key
+  at once; only transmission is deferred, by one handshake round trip.
+- **Live rooms are unchanged.** Their server marks the SyncStep2 for offline
+  collision reconciliation, so moving queued bytes into it would change what
+  is reconciled; a live socket writes in the provider's order.
+
+`4207` is not a refusal. It never counts toward the three-`1008` refusal bound
+(`MAX_DRAFT_UPDATE_REFUSALS` in `hocuspocus-document-transport.ts`; see the
+editor's `.context/CONTEXT.md`),
+keeps the outbox, and reconnects after the provider's delay like any drop.
+After handshake-first it means a server that lost committed rows or a peer that
+skips the handshake, and the next connection's SyncStep2 repairs it. Decision:
+[drafts without locks](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/branches/drafts-without-locks.md).
 
 ## Access scope and 4409
 
@@ -80,8 +126,8 @@ while local updates are still unacknowledged: the server refused them, and a
 reconnect's SyncStep2 would replay them from the Y.Doc. The transport then
 resets with reason `access-changed` instead of reconnecting, and
 `DocumentSession.refusedLocalEdits()` forbids `restartTransport` for that
-session. A branch (draft review) room rebuilds through
-`rebuildBranchRoom`, which starts a fresh session from the server's state. A
+session. A draft (review) room rebuilds through
+`rebuildDraftRoom`, which starts a fresh session from the server's state. A
 live room (scratch) goes through the registry's `dropRefusedRoom`, which
 revokes each lease's access: the session is torn down and its IndexedDB copy,
 which still holds the refused edits, is cleared. Editor hosts unbind at once
@@ -89,33 +135,40 @@ which still holds the refused edits, is cleared. Editor hosts unbind at once
 loads the server's state. A drop that fails leaves the refused session bound
 read-only rather than reopening again.
 
+## 4208: the document was removed
+
+A `4208 document-deleted` close is terminal for live and draft rooms alike:
+the transport freezes the room (`read`), resets with disposition `removed`
+and never reconnects on its own. Nothing rebuilds, replays or drops it, and a
+draft review keeps the terminal session painted. The registry reports each
+live room's close once (`observeRemovedRooms`) and the account lifetime asks
+the record cache again; the availability removal closes the tab and says who
+removed the document. Only a lookup after the close that proves the document
+present restarts the room, once per close: the lifetime's
+`restartRemovedRoom`, or an explicit open's bind (`restartUnavailableRoom`). See
+`features/project/context/.context/resource-catalog-and-editor-lifecycle.md`.
+
 ## Stateless document messages
 
 `HocuspocusDocumentTransport` parses the extensible stateless payload once with
 the contracts parser, ignores unknown message types, and exposes typed,
 per-message subscriptions. Live `DocumentSession`s subscribe to
-`change_event`; branch sessions deliberately do not.
+`change_event`; draft sessions deliberately do not.
 
 ## Dev-only wire observation
 
 The two client socket types use their canonical transport seams.
 `TappedWebSocket` observes each room-scoped Hocuspocus socket's final binary
 frames.
-`SocketLifecycleController` observes the thread/agent socket's lifecycle and
-final string frames. Both are active only behind the build-time debug gate;
+`@meridian/thread-client` owns `SocketLifecycleController` and the thread socket
+client. The app's `TransportProvider` injects its wire-tap adapter to observe
+lifecycle and final string frames. Both are active only behind the build-time debug gate;
 default production builds retain native WebSockets without capture, while the
 explicit `VITE_DEBUG_OVERLAY=1` build override includes the debug observers.
 Neither seam parses or retains frames, and observer failures never escape into
 product transport.
 `socketEpoch` distinguishes reconnects while each registered tap owns
 page-lifetime sequencing.
-
-Thread close observation runs before the controller's current-socket guard so
-controlled closes from teardown, manual reconnect, and ping timeout remain
-visible. The guard still fences every product callback, state transition, and
-reconnect decision for stale socket generations. Lifecycle observers receive
-only the socket epoch, numeric close code, and `wasClean`; URL and raw close
-reason text do not cross the core observer contract.
 
 Core owns only the late-bound, transport-specific `YjsWireTap` and
 `ThreadWireTap` contracts. The debug feature registers both implementations in
@@ -133,18 +186,12 @@ preserving the dependency direction
 and must only emit allowlisted classifications and identifiers; no agent, user,
 tool, catchup, or error content may enter an `EventRecord`.
 
-The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
-`resume`, `pong`, and `interrupt.respond`; its server vocabulary is `connected`,
-`subscribed`, `event`, `gap`, `error`, and `ping`. Turn cancellation is an HTTP
-operation through `cancelTurn`, not a WebSocket message. Keep these names aligned
-with `@meridian/contracts/protocol` rather than inferring them from UI actions.
-
-A `gap` means the server could not replay from the client's cursor. Its frame
-carries `fromSeq`/`toSeq`; the transport advances the subscription's resume point
-to `toSeq` before re-subscribing, so the next read asks for history the server
-can serve. The truncated catch-up that follows is skipped by the monotonic seq
-guard, and the `onGap` consumers refetch the thread snapshot as the real resync.
-A gap burst coalesces into one resync rather than one per gap.
+Thread protocol, cursor and deadline contracts belong to the
+[shared thread client](../../../../../../packages/thread-client/.context/CONTEXT.md).
+The app supplies browser WebSocket creation, URL, API error conversion, HTTP
+cancellation, connectivity hints and debug-gated observation through
+`TransportProvider`. App `onGap` consumers refetch snapshots; a gap burst
+coalesces into one app resync rather than one per gap.
 
 ## Shared connectivity hints
 
@@ -176,23 +223,3 @@ new hints. Working-set pagehide/hidden-visibility flushes are persistence signal
 its preference owner binds recovery only for the committed account epoch.
 Local document peers and session wakeup keep their content-recovery listeners,
 independent of network jitter, cooldowns, or unrelated connection successes.
-
-## Thread socket deadlines
-
-`SocketLifecycleController` owns the attempt phases: connecting, transport-open
-awaiting the protocol `connected` frame, and connected. One watchdog starts at
-socket creation and ends only on `connected`, close, or teardown. Its default
-is 10 seconds (`handshakeTimeoutMs` is injectable); opening or receiving other
-frames does not extend it. The separate 45-second ping deadline starts on open
-and resets on every inbound frame. Expiry of either deadline retires the socket
-before requesting native close and uses the same reconnect backoff as a network
-close, without waiting for a close acknowledgement. Retired sockets cannot drive
-product callbacks. Both timers are cancelled on retirement or teardown; protocol
-`connected` cancels only the handshake watchdog.
-
-Protocol readiness lives in this lifecycle, not in a second transport flag.
-Subscriptions still resume from the last delivered cursor after `connected`;
-catch-up and gap reconciliation are unchanged. These deadlines bound handshake
-wait and inbound silence, not time to recovery: retries still depend on the
-server/network returning and browser timers running (background suspension can
-delay either deadline).

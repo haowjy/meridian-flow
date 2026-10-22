@@ -1,12 +1,22 @@
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
+
 /** Postgres-backed coverage for independent figure asset identity. */
 
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, documents, folders, projects, users } from "@meridian/database/schema";
+import {
+  contextSources,
+  documentMarkdownProjections,
+  documents,
+  folders,
+  projects,
+  users,
+} from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDocumentRemoval } from "../../../test-support/document-removal.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
@@ -81,25 +91,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
         mimeType: "text/markdown",
         sizeBytes: 23,
-        markdownProjection: "# Chapter One\n\nIt began.",
       });
+      await db
+        .insert(documentMarkdownProjections)
+        .values({ documentId: HOST_DOCUMENT_ID, markdown: "# Chapter One\n\nIt began." });
     });
 
     afterAll(async () => db.$client.end());
 
     it("creates a distinct binary asset without changing the host document", async () => {
+      const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        pendingBranch: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
-        documentSync: createInMemoryCollabDomain(),
-        manifestMembership: {
-          async recordManifestDocumentCreated() {},
-          async recordManifestDocumentDeleted() {},
-          async resolveManifestMembership() {
-            return { members: [] };
-          },
-          async transferLiveManifestMembership() {},
-        },
+        removal: createTestDocumentRemoval(db),
+        documentSync: collab,
+        branches: collab.branches,
       });
       const service = createFigureAssetService({
         objectStore,
@@ -119,7 +127,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         storageUrl: before?.storageUrl,
         mimeType: before?.mimeType,
         sizeBytes: before?.sizeBytes,
-        markdownProjection: before?.markdownProjection,
+        markdownProjection: (
+          await db
+            .select()
+            .from(documentMarkdownProjections)
+            .where(eq(documentMarkdownProjections.documentId, HOST_DOCUMENT_ID))
+        )[0]?.markdown,
       };
 
       const uploaded = await service.uploadFigure({
@@ -144,7 +157,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         storageUrl: after?.storageUrl,
         mimeType: after?.mimeType,
         sizeBytes: after?.sizeBytes,
-        markdownProjection: after?.markdownProjection,
+        markdownProjection: (
+          await db
+            .select()
+            .from(documentMarkdownProjections)
+            .where(eq(documentMarkdownProjections.documentId, HOST_DOCUMENT_ID))
+        )[0]?.markdown,
       }).toEqual(hostBefore);
 
       const context = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());

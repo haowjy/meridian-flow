@@ -6,6 +6,7 @@ import {
   contextSources,
   documentDerivations,
   documentLinks,
+  documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   folders,
@@ -19,12 +20,11 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
-import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
 import {
   createDocumentLastAddress,
   createDocumentUriResolver,
 } from "../../context/document-uri-resolver.js";
+import { bumpLocationVersions, recordLocationHistory } from "../../context/tree/node-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {
@@ -33,11 +33,9 @@ import {
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
+import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
-import {
-  ensureAndReadDocumentAuthorityHead,
-  replaceDocumentAuthorityHeadGeneration,
-} from "./drizzle-document-authority-head.js";
+import { readDocumentAuthorityHead, replaceGeneration } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence, createDrizzleJournal } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
@@ -85,9 +83,11 @@ describe("durable document derivations", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      markdownProjection: "last good",
     });
-    await persistence.lifecycle.ensureDocument(documentId);
+    await db
+      .insert(documentMarkdownProjections)
+      .values({ documentId: documentId, markdown: "last good" });
+    await persistence.seeds.seedInitialDocument(documentId, Y.encodeStateAsUpdate(new Y.Doc()));
   });
   afterAll(async () => {
     await service.stop();
@@ -104,14 +104,17 @@ describe("durable document derivations", () => {
   async function checkpointCut() {
     const cut = await persistence.journal.captureCheckpoint(
       documentId,
-      await ensureAndReadDocumentAuthorityHead(db, documentId),
+      await readDocumentAuthorityHead(db, documentId),
     );
     if (!cut) throw new Error("Current authority did not produce a checkpoint cut");
     return cut;
   }
   async function projection() {
-    const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
-    return row?.markdownProjection;
+    const [row] = await db
+      .select()
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
+    return row?.markdown;
   }
 
   it.each([
@@ -119,7 +122,7 @@ describe("durable document derivations", () => {
     "explicit",
   ] as const)("%s checkpoints preserve an admitted writer row before the room applies it", async (path) => {
     const room = new Y.Doc({ gc: false });
-    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
+    bindDocumentAuthority(room, await readDocumentAuthorityHead(db, documentId));
     const transport = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
@@ -157,7 +160,6 @@ describe("durable document derivations", () => {
         const checkpoints = createCheckpointService({
           coordinator: {
             withDocument: async (_id, operation) => operation(room),
-            recover: async () => {},
           },
           store: persistence.store,
           journal: persistence.journal,
@@ -375,7 +377,7 @@ describe("durable document derivations", () => {
     const room = new Y.Doc({ gc: false });
     await append(room, "Before");
     await persistence.journal.storeCheckpoint(await checkpointCut());
-    const authority = await ensureAndReadDocumentAuthorityHead(db, documentId);
+    const authority = await readDocumentAuthorityHead(db, documentId);
     const checkpointId = await persistence.store.createCheckpoint(await checkpointCut(), "saved");
     if (!checkpointId) throw new Error("Missing checkpoint");
     await append(room, "After");
@@ -487,14 +489,11 @@ describe("durable document derivations", () => {
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
     await runInDrizzleTransaction(db, async () => {
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter", kind: "file" }],
-        "/chapter",
-        "/renamed",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/renamed" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -556,14 +555,11 @@ describe("durable document derivations", () => {
         .update(documents)
         .set({ folderId })
         .where(eq(documents.id, documentId));
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter", kind: "file" }],
-        "/chapter",
-        "/moved/chapter",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -610,7 +606,7 @@ describe("durable document derivations", () => {
     const retiredSeq = await append(doc, " After writer typing.");
     await service.derive(documentId);
     expect(await projection()).toBe("Before typing. After writer typing.");
-    const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
+    const replaced = await replaceGeneration(db, {
       documentId,
       checkpointId: checkpoint.id,
       expectedGeneration: 1n,
@@ -652,7 +648,7 @@ describe("durable document derivations", () => {
       .where(eq(documentYjsCheckpoints.upToSeq, beforeSeq));
     if (!saved) throw new Error("Missing saved checkpoint");
     await append(room, " After");
-    bindDocumentAuthority(room, await ensureAndReadDocumentAuthorityHead(db, documentId));
+    bindDocumentAuthority(room, await readDocumentAuthorityHead(db, documentId));
     const hp = createHocuspocusPersistenceService({
       journal: persistence.journal,
       hocuspocus: () => null,
@@ -662,7 +658,6 @@ describe("durable document derivations", () => {
     const explicit = createCheckpointService({
       coordinator: {
         withDocument: async (_id, operation) => operation(room),
-        recover: async () => {},
       },
       store: persistence.store,
       journal: persistence.journal,
@@ -697,7 +692,7 @@ describe("durable document derivations", () => {
       }
       throw new Error(`Expected ${count} queued mutation locks`);
     }
-    const replacement = replaceDocumentAuthorityHeadGeneration(db, {
+    const replacement = replaceGeneration(db, {
       documentId,
       checkpointId: saved.id,
       expectedGeneration: 1n,
@@ -770,7 +765,7 @@ describe("durable document derivations", () => {
     const admission = explicit.checkpoint(documentId, "pre-capture restore");
     await ready;
     try {
-      await replaceDocumentAuthorityHeadGeneration(db, {
+      await replaceGeneration(db, {
         documentId,
         checkpointId: Number(saved.id),
         expectedGeneration: 1n,
@@ -792,7 +787,7 @@ describe("durable document derivations", () => {
   });
 
   it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
-    const real = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+    const real = createTestLinkAheadRegistry(db);
     let failRegistration = true;
     const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
       registry: {
@@ -862,7 +857,7 @@ describe("durable document derivations", () => {
         sourceDocumentId: documentId,
         linkKey: `ahead:${id}`,
         aheadId: id,
-        address: "scratch://@missing/later",
+        address: "scratch://@w99/later",
         occurrences: 1,
       };
     });

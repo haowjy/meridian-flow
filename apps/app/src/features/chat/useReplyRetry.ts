@@ -5,8 +5,13 @@
  * the background. Retry on the latest failed reply shows a new reply working
  * below it at once, under a client-minted id, then asks the server to answer
  * from the ordinary conversation history (`POST /turns/:turnId/retry`). The
- * failed reply stays in history above it. `useRetryStandIns` owns the stand-in,
- * the refusal note, and the re-send of a lost request.
+ * failed reply is not drawn: the Retry takes its place (`viewTranscript`, from the
+ * stand-in's `metadata.retryOf` and the explicit `retried` set). `useRetryStandIns` owns the stand-in,
+ * the refusal and lost-request facts (`chatCards` draws them as cards), and the re-send of a lost request.
+ *
+ * The request is known by its execution and the record version of its answer. When it ends is
+ * the package's decision (`reconcileRetries`). A lost response has no version: its stand-in
+ * stays failed until the writer's Retry replays the request.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
@@ -15,7 +20,10 @@ import { retryReply } from "@/client/api/threads-api";
 import { announce } from "@/client/stores";
 import { type RetryStandIns, useRetryStandIns } from "./useRetryStandIns";
 
-export type ReplyRetry = Pick<RetryStandIns, "standIns" | "requestOf" | "refused"> & {
+export type ReplyRetry = Pick<
+  RetryStandIns,
+  "standIns" | "requestOf" | "outcomes" | "retried" | "clearRefused"
+> & {
   /** A new reply after `failed`, or the same request again when `failed` is a lost Retry. */
   retry: (failed: Turn) => void;
 };
@@ -40,10 +48,15 @@ export function optimisticRetryReply(input: { id: string; failed: Turn; createdA
     responseCount: 0,
     usage: null,
     error: null,
-    metadata: null,
+    // The Retry's target, carried explicitly: the transcript draws this in the failed reply's place.
+    metadata: { retryOf: failed.id },
     createdAt,
     completedAt: null,
     blocks: [],
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
+    forgottenBy: null,
     siblingIds: [],
     responses: [],
   };
@@ -58,7 +71,7 @@ export function useReplyRetry(input: {
     threadId,
     storedTurns,
     post: (id, from) => retryReply(threadId, from, { id }),
-    lostCopy: t`Couldn't start the retry. Try again.`,
+    supersedes: true,
   });
   const { retry: retryStandIn } = standIns;
   const retry = useCallback(
@@ -73,7 +86,9 @@ export function useReplyRetry(input: {
   return {
     standIns: standIns.standIns,
     requestOf: standIns.requestOf,
-    refused: standIns.refused,
+    outcomes: standIns.outcomes,
+    retried: standIns.retried,
+    clearRefused: standIns.clearRefused,
     retry,
   };
 }

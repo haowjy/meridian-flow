@@ -67,6 +67,14 @@
   color: var(--color-muted-foreground);
 }
 
+/* A document that exists only in a draft: reachable, but not live text yet.
+   A dotted outline at reading contrast sets it apart from a published target
+   (filled) and from nothing (dashed, muted). */
+[data-link-chip="draft"] {
+  border-color: var(--color-muted-foreground);
+  border-style: dotted;
+}
+
 /* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
 [data-link-chip="dashed"] strong {
   color: inherit;

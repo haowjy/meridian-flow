@@ -6,7 +6,7 @@ import { toHashline } from "../model/hashline.js";
 import type {
   AgentEditBlockGroup,
   AgentEditBlockItem,
-  AgentEditConcurrentRun,
+  AgentEditConcurrentListing,
   AgentEditResultV1,
 } from "./model-result.js";
 
@@ -26,7 +26,14 @@ export function readCall(path: string, version?: "draft" | "live"): string {
  */
 export function renderAgentEditResult(result: AgentEditResultV1): string {
   const groups = result.blocks ?? [];
-  const sections = [[statusLine(result), ...notes(result, groups)].join("\n")];
+  const sections = [
+    [
+      ...(result.notice ? [result.notice] : []),
+      ...pendingLine(result),
+      statusLine(result),
+      ...notes(result, groups),
+    ].join("\n"),
+  ];
   if (result.message) sections.push(result.message);
   const outline = outlineFile(result);
   if (outline) {
@@ -40,7 +47,7 @@ export function renderAgentEditResult(result: AgentEditResultV1): string {
 function statusLine(result: AgentEditResultV1): string {
   const facts = [`status: ${result.status}`];
   if (result.reason) facts.push(`reason: ${result.reason}`);
-  if (result.path) facts.push(`path: ${result.path}`);
+  if (result.path) facts.push(`path: ${result.path}${result.owner ? ` (${result.owner})` : ""}`);
   if (result.write?.id) facts.push(`write: ${result.write.id}`);
   const version = writeVersion(result);
   if (version) facts.push(`version: ${version}`);
@@ -52,6 +59,10 @@ function statusLine(result: AgentEditResultV1): string {
         : `copied: ${blockCount(count)} from ${result.copied.from}`,
     );
   }
+  if (result.namespace)
+    facts.push(
+      result.namespace.kind === "moved" ? `moved from ${result.namespace.from}` : "deleted",
+    );
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -62,6 +73,22 @@ function statusLine(result: AgentEditResultV1): string {
     if (result.read.format === "outline") facts.push("format: outline");
   }
   return facts.join("; ");
+}
+
+/**
+ * A drafted move or delete is pending until the user applies it: said first, before the status
+ * a model otherwise reads as done, and in terms of live, which every area shares.
+ */
+function pendingLine(result: AgentEditResultV1): string[] {
+  const change = result.namespace;
+  if (!change || result.destination !== "draft") return [];
+  const what =
+    change.kind === "moved"
+      ? `moved only in this chat's draft; live still has it at ${change.from}`
+      : "deleted only in this chat's draft; it stays live";
+  return [
+    `not applied yet: ${what} until the user applies it. Tell the user it is waiting for their review.`,
+  ];
 }
 
 function blockCount(count: number): string {
@@ -83,6 +110,10 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   if (result.destination === "draft" && result.draftWork !== undefined)
     facts.push(`version: ${writeVersion(result)}`);
   if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
+  if (result.namespace)
+    facts.push(
+      result.namespace.kind === "moved" ? `moved from ${result.namespace.from}` : "deleted",
+    );
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -95,11 +126,12 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
 
 /**
  * The version a write changed, in `read`'s terms (D50): `live`, or `draft
- * (@work)` for a write held in a Work's draft. Undo and redo name none.
+ * (w3)` for a write held in a named Work's draft; No Work's draft has no
+ * handle to name, so it is plain `draft`. Undo and redo name none.
  */
 function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork">): string {
   if (result.destination === "draft" && result.draftWork !== undefined)
-    return `draft (@${result.draftWork})`;
+    return result.draftWork === "/" ? "draft" : `draft (${result.draftWork})`;
   return result.destination === "live" ? "live" : "";
 }
 
@@ -113,16 +145,13 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
     lines.push("later edits were kept, so the text may not match how it was before the write.");
   }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
-  if (result.unchanged) lines.push(UNCHANGED_NOTE);
-  if (result.concurrent) {
-    const shown = new Set(
-      groups
-        .filter((group) => group.extent === "full" && group.relation === "changed")
-        .flatMap((group) => group.items.map((item) => item.hash)),
+  const surviving = result.namespace?.kind === "deleted" ? result.namespace.survivingWorks : [];
+  if (surviving?.length)
+    lines.push(
+      `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
     );
-    lines.push(...concurrentLines(result.concurrent.runs, shown));
-    if (result.concurrent.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
-  }
+  if (result.unchanged) lines.push(UNCHANGED_NOTE);
+  if (result.concurrent) lines.push(...concurrentLines(result.concurrent));
   const swept = groups.filter((group) => group.relation === "swept");
   if (swept.length > 0) {
     lines.push("concurrent user content swept during commit; re-read required");
@@ -136,21 +165,24 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
   return lines;
 }
 
-function concurrentLines(
-  runs: readonly AgentEditConcurrentRun[],
-  shown: ReadonlySet<string>,
-): string[] {
-  const rendered: string[] = [];
-  for (const run of runs) {
-    const entries = [
-      ...run.blocks.filter((item) => !shown.has(item.hash)).map((item) => `    ${blockLine(item)}`),
-      ...run.tombstones.map(
-        (tombstone) => `    ${tombstone.hash}| [explicit deletion]\n${tombstone.body}`,
-      ),
-    ];
-    if (entries.length > 0) rendered.push(`  ${run.origin}:`, ...entries);
-  }
-  return rendered.length > 0 ? ["concurrent edits:", ...rendered] : [];
+function listed(items: readonly string[]): string {
+  return items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** The blocks changed since the model last saw them, unlabelled (labels arrive with M3). */
+function concurrentLines(listing: AgentEditConcurrentListing): string[] {
+  const lines = listing.blocks.map((item) => `  ${blockLine(item)}`);
+  if (listing.removed?.length)
+    lines.push(`  removed since you last saw it: ${listing.removed.join(" ")}`);
+  if (listing.more)
+    lines.push(
+      listing.more === 1
+        ? "  1 more block changed since you last saw it"
+        : `  ${listing.more} more blocks changed since you last saw them`,
+    );
+  return lines.length > 0 ? ["concurrent edits:", ...lines] : [];
 }
 
 /** The file an outline's sections are read from; undefined when the result isn't an outline. */

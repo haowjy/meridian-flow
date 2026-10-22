@@ -14,6 +14,7 @@ import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
   EventJournalWriter,
+  LiveEventWriter,
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
@@ -86,7 +87,7 @@ export interface ChildRunCoordinatorDeps {
       ThreadRepository,
       "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById" | "lockByIdIncludingDeleted"
     >;
-    turns: Pick<TurnRepository, "findById">;
+    turns: Parameters<typeof resolveReadableThread>[0]["turns"];
     subagentThreads: SubagentThreadFactory;
     transaction: ThreadRepositories["transaction"];
   };
@@ -95,7 +96,7 @@ export interface ChildRunCoordinatorDeps {
     projectId: string;
     parentThreadId?: string | null;
   }): Promise<string>;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   /** Recomputes a parent's direct-child activity for its `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
@@ -168,7 +169,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     const child = await deps.repos.transaction(async () => {
       // Parent journal writes must precede child membership's Work locks in lock order.
-      await deps.repos.threads.lockByIdIncludingDeleted(input.parentThread.id as ThreadId);
+      const lockedParent = await deps.repos.threads.lockByIdIncludingDeleted(
+        input.parentThread.id as ThreadId,
+      );
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
@@ -180,6 +183,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             id: crypto.randomUUID() as ThreadId,
             userId: input.parentThread.userId,
             projectId: input.parentThread.projectId,
+            // A child works in its parent's mode, which is also the spawning reply's.
+            aiWriteMode: (lockedParent ?? input.parentThread).aiWriteMode,
             parentThreadId: input.parentThread.id as ThreadId,
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
             originTurnId: input.parentTurnId,

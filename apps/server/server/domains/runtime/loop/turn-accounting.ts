@@ -28,6 +28,12 @@ export interface TurnAccountingDeps {
 export interface TurnAccounting {
   /** Pre-iteration budget and credit checks. Returns MeridianError if exhausted. */
   assertPreIterationBudget(treeBudget: TreeBudget, thread: Thread): Promise<MeridianError | null>;
+  /** Non-spending authorization before preparing any automatic continuation. */
+  assertContinuationEligibility(
+    remainingIterations: number,
+    treeBudget: TreeBudget,
+    thread: Thread,
+  ): Promise<MeridianError | string | null>;
   /** Record one iteration spent against the tree budget. */
   recordIterationSpend(treeBudget: TreeBudget): void;
   /** Compute cost for a model response and debit credits. */
@@ -65,6 +71,11 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
       }
 
       return null;
+    },
+
+    async assertContinuationEligibility(remainingIterations, treeBudget, thread) {
+      if (remainingIterations <= 0) return "exceeded max tool iterations";
+      return this.assertPreIterationBudget(treeBudget, thread);
     },
 
     recordIterationSpend(treeBudget: TreeBudget): void {

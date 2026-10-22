@@ -2,7 +2,7 @@
 
 Setup and day-to-day workflow for the TypeScript monorepo on branch `h/v3`.
 
-See also [AGENTS.md](AGENTS.md), [CHANGELOG.md](CHANGELOG.md), and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
+See also [AGENTS.md](AGENTS.md), the PR body's `## Changelog` section, and [.cursor/rules/commit-phase-discipline.mdc](.cursor/rules/commit-phase-discipline.mdc).
 
 ## Environment
 
@@ -113,10 +113,17 @@ pnpm dev:prune-worktrees -- --target <value>           # clean that target after
 Targeted cleanup runs in order: stop dev stack → drop database → remove git
 worktree → optionally mark a linked Meridian work item done → delete the local
 branch. Eligibility is bound to the planned branch commit and revalidated before
-every action; exact merged-PR evidence must match the detected base, head commit,
-and repository owner. The resolver refuses primary/current or locked worktrees,
-the detected base branch, unmerged commits, dirty worktrees, ambiguous evidence,
-and refs that move after planning.
+every action. Targeted cleanup accepts the commit contained in another surviving
+local or remote-tracking ref (own refs resolved against the configured remote
+names, symbolic refs excluded, remote-tracking candidates verified against their
+remote before the check), or an exact merged PR into any base branch; each
+matched PR's head commit and repository owner must match. Batch cleanup still requires an exact merged PR into
+the detected base branch and keeps refusing duplicate exact records. Executing
+cleanups are serialized per repository, so two runs cannot each treat the other's
+branch as the surviving ref; a stale lock refuses rather than being taken over.
+The resolver refuses primary/current or locked worktrees, the detected base
+branch, commits no other ref contains (unless an exact merged PR or manual
+evidence covers them), dirty worktrees, and refs that move after planning.
 
 Batch cleanup is advanced and not yet trusted for routine use. It requires an
 explicit acknowledgement:
@@ -159,7 +166,7 @@ Branch history should replay verified work: **one plan phase or logical step →
 1. Finish one phase or logical step.
 2. Stage **only** files for that step.
 3. `git commit` with a message that states what and why.
-4. Add a matching bullet under [CHANGELOG.md](CHANGELOG.md) → `## [Unreleased]`.
+4. Add the matching `Added:`, `Changed:`, `Fixed:` or `Removed:` line to the PR body's `## Changelog` section.
 5. Start the next phase.
 
 Prefer separate commits per package or layer when it helps review (e.g. `packages/database`, then `tools/dev`). Fold small review fixes into that phase's commit or an immediate follow-up.

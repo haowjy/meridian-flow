@@ -68,7 +68,6 @@ describe("a document menu's tree", () => {
     const tree = buildMenuTree({
       heading: "My Serial",
       areas: [manuscript, uploads],
-      rooted: true,
     });
     expect(tree.children(null).map((node) => node.name)).toEqual(["Manuscript"]);
     // The open document's own area is held but not offered: it lists its files when asked.
@@ -76,18 +75,13 @@ describe("a document menu's tree", () => {
   });
 
   it("climbs: the open document's trail is its area then its folders, and each step lists in place", () => {
-    const tree = buildMenuTree({ heading: "My Serial", areas: [manuscript], rooted: true });
+    const tree = buildMenuTree({ heading: "My Serial", areas: [manuscript] });
     const trail = [areaNode(manuscript), ...foldersIn(manuscript, "/Act/ch.md")];
     expect(trail.map((node) => node.id)).toEqual(["area:manuscript", "act"]);
     // Back rows pop the trail one level at a time; each level lists what is under it.
     expect(tree.children("act").map((node) => node.name)).toEqual(["ch.md"]);
     expect(tree.children("area:manuscript").map((node) => node.name)).toEqual(["Act"]);
     expect(tree.children(null).map((node) => node.id)).toEqual(["area:manuscript"]);
-  });
-
-  it("lists a single area's entries directly when not rooted", () => {
-    const tree = buildMenuTree({ heading: "Scratch", areas: [manuscript], rooted: false });
-    expect(tree.children(null).map((node) => node.name)).toEqual(["Act"]);
   });
 
   it("puts a rebound chat's earlier notes in one folder above the area's own", () => {
@@ -101,8 +95,8 @@ describe("a document menu's tree", () => {
         ]),
       },
     });
-    const tree = buildMenuTree({ heading: "Scratch", areas: [withEarlier], rooted: false });
-    expect(tree.children(null).map((node) => node.name)).toEqual(["Earlier notes"]);
+    const tree = buildMenuTree({ heading: "Scratch", areas: [withEarlier] });
+    expect(tree.children("area:scratch").map((node) => node.name)).toEqual(["Earlier notes"]);
     expect(tree.children("earlier:area:scratch").map((node) => node.name)).toEqual(["n.md"]);
   });
 });
@@ -125,7 +119,6 @@ describe("folder picker boundaries", () => {
         area("m", "Manuscript", { catalog: m }),
         area("k", "Knowledge Base", { scheme: "kb", catalog: k }),
       ],
-      rooted: true,
     });
     expect(menuEntryFor(m, "k-act")).toBeNull();
     expect(menuEntryFor(k, "k-act")?.entryId).toBe("k-act");

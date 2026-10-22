@@ -1,10 +1,7 @@
 /** Pure final-state planner for one project's availability command batch. */
 
-import { parseContextUri } from "@meridian/contracts/context-uri";
-import {
-  isWorkScopedProjectContextScheme,
-  type WorkingSetRoute,
-} from "@meridian/contracts/protocol";
+import { isWorkScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
+import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import type { ContextTab, ProjectTabsSlice } from "@/client/stores";
 import {
   buildWorkingSetRoute,
@@ -44,6 +41,8 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
   transitionRevision: number;
   recentRoutes: readonly WorkingSetRoute[];
   routeSearch: ProjectSearch | null;
+  /** The document whose move rewrote `routeSearch`, so the route can tell relocation from replacement. */
+  relocatedRouteDocumentId: string | null;
   generationRecords: readonly (AppliedAvailabilityCommand & { documentId: string })[];
   sessionEffects: readonly {
     commandId: string;
@@ -51,6 +50,7 @@ export type ContextAvailabilityLocalBatchPlan = Readonly<{
     projectId: string;
     documentId: string;
     generation: string;
+    deletionVersion: string | null;
   }[];
 }>;
 
@@ -81,6 +81,7 @@ export function planContextAvailabilityBatch(
   let transitionRevision = input.project.transitionRevision;
   let recentRoutes = [...input.recentRoutes];
   let routeSearch = input.routeSearch;
+  let relocatedRouteDocumentId: string | null = null;
   const generationRecords: Array<AppliedAvailabilityCommand & { documentId: string }> = [];
   const sessionEffects: ContextAvailabilityLocalBatchPlan["sessionEffects"][number][] = [];
   const unavailableWorkIds = new Set(
@@ -110,8 +111,15 @@ export function planContextAvailabilityBatch(
         : never;
       const path = `/${entry.path.join("/")}`;
       const lineageId = entry.scope.kind === "lineage" ? entry.scope.rootThreadId : undefined;
-      if (isWorkScopedProjectContextScheme(scheme) && entry.scope.kind !== "work" && !lineageId)
-        throw new Error("Work-scoped availability requires a Work or chat owner");
+      // A chat's upload is held by its chat: it keeps that owner through recency but has no
+      // Editor route to plan.
+      const chatId = entry.scope.kind === "chat" ? entry.scope.chatId : undefined;
+      if (
+        scheme === "uploads"
+          ? !chatId
+          : isWorkScopedScheme(scheme) && !lineageId && entry.scope.kind !== "work"
+      )
+        throw new Error("Availability requires the owner its scheme names");
       // A chat's Scratch keeps the Editor's own Work in its route, as a project document does.
       const lineageRef = lineageId
         ? (() => {
@@ -121,13 +129,15 @@ export function planContextAvailabilityBatch(
               : undefined;
           })()
         : undefined;
-      const targetWorkId = lineageId
-        ? input.project.activeWorkId
-        : isWorkScopedProjectContextScheme(scheme)
-          ? entry.scope.kind === "work"
-            ? entry.scope.workId
-            : null
-          : input.project.activeWorkId;
+      const targetWorkId = chatId
+        ? null
+        : lineageId
+          ? input.project.activeWorkId
+          : isWorkScopedScheme(scheme)
+            ? entry.scope.kind === "work"
+              ? entry.scope.workId
+              : null
+            : input.project.activeWorkId;
       const target: ContextRouteTarget | null = targetWorkId
         ? { scheme, path, workId: targetWorkId, ...(lineageId ? { rootThreadId: lineageId } : {}) }
         : null;
@@ -154,17 +164,18 @@ export function planContextAvailabilityBatch(
           rootThreadRef: _oldHandle,
           ...withoutOwner
         } = common;
+        if (chatId) return common as ContextTab;
         if (lineageId && lineageRef)
           return {
             ...withoutOwner,
             rootThreadId: lineageId,
             rootThreadRef: lineageRef,
           } as ContextTab;
-        return isWorkScopedProjectContextScheme(scheme) && targetWorkId
+        return isWorkScopedScheme(scheme) && targetWorkId
           ? ({ ...withoutOwner, workId: targetWorkId } as ContextTab)
           : (withoutOwner as ContextTab);
       });
-      if (isWorkScopedProjectContextScheme(scheme) && targetWorkId && !lineageId) {
+      if (isWorkScopedScheme(scheme) && targetWorkId && !lineageId) {
         for (const workId of selectedWorks) delete selectedTabIdByWork[workId];
         if (selectedWorks.length) selectedTabIdByWork[targetWorkId] = id;
       }
@@ -182,17 +193,16 @@ export function planContextAvailabilityBatch(
           contextRouteMatchesSearch(routeSearch, previous, input.project.activeWorkId)
         ) {
           routeSearch = openContextRouteSearch(routeSearch, target);
+          relocatedRouteDocumentId = id;
         }
       } else if (target && priorTargets.some((prior) => sameTarget(admitted, prior))) {
         admitted = target;
       }
-      const replacement = buildWorkingSetRoute(
-        id,
-        scheme,
-        path,
-        isWorkScopedProjectContextScheme(scheme) && !lineageId ? targetWorkId : undefined,
-        lineageId,
-      );
+      const replacement = buildWorkingSetRoute(id, scheme, path, {
+        workId: isWorkScopedScheme(scheme) && !lineageId ? targetWorkId : undefined,
+        rootThreadId: lineageId,
+        chatId,
+      });
       if (replacement) {
         recentRoutes = recentRoutes.map((route) =>
           workingSetRouteIdentityEquals(route, replacement) ? replacement : route,
@@ -307,6 +317,7 @@ export function planContextAvailabilityBatch(
       projectId,
       documentId: id,
       generation: command.generation,
+      deletionVersion: command.kind === "terminal-remove" ? command.deletionVersion : null,
     });
   }
 
@@ -346,6 +357,7 @@ export function planContextAvailabilityBatch(
     transitionRevision,
     recentRoutes,
     routeSearch,
+    relocatedRouteDocumentId,
     generationRecords,
     sessionEffects,
   };

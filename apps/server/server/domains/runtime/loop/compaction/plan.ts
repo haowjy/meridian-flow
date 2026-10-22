@@ -9,7 +9,7 @@ import {
 import { orderTurnsByPosition } from "../../../threads/order-turns.js";
 import type { TokenizerFamily } from "../../gateway/index.js";
 import { estimateTurnTokens } from "./estimate.js";
-import { type CompactionCut, type RetainedTurnSlice, retainedTail } from "./tail.js";
+import { type CompactionCut, type RetainedTurnSlice, resolveCut, retainedTail } from "./tail.js";
 
 export type { RetainedTurnSlice } from "./tail.js";
 
@@ -160,16 +160,19 @@ function activeCompactionCut(turns: readonly ClassifiedTurn[]): CompactionCut | 
   if (!active) return null;
 
   const metadata = CompactionPlanMetadataCodec.parse(active.turn.metadata);
-  const cutTurn = turns.find(({ turn }) => turn.id === metadata.compactedThrough.turnId)?.turn;
-  if (!cutTurn || cutTurn.position >= active.turn.position) {
-    throw new Error(`Complete compaction ${active.turn.id} has an invalid cut turn`);
-  }
-  return {
-    turnId: cutTurn.id,
-    ...(metadata.compactedThrough.blockSequence !== undefined
-      ? { blockSequence: metadata.compactedThrough.blockSequence }
-      : {}),
-  };
+  const cut = resolveCut(
+    turns.map(({ turn }) => turn),
+    active.turn,
+    {
+      turnId: metadata.compactedThrough.turnId,
+      ...(metadata.compactedThrough.blockSequence !== undefined
+        ? { blockSequence: metadata.compactedThrough.blockSequence }
+        : {}),
+    },
+  );
+  if (!cut) throw new Error(`Complete compaction ${active.turn.id} has an invalid cut turn`);
+  // An empty cut covers nothing that is left, so every candidate is after it.
+  return cut.turnId === null ? null : cut;
 }
 
 function candidatesAfterCut(

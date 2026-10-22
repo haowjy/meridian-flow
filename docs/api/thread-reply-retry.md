@@ -12,9 +12,12 @@ The request body is strict and the ID is minted by the client:
 ```
 
 `replyRetryRequestSchema` validates the body and
-`apiThreadTurnRetryPath(threadId, turnId)` builds the canonical route path. A
-new retry returns **201** with the serialized new `Turn`. Repeating the same
-request ID returns **200** with that existing turn.
+`apiThreadTurnRetryPath(threadId, turnId)` builds the canonical route path. The
+answer is `ReplyRetryResponse`, `{ executionId, turn }`: the execution the
+client follows (it ends when a `meridian.run_state` record shows no open
+execution), the record after the reservation as `runState`, and the new reply
+when it can be named. A new retry returns **201**; repeating the same request ID returns
+**200** with the same execution.
 
 Retry is available only when `turnId` is the latest assistant turn with status
 `error` on the same primary or subagent thread, and no run is live. The server
@@ -28,11 +31,17 @@ For an early provider failure with no output, Retry's request is equivalent to
 the original. After partial output or work, that activity remains honest
 history. If preparation must compact first, the compaction uses a fresh turn ID
 and the retried reply uses the client ID, so the optimistic reply reconciles by
-ID. Repeating the same ID after that reply exists returns it with **200** when
-the ID identifies any assistant reply on the thread; replay does not recheck its relation
-to the requested failed turn.
-While the compaction is still running, a repeated request gets the ordinary
-**409** busy refusal; a new retry returns **201**.
+ID. The first turn the request reserves records `metadata.retryReplyId`.
+
+A replay is answered from durable facts, never from the reads that decide
+eligibility: the reply by ID, else the turn this request ID reserved first (a
+compaction before the reply exists, answered with `turn: null`). Before a
+definitive 409 the server checks again for this request's reservation, so a
+replay that raced its own Retry is answered, while another tab's Retry of the
+same reply is refused. While a claim is held and nothing it could match is
+reserved yet, the route returns **503** `retry_pending` with `Retry-After: 1`:
+repeat the same ID. The new execution runs once prepared, even if a read that
+only describes the answer fails; that answer then carries `turn: null`.
 
 A reply interrupted by process shutdown ends as an error with reason
 `shutdown` and copy “This response failed.” Its adopted messages are

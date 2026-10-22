@@ -4,8 +4,8 @@ import type {
   CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
+  CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
-  CreateUntitledContextDocumentResult,
   DeleteContextEntryRequest,
   MeridianError,
   MoveContextEntryRequest,
@@ -18,20 +18,26 @@ export type ResourceKey = Readonly<{ handle: string }>;
 /**
  * Durable owner identity asserted by a scoped catalog or checked command constructor.
  * Project-scoped schemes have no owner (`workId: null`). A Work-scoped location
- * names a Work (id and slug, slug null for No Work) or, for Scratch, a lineage
- * (the first chat's id and its handle, as in `scratch://@/c12/`). The type
+ * names a Work (id and handle, handle null for No Work) or, for Scratch, a lineage
+ * (the first chat's id and its handle, as in `scratch://@c12/`); uploads are held by a chat
+ * (its id and handle, as in `uploads://@c15/`; no handle, and a bare `uploads://` URI, until the chat exists). The type
  * preserves each pair; only a known project snapshot can establish which row is
  * No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
 export type ResourceOwner =
-  | { workId: null; workSlug?: undefined; rootThreadId?: undefined; rootThreadRef?: undefined }
-  | { workId: string; workSlug: string | null; rootThreadId?: undefined; rootThreadRef?: undefined }
-  | { workId: null; workSlug?: undefined; rootThreadId: string; rootThreadRef: string };
+  | ({ workId: null; workHandle?: undefined } & NoLineage & NoChat)
+  | ({ workId: string; workHandle: string | null } & NoLineage & NoChat)
+  | ({ workId: null; workHandle?: undefined; rootThreadId: string; rootThreadRef: string } & NoChat)
+  | ({ workId: null; workHandle?: undefined; chatId: string; chatRef: string | null } & NoLineage);
+type NoLineage = { rootThreadId?: undefined; rootThreadRef?: undefined };
+type NoChat = { chatId?: undefined; chatRef?: undefined };
 export type ResourceLocation = Readonly<
   { scheme: ProjectContextTreeScheme; path: string; name: string } & ResourceOwner
 >;
 /** A location's owner alone, without its other fields. */
 export function ownerOf(location: ResourceOwner): ResourceOwner {
+  if (location.chatId !== undefined)
+    return { workId: null, chatId: location.chatId, chatRef: location.chatRef };
   if (location.rootThreadId !== undefined)
     return {
       workId: null,
@@ -40,20 +46,22 @@ export function ownerOf(location: ResourceOwner): ResourceOwner {
     };
   return location.workId === null
     ? { workId: null }
-    : { workId: location.workId, workSlug: location.workSlug };
+    : { workId: location.workId, workHandle: location.workHandle };
 }
-/** What decides whether two owners are the same: the Work, or the lineage. Handles and slugs follow. */
+/** What decides whether two owners are the same: the Work, or the lineage. Handles follow. */
 export type ResourceOwnerKey = {
   workId: string | null;
-  workSlug?: string | null;
+  workHandle?: string | null;
   rootThreadId?: string | null;
+  chatId?: string | null;
 };
 /** Whether two locations are held by the same owner. */
 export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): boolean {
   return (
     left.workId === right.workId &&
-    (left.workSlug ?? null) === (right.workSlug ?? null) &&
-    (left.rootThreadId ?? null) === (right.rootThreadId ?? null)
+    (left.workHandle ?? null) === (right.workHandle ?? null) &&
+    (left.rootThreadId ?? null) === (right.rootThreadId ?? null) &&
+    (left.chatId ?? null) === (right.chatId ?? null)
   );
 }
 /** A picked folder identity or a qualified area's root. Paths are observations, not edges. */
@@ -117,8 +125,19 @@ export type ResourceDescriptor = ResourceKey & {
   lifecycle:
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
-    | { kind: "terminal"; generation: string; transitionId: string };
+    | {
+        kind: "terminal";
+        generation: string;
+        transitionId: string;
+        /**
+         * Server namespace version that proved the deletion. Only a strictly newer observation
+         * of the document as present revives it; without one it never revives from a catalog.
+         */
+        deletionVersion?: string;
+      };
   aliases: Record<string, { introducedAtIdentityRevision: number }>;
+  /** The terminal transition a newer server observation superseded; its late purge is stale. */
+  revivedFrom?: { generation: string; transitionId: string };
   obligations: {
     /** A new local document cannot dispatch Create until content exists or the writer files it. */
     createEligibility?: { eligibleAt: number | null };
@@ -133,7 +152,6 @@ export type ResourceDescriptor = ResourceKey & {
       documentId: string;
       identityRevision: number;
       exactDatabaseName: string;
-      generation: string | null;
     };
     cleanup?: { obligationId: string; exactDatabaseName: string };
   };
@@ -145,8 +163,8 @@ export type NamespaceRequest =
   | {
       kind: "move";
       scheme: ProjectContextTreeScheme;
-      sourceWorkSlug: string | null;
-      destinationWorkSlug: string | null;
+      sourceWorkHandle: string | null;
+      destinationWorkHandle: string | null;
       /** Handles of the lineages named by the body's root thread ids; they identify receipt URIs. */
       sourceRootThreadRef?: string | null;
       destinationRootThreadRef?: string | null;
@@ -156,7 +174,7 @@ export type NamespaceRequest =
       kind: "delete";
       scheme: ProjectContextTreeScheme;
       workId: string | null;
-      workSlug: string | null;
+      workHandle: string | null;
       rootThreadId?: string | null;
       rootThreadRef?: string | null;
       body: DeleteContextEntryRequest;
@@ -185,7 +203,16 @@ export type NamespaceIntent = ResourceKey & {
   sequence: number;
   identityRevision: number;
   desired:
-    | { kind: "create"; folderPath: string; provisionalName?: string }
+    | {
+        kind: "create";
+        folderPath: string;
+        provisionalName?: string;
+        /**
+         * Where the writer put the document, sent with the create so the server can join a
+         * branch's document waiting there. Absent for a nameless create (the editor's New document).
+         */
+        destination?: ResourceDestination;
+      }
     | {
         kind: "set-location";
         /** Original input; canonical destination is only for display and comparison. */
@@ -286,7 +313,7 @@ export interface ResourceMetadataStore {
 
 /** Transport evidence is matched to its recorded attempt by journal policy before installation. */
 export type NamespaceOutcome =
-  | { kind: "create"; result: CreateUntitledContextDocumentResult }
+  | { kind: "create"; result: CreateUntitledContextDocumentAnswer }
   | { kind: "operation"; receipt: ContextOperationReceipt }
   | { kind: "refusal"; operationId: string; error: MeridianError };
 

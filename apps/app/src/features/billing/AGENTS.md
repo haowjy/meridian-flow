@@ -1,36 +1,26 @@
 # features/billing
 
-Presentation over the server's USD strings and percentages. Stripe owns
-checkout/payment truth; the server `CreditLedger` owns balance and transactions.
-The client projects no credits and no balance.
+Presentation over server-owned USD strings and percentages. Stripe owns payment
+truth and the server `CreditLedger` owns balances and transactions; the client
+projects neither credits nor balance.
 
-Checkout is P0 server-confirmed:
+- One checkout attempt owns only the clicked control. Keep the catalog usable;
+  show pending and failure with Retry on that control.
+- Generation-fence attempts. Only the latest may redirect or write the handoff
+  baseline.
+- `?checkout=success` is a claim, not proof (the URL carries no session id and
+  no status endpoint exists). Fresh ledger reads compared with
+  the same-tab handoff baseline confirm a purchase; otherwise show reconciling
+  and an honest terminal timeout. If either baseline read fails, fail closed.
+- Capture the handoff baseline from fresh balance and transaction reads, never a
+  stale cache that could fake a delta.
+- Attribute by `(kind, createdAt, amountUsd)`, with the correct transaction kind:
+  extra usage needs a new `purchase` of the requested amount, a plan a new
+  `grant`. A pre-existing row or mode alone is never proof. Preserve whether handoff was
+  checkout or portal: a portal return reuses the cancel URL and is neither a
+  cancellation nor proof nothing was charged. Clear marker and baseline only at
+  terminal status; a reload mid-poll resumes reconciliation.
+- Keep one mounted `role="status"` region for return notices. Copy never promises
+  a balance update.
 
-- One `useCreateCheckoutSession` attempt owns the live control. Only the clicked
-  plan/extra-usage control is pending (`aria-busy`, "Opening checkout…"), and
-  only that control shows the failure `InlineErrorRow` + Retry. Do not disable
-  the whole catalog on `checkout.isPending`.
-- Only the latest attempt may redirect or write a baseline. `onMutate` bumps a
-  generation; a superseded `onSuccess` returns without calling `onHandoff` or
-  `location.assign`.
-- A returned `?checkout=success` is a claim, not proof: the success URL carries
-  no session id and there is no session-status endpoint. `useCheckoutReturn`
-  confirms only when a fresh ledger read shows a row attributable to this
-  checkout, measured against the same-tab baseline captured at handoff;
-  otherwise it shows reconciling, then an honest timeout.
-- The baseline is captured in `BillingPage`'s `onHandoff` from **fresh** balance
-  and transactions reads before the redirect. A stale cache read could miss a
-  purchase already on the server and fake a delta. If either read fails, write
-  no baseline: the return fails closed to `unverified` and never confirms.
-- Attribution is a transaction fingerprint `(kind, createdAt, amountUsd)`.
-  Extra usage needs a new `purchase` with the requested amount; a plan needs a
-  new `grant` while included usage is a subscription. A row present at handoff
-  is never a delta, and mode alone is never proof.
-- The handoff kind (`checkout` vs `portal`) is stored with the baseline. A
-  portal return reuses the cancel URL, so it must not be read as a cancellation
-  or as "nothing was charged."
-- The `?checkout=` marker and baseline clear together, through the router, only
-  at a terminal status (`confirmed`, `timeout`, `unverified`, `cancelled`,
-  `portal`). A reload mid-poll resumes reconciliation.
-- `CheckoutReturnNotice` keeps one `role="status"` region mounted and changes
-  its text so the status is announced. Copy never promises a balance update.
+Keep payment reconciliation honest even when the return URL looks successful.

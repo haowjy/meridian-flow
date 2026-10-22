@@ -3,14 +3,15 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { listsThroughLiveManifest, loadDocumentAddresses } from "../adapters/document-address.js";
-import type { LiveMembership } from "../ports/live-membership.js";
+import type { HiddenNodeRepair } from "../tree/hidden-node-repair.js";
+import { loadDocumentAddresses } from "../tree/tree-addresses.js";
+import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
 
 /**
  * Sums `document_links` occurrences whose target is a moved document or whose ahead ref is settled
  * on one, from live content holders in `projectId` (present where they live now, including under
- * their folders: the address module's deleted-ancestor rule). A drafted holder is live only while the
- * project's live manifest holds it; a draft-only or discarded row is not. A moved holder's own
+ * their folders: the address module's deleted-ancestor rule). A holder must be visible in the
+ * live tree; a hidden or discarded row is not. A moved holder's own
  * links to unmoved documents are not counted; one moved document naming another is. Personal and
  * other-project holders are not counted. Runs inside the move transaction, after settlement, so a
  * ref the move itself settled counts.
@@ -18,7 +19,7 @@ import type { LiveMembership } from "../ports/live-membership.js";
 export async function countIncomingLinks(
   db: Database,
   input: { projectId: ProjectId; movedDocumentIds: readonly DocumentId[] },
-  liveMembership?: Pick<LiveMembership, "members">,
+  repair?: Pick<HiddenNodeRepair, "schedule">,
 ): Promise<{ links: number; documents: number }> {
   if (input.movedDocumentIds.length === 0) return { links: 0, documents: 0 };
   const moved = sql.join(
@@ -38,13 +39,11 @@ export async function countIncomingLinks(
   const holders = (await loadDocumentAddresses(db, { ids: [...links.keys()] })).filter(
     (holder) => !holder.deleted && holder.projectId === input.projectId,
   );
-  const live =
-    liveMembership && holders.some((holder) => listsThroughLiveManifest(holder.scheme))
-      ? await liveMembership.members(input.projectId)
-      : null;
-  const counted = holders.filter(
-    (holder) => !live || !listsThroughLiveManifest(holder.scheme) || live.has(holder.documentId),
+  const statuses = await createTreeReader(db, repair ? { repair } : {}).identityStatus(
+    LIVE_TREE,
+    holders.map((holder) => holder.documentId),
   );
+  const counted = holders.filter((holder) => statuses.get(holder.documentId)?.kind === "visible");
   return {
     links: counted.reduce((sum, holder) => sum + (links.get(holder.documentId) ?? 0), 0),
     documents: counted.length,

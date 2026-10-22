@@ -1,0 +1,8 @@
+# FUTURE — nice-to-have follow-ups (runtime gateway)
+
+- `CANCEL_DRAIN_TIMEOUT_MS` (5 s, `attempt-stream.ts`) bounds Stop once output
+  has started. A probe measured about 5.1 s from Stop to the finish event
+  on the mock model. The likely cause is that the mock's stream does not end on
+  abort (unverified). Follow-up: verify, and make the mock honor abort so Stop
+  timings in probes mean something. Trigger: the next probe that needs Stop
+  latency.

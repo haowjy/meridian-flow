@@ -93,3 +93,45 @@
   writer choices per browser tab, without persisting open menus or confirmations.
   Unsent existing-chat draft loss is tracked separately in
   https://github.com/haowjy/meridian-flow/issues/746.
+
+- A sticky 402 failure shows the full non-retryable explanation live, but only
+  "The AI provider turned this request down." after reload: live-versus-stored
+  drift in failure copy. It moves into the shared chat session's row-failure
+  output; remove this entry then.
+
+- A merged delivery group (two child completions landing on one reply) could not
+  be produced live on the mock, because the server wakes the parent on each
+  completion; only the reviewer's probe script covers it. Add a mock script that
+  lands two completions on one reply, and a step in `docs/qa/chat-session.md`
+  that checks the `./mf thread view` delivery grouping against the screen.
+
+- Polite status announcements and connection-failure alerts still keep their
+  last text until replaced. In particular, the raw WebSocket close text from
+  `client/query/useThreadSnapshotSync.ts` calls unkeyed `announceError`.
+  Give that transport state its own clearable owner and writer-facing wording.
+  Reply, Retry and Stop failure cards are no longer part of this gap: F3a's
+  `useChatCardAnnouncer` clears their keyed alerts when the cards end.
+
+- A row below a reply that finishes hops by the reply's height change (27 px
+  measured: 84.8 px while streaming, 57.8 px settled) for one frame. `TurnList.tsx`
+  positions each virtual row absolutely from TanStack Virtual's `measureElement`
+  (`virtualizer.measureElement` on the row wrapper), which reports the shrunken
+  reply a frame late, so the row below keeps its old start until ResizeObserver
+  catches up. `shouldAdjustScrollPositionOnItemSizeChange` only compensates rows
+  wholly above the viewport. It hits any tail row, not only queued commands. No unit
+  seam measures it: take it with a browser recipe that samples row tops per frame.
+
+## Stop the reply and send this message now, from the queue
+
+The owner, on removing Stop from beside Send: "why would u want to prepare something but stop it...?
+unless u want to stop and send it... which there should be a way to do that in the queue". Add a per-message
+"stop the reply and send this now" to the queue's controls. The composer no longer offers it.
+
+## Cancelled failure-announcement batches
+
+If an unrelated unkeyed announceError supersedes a card batch before its
+publication microtask, its keys correctly remain unannounced, but retry waits
+for the next card projection change. Consider reporting cancellation from the
+announcement store so useChatCardAnnouncer can requeue without interrupting the
+newer alert. Accepted P3 in the F3a structural sign-off; visible cards are not
+lost.

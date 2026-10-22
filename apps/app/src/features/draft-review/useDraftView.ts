@@ -1,86 +1,53 @@
-/** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
+/** Listed rows retain their room even without an editor and share its projection with open review. */
 
-import {
-  type DraftRef,
-  useChangeCommandRecords,
-  wholeDraftPending,
-} from "@/client/query/draft-command-record";
-import { useDraftPreviews } from "@/client/query/useDraftPreview";
-import { usePresentedDraftReview } from "./DraftReviewProvider";
-import {
-  type DraftChangesData,
-  type DraftChangesView,
-  listablePreview,
-  useChangeItems,
-} from "./draft-changes";
-import { type ReviewChange, reviewChangesOfPreview } from "./review-changes";
-import { useOpenReviewChanges } from "./useOpenReviewChanges";
-import type { WorkDraftCommands } from "./useWorkDraftCommands";
-
-const EMPTY: readonly ReviewChange[] = [];
-
-/** Share a painted review's continuity, never borrow its command authority. */
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import { isPathTaken } from "./deleted-drafts";
+import type { DraftChangesView } from "./draft-changes";
+import { useChangeItems } from "./draft-changes";
+import type { DraftRef } from "./review-command-types";
+import { listedItemChanges, targetOfChanges } from "./review-model";
+import { hasTreeLine } from "./tree-line";
+import { useRoomReview } from "./useRoomReview";
+import type { WorkBranchCommands } from "./useWorkBranchCommands";
 export function useDraftView(
   draft: DraftRef,
   {
     controller,
     enabled = true,
+    item,
   }: {
-    controller: Pick<WorkDraftCommands, "commandChange" | "changesLocked">;
+    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked">;
     enabled?: boolean;
+    item?: ThreadDraftListItem;
   },
 ): DraftChangesView {
-  const records = useChangeCommandRecords();
-  const locked = controller.changesLocked || wholeDraftPending(records, draft);
-  const presented = usePresentedDraftReview().controller;
-  const open = presented.inlineReview;
-  const sharing =
-    enabled &&
-    presented.projectId === draft.projectId &&
-    presented.workId === draft.workId &&
-    open?.documentId === draft.documentId &&
-    open.draftId === draft.draftId;
-  const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const entry = useDraftPreviews(enabled && !sharing ? [draft] : [], { openReview: open })[0];
-  const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
-  const { items, hiding } = useChangeItems(
-    draft,
-    preview ? reviewChangesOfPreview(preview) : EMPTY,
-  );
-  const status = !entry
-    ? "idle"
-    : entry.status === "error" || (entry.status === "ready" && entry.preview.status === "corrupt")
-      ? "error"
-      : preview
-        ? "ready"
-        : entry.status === "ready" && entry.preview.status === "gone"
-          ? "gone"
-          : "loading";
-  const data: DraftChangesData = sharing
-    ? {
-        documentId: painted.documentId,
-        draftId: painted.draftId,
-        status: painted.status,
-        items: painted.items,
-        unlisted: painted.unlisted,
-      }
-    : {
-        documentId: draft.documentId,
-        draftId: draft.draftId,
-        status,
-        items: status === "ready" ? items : [],
-        unlisted: status === "ready" && items.length === 0 && !hiding,
-        ...(entry?.status === "error" ? { retry: entry.retry } : {}),
-      };
+  const owner = useDraftCommandOwner();
+  const discarding = Boolean(owner.state(draft.itemKey).discarding);
+  const withoutText = item?.hasDraft === false;
+  const read = useRoomReview(enabled && !withoutText ? draft : null);
+  const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
+  const changes =
+    item && enabled ? listedItemChanges(item, read.listedChanges) : read.listedChanges;
+  const treeLine = !!item && hasTreeLine(item);
+  const { items } = useChangeItems(draft, changes);
   return {
-    ...data,
+    documentId: draft.documentId,
+    itemKey: draft.itemKey,
+    status,
+    items,
+
+    retry: read.retry,
     focused: null,
-    locked,
+    canApply:
+      !isPathTaken(item) &&
+      (treeLine || (withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0)),
+    locked: controller.changesLocked || discarding || status !== "ready",
     apply: async (change) => {
-      await controller.commandChange("apply", draft, change.target);
+      await controller.commandChange("apply", draft, targetOfChanges([change]));
     },
     discard: async (change) => {
-      await controller.commandChange("discard", draft, change.target);
+      await controller.commandChange("discard", draft, targetOfChanges([change]));
     },
   };
 }

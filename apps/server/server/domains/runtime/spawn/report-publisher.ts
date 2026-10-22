@@ -6,7 +6,11 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
+import type {
+  EventJournalWriter,
+  LiveEventWriter,
+  ThreadRepositories,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
@@ -21,7 +25,7 @@ export interface ReportPublisher {
 
 export function createReportPublisher(deps: {
   repos: ThreadRepositories;
-  eventWriter: EventJournalWriter;
+  eventWriter: LiveEventWriter;
   delivery: DeliveryProducer;
   eventSink: EventSink;
 }): ReportPublisher {

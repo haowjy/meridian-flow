@@ -29,6 +29,8 @@ export interface NoticePort {
   record(input: NoticeInput): Promise<void>;
   peek(threadId: string): Promise<Notice[]>;
   consume(ids: readonly number[]): Promise<void>;
+  /** Withdraws the unconsumed notices recorded for pushes that never reached live. */
+  retractForPushes(pushIds: readonly string[]): Promise<void>;
 }
 
 export type WriterWorkSwitchedNoticeData = {

@@ -57,7 +57,18 @@ async function main(): Promise<void> {
     testArgs.shift();
     if (testArgs[0] === "--") testArgs.shift();
   }
-  const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
+  // Local default is 4, not 8. Measured on the shared host with the identical
+  // 912 cases: 8 fork workers peak at 6,038MB in 65s and flaked a settlement
+  // test; 4 workers peak at 3,869MB in 91s and ran all 912 green. Fork workers
+  // are whole processes, so this is the largest per-run memory knob in the repo
+  // — nearly twice the unit suite's 3.1GB. Override with DB_TEST_WORKERS=1..8.
+  //
+  // Workers are local-only: each needs its own cloned database, and only the
+  // local path provisions them. CI points DATABASE_URL at its own throwaway
+  // database and gets no worker URLs, so vitest.db.config.ts falls to
+  // maxWorkers 1 with fileParallelism false. The CI suite is serial, and its
+  // wall clock is the sum of every test rather than a fraction of it.
+  const workerCount = Number(process.env.DB_TEST_WORKERS ?? (local ? "4" : "1"));
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
     throw new Error(
       "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
@@ -68,6 +79,13 @@ async function main(): Promise<void> {
         managedTestDatabaseWorkerUrl(databaseUrl, index + 1),
       )
     : [];
+  // Test-bound against real Postgres and serial in CI, so the DB suite's wall
+  // clock is the sum of every test: 266-322s on a CI runner against 89s at four
+  // local workers. Wall time warns rather than blocks, and this is the value the
+  // warning compares against, so the DB suite's serial shape gets its own.
+  // `pnpm test:all` inherits it for the unit half too; that run is not in
+  // `pnpm check`.
+  const durationReferenceSeconds = process.env.TEST_DURATION_REFERENCE_SECONDS ?? "600";
 
   try {
     if (local) {
@@ -101,22 +119,26 @@ async function main(): Promise<void> {
         ...(testArgs.some((arg) => arg === "--reporter" || arg.startsWith("--reporter="))
           ? []
           : ["--reporter=default"]),
+        `--reporter=${join(repoRoot, "tools/ci/test-budget-reporter.ts")}`,
         `--reporter=${join(repoRoot, "tools/ci/db-test-reporter.ts")}`,
       ],
       databaseUrl,
-      workerDatabaseUrls.length > 0
-        ? {
-            DB_TEST_DATABASE_URLS: JSON.stringify(
-              workerDatabaseUrls.map((workerUrl) => {
-                const url = new URL(workerUrl);
-                // Postgres.js forwards unknown URL parameters as session startup settings.
-                // Only these owned throwaway connections sacrifice crash durability.
-                url.searchParams.set("synchronous_commit", "off");
-                return url.toString();
-              }),
-            ),
-          }
-        : {},
+      {
+        TEST_DURATION_REFERENCE_SECONDS: durationReferenceSeconds,
+        ...(workerDatabaseUrls.length > 0
+          ? {
+              DB_TEST_DATABASE_URLS: JSON.stringify(
+                workerDatabaseUrls.map((workerUrl) => {
+                  const url = new URL(workerUrl);
+                  // Postgres.js forwards unknown URL parameters as session startup settings.
+                  // Only these owned throwaway connections sacrifice crash durability.
+                  url.searchParams.set("synchronous_commit", "off");
+                  return url.toString();
+                }),
+              ),
+            }
+          : {}),
+      },
     );
     process.exitCode = testExit;
   } finally {

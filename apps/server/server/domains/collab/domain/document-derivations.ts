@@ -152,12 +152,11 @@ export async function deriveDocumentOutputs(
 ) {
   return {
     markdown: await serializer.serializeDocument(cut.documentId, doc, LIVE_VIEW),
-    links:
-      cut.kind === "manifest" || !cut.holderUri
-        ? []
-        : deriveDocumentLinkRows({
-            occurrences: extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
-            holderUri: cut.holderUri,
-          }),
+    links: !cut.holderUri
+      ? []
+      : deriveDocumentLinkRows({
+          occurrences: extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+          holderUri: cut.holderUri,
+        }),
   };
 }

@@ -7,7 +7,9 @@ export {
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
+export type { Branches } from "./domain/branches.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
+export { DraftPrefixMissingError, DraftStaleUpdateError } from "./domain/draft-store.js";
 export {
   type BindHolder,
   type BindMarkdownInput,
@@ -15,6 +17,7 @@ export {
   type LinkBinder,
   LinkBindingInsideTransactionError,
 } from "./domain/link-binding.js";
+export type { Branch, BranchStatus } from "./domain/ports/branch-store.js";
 export {
   type DocumentLinkScopes,
   type HolderLinkScope,

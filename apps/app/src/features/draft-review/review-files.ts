@@ -3,7 +3,7 @@ import {
   documentBasename,
   type ReviewFileTarget,
   sortDraftFiles,
-} from "@/client/query/work-draft-files";
+} from "@/client/query/work-branch-files";
 
 /**
  * The draft the review moves to when the writer is done with this one: the next
@@ -36,6 +36,6 @@ export function nextReviewFile(
 export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
   return (
     row.documentName ??
-    (row.isNewDocument ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)
+    (row.draftOnly ? (documentBasename(row.contextLocation?.path) ?? untitled) : row.documentId)
   );
 }

@@ -9,10 +9,12 @@ import { QueryClientContext } from "@tanstack/react-query";
 import { useContext, useEffect, useMemo } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
+  catalogScopeReady,
   contextCatalogQueryOptions,
   projectResourceCatalogView,
 } from "@/client/query/useContextCatalog";
 import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import {
   useAccountResourceProjection,
@@ -23,13 +25,17 @@ export function useReferenceBrowserCatalog(
   projectId: string | null | undefined,
   workId: string | null | undefined,
   label: string,
-  /** A No Work chat's lineage: its Scratch joins the Work's Uploads in the catalog. */
+  /** A No Work chat's lineage: its Scratch joins the Work's in the catalog. */
   rootThreadId?: string | null,
+  /** The chat whose uploads the picker offers: a subagent's top chat. */
+  chatId?: string | null,
 ): AtReferenceCatalog | null {
   const queryClient = useContext(QueryClientContext);
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId ?? "");
   const projectPending = useIsProjectPendingCreation(projectId);
+  const lineagePending = useIsThreadPendingCreation(rootThreadId);
+  const chatPending = useIsThreadPendingCreation(chatId);
   const scopes = useMemo(
     () =>
       projectId
@@ -38,9 +44,12 @@ export function useReferenceBrowserCatalog(
             { kind: "user" as const, userId: "self" },
             ...(workId ? [{ kind: "work" as const, projectId, workId }] : []),
             ...(rootThreadId ? [{ kind: "lineage" as const, projectId, rootThreadId }] : []),
-          ]
+            ...(chatId ? [{ kind: "chat" as const, projectId, chatId }] : []),
+          ].filter((scope) =>
+            catalogScopeReady(scope, true, { lineage: lineagePending, chat: chatPending }),
+          )
         : [],
-    [projectId, workId, rootThreadId],
+    [projectId, workId, rootThreadId, chatId, lineagePending, chatPending],
   );
   useEffect(() => {
     if (!queryClient || !projectId || !resources || projectPending) return;

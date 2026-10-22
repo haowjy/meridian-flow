@@ -165,6 +165,18 @@ export async function runInDrizzleSavepoint<T>(
   }
 }
 
+/**
+ * A statement whose failure the caller tolerates: inside an ambient transaction
+ * it runs in a savepoint, so a failure rolls back to it and leaves the
+ * transaction usable. Outside one it runs as is, opening no transaction.
+ */
+export function runIsolatedFromAmbientTransaction<T>(
+  db: DrizzleDatabase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return isInDrizzleTransaction() ? runInDrizzleSavepoint(db, operation) : operation();
+}
+
 export function enlistDrizzleTransactionParticipant<State>(
   participant: DrizzleTransactionParticipant<State>,
 ): State {

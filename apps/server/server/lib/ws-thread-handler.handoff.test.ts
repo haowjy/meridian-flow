@@ -1,12 +1,14 @@
 /** Ordered and cancellable socket handoff over the real journal hub. */
+
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import { goldenAssistantTurn } from "@meridian/contracts/test-support";
 import { describe, expect, it, vi } from "vitest";
-import { goldenAssistantTurn } from "../../../../packages/contracts/src/threads/golden/turn-fixture.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { createInMemoryEventJournalWriter } from "../domains/threads/adapters/in-memory/index.js";
 import type { EventJournalReader } from "../domains/threads/ports/index.js";
 import { createThreadEventHub } from "../domains/threads/thread-event-hub.js";
+import { noTransactionOwner } from "../shared/in-memory-transaction.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -41,7 +43,7 @@ async function harness(
     onFirstCatchupReady?: () => void;
   } = {},
 ) {
-  const journal = createInMemoryEventJournalWriter();
+  const journal = createInMemoryEventJournalWriter(noTransactionOwner);
   await journal.appendEvent(THREAD_ID, {
     type: "turn.created",
     turn: goldenAssistantTurn("turn-handoff", THREAD_ID),
@@ -111,10 +113,20 @@ async function harness(
   };
   const session = createThreadWebSocketSession(peer);
   session.open();
+  let requests = 0;
   const subscribe = (lastSeq = "0") =>
-    session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq }));
+    session.onMessage(
+      JSON.stringify({
+        type: "subscribe",
+        requestId: `r${++requests}`,
+        threadId: THREAD_ID,
+        lastSeq,
+      }),
+    );
   const unsubscribe = () =>
-    session.onMessage(JSON.stringify({ type: "unsubscribe", threadId: THREAD_ID }));
+    session.onMessage(
+      JSON.stringify({ type: "unsubscribe", requestId: `r${++requests}`, threadId: THREAD_ID }),
+    );
   const appendLive = async () => {
     await hub.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "b" });
     await hub.appendEvent(THREAD_ID, {

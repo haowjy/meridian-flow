@@ -6,7 +6,7 @@ import type {
   TraceStreamRef,
 } from "@meridian/contracts/observability";
 import type { ModelResponse } from "@meridian/contracts/threads";
-import { cacheHitPercent } from "@/features/chat/turn-stats";
+import { cacheHitPercent } from "@meridian/thread-client";
 
 export type LlmCallOutcome = "in-flight" | "ok" | "cancelled" | "error";
 
@@ -113,11 +113,11 @@ const CORRELATION_STRING_KEYS = [
   "toolCallId",
   "errorCode",
   "documentId",
-  "branchId",
+  "draftId",
   "yjsSpans",
 ] as const;
 
-const CORRELATION_NUMBER_KEYS = ["iteration", "branchGeneration", "yjsClient"] as const;
+const CORRELATION_NUMBER_KEYS = ["iteration", "yjsClient"] as const;
 const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
 
 type GatewayEventRecord = EventRecord & {

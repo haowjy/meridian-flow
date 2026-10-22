@@ -11,6 +11,7 @@ import type { Thread, Work } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
+import { topChatOf } from "@/client/query/useTopChat";
 import { useThreadActions } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
@@ -33,6 +34,7 @@ import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
+import { ProjectOwnerNamesProvider } from "./ProjectOwnerNamesProvider";
 import { SubagentPathRow } from "./SubagentPathRow";
 
 export type ChatScreenProps = {
@@ -128,7 +130,6 @@ function ChatScreenLoaded({
   visible: boolean;
 }) {
   const {
-    activateProjection,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
@@ -188,26 +189,29 @@ function ChatScreenLoaded({
           activeWork={activeWork}
           availableWorks={availableWorks}
           rootThreadId={thread?.rootThreadId ?? null}
+          chat={topChatOf(thread, projectThreads)}
           onOpenContextTarget={onOpenContextTarget}
         >
-          <ChatView
-            threadId={threadId}
-            projectId={projectId}
-            activeThread={thread}
-            activeWork={activeWork}
-            snapshotLiveState={snapshotLiveState}
-            snapshotNextSeq={snapshotNextSeq}
-            snapshotThreadUsage={snapshot?.threadUsage}
-            historySettled={historySettled}
-            activateProjection={activateProjection}
-            active={visible}
-            composerStrip={
-              activeWork && isWorkArchived(activeWork) ? (
-                <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
-              ) : undefined
-            }
-            key={`${projectId}:${threadId}`}
-          />
+          <ProjectOwnerNamesProvider projectId={projectId}>
+            <ChatView
+              threadId={threadId}
+              projectId={projectId}
+              activeThread={thread}
+              snapshotWriteMode={snapshotThread?.aiWriteMode}
+              activeWork={activeWork}
+              snapshotLiveState={snapshotLiveState}
+              snapshotNextSeq={snapshotNextSeq}
+              snapshotThreadUsage={snapshot?.threadUsage}
+              historySettled={historySettled}
+              active={visible}
+              composerStrip={
+                activeWork && isWorkArchived(activeWork) ? (
+                  <ArchivedWorkNotice projectId={projectId} work={activeWork} variant="strip" />
+                ) : undefined
+              }
+              key={`${projectId}:${threadId}`}
+            />
+          </ProjectOwnerNamesProvider>
         </ProjectChatContextNavigationProvider>
       </div>
     </div>

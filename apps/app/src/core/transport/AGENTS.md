@@ -1,8 +1,9 @@
 # core/transport — Client transport seams
 
 This directory owns browser transport primitives for collaborative documents and
-thread/agent sockets. It does not own document-session policy or debug-event
-interpretation.
+thread socket adapters. The thread socket client and its contract live in
+`@meridian/thread-client`; `TransportProvider` owns the app composition. This
+directory does not own document-session policy or debug-event interpretation.
 
 ## Mental model
 
@@ -32,6 +33,9 @@ Depth and the incident behind it: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - A `DocumentSessionTransportProvider` must synchronously publish its current
   connection status when `subscribeStatus` is called, then publish every later
   transition.
+- A draft room's socket holds its Updates until that socket's SyncStep2 is
+  written, then releases them in order; live rooms keep the provider's order
+  byte for byte. Never inject a frame around `send` or release on a timer.
 - Keep document and thread wire contracts separate. Transport observers receive
   final frames but never parse, retain, or broaden their contents.
 - Register optional wire taps before a socket can be created; debug features own

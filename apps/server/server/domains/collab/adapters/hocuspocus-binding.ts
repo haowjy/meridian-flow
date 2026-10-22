@@ -1,14 +1,20 @@
-/** Mutable Hocuspocus instance binding and branch-room publication adapter. */
+/** Mutable Hocuspocus instance binding and draft-room delivery and repair. */
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { closeBranchRooms } from "../hocuspocus-rooms.js";
+import { closeDraftRooms } from "../hocuspocus-rooms.js";
 
-const BRANCH_AGENT_BROADCAST_ORIGIN = {
+const DRAFT_AGENT_BROADCAST_ORIGIN = {
   source: "local",
-  context: { origin: { type: "system", reason: "branch-agent-append" } },
+  context: { origin: { type: "system", reason: "draft-agent-append" } },
 } satisfies TransactionOrigin;
+
+/** Content a draft room did not author: Hocuspocus broadcasts it to the room's tabs. */
+function applyToRoom(room: Y.Doc, update: Uint8Array): void {
+  Y.applyUpdate(room, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+}
 
 export function createHocuspocusBinding(eventSink?: EventSink) {
   let instance: Hocuspocus | null = null;
@@ -23,24 +29,21 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
     },
-    closeBranch(branchId: string): void {
-      closeBranchRooms(instance, branchId);
+    closeDraft(draftId: string): void {
+      closeDraftRooms(instance, draftId);
     },
-    publishBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
+    applyToRoom,
+    deliverDraftUpdate({ draftId, update }: { draftId: string; update: Uint8Array }): void {
       try {
-        const prefix = `branch:${branchId}:gen:`;
-        for (const [roomName, branchDoc] of instance?.documents.entries() ?? []) {
-          if (roomName.startsWith(prefix)) {
-            Y.applyUpdate(branchDoc, update, BRANCH_AGENT_BROADCAST_ORIGIN);
-          }
-        }
+        const room = instance?.documents.get(draftRoomName(draftId));
+        if (room) applyToRoom(room, update);
       } catch (cause) {
         if (!eventSink) return;
         emitEvent(eventSink, {
           level: "warn",
-          source: "collab.branch_review",
-          name: "branch_update_broadcast.failed",
-          payload: { branchId, ...unknownToEventPayload(cause) },
+          source: "collab.draft_review",
+          name: "draft_update_broadcast.failed",
+          payload: { draftId, ...unknownToEventPayload(cause) },
         });
       }
     },

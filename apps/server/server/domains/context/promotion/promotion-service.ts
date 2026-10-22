@@ -93,7 +93,7 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       const policy = evaluatePromotionPolicy(sourcePath);
       if (policy.decision === "skip" || !policy.mimeType)
         return err("policy_skip", `Path not eligible for promotion: ${sourcePath}`);
-      let authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }> = { kind: "none" };
+      let authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }> | null = null;
       if (input.workId) {
         try {
           const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
@@ -105,9 +105,9 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
           );
         }
       }
-      if (input.workId && !("workId" in authority))
+      if (input.workId && !(authority && "workId" in authority))
         return err("invalid_input", "Work is not available in this project");
-      if (!("workSlug" in authority) || authority.workSlug === null) {
+      if (!authority || !("workHandle" in authority) || authority.workHandle === null) {
         const lineage = await deps.lineages?.byId(input.projectId, input.provenance.rootThreadId);
         if (!lineage)
           return err("invalid_input", "Results require the first chat's assigned handle");

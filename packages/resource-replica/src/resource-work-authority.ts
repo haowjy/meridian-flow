@@ -1,21 +1,22 @@
 /** Checked owner construction at command boundaries and one durable URI authority rule. */
-import type { ParsedContextAuthority } from "@meridian/contracts/context-uri";
 import {
-  type CatalogScope,
-  isWorkScopedProjectContextScheme,
-  type ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+  formatParsedContextUri,
+  isOwnedContextScheme,
+  type ParsedContextAuthority,
+} from "@meridian/contracts/context-uri";
+import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { decodeWorkHandle } from "@meridian/contracts/works";
 import type { ResourceOwner } from "./resource-records";
 
 /** The locked row is separate from named Works in the project's authoritative snapshot. */
 export function resourceWorkAuthorityFor(
   workId: string,
-  snapshot: { works: readonly { id: string; slug: string | null }[]; noWork: { id: string } },
+  snapshot: { works: readonly { id: string; handle: string | null }[]; noWork: { id: string } },
 ): ResourceOwner {
-  if (workId === snapshot.noWork.id) return { workId, workSlug: null };
+  if (workId === snapshot.noWork.id) return { workId, workHandle: null };
   const work = snapshot.works.find((candidate) => candidate.id === workId);
-  if (!work?.slug) throw new Error("The destination Work has no known named authority");
-  return { workId: work.id, workSlug: work.slug };
+  if (!work?.handle) throw new Error("The destination Work has no known named authority");
+  return { workId: work.id, workHandle: work.handle };
 }
 
 /** The owner a lineage catalog entry asserts: the scope's first-chat id and the handle its URI spells. */
@@ -26,45 +27,77 @@ export function resourceLineageOwner(
   return { workId: null, rootThreadId: scope.rootThreadId, rootThreadRef };
 }
 
+/** The owner a chat catalog entry asserts: the scope's chat id and the handle its URI spells. */
+export function resourceChatOwner(
+  scope: Extract<CatalogScope, { kind: "chat" }>,
+  chatRef: string | null,
+): ResourceOwner {
+  return { workId: null, chatId: scope.chatId, chatRef };
+}
+
 /** What a location's owner spells in a context URI. */
 export type ResourceContextAuthority =
   | { kind: "contextual" }
-  | { kind: "none" }
-  | { kind: "work"; workSlug: string }
-  | { kind: "lineage"; rootThreadRef: string };
+  | { kind: "work"; workHandle: string }
+  | { kind: "lineage"; rootThreadRef: string }
+  | { kind: "chat"; chatRef: string | null };
 
 /** Journal identity was checked against a Works snapshot or asserted by a scoped server catalog. */
 export function resourceContextAuthority(
   scheme: ProjectContextTreeScheme,
   owner: {
     workId: string | null;
-    workSlug?: string | null;
+    workHandle?: string | null;
     rootThreadId?: string | null;
     rootThreadRef?: string | null;
+    chatId?: string | null;
+    chatRef?: string | null;
   },
 ): ResourceContextAuthority {
-  if (!isWorkScopedProjectContextScheme(scheme)) return { kind: "contextual" };
+  if (!isOwnedContextScheme(scheme)) return { kind: "contextual" };
+  if (scheme === "uploads") {
+    if (!owner.chatId || owner.workId !== null) throw new Error("Uploads require a chat owner");
+    return { kind: "chat", chatRef: owner.chatRef ?? null };
+  }
+  if (owner.chatId) throw new Error("Chat authority requires Uploads");
   if (owner.rootThreadId) {
-    if (scheme !== "scratch" || owner.workId !== null || !owner.rootThreadRef)
+    if (owner.workId !== null || !owner.rootThreadRef)
       throw new Error("Lineage authority requires Scratch and a first-chat handle");
     return { kind: "lineage", rootThreadRef: owner.rootThreadRef };
   }
-  if (!owner.workId || owner.workSlug === undefined)
+  if (!owner.workId || owner.workHandle === undefined)
     throw new Error("Work-scoped authority requires a known Work identity");
-  return owner.workSlug === null ? { kind: "none" } : { kind: "work", workSlug: owner.workSlug };
+  if (owner.workHandle === null) throw new Error("No Work owns no Scratch");
+  return { kind: "work", workHandle: owner.workHandle };
 }
 
-/** The authority's spelling in a URI: nothing for contextual, `@arc/`, `@/` or `@/c12/`. */
-export function resourceUriQualifier(authority: ResourceContextAuthority): string {
+/**
+ * A location's URI, spelled by the contracts serializer from its owner's authority. A chat that
+ * does not exist yet has no handle, so its uploads take the contextual form. Null when the
+ * authority names no valid Work.
+ */
+export function resourceContextUri(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  authority: ResourceContextAuthority,
+): string | null {
+  const bare = path.replace(/^\/+/, "");
   switch (authority.kind) {
+    case "work": {
+      const workHandle = decodeWorkHandle(authority.workHandle);
+      return workHandle ? formatParsedContextUri(scheme, bare, { kind: "work", workHandle }) : null;
+    }
+    case "chat":
+      return formatParsedContextUri(
+        scheme,
+        bare,
+        authority.chatRef === null
+          ? { kind: "contextual" }
+          : { kind: "chat", chatRef: authority.chatRef },
+      );
     case "contextual":
-      return "";
-    case "none":
-      return "@/";
-    case "work":
-      return `@${authority.workSlug}/`;
     case "lineage":
-      return `@/${authority.rootThreadRef}/`;
+      return formatParsedContextUri(scheme, bare, authority);
   }
 }
 
@@ -77,8 +110,14 @@ export function catalogEntryOwner(
     return authority.kind === "lineage"
       ? resourceLineageOwner(scope, authority.rootThreadRef)
       : { workId: null };
+  if (scope.kind === "chat")
+    // A chat that does not exist yet has no handle, so its uploads spell a bare URI.
+    return resourceChatOwner(scope, authority.kind === "chat" ? authority.chatRef : null);
   if (scope.kind !== "work") return { workId: null };
-  return { workId: scope.workId, workSlug: authority.kind === "work" ? authority.workSlug : null };
+  return {
+    workId: scope.workId,
+    workHandle: authority.kind === "work" ? authority.workHandle : null,
+  };
 }
 
 /** Whether a catalog scope is where this owner's documents are listed. */
@@ -88,6 +127,7 @@ export function ownerListedInScope(
   scope: CatalogScope,
   projectId: string,
 ): boolean {
+  if (owner.chatId !== undefined) return scope.kind === "chat" && scope.chatId === owner.chatId;
   if (owner.rootThreadId !== undefined)
     return scope.kind === "lineage" && scope.rootThreadId === owner.rootThreadId;
   if (owner.workId !== null) return scope.kind === "work" && scope.workId === owner.workId;
@@ -99,8 +139,8 @@ export function ownerListedInScope(
 /** The owner fields a move request carries for its source and destination locations. */
 export function moveOwnerFields(source: ResourceOwner, destination: ResourceOwner) {
   return {
-    sourceWorkSlug: source.workSlug ?? null,
-    destinationWorkSlug: destination.workSlug ?? null,
+    sourceWorkHandle: source.workHandle ?? null,
+    destinationWorkHandle: destination.workHandle ?? null,
     sourceRootThreadRef: source.rootThreadRef ?? null,
     destinationRootThreadRef: destination.rootThreadRef ?? null,
     body: {

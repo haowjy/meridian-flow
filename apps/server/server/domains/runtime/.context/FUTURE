@@ -38,3 +38,14 @@
   the prompt's lineage line and once in `readChainPermission` for
   `<work_context>` (10 of 17 statements at depth 3). Read the lineage once and
   derive both (`runtime/loop/work-context.ts`, `loop/permissions/agent-chain.ts`).
+
+- A start whose selection holds a due write-mode switch prepares inside the
+  thread lock (`adapters/runtime-delivery.ts`, `selectRunStart` and the locked
+  attempt; see `controls.md`), so a writer send on that chat waits for the
+  whole preparation. The mock measured 90.7 ms; reference reads and image
+  bytes grow it. If due-switch starts on image-heavy chats stall sends, revisit
+  carrying the projected switch through optimistic preparation. That needs a
+  twin of every seam that reads the mode or the leaf (work-context render,
+  prompt bake and tools, the switch notice, the leaf and position chain), and a
+  missed seam runs a reply in the wrong mode, which is why it was rejected for
+  now.

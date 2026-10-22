@@ -1,0 +1,26 @@
+{
+  "name": "@meridian/thread-client",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/thread-client/src",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/thread-client",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/thread-client",
+        "command": "vitest run --passWithNoTests"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}
