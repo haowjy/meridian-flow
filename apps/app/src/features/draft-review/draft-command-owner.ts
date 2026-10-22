@@ -764,18 +764,21 @@ export class DraftCommandOwner {
     surface: "editor" | "dock",
     onNoticeEnd?: () => void,
   ): { notice: DiscardNotice; outcome: Promise<CommandOutcome> } | null {
+    const entry = this.byItem.get(ref.itemKey);
     return startDraftDiscardSession({
       ref,
       target,
       surface,
       onNoticeEnd,
-      entry: this.byItem.get(ref.itemKey),
+      entry,
       registry: this.registry,
       active: () => this.active,
       state: () => this.state(ref.itemKey),
       setState: (state) => this.setState(ref.itemKey, state),
-      textClicks: (entry) => this.textClicks(entry as Entry),
-      releaseIdle: (entry) => this.releaseIdle(entry as Entry),
+      textClicks: () => (entry ? this.textClicks(entry) : []),
+      releaseIdle: () => {
+        if (entry) this.releaseIdle(entry);
+      },
     });
   }
 

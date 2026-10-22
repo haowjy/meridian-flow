@@ -251,31 +251,6 @@ export async function handleBranchCommandObservation(
 // --- Grants ------------------------------------------------------------------------------------
 
 /**
- * The writer's grant on one draft (file-access §2, §4): preview reads it; Discard edits it;
- * Apply edits it and the live document, so an archived Work's frozen drafts can't be applied
- * (D30).
- */
-async function _draftGrants<N extends FileNeed>(
-  deps: BranchRouteServices,
-  input: { projectId: ProjectId; workId: WorkId; documentId: DocumentId; userId: UserId },
-  need: N,
-  options: { live?: boolean } = {},
-): Promise<FileGrant<N>[]> {
-  await requireBranchWorkAccess(deps, input);
-  const draft = await requireFileGrant(
-    deps.fileAccess,
-    input.userId,
-    { kind: "draft", documentId: input.documentId, workId: input.workId },
-    need,
-  );
-  if (!options.live) return [draft];
-  return [
-    draft,
-    await requireFileGrant(deps.fileAccess, input.userId, documentTarget(input.documentId), need),
-  ];
-}
-
-/**
  * A pending existing document is authorized by its stable live identity when its proposed
  * branch placement cannot be resolved. Project and Work ownership are checked separately by
  * every caller; this fallback never makes a hidden creation addressable outside its branch.
