@@ -47,6 +47,26 @@ function skillFileDisplayName(uriOrPath: string): string | null {
   return t`${name} (${skill})`;
 }
 
+/**
+ * Where a move took a document, as little as tells it apart: its new name for a rename in
+ * place; the folder path for a move between folders; the section too ("Manuscript/part2/ch4")
+ * for a move between sections. Works are never named by handle (#914), so a move between two
+ * Works' Scratch reads as a move within Scratch.
+ */
+export function moveDestinationName(from: string, to: string): string {
+  const source = parseContextLocation(from);
+  const destination = parseContextLocation(to);
+  const name = documentDisplayName(to);
+  const folder = (path: string) => {
+    const trimmed = path.replace(/^\/+/, "");
+    return trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
+  };
+  const crossSection = source.scheme !== destination.scheme && destination.scheme !== null;
+  const path = `${folder(destination.path)}${name}`;
+  if (crossSection && destination.scheme) return `${schemeLabel(destination.scheme)}/${path}`;
+  return folder(source.path) === folder(destination.path) ? name : path;
+}
+
 export function folderDisplayName(uriOrPath: string): string {
   const { scheme, path } = parseContextLocation(uriOrPath);
   const segments = path.split("/").filter(Boolean);

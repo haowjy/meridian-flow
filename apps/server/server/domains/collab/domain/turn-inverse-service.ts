@@ -9,7 +9,9 @@ import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
+  TreeReversalFault,
   TurnInverseSkip,
+  TurnInverseSkipCause,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
@@ -28,7 +30,7 @@ import {
   settlementOf,
   type TransitionEntry,
   type TreeStates,
-  treeChangedReason,
+  treeChangedCause,
   treeKey,
 } from "./tree-inverse.js";
 
@@ -189,20 +191,21 @@ function prepare(
         actor: kind === "rollback" ? "system" : "human",
       },
     });
-    const skipTree = (row: StoredTreeEntry, reason: string) =>
+    const skipTree = (row: StoredTreeEntry, cause: TurnInverseSkipCause) =>
       skips.push({
+        kind: "tree",
         documentId: document.documentId,
         uri: document.uri,
-        before: row.tree.shownAt ?? "",
-        after: "",
-        reason,
+        at: row.tree.shownAt,
+        cause,
       });
-    const skip = (part: StoredInversePart, reason: string) =>
+    const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) =>
       skips.push({
+        kind: "text",
         ...store.describePart(document, part),
         documentId: document.documentId,
         uri: document.uri,
-        reason,
+        cause,
       });
     // The originals in step order: a tree entry, or one edit's targeted text parts.
     const byEdit = new Map<string, StoredInversePart[]>();
@@ -225,17 +228,17 @@ function prepare(
     for (const { at, row, parts } of originals) {
       if (row) {
         if (simulation.rolledBack.has(treeKey(row.editId))) {
-          skipTree(row, "Rolled back");
+          skipTree(row, "rolled_back");
           continue;
         }
         const settled = settlementOf(row, document.tree);
         if (settled) {
-          skipTree(row, settled === "applied" ? "Applied to the manuscript" : "discarded");
+          skipTree(row, settled === "applied" ? "applied" : "discarded");
           continue;
         }
         const latest = latestTransition(row, simulation.tree, simulation.rolledBack);
         if (latest.stands !== (direction === "undo")) {
-          skipTree(row, direction === "undo" ? "Already undone" : "Already redone");
+          skipTree(row, direction === "undo" ? "already_undone" : "already_redone");
           continue;
         }
         const planned = planTreeInverse(
@@ -246,7 +249,7 @@ function prepare(
           simulation.nextStep(),
         );
         if (!planned) {
-          skipTree(row, `It was ${treeChangedReason(simulation.states, row.tree.destination)}`);
+          skipTree(row, treeChangedCause(simulation.states, row.tree.destination));
           continue;
         }
         simulation.recordTree(planned, { kind, actionId, consumes });
@@ -256,7 +259,7 @@ function prepare(
       let chosen = 0;
       for (const part of parts) {
         if (rolledBack(part)) {
-          skip(part, "Rolled back");
+          skip(part, "rolled_back");
           continue;
         }
         // Parts in an active draft that outlived a live delete invert there (D79); parts that
@@ -265,21 +268,21 @@ function prepare(
         if (!draft && simulation.liveRemoved()) {
           skip(
             part,
-            `This file was ${document.removal?.reason === "discarded" ? "discarded" : "deleted"}`,
+            document.removal?.reason === "discarded" ? "document_discarded" : "document_deleted",
           );
           continue;
         }
         if (disposition(part) === "applied") {
-          skip(part, "Applied to the manuscript");
+          skip(part, "applied");
           continue;
         }
         if (draft?.frozen) {
-          skip(part, "This draft is archived");
+          skip(part, "draft_archived");
           continue;
         }
         const originDraftId = part.origin.kind === "pending" ? part.origin.draftId : null;
         if (originDraftId !== draftId || (originDraftId && !draft)) {
-          skip(part, originDraftId === draftId ? "discarded" : "This part is in another draft");
+          skip(part, originDraftId === draftId ? "discarded" : "other_draft");
           continue;
         }
         selection.push({ part, direction: direction === "undo" ? "invert" : "reapply" });
@@ -301,10 +304,10 @@ function prepare(
           disposition(part) === "discarded"
             ? "discarded"
             : classified.reasons.includes("inaccessible ancestor")
-              ? "Its paragraph was removed"
+              ? "paragraph_removed"
               : classified.state === "undone"
-                ? "Already undone"
-                : "Stayed as you edited it",
+                ? "already_undone"
+                : "edited_since",
         );
     }
     const steps = order.flatMap((step): InverseStep[] => {
@@ -333,6 +336,22 @@ const countAccepted = (plans: PreparedDocumentInverse[]) =>
       plan.steps.reduce((n, step) => n + (step.kind === "tree" ? 1 : step.edit.parts.length), 0),
     0,
   );
+
+/**
+ * Why a reversal that reversed nothing failed, when a move or delete met its destination
+ * unable to take it: a taken location first (the writer can clear it), then a missing folder,
+ * then a document moved or deleted again since. Not a dependency on later edits.
+ */
+function treeFault(skips: readonly TurnInverseSkip[]): TreeReversalFault | null {
+  const causes = new Set(skips.flatMap((skip) => (skip.kind === "tree" ? [skip.cause] : [])));
+  if (causes.has("location_taken")) return "location_taken";
+  if (causes.has("folder_missing")) return "folder_missing";
+  return ["superseded", "deleted_since", "moved_since"].some((cause) =>
+    causes.has(cause as TurnInverseSkipCause),
+  )
+    ? "superseded"
+    : null;
+}
 
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
@@ -388,14 +407,14 @@ export function createTurnInverseService(store: TurnInverseStore) {
             ? skips.length
               ? "partial"
               : "reversed"
-            : plans.length &&
-                plans.every(
-                  (plan) =>
-                    plan.skips.length &&
-                    plan.skips.every((skip) => skip.reason === "This draft is archived"),
-                )
-              ? "permission_denied"
-              : "expired",
+            : (treeFault(skips) ??
+              (plans.length &&
+              plans.every(
+                (plan) =>
+                  plan.skips.length && plan.skips.every((skip) => skip.cause === "draft_archived"),
+              )
+                ? "permission_denied"
+                : "expired")),
           documents: plans.map((plan) => ({
             uri: plan.document.uri,
             ...(reversedHere(plan)
@@ -407,10 +426,11 @@ export function createTurnInverseService(store: TurnInverseStore) {
               : {}),
             status: reversedHere(plan)
               ? "reversed"
-              : plan.skips.length &&
-                  plan.skips.every((skip) => skip.reason === "This draft is archived")
+              : plan.skips.length && plan.skips.every((skip) => skip.cause === "draft_archived")
                 ? "permission_denied"
-                : "expired",
+                : (treeFault(
+                    skips.filter((skip) => skip.documentId === plan.document.documentId),
+                  ) ?? "expired"),
           })),
           skips,
           acceptedParts: accepted,

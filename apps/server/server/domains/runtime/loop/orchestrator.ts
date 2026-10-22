@@ -297,7 +297,7 @@ export interface OrchestratorDeps {
     rollbackResponse(
       responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<{ skipped: readonly { uri: string; reason: string }[] } | undefined>;
+    ): Promise<{ skipped: readonly { uri: string; cause: string }[] } | undefined>;
   };
 }
 

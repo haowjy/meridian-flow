@@ -74,7 +74,6 @@ import {
   type TreeInverseFault,
   TreeInverseRefused,
   type TreeStates,
-  treeFaultReason,
 } from "../domain/tree-inverse.js";
 import {
   createTurnInverseService,
@@ -624,11 +623,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       if (query.model)
         throw new TreeInverseRefused(cause.fault, planned, planned.entry.tree.shownAt ?? undefined);
       return {
+        kind: "tree",
         documentId,
         uri: document.uri,
-        before: planned.entry.tree.shownAt ?? "",
-        after: "",
-        reason: treeFaultReason(cause.fault),
+        at: planned.entry.tree.shownAt,
+        cause: cause.fault,
       };
     }
   }
@@ -757,11 +756,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     if (!draft && (entry.stopped || !entry.living)) {
       entry.stopped = true;
       return {
+        kind: "text",
         documentId: document.documentId,
         uri: document.uri,
         before: "",
         after: "",
-        reason: "Its file wasn't restored",
+        cause: "not_restored",
       };
     }
     if (draft && !entry.origins.size) await rewriteDraft(entry, draft, userId, query);

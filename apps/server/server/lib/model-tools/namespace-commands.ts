@@ -29,6 +29,7 @@ import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
 import {
+  canonicalPath,
   isToolError,
   recordTouchInBackground,
   type ToolCall,
@@ -117,6 +118,7 @@ async function commitLive(
   });
   const history = deps.documentSync.treeHistory();
   const before = await history.liveState(source.documentId);
+  const landedAt = input.command === "move" ? await canonicalPath(call, input.path) : undefined;
   if (!before?.living)
     return namespaceRefusal(input.command, "stale_location", { path: source.uri });
   const origin = {
@@ -136,6 +138,7 @@ async function commitLive(
         op: input.command,
         before,
         shownAt: source.uri,
+        ...(landedAt ? { landedAt } : {}),
       })
     ).handle;
   };
