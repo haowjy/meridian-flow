@@ -1960,8 +1960,8 @@ msgid "Create file or folder"
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
-msgid "Create it and this link opens it."
-msgstr ""
+#~ msgid "Create it and this link opens it."
+#~ msgstr ""
 
 #: src/features/home/NewProjectView.tsx
 #: src/features/home/ProjectLibrary.tsx
