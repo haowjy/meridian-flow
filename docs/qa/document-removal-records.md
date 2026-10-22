@@ -227,13 +227,17 @@ otherwise, A's tabs are live tabs.
   manuscript" on its status line; an open draft tab stays open. A dock with
   several files, or Work Files' "Apply all changes", asks first: "Applying
   brings back <title>, which was deleted from the manuscript." with Cancel and
-  Apply. Applying leaves "<title> is back in the manuscript." in the surface's
+  Apply, in the footer below the rows (as Discard all's question does): no row
+  moves when it opens. Applying leaves "<title> is back in the manuscript." in the surface's
   notice slot and the tree shows the document again. To force `needs_restore`,
   route the Work's `**/works/<W>/branches` list to its pre-delete body before
   the delete, then Apply all: the list asks again by name and the row says
   "This document was deleted from the manuscript. Apply again to bring it
   back." Create a new document at the deleted one's path: the row says another
-  document now has this name, and Apply all is not offered.
+  document now has this name, and Apply all is not offered. Opening that
+  draft from the row still opens it draft-only, and the editor line names both
+  the delete and the taken name (the list item's `deletedLive` is independent
+  of `conflict`).
 - A stale 4208 (an init script dispatching the close on the page's `/ws/yjs`
   socket while the document exists): the room reconnects within a few hundred
   ms and typing saves. A second stale 4208 on the same tab reconnects too.
