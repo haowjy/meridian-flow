@@ -141,7 +141,9 @@ function prepare(
         skip(part, "Rolled back");
         continue;
       }
-      if (document.removal) {
+      // Parts in an active draft that outlived a live delete invert there (D79); parts that
+      // landed live meet the removal, and a draft-text inverse never restores live.
+      if (document.removal && !draft) {
         skip(
           part,
           `This file was ${document.removal.reason === "discarded" ? "discarded" : "deleted"}`,

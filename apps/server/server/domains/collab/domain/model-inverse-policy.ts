@@ -194,10 +194,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         status: "document_not_found",
         message: "File not found. Read the project to find the right path.",
       };
-    if (document.removal) return removedFile(document.removal);
     const policy = preparedPolicy ?? planner(document, query),
       own = policy.own,
       actionId = randomUUID();
+    // A draft that outlived the document's live delete still takes its own inverse (D79);
+    // the live document, and any draft no longer active, meet the removal.
+    if (document.removal && !policy.draft) return removedFile(document.removal);
     if (policy.draft?.frozen)
       return {
         status: "work_archived",

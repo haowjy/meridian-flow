@@ -23,6 +23,15 @@ export function livingDocumentSql(documentId: SQL | AnyColumn): SQL {
   return sql`exists (select 1 from documents d where d.id = ${documentId} and d.deleted_at is null)`;
 }
 
+/**
+ * `livingDocumentSql`, widened where `draftScoped` holds to a document deleted live whose
+ * drafts may outlive the delete (`deletedDocument`): a draft's edits keep their history.
+ */
+export function livingOrOutlivedSql(documentId: SQL | AnyColumn, draftScoped: SQL): SQL {
+  return sql`exists (select 1 from documents d where d.id = ${documentId}
+    and (d.deleted_at is null or (${draftScoped} and ${deletedDocument})))`;
+}
+
 /** Why the document is not living: not found with its removal record, or no row at all. */
 export async function livingDocumentRefusal(
   db: LivingDocumentDb,

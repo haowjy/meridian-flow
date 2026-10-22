@@ -20,6 +20,17 @@ export function removalPhrase(removal: DocumentRemovalRecord | null | undefined)
   return name ? `${verb} by ${name}` : verb;
 }
 
+/**
+ * A read through a draft that outlived its document's live delete (D79): the draft is ordinary
+ * and writable, and only the writer's Apply brings the document back to the manuscript.
+ */
+export function survivingDraftNotice(removal: DocumentRemovalRecord | null | undefined): string {
+  const actor = removal?.actor;
+  const name =
+    actor?.kind === "work" ? actor.name : actor?.kind === "user" ? actor.displayName : null;
+  return `Deleted from the manuscript${name ? ` by ${name}` : ""}. Your draft still has it; Apply brings it back.`;
+}
+
 /** A call that named a removed file: `document_not_found`, "File not found. This file was deleted by Ana." */
 export function removedFile(removal: DocumentRemovalRecord | null | undefined): {
   status: "document_not_found";

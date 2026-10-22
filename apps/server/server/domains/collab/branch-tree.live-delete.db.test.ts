@@ -42,6 +42,14 @@ describeBranchTreeDb("A live delete and the drafts that outlive it (postgres)", 
     const second = await s.thread(ascension);
     await s.model(second).edit("ch3", "crossed the river", "crossed the burning river");
     expect.soft(await s.view(ascension).text("ch3")).toContain("burning river");
+    const read = await s.model(second).now("read", { path: "manuscript://ch3" });
+    expect.soft(String(read.output), "read says why").toContain("Deleted from the manuscript");
+    // Its own edit undoes in the draft it landed in.
+    const undone = await s
+      .model(second)
+      .now("write", { command: "undo", path: "manuscript://ch3" });
+    expect.soft(undone.isError ?? false, JSON.stringify(undone.output)).toBe(false);
+    expect.soft(await s.view(ascension).text("ch3")).not.toContain("burning");
 
     const access = runtime.ports.fileAccess;
     const writer = { accountId: s.project.userId };
