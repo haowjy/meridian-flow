@@ -121,8 +121,11 @@ export type PathQuery = { contextSourceId: ContextSourceId; path: string; as?: N
 
 export type PathResolution<N> =
   | { kind: "found"; node: N }
-  /** Two or more visible nodes at one path in this view. */
-  | { kind: "ambiguous"; nodes: readonly [NodeRef, NodeRef, ...NodeRef[]] }
+  /**
+   * Two or more visible nodes at one path in this view. `outlived`: one is a document deleted
+   * live that this branch still has (D79), which a store reports so the fault can say so.
+   */
+  | { kind: "ambiguous"; nodes: readonly [NodeRef, NodeRef, ...NodeRef[]]; outlived?: true }
   | { kind: "not_found" };
 
 export type TreeNode =
@@ -163,7 +166,7 @@ export type TreeStateNode = {
   hidden: boolean;
   binary: boolean;
   fileType: string;
-  /** Soft-deleted live: Apply holds it with the removal's record and revives nothing. */
+  /** Deleted from the manuscript: Apply brings it back (`restoreDocument`), then merges. */
   deleted: boolean;
   /** The row's own location, the only one a document has: where Apply reveals it. */
   target: {
@@ -186,7 +189,10 @@ export type TreeStateNode = {
      * document holds the path of a folder the target needs.
      */
     | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
-    /** Created-and-revealed or edited, then deleted live: Apply holds it, reviving nothing. */
+    /**
+     * Created-and-revealed or edited, then deleted live while the branch kept pending changes
+     * (D79): the branch still lists it; Apply restores it, then merges.
+     */
     | { kind: "deleted_live" };
 };
 

@@ -1,4 +1,7 @@
-/** Atomic Apply: Work lock, command claim, committed live effect, prefix-authored base and trail. */
+/**
+ * Atomic Apply: Work lock, command claim, committed live effect, prefix-authored base and trail.
+ * A document deleted live comes back first (`restoreDocument`, D79), then the text merges.
+ */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import {
@@ -31,10 +34,9 @@ import { testHook } from "../../../shared/test-hooks.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
-import { livingDocumentRefusal } from "../../context/tree/living-document.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { place } from "../../context/tree/placement.js";
-import { readRemovalRecords } from "../../context/tree/removal.js";
+import { readRemovalRecords, restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
 import {
   WorkLifecycleUnavailableError,
@@ -165,6 +167,9 @@ export function createDrizzleApplyClick(
       await testHook("apply.beforeBoundary");
       const boundaryStart = performance.now();
       let committedAt: number | undefined;
+      // A restore or reveal locks the document's namespace before the document. Once an
+      // attempt finds that scope needed, every later attempt takes it from the start.
+      let treeScope = false;
       try {
         for (let attempt = 0; ; attempt++) {
           try {
@@ -201,19 +206,43 @@ export function createDrizzleApplyClick(
                         .where(eq(branchCommands.id, command.envelope.commandId));
                       return result;
                     };
-                    // Only a hidden-create reveal changes the tree. Ordinary text Apply must not
-                    // serialize unrelated documents on their source's namespace lock.
-                    const [initialNode] = await tree.treeState(branchId, [command.documentId]);
-                    if (initialNode?.hidden)
+                    // Only a hidden-create reveal or a deleted document's restore changes the
+                    // tree. Ordinary text Apply must not serialize unrelated documents on their
+                    // source's namespace lock. This read is unlocked, so it only guesses.
+                    const [guess] = await tree.treeState(branchId, [command.documentId]);
+                    treeScope ||= Boolean(guess?.hidden || guess?.deleted);
+                    await testHook("apply.afterScopeGuess");
+                    if (treeScope)
                       await acquireTreeScope(db, { documentIds: [command.documentId] });
                     else await lockDocumentMutation(tx, command.documentId);
-                    const removed = await livingDocumentRefusal(tx, command.documentId);
-                    if (removed)
-                      return finish({
-                        status: "closed",
-                        commandId: command.envelope.commandId,
-                        ...(removed.removal ? { removal: removed.removal } : {}),
-                      });
+                    const [locked] = await tree.treeState(branchId, [command.documentId]);
+                    if (locked?.deleted && !treeScope) {
+                      // A delete committed between the guess and the lock: start over
+                      // namespace-first, never taking a namespace under a document lock.
+                      treeScope = true;
+                      throw new TreeScopeChangedError();
+                    }
+                    let restored = false;
+                    if (locked?.deleted) {
+                      const outcome = await restoreDocument(
+                        db,
+                        { documentId: command.documentId },
+                        { arrivals: deps.arrivals, catalog: deps.catalog },
+                      );
+                      if (outcome.kind === "location_taken")
+                        throw new ApplyClickRefused("forbidden");
+                      if (outcome.kind === "refused") {
+                        const removal = (await readRemovalRecords(tx, [command.documentId])).get(
+                          command.documentId,
+                        );
+                        return finish({
+                          status: "closed",
+                          commandId: command.envelope.commandId,
+                          ...(removal ? { removal } : {}),
+                        });
+                      }
+                      restored = outcome.kind === "restored";
+                    }
                     if (!base || !click) {
                       const [node] = await tree.treeState(branchId, [command.documentId]);
                       const [draft] = await tx
@@ -430,6 +459,7 @@ export function createDrizzleApplyClick(
                         status: "applied",
                         commandId: command.envelope.commandId,
                         ...(overrode ? { overrode } : {}),
+                        ...(restored ? { restored } : {}),
                       };
                       await finish(answer);
                       deferUntilDrizzleCommit(async () => {

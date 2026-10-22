@@ -71,7 +71,9 @@ export function createDocumentRemoval(
         .where(inArray(documents.id, removed));
       await bumpLocationVersions(db, { documentIds: removed });
       // A Work cascade keeps hidden creations' tree uses: `restoreWorkDocuments` brings their
-      // membership back with the tombstone, while a revealed document needs none.
+      // membership back with the tombstone, while a revealed document needs none. Rows only
+      // say `created` today; PR 3's move and delete facts are a branch's pending intent, which
+      // a delete must keep as it keeps the drafts (D79).
       const retired = input.workId
         ? living.filter((row) => !row.hidden).map((row) => row.id)
         : removed;
