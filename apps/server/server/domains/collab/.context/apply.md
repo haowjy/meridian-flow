@@ -37,7 +37,7 @@ folders in the same transaction, then the ordinary text merge runs against the
 deleted document's last text, which equals its review base. The result carries
 `restored: true`. A path another document took refuses `forbidden` (the item
 lists `path_taken`); a Work cascade, discard or deleted source answers `closed`
-with the record. The route authorizes a deleted item at its source through the
+(no record on the answer). The route authorizes a deleted item at its source through the
 draft destination (`restoreGrant`) instead of a live grant. When a delete commits
 after the route resolved the item, its authorization or the transaction's grant
 confirmation refuses the live grant, nothing is claimed, and the route runs the
