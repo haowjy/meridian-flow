@@ -10,7 +10,11 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
-import type { ApplyClick, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type {
+  ApplyClick,
+  DraftMetadataResponse,
+  ThreadDraftListItem,
+} from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
@@ -76,6 +80,7 @@ type Binding = {
 };
 type Entry = {
   ref: DraftRef;
+  draftId: string;
   binding: Binding | null;
   queue: ApplyClickQueue;
   users: number;
@@ -122,6 +127,7 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private readonly closingWorks = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
+  private readonly reconciling = new Map<string, Promise<boolean>>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
   private active = true;
@@ -146,8 +152,18 @@ export class DraftCommandOwner {
     };
   };
   snapshot = () => this.revision;
+  /**
+   * State follows the item's current draft generation. An item key (branch + document) outlives
+   * its drafts: discarding one item keeps the branch, and a later write mints a new draft under
+   * the same key. Each generation's record stays its own; only `bind` and `reconcileClosed`
+   * move the key to a newer one.
+   */
   state(itemKey: string): DraftCommandState {
-    return this.records.get(this.identities.get(itemKey) ?? itemKey) ?? EMPTY;
+    return this.records.get(this.generation(itemKey)) ?? EMPTY;
+  }
+  /** The draft the item's state currently follows; the key itself before any draft is known. */
+  generation(itemKey: string): string {
+    return this.identities.get(itemKey) ?? itemKey;
   }
   private publish() {
     this.revision++;
@@ -179,6 +195,7 @@ export class DraftCommandOwner {
     if (!entry) {
       const owned: Entry = {
         ref,
+        draftId: address.draftId,
         binding: null,
         users: 0,
         lease: null,
@@ -290,7 +307,7 @@ export class DraftCommandOwner {
         connection?.kind === "reset" &&
         (connection.disposition === "closed" || connection.disposition === "removed")
       ) {
-        this.finishClose(entry.ref, connection.disposition);
+        this.finishClose(entry.ref, entry.draftId, connection.disposition);
       } else if (
         snapshot.status === "destroyed" ||
         connection?.kind === "reset" ||
@@ -329,69 +346,107 @@ export class DraftCommandOwner {
    * them active (D79), so their tabs stay; the review list lags, this does not.
    */
   boundDrafts(projectId: string, documentId: string): DraftRef[] {
-    return [...this.entries.values()].flatMap(({ ref, binding }) =>
+    return [...this.entries.values()].flatMap(({ ref, draftId, binding }) =>
       binding &&
       ref.projectId === projectId &&
       ref.documentId === documentId &&
-      !this.state(ref.itemKey).closed
+      !this.records.get(draftId)?.closed
         ? [ref]
         : [],
     );
   }
 
-  /** Only the typed metadata `gone` answer enters here, never a failed read or list omission. */
+  /**
+   * Only the typed metadata `gone` answer enters here, never a failed read or list omission.
+   * It retires the generation known when it arrives: a draft bound while the answer resolves
+   * is a newer one, and stays open.
+   */
   metadataGone(ref: DraftRef): Promise<void> {
-    if (!this.active || this.state(ref.itemKey).closed) return Promise.resolve();
-    const pending = this.resolvingGone.get(ref.itemKey);
+    const id = this.generation(ref.itemKey);
+    if (!this.active || this.records.get(id)?.closed) return Promise.resolve();
+    const pending = this.resolvingGone.get(id);
     if (pending) return pending;
-    const entry = this.byItem.get(ref.itemKey);
+    const entry = this.entries.get(id);
     const lease = entry?.binding
       ? readDraftRoom(this.registry, entry.binding.session.roomKey)
       : null;
     if (entry) entry.users++;
-    this.setState(ref.itemKey, { checkingClose: true });
+    this.setState(ref.itemKey, { checkingClose: true }, id);
     const resolving = (async () => {
       const disposition = await this.lifecycle.resolveGone?.(ref);
       if (this.active && disposition)
-        this.finishClose(ref, disposition.disposition, disposition.liveUri);
+        this.finishClose(ref, id, disposition.disposition, disposition.liveUri);
     })()
       .catch(() => undefined)
       .finally(() => {
-        this.resolvingGone.delete(ref.itemKey);
-        if (this.active) this.setState(ref.itemKey, { checkingClose: false });
+        this.resolvingGone.delete(id);
+        if (this.active) this.setState(ref.itemKey, { checkingClose: false }, id);
         lease?.dispose();
-        const id = this.identities.get(ref.itemKey);
         if (entry) {
           entry.users--;
-          if (id) this.releaseIdle(id, entry);
+          this.releaseIdle(id, entry);
         }
       });
-    this.resolvingGone.set(ref.itemKey, resolving);
+    this.resolvingGone.set(id, resolving);
     return resolving;
   }
 
-  private finishClose(ref: DraftRef, disposition: "closed" | "removed", liveUri?: string) {
-    if (!this.active || this.state(ref.itemKey).closed) return;
-    const entry = this.byItem.get(ref.itemKey);
+  /**
+   * Whether the item is open after asking the server, for an item whose known generation is
+   * closed. A different active draft is a replacement under the same key: the item follows it.
+   * The closed generation's record (its unsent text, its queue) is kept, and a failed read
+   * leaves the item closed.
+   */
+  reconcileClosed(ref: DraftRef, read: () => Promise<DraftMetadataResponse>): Promise<boolean> {
+    if (!this.state(ref.itemKey).closed) return Promise.resolve(this.active);
+    const pending = this.reconciling.get(ref.itemKey);
+    if (pending) return pending;
+    const closedId = this.generation(ref.itemKey);
+    const reconcile = read()
+      .then((answer) => {
+        if (!this.active || answer.status !== "active" || answer.draftId === closedId) return false;
+        if (this.generation(ref.itemKey) === closedId) {
+          this.identities.set(ref.itemKey, answer.draftId);
+          this.publish();
+        }
+        return !this.state(ref.itemKey).closed;
+      })
+      .catch(() => false)
+      .finally(() => this.reconciling.delete(ref.itemKey));
+    this.reconciling.set(ref.itemKey, reconcile);
+    return reconcile;
+  }
+
+  private finishClose(
+    ref: DraftRef,
+    id: string,
+    disposition: "closed" | "removed",
+    liveUri?: string,
+  ) {
+    const record = this.records.get(id) ?? EMPTY;
+    if (!this.active || record.closed) return;
+    const entry = this.entries.get(id);
     const frame = entry?.binding?.runtime.projectNow();
     const unsentText =
-      disposition === "closed" &&
-      !this.state(ref.itemKey).hidden &&
-      entry?.binding?.session.hasUnacknowledgedEdits()
+      disposition === "closed" && !record.hidden && entry?.binding?.session.hasUnacknowledgedEdits()
         ? (frame?.doc.textBetween(0, frame.doc.content.size, "\n\n") ?? null)
         : null;
     if (disposition === "removed") this.lifecycle.removed?.(ref);
-    this.setState(ref.itemKey, {
-      closed: true,
-      checkingClose: false,
-      removed: disposition === "removed",
-      unsentText,
-      liveUri: liveUri ?? null,
-    });
+    this.setState(
+      ref.itemKey,
+      {
+        closed: true,
+        checkingClose: false,
+        removed: disposition === "removed",
+        unsentText,
+        liveUri: liveUri ?? null,
+      },
+      id,
+    );
     if (entry?.binding) for (const end of entry.binding.notices) end();
     entry?.queue.close();
-    const id = this.identities.get(ref.itemKey);
-    if (id) void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
+    if (id !== ref.itemKey)
+      void this.registry.closeDraftRoom(draftRoomName(id)).catch(() => undefined);
   }
 
   private releaseIdle(id: string, entry: Entry) {
@@ -515,7 +570,7 @@ export class DraftCommandOwner {
     );
     const body: ApplyClick = {
       commandId: crypto.randomUUID(),
-      draftId: this.identities.get(ref.itemKey),
+      draftId: entry.draftId,
       snapshot: base64(Y.encodeSnapshotV2(Y.snapshot(binding.session.document))),
       groupIds: [...ids],
       baseViewDelta: baseViewDelta(
