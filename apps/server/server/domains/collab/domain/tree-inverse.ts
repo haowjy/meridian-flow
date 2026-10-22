@@ -17,7 +17,6 @@ import {
   type TreeChange,
   type TreeChangeDestination,
   type TreeChangeOp,
-  type TreePlacement,
   type TreeRemoval,
   type TreeTransition,
   type TreeTransitionChange,
