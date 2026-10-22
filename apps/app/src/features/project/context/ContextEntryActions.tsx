@@ -1,11 +1,14 @@
 /** ContextEntryActions — right-click context menu and hover kebab button for file/folder rows in the desktop context tree. */
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
+import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { getContextTabs } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import {
@@ -296,13 +299,19 @@ export function useDeleteConfirmation({ projectId }: { projectId: string }) {
   };
 }
 
+/**
+ * A delete changes the manuscript only: Works with pending changes to the document keep them,
+ * and applying them brings it back (D79). The dialog names those Works, never their handles.
+ */
 export function DeleteConfirmationDialog({
+  projectId,
   target,
   isPending,
   error,
   onCancel,
   onConfirm,
 }: {
+  projectId: string;
   target: EntryActionTarget | null;
   isPending: boolean;
   error?: Error | null;
@@ -320,15 +329,18 @@ export function DeleteConfirmationDialog({
             {target?.kind === "dir" ? (
               <Trans>
                 <strong className="break-all font-semibold text-foreground">{target.name}</strong>{" "}
-                and all its contents will be permanently deleted.
+                and all its contents will be deleted.
               </Trans>
             ) : (
               <Trans>
                 <strong className="break-all font-semibold text-foreground">{target?.name}</strong>{" "}
-                will be permanently deleted.
+                will be deleted.
               </Trans>
             )}
           </DialogDescription>
+          {target?.kind === "file" ? (
+            <PendingWorksLine projectId={projectId} documentId={target.documentId} />
+          ) : null}
         </DialogHeader>
         {error ? (
           <p className="text-sm text-destructive">
@@ -351,5 +363,24 @@ export function DeleteConfirmationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The Works whose pending changes to the document survive its delete, by name. */
+function PendingWorksLine({ projectId, documentId }: { projectId: string; documentId: string }) {
+  useLingui();
+  const hints = useDocumentDraftHints(projectId, documentId, { enabled: true });
+  if (hints.length === 0) return null;
+  const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+    hints.map((hint) => hint.label ?? t`Unnamed Work`),
+  );
+  return (
+    <p className="text-muted-foreground text-sm" data-delete-pending-works>
+      {hints.length === 1 ? (
+        <Trans>The Work {names} has changes to it. Applying them brings it back.</Trans>
+      ) : (
+        <Trans>The Works {names} have changes to it. Applying them brings it back.</Trans>
+      )}
+    </p>
   );
 }
