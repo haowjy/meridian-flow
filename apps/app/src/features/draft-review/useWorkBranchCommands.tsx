@@ -23,7 +23,14 @@ export type BranchCommandOutcome = CommandOutcome;
 /** A surface's latest command feedback: a Discard with its Undo, or documents an Apply brought back. */
 export type SurfaceNotice =
   | DiscardNotice
-  | { kind: "restored"; itemKey?: undefined; undo?: undefined; titles: string[]; end(): void };
+  | {
+      kind: "applied";
+      itemKey?: undefined;
+      undo?: undefined;
+      restored: string[];
+      renamed: string[];
+      end(): void;
+    };
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
 export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
 
@@ -85,13 +92,25 @@ export function useWorkBranchCommands({
       heldNotice.current = value;
       setNotice(value);
     };
-    // Each document an Apply brought back joins the notice until the surface's next action.
-    const restored = (item: ThreadDraftListItem | undefined) => {
-      const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
-      if (!title) return;
+    // Apply facts join the surface's notice until its next action.
+    const applied = (
+      item: ThreadDraftListItem | undefined,
+      outcome: Extract<CommandOutcome, { kind: "done" }>,
+    ) => {
       const held = heldNotice.current;
-      const titles = held?.kind === "restored" ? [...held.titles, title] : [title];
-      show({ kind: "restored", titles, end() {} });
+      const title = item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
+      const restored = [
+        ...(held?.kind === "applied" ? held.restored : []),
+        ...(outcome.restored && title ? [title] : []),
+      ];
+      const renamed = [
+        ...(held?.kind === "applied" ? held.renamed : []),
+        ...(outcome.renamed ?? []).flatMap((path) => {
+          const name = documentBasename(path);
+          return name ? [name] : [];
+        }),
+      ];
+      if (restored.length || renamed.length) show({ kind: "applied", restored, renamed, end() {} });
     };
     // An archived Work's refusal is silent (`shownRefusal`): its notice explains it once this tab
     // has read the archive, which another tab or device may have made.
@@ -100,8 +119,9 @@ export function useWorkBranchCommands({
       draft: DraftReviewSelection,
       target: ChangeTarget,
       restore?: boolean,
+      treeAlreadyApplied = false,
     ): CommandStart => {
-      const started = dispatch(mode, draft, target, restore);
+      const started = dispatch(mode, draft, target, restore, treeAlreadyApplied);
       void started.outcome.then((outcome) => {
         if (outcome.kind === "change-refused" && outcome.code === "work_archived")
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
@@ -118,23 +138,32 @@ export function useWorkBranchCommands({
       draft: DraftReviewSelection,
       target: ChangeTarget,
       restore?: boolean,
+      treeAlreadyApplied = false,
     ): CommandStart => {
       endNotice();
       if (locked) return blocked();
       const item = row(draft);
       if (mode === "apply") {
+        if (treeAlreadyApplied && target.kind === "tree") {
+          if (item) dropTreeLine(item);
+          refresh();
+          return { sent: false, outcome: Promise.resolve({ kind: "done" }) };
+        }
         const bringBack = restore ?? isDeletedFromManuscript(item);
         // The tree cut rides with the tree line, a whole-item click, or a selection that includes the line.
-        const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
+        const tree =
+          !treeAlreadyApplied && (target.kind === "tree" || target.kind === "draft" || target.tree);
+        const appliedTarget =
+          treeAlreadyApplied && target.kind === "groups" ? { ...target, tree: undefined } : target;
         const started = owner.apply(
           ref(draft),
-          target,
+          appliedTarget,
           bringBack,
           (tree && item?.tree) || undefined,
         );
         void started.outcome.then((outcome) => {
           if (outcome.kind === "done" && tree && item?.tree) dropTreeLine(item);
-          if (outcome.kind === "done" && outcome.restored) restored(item);
+          if (outcome.kind === "done") applied(item, outcome);
           // A needs-restore answer means the row is behind: refresh so it shows the delete.
           if (outcome.kind === "needs-restore" || !owner.state(draft.itemKey).pending) refresh();
         });
@@ -229,10 +258,8 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         // Capture every item in the event turn, not in a promise continuation.
-        const send = ({ draft, target }: (typeof items)[number]) =>
-          start(mode, draft, target, restore.has(draft.documentId)).outcome;
-        const outcomes = Promise.all(items.map(send));
-        return mode === "apply" ? afterHolds(outcomes, items, send) : outcomes;
+        if (mode === "apply") return applyInServerOrder(items, restore, start);
+        return Promise.all(items.map(({ draft, target }) => start(mode, draft, target).outcome));
       },
       disposeDrafts: (
         mode: "apply" | "discard",
@@ -240,9 +267,11 @@ export function useWorkBranchCommands({
         restore: ReadonlySet<string> = new Set(),
       ) => {
         if (mode === "apply") {
-          const send = (draft: DraftReviewSelection) =>
-            start(mode, draft, { kind: "draft" }, restore.has(draft.documentId)).outcome;
-          return afterHolds(Promise.all(drafts.map(send)), drafts, send);
+          return applyInServerOrder(
+            drafts.map((draft) => ({ draft, target: { kind: "draft" as const } })),
+            restore,
+            start,
+          );
         }
         endNotice();
         const branchId = drafts.map(row).find(Boolean)?.branchId;
@@ -258,29 +287,35 @@ export function useWorkBranchCommands({
 }
 
 /**
- * Apply all's order for drafted moves: a move whose destination another item still holds
- * answers `held`, so once the others ran it is sent again, until a pass frees none (a swap
- * stays held). Every other outcome is final.
+ * One Apply can settle the tree rows ahead of it. Later items still send their text, but do
+ * not send a tree cut the server already named as applied.
  */
-async function afterHolds<T>(
-  first: Promise<CommandOutcome[]>,
-  items: readonly T[],
-  send: (item: T) => Promise<CommandOutcome>,
+async function applyInServerOrder(
+  items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+  restore: ReadonlySet<string>,
+  start: (
+    mode: "apply" | "discard",
+    draft: DraftReviewSelection,
+    target: ChangeTarget,
+    restore?: boolean,
+    treeAlreadyApplied?: boolean,
+  ) => CommandStart,
 ): Promise<CommandOutcome[]> {
-  const outcomes = await first;
-  for (;;) {
-    const held = outcomes.flatMap((outcome, index) => (outcome.kind === "held" ? [index] : []));
-    if (!held.length) return outcomes;
-    let freed = false;
-    for (const index of held) {
-      const item = items[index];
-      if (item === undefined) continue;
-      const again = await send(item);
-      outcomes[index] = again;
-      freed ||= again.kind !== "held";
-    }
-    if (!freed) return outcomes;
+  const appliedTrees = new Set<string>();
+  const outcomes: CommandOutcome[] = [];
+  for (const { draft, target } of items) {
+    const outcome = await start(
+      "apply",
+      draft,
+      target,
+      restore.has(draft.documentId),
+      appliedTrees.has(draft.itemKey),
+    ).outcome;
+    outcomes.push(outcome);
+    if (outcome.kind === "done")
+      for (const itemKey of outcome.appliedTrees ?? []) appliedTrees.add(itemKey);
   }
+  return outcomes;
 }
 
 const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);

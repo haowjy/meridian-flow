@@ -31,8 +31,7 @@ function isFinalRefusal(
     answer.status === "closed" ||
     answer.status === "refused" ||
     answer.status === "needs_restore" ||
-    answer.status === "changed" ||
-    answer.status === "held"
+    answer.status === "changed"
   );
 }
 

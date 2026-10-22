@@ -68,8 +68,8 @@ export function CommandNotice({
       ) : (
         <>
           {notice?.itemKey ? <DraftCommandStatus itemKey={notice.itemKey} /> : null}
-          {notice?.kind === "restored" ? (
-            <RestoredSentence titles={notice.titles} />
+          {notice?.kind === "applied" ? (
+            <AppliedSentence restored={notice.restored} renamed={notice.renamed} />
           ) : notice ? (
             <>
               <span>
@@ -131,9 +131,20 @@ export function restoredSentence(titles: readonly string[]): string {
     : t`${names} are back in the manuscript.`;
 }
 
-function RestoredSentence({ titles }: { titles: readonly string[] }) {
+function AppliedSentence({
+  restored,
+  renamed,
+}: {
+  restored: readonly string[];
+  renamed: readonly string[];
+}) {
   useLingui();
-  const sentence = restoredSentence(titles);
+  const sentence = [
+    ...(renamed.length === 1
+      ? [t`Added as ${renamed[0]}.`]
+      : renamed.map((name) => t`Added as ${name}.`)),
+    ...(restored.length ? [restoredSentence(restored)] : []),
+  ].join(" ");
   return (
     <span className="min-w-0 truncate" title={sentence}>
       {sentence}
