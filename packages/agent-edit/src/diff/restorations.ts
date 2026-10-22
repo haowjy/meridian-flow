@@ -28,6 +28,26 @@ export type RestorationLink = readonly [
   toClock: number,
 ];
 
+/** Persist server-computed inverse aliases in the same room evidence browser Undo uses. */
+export function appendRestorationLinks(
+  doc: Y.Doc,
+  aliases: readonly {
+    source: { client: number; clock: number };
+    target: { client: number; clock: number };
+    len: number;
+  }[],
+): void {
+  if (!aliases.length) return;
+  doc
+    .getArray<RestorationLink>(RESTORED_ROOT)
+    .push(
+      aliases.map(
+        ({ source, target, len }) =>
+          [target.client, target.clock, len, source.client, source.clock] as const,
+      ),
+    );
+}
+
 /**
  * Record inserted base IDs minus exact copies, before appending provenance consumes another clock.
  * The caller owns the transaction; its UndoManager scopes the prose fragment, not this root.

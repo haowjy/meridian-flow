@@ -53,7 +53,11 @@ export function createDocumentEditCommands(deps: {
         status: "success",
         phase: "committed",
         ...(result.writeId ? { writeId: result.writeId } : {}),
-        model: { message: result.message },
+        model: {
+          message: result.message,
+          ...(result.destination ? { destination: result.destination } : {}),
+          ...(result.draftWork !== undefined ? { draftWork: result.draftWork } : {}),
+        },
       };
 
     // `after` is the cut the inverse committed on top of, in the room it ran in: the echo
@@ -111,7 +115,12 @@ export function createDocumentEditCommands(deps: {
       return await observed({
         ...receipt,
         revision: deps.options.links.revision(after, links.scope),
-        model: { ...receipt.model, message: result.message },
+        model: {
+          ...receipt.model,
+          message: result.message,
+          ...(result.destination ? { destination: result.destination } : {}),
+          ...(result.draftWork !== undefined ? { draftWork: result.draftWork } : {}),
+        },
       });
     } catch {
       // Admission has already succeeded; an echo failure cannot turn it into a refusal.
@@ -119,7 +128,12 @@ export function createDocumentEditCommands(deps: {
         status: "success",
         phase: "committed",
         ...(result.writeId ? { writeId: result.writeId } : {}),
-        model: { message: result.message, awarenessDegraded: true },
+        model: {
+          message: result.message,
+          awarenessDegraded: true,
+          ...(result.destination ? { destination: result.destination } : {}),
+          ...(result.draftWork !== undefined ? { draftWork: result.draftWork } : {}),
+        },
       });
     } finally {
       before.destroy();

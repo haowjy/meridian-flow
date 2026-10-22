@@ -52,6 +52,7 @@ export {
   rebase,
 } from "./merge.js";
 export {
+  appendRestorationLinks,
   RESTORED_ROOT,
   type RestorationLink,
   readRestorations,
