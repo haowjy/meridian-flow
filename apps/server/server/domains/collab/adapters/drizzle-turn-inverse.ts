@@ -15,6 +15,7 @@ import {
   type BranchTreeFacts,
   type BranchTreeTransition,
   type DocumentId,
+  type FolderId,
   isLiveTransition,
   type LiveTreeState,
   type LiveTreeTransition,
@@ -52,6 +53,7 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import type { DocumentRemoval } from "../../context/ports/document-removal.js";
 import { writeBackBranchFacts } from "../../context/tree/branch-tree-changes.js";
 import { readBranchTreeFacts } from "../../context/tree/branch-tree-store.js";
+import { resolveAbsorbedFolders } from "../../context/tree/folder-normalization.js";
 import {
   moveToPlacement,
   placementSources,
@@ -80,6 +82,8 @@ import {
   type TreeInverseFault,
   TreeInverseRefused,
   type TreeStates,
+  treeChangeFolders,
+  withCurrentFolders,
 } from "../domain/tree-inverse.js";
 import {
   createTurnInverseService,
@@ -168,6 +172,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .where(
         and(inArray(documentEdits.documentId, documentIds), isNotNull(documentEdits.treeChange)),
       );
+    // History names folders as they were; a hidden one a live folder absorbed since is that one.
+    const current = await resolveAbsorbedFolders(input.db, [
+      ...new Set(
+        rows.flatMap((edit) => (edit.treeChange ? treeChangeFolders(edit.treeChange) : [])),
+      ),
+    ] as FolderId[]);
     return rows
       .flatMap((edit) =>
         edit.treeChange
@@ -186,7 +196,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 actionId: edit.actionId,
                 consumes: edit.consumes,
                 targets: edit.treeChange.targets,
-                tree: edit.treeChange,
+                tree: withCurrentFolders(
+                  edit.treeChange,
+                  (id) => current.get(id as FolderId) ?? id,
+                ),
               },
             ]
           : [],
@@ -711,8 +724,20 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       receipts,
       ...(treeChange ? { treeChange } : {}),
     });
-    if ("receipts" in committed) count(entry, committed.draftId, receipts.length);
-    else count(entry, null, 1);
+    if ("receipts" in committed)
+      count(
+        entry,
+        committed.draftId
+          ? (entry.plan.document.drafts.get(committed.draftId)?.documentDraft.branchId ?? null)
+          : null,
+        receipts.length,
+      );
+    else
+      count(
+        entry,
+        isLiveTransition(committed.transition) ? null : committed.transition.destination.branchId,
+        1,
+      );
     return wId === undefined ? "" : editHandle(wId);
   }
 
@@ -833,8 +858,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /** Counts what a step committed where it landed. */
-  function count(entry: PlannedInverse, draftId: string | null, n: number) {
-    entry.reversed.set(draftId, (entry.reversed.get(draftId) ?? 0) + n);
+  function count(entry: PlannedInverse, branchId: BranchId | null, n: number) {
+    entry.reversed.set(branchId, (entry.reversed.get(branchId) ?? 0) + n);
   }
 
   /**
@@ -1083,8 +1108,8 @@ type PlannedInverse = {
   committed: ComputedInverseEdit[];
   /** A skipped restore stopped this document's live text. */
   stopped: boolean;
-  /** Text parts and tree steps committed, by where they landed (a draft's id, or null). */
-  reversed: Map<string | null, number>;
+  /** Text parts and tree steps committed, by where they landed: a branch (its text draft or its tree facts), or null for live. */
+  reversed: Map<BranchId | null, number>;
 };
 
 /** A draft a plan's text lands in: the revision and view it was planned on, and its edits. */

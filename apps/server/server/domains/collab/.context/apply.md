@@ -114,7 +114,8 @@ deletes answers `held` naming that item (the review item lists the same as
 `pending_item`); any other occupant refuses `forbidden`. The client's Apply all
 re-sends held clicks after the others until a pass frees none, so a renumber
 applies and a swap stays held. Then the row goes through `dropDocumentRows`,
-which writes the settlement rows (`as: applied`) every terminal path writes, and
+which writes the settlement rows every terminal path writes (`as: applied` for the
+entries in effect, `discarded` for those undone before it), and
 prunes every hidden folder its moves held that nothing else uses. The route authorizes a drafted
 delete of a document live deleted too through `restoreGrant` alone: the branch
 view has no draft of it to grant.

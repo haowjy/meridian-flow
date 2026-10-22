@@ -19,12 +19,18 @@ import type { Database } from "@meridian/database";
 import {
   branchTreeChanges,
   branchTreeFolders,
+  branchTreeUnsettled,
   documentEdits,
   folders,
 } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { nextEditSeq } from "../../../shared/edit-history-seq.js";
+import {
+  isTransitionEntry,
+  latestTransition,
+  type StoredTreeEntry,
+} from "../../collab/domain/tree-inverse.js";
 import { tombstoneFolders } from "./node-rows.js";
 import { loadFolderChains } from "./tree-addresses.js";
 import type { NodeRef } from "./tree-view.js";
@@ -108,13 +114,15 @@ export async function dropDocumentRows(
 }
 
 /**
- * The one settlement of a branch's drafted entries (design-v2 §4): one row per document naming
- * every drafted entry (a move, delete or their inverses) the branch recorded on it that no
- * settlement ended yet, which the stack rules read (`settlementOf`); then the folders those
- * entries held (`branch_tree_folders`) are released and the hidden ones nothing else uses are
- * pruned. The row itself is the caller's: it drops it or keeps only a creation. The caller
- * holds the tree scope of the branch's documents (`acquireTreeScope`), which covers every
- * held folder's namespace.
+ * The one settlement of a branch's drafted entries (design-v2 §4): per document, the stack
+ * entries (moves, deletes and reverts; never the undo, redo or rollback rows that reversed them)
+ * the branch recorded on it that no settlement ended yet. Those still in effect settle as the
+ * caller says; those undone settle as discarded, since the proposal they belonged to ended
+ * without them (a later redo answers so rather than proposing them again); those a rollback
+ * reversed are not named, their rollback ended them. Then the folders the entries held
+ * (`branch_tree_folders`) are released and the hidden ones nothing else uses are pruned. The row
+ * itself is the caller's: it drops it or keeps only a creation. The caller holds the tree scope
+ * of the branch's documents (`acquireTreeScope`), which covers every held folder's namespace.
  */
 export async function settleBranchEntries(
   db: Database,
@@ -126,6 +134,7 @@ export async function settleBranchEntries(
     .select({
       editId: documentEdits.id,
       documentId: documentEdits.documentId,
+      kind: documentEdits.kind,
       treeChange: documentEdits.treeChange,
     })
     .from(documentEdits)
@@ -135,28 +144,51 @@ export async function settleBranchEntries(
         sql`${documentEdits.treeChange}->'destination'->>'branchId' = ${input.branchId}`,
       ),
     );
-  const settled = new Set(
-    rows.flatMap((row) => (row.treeChange?.op === "settle" ? row.treeChange.settles.editIds : [])),
-  );
-  const open = new Map<DocumentId, string[]>();
+  const byDocument = new Map<DocumentId, TreeRow[]>();
   for (const row of rows)
-    if (row.treeChange && row.treeChange.op !== "settle" && !settled.has(row.editId))
-      open.set(row.documentId, [...(open.get(row.documentId) ?? []), row.editId]);
-  for (const [documentId, editIds] of open)
-    await tx.insert(documentEdits).values({
-      documentId,
-      actor: input.settle.userId ? "human" : "system",
-      actorUserId: input.settle.userId ?? null,
-      kind: "write",
-      treeChange: {
-        op: "settle",
-        destination: { kind: "draft", branchId: input.branchId },
-        shownAt: null,
-        seq: await nextEditSeq(tx),
-        targets: [],
-        settles: { editIds, as: input.settle.as },
-      },
-    });
+    if (row.treeChange)
+      byDocument.set(row.documentId, [
+        ...(byDocument.get(row.documentId) ?? []),
+        {
+          id: row.treeChange.seq,
+          editId: row.editId,
+          kind: row.kind,
+          targets: row.treeChange.targets,
+          tree: row.treeChange,
+        },
+      ]);
+  for (const [documentId, history] of byDocument) {
+    history.sort((a, b) => a.id - b.id);
+    const { effective, undone } = unsettledEntries(history);
+    const settlements: [BranchSettlement["as"], string[]][] =
+      input.settle.as === "applied"
+        ? [
+            ["applied", effective],
+            ["discarded", undone],
+          ]
+        : [["discarded", [...effective, ...undone]]];
+    for (const [as, editIds] of settlements)
+      if (editIds.length)
+        await tx.insert(documentEdits).values({
+          documentId,
+          actor: input.settle.userId ? "human" : "system",
+          actorUserId: input.settle.userId ?? null,
+          kind: "write",
+          treeChange: {
+            op: "settle",
+            destination: { kind: "draft", branchId: input.branchId },
+            shownAt: null,
+            seq: await nextEditSeq(tx),
+            targets: [],
+            settles: { editIds, as },
+          },
+        });
+  }
+  const scoped = and(
+    eq(branchTreeUnsettled.branchId, input.branchId),
+    inArray(branchTreeUnsettled.documentId, [...input.documentIds]),
+  );
+  await tx.delete(branchTreeUnsettled).where(scoped);
   const released = await tx
     .delete(branchTreeFolders)
     .where(
@@ -167,6 +199,31 @@ export async function settleBranchEntries(
     )
     .returning({ folderId: branchTreeFolders.folderId });
   return pruneHiddenFolders(db, [...new Set(released.map((row) => row.folderId))]);
+}
+
+type TreeRow = Pick<StoredTreeEntry, "id" | "editId" | "kind" | "targets" | "tree">;
+
+/**
+ * One document's unsettled stack entries in one branch, split by whether their effect stands
+ * (`latestTransition`, the rule the inverses judge by). `history` is ordered by `seq`.
+ */
+function unsettledEntries(history: readonly TreeRow[]): { effective: string[]; undone: string[] } {
+  const settled = new Set(
+    history.flatMap((row) => (row.tree.op === "settle" ? row.tree.settles.editIds : [])),
+  );
+  const rolledBack = new Set(
+    history.flatMap((row) =>
+      row.kind === "rollback" ? row.targets.map((target) => target.editId) : [],
+    ),
+  );
+  const effective: string[] = [];
+  const undone: string[] = [];
+  for (const row of history) {
+    if (!isTransitionEntry(row) || settled.has(row.editId) || rolledBack.has(row.editId)) continue;
+    if (row.kind !== "write" && row.kind !== "revert") continue;
+    (latestTransition(row, history, new Set()).stands ? effective : undone).push(row.editId);
+  }
+  return { effective, undone };
 }
 
 /**
@@ -202,20 +259,27 @@ export async function pruneHiddenFolders(
 }
 
 /**
- * The folders a branch holds for its drafted moves (all its documents', or these), each with
- * the source it sits in now: what its settlement may prune, so what its cleanup must lock.
+ * What a branch's cleanup must lock for its unsettled entries (all its documents', or these):
+ * the documents they are on, wherever its row has them now or whether it has one, and the source
+ * each folder they hold sits in now, which settlement may prune.
  */
-export async function readHeldFolders(
+export async function readBranchHolds(
   db: Pick<DrizzleDb, "select">,
   branchId: BranchId,
   documentIds?: readonly DocumentId[],
-): Promise<{ documentId: DocumentId; contextSourceId: ContextSourceId }[]> {
-  if (documentIds?.length === 0) return [];
-  return db
-    .select({
-      documentId: branchTreeFolders.documentId,
-      contextSourceId: folders.contextSourceId,
-    })
+): Promise<{ documentIds: DocumentId[]; sourceIds: ContextSourceId[] }> {
+  if (documentIds?.length === 0) return { documentIds: [], sourceIds: [] };
+  const unsettled = await db
+    .select({ documentId: branchTreeUnsettled.documentId })
+    .from(branchTreeUnsettled)
+    .where(
+      and(
+        eq(branchTreeUnsettled.branchId, branchId),
+        documentIds ? inArray(branchTreeUnsettled.documentId, [...documentIds]) : undefined,
+      ),
+    );
+  const held = await db
+    .select({ contextSourceId: folders.contextSourceId })
     .from(branchTreeFolders)
     .innerJoin(folders, eq(folders.id, branchTreeFolders.folderId))
     .where(
@@ -224,6 +288,10 @@ export async function readHeldFolders(
         documentIds ? inArray(branchTreeFolders.documentId, [...documentIds]) : undefined,
       ),
     );
+  return {
+    documentIds: unsettled.map((row) => row.documentId),
+    sourceIds: held.map((row) => row.contextSourceId),
+  };
 }
 
 const NO_FACTS: BranchTreeFacts = { row: false, created: false, moved: null, deleted: false };
@@ -309,6 +377,11 @@ export async function writeBranchTreeFacts(
     eq(branchTreeChanges.nodeKind, "document"),
     eq(branchTreeChanges.nodeId, input.documentId),
   );
+  // Every facts write is a drafted tree entry's: it stays to settle wherever the row goes.
+  await tx
+    .insert(branchTreeUnsettled)
+    .values({ branchId: input.branchId, documentId: input.documentId })
+    .onConflictDoNothing();
   if (!facts.row || !(facts.created || facts.moved || facts.deleted)) {
     await tx.delete(branchTreeChanges).where(key);
     return;

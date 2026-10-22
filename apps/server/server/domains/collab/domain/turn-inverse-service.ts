@@ -121,10 +121,10 @@ export interface TurnInverseStore {
      */
     skips: TurnInverseSkip[];
     /**
-     * Text parts and tree steps committed, by document and then by where they landed: a
-     * draft's id for its text, null for live text and every tree step.
+     * Text parts and tree steps committed, by document and then by where they landed: the
+     * branch whose text draft or tree facts took them, null for live.
      */
-    reversed: ReadonlyMap<DocumentId, ReadonlyMap<string | null, number>>;
+    reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
   }>;
   describePart(
     document: InverseDocument,
@@ -451,10 +451,10 @@ export function createTurnInverseService(store: TurnInverseStore) {
               query,
               userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
             })
-          : { skips: [], reversed: new Map<DocumentId, ReadonlyMap<string | null, number>>() };
+          : { skips: [], reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>() };
         const reversedAt = (plan: PreparedDocumentInverse) =>
-          [...(committed.reversed.get(plan.document.documentId) ?? [])].flatMap(([draftId, n]) =>
-            n > 0 ? [draftId] : [],
+          [...(committed.reversed.get(plan.document.documentId) ?? [])].flatMap(([branchId, n]) =>
+            n > 0 ? [branchId] : [],
           );
         const accepted = [...committed.reversed.values()].reduce(
           (n, byDestination) => [...byDestination.values()].reduce((m, count) => m + count, n),
@@ -478,10 +478,10 @@ export function createTurnInverseService(store: TurnInverseStore) {
           documents: plans.flatMap((plan): DocumentReversalResult[] => {
             const reversed = reversedAt(plan);
             if (reversed.length)
-              return reversed.map((draftId) => ({
+              return reversed.map((branchId) => ({
                 uri: plan.document.uri,
-                destination: draftId
-                  ? { kind: "draft" as const, draftId }
+                destination: branchId
+                  ? { kind: "draft" as const, branchId }
                   : { kind: "live" as const },
                 status: "reversed" as const,
               }));

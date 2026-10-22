@@ -17,6 +17,7 @@ import {
   type TreeChange,
   type TreeChangeDestination,
   type TreeChangeOp,
+  type TreePlacement,
   type TreeRemoval,
   type TreeTransition,
   type TreeTransitionChange,
@@ -65,8 +66,9 @@ export type TreeStates = {
 /** A tree entry that moved, deleted or restored: one with a transition to reverse. */
 export type TransitionEntry = StoredTreeEntry & { tree: TreeTransitionChange };
 
-export const isTransitionEntry = (row: StoredTreeEntry): row is TransitionEntry =>
-  row.tree.op !== "settle";
+export const isTransitionEntry = <T extends Pick<StoredTreeEntry, "tree">>(
+  row: T,
+): row is T & { tree: TreeTransitionChange } => row.tree.op !== "settle";
 
 /** A planned live transition starts where the inverse's earlier steps leave the document. */
 export type PlannedLiveTransition = {
@@ -100,6 +102,38 @@ export class TreeInverseRefused extends Error {
     super(`A tree inverse met ${fault}`);
     this.name = "TreeInverseRefused";
   }
+}
+
+/** Every folder a recorded tree change's placements name. */
+export function treeChangeFolders(change: TreeChange): string[] {
+  if (change.op === "settle") return [];
+  const states: (LiveTreeState | BranchTreeFacts)[] = [change.before, change.after];
+  return states.flatMap((state) => {
+    const at = "living" in state ? (state.living ? state.at : null) : state.moved;
+    return at?.folderId ? [at.folderId] : [];
+  });
+}
+
+/**
+ * A recorded tree change with its placements' folders as they stand now (`folderOf`): a hidden
+ * folder a live one absorbed since is that live one, so comparing and writing back see one
+ * identity for one place.
+ */
+export function withCurrentFolders(
+  change: TreeChange,
+  folderOf: (id: string) => string,
+): TreeChange {
+  if (change.op === "settle") return change;
+  const place = (at: TreePlacement): TreePlacement =>
+    at.folderId ? { ...at, folderId: folderOf(at.folderId) } : at;
+  if (isLiveTransition(change)) {
+    const live = (state: LiveTreeState): LiveTreeState =>
+      state.living ? { living: true, at: place(state.at) } : state;
+    return { ...change, before: live(change.before), after: live(change.after) };
+  }
+  const facts = (state: BranchTreeFacts): BranchTreeFacts =>
+    state.moved ? { ...state, moved: place(state.moved) } : state;
+  return { ...change, before: facts(change.before), after: facts(change.after) };
 }
 
 /** A tree entry's key in the effective action index; text parts key by ordinal. */
@@ -174,14 +208,19 @@ export function advanceStates(states: TreeStates, planned: PlannedTreeInverse): 
  * holds while nothing else changed it; `stands` says whether the entry's effect is in place.
  * `tree` is ordered by id.
  */
-export function latestTransition(
-  entry: TransitionEntry,
-  tree: readonly StoredTreeEntry[],
+export function latestTransition<
+  T extends Pick<StoredTreeEntry, "id" | "editId" | "targets" | "tree">,
+>(
+  entry: T & { tree: TreeTransitionChange },
+  tree: readonly T[],
   rolledBack: ReadonlySet<string>,
-): { row: TransitionEntry; stands: boolean } {
+): { row: T & { tree: TreeTransitionChange }; stands: boolean } {
   // Each row in the chain, with whether it left the entry standing.
   const stood = new Map<string, boolean>([[entry.editId, true]]);
-  let latest: { row: TransitionEntry; stands: boolean } = { row: entry, stands: true };
+  let latest: { row: T & { tree: TreeTransitionChange }; stands: boolean } = {
+    row: entry,
+    stands: true,
+  };
   for (const row of tree) {
     if (row.id <= entry.id || !isTransitionEntry(row) || rolledBack.has(treeKey(row.editId)))
       continue;
