@@ -20,6 +20,8 @@ export {
   isLiveTransition,
   type LiveTreeState,
   type LiveTreeTransition,
+  sameBranchFacts,
+  samePlacement,
   type TreeChange,
   type TreeChangeDestination,
   type TreeChangeOp,

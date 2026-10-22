@@ -86,3 +86,27 @@ export function isLiveTransition<T extends TreeTransition>(
 ): transition is Extract<T, LiveTreeTransition> {
   return transition.destination.kind === "live";
 }
+
+/** Two placements are one: the same folder (or source root), name and extension. */
+export function samePlacement(a: TreePlacement, b: TreePlacement): boolean {
+  return (
+    a.folderId === b.folderId &&
+    a.rootSourceId === b.rootSourceId &&
+    a.name === b.name &&
+    a.extension === b.extension
+  );
+}
+
+/** Two sets of a branch's facts are one state; a missing set is no state. */
+export function sameBranchFacts(
+  a: BranchTreeFacts | null | undefined,
+  b: BranchTreeFacts | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return (
+    a.row === b.row &&
+    a.created === b.created &&
+    a.deleted === b.deleted &&
+    (a.moved === null ? b.moved === null : b.moved !== null && samePlacement(a.moved, b.moved))
+  );
+}
