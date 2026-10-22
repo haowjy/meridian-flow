@@ -31,6 +31,7 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
     backgroundTasks: processDetachedWork,
     eventSink,
     environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
+    internalWriteSurface: true,
   });
   const hocuspocus = new Hocuspocus({
     yDocOptions: { gc: false, gcFilter: () => true },

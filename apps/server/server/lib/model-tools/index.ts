@@ -36,16 +36,22 @@ async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) 
   return { value: resolvedProps.resolvedValue, provenance: response.provenance };
 }
 
-export function createModelToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
+export function createModelToolRegistrations(
+  deps: ToolWiringDeps,
+  options: { internalWriteSurface?: boolean } = {},
+): ToolRegistration[] {
   return [
-    ...createCoreToolRegistrations({
-      read: createReadHandler(deps),
-      write: createWriteHandler(deps),
-      work: createWorkHandler(deps),
-      ls: createLsHandler(deps),
-      search: createSearchHandler(deps),
-      ask_user: askUserHandler,
-    }),
+    ...createCoreToolRegistrations(
+      {
+        read: createReadHandler(deps),
+        write: createWriteHandler(deps),
+        work: createWorkHandler(deps),
+        ls: createLsHandler(deps),
+        search: createSearchHandler(deps),
+        ask_user: askUserHandler,
+      },
+      options,
+    ),
     ...createSkillToolRegistrations(deps),
   ];
 }
