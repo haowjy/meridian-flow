@@ -522,8 +522,7 @@ export async function handleApplyClickRequest(
       grant.facts.projectId === input.projectId
     ) {
       const removed = await deps.documentSync.roomRemoval({ documentId: input.documentId });
-      if (removed)
-        return (await lookup()) ?? { status: "closed", commandId, removal: removed.removal };
+      if (removed) return (await lookup()) ?? { status: "closed", commandId };
     }
     return refuse(
       grant.facts?.branchWork?.deleted || grant.facts?.ownerWork?.deleted

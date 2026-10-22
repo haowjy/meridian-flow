@@ -205,7 +205,7 @@ export function createDrizzleBranchDiscard(
   };
 }
 
-/** Purge transactions run again when a branch's end-use scope moved under them. */
+/** Purge transactions run again when a branch's tree scope moved under them. */
 const PURGE_ATTEMPTS = 3;
 
 /**

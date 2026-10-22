@@ -37,8 +37,6 @@ const TEST_HOOK_POINTS = [
   /** Apply chose its lock scope from an unlocked tree read and holds no tree lock yet. */
   "apply.afterScopeGuess",
   "apply.afterLive",
-  "applyItems.beforeStaging",
-  "applyItems.afterStaging",
   /** A created document's retraction read its drafts and holds no draft row yet. */
   "retract.beforeLocks",
   /** A retraction holds its draft rows and found no contribution; nothing is deleted yet. */

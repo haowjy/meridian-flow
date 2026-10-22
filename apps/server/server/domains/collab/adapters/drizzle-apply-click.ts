@@ -38,7 +38,7 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import { dropDocumentRows } from "../../context/tree/branch-tree-store.js";
 import { acquireTreeScope, TreeScopeChangedError } from "../../context/tree/mutation-scope.js";
 import { place } from "../../context/tree/placement.js";
-import { readRemovalRecords, restoreDocument } from "../../context/tree/removal.js";
+import { restoreDocument } from "../../context/tree/removal.js";
 import { createTreeReader, type TreeStateNode } from "../../context/tree/tree-view.js";
 import { loadDocumentIdentityRows } from "../../context/tree/tree-view-sql.js";
 import {
@@ -98,16 +98,10 @@ export function createDrizzleApplyClick(
   },
 ): ApplyClickStore {
   const tree = createTreeReader(db);
-  async function closed(command: ApplyClickCommand): Promise<ApplyClickResult> {
-    const removal = (await readRemovalRecords(currentDrizzleDb(db), [command.documentId])).get(
-      command.documentId,
-    );
-    return {
-      status: "closed",
-      commandId: command.envelope.commandId,
-      ...(removal ? { removal } : {}),
-    };
-  }
+  const closed = (command: ApplyClickCommand): ApplyClickResult => ({
+    status: "closed",
+    commandId: command.envelope.commandId,
+  });
   async function reveal(node: TreeStateNode) {
     const placed = await place(db, {
       targets: [
@@ -135,7 +129,6 @@ export function createDrizzleApplyClick(
     return nodes.find((node) => node.nodeId === documentId);
   }
   return {
-    closed,
     async loadBase(command) {
       const draftId = command.request.draftId;
       if (!draftId) return null;
@@ -252,16 +245,7 @@ export function createDrizzleApplyClick(
                       );
                       if (outcome.kind === "location_taken")
                         throw new ApplyClickRefused("forbidden");
-                      if (outcome.kind === "refused") {
-                        const removal = (await readRemovalRecords(tx, [command.documentId])).get(
-                          command.documentId,
-                        );
-                        return finish({
-                          status: "closed",
-                          commandId: command.envelope.commandId,
-                          ...(removal ? { removal } : {}),
-                        });
-                      }
+                      if (outcome.kind === "refused") return finish(closed(command));
                       restored = outcome.kind === "restored";
                     }
                     if (!base || !click) {
