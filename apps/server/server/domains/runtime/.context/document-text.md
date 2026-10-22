@@ -1,160 +1,155 @@
 # Document text in history
 
-A document's current text lives in the document. Copies of it in a thread's
-history (read results, search excerpts, reference reads, write echoes) go
-stale when the writer edits, so every copy records which revision it saw, and
-two readers replace copies by different rules:
+This context defines revision, shown-link and observation-frontier evidence
+for document copies in history. Compaction replaces stale copies selectively; `thread_history` stubs
+every copy and preserves mutation inputs, so the transcript itself stays
+unchanged. Compaction applies replacement only where the retained prefix
+already breaks at position 0; it does not rewrite later arrivals.
 
-- **Compaction** (`stale` treatment) replaces only copies whose document has
-  changed since they were observed, and only where the prefix already breaks
-  at position 0. The rationale is the KB's
-  [Compaction Elides Only Stale Document Text][kb-elision].
-- **`thread_history`** (`history` treatment) stubs every copy regardless of
-  revision and passes mutation inputs through as dated edit records
-  ([history tools](history-tools.md)).
+## Revision evidence
 
-## Revision metadata
+Document reads, search hits, settled writes, and reference reads persist
+`DocumentRevisionEvidence`; the model sees only result text. URI is canonical at
+observation time. A null revision means unverifiable and is never resolved
+against current content. Empty evidence is explicit; failed lookups and edits
+fail closed.
 
-Document reads, search hits, and settled writes persist
-`tool_result.content.metadata.documentRevisions` entries. Writer-reference reads
-persist `read.revision` beside `read.result`. The model projection consumes only
-the result, never these tokens. Entries use the shared `DocumentRevisionEvidence` contract:
-URI is canonical at observation time. Null revision means unverifiable
-(including binary references, failed writes, and unverified recovery).
+A pre-compaction held tool result (`isNotesStepHeldResult`) executed nothing.
+Exclude it from document pairing and edit records; retain its not-run output
+verbatim in compaction and history instead of treating missing evidence as a
+stale successful write.
 
 Staged mutation results start with null. The response-settlement receipt supplies
-the token captured at apply; `persistCommittedWriteResult` copies it without a
-second document read. Re-reading here would misattribute a writer's intervening
-edit to the agent write. Compaction compares these tokens with current ones from
-the context domain's `DocumentRevisions` port (below).
-
-Results without edit records persist an explicit empty revision list; quoted
-edits use null revisions. An explicit empty `documentRevisions` means no
-document text; absent evidence, null tokens, and failed lookups fail closed.
-Known-null evidence is never resolved against current documents, including
-failed edits with only a historical path.
+the revision captured at apply, and `persistCommittedWriteResult` copies it
+without a second read; a reread would misattribute an intervening writer edit.
+Compaction compares stored evidence with current revisions through the
+`DocumentRevisions` port. Revision evidence is distinct from shown-link
+evidence and must not be derived from it.
 
 ## Shown links
 
-Each tool result that shows the model a document's links also records them as
-shown-link evidence ([`ports/shown-links.ts`](../ports/shown-links.ts), table
-`thread_shown_links`). A row holds the identity shown (`ref`: a link's
-`doc:`/`ahead:` ref or an uploaded picture's `asset:<id>`, the link index's key
-space; never in model text), the absolute address shown,
-the holder URI, the view (`live` or `draft:<workId>`) and the turn. When a
-write rewrites links, ref assignment binds them to these rows. The model
-never sees them: agent-edit's `showing { holderUri, view, links }` stays
-host-only on `WriteOutcome`, receipts and concurrent runs, a search hit's
-`shown` (holder URI, view, and each passage's links) on the hit, and handlers
-send only `result` or the stripped hit. The executor also strips `shown` and
-`showing` from every handler's value before it computes the persisted
-`result`, so no transcript row, history summary or browser event carries them.
+Tool results that show document links record host-only shown-link facts keyed by
+thread, document/ref, address, holder URI, view, and turn. The model-facing
+result is stripped of `shown`/`showing`; handlers produce candidates, and the
+executor records them only with an accepted result, inside the same transaction
+as the tool result or reference blocks. Aborted, timed-out, or thrown handlers
+record nothing. Settled receipts and concurrent response fits use the response
+save transaction.
 
-The holder URI and view recorded are the ones the facts were actually spelled
-from, never ones rebuilt from the grant: agent-edit's `showing` carries its
-command links' `scope.holder`, and a search hit's `shown` carries the holder
-ContextFS's read spelled from.
+Rows are per showing key per turn. Fork readers select their own and source
+rows through the cutoff, then deduplicate by the latest eligible sequence;
+nothing is copied at fork time. Handoffs and spawned children inherit no rows.
+The in-memory repository transaction rolls evidence back with a failed result;
+a response rollback still keeps evidence for an echo the model already saw.
 
-Ordinary tool evidence commits only with the result the model is shown.
-Handlers compute facts but never record: they return them as host-only
-`shown` candidates beside the result, the executor forwards them only for a
-handler result it accepts (never for an abort, a timeout or a throw, even when
-the abandoned handler finishes later), and `dispatchToolCall` records them in
-the transaction that persists the tool result. Handlers get only
-`forDocument`.
+## Observation frontiers
 
-| Showing | Candidates from | Recorded |
-|---|---|---|
-| successful read, narrowed or outline | `read` handler (`lib/model-tools/document-tools.ts`) | with the tool result (`loop/tool-dispatch.ts`) |
-| returned, authorized search passages | `search` handler (`listing-tools.ts`) | with the tool result |
-| write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` | with the tool result |
-| settled receipts | the response save | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
-| concurrent runs that fit the render budget | the response save | the response scope's backfill |
-| `@` reference reads | `lib/model-tools/reference-reader.ts` | with the reference blocks: the run-start persist (`loop/orchestrator.ts`) or the adoption commit (`adapters/runtime-delivery.ts`) |
+An observation frontier records what document state a block showed the model:
+`{ room, snapshot, unshown }` in `observation_frontiers` (the room in
+`room_key`), on the source block: a `tool_result`, or a writer turn's reference
+block whose materialized read the model is sent. A block records at most one
+(`source_block_id` is the primary key).
+The room is `draft:<workDraftId>` (the Work draft the call read, never a peer)
+or `live:<documentId>:<authorityGeneration>`; collab names it from what the
+call read. `snapshot` is `Y.encodeSnapshotV2` of the doc the result was
+rendered from; `unshown` lists blocks changed since the model's previous
+frontier and not shown in full (`@meridian/agent-edit/integration` computes
+both). Every write plans on the `planning` frontier of its room plus the
+reply's own writes ([decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/merge/ai-writes-plan-on-what-the-model-was-shown.md)),
+and is refused with the passage's current text (`region_changed`) when that
+passage changed since the model saw it. Every result that shows document text
+lists, under `concurrent edits:`, the blocks changed since the model's frontier
+that it doesn't show; the listing and `unshown` are one computation in
+agent-edit ([write architecture](../../../../../../packages/agent-edit/.context/write-architecture.md#the-listing)).
 
-`@` reference blocks persist through run preparation and inbox adoption, not
-tool dispatch. The reader returns its candidates as host-only `shown` beside
-the read; `loadReferenceReads` carries them beside the updated blocks (never
-in their content), through `PreparedRequest.shown` at run start and
-`InboxDrain.shown` at adoption. The commit that persists those blocks records
-them: at run start under the reserved turn, at adoption under the successor
-turn whose request shows them (via `DeliveryBoundary.recordShown`). A
-preparation that fails, is cancelled or is retried after its selection
-changed is discarded whole, candidates included.
+- **What records.** Only results the model receives: reads, immediate write
+  echoes, undo, redo and revert echoes, settled save receipts, and reference
+  reads. A staged write's echo records nothing: the step's save replaces it
+  before the next request is built. A `region_changed` refusal that shows the
+  passage records like a read; other refusals, `format: "edits"` reads and copy
+  source reads record none. Dispatch records whatever frontier a result
+  carries, error or not. A result reported with `awarenessDegraded` records
+  a frontier that counts no block as shown in full: its snapshot advances and
+  every changed block is unshown.
+- **Recording.** A handler returns its host-only `evidence` (`ResultEvidence`:
+  shown links and the frontier) beside the result; the executor strips it from
+  everything serialized, and dispatch records both in
+  `persistAndAppendEvents`'s `afterEvents`, once the block row exists.
+  Reference reads carry `ReferenceEvidence` the same way to the commit that
+  persists their blocks. Deleting the block's old row is part of the block write
+  and fails it; the insert runs in a savepoint, so a failed insert is logged
+  (`observation_frontier.record_failed`) and the result commits with no
+  frontier, never the stale one.
+- **Saves.** The save records on each committed document's last settled
+  result a frontier at the save's after-state, chained like any result from the
+  `recording` lookup, crediting what the settled receipts show in full (nothing
+  when they are degraded or textless) and what the last one lists. The latest row may be a sibling read's
+  from the same step: its snapshot holds the step's staged structs, so it
+  validates only if they landed, and it credits only what that read showed.
+  Recovery's journal replay leaves the cut unknown and records none; a failed
+  save, a refused write and a typed rejection record none. Replacing a result
+  replaces its row.
+- **Selection.** The model's frontier for a room is the row with the greatest
+  `recorded_seq` among a block set (rooms only grow, so recording order is cut
+  order). `frontierLookup` (`loop/frontier-recording.ts`) builds one lookup per
+  block set. Dispatch puts two on `ToolHandlerContext.frontiers`: `recording`
+  reads the run's credited ids live, so a sibling call's result counts as seen,
+  and `planning` reads the ids as they stood when the authoring request was
+  built (calls in one response share the view from before it; every write plans on it). The
+  third, `reply`, is the provider reply's `ReplyMutations`: its own accepted writes and
+  inverses, which the view replays after that frontier. The reply's response scope
+  (`createResponseScope`) creates it, it outlives edit-scope rotations, and the reply
+  clears it in a `finally` however it ends. **Credit follows
+  what the request carries** (C10): the block set is the projector's
+  `creditedBlockIds` (`compaction/project.ts`), the blocks after the latest
+  complete compaction plus that compaction's re-shown documents, or every
+  effective block (fork lineage through the cutoff, forgotten turns removed)
+  when there is no compaction. The retained tail before the compaction credits
+  nothing: its rows may fold credit from rows the summary replaced, and no row
+  records what it folded. The chain therefore restarts at each compaction for
+  every document, and a fork whose cutoff precedes the compaction counts the
+  earlier rows again. The run's `CreditedBlocks` is reseeded from each request's
+  projection and takes the tool results and adopted writer blocks that persist
+  after it; run-start reference reads project the request's blocks for theirs.
+  A failed lookup is logged and answers null, the empty frontier; it runs in a
+  savepoint inside a transaction, so the caller's stays usable. Its `ORDER BY
+  recorded_seq DESC NULLS LAST` matches the `(room_key, recorded_seq DESC NULLS
+  LAST)` index, so the scan walks the room newest first and stops at the first
+  row among the blocks.
+- **Lifecycle.** Rows cascade with their block. A fork renders inherited block
+  ids and finds their rows with nothing copied; a retry has new blocks.
 
-The in-memory store keeps its rows in the repositories'
-`InMemoryTransactionOwner`, so on both adapters evidence recorded with a
-result that fails to persist rolls back with it.
+## Tool policy and elision
 
-Nothing else records evidence. Capture lives in the handlers, never in
-`readDocument`, so a copy's private source read records nothing. Matches past
-the passage cap, `thread_history` items, compaction summaries and handoff briefs
-record nothing either. Never derive evidence from `documentRevisions` metadata:
-that is revision evidence, and history copies carry it with null revisions.
+`ToolRegistration.documentText` owns each tool's stale/history treatment and
+`historySummary` owns the text after a history call line. Missing registration
+or pairing fails closed. The treatment preserves compaction stub bytes or
+history mutation inputs as appropriate.
 
-The rows are independent of transcript blocks, so compaction and restart
-lose none of them. A response that rolls back keeps its rows, since the model
-saw the echo.
+A completed compaction owns frozen `metadata.elisions` (block, treatment, URI,
+and replacement). The active projector applies them only to C's retained tail
+and pinned requests; failed, pending, and superseded owners do not apply them.
+Forks inherit elisions only when their cutoff includes C. Never write elisions
+onto source block rows or derive stubs at render time, or a later source
+compaction/deploy would rewrite a fork's frozen prefix.
 
-Storage keeps one row per showing key **per turn** (key: thread, document,
-ref, address, holder URI, view; plus turn). This amends contract §7.3's one
-mutable row per key, which could not keep its own cutoff promise: a source's
-later repeat moved the row past a fork's cutoff and erased what the fork saw.
-Now a repeat in a later turn adds a row; within a turn the row keeps the
-greatest `seq` from the one global sequence. The upsert applies only when
-`excluded.seq > seq`, because a sequence value is drawn before conflict
-arbitration and a writer delayed after drawing can arrive second.
+Reference snapshots can carry host-only `read.input`: the actual ordinary read
+arguments, separate from canonical identity. The ordinary schema validates it
+before the shared tracked read executes it. Persisted input is display-only JSON;
+replay never executes it. Both entry points share scope, grant, version and
+frontier logic; submitted references cannot carry read metadata.
 
-Readers select first and deduplicate second: a fork reads its own rows plus
-its source's rows at turns up to its cutoff position, recursively, and only
-then keeps the latest eligible showing per key (its `at`). PostgreSQL does both
-in one query: one `UNION ALL` branch per lineage segment applies its cutoff,
-then `DISTINCT ON` keeps the greatest `seq` per key. Nothing is copied at
-fork time. Handoffs and spawned children inherit nothing, because they start
-from a brief.
+A document the compaction re-shows in full after its summary
+([important files](compaction.md#important-files)) elides every tail copy of it
+as `reshown`, stale or not, with a stub pointing at the text after the summary;
+a block that also holds some other stale document keeps the `stale` stub.
+Partial re-shows never authorize duplicate elision; their fresh frontiers leave
+outside blocks unseen even when an unchanged full tail read remains visible.
 
-Delivery: `writeUnderGrant` binds `WriteContext.shownLinks` to
-`ShownLinkStore.forDocument(threadId, ·)`. The pool spreads the context
-through, so the field survives. Utility, seed and import writes pass none, so
-their links bind fresh.
-
-## Tool-owned policy
-
-`ToolRegistration.documentText` (`tools/document-text.ts`) owns each tool's
-classification and replacement copy; `historySummary`
-(`tools/history-summaries.ts`) owns what follows its history call line's `→`. `read`,
-`write` and `search` register policies, each with a fixed kind; references use
-`reference-context`. Error pairs are outside the policy. Tool pairing, reasoning, writer
-words, and fresh text stay. Missing tool pairing or registration fails closed
-on result text. The `stale` treatment preserves compaction's stub bytes; the
-`history` treatment preserves mutation inputs and stubs copies.
-
-## Elision at compaction
-
-The writer transcript stays intact. A completed compaction owns frozen
-`metadata.elisions` (block ID, treatment, affected URIs, replacement content).
-The active projection ([compaction](compaction.md#one-projection-authority))
-substitutes them only in C's retained tail and pinned requests, not later
-arrivals. Failed, pending, and superseded owners do not apply.
-Forks inherit this metadata only when their cutoff includes the owner. Never move elisions onto block rows: a fork reads its source's blocks in place,
-so a source compaction after the cutoff would rewrite the fork's request. Do not derive stubs at render
-time either: a copy change in a deploy would rewrite every compacted thread's
-prefix. `compaction/elide.ts` plans the replacements and
-`compaction-revisions.ts` queries current revisions.
-
-Stale reference reads inside pinned unanswered messages are elided; the writer
-words and mention stay verbatim. Pins retain identity and order, not stale
-embedded document text.
-
-Successor prepare independently queries current document revisions once per
-attempt and plans from raw retained blocks, never from a previous owner's
-replacements. A moved leaf re-queries, while a failed prepare writes no elisions.
-An edit made after the successor commit reaches the model as stale text until
-the next compaction; elision runs only where the prefix already breaks at
-position 0.
-
-The loop asserts no response scope is open: `DocumentRevisions.current` cannot
-represent response-staged overlays. Query failures become unknown tokens; the
-assertion is an invariant failure, not a lookup failure.
+Successor preparation queries current revisions from raw retained blocks once
+per attempt. Stale text in pinned unanswered messages is replaced while writer
+words and mentions remain verbatim. A response-staged overlay must not be
+visible to `DocumentRevisions.current`; that is an invariant failure, not a
+lookup fallback.
 
 [kb-elision]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/request-prefix/stale-document-elision.md

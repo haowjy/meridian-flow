@@ -1,10 +1,8 @@
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
-import {
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -92,6 +90,13 @@ export type ResolvedContextMove = {
   name?: string;
 };
 
+function uploadsNotMovable() {
+  return createError({
+    statusCode: 400,
+    message: "Uploads belong to the chat that received them and can't be moved",
+  });
+}
+
 function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string" || raw.trim() === "") {
@@ -110,6 +115,7 @@ function parseLocator(input: {
   if (!isProjectContextTreeScheme(input.scheme)) {
     throw createError({ statusCode: 400, message: "Context scheme is invalid" });
   }
+  if (input.scheme === "uploads") throw uploadsNotMovable();
   if (input.rootThreadId != null) {
     if (input.scheme !== "scratch" || input.workId)
       throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
@@ -120,7 +126,7 @@ function parseLocator(input: {
       rootThreadId: requireRequestId(input.rootThreadId, "rootThreadId"),
     };
   }
-  if (isWorkScopedProjectContextScheme(input.scheme)) {
+  if (isWorkScopedScheme(input.scheme)) {
     if (!input.workId) {
       return { scope: "none", scheme: input.scheme, path: input.path };
     }
@@ -138,6 +144,60 @@ function parseLocator(input: {
     });
   }
   return { scope: "project", scheme: input.scheme as ProjectContextFsScheme, path: input.path };
+}
+
+/**
+ * A writer-selected parent folder, by identity: a folder id, or a scheme root and its
+ * owner, each with the missing-folder suffix (`createFolders`). Moves and creates share it.
+ */
+export function parseDestinationParent(
+  raw: unknown,
+): NonNullable<MoveContextEntryRequest["destinationParent"]> {
+  const parent = raw as Record<string, unknown> | null;
+  let destinationParent: NonNullable<MoveContextEntryRequest["destinationParent"]>;
+  if (parent?.kind === "folder") {
+    destinationParent = {
+      kind: "folder",
+      folderId: requireRequestId(parent.folderId, "destinationParent.folderId"),
+    };
+  } else if (
+    parent?.kind === "root" &&
+    isProjectContextTreeScheme(parent.scheme) &&
+    parent.owner &&
+    typeof parent.owner === "object"
+  ) {
+    const owner = parent.owner as Record<string, unknown>;
+    destinationParent = {
+      kind: "root",
+      scheme: parent.scheme,
+      owner: {
+        workId: parseWorkId(owner.workId, "destinationWorkId"),
+        ...(typeof owner.workHandle === "string" || owner.workHandle === null
+          ? { workHandle: owner.workHandle }
+          : {}),
+        ...(owner.rootThreadId != null
+          ? {
+              rootThreadId: requireRequestId(
+                owner.rootThreadId,
+                "destinationParent.owner.rootThreadId",
+              ),
+              rootThreadRef: typeof owner.rootThreadRef === "string" ? owner.rootThreadRef : null,
+            }
+          : {}),
+      },
+    };
+  } else throw createError({ statusCode: 400, message: "Destination parent is invalid" });
+  if (parent.createFolders !== undefined) {
+    if (!Array.isArray(parent.createFolders))
+      throw createError({
+        statusCode: 400,
+        message: "Destination folder suffix must be an array",
+      });
+    destinationParent.createFolders = parent.createFolders.map((segment) =>
+      parseContextMutationName(segment, "destinationParent.createFolders"),
+    );
+  }
+  return destinationParent;
 }
 
 export function parseContextMove(input: {
@@ -159,53 +219,16 @@ export function parseContextMove(input: {
   }
   let destinationParent: MoveContextEntryRequest["destinationParent"];
   if (body.destinationParent !== undefined) {
-    const parent = body.destinationParent as Record<string, unknown> | null;
-    if (parent?.kind === "folder") {
-      destinationParent = {
-        kind: "folder",
-        folderId: requireRequestId(parent.folderId, "destinationParent.folderId"),
-      };
-    } else if (
-      parent?.kind === "root" &&
-      parent.scheme === body.destinationScheme &&
-      parent.owner &&
-      typeof parent.owner === "object"
-    ) {
-      const owner = parent.owner as Record<string, unknown>;
+    destinationParent = parseDestinationParent(body.destinationParent);
+    if (destinationParent.kind === "root") {
+      if (destinationParent.scheme !== body.destinationScheme)
+        throw createError({ statusCode: 400, message: "Destination parent is invalid" });
+      const owner = destinationParent.owner;
       if (
-        (owner.workId ?? null) !== (body.destinationWorkId ?? null) ||
+        (owner.workId ?? null) !== parseWorkId(body.destinationWorkId, "destinationWorkId") ||
         (owner.rootThreadId ?? null) !== (body.destinationRootThreadId ?? null)
       )
         throw createError({ statusCode: 400, message: "Destination root owner does not match" });
-      destinationParent = {
-        kind: "root",
-        scheme: parent.scheme as MoveContextEntryRequest["destinationScheme"],
-        owner: {
-          workId: parseWorkId(owner.workId, "destinationWorkId"),
-          ...(typeof owner.workSlug === "string" || owner.workSlug === null
-            ? { workSlug: owner.workSlug }
-            : {}),
-          ...(owner.rootThreadId != null
-            ? {
-                rootThreadId: requireRequestId(
-                  owner.rootThreadId,
-                  "destinationParent.owner.rootThreadId",
-                ),
-                rootThreadRef: typeof owner.rootThreadRef === "string" ? owner.rootThreadRef : null,
-              }
-            : {}),
-        },
-      };
-    } else throw createError({ statusCode: 400, message: "Destination parent is invalid" });
-    if (parent.createFolders !== undefined) {
-      if (!Array.isArray(parent.createFolders))
-        throw createError({
-          statusCode: 400,
-          message: "Destination folder suffix must be an array",
-        });
-      destinationParent.createFolders = parent.createFolders.map((segment) =>
-        parseContextMutationName(segment, "destinationParent.createFolders"),
-      );
     }
   }
   const sourcePath = parseContextMutationPath(body.path, "path");
@@ -295,10 +318,8 @@ export async function commitContextMove(input: {
           : destination.scope === "lineage"
             ? collision.value.authority.kind === "lineage" &&
               collision.value.authority.rootThreadRef === destination.authority.rootThreadRef
-            : destination.authority.workSlug === null
-              ? collision.value.authority.kind === "none"
-              : collision.value.authority.kind === "work" &&
-                collision.value.authority.workSlug === destination.authority.workSlug;
+            : collision.value.authority.kind === "work" &&
+              collision.value.authority.workHandle === destination.authority.workHandle;
       if (
         collision.value.scheme !== destination.scheme ||
         (!identityDestination && collision.value.path !== destinationPath) ||
@@ -328,7 +349,7 @@ export async function commitContextMove(input: {
                   path: collision.value.path,
                   authority: {
                     workId: destination.authority.workId,
-                    workSlug: destination.authority.workSlug,
+                    workHandle: destination.authority.workHandle,
                   },
                 }
               : {
@@ -446,11 +467,12 @@ export async function handleContextMoveRequest(
     const parsed = parseUnifiedContextUri(uri);
     if (!parsed.ok) contextErrorToHttp(parsed.error);
     const { scheme, path, authority } = parsed.value;
-    if (authority.kind === "work" || authority.kind === "none") {
-      const resolved =
-        authority.kind === "none"
-          ? await deps.workAuthorityResolver.noWork(input.projectId)
-          : await deps.workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
+    if (scheme === "uploads") throw uploadsNotMovable();
+    if (authority.kind === "work") {
+      const resolved = await deps.workAuthorityResolver.byHandle(
+        input.projectId,
+        authority.workHandle,
+      );
       if (!resolved) throwContextWorkUnavailableHttpError("work_missing");
       return {
         scope: "work",

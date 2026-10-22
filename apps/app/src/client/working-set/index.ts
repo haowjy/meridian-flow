@@ -8,11 +8,13 @@ export {
   reconcileContextRoutes,
   replaceRecentRoutes,
   retryWorkingSetHydration,
+  subscribeWorkingSetHydration,
 } from "./driver";
 export type { WorkingSetHydrationPlan } from "./hydration";
 export type { ReconcileContextRoutesInput } from "./store";
 export {
   buildWorkingSetRoute,
+  followRouteIdentity,
   recentRouteForEditorWork,
   reconcileSnapshotContextRoutes,
   replaceSnapshotRoute,

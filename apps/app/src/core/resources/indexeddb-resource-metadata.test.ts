@@ -391,9 +391,15 @@ it("settles a folder receipt and exact descendant tombstones atomically, fencing
   expect(snapshot.folders[0]?.intents.at(-1)?.state).toBe("settled");
   expect(snapshot.records.map(({ resource }) => [resource.handle, resource.lifecycle])).toEqual([
     ["newer", { kind: "acknowledged", availabilityGeneration: "10" }],
-    ["one", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
+    [
+      "one",
+      { kind: "terminal", generation: "9", transitionId: "delete-folder", deletionVersion: "1" },
+    ],
     ["survivor", { kind: "acknowledged", availabilityGeneration: "7" }],
-    ["two", { kind: "terminal", generation: "9", transitionId: "delete-folder" }],
+    [
+      "two",
+      { kind: "terminal", generation: "9", transitionId: "delete-folder", deletionVersion: "1" },
+    ],
   ]);
 });
 

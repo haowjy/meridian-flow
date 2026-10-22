@@ -36,6 +36,11 @@ export type UploadFigureInput = {
 };
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
+  /**
+   * The Work the viewer is in. A picture still in a Work's branch is readable
+   * only through that Work, so the request names it.
+   */
+  workId?: string;
   src?: string;
   skipCache?: boolean;
 };
@@ -61,15 +66,18 @@ function signedUrlPath(input: AssetRouteInput): string {
   return `${figurePath(input.projectId, input.assetDocumentId)}/signed-url`;
 }
 
-function cacheKey(input: AssetRouteInput): string {
-  return `${input.projectId}\u0000${input.assetDocumentId}`;
+function cacheKey(input: AssetRouteInput & { workId?: string }): string {
+  return `${input.projectId}\u0000${input.assetDocumentId}\u0000${input.workId ?? ""}`;
 }
 
-function cacheSignedUrl(input: AssetRouteInput & GetFigureSignedUrlResponse): void {
+function cacheSignedUrl(
+  input: AssetRouteInput & { workId?: string } & GetFigureSignedUrlResponse,
+): void {
   signedUrlCache.set(
     cacheKey({
       projectId: input.projectId,
       assetDocumentId: input.assetDocumentId,
+      workId: input.workId,
     }),
     {
       projectId: input.projectId,
@@ -86,6 +94,7 @@ function getCachedSignedUrl(input: GetFigureSignedUrlInput): CachedSignedUrl | n
     cacheKey({
       projectId: input.projectId,
       assetDocumentId: input.assetDocumentId,
+      workId: input.workId,
     }),
   );
   if (!cached) return null;
@@ -129,7 +138,8 @@ export async function getFigureSignedUrl(
   const request = (async () => {
     // A refusal keeps its status: a 404 is the route saying the document is
     // gone (or unreadable, which it does not tell apart), not a failure.
-    const value = await getJson<GetFigureSignedUrlResponse>(signedUrlPath(input));
+    const query = input.workId ? `?workId=${encodeURIComponent(input.workId)}` : "";
+    const value = await getJson<GetFigureSignedUrlResponse>(`${signedUrlPath(input)}${query}`);
     cacheSignedUrl({ ...input, ...value });
     return value;
   })();

@@ -1,26 +1,28 @@
-export type AiWriteMode = "direct" | "draft";
+export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
+import type { WorkHandle } from "../handles.js";
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
+import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
-import type { WorkSlug } from "./work-slug.js";
 
 export interface Work {
   id: WorkId;
   projectId: ProjectId;
   createdByUserId: UserId;
   name: string;
-  /** Stable project-unique handle. Null on the locked No Work row. */
-  slug: WorkSlug | null;
+  /** Permanent project-unique handle (`w3`), never reused. Null on the locked No Work row. */
+  handle: WorkHandle | null;
   isNoWork: boolean;
   goal: string | null;
   /** AI-owned one-to-three-word progress summary. */
   status: string | null;
   archivedAt: string | null;
-  aiWriteMode: AiWriteMode;
+  /** What a new chat in this Work starts with. A chat owns its own mode afterwards. */
+  defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */
-  unpushedChangeCount?: number | null;
+  /** Documents this Work's active branch changes (the Works badge), as the server stores it; never derive from visible rows. */
+  pendingDocumentCount: number;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -42,9 +44,8 @@ export function isWorkArchived(work: Pick<Work, "archivedAt">): boolean {
   return work.archivedAt !== null;
 }
 
-export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
-export type NamedWorkCatalogEntry = WorkCatalogEntry & { isNoWork: false; slug: WorkSlug };
-export type NoWorkCatalogEntry = WorkCatalogEntry & { isNoWork: true; slug: null };
+export type NamedWorkCatalogEntry = Work & { isNoWork: false; handle: WorkHandle };
+export type NoWorkCatalogEntry = Work & { isNoWork: true; handle: null };
 
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
@@ -70,14 +71,14 @@ export interface UpdateWorkRequest {
   goal?: string;
 }
 
-/** Resolved execution scope. Null slug is No Work. */
-export type ThreadWorkScope = { workId: WorkId; workSlug: WorkSlug | null };
+/** Resolved execution scope. Null handle is No Work. */
+export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 
-/** Resolved execution always has a Work id. Null slug is No Work. */
+/** Resolved execution always has a Work id. Null handle is No Work. */
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  draftOwner: { kind: "work"; workId: WorkId } | null;
+  branchOwner: { kind: "work"; workId: WorkId } | null;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */
@@ -95,8 +96,7 @@ export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 /** One side of a thread's Work rebind. */
 export type WorkBindingState = WorkReceiptState & {
   workId: WorkId;
-  slug: WorkSlug | null;
-  aiWriteMode: AiWriteMode;
+  handle: WorkHandle | null;
 };
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */
@@ -120,8 +120,8 @@ export interface WorkContextProjectionSignal {
   scope: ThreadWorkScope;
 }
 
+export { decodeWorkHandle, formatWorkHandle, type WorkHandle } from "../handles.js";
 export * from "./metadata.js";
 export * from "./receipts.js";
 export * from "./work-authority.js";
 export * from "./work-retention.js";
-export * from "./work-slug.js";

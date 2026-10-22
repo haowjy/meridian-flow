@@ -1,4 +1,5 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
+import { newerCanonicalObservation } from "./canonical-observation";
 import { validateNamespaceJournal } from "./namespace-journal-policy";
 import type { ResourceRecord } from "./resource-records";
 
@@ -13,8 +14,30 @@ export function validateResourceRecordUpdate(
     throw new Error("Invalid resource revision");
   if (previous && previous.resource.handle !== resource.handle)
     throw new Error("Resource identity mismatch");
-  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal")
-    throw new Error("Terminal resources cannot be revived");
+  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal") {
+    // Only a strictly newer server observation of the document as present supersedes deletion,
+    // and never under an outstanding purge of the deleted lineage's content.
+    const deletionVersion = previous.resource.lifecycle.deletionVersion;
+    const restored =
+      resource.lifecycle.kind === "acknowledged" &&
+      resource.canonical !== null &&
+      resource.observationVersion !== undefined &&
+      deletionVersion !== undefined &&
+      newerCanonicalObservation(resource.observationVersion, deletionVersion) &&
+      !previous.resource.obligations.cleanup &&
+      resource.identity.documentId === previous.resource.identity.documentId &&
+      resource.identity.revision === previous.resource.identity.revision &&
+      resource.content.kind === "unacquired" &&
+      resource.revivedFrom?.generation === previous.resource.lifecycle.generation &&
+      resource.revivedFrom.transitionId === previous.resource.lifecycle.transitionId;
+    if (!restored) throw new Error("Terminal resources revive only from newer server observations");
+  }
+  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind === "terminal") {
+    const held = previous.resource.lifecycle.deletionVersion;
+    const kept = resource.lifecycle.deletionVersion;
+    if (held !== undefined && (kept === undefined || newerCanonicalObservation(held, kept)))
+      throw new Error("A terminal resource cannot lose its deletion version");
+  }
   const nextInitializationReserved =
     resource.content.kind === "exact" && resource.content.initialization === "reserved";
   const previousInitializationReserved =
@@ -86,42 +109,45 @@ export function validateResourceRecordUpdate(
   )
     throw new Error("Session adoption witness does not match the resource");
   if (adoption && previous && !previous.resource.obligations.sessionAdoption) {
+    // A join re-identified the reservation in this write: its create, submitted under the old id,
+    // is the witness whether the answer or the catalog entry came first.
     const source = next.intents.find(
       (intent) =>
         intent.projectId === adoption.projectId &&
-        intent.identityRevision === adoption.identityRevision &&
-        intent.attempts.some(
-          (attempt) =>
-            attempt.attemptId === adoption.transitionId &&
-            attempt.request.kind === "create" &&
+        intent.attempts.some((attempt) => {
+          if (attempt.attemptId !== adoption.transitionId || attempt.request.kind !== "create")
+            return false;
+          const joined =
+            resource.aliases[attempt.request.body.documentId]?.introducedAtIdentityRevision ===
+            adoption.identityRevision;
+          if (joined)
+            return (
+              attempt.outcome === undefined ||
+              (attempt.outcome.kind === "create" &&
+                attempt.outcome.result.status === "joined" &&
+                attempt.outcome.result.documentId === adoption.documentId)
+            );
+          return (
+            intent.identityRevision === adoption.identityRevision &&
             attempt.outcome?.kind === "create" &&
-            attempt.outcome.result.status !== "conflict",
-        ),
+            attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.status !== "joined"
+          );
+        }),
     );
     const previousContent = previous?.resource.content;
-    const sameAcknowledgedCache =
+    // A new obligation is witnessed either by the local create that produced the content, or by an
+    // acknowledged resource whose content is not yet acquired or is already this exact cache.
+    const acknowledgedExactCache =
       previous?.resource.lifecycle.kind === "acknowledged" &&
-      previous.resource.identity.documentId === adoption.documentId &&
-      previous.resource.identity.revision === adoption.identityRevision &&
-      previousContent?.kind === "exact" &&
-      previousContent.initialization !== "reserved" &&
-      previousContent.databaseName === adoption.exactDatabaseName &&
-      !previous.intents.some((intent) =>
-        intent.attempts.some((attempt) => attempt.attemptId === adoption.transitionId),
-      );
-    const acquiredServerCache =
-      previous?.resource.lifecycle.kind === "acknowledged" &&
-      adoption.generation !== null &&
       resource.lifecycle.kind === "acknowledged" &&
-      resource.lifecycle.availabilityGeneration === adoption.generation &&
       previous.resource.identity.documentId === adoption.documentId &&
       previous.resource.identity.revision === adoption.identityRevision &&
       (previousContent.kind === "unacquired" ||
         (previousContent.initialization !== "reserved" &&
           previousContent.databaseName === adoption.exactDatabaseName));
-    const createdLocalContent =
-      previous?.resource.lifecycle.kind === "local" && source && adoption.generation === null;
-    if (!createdLocalContent && !sameAcknowledgedCache && !acquiredServerCache)
+    const createdLocalContent = previous?.resource.lifecycle.kind === "local" && source;
+    if (!createdLocalContent && !acknowledgedExactCache)
       throw new Error("Session adoption requires created or acquired exact content");
   }
   if (resource.obligations.canonicalRefresh) {
@@ -152,22 +178,13 @@ export function validateResourceRecordUpdate(
   if (oldRefresh && nextRefresh && JSON.stringify(oldRefresh) !== JSON.stringify(nextRefresh))
     throw new Error("Canonical refresh obligation cannot be replaced");
   const oldAdoption = previous?.resource.obligations.sessionAdoption;
-  if (oldAdoption && adoption) {
-    const { generation: _oldGeneration, ...oldWitness } = oldAdoption;
-    const { generation: _nextGeneration, ...nextWitness } = adoption;
-    if (
-      JSON.stringify(oldWitness) !== JSON.stringify(nextWitness) ||
-      (oldAdoption.generation !== null && adoption.generation !== oldAdoption.generation)
-    )
-      throw new Error("Session adoption obligation cannot be replaced");
-  }
+  if (oldAdoption && adoption && JSON.stringify(oldAdoption) !== JSON.stringify(adoption))
+    throw new Error("Session adoption obligation cannot be replaced");
   if (
     oldAdoption &&
     !adoption &&
     resource.lifecycle.kind !== "terminal" &&
-    (oldAdoption.generation === null ||
-      resource.lifecycle.kind !== "acknowledged" ||
-      resource.lifecycle.availabilityGeneration !== oldAdoption.generation)
+    resource.lifecycle.kind !== "acknowledged"
   )
     throw new Error("Session adoption can clear only after exact admission");
 }

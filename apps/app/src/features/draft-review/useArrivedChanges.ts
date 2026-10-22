@@ -2,13 +2,13 @@
  * useArrivedChanges — which changes arrived while the writer was reviewing.
  *
  * The first read of a draft is the baseline: everything in it was already
- * there. A change that shows up later is an arrival (the AI is still writing),
+ * there. The runtime marks new AI writes with an arrival sequence,
  * and is reported for a moment so its row and marks can pulse once. The
  * writer's own typing is never an arrival.
  */
 import { useEffect, useRef, useState } from "react";
 
-import type { ReviewChange } from "./review-changes";
+import type { ReviewChange } from "./review-model";
 
 const PULSE_MS = 1400;
 
@@ -17,7 +17,7 @@ export function useArrivedChanges(
   ready: boolean,
   draftKey: string | null,
 ): ReadonlySet<string> {
-  const known = useRef<{ key: string | null; ids: Set<string> } | null>(null);
+  const known = useRef<{ key: string | null; sequence: number } | null>(null);
   const [arrived, setArrived] = useState<ReadonlySet<string>>(EMPTY);
   // Timers outlive the effect that set them: a refetch re-runs it, and the
   // pulse of an earlier arrival must still end on time.
@@ -35,23 +35,24 @@ export function useArrivedChanges(
       return;
     }
     if (known.current?.key !== draftKey) {
-      known.current = { key: draftKey, ids: new Set(changes.flatMap(identities)) };
+      known.current = {
+        key: draftKey,
+        sequence: changes.reduce((last, change) => Math.max(last, change.arrival ?? 0), 0),
+      };
       setArrived(EMPTY);
       return;
     }
-    const seen = known.current.ids;
-    // A re-forked draft gives its surviving changes new ids; they are not arrivals.
-    const fresh = changes.filter(
-      (change) => !identities(change).some((id) => seen.has(id)) && change.tone !== "writer",
-    );
-    for (const id of changes.flatMap(identities)) seen.add(id);
+    const seen = known.current.sequence;
+    const fresh = changes.filter((change) => change.arrival !== undefined && change.arrival > seen);
+    for (const change of fresh)
+      known.current.sequence = Math.max(known.current.sequence, change.arrival ?? 0);
     if (fresh.length === 0) return;
-    setArrived((current) => new Set([...current, ...fresh.map((change) => change.classId)]));
+    setArrived((current) => new Set([...current, ...fresh.map((change) => change.id)]));
     const timer = window.setTimeout(() => {
       timers.current.delete(timer);
       setArrived((current) => {
         const next = new Set(current);
-        for (const change of fresh) next.delete(change.classId);
+        for (const change of fresh) next.delete(change.id);
         return next.size === current.size ? current : next;
       });
     }, PULSE_MS);
@@ -62,8 +63,3 @@ export function useArrivedChanges(
 }
 
 const EMPTY: ReadonlySet<string> = new Set();
-
-/** What a change has been: its class and its operations' keys, which outlive a re-fork. */
-function identities(change: ReviewChange): string[] {
-  return [change.classId, ...change.keys];
-}

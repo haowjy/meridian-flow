@@ -1,5 +1,7 @@
 // Durable draft receipts and staged response setup shared by the Postgres suites.
+
 import { randomUUID } from "node:crypto";
+import { editHandle } from "@meridian/agent-edit/integration";
 import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
 import { testFileGrant } from "../../../test-support/file-grants.js";
@@ -14,8 +16,6 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
-
-type ReceiptFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
 export async function stageDraft(
   db: ReturnType<typeof createTestDatabase>,
@@ -45,14 +45,13 @@ export async function stageDraft(
     identities.push(outcome.writeId);
   }
   expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
-  const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-  const branchId = branch.branchId;
-  branch.doc.destroy();
+  const documentDraft = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+  const draftId = documentDraft.draftId;
   const rows = await db
     .select()
-    .from(schema.branchWriteJournal)
-    .where(eq(schema.branchWriteJournal.branchId, branchId))
-    .orderBy(schema.branchWriteJournal.id);
+    .from(schema.draftWriteJournal)
+    .where(eq(schema.draftWriteJournal.draftId, draftId))
+    .orderBy(schema.draftWriteJournal.id);
   expect(rows).toHaveLength(writes.length);
   const edits = await db
     .select()
@@ -64,10 +63,10 @@ export async function stageDraft(
       ),
     )
     .orderBy(schema.documentEdits.wId);
-  expect(identities).toEqual(edits.map((edit) => `w${edit.wId}`));
+  expect(identities).toEqual(edits.map((edit) => editHandle(edit.wId as number)));
   expect(new Set(identities).size).toBe(writes.length);
-  expect(rows.map((row) => `w${row.wId}`)).toEqual(identities);
-  return { fixture, branchId, rows, responseId };
+  expect(rows.map((row) => editHandle(row.wId as number))).toEqual(identities);
+  return { fixture, draftId, rows, responseId };
 }
 
 export async function createResponse(db: ReturnType<typeof createTestDatabase>, sequence: number) {
@@ -90,15 +89,26 @@ export function responseContext(responseId: string) {
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+    grant: inProject(
+      testFileGrant({ kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" }),
+    ),
   };
+}
+
+/** The grant names this project and its owner, as the file policy would, so a write can make a draft. */
+export function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
+  return {
+    ...grant,
+    principal: { ...grant.principal, accountId: USER_ID },
+    facts: { ...grant.facts, projectId: PROJECT_ID, ownerAccountId: USER_ID },
+  } as T;
 }
 export async function setupResponseDraft(
   db: ReturnType<typeof createTestDatabase>,
   harness: ReturnType<typeof createHarness>,
   empty = false,
 ) {
-  const { fixture, branchId, rows } = await stageDraft(
+  const { fixture, draftId, rows } = await stageDraft(
     db,
     harness,
     "red\n\nblue\n\ngreen",
@@ -110,13 +120,12 @@ export async function setupResponseDraft(
           ["blue", "azure"],
         ],
   );
-  const target = {
-    projectId: PROJECT_ID as never,
+  const resolved = await fixture.collab.draftReview.resolveItemByDocument({
     workId: WORK_ID,
     documentId: ALPHA_ID,
-    draftId: branchId,
-  };
-  const review = (after: string, apply = false) => reviewChange(fixture, target, after, apply);
+  });
+  if (!resolved) throw new Error("staged draft has no review item");
+  const target = { workId: WORK_ID, itemKey: resolved.itemKey };
   const read = () =>
     fixture.collab
       .agentEdit()
@@ -136,33 +145,5 @@ export async function setupResponseDraft(
       },
       context,
     );
-  return { fixture, branchId, rows, target, review, responseId, context, read, write };
-}
-export async function reviewChange(
-  fixture: ReceiptFixture,
-  target: Parameters<ReceiptFixture["collab"]["draftReview"]["preview"]>[0],
-  after: string,
-  apply = false,
-) {
-  const preview = await fixture.collab.draftReview.preview(target);
-  if (preview.status !== "active") throw new Error("Missing active preview");
-  const op = preview.operations.find((op) => op.afterExcerpt === after);
-  if (!op) throw new Error(`Missing ${after}: ${JSON.stringify(preview.operations)}`);
-  const command = {
-    ...target,
-    userId: USER_ID as never,
-    closureClassIds: [op.closureClassId],
-    admissionTokens: [op.admissionToken],
-    memberPartKeys: op.partKey ? [op.partKey] : [],
-    liveRevisionToken: preview.liveRevisionToken,
-    draftRevisionToken: preview.draftRevisionToken,
-  };
-  expect(
-    await (apply
-      ? fixture.collab.draftReview.applyWorkDraftChanges({
-          ...command,
-          operationIds: [op.operationId],
-        })
-      : fixture.collab.draftReview.discardWorkDraft(command)),
-  ).toMatchObject({ status: apply ? "applied" : "discarded" });
+  return { fixture, draftId, rows, target, responseId, context, read, write };
 }

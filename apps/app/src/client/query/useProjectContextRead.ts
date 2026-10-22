@@ -13,8 +13,8 @@
  * `ContextReadStatus` instead of `array.length`.
  */
 
+import { isOwnedContextScheme } from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
 
 import { getProjectContextRead } from "@/client/api/projects-api";
@@ -35,10 +35,10 @@ export function contextReadQueryKey(
   path: string,
   owner: ContextOwner = {},
 ) {
-  if (!isWorkScopedProjectContextScheme(scheme)) {
+  if (!isOwnedContextScheme(scheme)) {
     return ["projects", projectId, "context", scheme, "read", path] as const;
   }
-  const ownerId = (scheme === "scratch" && owner.rootThreadId) || owner.workId;
+  const ownerId = owner.chatThreadId ?? owner.rootThreadId ?? owner.workId;
   return ownerId
     ? (["projects", projectId, "context", scheme, ownerId, "read", path] as const)
     : (["projects", projectId, "context", scheme, "read", path] as const);

@@ -46,7 +46,6 @@ vi.mock("@/client/api/projects-api", () => ({
   restoreWork: vi.fn(),
   unarchiveWork: vi.fn(),
   updateWork: vi.fn(),
-  updateWorkWriteMode: vi.fn(),
 }));
 
 beforeEach(() => notifyManager.setScheduler(queueMicrotask));
@@ -57,7 +56,7 @@ const SECOND = {
   ...WORK,
   id: "00000000-0000-4000-8000-000000000002",
   name: "Coda",
-  slug: "coda",
+  handle: "w2",
 } as Work;
 const OPERATIONS = ["create", "update", "archive", "unarchive"] as const;
 type Seen = {
@@ -332,8 +331,8 @@ describe("Work creation", () => {
   const CREATED = {
     ...WORK,
     id: "00000000-0000-4000-8000-000000000003",
-    name: "Draft three",
-    slug: "draft-three",
+    name: "Branch three",
+    handle: "w3",
   } as Work;
   const CREATED_ID = CREATED.id as ParsedRequestId;
 
@@ -347,7 +346,7 @@ describe("Work creation", () => {
       const staleRead = deferred<WorksSnapshot>();
       const stale = acquireWorksSnapshot(client, PROJECT_ID, () => staleRead.promise);
       await act(async () => {
-        void commands.create({ workId: CREATED_ID, name: "Draft three" });
+        void commands.create({ workId: CREATED_ID, name: "Branch three" });
       });
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("pending"));
       expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
@@ -377,10 +376,10 @@ describe("Work creation", () => {
     vi.mocked(listProjectWorks).mockImplementation(async () => server);
     await withProbe(server, async () => {
       await act(async () => {
-        void commands.create({ workId: CREATED_ID, name: "Draft three" });
+        void commands.create({ workId: CREATED_ID, name: "Branch three" });
       });
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("failed"));
-      expect(seen.creations.get(CREATED.id)?.work.name).toBe("Draft three");
+      expect(seen.creations.get(CREATED.id)?.work.name).toBe("Branch three");
       expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
 
       server = snapshot([CREATED, WORK], "2");
@@ -399,7 +398,7 @@ describe("Work creation", () => {
     await withProbe(snapshot([WORK]), async (client) => {
       let outcome: Error | null | undefined;
       await act(async () => {
-        outcome = await commands.create({ workId: CREATED_ID, name: "Draft three" });
+        outcome = await commands.create({ workId: CREATED_ID, name: "Branch three" });
       });
       expect(outcome).toBeNull();
       await settle(() => expect(seen.works?.map((work) => work.id)).toEqual([CREATED.id, WORK.id]));

@@ -21,6 +21,26 @@ export function findItem(document: Y.Doc, id: Y.ID): Y.Item | null {
   return item instanceof Y.Item ? item : null;
 }
 
+/** Retained item spans intersecting a clock range; GC and unknown clocks are omitted. */
+export function* itemsInRange(
+  document: Y.Doc,
+  range: { client: number; clock: number; len: number },
+): Generator<{ item: Y.Item; clock: number; len: number }> {
+  const structs = document.store.clients.get(range.client);
+  const last = structs?.at(-1);
+  if (!structs || !last) return;
+  const end = Math.min(range.clock + range.len, last.id.clock + last.length);
+  const clock = Math.max(range.clock, structs[0].id.clock);
+  if (clock >= end) return;
+  for (let i = Y.findIndexSS(structs, clock); i < structs.length; i++) {
+    const item = structs[i];
+    if (item.id.clock >= end) break;
+    const from = Math.max(clock, item.id.clock);
+    const to = Math.min(end, item.id.clock + item.length);
+    if (item instanceof Y.Item && from < to) yield { item, clock: from, len: to - from };
+  }
+}
+
 /** Visible text-run edges, by item identity, for a host's nearest-survivor fallback. */
 export function textItemBoundaryPositions(text: Y.XmlText): Y.RelativePosition[] {
   const positions: Y.RelativePosition[] = [];
@@ -116,9 +136,12 @@ export function allItems(doc: Y.Doc): Y.Item[] {
   return [...doc.store.clients.values()].flat().filter((s): s is Y.Item => s instanceof Y.Item);
 }
 export function itemIsInFragment(doc: Y.Doc, item: Y.Item, root: string): boolean {
+  // Typing the root first: on a doc that only integrated updates, `getXmlFragment` replaces
+  // the untyped root with a new instance, so a root reached before it would never match.
+  const fragment = doc.getXmlFragment(root);
   let parent = item.parent;
   while (parent instanceof Y.AbstractType && parent._item) parent = parent._item.parent;
-  return parent === doc.getXmlFragment(root);
+  return parent === fragment;
 }
 
 export function ancestorItems(item: Y.Item): Y.Item[] {
@@ -256,4 +279,63 @@ export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Arr
     doc.off("update", collect);
   }
   return updates;
+}
+
+/** Index one decoded update without changing first-match lookup on noncanonical frames. */
+export function indexDecodedStructs<T extends { id: Y.ID; length: number }>(
+  structs: readonly T[],
+): (id: Y.ID) => T | undefined {
+  const clients = new Map<number, { values: T[]; ordered: boolean }>();
+  for (const struct of structs) {
+    const entry = clients.get(struct.id.client) ?? { values: [], ordered: true };
+    const last = entry.values.at(-1);
+    if (last && last.id.clock + last.length > struct.id.clock) entry.ordered = false;
+    entry.values.push(struct);
+    clients.set(struct.id.client, entry);
+  }
+  return (id) => {
+    const entry = clients.get(id.client);
+    if (!entry) return undefined;
+    // decodeUpdate also accepts repeated client blocks out of clock order. Keep their
+    // original first-match semantics, including overlaps, rather than changing admission.
+    if (!entry.ordered) {
+      return entry.values.find(
+        (item) => item.id.clock <= id.clock && id.clock < item.id.clock + item.length,
+      );
+    }
+    let lo = 0;
+    let hi = entry.values.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const item = entry.values[mid];
+      if (id.clock < item.id.clock) hi = mid;
+      else if (id.clock >= item.id.clock + item.length) lo = mid + 1;
+      else return item;
+    }
+    return undefined;
+  };
+}
+
+/** Split existing text boundaries in clock order, before a bulk edit shifts the same struct tail repeatedly. */
+export function splitTextBoundaries(
+  transaction: Y.Transaction,
+  runs: readonly { text: Y.XmlText; offsets: readonly number[] }[],
+): void {
+  const ids: Y.ID[] = [];
+  for (const { text, offsets } of runs) {
+    let position = 0;
+    let cut = 0;
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted || !item.countable) continue;
+      const end = position + item.length;
+      while (cut < offsets.length && offsets[cut] < end) {
+        const offset = offsets[cut++];
+        if (offset > position && item.content instanceof Y.ContentString)
+          ids.push(Y.createID(item.id.client, item.id.clock + offset - position));
+      }
+      position = end;
+    }
+  }
+  ids.sort((a, b) => a.client - b.client || a.clock - b.clock);
+  for (const id of ids) Y.getItemCleanStart(transaction, id);
 }

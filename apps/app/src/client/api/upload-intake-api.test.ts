@@ -34,7 +34,7 @@ it.each([
     uploadIntakePort.intake({
       file: new File(["words"], "draft.txt"),
       intakeId: "intake",
-      scope: { kind: "work", projectId: "deleted", workId: "work" },
+      scope: { kind: "chat", projectId: "deleted", chatId: "chat" },
     }),
   ).rejects.toThrow(message);
 });

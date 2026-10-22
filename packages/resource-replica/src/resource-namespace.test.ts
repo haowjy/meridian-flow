@@ -192,7 +192,6 @@ describe("namespace record transitions", () => {
           documentId: "document",
           identityRevision: 1,
           exactDatabaseName: "content",
-          generation: null,
         },
       },
     });
@@ -253,6 +252,7 @@ describe("namespace record transitions", () => {
       kind: "terminal",
       generation: "2",
       transitionId: "operation",
+      deletionVersion: "1",
     });
     expect(settled?.next.resource.content).toEqual(before.resource.content);
     expect(settled?.next.resource.canonical).toBeNull();
@@ -476,7 +476,7 @@ describe("namespace record transitions", () => {
       path: "/note",
       name: "note",
       workId: "work-a",
-      workSlug: "alpha",
+      workHandle: "w1",
     };
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
     before.intents = [
@@ -503,7 +503,7 @@ describe("namespace record transitions", () => {
           operationId: "operation",
           command: {
             kind: "delete",
-            uri: "scratch://@beta/note",
+            uri: "scratch://@w2/note",
             expected: { kind: "file", documentId: "document" },
           },
           result: {
@@ -607,7 +607,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c12/duel/beats"),
+        receipt("scratch://@c12/duel/beats"),
       ),
     ).not.toThrow();
     expect(() =>
@@ -615,7 +615,7 @@ describe("a chat's Scratch owner", () => {
         submitted.next,
         "delete",
         "attempt",
-        receipt("scratch://@/c40/duel/beats"),
+        receipt("scratch://@c40/duel/beats"),
       ),
     ).toThrow("does not match current attempt");
   });
@@ -742,7 +742,7 @@ it.each([
     path: "/before",
     name: "before",
     workId: "work",
-    workSlug: "notes",
+    workHandle: "w5",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [
@@ -753,7 +753,7 @@ it.each([
         kind: "set-location",
         typedName: "after",
         destination: {
-          parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
+          parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workHandle: "w5" } },
           name: "after",
         },
       },
@@ -787,11 +787,11 @@ it.each([
                   destinationParent: {
                     kind: "root" as const,
                     scheme: "scratch" as const,
-                    owner: { workId: "work", workSlug: "notes" },
+                    owner: { workId: "work", workHandle: "w5" },
                   },
                   kind: "move",
-                  sourceUri: "scratch://@notes/before",
-                  destinationUri: "scratch://@notes/after",
+                  sourceUri: "scratch://@w5/before",
+                  destinationUri: "scratch://@w5/after",
                   expected: { kind: "file", nodeId: "document" },
                 },
                 result: {
@@ -799,8 +799,8 @@ it.each([
                   error: {
                     code: "context_unavailable",
                     reason,
-                    workSlug: "notes",
-                    uri: "scratch://@notes/after",
+                    workHandle: "w5",
+                    uri: "scratch://@w5/after",
                   },
                 },
               },
@@ -815,7 +815,7 @@ it.each([
     kind: "set-location",
     name: "after",
     destination: {
-      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
+      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workHandle: "w5" } },
       name: "after",
     },
   });
@@ -861,10 +861,10 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@notes/before",
+              uri: "scratch://@w5/before",
               expected: { kind: "file", documentId: "document" },
             },
-            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before" } },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@w5/before" } },
           },
         }),
       }),
@@ -881,7 +881,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
     path: "/note",
     name: "note",
     workId: "work",
-    workSlug: "alpha",
+    workHandle: "w1",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [];
@@ -908,10 +908,10 @@ it("restores a rejected delete after retry and admits another delete", async () 
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
-                uri: "scratch://@alpha/note",
+                uri: "scratch://@w1/note",
                 expected: { kind: "file", documentId: "document" },
               },
-              result: { ok: false, error: { code: "conflict", uri: "scratch://@alpha/note" } },
+              result: { ok: false, error: { code: "conflict", uri: "scratch://@w1/note" } },
             },
           }),
         }),
@@ -1107,8 +1107,8 @@ it("refuses a move receipt for a different captured destination parent", () => {
     request: {
       kind: "move",
       scheme: "manuscript",
-      sourceWorkSlug: null,
-      destinationWorkSlug: null,
+      sourceWorkHandle: null,
+      destinationWorkHandle: null,
       body: {
         operationId: "operation",
         path: "A",
@@ -1163,7 +1163,7 @@ it("matches immutable identity moves after the destination's path and owner chan
   const submitted = prepareNamespaceAttempt(
     before,
     { attemptId: "attempt", operationId: "operation" },
-    () => ({ scheme: "scratch", path: "/B", name: "B", workId: "work", workSlug: "notes" }),
+    () => ({ scheme: "scratch", path: "/B", name: "B", workId: "work", workHandle: "w5" }),
   );
   if (!submitted) throw new Error("Missing attempt");
   expect(() =>

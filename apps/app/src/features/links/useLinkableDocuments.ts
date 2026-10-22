@@ -8,8 +8,8 @@
  * answer costs no request, and whether a link-ahead address is already taken.
  * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
  * and the scope's Scratch (the chat's lineage notes on No Work, else the scope
- * Work's) and the scope Work's Uploads. A URI naming another owner's Scratch is
- * outside it and always asks the server.
+ * Work's) and the chat's uploads. A URI naming another owner's Scratch or
+ * another chat's uploads is outside it and always asks the server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a
@@ -24,11 +24,11 @@
 
 import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
-
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { useDraftLinkEpoch } from "@/client/query/draft-link-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 
-import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
+import { linkableCatalogScopes, ownedLinkableSchemes } from "./linkable-catalog-scopes";
 
 export type LinkableDocument = {
   /** Persisted identity, stable across reorder, move, and rename. */
@@ -59,75 +59,57 @@ export function useLinkableDocuments({
   projectId,
   workId,
   rootThreadId,
+  chatId,
 }: {
   projectId: string | null;
   workId: string | null;
   rootThreadId?: string | null;
+  chatId?: string | null;
 }): LinkableDocumentIndex {
+  const draftEpoch = useDraftLinkEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId });
+  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId, chatId });
   const catalogWorkId = scopes?.workId ?? null;
   const catalogRootThreadId = scopes?.rootThreadId ?? null;
-  const {
-    manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
-    kb: { catalog: knowledgeBase, isComplete: knowledgeBaseComplete },
-    unfiled: { catalog: unfiled, isComplete: unfiledComplete },
-    user: { catalog: user, isComplete: userComplete },
-    scratch: { catalog: scratch, isComplete: scratchComplete },
-    uploads: { catalog: uploads, isComplete: uploadsComplete },
-  } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
+  // A surface owns only some catalogs (an Editor document has no chat, so no uploads):
+  // an unowned scheme is absent here, not a catalog that never finishes loading.
+  const schemes = useMemo(
+    () => ownedLinkableSchemes(scopes),
+    [scopes?.projectId, scopes?.workId, scopes?.rootThreadId, scopes?.chatId],
+  );
+  const views = useContextCatalogViews(scopes?.projectId ?? "", schemes, {
     enabled: scopes !== null,
     ...contextOwner(catalogWorkId, catalogRootThreadId),
-    // A lineage's Scratch and the Work row's Uploads are separate owners of one index.
-    uploadsWorkId: catalogWorkId,
+    chatId: scopes?.chatId ?? null,
   });
 
   return useMemo(() => {
-    const documents = [
-      ...(manuscript ? linkableDocuments(manuscript, null) : []),
-      ...(knowledgeBase ? linkableDocuments(knowledgeBase, null) : []),
-      ...(user ? linkableDocuments(user, null) : []),
-      ...(unfiled ? linkableDocuments(unfiled, null) : []),
-      ...(scratch
-        ? linkableDocuments(
-            scratch,
-            catalogRootThreadId ? null : catalogWorkId,
-            catalogRootThreadId,
-          )
-        : []),
-      ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
-    ];
+    const documents: LinkableDocument[] = [];
+    let complete = scopes !== null;
+    for (const scheme of schemes) {
+      const { catalog, isComplete } = views[scheme];
+      complete &&= isComplete;
+      if (!catalog) continue;
+      documents.push(
+        ...(scheme === "scratch"
+          ? linkableDocuments(
+              catalog,
+              catalogRootThreadId ? null : catalogWorkId,
+              catalogRootThreadId,
+            )
+          : linkableDocuments(catalog, null)),
+      );
+    }
     const next = {
       documents,
-      revision: catalogRevision(documents),
-      complete:
-        manuscriptComplete &&
-        knowledgeBaseComplete &&
-        userComplete &&
-        unfiledComplete &&
-        scratchComplete &&
-        uploadsComplete,
+      revision: `${draftEpoch}\n${catalogRevision(documents)}`,
+      complete,
     };
     if (prior.current?.revision === next.revision && prior.current.complete === next.complete)
       return prior.current;
     prior.current = next;
     return next;
-  }, [
-    knowledgeBase,
-    knowledgeBaseComplete,
-    manuscript,
-    manuscriptComplete,
-    scratch,
-    scratchComplete,
-    unfiled,
-    unfiledComplete,
-    uploads,
-    uploadsComplete,
-    user,
-    userComplete,
-    catalogWorkId,
-    catalogRootThreadId,
-  ]);
+  }, [schemes, views, scopes, catalogWorkId, catalogRootThreadId, draftEpoch]);
 }
 
 /**

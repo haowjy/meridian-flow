@@ -188,7 +188,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
    may still use its touch-row name.
 
 Known independent issue: a mounted project can recreate a deleted Work's shared
-draft and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
+branch and make Work restore fail ([#761](https://github.com/haowjy/meridian-flow/issues/761)).
 Record this separately from Scratch availability; never delete real branches to force restoration.
 
 Clean up `zz-probe` notes and chats and close only the owned browser profiles.
@@ -209,7 +209,7 @@ Focused automated proofs: `indexeddb-resource-metadata.test.ts` (atomic folder s
    convergence, and reload. Read the document through `./mf` at its new URI.
 4. Repeat across two named Works: move alpha's B to beta without changing B's
    name, then move beta's X under B/sub. Both row orders must place X at
-   `scratch://@beta/B/sub/X`.
+   `scratch://@w2/B/sub/X`.
 5. If availability returns `unavailable` while a move refresh fences a queued
    command, the queued command becomes repair, not deletion. Even without the
    folder's catalog row, its journal identity must remain reachable in the

@@ -24,21 +24,18 @@ const resources = vi.hoisted(() => ({
     key: { handle: "resource" },
     content: { kind: "opened", handle: { documentId: "document", release() {} } },
   })),
-  setLocation: vi.fn(async () => ({ isLatest: true })),
-  deleteDocument: vi.fn(),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useAccountResourceReplica: () => resources,
 }));
 
-it("discards a reservation that never reached its address and reports the failure", async () => {
+it("reports a failed reservation", async () => {
   let creation!: CreateLinkedDocument;
   function Probe() {
     creation = useCreateLinkedDocument("project");
     return null;
   }
-  resources.setLocation.mockRejectedValueOnce(new Error("refused"));
-  resources.deleteDocument.mockResolvedValue(undefined);
+  resources.reserveDocument.mockRejectedValueOnce(new Error("refused"));
   await withReactRoot(<Probe />, async () => {
     const target = linkCreationTarget("manuscript://scene.md");
     if (!target) throw new Error("Missing target");
@@ -47,7 +44,6 @@ it("discards a reservation that never reached its address and reports the failur
       documentId = await creation.create(target);
     });
     expect(documentId).toBeNull();
-    expect(resources.deleteDocument).toHaveBeenCalledWith("project", { handle: "resource" });
     expect(creation.failed).toBe(true);
   });
 });
@@ -65,7 +61,7 @@ it("captures an existing nested home without contacting the server before openin
   const target = linkCreationTarget("manuscript://Act/scene.md");
   if (!target) throw new Error("Missing target");
   createFolder.mockClear();
-  resources.setLocation.mockClear();
+  resources.reserveDocument.mockClear();
   await withReactRoot(<Probe />, async () => {
     let id: string | null = null;
     await act(async () => {
@@ -73,11 +69,11 @@ it("captures an existing nested home without contacting the server before openin
     });
     expect(id).toBe("document");
     expect(createFolder).not.toHaveBeenCalled();
-    expect(resources.setLocation).toHaveBeenCalledWith(
-      "project",
-      { handle: "resource" },
-      { parent: { kind: "folder", folderId: "picked-folder" }, name: "scene" },
-    );
+    // The destination rides the create, so a branch's document at this name is joined.
+    expect(resources.reserveDocument).toHaveBeenCalledWith("project", "", {
+      parent: { kind: "folder", folderId: "picked-folder" },
+      name: "scene",
+    });
   });
 });
 
@@ -93,7 +89,7 @@ it("opens a missing-folder link from local persistence before any network comple
     .mockResolvedValueOnce({ kind: "folder", folderId: "anchor" });
   createFolder.mockClear();
   createFolder.mockImplementation(() => new Promise(() => {}));
-  resources.setLocation.mockClear();
+  resources.reserveDocument.mockClear();
   await withReactRoot(<Probe />, async () => {
     const target = linkCreationTarget("manuscript://Act/New Arc/Part 1/Chapter 1");
     if (!target) throw new Error("Missing target");
@@ -106,14 +102,10 @@ it("opens a missing-folder link from local persistence before any network comple
     });
     expect(id).toBe("document");
     expect(createFolder).not.toHaveBeenCalled();
-    expect(resources.setLocation).toHaveBeenCalledWith(
-      "project",
-      { handle: "resource" },
-      {
-        parent: { kind: "folder", folderId: "anchor" },
-        createFolders: ["New Arc", "Part 1"],
-        name: "Chapter 1",
-      },
-    );
+    expect(resources.reserveDocument).toHaveBeenCalledWith("project", "", {
+      parent: { kind: "folder", folderId: "anchor" },
+      createFolders: ["New Arc", "Part 1"],
+      name: "Chapter 1",
+    });
   });
 });

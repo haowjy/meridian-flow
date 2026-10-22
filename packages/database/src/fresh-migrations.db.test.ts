@@ -39,11 +39,11 @@ if (!enabled || !databaseUrl) {
         const rows = await target<{ table_name: string }[]>`
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
+              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'draft_write_journal')
           `;
         expect(rows.map((row) => row.table_name).sort()).toEqual([
-          "branch_write_journal",
           "change_trail_document_occurrences",
+          "draft_write_journal",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name
@@ -83,6 +83,14 @@ if (!enabled || !databaseUrl) {
           },
           {
             event_object_table: "turns",
+            trigger_name: "recompute_thread_chat_activity_on_forget",
+          },
+          {
+            event_object_table: "thread_inbox_messages",
+            trigger_name: "recompute_thread_chat_activity_on_hand_back",
+          },
+          {
+            event_object_table: "turns",
             trigger_name: "recompute_thread_chat_activity_on_turn",
           },
         ]);
@@ -107,6 +115,8 @@ if (!enabled || !databaseUrl) {
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",
           "recompute_thread_chat_activity_from_block_update",
+          "recompute_thread_chat_activity_from_forget",
+          "recompute_thread_chat_activity_from_hand_back",
           "recompute_thread_chat_activity_from_thread",
           "recompute_thread_chat_activity_from_turn",
           "update_updated_at_column",
@@ -122,13 +132,13 @@ if (!enabled || !databaseUrl) {
           SELECT indexname, indexdef
           FROM pg_indexes
           WHERE schemaname = 'public'
-            AND indexname = 'document_branches_active_work_draft_by_work'
+            AND indexname = 'document_drafts_active_work_draft_by_branch'
         `;
         expect(indexes).toEqual([
           {
-            indexname: "document_branches_active_work_draft_by_work",
+            indexname: "document_drafts_active_work_draft_by_branch",
             indexdef:
-              "CREATE INDEX document_branches_active_work_draft_by_work ON public.document_branches USING btree (work_id, id, generation) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
+              "CREATE INDEX document_drafts_active_work_draft_by_branch ON public.document_drafts USING btree (branch_id, id) WHERE ((kind = 'work_draft'::text) AND (status = 'active'::text))",
           },
         ]);
       } finally {
@@ -148,12 +158,12 @@ if (!enabled || !databaseUrl) {
           const [work] =
             await tx`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)
             VALUES (${project.id}, ${user.id}, 'No Work', true)
-            RETURNING id, slug, status, archived_at, ai_write_mode`;
+            RETURNING id, handle, status, archived_at, default_ai_write_mode`;
           expect(work).toMatchObject({
-            slug: null,
+            handle: null,
             status: null,
             archived_at: null,
-            ai_write_mode: "direct",
+            default_ai_write_mode: "direct",
           });
           await expect(
             tx.savepoint(
@@ -161,8 +171,8 @@ if (!enabled || !databaseUrl) {
             ),
           ).rejects.toMatchObject({ constraint_name: "works_no_work_not_archived" });
           await expect(
-            tx.savepoint((save) => save`UPDATE works SET slug = 'named' WHERE id = ${work.id}`),
-          ).rejects.toMatchObject({ constraint_name: "works_no_work_slug" });
+            tx.savepoint((save) => save`UPDATE works SET handle = 'w1' WHERE id = ${work.id}`),
+          ).rejects.toMatchObject({ constraint_name: "works_no_work_handle" });
           await expect(
             tx.savepoint(
               (save) => save`INSERT INTO works (project_id, created_by_user_id, name, is_no_work)

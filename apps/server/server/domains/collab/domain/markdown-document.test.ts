@@ -14,7 +14,6 @@ import { createInMemoryEventSink } from "../../observability/index.js";
 import { createMarkdownSerializationAnomalyObserver } from "../adapters/agent-edit-observability.js";
 import {
   createInMemoryCoordinator,
-  createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
 import {
@@ -22,7 +21,7 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
-import { createLinkBinder } from "./link-binding.js";
+import { createLinkBinder, createUnboundParser } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
@@ -41,15 +40,11 @@ function setup(filetype = "typescript") {
     model,
     journal,
     coordinator,
-    lifecycle: createInMemoryDocumentLifecycle(coordinator),
     initialDocumentSeeds: {
-      async seedInitialDocument(documentId, state) {
-        const snapshot = await journal.read(documentId);
-        if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.seedInitialDocument(documentId, state);
-        return true;
-      },
+      seedInitialDocument: (documentId, state) => journal.seedInitialDocument(documentId, state),
+      missingAuthorityProjection: async () => null,
     },
+    parseStored: createUnboundParser({ codec: mdxCodec({ schema }), schema }),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
     identityPreservingWrite: async () => {
       throw new Error("Identity-preserving writes are not part of this test");
@@ -75,6 +70,7 @@ function setup(filetype = "typescript") {
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
+  await setupResult.engine.initializeEmptyDocument(DOCUMENT_ID);
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
     content: await setupResult.bind(source),

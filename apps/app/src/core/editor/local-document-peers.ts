@@ -37,6 +37,9 @@ export class LocalDocumentPeers {
     this.channel = new BroadcastChannel(
       `meridian:document-peers:v1:${collabSchemaKeyTag()}:${encodeURIComponent(persistence.name)}`,
     );
+    // Another tab can drop a retired room's cache before our room close arrives.
+    // lib0 closes this connection on versionchange; replay must stop with it.
+    this.persistence.db?.addEventListener("versionchange", this.onPersistenceClosed);
     this.channel.onmessage = this.receive;
     this.document.on("update", this.sendUpdate);
     this.awareness.on("update", this.sendAwarenessUpdate);
@@ -99,6 +102,8 @@ export class LocalDocumentPeers {
     void this.catchUp().catch(reportError);
   };
 
+  private onPersistenceClosed = (): void => this.stop();
+
   private onVisibility = (): void => {
     if (window.document.visibilityState === "visible") this.wake();
   };
@@ -140,6 +145,7 @@ export class LocalDocumentPeers {
     if (this.stopped) return;
     this.sendAwareness([this.awareness.clientID], new Map());
     this.stopped = true;
+    this.persistence.db?.removeEventListener("versionchange", this.onPersistenceClosed);
     this.channel.close();
     this.document.off("update", this.sendUpdate);
     this.awareness.off("update", this.sendAwarenessUpdate);

@@ -1,15 +1,31 @@
 /** One process-local owner for prepared runs, cancellation, and terminal cleanup. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
+import {
+  type HandBackRequest,
+  isTerminalTurnStatus,
+  type SendNowRequest,
+  type SendNowResponse,
+  type StopRequest,
+  type StopResponse,
+  type Turn,
+} from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import {
+  type ThreadRepository,
+  type TurnRepository,
+  TurnStartConflictError,
+} from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
+import { latestRowAt } from "./latest-row.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import {
   NoPendingWakeError,
   type PreparedLoop,
   type PreparedRun,
+  ReplyRetryPendingError,
   ReplyRetryUnavailableError,
   type RunLoopInput,
   type RunOutcome,
@@ -22,6 +38,8 @@ import type { RuntimeDelivery } from "./runtime-delivery.js";
 type RunSession = {
   controller: AbortController;
   currentTurn: CurrentTurn | null;
+  /** The execution this session holds, once it has the lease. */
+  executionId: string | null;
   startedAt: Date;
   child?: RunTurnInput["child"];
   completion: Promise<void>;
@@ -39,9 +57,18 @@ export function createRunSessions(deps: {
     lease: Lease;
   }): Promise<Turn>;
   runClaim: RunClaim;
-  delivery: Pick<RuntimeDelivery, "repairOrphanedTurns" | "refreshPending" | "selectPending">;
+  delivery: Pick<
+    RuntimeDelivery,
+    | "settleStaleExecution"
+    | "releaseExecution"
+    | "selectPending"
+    | "answerRunState"
+    | "stop"
+    | "handBack"
+    | "sendNow"
+  >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
-  repos: { turns: TurnRepository };
+  repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
   headSeq(threadId: ThreadId): Promise<bigint>;
   eventSink: EventSink;
   wakeIfRunnable(threadId: ThreadId): Promise<void>;
@@ -70,6 +97,18 @@ export function createRunSessions(deps: {
     }
   }
 
+  /**
+   * The local consequence of a command whose durable answer cancelled an execution (Stop, Send now):
+   * abort this session's run and its children when it is that execution. A replayed answer names an
+   * execution that may be long over, so it never aborts a newer one.
+   */
+  function abortConfirmedExecution(threadId: ThreadId, cancelledExecutionId: string | null) {
+    const active = running.get(threadId);
+    if (!active || cancelledExecutionId !== active.executionId) return;
+    abortChildrenOf(threadId, true);
+    active.controller.abort();
+  }
+
   async function prepare(input: RunTurnInput): Promise<PreparedRun> {
     const { threadId } = input;
     if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
@@ -79,6 +118,7 @@ export function createRunSessions(deps: {
     const session: RunSession = {
       controller,
       currentTurn: null,
+      executionId: null,
       startedAt: new Date(),
       child: input.child,
       completion: new Promise<void>((resolve) => {
@@ -104,7 +144,9 @@ export function createRunSessions(deps: {
       let wakeAfterRelease = false;
       try {
         if (lease) {
-          await authority.release(lease);
+          // Ends the execution when its turns are terminal, else abandons it to
+          // the next claim holder's settlement; either way the claim unlocks.
+          await deps.delivery.releaseExecution(lease);
           claimReleased = true;
           wakeAfterRelease =
             preparedRun || setupMayWake || ("replyTurnId" in input && !!input.replyTurnId);
@@ -129,10 +171,13 @@ export function createRunSessions(deps: {
       }
     }
     try {
-      lease = await authority.startExecution(threadId, crypto.randomUUID());
+      lease = await authority.startExecution(threadId, crypto.randomUUID(), () =>
+        deps.delivery.settleStaleExecution(threadId),
+      );
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
       if (shutdown.started) throw new RuntimeShuttingDownError(threadId);
       const heldLease = lease;
+      session.executionId = heldLease.executionId;
       heartbeat = setInterval(
         () => {
           backgroundTasks.track(
@@ -155,13 +200,6 @@ export function createRunSessions(deps: {
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
-      await deps.delivery.repairOrphanedTurns(lease);
-      if (
-        "expectedLeafTurnId" in input &&
-        input.expectedLeafTurnId &&
-        (await deps.repos.turns.getLatestByThread(threadId))?.id !== input.expectedLeafTurnId
-      )
-        throw new ReplyRetryUnavailableError(threadId);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,
@@ -210,7 +248,7 @@ export function createRunSessions(deps: {
         return outcome;
       }
       return {
-        runId: lease.runId,
+        executionId: lease.executionId,
         userTurnId: loop.userTurnId,
         executionTurnId: loop.currentTurn.id,
         resumeAfterSeq,
@@ -248,65 +286,122 @@ export function createRunSessions(deps: {
   }
   return {
     prepare,
+    /**
+     * Retry a latest failed reply under the client-minted `replyTurnId`. A
+     * replay is answered from durable facts: the reply by id, else the first
+     * turn that request's execution reserved (`metadata.retryReplyId`), which
+     * may be a start-time compaction. While the claim is held by an execution
+     * that has reserved nothing, a replay can't tell whose it is:
+     * `retry_pending`.
+     */
     async retryReply(input: { threadId: ThreadId; failedTurnId: TurnId; replyTurnId: TurnId }) {
-      const existing = await deps.repos.turns.findById(input.replyTurnId);
-      if (existing) {
-        if (existing.threadId !== input.threadId || existing.role !== "assistant")
-          throw new ReplyRetryUnavailableError(input.threadId);
-        return { created: false as const, turn: existing };
-      }
+      // Every answer carries the record read at answer time, under the thread lock.
+      const answered = async <T extends object>(result: T) => ({
+        ...result,
+        runState: await deps.delivery.answerRunState(input.threadId),
+      });
+      const accepted = async () => {
+        const existing = await deps.repos.turns.findById(input.replyTurnId);
+        if (existing) {
+          if (existing.threadId !== input.threadId || existing.role !== "assistant")
+            throw new ReplyRetryUnavailableError(input.threadId);
+          return { created: false as const, turn: existing, executionId: existing.executionId };
+        }
+        // Matched by request id: another tab's Retry of the same reply is not this one.
+        const retrying = await deps.repos.turns.findRetryReservation(
+          input.threadId,
+          input.replyTurnId,
+        );
+        return retrying
+          ? { created: false as const, turn: null, executionId: retrying.executionId }
+          : null;
+      };
+      const replay = await accepted();
+      if (replay) return answered(replay);
+      // A refusal can rest on reads that raced this request's own reservation
+      // elsewhere; that reservation commits with the leaf it moves, so a later
+      // acceptance read sees it. Another tab's request id never matches.
+      // Shutdown refuses too, but only new work: never an accepted request.
+      const refuse = async (refusal: Error = new ReplyRetryUnavailableError(input.threadId)) => {
+        const raced = await accepted();
+        if (raced) return answered(raced);
+        throw refusal;
+      };
 
-      const [failedTurn, latestTurn, runState] = await Promise.all([
+      const [failedTurn, leafThread, latestTurn, runState] = await Promise.all([
         deps.repos.turns.findById(input.failedTurnId),
-        deps.repos.turns.getLatestByThread(input.threadId),
+        deps.repos.threads.findById(input.threadId),
+        turnGraph(deps.repos.turns).latest(input.threadId),
         authority.read(input.threadId),
       ]);
-      if (shutdown.started) throw new RuntimeShuttingDownError(input.threadId);
+      if (shutdown.started) return refuse(new RuntimeShuttingDownError(input.threadId));
+      if (running.has(input.threadId) || runState.kind === "awake") {
+        if ((await authority.readOpenExecutionId(input.threadId)) === null)
+          throw new ReplyRetryPendingError(input.threadId);
+        // The holder reserved: it is this request's only if it recorded its id.
+        return refuse();
+      }
       if (
-        running.has(input.threadId) ||
-        runState.kind === "awake" ||
         !failedTurn ||
         failedTurn.threadId !== input.threadId ||
         failedTurn.role !== "assistant" ||
         failedTurn.status !== "error" ||
-        latestTurn?.id !== failedTurn.id
+        !latestTurn ||
+        (await latestRowAt(deps.repos.turns, leafThread?.activeLeafTurnId ?? null)).latest?.id !==
+          failedTurn.id
       )
-        throw new ReplyRetryUnavailableError(input.threadId);
+        return refuse();
 
+      let run: PreparedRun;
       try {
-        const run = await prepare({
+        run = await prepare({
           threadId: input.threadId,
           drain: true,
           replyTurnId: input.replyTurnId,
-          expectedLeafTurnId: input.failedTurnId,
+          retryOf: input.failedTurnId,
         });
-        const persisted = await deps.repos.turns.findById(input.replyTurnId);
-        const firstTurn = await deps.repos.turns.findById(run.executionTurnId);
-        const turn =
+      } catch (error) {
+        const raced = await accepted();
+        if (raced) return answered(raced);
+        // Another holder took the claim before its lease row was visible.
+        if (error instanceof TurnStartConflictError)
+          throw new ReplyRetryPendingError(input.threadId);
+        if (error instanceof NoPendingWakeError)
+          throw new ReplyRetryUnavailableError(input.threadId);
+        throw error;
+      }
+      // This call owns the prepared execution: it runs before any read that
+      // only describes the answer, so a failing read can't strand it. The
+      // execution is the answer; the reply is best-effort decoration.
+      backgroundTasks.track(run.execute(), "detached reply retry");
+      const describe = async (prepared: PreparedRun): Promise<Turn> => {
+        const [persisted, firstTurn, thread] = await Promise.all([
+          deps.repos.turns.findById(input.replyTurnId),
+          deps.repos.turns.findById(prepared.executionTurnId),
+          // A Retry is a new reply, so it runs in the chat's current mode (D62).
+          deps.repos.threads.findById(input.threadId),
+        ]);
+        return (
           persisted ??
           createLocalTurn({
             id: input.replyTurnId,
             threadId: input.threadId,
-            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : failedTurn.id,
+            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : latestTurn.id,
             position:
-              (firstTurn?.role === "compaction" ? firstTurn.position : failedTurn.position) + 1,
+              (firstTurn?.role === "compaction" ? firstTurn.position : latestTurn.position) + 1,
             role: "assistant",
             origin: "assistant",
             status: "pending",
-            writeMode: failedTurn.writeMode ?? undefined,
-          });
-        backgroundTasks.track(run.execute(), "detached reply retry");
-        return { created: true as const, turn };
-      } catch (error) {
-        const raced = await deps.repos.turns.findById(input.replyTurnId);
-        if (raced?.threadId === input.threadId && raced.role === "assistant") {
-          return { created: false as const, turn: raced };
-        }
-        if (error instanceof TurnStartConflictError || error instanceof NoPendingWakeError) {
-          throw new ReplyRetryUnavailableError(input.threadId);
-        }
-        throw error;
-      }
+            writeMode: thread?.aiWriteMode,
+            executionId: prepared.executionId,
+          })
+        );
+      };
+      const turn = await describe(run).catch((error: unknown) => {
+        observe(input.threadId, "retry.describe_failed", error);
+        return null;
+      });
+      return answered({ created: true as const, turn, executionId: run.executionId });
     },
     startDrain,
     getRunningTurn(threadId: ThreadId) {
@@ -324,6 +419,25 @@ export function createRunSessions(deps: {
     beginShutdown() {
       shutdown.started = true;
       for (const session of running.values()) session.controller.abort("shutdown");
+    },
+    /**
+     * Chat Stop: the delivery decides and flags under the thread lock; this session then aborts its
+     * own run at once when it holds the flagged execution (any other holder sees the flag at its next
+     * check). A replayed press names an execution that may be long over, so it never aborts a newer one.
+     */
+    async stop(threadId: ThreadId, request: StopRequest): Promise<StopResponse> {
+      const response = await deps.delivery.stop(threadId, request);
+      abortConfirmedExecution(threadId, response.cancelledExecutionId);
+      return response;
+    },
+    /** The queue's x and Cancel queue: decided under the thread lock; never cancels a reply. */
+    handBack: (threadId: ThreadId, request: HandBackRequest) =>
+      deps.delivery.handBack(threadId, request),
+    /** Send now: as Stop aborts the run it flagged, and nothing is handed back. */
+    async sendNow(threadId: ThreadId, request: SendNowRequest): Promise<SendNowResponse> {
+      const response = await deps.delivery.sendNow(threadId, request);
+      abortConfirmedExecution(threadId, response.cancelledExecutionId);
+      return response;
     },
     async cancel(
       threadId: ThreadId,

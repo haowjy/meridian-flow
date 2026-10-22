@@ -1,7 +1,6 @@
 import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
-import type { LinkShowing } from "../links/shown.js";
 
 export interface ResolvedSpan {
   start: number;
@@ -84,42 +83,11 @@ export type ConcurrentUpdateOrigin =
 export interface ConcurrentUpdate {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
-  /**
-   * Final-state block hashes to use as attribution authority when update bytes
-   * are only transport and cannot identify stable origins after re-materialization.
-   */
-  touchedHashes?: {
-    human?: readonly string[];
-    agent?: readonly string[];
-  };
-  /** Baseline block hashes explicitly deleted by the attribution kernel. */
-  deletedHashes?: {
-    human?: readonly string[];
-    agent?: readonly string[];
-  };
 }
 
 export interface ApplyEchoHunk {
   mode: "suppressed" | "truncated" | "full";
   blocks: string[];
-}
-
-export interface ConcurrentEditInfo {
-  human: string[];
-  agent: string[];
-  runs: ConcurrentEditRun[];
-  /** Set by the request assembler when one or more indivisible runs did not fit. */
-  syncOverflow?: boolean;
-}
-
-export interface ConcurrentEditRun {
-  origin: "human" | "agent" | "mixed" | "concurrent edits";
-  /** Full hash-prefixed current prose, anchors and gap blocks included. */
-  blocks: string[];
-  /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
-  tombstones: Array<{ hash: string; capturedBody: string }>;
-  /** Host-only: what this run's rendered blocks showed the model (never in model text). */
-  showing?: LinkShowing;
 }
 
 export type ApplyResult =

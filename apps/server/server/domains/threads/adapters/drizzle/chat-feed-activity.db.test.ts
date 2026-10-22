@@ -117,6 +117,73 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       ]);
     });
 
+    it("moves the head past a forgotten failure to the reply before it, or to the message that forgot it", async () => {
+      // Risk (C9): the chat list still previewing the abandoned exchange, because the recursion stopped at
+      // the forgotten assistant or the forgotten message anchored the head.
+      const head = async () =>
+        (
+          await db
+            .select({ head: schema.threads.conversationalLeafTurnId })
+            .from(schema.threads)
+            .where(eq(schema.threads.id, THREAD))
+        )[0]?.head;
+      const say = async (
+        prevTurnId: string | undefined,
+        role: "user" | "assistant",
+        text: string,
+        status = "complete",
+      ) => {
+        const created = await repos.turns.create({
+          threadId: THREAD,
+          ...(prevTurnId ? { prevTurnId } : {}),
+          role,
+          origin: role === "user" ? "writer" : "assistant",
+          status: status as never,
+        });
+        if (text)
+          await repos.blocks.create({
+            turnId: created.id,
+            blockType: "text",
+            sequence: 0,
+            textContent: text,
+          });
+        return created;
+      };
+      const answered = await say(undefined, "assistant", "earlier reply");
+      const abandoned = await say(answered.id, "user", "abandoned message");
+      const failed = await say(abandoned.id, "assistant", "", "error");
+      expect(await head()).toBe(failed.id);
+      // A compaction reservation is a closing row that is no visible head; it forgets the exchange.
+      const reservation = await repos.turns.create({
+        threadId: THREAD,
+        prevTurnId: failed.id,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      await repos.turns.forgetTurns([abandoned.id, failed.id], reservation.id);
+      expect(await head()).toBe(answered.id);
+      // A writer message that forgets a failure is itself the head and the preview.
+      const second = await say(reservation.id, "user", "second abandoned");
+      const secondFailed = await say(second.id, "assistant", "", "error");
+      const next = await say(secondFailed.id, "user", "the next message");
+      await repos.turns.forgetTurns([second.id, secondFailed.id], next.id);
+      expect(await head()).toBe(next.id);
+      expect(
+        (
+          await repos.chatFeed.queryPage({
+            projectId: PROJECT,
+            userId: USER,
+            after: null,
+            limit: 10,
+            favorite: false,
+            search: null,
+            workId: null,
+          })
+        )[0],
+      ).toMatchObject({ lastMessagePreview: "the next message" });
+    });
+
     it("does not advance for a hidden work-context system update", async () => {
       const first = await repos.turns.create({
         threadId: THREAD,

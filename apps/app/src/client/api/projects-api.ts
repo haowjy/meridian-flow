@@ -26,7 +26,6 @@ import {
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
-  apiProjectWorkWriteModePath,
   type CatalogChanges,
   type CatalogLookupResult,
   type CatalogScope,
@@ -37,10 +36,11 @@ import {
   type CreateProjectResponse,
   type CreateThreadRequest,
   type CreateThreadResponse,
+  type CreateUntitledContextDocumentAnswer,
   type CreateUntitledContextDocumentRequest,
-  type CreateUntitledContextDocumentResult,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
+  type DocumentAddressRequestOptions,
   type DocumentAddressResult,
   type LineageInfo,
   type ListProjectsResponse,
@@ -54,8 +54,6 @@ import {
   type ProjectWorkingSet,
   type ThreadListItem,
   type UpdateProjectRequest,
-  type UpdateWorkWriteModeRequest,
-  type UpdateWorkWriteModeResponse,
   type Work,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
@@ -186,7 +184,7 @@ export async function getProjectDocumentAddress(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   path: string,
-  opts?: ProjectContextRequestOptions,
+  opts?: DocumentAddressRequestOptions,
   init?: RequestInitOptions,
 ): Promise<DocumentAddressResult> {
   return getJson(urlFor(apiProjectDocumentAddressPath(projectId, scheme, path, opts), init), {
@@ -218,23 +216,11 @@ export async function updateProjectWorkingSet(
   );
 }
 
-export async function updateWorkWriteMode(
-  projectId: string,
-  workId: string,
-  input: UpdateWorkWriteModeRequest,
-  init?: RequestInitOptions,
-): Promise<UpdateWorkWriteModeResponse> {
-  return patchJson<UpdateWorkWriteModeResponse>(
-    urlFor(apiProjectWorkWriteModePath(projectId, workId), init),
-    input,
-    { headers: init?.headers },
-  );
-}
-
 function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): string {
   const query = new URLSearchParams({ scope: scope.kind, ...extra });
   if (scope.kind === "work") query.set("workId", scope.workId);
   if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
+  if (scope.kind === "chat") query.set("chatId", scope.chatId);
   return query.toString();
 }
 
@@ -332,8 +318,8 @@ export async function createUntitledContextDocument(
   body: CreateUntitledContextDocumentRequest,
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<CreateUntitledContextDocumentResult> {
-  const response = await postJson<CreateUntitledContextDocumentResult>(
+): Promise<CreateUntitledContextDocumentAnswer> {
+  const response = await postJson<CreateUntitledContextDocumentAnswer>(
     urlFor(apiProjectContextCreateUntitledPath(projectId, scheme, opts), init),
     body,
     {
@@ -343,6 +329,16 @@ export async function createUntitledContextDocument(
     },
   );
   if (response.status === "conflict") return response;
+  if (response.status === "joined")
+    return {
+      ...response,
+      address: {
+        ...response.address,
+        path: response.address.path.startsWith("/")
+          ? response.address.path
+          : `/${response.address.path}`,
+      },
+    };
   return {
     ...response,
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,

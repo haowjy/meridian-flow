@@ -14,8 +14,13 @@ export type DocumentEditResult =
       message: string;
       actionId: string;
       writeId?: string;
+      /** The host's label for the room the command ran in: an inverse's `after` is its cut. */
+      room: string | null;
+      /** The text cuts around the inverse; both absent when it changed no text (a move's undo). */
       before?: Uint8Array;
       after?: Uint8Array;
+      /** An inverse's committed bytes, exactly as journaled, in order: the reply replays them. */
+      updates?: readonly Uint8Array[];
     };
 export interface DocumentEdits {
   execute(

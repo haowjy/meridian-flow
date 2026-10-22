@@ -22,10 +22,21 @@ export function previousAttemptRejectedAsTooLarge(
   ownerKind: "compaction" | "handoff_seed",
 ): boolean {
   const byId = new Map(turns.map((turn) => [turn.id, turn]));
-  let turnId = byId.get(currentTurnId)?.prevTurnId;
-  while (turnId) {
-    const turn = byId.get(turnId);
-    if (!turn) return false;
+  const current = byId.get(currentTurnId);
+  // The chain is the graph. A link that left the conversation (a handed-back message) is not in
+  // `turns`, so the walk steps over it to the last turn before the one that pointed at it.
+  const stepBack = (child: Turn, parentId: string | null | undefined): Turn | undefined =>
+    parentId == null
+      ? undefined
+      : (byId.get(parentId) ??
+        turns
+          .filter((turn) => turn.position < child.position)
+          .reduce<Turn | undefined>(
+            (latest, turn) => (!latest || turn.position > latest.position ? turn : latest),
+            undefined,
+          ));
+  let turn = current ? stepBack(current, current.prevTurnId) : undefined;
+  while (turn) {
     if (turn.status !== "pending") {
       if (ownerKind === "compaction" && turn.role === "compaction")
         return (
@@ -36,7 +47,7 @@ export function previousAttemptRejectedAsTooLarge(
         if (metadata.success) return metadata.data.reason === "request_too_large";
       }
     }
-    turnId = turn.prevTurnId;
+    turn = stepBack(turn, turn.prevTurnId);
   }
   return false;
 }

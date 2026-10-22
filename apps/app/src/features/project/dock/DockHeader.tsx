@@ -3,12 +3,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
+import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
+import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { ScreenKey } from "../shell/screens";
-import { DockDocumentActions } from "./DockDocumentActions";
 import { DockDocumentIdentity } from "./DockDocumentIdentity";
 import type { DockDocument } from "./dock-document-store";
 
@@ -37,43 +38,47 @@ export function DockHeader({
     threadId: threadId ?? "",
     seed: null,
   });
+  // px-2 matches ContextTabBar's trailing zone so the collapse toggle sits
+  // exactly where the expand toggle appears when the dock closes: collapse and
+  // expand must round-trip without moving the mouse. The document's header
+  // pins the same toggle to its first line (DocumentIdentityBar `trailing`).
+  const collapse = onClose ? (
+    <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
+  ) : null;
+  if (dockDocument) {
+    return (
+      <header className="flex min-h-10 shrink-0 items-stretch">
+        <DockDocumentIdentity projectId={projectId} document={dockDocument} trailing={collapse} />
+      </header>
+    );
+  }
   return (
-    <header className="flex h-10 shrink-0 items-stretch pl-2">
+    <header className="flex h-10 shrink-0 items-stretch pl-2 [@media(pointer:coarse)]:h-11">
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}
       <div className="relative flex min-w-0 flex-1 items-center gap-1 pr-1">
-        {dockDocument ? (
-          <DockDocumentIdentity projectId={projectId} document={dockDocument} />
-        ) : (
+        {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
+        {screen === "chat" ? (
           <>
-            {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
-            {screen === "chat" ? (
-              <PaneTitle>
-                <Trans>Recent</Trans>
-              </PaneTitle>
-            ) : null}
-            {screen !== "chat" ? threadSelect : null}
-            {screen !== "chat" && threadId ? (
-              <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
-            ) : null}
+            <PaneTitle>
+              <Trans>Recent</Trans>
+            </PaneTitle>
+            {/* The header's free end holds the notice for a document the dock closed. */}
+            <RemovedNoticeSlot>
+              <RemovedDocumentChip projectId={projectId} surface="dock" />
+            </RemovedNoticeSlot>
           </>
-        )}
+        ) : null}
+        {screen !== "chat" ? threadSelect : null}
+        {screen !== "chat" && threadId ? (
+          <>
+            <ChatFilesMenu projectId={projectId} threadId={threadId} />
+            <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+          </>
+        ) : null}
       </div>
-      {dockDocument ? (
-        <div className="flex shrink-0 items-center">
-          <DockDocumentActions document={dockDocument} onCollapse={onClose} />
-        </div>
-      ) : onClose ? (
-        // px-2 matches ContextTabBar's trailing zone so the collapse toggle
-        // sits exactly where the expand toggle appears when the dock closes —
-        // collapse/expand must round-trip without moving the mouse.
-        <div className="flex shrink-0 items-center gap-0.5 px-2">
-          {onClose ? (
-            <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
-          ) : null}
-        </div>
-      ) : null}
+      {collapse ? <div className="flex shrink-0 items-center gap-0.5 px-2">{collapse}</div> : null}
     </header>
   );
 }

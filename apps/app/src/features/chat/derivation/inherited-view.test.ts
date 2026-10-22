@@ -15,6 +15,7 @@ import {
   type InheritedViewState,
   inheritedQueryOptions,
   inheritedViewFromPages,
+  optimisticForkPrefix,
   useInheritedView,
 } from "./inherited-view";
 
@@ -97,5 +98,25 @@ describe("useInheritedView", () => {
     await act(async () => undefined);
     expect(latest.current).toMatchObject({ failed: false, view: optimistic });
     await unmount();
+  });
+});
+
+describe("optimisticForkPrefix", () => {
+  it("leaves the source's forgotten turns out of a pending fork but keeps the source's own inherited stamps", () => {
+    // Risk (F1): a fork shown before its pages land restored words the source had forgotten.
+    const forgotten = { ...turn("lost", "source"), forgottenBy: "kept" } as Turn;
+    const view = optimisticForkPrefix({
+      source: { id: "source", title: "Plan" },
+      sourceInherited: {
+        transcript: {
+          turns: [{ ...turn("old", "grand"), forgottenBy: "beyond-cutoff" } as Turn],
+          ownerByTurnId: new Map([["old", "grand"]]),
+        },
+        owners: new Map(),
+      },
+      localTurns: [forgotten, turn("kept", "source")],
+      cutoffTurnId: "kept",
+    });
+    expect(view?.transcript.turns.map((t) => t.id)).toEqual(["old", "kept"]);
   });
 });

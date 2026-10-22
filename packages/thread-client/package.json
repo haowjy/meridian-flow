@@ -1,0 +1,24 @@
+{
+  "name": "@meridian/thread-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sync": "./src/sync/index.ts",
+    "./view": "./src/view/index.ts",
+    "./test-support": "./src/test-support/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@meridian/contracts": "workspace:*",
+    "@meridian/markup": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

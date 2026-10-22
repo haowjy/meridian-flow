@@ -1,5 +1,6 @@
 // Shared admission fixture for durable inverse boundaries.
 import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
@@ -31,8 +32,29 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }, ALPHA_ID),
+    grant: testFileGrant(
+      { kind: "draft", workId: WORK_ID, workHandle: "atomicity-work" },
+      ALPHA_ID,
+    ),
   };
   const target = { projectId: PROJECT_ID as never, workId: WORK_ID, documentId: ALPHA_ID };
   return { harness, view, responseId, context, target };
+}
+
+/** The document's Work draft id: what `view.draftMarkdown` reads. */
+export async function readDraftId(
+  db: ReturnType<typeof createTestDatabase>,
+  documentId: string,
+): Promise<string> {
+  const [documentDraft] = await db
+    .select({ id: schema.documentDrafts.id })
+    .from(schema.documentDrafts)
+    .where(
+      and(
+        eq(schema.documentDrafts.documentId, documentId),
+        eq(schema.documentDrafts.kind, "work_draft"),
+      ),
+    );
+  if (!documentDraft) throw new Error(`No Work draft for ${documentId}`);
+  return documentDraft.id;
 }

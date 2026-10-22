@@ -521,6 +521,16 @@
   @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-chat-interactive px-4 py-3 text-prose-foreground;
 }
 
+/* A queued message is not live yet: the draft link chip's outline (`link-chip.css`), dotted, with
+   no fill and muted ink. `data-queued` is set by `UserTurn` from the view model's `queued`. */
+[data-queued] .user-message-bubble {
+  border-style: dotted;
+  border-color: var(--color-muted-foreground);
+  background-color: transparent;
+  color: var(--color-ink-muted);
+  --prose-color: var(--color-ink-muted);
+}
+
 /* Context-dependent interactive lift for chat elements (user bubble, composer,
    turn-edit cards). The page-sheet placement (centered chat) lifts above the
    warm page with --color-card; the dock placement lifts above the chrome with
@@ -883,12 +893,6 @@
  * so shelf rows keep the shared class names without per-component forks.
  */
 .shelf-surface .hover\:bg-sidebar-accent\/50:hover {
-  background-color: var(--color-shelf-hover);
-}
-.shelf-surface .hover\:bg-sidebar-accent\/40:hover {
-  background-color: var(--color-shelf-muted);
-}
-.shelf-surface .hover\:bg-sidebar-accent:hover {
   background-color: var(--color-shelf-hover);
 }
 

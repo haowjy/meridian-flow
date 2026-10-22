@@ -19,10 +19,12 @@
     "db:apply-functions": "tsx scripts/apply-functions.ts"
   },
   "dependencies": {
+    "@meridian/agent-edit": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",
-    "postgres": "catalog:"
+    "postgres": "catalog:",
+    "yjs": "13.6.31"
   },
   "devDependencies": {
     "drizzle-kit": "catalog:",

@@ -1,34 +1,33 @@
 // Composition adapter binds model history commands to the caller's current destination.
-import type {
-  DocumentCoordinator,
-  DocumentEditRequest,
-  DocumentEdits,
-} from "@meridian/agent-edit/integration";
+
+import type { DocumentEditRequest, DocumentEdits } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
+import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
 import type { TurnInverseService } from "./turn-inverse-service.js";
 
 export function createModelDocumentEdits(input: {
   service(): TurnInverseService;
-  branches: ApplicationBranchStore;
-  coordinator: DocumentCoordinator;
+  drafts: ApplicationDraftStore;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
 }): DocumentEdits {
-  async function query(request: DocumentEditRequest) {
+  async function query(request: DocumentEditRequest & { command: { file: string } }) {
     const documentId = request.documentId as DocumentId;
     const view = request.context.linkView;
-    let branchId: string | null = null;
-    if (view?.kind === "draft") {
-      const branch = await input.coordinator.withDocument(documentId, (liveDoc) =>
-        input.branches.resolveWorkDraftBranchForWork({ documentId, workId: view.workId, liveDoc }),
+    let draftId: string | null = null;
+    if (view?.kind === "branch") {
+      const documentDraft = await input.coordinator.withDocument(documentId, (liveDoc) =>
+        input.drafts.ensureDocumentDraft({ documentId, branchId: view.branchId, liveDoc }),
       );
-      branchId = branch.branchId;
-      branch.doc.destroy();
+      draftId = documentDraft.draftId;
     }
     return {
       model: true as const,
-      branchId,
+      draftId,
       documentIds: [documentId],
       threadId: request.threadId as ThreadId,
+      // A deleted document has no address of its own: results name it by the model's path.
+      path: request.command.file,
       turnId: request.context.turnId as TurnId | undefined,
       responseIdentity: request.context.responseIdentity,
     };

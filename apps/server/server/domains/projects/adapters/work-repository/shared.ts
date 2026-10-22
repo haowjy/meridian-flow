@@ -1,33 +1,3 @@
-/** Shared Work naming and stable-handle rules used by both repository adapters. */
-import { decodeWorkSlug, type WorkSlug } from "@meridian/contracts/works";
+/** Shared Work naming rules used by both repository adapters. */
 export const DEFAULT_WORK_NAME = "Untitled Work";
 export const NO_WORK_NAME = "No Work";
-
-export function workSlugBase(name: string): WorkSlug {
-  const slug =
-    name
-      .normalize("NFKD")
-      .replace(/\p{Mark}/gu, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80)
-      .replace(/-+$/g, "") || "work";
-  const decoded = decodeWorkSlug(slug);
-  if (!decoded) throw new Error(`Generated invalid Work slug: ${slug}`);
-  return decoded;
-}
-
-export function nextWorkSlug(name: string, existingSlugs: Iterable<string | null>): WorkSlug {
-  const base = workSlugBase(name);
-  const taken = new Set([...existingSlugs].filter((slug): slug is string => slug != null));
-  if (!taken.has(base)) return base;
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${base}-${suffix}`;
-    if (!taken.has(candidate)) {
-      const decoded = decodeWorkSlug(candidate);
-      if (!decoded) throw new Error(`Generated invalid Work slug: ${candidate}`);
-      return decoded;
-    }
-  }
-}

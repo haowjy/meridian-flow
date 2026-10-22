@@ -1,6 +1,6 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
 import { namespaceRepairDestination } from "./namespace-journal-policy";
-import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
+import { intentOwnsDeletionAt, placementDestination } from "./resource-intent-policy";
 import {
   type DestinationParentLookup,
   destinationLocation,
@@ -12,17 +12,45 @@ import {
 
 export type ProjectResourceLocation = ResourceLocation & { provisional: boolean };
 
-/** Current identities outrank obsolete remint aliases when both exist in the account catalog. */
+/** One projection's identity lookup: by stable handle, or by document id with its alias rule. */
+export type ResourceIdentityIndex = {
+  byHandle(handle: string): ResourceRecord | null;
+  /** A current identity outranks another resource's obsolete remint alias. */
+  byDocumentId(documentId: string): ResourceRecord | null;
+};
+
+/** The only reading of the durable alias dictionary; build it once per projection. */
+export function resourceIdentityIndex(records: readonly ResourceRecord[]): ResourceIdentityIndex {
+  const handles = new Map<string, ResourceRecord>();
+  const current = new Map<string, ResourceRecord[]>();
+  const aliases = new Map<string, ResourceRecord[]>();
+  const add = (index: Map<string, ResourceRecord[]>, id: string, record: ResourceRecord) =>
+    index.set(id, [...(index.get(id) ?? []), record]);
+  for (const record of records) {
+    handles.set(record.resource.handle, record);
+    add(current, record.resource.identity.documentId, record);
+    for (const alias of Object.keys(record.resource.aliases)) add(aliases, alias, record);
+  }
+  return {
+    byHandle: (handle) => handles.get(handle) ?? null,
+    byDocumentId(documentId) {
+      const owners = current.get(documentId);
+      if (owners && owners.length > 1)
+        throw new Error("Document identity resolves to multiple resources");
+      if (owners) return owners[0] ?? null;
+      const obsolete = aliases.get(documentId);
+      if (obsolete && obsolete.length > 1)
+        throw new Error("Document alias resolves to multiple resources");
+      return obsolete?.[0] ?? null;
+    },
+  };
+}
+
 export function resourceForDocumentIdentity(
   records: readonly ResourceRecord[],
   documentId: string,
 ): ResourceRecord | null {
-  const current = records.filter(({ resource }) => resource.identity.documentId === documentId);
-  if (current.length > 1) throw new Error("Document identity resolves to multiple resources");
-  if (current[0]) return current[0];
-  const aliases = records.filter(({ resource }) => documentId in resource.aliases);
-  if (aliases.length > 1) throw new Error("Document alias resolves to multiple resources");
-  return aliases[0] ?? null;
+  return resourceIdentityIndex(records).byDocumentId(documentId);
 }
 
 export function projectResourceNeedsRepair(
@@ -59,16 +87,16 @@ export function projectResourceLocation(
 ): ProjectResourceLocation | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
+    record.intents.some(
+      (intent) =>
+        intent.projectId === projectId &&
+        intentOwnsDeletionAt(intent, record.resource.observationVersion),
+    )
   )
     return null;
-  const placement = owningLocationIntent(
-    projectId,
-    record.intents,
-    Boolean(record.resource.obligations.canonicalRefresh),
-  )?.desired;
-  if (placement?.kind === "set-location") {
-    const location = destinationLocation(placement.destination, lookup);
+  const placement = placementDestination(projectId, record);
+  if (placement) {
+    const location = destinationLocation(placement, lookup);
     if (location) return { ...location, provisional: false };
   }
 
@@ -76,13 +104,16 @@ export function projectResourceLocation(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;
   // Refused filing returns a normal file to its accepted home, not a provisional reservation.
-  const filed = record.intents.some(
-    (intent) =>
-      intent.desired.kind === "set-location" &&
-      (intent.state === "settled" ||
-        intent.state === "needs-repair" ||
-        intent.state === "superseded"),
-  );
+  const filed =
+    create?.kind === "create" && create.destination
+      ? true
+      : record.intents.some(
+          (intent) =>
+            intent.desired.kind === "set-location" &&
+            (intent.state === "settled" ||
+              intent.state === "needs-repair" ||
+              intent.state === "superseded"),
+        );
   if (record.resource.canonical)
     return { ...record.resource.canonical, provisional: create?.kind === "create" && !filed };
   if (create?.kind !== "create") return null;

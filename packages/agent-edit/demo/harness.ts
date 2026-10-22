@@ -55,7 +55,6 @@ function createEnvironment(journal = new InMemoryJournal(), coordinator?: InMemo
     core: createAgentEditCore({
       journal,
       coordinator: fakeServer,
-      lifecycle: fakeServer,
       codec,
       model,
       defaultSessionId: "demo-session",

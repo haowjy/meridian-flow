@@ -6,11 +6,12 @@
  * read-only destination prefix. Enter or Save commits through one identity
  * seam; Esc, blur, or Cancel revert it.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { isWorkScopedScheme } from "@meridian/contracts/context-uri";
 import {
   type ContextOwner,
-  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
   storedFilename,
 } from "@meridian/contracts/protocol";
@@ -157,7 +158,7 @@ export function IdentityPlacementField({
     [editorWorkId, locationWorkId, rootThreadId, rootThreadRef],
   );
   const ownerOfScheme = (scheme: ProjectContextTreeScheme): ContextOwner =>
-    isWorkScopedProjectContextScheme(scheme) ? owner : { workId: null };
+    isWorkScopedScheme(scheme) ? owner : { workId: null };
   const suggestionOptions = useMemo(
     () => ({
       schemes: [...new Set([...WRITABLE_IDENTITY_DESTINATIONS, location.scheme])],

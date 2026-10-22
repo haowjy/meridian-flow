@@ -11,11 +11,19 @@
  */
 
 import { createContext, useCallback, useContext } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import { useContextTabsActions } from "@/client/stores";
+import type { ReviewFocus } from "@/features/draft-review/review-model";
+import type { LinkDestination } from "@/features/links";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
+import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
-import { type AiDraftLaunchTarget, useOpenEditorReview } from "./editor-review-handoff";
+import {
+  type AiDraftLaunchTarget,
+  useOpenEditorReview,
+  useOptionalOpenEditorReview,
+} from "./editor-review-handoff";
 import { commitDockDocument } from "./use-dock-placement";
 
 /** Containers choose launch placement once; list launches outside the dock remain Editor commands. */
@@ -39,16 +47,16 @@ export function useAiDraftLauncher() {
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, workId: string, focusOperationIds?: readonly string[]) =>
+    (row: ReviewFileTarget, workId: string, focus?: ReviewFocus) =>
       row.contextLocation &&
       openAiDraft({
         workId,
         documentId: row.documentId,
-        draftId: row.draft.draftId,
+        itemKey: row.draft.itemKey,
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
-        isNewDocument: row.isNewDocument,
-        ...(focusOperationIds?.length ? { focusOperationIds } : {}),
+        draftOnly: row.draftOnly,
+        ...(focus ? { focus } : {}),
       }),
     [openAiDraft],
   );
@@ -67,10 +75,50 @@ export function useDockReviewLauncher(projectId: string, document: DockDocument)
       if (tab)
         commitDockDocument(projectId, document.screen, tab, revealDock, claim, {
           workId: target.workId,
-          draftId: target.draftId,
+          itemKey: target.itemKey,
         });
     },
     [projectId, document.screen, revealDock],
   );
   return launch;
+}
+
+/**
+ * A link destination that sends a document living only in a draft to that
+ * Work's review (by item identity, as the review handoff does), and every
+ * other document to the surface's own live opener.
+ */
+export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
+  const openEditorReview = useOptionalOpenEditorReview();
+  const containerLaunch = useContext(ReviewLaunchContext);
+  const projectId = useProjectDocumentNavigationProjectId();
+  const { openTab } = useContextTabsActions();
+  return useCallback(
+    (document, gesture) => {
+      const { review } = document;
+      if (!review) return open(document, gesture);
+      // A hidden target exists only in the draft: it is a draft-only review, never a live tab.
+      const target: AiDraftLaunchTarget = {
+        documentId: document.documentId,
+        ...review,
+        draftOnly: true,
+      };
+      if (gesture === "new-tab") {
+        // The writer keeps their place: the review joins the tab strip without a route change.
+        const tab = contextTabFromDraftGroup(target);
+        if (projectId && tab) openTab(projectId, tab);
+        return Promise.resolve();
+      }
+      if (containerLaunch) {
+        containerLaunch(target);
+        return Promise.resolve();
+      }
+      if (!openEditorReview)
+        throw new Error("Opening a draft requires the project review handoff owner");
+      return openEditorReview(target).catch((error) => {
+        console.error("[editor-review] launch failed", error);
+      });
+    },
+    [open, openEditorReview, containerLaunch, projectId, openTab],
+  );
 }

@@ -20,9 +20,8 @@ import {
 import { parseLinkRef } from "./document-ref.js";
 import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
-export type LinkView =
-  | { kind: "live"; responseId?: string }
-  | { kind: "draft"; workId: string; responseId?: string };
+/** The tree a link is read in: live, or one branch's view (the live tree plus what it created). */
+export type LinkView = { kind: "live" } | { kind: "branch"; branchId: string };
 
 export interface LinkHolder {
   /** Canonical URI of the holder in this view; null for chat (no holder). */
@@ -38,8 +37,16 @@ export interface CatalogDocument {
   projectId: string;
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
-  /** live: in the live tree; draft: exists only in a Work draft (or is staged by this response). */
-  presence: "live" | "draft" | "deleted";
+  /**
+   * live: in the live tree; branch: a hidden document in a pending file tree;
+   * deleted: soft-deleted, at its last address.
+   */
+  presence: "live" | "branch" | "deleted";
+  /**
+   * Present iff presence is "branch": the branch holding the document, the reader's own
+   * if it uses the document, otherwise the oldest active branch that does.
+   */
+  branch?: { branchId: string; workId: string | null };
   /** The reader may read it (file policy). False is answered exactly like a missing row. */
   readable: boolean;
   /** Nameable from the holder: same project, or the reader's personal `user://` space. */
@@ -61,7 +68,7 @@ export type LinkResolution =
    * rule 3, an ahead ref answered through its settlement, which never again
    * answers by address.
    */
-  | { kind: "document"; document: CatalogDocument; inDraft: boolean; settled?: true }
+  | { kind: "document"; document: CatalogDocument; inBranch: boolean; settled?: true }
   /** Rule 2 (and 3, `settled`, when the settled document is gone). */
   | { kind: "gone"; settled?: true }
   /** Rule 4: an unsettled ahead ref with nothing at its address. */
@@ -124,7 +131,7 @@ function nameableLive(document: CatalogDocument): boolean {
 function documentResolution(
   document: CatalogDocument,
 ): Extract<LinkResolution, { kind: "document" }> {
-  return { kind: "document", document, inDraft: document.presence === "draft" };
+  return { kind: "document", document, inBranch: document.presence === "branch" };
 }
 
 export type WrittenLinkClass =

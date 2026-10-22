@@ -1,5 +1,5 @@
 /** Drizzle authority-generation replacement binding for checkpoint restore. */
-import type { DocumentCoordinator } from "@meridian/agent-edit/integration";
+
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type * as Y from "yjs";
@@ -8,7 +8,8 @@ import {
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
 } from "../domain/document-mutation-policy.js";
-import { replaceDocumentAuthorityHeadGeneration } from "./drizzle-document-authority-head.js";
+import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
+import { replaceGeneration } from "./drizzle-document-authority-head.js";
 
 type CheckpointReader = {
   getCheckpoint(id: string): Promise<{
@@ -19,7 +20,7 @@ type CheckpointReader = {
 
 export function createDrizzleAuthorityGenerationReplacement(input: {
   db: Database;
-  coordinator: DocumentCoordinator;
+  coordinator: Pick<LiveDocumentCoordinator, "withDocument">;
   checkpoints: CheckpointReader;
   onReplaced(documentId: DocumentId): void;
   disconnectGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
@@ -47,9 +48,8 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
               }
             : null;
         },
-        unresolvedSettlements: async () => 0,
         replaceGeneration: async (checkpoint, expectedGeneration) => {
-          const result = await replaceDocumentAuthorityHeadGeneration(input.db, {
+          const result = await replaceGeneration(input.db, {
             documentId,
             checkpointId: Number(checkpoint.checkpointId),
             expectedGeneration,
@@ -60,11 +60,7 @@ export function createDrizzleAuthorityGenerationReplacement(input: {
             return result.generation;
           }
           throw new DocumentMutationPolicyError(
-            result.code === "authority_head_busy"
-              ? "authority_head_busy"
-              : result.code === "checkpoint_incomplete"
-                ? "checkpoint_incomplete"
-                : "invalid_mutation",
+            result.code === "checkpoint_incomplete" ? "checkpoint_incomplete" : "invalid_mutation",
             `Durable authority head generation replacement failed: ${result.code}`,
           );
         },

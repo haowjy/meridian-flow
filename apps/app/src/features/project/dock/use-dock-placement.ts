@@ -17,6 +17,7 @@
  */
 import { useCallback } from "react";
 import type { ContextTab } from "@/client/stores";
+import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
 import type { ReviewAddress } from "../presented-document";
@@ -44,9 +45,9 @@ export function useDockPlacement() {
   const { revealDock } = useChatNavigation();
   /** Show `tab` in the dock under `claim` (a fresh one when the caller has none). */
   const commit = useCallback(
-    (tab: ContextTab, claim?: number): DockCommit => {
+    (tab: ContextTab, claim?: number, focus?: true, review?: ReviewAddress): DockCommit => {
       if (!projectId || (screen !== "chat" && screen !== "work")) return "cancelled";
-      return commitDockDocument(projectId, screen, tab, revealDock, claim);
+      return commitDockDocument(projectId, screen, tab, revealDock, claim, review ?? null, focus);
     },
     [projectId, revealDock, screen],
   );
@@ -67,10 +68,14 @@ export function commitDockDocument(
   revealDock: (view: "document") => void,
   claim?: number,
   review: ReviewAddress | null = null,
+  focus?: true,
 ): DockCommit {
   const store = useDockDocumentStore.getState();
   const attempt = claim ?? store.claim();
-  if (!store.commit(attempt, dockDocument(projectId, screen, tab, review))) return "cancelled";
+  // Each dock open is its own tab instance, so its focus intent cannot reach a later reopen.
+  const opened = { ...tab, tabInstanceId: tab.tabInstanceId ?? crypto.randomUUID() } as ContextTab;
+  if (!store.commit(attempt, dockDocument(projectId, screen, opened, review))) return "cancelled";
+  if (focus) armEditorFocus(opened.tabInstanceId as string);
   revealDock("document");
   return "opened";
 }

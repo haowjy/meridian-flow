@@ -1,6 +1,11 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
 
-import { type ParsedContextUri, parseContextUri, splitDocumentHrefSuffix } from "./context-uri.js";
+import {
+  formatParsedContextUri,
+  type ParsedContextUri,
+  parseContextUri,
+  splitDocumentHrefSuffix,
+} from "./context-uri.js";
 import { parseDocumentFilename, renderFilename } from "./protocol/document-filename.js";
 
 export { splitDocumentHrefSuffix } from "./context-uri.js";
@@ -37,7 +42,10 @@ export function resolveDocumentHref(
     } else segments.push(part);
   }
   if (!segments.length) return null;
-  return { uri: format(base.value, segments.join("/")), suffix };
+  return {
+    uri: formatParsedContextUri(base.value.scheme, segments.join("/"), base.value.authority),
+    suffix,
+  };
 }
 
 export function spellDocumentHref(holderUri: string | null, targetUri: string): string {
@@ -63,7 +71,11 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
       return encodePath([...from.map(() => ".."), ...to].join("/"));
     }
   }
-  return format(target.value, encodePath(target.value.path));
+  return formatParsedContextUri(
+    target.value.scheme,
+    encodePath(target.value.path),
+    target.value.authority,
+  );
 }
 
 /** Canonicalize only the filename: folder segments are literal names. */
@@ -117,18 +129,6 @@ function decodePath(path: string): string | null {
   } catch {
     return null;
   }
-}
-
-function format(base: ParsedContextUri, path: string): string {
-  const qualifier =
-    base.authority.kind === "lineage"
-      ? `@/${base.authority.rootThreadRef}`
-      : base.authority.kind === "work"
-        ? `@${base.authority.workSlug}`
-        : base.authority.kind === "none"
-          ? "@"
-          : "";
-  return qualifier ? `${base.scheme}://${qualifier}/${path}` : `${base.scheme}://${path}`;
 }
 
 function sameAuthority(a: ParsedContextUri, b: ParsedContextUri): boolean {

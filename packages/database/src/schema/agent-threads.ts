@@ -17,6 +17,7 @@ import type {
   PrefixCachePredictionState,
   PriceSource,
 } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -37,7 +38,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { byteaColumn, createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { documents, projects, works } from "./content";
 import { pendingPlaceholderPredicate } from "./pending-placeholder";
 import { users } from "./users";
@@ -76,6 +77,8 @@ export const threads = pgTable(
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     inboxBlockedReason: text("inbox_blocked_reason").$type<"credits_exhausted">(),
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
+    // The chat's write mode: copied at creation, changed only by an applied switch.
+    aiWriteMode: text("ai_write_mode").$type<AiWriteMode>().notNull().default("direct"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -116,6 +119,7 @@ export const threads = pgTable(
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
+    check("threads_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
     // Lifecycle only. Run state is derived from the lease, never stored here.
     check("threads_status_valid", sql`${table.status} IN ('idle', 'archived')`),
@@ -162,13 +166,22 @@ export const threads = pgTable(
   ],
 );
 
-export const projectThreadCounters = pgTable("project_thread_counters", {
-  projectId: uuid("project_id")
-    .$type<ProjectId>()
-    .primaryKey()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  n: integer("n").notNull(),
-});
+/** Per-project, per-kind handle counters. `thread` is shared by chats and subagents (`c12`, `p3`). */
+export const projectHandleCounters = pgTable(
+  "project_handle_counters",
+  {
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"thread" | "work">().notNull(),
+    n: integer("n").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.kind] }),
+    check("project_handle_counters_kind_valid", sql`${table.kind} IN ('thread', 'work')`),
+  ],
+);
 
 /** M:N thread↔Work history; every live thread has one primary row. */
 export const threadWorks = pgTable(
@@ -203,6 +216,27 @@ export const threadWorks = pgTable(
 );
 
 /**
+ * One row per hand-back request (Stop, the queue's x, Cancel queue): its decision, stored in the
+ * request's own transaction and replayed by request id, so a replay answers what the first call did
+ * even after the chat's state moved on.
+ */
+export const threadHandBacks = pgTable("thread_hand_backs", {
+  requestId: uuid("request_id").primaryKey(),
+  threadId: uuid("thread_id")
+    .$type<ThreadId>()
+    .notNull()
+    .references(() => threads.id, { onDelete: "cascade" }),
+  /** Hash of the request body: the same id with another body is refused. */
+  fingerprint: text("fingerprint").notNull(),
+  handedBack: uuid("handed_back").array().notNull(),
+  answered: uuid("answered").array().notNull(),
+  gone: uuid("gone").array().notNull(),
+  /** The execution a Stop press cancelled; null for a hand-back and for a press that cancelled none. */
+  cancelledExecutionId: text("cancelled_execution_id"),
+  createdAt: createdAt(),
+});
+
+/**
  * Durable per-thread message queue drained in a batch at the next delivery
  * boundary. Rows are marked delivered rather than deleted so the idempotency
  * key and replay facts survive. `seq` is a global bigserial; sequences order
@@ -225,9 +259,33 @@ export const threadInboxMessages = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /**
+     * The turn current when the execution acknowledged this message, written with
+     * `delivered_at`. Null when unknown: delivered before run identity, by no
+     * reserved turn, or a non-message row.
+     */
+    deliveredByTurnId: uuid("delivered_by_turn_id").$type<TurnId>(),
+    /**
+     * The hand-back request that took this waiting writer message out of the chat. Set with
+     * `delivered_at` and no deliverer; the message's turn and blocks stay for diagnostics, and no
+     * conversation read returns them.
+     */
+    handedBackBy: uuid("handed_back_by"),
   },
   (table) => [
+    foreignKey({
+      columns: [table.handedBackBy],
+      foreignColumns: [threadHandBacks.requestId],
+      name: "thread_inbox_messages_handed_back_by_fk",
+    }),
+    check(
+      "thread_inbox_messages_hand_back",
+      sql`${table.handedBackBy} IS NULL OR (${table.deliveredAt} IS NOT NULL AND ${table.deliveredByTurnId} IS NULL AND ${table.intent} = 'message')`,
+    ),
     unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),
+    index("thread_inbox_messages_handed_back")
+      .on(table.threadId)
+      .where(sql`${table.handedBackBy} IS NOT NULL`),
     index("thread_inbox_messages_pending")
       .on(table.threadId, table.seq)
       .where(sql`${table.deliveredAt} IS NULL`),
@@ -241,7 +299,7 @@ export const threadInboxMessages = pgTable(
     ),
     check(
       "thread_inbox_messages_body_valid",
-      sql`(CASE WHEN ${table.intent} = 'control' THEN ${table.body}->>'kind' IN ('compact') ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
+      sql`(CASE WHEN ${table.intent} = 'control' THEN (${table.body}->>'kind' = 'compact' OR (${table.body}->>'kind' = 'write_mode' AND ${table.body}->>'mode' IN ('direct','draft'))) ELSE ${table.body}->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE`,
     ),
   ],
 );
@@ -251,7 +309,10 @@ export const threadInboxMessages = pgTable(
  * the atomic mutex (crash-safe because the DB session dies); this expiring row
  * is what `holder()`, derived status, and the running-turn read can observe from
  * another process. `turnId` is bound after the run's assistant turn commits, so
- * it may be null while a run is mid-setup.
+ * it may be null while a run is mid-setup. One row is one execution: its
+ * `executionId` is what every turn it reserves records in `turns.execution_id`.
+ * The row is deleted when the execution ends; an expired row is a repair
+ * candidate, never proof of death on its own.
  */
 export const threadRunLeases = pgTable(
   "thread_run_leases",
@@ -260,7 +321,7 @@ export const threadRunLeases = pgTable(
       .$type<ThreadId>()
       .primaryKey()
       .references(() => threads.id, { onDelete: "cascade" }),
-    runId: text("run_id").notNull(),
+    executionId: text("execution_id").notNull(),
     boundTurnIds: uuid("bound_turn_ids").array().notNull().default(sql`'{}'::uuid[]`),
     adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
     turnId: uuid("turn_id").$type<TurnId>(),
@@ -300,6 +361,16 @@ export const turns = pgTable(
     origin: text("origin").notNull(),
     aiWriteMode: text("ai_write_mode"),
     status: text("status").notNull().default("pending"),
+    /** The execution that reserved this turn (write-once); null when none did. */
+    executionId: uuid("execution_id"),
+    /** The messages this turn was reserved for (write-once); a hint, never delivery. */
+    reservedForUserTurnIds: uuid("reserved_for_user_turn_ids").array(),
+    /**
+     * The turn that retried this failed attempt or moved the chat past it (write-once, same thread).
+     * The turn stays in the graph and the journal but has left the conversation; a reader applies the
+     * stamp only when the forgetting turn is inside the span it reads.
+     */
+    forgottenByTurnId: uuid("forgotten_by_turn_id").$type<TurnId>(),
     finishReason: text("finish_reason"),
     error: text("error"),
     model: text("model"),
@@ -320,6 +391,11 @@ export const turns = pgTable(
   },
   (table) => [
     unique("turns_thread_id_id_unique").on(table.threadId, table.id),
+    foreignKey({
+      columns: [table.threadId, table.forgottenByTurnId],
+      foreignColumns: [table.threadId, table.id],
+      name: "turns_forgotten_by_fk",
+    }),
     uniqueIndex("turns_thread_position_unique").on(table.threadId, table.position),
     index("turns_epoch_boundaries")
       .on(table.threadId, table.position)
@@ -327,6 +403,9 @@ export const turns = pgTable(
     index("turns_unsettled")
       .on(table.threadId, table.position)
       .where(sql`${table.status} IN ('pending','streaming','waiting_interrupt')`),
+    index("turns_execution")
+      .on(table.threadId, table.executionId)
+      .where(sql`${table.executionId} IS NOT NULL`),
     index("turns_parent_position")
       .on(table.parentTurnId, table.position.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),
@@ -687,7 +766,7 @@ export const threadShownLinks = pgTable(
     ref: text("ref").notNull(),
     address: text("address").notNull(),
     holderUri: text("holder_uri").notNull(),
-    /** `live` or `draft:<workId>`. */
+    /** `live` or `branch:<branchId>`. */
     view: text("view").notNull(),
     showingDigest: text("showing_digest").notNull(),
     turnId: uuid("turn_id").$type<TurnId>().notNull(),
@@ -699,6 +778,37 @@ export const threadShownLinks = pgTable(
       columns: [table.threadId, table.documentId, table.showingDigest, table.turnId],
     }),
     check("thread_shown_links_digest_valid", sql`${table.showingDigest} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+/**
+ * Observation frontiers: the document state the model was shown by one
+ * transcript block (a tool result, or a writer turn's reference block whose
+ * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
+ * (`encodeSnapshotV2`); `unshown` lists the block ids (`client:clock`) that
+ * changed since the model's previous frontier and were not shown in full.
+ * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`.
+ *
+ * Keyed by the block's own id, so a fork that renders the inherited block
+ * finds its rows with nothing copied, and deleting the block deletes them.
+ * `recorded_seq` is global recording order: the latest row among a
+ * conversation's blocks is the model's frontier for a room.
+ */
+export const observationFrontiers = pgTable(
+  "observation_frontiers",
+  {
+    sourceBlockId: uuid("source_block_id")
+      .$type<TurnBlockId>()
+      .primaryKey()
+      .references(() => turnBlocks.id, { onDelete: "cascade" }),
+    roomKey: text("room_key").notNull(),
+    snapshot: byteaColumn("snapshot").notNull(),
+    unshown: jsonb("unshown").$type<string[]>().notNull(),
+    recordedSeq: bigint("recorded_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+  },
+  (table) => [
+    // The latest-row lookup walks a room's rows newest first and stops at the first in the conversation.
+    index("observation_frontiers_room_latest").on(table.roomKey, table.recordedSeq.desc()),
   ],
 );
 
@@ -715,7 +825,8 @@ export const userTurnAdmissions = pgTable(
     state: text("state").notNull(),
     rejectionCode: text("rejection_code"),
     userTurnId: uuid("user_turn_id").$type<TurnId>(),
-    assistantTurnId: uuid("assistant_turn_id").$type<TurnId>(),
+    /** Stream version of the run-state record the admission's transaction published; null for rows from before it existed. */
+    runStateVersion: text("run_state_version"),
     resumeAfterSeq: text("resume_after_seq"),
     snapshotFloorNextSeq: text("snapshot_floor_next_seq"),
     claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),

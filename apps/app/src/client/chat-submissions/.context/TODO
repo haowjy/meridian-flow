@@ -1,3 +1,8 @@
-# TODO
+# Submission recovery follow-up
 
-- Remove `rewriteV1ChatSubmissions` after the first production deploy shipping v2 has been live for a release.
+- Give refused local retirement of a write-mode switch its own withdrawal
+  failure fact. Today driver.withdrawControl retains the switch and publishes a
+  new unsaved occurrence, but the row says "Couldn't switch" with Retry (Stop
+  remains available). If storage refuses deletion, recovery should retry the
+  withdrawal rather than post the switch. Predates F3a; accepted P3 in the F3a
+  structural/alignment sign-offs. Map the owner's fact to switch-withdraw-failed.

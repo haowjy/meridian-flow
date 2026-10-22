@@ -1,140 +1,133 @@
 # Run loop
 
-One run is one lease through potentially many LLM-call and tool-execution
-iterations and assistant turns. `loop/orchestrator.ts` owns the skeleton and
-delegates the moving parts: what enters the run is [delivery](delivery.md),
-what the model is sent is [request assembly](request-assembly.md), and how a
-run shrinks its history is [compaction](compaction.md).
+A run holds one thread claim through model calls, tool execution, and assistant
+turns. `orchestrator.ts` owns the skeleton; [delivery](delivery.md) decides what
+enters it, [request assembly](request-assembly.md) builds model input, and
+[compaction](compaction.md) shrinks history.
 
-| File (under `loop/`) | Role |
-|---|---|
-| `orchestrator.ts` | Builds run-start and next-boundary model context from selected writer messages, durable history, references, skills, and images. It returns durable turn events plus the assistant to reserve; the delivery boundary owns preparation retries, notice consumption, inbox adoption, and atomic commit. `loadRunStartContext` reports a typed fork-history load failure as the `thread.conversation_context.load_failed` warn event and preserves the `thread_context_error` failed-reply path instead of falling back. A mid-run adoption completes assistant A and creates B, preserving graph order. Report admission belongs to the first commit that adopts a directed row, on that commit's reserved turn. Control-only runs admit no report. |
-| `run-session.ts` | One owner for writer and child claims, AbortController, current-turn registry, heartbeat, cancel, terminal fallback, and best-effort release. `execute` settles after cleanup; child report publication B follows it. A primary completion aborts foreground descendants only; a child invocation bounds its whole subtree and aborts background descendants too. Explicit cancellation includes background descendants. |
-| `run-turn-port.ts` | `prepare(input)` returns a `PreparedRun` with run/initial assistant identity, pre-setup replay cursor, post-setup snapshot floor, and one-shot `execute(): Promise<RunOutcome>`. Setup commits before returning; only execute enters the model loop. The journal/hub is the sole event consumer, not an orchestrator generator. |
-| `ports.ts` / `adapters/drizzle-run-claim.ts` | `InboxReader` is read-only; `selectPending` does not claim or mutate. `RunClaim` shares one nonreentrant session advisory claim across `withExclusiveThread` (short admission/Work/recovery work without a lease) and `startExecution` (observable, heartbeating lease). Only delivery binds the current turn (assistant or pending compaction) and receipt. A replacement run preserves a crashed run's turn and adopted-message receipt until orphan repair retires them together; queued-behind rows are not in that receipt. Other receipt mutation is guarded by thread/run/holder and exact IDs when clearing; the held session claim, not heartbeat expiry, authorizes a paid response commit. Guarded `cancelExecution(threadId, turnId)` matches any selector bound to the live run under the lease row lock: a prior segment can stop its current successor, but a selector from an ended run cannot stop a new run. Session release deletes only its own lease and physically unlocks after commit; the session owner retains one failure-backstop release. |
-| `execution-finalizer.ts` | Terminal transaction projects the current turn event and finalizes the nearest admitted report on the terminal turn's ancestor chain. Every failed runtime turn stores generic error copy derived from its role; specific causes stay in metadata, journal error details, and execution-report reasons. The report's selector remains its admitted first reserved turn; `terminalTurnId` records the final turn. A pending placeholder can end failed or cancelled, never successful through this finalizer. Fallback text is from that terminal turn’s final persisted response; cost includes terminal responses and every assistant or compaction response back through the selector, so a C that is the selector or terminal is covered once. Run-scoped capture keeps the existing partial-outcome policy except orphaned placeholders, whose child report is empty. Intermediate splits never publish a report. |
-| `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
-| `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
-| `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
-| `partial-tool-activity.ts` | Reads only the top-level string fields used by live labels from partial tool-call JSON; it tolerates an unfinished object and ignores nested arguments. |
-| `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
-| `turn-accounting.ts` / `settle-summary-responses.ts` | One `computeAndDebit` path records summary-call cost against the shared tree budget and credits ledger in the transaction that completes, fails, or cancels C or a handoff seed. Row settlement is metadata-neutral; each summary owner writes its own typed metadata. Summary calls do not spend model iterations or the turn budget; the successor's next pre-iteration check sees any exhausted tree cost budget. Handoff settlement is owned outside this loop by the [handoff service](handoff.md). |
-| `block-helpers.ts` | Content block conversion and local accumulator helpers. |
-| `local-turn.ts` | The one builder for turns that carry no model response (run skeleton, drained messages), so the read model and context projection see a single turn contract. |
-| `model-response-timing.ts` | Flattens per-attempt gateway timing into persisted model-response fields. |
+## Ownership boundaries
 
-## Queue and release wake
+`RunTurnPort.prepare()` performs setup and returns a one-shot `execute()`; setup
+commits before model execution, and the journal/hub is the event consumer, not
+an orchestrator generator. `RunSession` owns the process-local abort signal,
+current-turn registry, heartbeat, cancellation, and best-effort release.
+`RunClaim` is the cross-process authority: short exclusive work and observable
+heartbeating execution share one session claim. Only delivery binds the current
+turn and receipt.
 
-`next(pending, at)` in `next-inbox-work.ts` is the one pure selector used by
-run start and `wakeIfRunnable`. A boundary adopts every pending non-command row,
-regardless of queued commands. At run start, every non-command row runs when a
-message is waiting; otherwise the oldest command runs alone. Stop has no
-queue-priority behavior.
-Every non-control row, including a Work refresh notice, closes the reply prefix
-at a boundary; a notice-only queue still does not start a run.
+A new holder settles a crashed run's row (repair, then end and delete) before
+inserting its own, so the crashed receipt is retired together with its turn.
+Receipt mutations are guarded by thread, run, holder, and exact IDs; heartbeat
+expiry alone never authorizes a paid commit. Cancellation matches any selector
+bound to the live run under the lease row lock, so an old segment may stop its
+current successor but an ended run cannot stop a new one.
 
-After a run releases its claim, cleanup refreshes and re-reads the queue through
-`wakeIfRunnable`; this includes a run that found nothing to do and a lease
-cancelled during setup, plus a Retry refusal after taking a claim. A failed
-assistant acknowledges every message it
-adopted, including on provider error, output-limit failure, preparation
-failure, a thrown execution error, or crash repair. A crashed reply therefore
-fails once: repair shows “This response failed.” and retires its preserved
-receipt, while messages queued after its last adoption remain pending for the
-next run. Failed replies are
-never restarted by release wakes or the periodic sweep. Explicit Retry of the
-latest assistant `error` with no live run starts an ordinary no-input run through
-optimistic preparation; it uses the regular history projection (including the
-failed turn) and any pending non-control rows are adopted normally. Retry stores
-no inbox provenance and does not un-acknowledge messages. If startup compacts,
-the compaction receives a fresh ID and the reply receives the client's ID. A
-queued command runs normally after failed adopted rows are acknowledged. A real
-setup error before adoption still skips the reread as the hot-loop guard. Short
-exclusive claim holders still use the sweep as their liveness backstop.
+## Persistence and accounting
+
+Every mutation uses `persistAndAppendEvents`: read-model projection creates the
+turn/block/model-response rows before journal append, satisfying the journal
+foreign key, and both occur in one transaction. Tool dispatch persists typed
+`tool_result` values and delegates policy to the per-turn gate. return-result
+settlement remains spawn-owned.
+
+**Failure records.** `projectAndAppendEvents` (`loop/persistence.ts`) is the one seam
+every live durable event passes through inside its transaction, so it is also
+where a failure is detected (`loop/failure-detection.ts`). A `turn.error`
+becomes `failure.recorded` (the occurrence is the turn id, classified by
+`classifyReplyFailure` from `@meridian/contracts/failures`), plus an immediate
+`failure.ended { moved_on }` when a closing row already follows the turn (the
+carried case), naming the first closing row after it on the active chain (`firstClosingRowAfter`),
+not the latest: a reply that fails after the writer sent U then V ends `moved_on` by U. `turns.forgotten` says which content leaves the model's history and ends
+nothing. A failure ends at the first boundary that follows it (a closing row, a Retry, or a
+same-run continuation), and only there. `decideForgetting` owns that: its `ends` lists every
+failure that ends at the boundary (the latest failed row, forgotten or kept, and the newest
+failed handoff seed) with how it ends (`retried`, `forgotten`, `moved_on`). Older members of a
+failed chain ended at the boundaries that followed them. The append primitive records exactly
+that list (run start decides the same, and only the commit records). The recorder records what
+it is given and keeps no memory of earlier ends. A failed handoff seed's Retry records `retried` in
+`brief-service.ts`, because the Retry seed's `turn.created` names no seed. A usage
+block records `failure.recorded` and its clear `failure.ended { resolved }`
+from `setBlockedReason`, with occurrence `usage:${threadId}:${episode}`, where the
+episode is the journal seq of the chat's last unblocked `run_state.changed`
+record (no column holds it). `interrupts.ts` projects directly and calls the same
+detector. The projector itself never logs.
+
+Records go to the `recordFailure` a `LiveEventWriter` carries (required by
+`PersistenceDeps`; `noFailureRecorder` is the explicit opt-out; the raw journal stays
+append-only), which queues them on the
+`FailureRecord` transaction participant (`shared/failure-records.ts`): own
+state, forked and merged across savepoints, emitted through `recordFailure` over
+`emitEvent` after the outermost commit. Within one Drizzle transaction a repeated
+`(occurrenceId, phase)` emits once; across transactions uniqueness comes from the
+transition decision, not from the participant. A rolled-back transition emits
+nothing on Drizzle. The in-memory repositories do the same per `InMemoryTransactionOwner`: the
+journal writer takes the owner of the repositories it serves (required; a fixture with no
+transactions passes `noTransactionOwner`, and `createRuntimeHarness` reads the owner off the
+repositories it is given), and `owner.afterCommit` runs a
+record when that owner commits and drops it when that owner rolls back. A nested `run` on the
+same owner joins the outer transaction (it is not a savepoint); another owner's transaction
+neither emits nor discards it. Outside any transaction a record emits at once. The journal row is the durable
+record; the log entry is its classified, best-effort view.
 
 `POST /api/threads/:threadId/turns/:turnId/retry` is available only for the
-latest failed assistant reply on an idle primary or subagent thread; eligibility
-is checked before the claim and its expected leaf is checked again after the
-claim. A repeated client ID returns the same assistant turn. See the
-[reply Retry API](../../../../../../docs/api/thread-reply-retry.md).
+latest failed assistant reply on an idle primary or subagent thread; a repeated
+client ID is answered with the same execution from durable facts, and once
+`prepare` returns, Retry hands the run to execution before any descriptive read
+so no exit after preparation can strand a heartbeating claim.
 
-The runtime composition owns one `DetachedWorkTracker` shared by run sessions,
-delivery callbacks, background child completion, and handoff briefs. Cleanup
-wakes, detached drain execution, lease-renewal I/O, brief launches/polls, and
-post-commit runtime work register with it. `drain()` waits for tracked work and
-work registered before the tracker becomes quiescent. App shutdown sets the
-shared shutdown flag before aborting live runs and briefs with the `shutdown`
-reason. Run starts and wakes are suppressed after that point; live replies
-settle paid response rows, end as error with `reason: shutdown` and
-“This response failed.”, acknowledge their receipts, and release their
-claims. SIGTERM and SIGINT enter one shared process-hook sequence: registered
-app shutdown callbacks run before the observability sink flushes and process
-exit. Production signals reach that sequence directly. Nitro dev uses the
-upstream worker runner: Ctrl+C or SIGTERM exits promptly by terminating the
-worker, so the runtime treats an in-flight reply as a crash and repairs it on
-restart. The app waits for one
-bounded 10-second runtime drain and warns if it times out. Recovery lanes get a
-five-second stop bound. Both nested bounds are derived from the whole callback
-and observability flush sequence's 12-second process deadline in
-`lib/shutdown-deadlines.ts`; a second signal exits immediately. A
-brief launched after
-shutdown begins leaves S pending for ordinary repair, and a released claim does
-not wake its destination. DB test fixture resets drain the explicitly wired
-test tracker before locking and deleting tables.
+`persistModelResponse` mints the response ID used by tool handlers. One
+response's tool calls dispatch one at a time (`orchestrator.ts`, "Sequential
+dispatch is load-bearing"), each result persisting before the next call runs.
+After all tool results persist, response-scoped agent-edit writes commit, so
+staged writes save at the end of every model step, before the next request is
+prepared; staged results are replaced by settled receipts in the same
+transaction. A staged result left by process failure becomes a typed rejection
+only when its canonical result shape and staged phase are both present.
+Cancellation rolls the response buffer back before finalizing the turn.
 
-`OrchestratorDeps` requires the runtime ports: gateway, repos, retained Agent
-revision reader, tool registry/executor, project preferences, credit ledger, the
-`RuntimeDelivery` boundary, the `RunClaim`, interrupt artifact flush,
-child-run coordinator, interrupt registry, and `EventSink`. `backgroundTasks`
-is required and injected by the app composition or test harness. The process
-tracker is explicitly wired only into DB test fixtures. Disabled behavior is
-an explicit adapter (for example a no-op sink), never an omitted dep. Do not
-re-add a global permission gate here; tool names are gated per turn from
-advertised policy, and file and action access per call
-([tools](tools.md#permissions)). Provider-specific model-call behavior stays behind the
-gateway port.
+A block whose document view the model receives records its
+[observation frontier](document-text.md#observation-frontiers) in the
+transaction that persists it, in `afterEvents`, once the block row exists. A
+staged result records none; the settled receipt that replaces it does.
 
-Handoff brief generation is not a run: the orchestrator only delegates Stop
-for a pending seed to `HandoffBriefs`. Launch, provider calls, seed settlement,
-and recovery live in the independent [handoff service](handoff.md).
+Summary calls use `TurnAccounting.computeAndDebit` and the shared tree budget;
+handoff settlement is outside this loop. Summary calls do not consume model
+iterations or the turn budget. The explicit gateway, repositories, retained
+Agent reader, tool registry/executor, delivery, claim, credit ledger, child
+coordinator, interrupts, EventSink, and background tracker are required ports;
+no disabled behavior is represented by an omitted dependency.
+
+Continuation eligibility is checked before preparation or compaction; iteration
+and tree-turn spend happen only when an assistant request actually dispatches.
+Successful reply closure first asks delivery whether pending input needs another
+request. No input means success can close even if the last response spent into
+debt. Pending input goes through the same eligibility and split preparation as
+other continuations, not a separate closure-owned preparation path.
+
+## Queue, release, and shutdown
+
+Run start and `wakeIfRunnable` share delivery's message-first selector. A
+failed assistant acknowledges its adopted messages and is never restarted by a
+release wake or periodic sweep. Explicit Retry starts a normal no-input run
+whose history includes the failed turn; it does not restore inbox provenance.
+
+One process-shared `DetachedWorkTracker` covers cleanup wakes, child completion,
+handoff briefs, lease I/O, and post-commit work. Shutdown sets its flag before
+aborting live work, settles paid rows, records `reason: shutdown`, acknowledges
+receipts, releases claims, and suppresses new starts/wakes. The bounded runtime
+drain and recovery-lane limits come from the process shutdown deadline. Nitro
+dev's worker termination may leave repair to restart; production signals use
+the same shutdown hook sequence.
 
 ## Invariants
 
-- **Max 32 iterations** per turn (`MAX_TURN_ITERATIONS`). Exceeding this
-  finalizes the turn with an error.
-- **Cancellation via `AbortSignal`**, checked before model calls, after stream
-  events, and around tool execution. Writer Stop finalizes the turn as
-  `cancelled`; shutdown abort reason `shutdown` finalizes as a retryable error
-  after response settlement. Both return the thread to `idle`. The run signal
-  (with the durable cancel request) is the only cancel authority; see
-  [compaction cancellation](compaction.md#current-turn-and-cancellation).
-- **Persist/project-then-emit.** Every state mutation goes through
-  `persistAndAppendEvents` before any event is yielded to subscribers. Within
-  the transaction, `projectReadModelEvent` runs first (creating
-  turn/block/model-response rows), then `eventWriter.appendEvent` appends to
-  the journal (satisfying the `event_journal.turn_id` FK).
-- **Tool execution** is parallel by default; registrations marked
-  `sequential: true` run serially after parallel tools complete. Timeout and
-  abort races are handled by the executor.
-- **Model response lifecycle.** `persistModelResponse` mints the response id
-  used by tool handlers. After all tool results for that response are
-  persisted, the orchestrator commits response-scoped agent-edit writes.
-  Staged tool results finalize in the same database transaction as that commit
-  using the settled receipts returned by agent-edit, never the speculative
-  staged output. A host-only settlement id correlates each tool call to its
-  receipt; the model-facing write handle is not unique within a response. A
-  staged result left by a pre-commit process failure becomes a typed rejection
-  before a later turn assembles model context. Durable orphan recovery
-  recognizes that state only when the persisted block is marked as a staged
-  write, its output passes the canonical `isAgentEditResult` guard, and the
-  discriminated result phase is `staged`; a schema string alone is not
-  sufficient. Cancellation paths roll the response buffer back before
-  finalizing the turn as cancelled.
-- **Response write settlement is report-only.** Ordinary Yjs merge always
-  commits. Destructive effects are echoed to the model and writer-lineage
-  overlap may elevate receiving-writer-specific session marks. Trail evidence
-  stays lifecycle-neutral and read-only.
-- **Production runners hold the cross-process claim through completion
-  delivery.** A crashed process loses its session claim, so recovery can
-  safely take over its orphaned work ([recovery](recovery.md)).
+- A turn permits at most 32 model/tool iterations.
+- Cancellation is authorized only by the run signal or durable cancel request,
+  checked before calls, after stream events, and around tool execution.
+- One response's tool calls run sequentially, in the model's order; timeout and
+  abort races belong to the executor. `ToolExecutor.executeTools` (parallel
+  unless a registration is sequential) is not used by the loop.
+- Response-write settlement is report-only: ordinary Yjs merge commits;
+  destructive effects are echoed and trail evidence stays lifecycle-neutral.
+- Production runners hold the cross-process claim through completion delivery;
+  process loss therefore leaves work for [recovery](recovery.md).
