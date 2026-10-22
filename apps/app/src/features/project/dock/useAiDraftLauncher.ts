@@ -55,7 +55,7 @@ export function useAiDraftLauncher() {
         itemKey: row.draft.itemKey,
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
-        isNew: row.isNew,
+        draftOnly: row.draftOnly,
         ...(focus ? { focus } : {}),
       }),
     [openAiDraft],
@@ -101,7 +101,7 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
       const target: AiDraftLaunchTarget = {
         documentId: document.documentId,
         ...review,
-        isNew: true,
+        draftOnly: true,
       };
       if (gesture === "new-tab") {
         // The writer keeps their place: the review joins the tab strip without a route change.

@@ -39,6 +39,7 @@ function composed(settleWorkspace: () => Promise<void>) {
       commit: () => [],
       settleDraft: async () => ({ kind: "not-settled" as const }),
       applyAvailability: settleWorkspace,
+      holdForDrafts: () => undefined,
     },
   });
   const availability = new ProjectContextAvailabilityCoordinator({

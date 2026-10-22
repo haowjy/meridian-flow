@@ -152,7 +152,7 @@ export function ProjectChatContextNavigationProvider({
         const tab = contextTabFromDraftGroup({
           documentId: document.documentId,
           ...review,
-          isNew: true,
+          draftOnly: true,
         });
         if (tab)
           besideChat(tab, door.claim, undefined, {

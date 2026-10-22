@@ -187,7 +187,7 @@ export function ReviewAddressOwner({
         documentId: presented.documentId,
         itemKey: requestedItemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },
-        isNew: presented.draftOnly,
+        draftOnly: presented.draftOnly,
       });
       return;
     }
@@ -212,7 +212,7 @@ export function ReviewAddressOwner({
         itemKey: requestedItemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },
         documentName: file?.documentName ?? undefined,
-        isNew: file?.isNew ?? presented.draftOnly,
+        draftOnly: file?.draftOnly ?? presented.draftOnly,
       }),
     ).catch((error) => {
       restoring.current = null;

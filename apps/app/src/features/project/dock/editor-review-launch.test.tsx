@@ -45,7 +45,7 @@ it.each([
             documentId: "document-a",
             itemKey: "draft-a",
             contextLocation: { scheme, path: "folder/chapter.md" },
-            isNew,
+            draftOnly: isNew,
           };
           await act(async () => {
             await launch?.(target);

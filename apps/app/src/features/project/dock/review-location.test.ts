@@ -11,7 +11,7 @@ it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Wo
     itemKey: "draft",
     sequence: 1,
     contextLocation: { scheme, path: "/characters/Hero" },
-    isNew: true,
+    draftOnly: true,
   };
   expect(contextTabFromDraftGroup(intent)).toMatchObject({
     scheme,
