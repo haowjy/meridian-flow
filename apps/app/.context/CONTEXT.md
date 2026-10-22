@@ -210,8 +210,9 @@ to learn what is clickable): one base-layer rule in `src/styles/globals.css`
 covers buttons, links, and summaries minus disabled and `aria-disabled`, and
 components add no cursor utility. Manuscript links remain text under the caret.
 Programmatic focus paints a ring only for keyboard input: navigation-focused
-screen headings never ring, and controls focused after a pointer action use
-`moveFocus` from `src/lib/focus-follow.ts`.
+screen headings never ring. `moveFocus` in `src/lib/focus-follow.ts` pairs with
+the app-wide focus-ring CSS for app-moved focus; Work archive focus uses it
+today so focus following a pointer command stays quiet.
 A shadcn refresh will try to take this back; it is a divergence we keep.
 
 E2E fixtures may seed relational project/Work/thread/context shells through the
