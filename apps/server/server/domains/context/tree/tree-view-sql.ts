@@ -681,6 +681,23 @@ export function identityDocuments(view: TreeView) {
   return subquery(query, columns, "document_identities");
 }
 
+/**
+ * The living documents a branch view deletes (alias "document_identities", the identity
+ * relation's shape): in no branch reader, yet where an undo of that delete brings them back,
+ * at their row. Authorization only; listing and availability never read it.
+ */
+export function branchDeletedDocuments(view: Extract<TreeView, { kind: "branch" }>) {
+  const columns = getTableColumns(documents);
+  const query = sql`SELECT ${sql.raw(
+    Object.values(columns)
+      .map((column) => `d.${column.name}`)
+      .join(", "),
+  )} FROM documents d WHERE d.deleted_at IS NULL AND EXISTS (SELECT 1 FROM branch_tree_changes c
+      WHERE c.branch_id = ${view.branchId}::uuid AND c.node_kind = 'document'
+        AND c.node_id = d.id AND c.deleted)`;
+  return subquery(query, columns, "document_identities");
+}
+
 const PLACEMENT_COLUMNS = new Set(["context_source_id", "folder_id", "name", "extension"]);
 
 /** Branch `b`'s view shows deleted document `d`: it moved it, or a draft of it is pending. */
