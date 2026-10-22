@@ -45,8 +45,9 @@ it.each([
           }}
           port={{
             write: (next) => setItemKey(next?.itemKey ?? null),
-            admit: (target) => {
+            admit: async (target) => {
               setDestination(`${target.contextLocation.scheme}:${target.documentId}`);
+              return true;
             },
           }}
         />

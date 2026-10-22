@@ -93,10 +93,24 @@ list omission alone must not infer local Discard or successful Apply. The list
 omits an active draft with no effect (a delete's held tab, a fully applied draft,
 one inside the `has_effect` lag), so an unlisted draft-only tab goes live when
 the catalog shows its document and closes only when its draft metadata answers
-`gone`; an active or unanswered draft keeps its tab. While its draft is closed,
-the review address port (`ProjectView`) does not admit the address's review: the
-room owner just ended it, and a draft-only tab keeps its address until
-settlement closes it. The server answers `gone`
+`gone`; an active or unanswered draft keeps its tab.
+
+Closure belongs to a draft generation, not to its item key. The key (branch +
+document) outlives its drafts: discarding one item leaves the branch active, and
+a later write to the same document mints a new draft under the same key. The
+command owner keeps each draft's record (its unsent text, its queue) under its
+draft id, and an item follows its newest known generation: `bind` and
+`reconcileClosed` advance it, never a close. A close (room reset or metadata
+`gone`) retires the generation it was issued for, so a late answer about the old
+draft cannot close a newer one. While the item's known draft is closed, the
+review address port (`ProjectView`) and the route's address clearing both ask
+the server first (`reconcileClosed`, a fresh metadata read): `gone`, the same
+closed draft, or a failed read refuse admission and clear a non-draft-only
+address, since the room owner just ended that review and admitting it again
+would loop; a different active draft is the replacement, and admission goes
+ahead. `ReviewAddressOwner` remembers a refusal only for the port that gave it;
+the port changes when the item's generation does, so a replacement that becomes
+known later (another surface bound it) is retried once. The server answers `gone`
 from the Work's ownership and the item key alone, before any content grant:
 the active draft is what grants reading a document deleted live or a hidden
 creation, so after a Discard on another device a content check would answer
