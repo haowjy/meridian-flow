@@ -60,7 +60,10 @@ draft forks; read the drafted path (`ch1-old`) in a later reply, then `replace`.
    and ch5 → ch6 both land (the held one is sent again after the other).
 7. **Mixed move.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`: the row says "Couldn't move sect-notes" (the model reads D45's
-   refusal). Then `copy` it there and `delete` the scratch one: the dock lists sect-notes.
+   refusal). Then `copy` it there and `delete` the scratch one: the dock lists sect-notes. The
+   other direction refuses alike: `move` `manuscript://ch2` to `scratch://@w1/ch2` reads the
+   same refusal. After both, `./mf` shows sect-notes still in scratch and ch2 still live at its
+   path, with no row in the dock for either move.
 8. **Undo after Apply.** Script `undo` of `manuscript://ch1-old`: "Couldn't undo ch1-old";
    the model reads `cant_undo_applied`.
 
@@ -77,6 +80,12 @@ With more than one file, the dock's Apply asks the same question in its footer
    "white" listed and ch6 live under its name; the footer says "Discarded" with no Undo.
    With only ch1 left, the dock's Discard drops both, says "Discarded" with no Undo, and the
    Work lists nothing.
+10. **A destination folder the writer makes, and a rename the Work ends.** Script `move` ch2 →
+   `arc2/ch2` (a folder only the Work sees). In the live tree, create a folder and rename it to
+   `arc2`: the dock still reads "ch2: renaming to arc2/ch2". The card's Undo moves it back and
+   the card expands with its draft outcome; Redo puts it in `arc2` again. Then script `move` ch4
+   → ch4b, press the card's Undo, and Discard all of the Work: the card's Redo then says the
+   change was discarded, not that it can't be restored.
 
 ## Last run
 
